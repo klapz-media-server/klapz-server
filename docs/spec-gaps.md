@@ -29,6 +29,7 @@ series* below.
 | --- | --- | --- |
 | `GET /library/sections/{sectionId}/firstCharacters` | `GET /library/sections/{sectionId}/firstCharacter` | Singular. The plural form 404s in every variant tried, with and without `type`. The singular form requires `type` (e.g. `type=1`), and 404s without it. |
 | `GET /identity` under the global `user_token` security | Answers `200` with no token at all | The spec applies its global security requirement to `/identity`, but a real server serves it unauthenticated — necessarily so, since clients call it to discover whether a host is a Plex server before holding any token. |
+| `X-Plex-Client-Identifier` `required: true` on the transcode `decision`, `start` and `subtitles` operations, `POST /:/timeline` and `POST /downloadQueue/{queueId}/add` | Not required: `decision` and `subtitles` answer `200` without it, as a header, as a query parameter, or at all | What the decision actually refuses (`400`) is a request with no resolvable client profile: an `X-Plex-Platform` it knows (matched case-insensitively, untrimmed) or an `X-Plex-Client-Profile-Name`. Probed on a real film; `start`, `timeline` and `downloadQueue` were not probed because they create state. |
 
 ## Aliases
 
@@ -84,6 +85,24 @@ derivable from the spec or from the database schema alone.
 | Jump-bar buckets | `/library/sections/{id}/firstCharacter?type=` groups by the first character of the sort title, **folded** — 594 films under `C` where a raw first character gives 593, because `Ç` folds to `C`. Ligatures do not fold and get their own bucket: `Œ` is a letter there, with two films. Everything not starting with a letter collapses into `#`. The `key` is percent-encoded (`%23`, `%C5%92`); the count attribute is `size`, not `count`, unlike every other `Directory` in the surface. |
 | Search-result attribute order | `/search` puts the library attributes (`allowSync`, `librarySectionID`, `librarySectionTitle`, `librarySectionUUID`, `personal`, `sourceTitle`) **before** `ratingKey`; `/library/metadata/{ids}` puts the same ones after `titleSort`. Order is observable in XML, so the two shapes are distinct types. |
 | Boolean stream flags | `default` and `forced` are sent only when true, never as `0`. |
+
+### Where an `X-Plex-*` value is read from
+
+The spec says every `X-Plex-*` header may also travel as a query parameter, and nothing more.
+Measured through `X-Plex-Platform` on the transcode decision, the one value whose effect is
+observable without creating state:
+
+| Probe | Reference | Rule |
+| --- | --- | --- |
+| header `NoSuch`, query `Chrome` | refused | the header wins |
+| empty header, query `Chrome` | refused | an empty header still shadows the query |
+| header `x-plex-platform: Chrome` | accepted | header names are case-insensitive |
+| query `x-plex-platform=Chrome` | refused | query names are **not** |
+| query `NoSuch` then `Chrome` | accepted | a repeated parameter takes its last value |
+| query `%20Chrome%20` | refused | values are not trimmed |
+
+`ClientIdentity` in `api-plex` applies the same rules to the whole family, and decodes a header
+as UTF-8 with an ISO-8859-1 fallback, which the spec states the server attempts.
 
 ### Opening a series
 

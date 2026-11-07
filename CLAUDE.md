@@ -253,7 +253,10 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
   season's episodes, and every episode of a show as one list, through a `grandchildren`
   port and `Show.episodes` on the official API; zero differing fields against the reference
   on seven parents across two libraries;
-- ⬜ the `X-Plex-*` client-identity extractor;
+- ✅ the `X-Plex-*` client-identity extractor (`ClientIdentity`): header or query, with the
+  precedence, case and repetition rules measured on the reference. It never rejects —
+  the spec marks `X-Plex-Client-Identifier` required, the reference does not enforce it.
+  No handler takes it yet; transcoding and timelines will be its first consumers;
 - ⬜ `docs/ENDPOINTS.md` kept current as work lands.
 
 Then: iterate endpoint by endpoint, following `docs/ENDPOINTS.md`.

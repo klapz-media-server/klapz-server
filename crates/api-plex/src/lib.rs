@@ -8,6 +8,7 @@
 pub mod auth;
 pub mod capabilities;
 pub mod children;
+pub mod client;
 pub mod container;
 pub mod error;
 pub mod gql;
