@@ -1,0 +1,888 @@
+# Proposed schema additions for library items.
+#
+# NOT IMPLEMENTED — this is the reviewable form of docs/schema-proposal-graphql-items.md.
+# The generated schema lives in docs/schema.graphql; this file is hand-written and shows only
+# what is new, plus the existing types it changes.
+#
+# One storage table (metadata_item) maps onto one interface and four concrete types. Shows and
+# seasons carry no media because, measured on the reference library, none of 4,002 shows and
+# none of 9,736 seasons has one — while all 18,332 movies and all 138,981 episodes do.
+#
+# `MetadataItem.title` is nullable while `Movie`, `Show` and `Episode` narrow it to `String!`.
+# GraphQL allows an implementing field to be non-null where the interface is nullable, and a
+# season genuinely has no stored title.
+#
+# `versions` is a list because the data allows several, not because it usually has them: only
+# 8 movies and 88 episodes here carry more than one. The level exists because the Plex surface
+# exposes it with its own identity, and because collapsing it would make those 96 items
+# unrepresentable.
+#
+# `MetadataItem` does not declare `implements Node`: concrete types implement both, which keeps
+# the schema compatible with tooling that predates interfaces-implementing-interfaces.
+#
+# The interface's common fields are redeclared with their descriptions on each concrete type.
+# GraphQL does not inherit descriptions, so introspecting `Movie.title` would otherwise return
+# null — and the schema-documentation test reads introspection, not the interface.
+#
+# There is no `databaseId`. The global `id` is the only identifier the API publishes: the Plex
+# compatibility layer lives in this workspace and uses the published `GlobalId` codec, so it
+# needs no numeric field of its own. That also keeps internal ids out of the official API.
+#
+# Every object with an identity implements `Node` and is refetchable through `node(id:)`.
+# "Some objects are refetchable and some are not" is harder to explain than "all of them are",
+# and a uniform rule costs only a routing arm per type.
+#
+# All four item types share the type tag `Item` in their global id, because a caller holding
+# only a number does not know the kind — `node` reads it from storage and returns the matching
+# concrete type. The media types need no such trick: `MediaFile` is unambiguous.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Interface
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+Anything that appears in a library listing.
+"""
+interface MetadataItem {
+  """
+  Globally unique, opaque identifier. Pass it to `node` to refetch this item.
+
+  Treat it as a token: its encoding is not part of the contract and may change.
+  """
+  id: ID!
+
+  """
+  The library this item belongs to.
+
+  The same work present in two libraries is two distinct items with two ids — 78% of movies
+  here have such a twin, because libraries can share a scanned folder.
+  """
+  library: Library!
+
+  """
+  Display title, in the library's metadata language.
+
+  Nullable on the interface because a season has none: 9,733 of 9,737 seasons in the
+  reference library store an empty title, and `Season.number` is what identifies them.
+  Concrete types that always have one narrow this to `String!`.
+  """
+  title: String
+
+  """
+  Title to sort by when it differs from `title`, for example with a leading article removed.
+  Null when `title` already sorts correctly.
+  """
+  titleSort: String
+
+  """
+  Synopsis, in the library's metadata language.
+  """
+  summary: String
+
+  """
+  When the item was added to the library, in seconds since the Unix epoch.
+  """
+  addedAt: Int!
+
+  """
+  When the item's metadata last changed, in seconds since the Unix epoch.
+  """
+  updatedAt: Int!
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Concrete types
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+A film: a single playable item with no children.
+"""
+type Movie implements MetadataItem & Node {
+  """
+  Globally unique, opaque identifier. Pass it to `node` to refetch this item.
+  """
+  id: ID!
+
+  """
+  The library this item belongs to.
+  """
+  library: Library!
+
+  """
+  Display title, in the library's metadata language.
+  """
+  title: String!
+
+  """
+  Title to sort by when it differs from `title`. Null when `title` already sorts correctly.
+  """
+  titleSort: String
+
+  """
+  Synopsis, in the library's metadata language.
+  """
+  summary: String
+
+  """
+  When the item was added to the library, in seconds since the Unix epoch.
+  """
+  addedAt: Int!
+
+  """
+  When the item's metadata last changed, in seconds since the Unix epoch.
+  """
+  updatedAt: Int!
+
+  """
+  Original-language title, when it differs from `title`.
+  """
+  originalTitle: String
+
+  """
+  Release year.
+  """
+  year: Int
+
+  """
+  Release date as `YYYY-MM-DD`.
+  """
+  releasedOn: String
+
+  """
+  Production studio.
+  """
+  studio: String
+
+  """
+  Marketing tagline.
+  """
+  tagline: String
+
+  """
+  Age-rating label, as the metadata source expresses it — for example `fr/Tous publics`.
+  Not comparable across countries.
+  """
+  contentRating: String
+
+  """
+  Critic rating out of 10.
+  """
+  rating: Float
+
+  """
+  Audience rating out of 10.
+  """
+  audienceRating: Float
+
+  """
+  Runtime in milliseconds.
+  """
+  durationMs: Int
+
+  """
+  The available encodings of this film. Several when the library holds more than one cut,
+  which is rare: 8 of 18,332 films in the reference library.
+  """
+  versions: [MediaVersion!]!
+}
+
+"""
+A television series. Not playable itself: its episodes are.
+"""
+type Show implements MetadataItem & Node {
+  """
+  Globally unique, opaque identifier. Pass it to `node` to refetch this item.
+  """
+  id: ID!
+
+  """
+  The library this item belongs to.
+  """
+  library: Library!
+
+  """
+  Display title, in the library's metadata language.
+  """
+  title: String!
+
+  """
+  Title to sort by when it differs from `title`. Null when `title` already sorts correctly.
+  """
+  titleSort: String
+
+  """
+  Synopsis, in the library's metadata language.
+  """
+  summary: String
+
+  """
+  When the item was added to the library, in seconds since the Unix epoch.
+  """
+  addedAt: Int!
+
+  """
+  When the item's metadata last changed, in seconds since the Unix epoch.
+  """
+  updatedAt: Int!
+
+  """
+  Year the series first aired.
+  """
+  year: Int
+
+  """
+  Production studio or network.
+  """
+  studio: String
+
+  """
+  Age-rating label, as the metadata source expresses it.
+  """
+  contentRating: String
+
+  """
+  The series' seasons, ordered by season number.
+  """
+  seasons(
+    """
+    Return items after this cursor.
+    """
+    after: String
+    """
+    Return items before this cursor.
+    """
+    before: String
+    """
+    Return at most this many items from the start of the range.
+    """
+    first: Int
+    """
+    Return at most this many items from the end of the range.
+    """
+    last: Int
+  ): SeasonConnection!
+
+  """
+  Aggregates over the series' contents.
+  """
+  stats: ShowStats!
+}
+
+"""
+Counts over a series, grouped so a client opts into the cost of computing them.
+"""
+type ShowStats {
+  """
+  How many seasons the series has, without paging through them.
+  """
+  seasonCount: Int!
+
+  """
+  How many episodes the series has across all seasons.
+  """
+  episodeCount: Int!
+}
+
+"""
+A season of a series. Not playable itself: its episodes are.
+"""
+type Season implements MetadataItem & Node {
+  """
+  Globally unique, opaque identifier. Pass it to `node` to refetch this item.
+  """
+  id: ID!
+
+  """
+  The library this item belongs to.
+  """
+  library: Library!
+
+  """
+  Display title. Null for almost every season: the source stores none, and a display name
+  such as "Season 1" is localized presentation that belongs to the client — Plex renders it
+  as `Saison 1` on a French library. Use `number`.
+  """
+  title: String
+
+  """
+  Title to sort by when it differs from `title`. Null when `title` already sorts correctly.
+  """
+  titleSort: String
+
+  """
+  Synopsis, in the library's metadata language.
+  """
+  summary: String
+
+  """
+  When the item was added to the library, in seconds since the Unix epoch.
+  """
+  addedAt: Int!
+
+  """
+  When the item's metadata last changed, in seconds since the Unix epoch.
+  """
+  updatedAt: Int!
+
+  """
+  Season number within the series. Zero conventionally denotes specials.
+  """
+  number: Int!
+
+  """
+  The series this season belongs to.
+  """
+  show: Show!
+
+  """
+  The season's episodes, ordered by episode number.
+  """
+  episodes(
+    """
+    Return items after this cursor.
+    """
+    after: String
+    """
+    Return items before this cursor.
+    """
+    before: String
+    """
+    Return at most this many items from the start of the range.
+    """
+    first: Int
+    """
+    Return at most this many items from the end of the range.
+    """
+    last: Int
+  ): EpisodeConnection!
+
+  """
+  Aggregates over the season's contents.
+  """
+  stats: SeasonStats!
+}
+
+"""
+Counts over a season.
+"""
+type SeasonStats {
+  """
+  How many episodes the season has, without paging through them.
+  """
+  episodeCount: Int!
+}
+
+"""
+An episode of a series.
+"""
+type Episode implements MetadataItem & Node {
+  """
+  Globally unique, opaque identifier. Pass it to `node` to refetch this item.
+  """
+  id: ID!
+
+  """
+  The library this item belongs to.
+  """
+  library: Library!
+
+  """
+  Display title, in the library's metadata language.
+  """
+  title: String!
+
+  """
+  Title to sort by when it differs from `title`. Null when `title` already sorts correctly.
+  """
+  titleSort: String
+
+  """
+  Synopsis, in the library's metadata language.
+  """
+  summary: String
+
+  """
+  When the item was added to the library, in seconds since the Unix epoch.
+  """
+  addedAt: Int!
+
+  """
+  When the item's metadata last changed, in seconds since the Unix epoch.
+  """
+  updatedAt: Int!
+
+  """
+  Episode number within its season.
+  """
+  number: Int!
+
+  """
+  The season this episode belongs to.
+  """
+  season: Season!
+
+  """
+  The series this episode belongs to, reachable directly rather than through the season,
+  because rendering an episode row needs the series title without a second hop.
+  """
+  show: Show!
+
+  """
+  Original air date as `YYYY-MM-DD`.
+  """
+  releasedOn: String
+
+  """
+  Age-rating label, as the metadata source expresses it.
+  """
+  contentRating: String
+
+  """
+  Audience rating out of 10.
+  """
+  audienceRating: Float
+
+  """
+  Runtime in milliseconds.
+  """
+  durationMs: Int
+
+  """
+  The available encodings of this episode.
+  """
+  versions: [MediaVersion!]!
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Media chain
+#
+# Named for what these are rather than after Plex's Media/Part/Stream, whose names leak its
+# implementation. The Plex compatibility layer maps back to them.
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+A particular encoding of an item — a 1080p cut and a 4K cut are two versions.
+"""
+type MediaVersion implements Node {
+  """
+  Globally unique, opaque identifier. Pass it to `node` to refetch this object.
+  """
+  id: ID!
+
+  """
+  Frame width in pixels.
+  """
+  width: Int
+
+  """
+  Frame height in pixels.
+  """
+  height: Int
+
+  """
+  Display aspect ratio, for example 1.78.
+  """
+  aspectRatio: Float
+
+  """
+  Video codec, for example `h264` or `hevc`.
+  """
+  videoCodec: String
+
+  """
+  Audio codec of the default track, for example `eac3`.
+  """
+  audioCodec: String
+
+  """
+  Channel count of the default audio track.
+  """
+  audioChannels: Int
+
+  """
+  Overall bitrate in kilobits per second.
+  """
+  bitrate: Int
+
+  """
+  Container format, for example `mkv`.
+  """
+  container: String
+
+  """
+  Runtime in milliseconds.
+  """
+  durationMs: Int
+
+  """
+  Frames per second, for example 23.976.
+
+  A number rather than a label: Plex publishes `24p`, which is a rounded display string.
+  The compatibility layer derives it; the official API gives the measured value.
+  """
+  frameRate: Float
+
+  """
+  Whether the file is laid out for progressive streaming without a remux.
+  """
+  optimizedForStreaming: Boolean!
+
+  """
+  The files making up this version. Usually one; several for a release split across discs.
+  """
+  files: [MediaFile!]!
+}
+
+"""
+One file on disk belonging to a version.
+
+The filesystem path is deliberately not exposed: it would publish the server's directory
+layout, and playback resolves it server-side from the file's identifier.
+"""
+type MediaFile implements Node {
+  """
+  Globally unique, opaque identifier. Pass it to `node` to refetch this file; playback and
+  download endpoints take it too.
+  """
+  id: ID!
+
+  """
+  Position within a multi-file release, starting at zero.
+  """
+  position: Int!
+
+  """
+  File size in bytes.
+  """
+  sizeBytes: Int
+
+  """
+  Container format, for example `mkv`.
+  """
+  container: String
+
+  """
+  Runtime in milliseconds.
+  """
+  durationMs: Int
+
+  """
+  The tracks inside this file, plus any sidecar subtitle files.
+  """
+  streams: [MediaStream!]!
+}
+
+"""
+A track: a video, audio or subtitle stream.
+"""
+type MediaStream implements Node {
+  """
+  Globally unique, opaque identifier. Pass it to `node` to refetch this object.
+  """
+  id: ID!
+
+  """
+  Which kind of track this is.
+  """
+  kind: StreamKind!
+
+  """
+  Index of the track inside the file, as the transcoder addresses it.
+  """
+  position: Int!
+
+  """
+  Codec, for example `h264`, `eac3` or `srt`.
+  """
+  codec: String
+
+  """
+  Language tag as stored, for example `fr` or `en`.
+  """
+  language: String
+
+  """
+  Channel count, for audio tracks.
+  """
+  channels: Int
+
+  """
+  Bitrate in kilobits per second.
+  """
+  bitrate: Int
+
+  """
+  Whether the file marks this track as the default for its kind.
+  """
+  isDefault: Boolean!
+
+  """
+  Whether the subtitle track is forced — shown even when subtitles are off, for foreign
+  dialogue.
+  """
+  isForced: Boolean!
+
+  """
+  Whether the track lives in a separate file next to the media rather than inside it.
+  """
+  isExternal: Boolean!
+}
+
+"""
+The kind of a media track.
+"""
+enum StreamKind {
+  """
+  Picture.
+  """
+  VIDEO
+  """
+  Sound.
+  """
+  AUDIO
+  """
+  Subtitles or captions.
+  """
+  SUBTITLE
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Connections
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+A page of library items, with cursors for walking the rest.
+"""
+type MetadataItemConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [MetadataItemEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [MetadataItem!]!
+}
+
+"""
+An edge in a connection.
+"""
+type MetadataItemEdge {
+  """
+  The item at the end of the edge.
+  """
+  node: MetadataItem!
+  """
+  A cursor for use in pagination.
+  """
+  cursor: String!
+}
+
+"""
+A page of seasons.
+"""
+type SeasonConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [SeasonEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [Season!]!
+}
+
+"""
+An edge in a connection.
+"""
+type SeasonEdge {
+  """
+  The season at the end of the edge.
+  """
+  node: Season!
+  """
+  A cursor for use in pagination.
+  """
+  cursor: String!
+}
+
+"""
+A page of episodes.
+"""
+type EpisodeConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [EpisodeEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [Episode!]!
+}
+
+"""
+An edge in a connection.
+"""
+type EpisodeEdge {
+  """
+  The episode at the end of the edge.
+  """
+  node: Episode!
+  """
+  A cursor for use in pagination.
+  """
+  cursor: String!
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sorting and the change to Library
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+How a library listing is ordered.
+
+An enum rather than a string because the value becomes a SQL identifier, which cannot be
+bound as a parameter: an exhaustive match is the only form that is both injection-proof and
+verifiable by reading.
+"""
+enum ItemSort {
+  """
+  By `titleSort`, falling back to `title` when it is absent. The default.
+  """
+  TITLE
+  """
+  By when the item was added to the library — newest first under `DESCENDING`.
+  """
+  ADDED_AT
+  """
+  By release date.
+  """
+  RELEASED_ON
+  """
+  By release year.
+  """
+  YEAR
+  """
+  By critic rating. Items without one sort last.
+  """
+  RATING
+}
+
+"""
+Sort direction.
+"""
+enum SortDirection {
+  """
+  Smallest or earliest first.
+  """
+  ASCENDING
+  """
+  Largest or latest first.
+  """
+  DESCENDING
+}
+
+extend type Library {
+  """
+  The items this library holds.
+
+  Polymorphic: a movie library yields `Movie`, a show library yields `Show`. Use inline
+  fragments to read kind-specific fields.
+  """
+  items(
+    """
+    Return items after this cursor.
+    """
+    after: String
+    """
+    Return items before this cursor.
+    """
+    before: String
+    """
+    Return at most this many items from the start of the range.
+    """
+    first: Int
+    """
+    Return at most this many items from the end of the range.
+    """
+    last: Int
+    """
+    How to order the listing.
+    """
+    sort: ItemSort = TITLE
+    """
+    Which direction to order in.
+    """
+    direction: SortDirection = ASCENDING
+    """
+    Keep only items whose title starts with this text, case-insensitively.
+
+    A prefix match rather than full-text search: full-text indexing is the least portable
+    feature across database engines, and the engine is meant to stay swappable.
+    """
+    search: String
+  ): MetadataItemConnection!
+
+  """
+  Aggregates over the library's contents.
+  """
+  stats: LibraryStats!
+}
+
+"""
+Counts over a library.
+"""
+type LibraryStats {
+  """
+  How many items the library holds, without paging through them.
+  """
+  itemCount: Int!
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Changes to the already-implemented types
+#
+# Dropping `databaseId` and making every identified object a `Node` is a rule, so it applies
+# to what already ships. These are breaking changes to the generated schema, listed here so
+# they are decided rather than discovered.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# `Library.databaseId` is removed. The Plex compatibility layer reads `key="4"` by decoding
+# the global id through the published codec, like everywhere else.
+#
+# `Query.library(databaseId:)` is removed. `node(id:)` covers it.
+#
+# `Root` gains `implements Node` and loses `databaseId`, so `<Location id="17">` in the Plex
+# surface comes from decoding its global id.
+
+"""
+A filesystem location a library scans for media.
+"""
+type Root implements Node {
+  """
+  Globally unique, opaque identifier. Pass it to `node` to refetch this root.
+  """
+  id: ID!
+
+  """
+  Absolute path on the server's filesystem.
+  """
+  path: String!
+
+  """
+  When the root was added to the library, in seconds since the Unix epoch.
+  """
+  createdAt: Int!
+}

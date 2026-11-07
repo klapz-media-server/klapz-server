@@ -1,0 +1,396 @@
+//! Schema roots, Relay plumbing, and the per-request context.
+
+use std::sync::Arc;
+
+use async_graphql::connection;
+use async_graphql::dataloader::DataLoader;
+use async_graphql::{
+    Context, EmptyMutation, EmptySubscription, Interface, Object, Result, Schema, ID,
+};
+use open_plex_core::library::LibraryRepository;
+use open_plex_core::metadata::{MetadataRepository, SearchQuery};
+use open_plex_core::page::{Cursor, Window, WindowError};
+use open_plex_core::{MediaId, PartId, RatingKey, SectionId, StreamId};
+
+use crate::cursor::OpaqueCursor;
+use crate::item::{Episode, Item, Movie, Season, Show, ITEM_TYPE};
+use crate::library::{Library, Root, LIBRARY_TYPE, ROOT_TYPE};
+use crate::loader::{
+    ChildCountLoader, FilesLoader, ItemLoader, LeafCountLoader, LibraryLoader, RootsLoader,
+    StreamsLoader, VersionsLoader,
+};
+use crate::media::{File, Track, Version, FILE_TYPE, STREAM_TYPE, VERSION_TYPE};
+use crate::node::GlobalId;
+use crate::server::{Server, SERVER_TYPE};
+
+pub type ApiSchema = Schema<Query, EmptyMutation, EmptySubscription>;
+
+/// Everything a resolver may reach.
+///
+/// Holds the repository ports rather than a database handle: this crate does not depend on
+/// storage.
+#[derive(Debug, Clone)]
+pub struct ApiContext {
+    /// What this server reports about itself. Fixed for the life of the process, so it is
+    /// carried rather than queried.
+    pub capabilities: open_plex_core::ServerCapabilities,
+    pub library: Arc<dyn LibraryRepository>,
+    pub metadata: Arc<dyn MetadataRepository>,
+}
+
+/// Anything that can be refetched by its global identifier.
+///
+/// Relay's object identification contract. Every object with an identity implements it:
+/// "some objects are refetchable and some are not" is harder to explain than "all of them
+/// are", and a uniform rule costs only a routing arm per type.
+#[derive(Debug, Interface)]
+#[graphql(field(name = "id", ty = "ID", desc = "Globally unique, opaque identifier."))]
+pub enum Node {
+    /// This server.
+    Server(Server),
+    /// A media library.
+    Library(Library),
+    /// A filesystem location a library scans.
+    Root(Root),
+    /// A film.
+    Movie(Movie),
+    /// A television series.
+    Show(Show),
+    /// A season of a series.
+    Season(Season),
+    /// An episode of a series.
+    Episode(Episode),
+    /// One encoding of an item.
+    MediaVersion(Version),
+    /// One file of an encoding.
+    MediaFile(File),
+    /// One track inside a file.
+    MediaStream(Track),
+}
+
+/// Default page size when the client requests neither end of a range.
+///
+/// Relay permits an unbounded connection; a server honoring that would have no cap on result
+/// size, so one is applied here instead of refusing the query.
+pub const DEFAULT_PAGE_SIZE: u32 = 50;
+
+/// How many objects one `nodes` call may refetch.
+///
+/// The same reasoning as the page-size cap: a list supplied by the client needs a ceiling,
+/// or one request can make the server do unbounded work.
+const MAX_NODES: usize = open_plex_core::page::MAX_ITEMS as usize;
+
+#[derive(Debug, Default)]
+pub struct Query;
+
+// Doc comments on these resolvers are the published schema descriptions, so a Rust
+// `# Errors` section would leak into the schema. Failure modes are documented in the
+// schema's own terms instead.
+//
+// Resolvers are `async` even when they only read context: async-graphql requires that shape.
+#[allow(clippy::missing_errors_doc, clippy::unused_async)]
+#[Object]
+impl Query {
+    /// Refetches any object by its global identifier.
+    ///
+    /// The single entry point Relay clients use to refresh cached objects. Returns null when
+    /// nothing carries that identifier; a malformed identifier is an error rather than null,
+    /// because it signals a client bug rather than a deleted object.
+    async fn node(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "A global identifier previously returned in an `id` field.")] id: ID,
+    ) -> Result<Option<Node>> {
+        let global = GlobalId::decode(&id.0)?;
+        match global.type_name.as_str() {
+            SERVER_TYPE => Ok(Some(Node::Server(Server(
+                context.data::<ApiContext>()?.capabilities.clone(),
+            )))),
+            LIBRARY_TYPE => Ok(load_library(context, SectionId::new(global.key))
+                .await?
+                .map(Node::Library)),
+            ROOT_TYPE => Ok(load_root(context, global.key).await?.map(Node::Root)),
+            // One tag for all four item kinds: the kind comes from storage, not the id.
+            ITEM_TYPE => Ok(load_item(context, RatingKey::new(global.key))
+                .await?
+                .map(|item| match Item::from_domain(item) {
+                    Item::Movie(movie) => Node::Movie(movie),
+                    Item::Show(show) => Node::Show(show),
+                    Item::Season(season) => Node::Season(season),
+                    Item::Episode(episode) => Node::Episode(episode),
+                })),
+            VERSION_TYPE => Ok(load_version(context, MediaId::new(global.key))
+                .await?
+                .map(Node::MediaVersion)),
+            FILE_TYPE => Ok(load_file(context, PartId::new(global.key))
+                .await?
+                .map(Node::MediaFile)),
+            STREAM_TYPE => Ok(load_track(context, StreamId::new(global.key))
+                .await?
+                .map(Node::MediaStream)),
+            other => Err(async_graphql::Error::new(format!(
+                "`{other}` is not an identifiable type"
+            ))),
+        }
+    }
+
+    /// Refetches several objects by their global identifiers, in the order given.
+    ///
+    /// The batched form of `node`. A client refreshing a screenful of cached objects would
+    /// otherwise send one query per object, or an aliased query whose *text* grows with the
+    /// request; here the count is a value. Entries are null where nothing carries that
+    /// identifier, so positions line up with the input and a missing object does not shift
+    /// the rest.
+    ///
+    /// Identifiers are deduplicated before loading, so repeating one costs nothing.
+    async fn nodes(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Global identifiers previously returned in `id` fields.")] ids: Vec<ID>,
+    ) -> Result<Vec<Option<Node>>> {
+        if ids.len() > MAX_NODES {
+            return Err(async_graphql::Error::new(format!(
+                "a request for {} objects exceeds the maximum of {MAX_NODES}",
+                ids.len()
+            )));
+        }
+
+        // Resolved one at a time, but the loaders batch across the whole set: a lookup of
+        // fifty items costs one storage query, not fifty.
+        let mut resolved = Vec::with_capacity(ids.len());
+        for id in ids {
+            resolved.push(self.node(context, id).await?);
+        }
+        Ok(resolved)
+    }
+
+    /// What this server is and what it can do.
+    ///
+    /// The first thing a client should ask: it decides from the answer what to offer. Every
+    /// optional feature reports as available, because there is no paid tier here.
+    async fn server(&self, context: &Context<'_>) -> Result<Server> {
+        Ok(Server(context.data::<ApiContext>()?.capabilities.clone()))
+    }
+
+    /// Items whose title matches a search term, across every library.
+    ///
+    /// Matches a *word prefix*: `hell` finds "Good News About Hell", and accents are folded so
+    /// `soiree` finds "# Pire Soirée". A term inside a word does not match — the index is a
+    /// range scan, not a substring scan.
+    ///
+    /// Polymorphic and cross-library by design: results mix films, series and episodes from
+    /// different libraries, which is what a single search box needs. Narrow with `kind`.
+    ///
+    /// Ordered by sort title. Not by relevance: ranking needs a score this server does not
+    /// compute, and a title ordering at least gives the cursor a stable position to resume
+    /// from. A blank term matches nothing rather than everything.
+    // One Rust parameter per field argument; see the note on `Library.items`.
+    #[allow(clippy::too_many_arguments)]
+    async fn search(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Term to match a prefix of any title word against.")] query: String,
+        #[graphql(desc = "Restrict to one kind. Omit to search every kind.")] kind: Option<
+            crate::filter::ItemType,
+        >,
+        #[graphql(desc = "Return items after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return items before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many items from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many items from the end of the range.")] last: Option<
+            i32,
+        >,
+    ) -> Result<crate::item::ItemConnection> {
+        let mut search = SearchQuery::new(query);
+        search.kind = kind.map(Into::into);
+
+        connection::query(
+            after,
+            before,
+            first,
+            last,
+            |after, before, first, last| async move {
+                let window = window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?;
+                let page = metadata(context)?.search(&search, window).await?;
+
+                let mut connection = connection::Connection::new(page.has_previous, page.has_next);
+                connection.edges.extend(page.items.into_iter().map(|item| {
+                    let cursor = Cursor::new(search.cursor_key(&item), item.id.get());
+                    connection::Edge::new(OpaqueCursor(cursor), Item::from_domain(item))
+                }));
+                Ok::<_, async_graphql::Error>(connection)
+            },
+        )
+        .await
+    }
+
+    /// Every library on this server, ordered by identifier.
+    ///
+    /// Paginated as a Relay connection, with the window pushed down to storage rather than
+    /// applied after loading. Ordering by the identifier is what makes cursors stable: adding
+    /// a library never shifts the position of the others.
+    async fn libraries(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return items after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return items before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many items from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many items from the end of the range.")] last: Option<
+            i32,
+        >,
+    ) -> Result<crate::library::LibraryConnection> {
+        crate::library::libraries(context, after, before, first, last).await
+    }
+}
+
+/// Translates Relay's arguments into a storage window.
+///
+/// # Errors
+///
+/// Fails when the requested page size is past the server's cap, or when both ends of the
+/// range are given.
+pub fn window_for(
+    after: Option<OpaqueCursor>,
+    before: Option<OpaqueCursor>,
+    first: Option<usize>,
+    last: Option<usize>,
+    default_page: u32,
+) -> Result<Window, WindowError> {
+    // `usize` counts become `u32` because the window caps page size well below either
+    // ceiling; a count that does not fit is already past the maximum and reported as such.
+    let narrow = |count: Option<usize>| count.map(|value| u32::try_from(value).unwrap_or(u32::MAX));
+
+    let (first, last) = match (narrow(first), narrow(last)) {
+        (None, None) => (Some(default_page), None),
+        bounds => bounds,
+    };
+
+    Window::new(
+        after.map(|cursor| cursor.0),
+        before.map(|cursor| cursor.0),
+        first,
+        last,
+    )
+}
+
+/// A window over a collection ordered by identifier.
+///
+/// # Errors
+///
+/// Fails when the requested page size is past the server's cap, or when both ends of the
+/// range are given.
+pub fn id_window(
+    after: Option<Cursor>,
+    before: Option<Cursor>,
+    first: Option<usize>,
+    last: Option<usize>,
+) -> Result<Window, WindowError> {
+    let narrow = |count: Option<usize>| count.map(|value| u32::try_from(value).unwrap_or(u32::MAX));
+    let (first, last) = match (narrow(first), narrow(last)) {
+        (None, None) => (Some(DEFAULT_PAGE_SIZE), None),
+        bounds => bounds,
+    };
+    Window::new(after, before, first, last)
+}
+
+async fn load_library(context: &Context<'_>, id: SectionId) -> Result<Option<Library>> {
+    let loader = context.data::<DataLoader<LibraryLoader>>()?;
+    Ok(loader.load_one(id).await?.map(Library::new))
+}
+
+/// Resolves a root by walking its library's roots.
+///
+/// Roots have no lookup of their own in the port: there are twenty of them in the reference
+/// library, and adding a by-id query to serve a refetch nobody makes would be the wrong
+/// trade. If that changes, the port grows a method.
+async fn load_root(context: &Context<'_>, id: i64) -> Result<Option<Root>> {
+    let library = library_repository(context)?;
+    let window = id_window(None, None, Some(500), None)?;
+    let sections = library.sections(window).await?;
+    let ids: Vec<SectionId> = sections.items.iter().map(|section| section.id).collect();
+
+    Ok(library
+        .roots_for(&ids)
+        .await?
+        .into_iter()
+        .find(|root| root.id == id)
+        .map(Root::new))
+}
+
+async fn load_item(
+    context: &Context<'_>,
+    id: RatingKey,
+) -> Result<Option<open_plex_core::MetadataItem>> {
+    let loader = context.data::<DataLoader<ItemLoader>>()?;
+    Ok(loader.load_one(id).await?)
+}
+
+async fn load_version(context: &Context<'_>, id: MediaId) -> Result<Option<Version>> {
+    Ok(metadata(context)?.version(id).await?.map(Version))
+}
+
+async fn load_file(context: &Context<'_>, id: PartId) -> Result<Option<File>> {
+    Ok(metadata(context)?.file(id).await?.map(File))
+}
+
+async fn load_track(context: &Context<'_>, id: StreamId) -> Result<Option<Track>> {
+    Ok(metadata(context)?.stream(id).await?.map(Track))
+}
+
+/// The library port, for resolvers that need it directly rather than through a loader.
+///
+/// # Errors
+///
+/// Fails if the schema was built without a context, which is a wiring mistake.
+pub fn library_repository<'a>(context: &Context<'a>) -> Result<&'a Arc<dyn LibraryRepository>> {
+    Ok(&context.data::<ApiContext>()?.library)
+}
+
+/// The metadata port.
+///
+/// # Errors
+///
+/// Fails if the schema was built without a context, which is a wiring mistake.
+pub fn metadata<'a>(context: &Context<'a>) -> Result<&'a Arc<dyn MetadataRepository>> {
+    Ok(&context.data::<ApiContext>()?.metadata)
+}
+
+/// Builds the schema with its context and loaders attached.
+pub fn build_schema(context: ApiContext) -> ApiSchema {
+    let library = Arc::clone(&context.library);
+    let metadata = Arc::clone(&context.metadata);
+
+    Schema::build(Query, EmptyMutation, EmptySubscription)
+        .data(context)
+        .data(DataLoader::new(
+            RootsLoader::new(Arc::clone(&library)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(LibraryLoader::new(library), tokio::spawn))
+        .data(DataLoader::new(
+            ItemLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            VersionsLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            FilesLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            StreamsLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            ChildCountLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            LeafCountLoader::new(metadata),
+            tokio::spawn,
+        ))
+        .finish()
+}

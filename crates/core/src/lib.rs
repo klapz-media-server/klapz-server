@@ -1,0 +1,27 @@
+//! Domain layer: library entities, and the ports storage must implement.
+//!
+//! Nothing here knows about HTTP, XML, or Plex naming. A binding translates these types into
+//! whatever its protocol expects, so adding a second binding costs no change in this crate.
+
+pub mod auth;
+pub mod identity;
+pub mod ids;
+pub mod library;
+pub mod metadata;
+pub mod page;
+pub mod search;
+
+#[cfg(feature = "testing")]
+pub mod testing;
+
+pub use auth::{Accounts, Credential, Principal, Scope};
+pub use identity::{
+    now_epoch, ServerCapabilities, ServerFeatures, ServerIdentity, TranscoderCapabilities,
+};
+pub use ids::{MediaId, PartId, RatingKey, SectionId, StreamId};
+pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot};
+pub use metadata::{
+    ItemFilter, ItemKind, ItemQuery, ItemSort, MediaFile, MediaStream, MediaVersion, MetadataError,
+    MetadataItem, MetadataRepository, SearchQuery, StreamKind,
+};
+pub use page::{Bound, Cursor, CursorKey, Direction, Page, Window, WindowError};

@@ -1,0 +1,33 @@
+[package]
+name = "open-plex-api"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+open-plex-core.workspace = true
+async-graphql.workspace = true
+base64.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+open-plex-core = { workspace = true, features = ["testing"] }
+serde_json.workspace = true
+
+[lints]
+workspace = true
+
+# The example needs the test-only in-memory repository, which dev-dependencies already
+# provide; declared explicitly so `cargo run --example` picks them up.
+[[example]]
+name = "sdl"
+
+[[example]]
+name = "introspect"
+
+[[example]]
+name = "validate_sdl"

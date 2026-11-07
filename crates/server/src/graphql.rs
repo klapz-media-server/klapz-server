@@ -1,0 +1,51 @@
+//! The official GraphQL endpoint.
+//!
+//! Mounted at `/graphql`: `POST` executes operations, `GET` serves `GraphiQL` so the schema is
+//! explorable without extra tooling. The Plex adapter does not come through here — it
+//! executes against the same schema in-process — so this route exists for real clients.
+
+use async_graphql::http::GraphiQLSource;
+use async_graphql::Request;
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
+use axum::extract::{OriginalUri, State};
+use axum::response::{Html, IntoResponse};
+use axum::routing::{get, post};
+use axum::{Extension, Router};
+use open_plex_api::ApiSchema;
+use open_plex_core::Principal;
+
+pub fn router(schema: ApiSchema) -> Router {
+    Router::new()
+        .route("/graphql", post(execute))
+        .route("/graphql", get(graphiql))
+        .with_state(schema)
+}
+
+/// Executes an operation on behalf of the authenticated caller.
+///
+/// The principal is attached by the token middleware and forwarded into the request data, so
+/// resolvers can scope results to the caller without knowing how authentication happened.
+async fn execute(
+    State(schema): State<ApiSchema>,
+    principal: Option<Extension<Principal>>,
+    request: GraphQLRequest,
+) -> GraphQLResponse {
+    let mut request: Request = request.into_inner();
+    if let Some(Extension(principal)) = principal {
+        request = request.data(principal);
+    }
+    schema.execute(request).await.into()
+}
+
+/// Serves the `GraphiQL` playground.
+///
+/// The token is carried through into the endpoint `GraphiQL` posts to. Without that, the page
+/// loads but every query it sends is rejected: the browser fetches `/graphql` with no
+/// credential, and the token middleware is right to refuse it.
+async fn graphiql(OriginalUri(uri): OriginalUri) -> impl IntoResponse {
+    let endpoint = match uri.query() {
+        Some(query) if !query.is_empty() => format!("/graphql?{query}"),
+        _ => "/graphql".to_owned(),
+    };
+    Html(GraphiQLSource::build().endpoint(&endpoint).finish())
+}

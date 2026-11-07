@@ -1,0 +1,928 @@
+//! Endpoint-level conformance.
+//!
+//! These drive the real router with real requests and assert what a client actually reads:
+//! the status, the negotiated content type, and the exact encoding of each field. The
+//! expectations come from captures against a reference server (1.43.5), recorded in
+//! `docs/wire-format.md`.
+
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
+use axum::body::Body;
+use axum::http::{header, Request, StatusCode};
+use http_body_util::BodyExt;
+use open_plex_api::{build_schema, ApiContext};
+use open_plex_api_plex::{router, PlexState};
+use open_plex_core::metadata::{
+    ItemKind, MediaFile, MediaStream, MediaVersion, MetadataItem, StreamKind,
+};
+use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
+use open_plex_core::{
+    Accounts, Credential, LibrarySection, MediaId, PartId, Principal, RatingKey, Scope, SectionId,
+    SectionKind, SectionRoot, ServerCapabilities, ServerIdentity, StreamId,
+};
+use serde_json::Value;
+use tower::ServiceExt;
+
+/// The token every authenticated request in this file presents.
+const TOKEN: &str = "test-owner-token";
+
+fn section(id: i64, kind: SectionKind, title: &str, hidden: bool) -> LibrarySection {
+    section_with_uuid(id, kind, title, hidden, &format!("uuid-{id}"))
+}
+
+fn section_with_uuid(
+    id: i64,
+    kind: SectionKind,
+    title: &str,
+    hidden: bool,
+    uuid: &str,
+) -> LibrarySection {
+    LibrarySection {
+        id: SectionId::new(id),
+        kind,
+        title: title.to_owned(),
+        title_sort: None,
+        language: "fr-FR".to_owned(),
+        uuid: uuid.to_owned(),
+        created_at: 1_477_835_115,
+        updated_at: 1_792_916_300,
+        scanned_at: Some(1_792_916_245),
+        content_changed_at: 8_457_612_157_739_110_435,
+        hidden,
+    }
+}
+
+fn root(id: i64, section: i64, path: &str) -> SectionRoot {
+    SectionRoot {
+        id,
+        section_id: SectionId::new(section),
+        path: path.to_owned(),
+        created_at: 1_477_835_115,
+    }
+}
+
+/// Builds the adapter over a schema backed by the given catalog, with a caller attached.
+///
+/// Two things this setup makes explicit. The adapter is handed only a GraphQL schema, so
+/// every assertion below exercises the official API too. And authentication happens in the
+/// `server` crate's middleware, so these tests inject the principal it would attach — the
+/// token itself is tested where it is validated.
+fn app_from(library: InMemoryLibrary) -> axum::Router {
+    authenticated(unauthenticated(library))
+}
+
+fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
+    let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
+    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
+    // One identity for both surfaces, as the binary wires it: `/identity` reads the
+    // adapter's copy while `/` reads the schema's, and a client that sees two different
+    // machine identifiers from one server treats it as two servers.
+    let schema = build_schema(ApiContext {
+        capabilities: ServerCapabilities::new(identity.clone(), 0),
+        library: std::sync::Arc::new(library),
+        metadata: std::sync::Arc::new(InMemoryMetadata::default()),
+    });
+    router(PlexState::new(identity, schema, accounts))
+}
+
+fn authenticated(router: axum::Router) -> axum::Router {
+    router.layer(axum::Extension(Principal {
+        name: "owner".to_owned(),
+        scope: Scope::Admin,
+    }))
+}
+
+/// Builds an app over an arbitrary catalog, for tests about ordering and flags.
+fn app_with(sections: Vec<LibrarySection>) -> axum::Router {
+    app_from(InMemoryLibrary::new(sections))
+}
+
+fn app() -> axum::Router {
+    let movies = section_with_uuid(
+        4,
+        SectionKind::Movie,
+        "VF - Films",
+        false,
+        "2cd48489-54c0-41e9-ae62-f3dcb0f3c249",
+    );
+    app_from(InMemoryLibrary::new(vec![movies]).with_roots(vec![
+        root(17, 4, "/mnt/acd/Plex/Movies/Multi"),
+        root(18, 4, "/mnt/acd/Plex/Movies/VF"),
+    ]))
+}
+
+async fn get(uri: &str, accept: Option<&str>) -> (StatusCode, String, String) {
+    request_with(uri, accept, Some(TOKEN)).await
+}
+
+async fn request_with(
+    uri: &str,
+    accept: Option<&str>,
+    token: Option<&str>,
+) -> (StatusCode, String, String) {
+    let mut request = Request::builder().uri(uri);
+    if let Some(accept) = accept {
+        request = request.header(header::ACCEPT, accept);
+    }
+    if let Some(token) = token {
+        request = request.header("X-Plex-Token", token);
+    }
+    let response = app()
+        .oneshot(request.body(Body::empty()).expect("request builds"))
+        .await
+        .expect("router responds");
+
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    (
+        status,
+        content_type,
+        String::from_utf8_lossy(&body).into_owned(),
+    )
+}
+
+#[tokio::test]
+async fn identity_is_reachable_without_a_token() {
+    // Requiring a token here would make the server undiscoverable.
+    let (status, content_type, body) = request_with("/identity", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(content_type, "text/xml;charset=utf-8");
+    assert!(body.contains("machineIdentifier=\"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\""));
+}
+
+#[tokio::test]
+async fn defaults_to_xml_and_switches_on_accept() {
+    let (_, xml_type, _) = get("/library/sections", None).await;
+    let (_, json_type, _) = get("/library/sections", Some("application/json")).await;
+    // What the bundled Plex Web App sends.
+    let (_, web_type, _) = get(
+        "/library/sections",
+        Some("application/json, text/plain, */*"),
+    )
+    .await;
+    // `*/*` yields XML on a real server, counter-intuitively.
+    let (_, any_type, _) = get("/library/sections", Some("*/*")).await;
+
+    assert_eq!(xml_type, "text/xml;charset=utf-8");
+    assert_eq!(json_type, "application/json");
+    assert_eq!(web_type, "application/json");
+    assert_eq!(any_type, "text/xml;charset=utf-8");
+}
+
+#[tokio::test]
+async fn xml_sections_match_the_reference_layout() {
+    let (status, _, body) = get("/library/sections", None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    assert!(body.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer "));
+    // Booleans are digits in XML; `refreshing` and `hidden` both read "0" here even though
+    // they differ in JSON.
+    assert!(body.contains("allowSync=\"1\""), "{body}");
+    assert!(body.contains("refreshing=\"0\""), "{body}");
+    assert!(body.contains("hidden=\"0\""), "{body}");
+    // Locations are leaf elements, self-closed with a space before the slash.
+    assert!(
+        body.contains("<Location id=\"17\" path=\"/mnt/acd/Plex/Movies/Multi\" />\n"),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn json_sections_nest_under_media_container_with_captured_types() {
+    let (status, _, body) = get("/library/sections", Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let parsed: Value = serde_json::from_str(&body).expect("valid JSON");
+    let container = &parsed["MediaContainer"];
+    assert!(
+        container.is_object(),
+        "JSON nests under a MediaContainer key"
+    );
+
+    assert_eq!(container["size"], Value::from(1));
+    assert_eq!(container["allowSync"], Value::Bool(false));
+
+    let directory = &container["Directory"][0];
+    // Plex is not self-consistent: these are booleans in JSON...
+    assert_eq!(directory["refreshing"], Value::Bool(false));
+    assert_eq!(directory["filters"], Value::Bool(true));
+    // ...while `hidden` is a number, and `key` is a string despite holding digits.
+    assert_eq!(directory["hidden"], Value::from(0));
+    assert_eq!(directory["key"], Value::from("4"));
+    assert_eq!(directory["updatedAt"], Value::from(1_792_916_300_i64));
+    assert!(
+        directory["Location"].is_array(),
+        "Location is an array even when nested"
+    );
+}
+
+#[tokio::test]
+async fn both_formats_describe_the_same_container() {
+    let (_, _, xml) = get("/library/sections", None).await;
+    let (_, _, json) = get("/library/sections", Some("application/json")).await;
+    let parsed: Value = serde_json::from_str(&json).expect("valid JSON");
+
+    let sections = parsed["MediaContainer"]["Directory"]
+        .as_array()
+        .expect("Directory array")
+        .len();
+    assert_eq!(sections, xml.matches("<Directory ").count());
+}
+
+#[tokio::test]
+async fn unknown_routes_answer_with_html_not_a_container() {
+    // A real server returns a minimal HTML document and ignores content negotiation.
+    let (status, _, body) = get("/nope/nothing", Some("application/json")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(!body.contains("MediaContainer"));
+}
+
+#[tokio::test]
+async fn refuses_a_request_with_no_authenticated_caller() {
+    // The `Caller` extractor's contract: if the HTTP layer attached no principal, the route
+    // must refuse rather than serve. Validating the token itself is the middleware's job and
+    // is tested in the `server` crate.
+    let response = unauthenticated(InMemoryLibrary::default())
+        .oneshot(
+            Request::builder()
+                .uri("/library/sections")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    // A real server answers errors with HTML and ignores content negotiation.
+    assert_eq!(
+        String::from_utf8_lossy(&body),
+        "<html><head><title>Unauthorized</title></head><body><h1>401 Unauthorized</h1></body></html>"
+    );
+}
+
+#[tokio::test]
+async fn serves_the_spec_declared_alias_identically() {
+    let (canonical_status, _, canonical) = get("/library/sections", None).await;
+    let (alias_status, _, alias) = get("/library/sections/all", None).await;
+    assert_eq!(canonical_status, alias_status);
+    assert_eq!(canonical, alias);
+}
+
+#[tokio::test]
+async fn lists_sections_by_kind_then_title_not_by_id() {
+    // The reference library's order: movies before shows, alphabetical within each.
+    let app = app_with(vec![
+        section(20, SectionKind::Show, "VO - TV Shows UHD", false),
+        section(4, SectionKind::Movie, "VF - Films", false),
+        section(5, SectionKind::Show, "VF - Series", false),
+        section(17, SectionKind::Movie, "VF - Films UHD", false),
+    ]);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/library/sections")
+                .header("X-Plex-Token", TOKEN)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    let body = String::from_utf8_lossy(&body);
+
+    let keys: Vec<&str> = body
+        .match_indices("key=\"")
+        .map(|(index, _)| {
+            let rest = &body[index + 5..];
+            &rest[..rest.find('"').expect("closing quote")]
+        })
+        .collect();
+    assert_eq!(keys, vec!["4", "17", "5", "20"]);
+}
+
+#[tokio::test]
+async fn encodes_hidden_as_a_digit_in_xml_and_a_number_in_json() {
+    let hidden_section = vec![section(9, SectionKind::Movie, "VF - Films 3D", true)];
+
+    let xml_response = app_with(hidden_section.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/library/sections")
+                .header("X-Plex-Token", TOKEN)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+    let xml = xml_response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    assert!(String::from_utf8_lossy(&xml).contains("hidden=\"1\""));
+
+    let json_response = app_with(hidden_section)
+        .oneshot(
+            Request::builder()
+                .uri("/library/sections")
+                .header("X-Plex-Token", TOKEN)
+                .header(header::ACCEPT, "application/json")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+    let json = json_response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    let parsed: Value = serde_json::from_slice(&json).expect("valid JSON");
+    // A number, not a boolean, unlike `refreshing` in the same object.
+    assert_eq!(
+        parsed["MediaContainer"]["Directory"][0]["hidden"],
+        Value::from(1)
+    );
+}
+
+#[tokio::test]
+async fn capabilities_are_reachable_without_a_token() {
+    // Same reason as `/identity`: a client that cannot read this before authenticating has
+    // no way to learn the server exists.
+    let (status, content_type, body) = request_with("/", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(content_type, "text/xml;charset=utf-8");
+    assert!(body.contains("machineIdentifier=\"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\""));
+    // The endpoint groups are what a client walks to find the rest of the surface.
+    assert!(
+        body.contains("<Directory count=\"3\" key=\"library\" title=\"library\" />"),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn capabilities_advertise_every_gated_feature_as_available() {
+    // The no-paywall rule, asserted where a client can actually observe it. Each of these
+    // is a subscription feature upstream, and each decides whether a client offers a menu
+    // entry at all.
+    let (status, _, body) = get("/", Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let body: Value = serde_json::from_str(&body).expect("json body");
+    let container = &body["MediaContainer"];
+    for flag in [
+        "allowCameraUpload",
+        "allowChannelAccess",
+        "allowMediaDeletion",
+        "allowSharing",
+        "allowSync",
+        "allowTuners",
+        "eventStream",
+        "hubSearch",
+        "multiuser",
+        "myPlexSubscription",
+        "sync",
+        "voiceSearch",
+    ] {
+        assert_eq!(
+            container[flag],
+            Value::Bool(true),
+            "{flag} must not be gated"
+        );
+    }
+    // Reported as levels rather than flags by the reference server.
+    assert_eq!(container["livetv"], 7);
+    assert_eq!(container["musicAnalysis"], 2);
+    assert_eq!(container["offlineTranscode"], 1);
+
+    // Not linked to plex.tv, and saying so plainly beats a lie that breaks later.
+    assert_eq!(container["myPlex"], Value::Bool(false));
+    assert_eq!(container["myPlexSigninState"], "none");
+
+    // Checked by name upstream, so every name has to be present.
+    let owner_features = container["ownerFeatures"].as_str().expect("ownerFeatures");
+    for name in ["sync", "livetv", "loudness", "camera_upload", "collections"] {
+        assert!(
+            owner_features.split(',').any(|feature| feature == name),
+            "{name} missing from {owner_features}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn capabilities_encode_booleans_per_format() {
+    // Same container, two encodings: the dual-format rule applied to the widest response
+    // in the surface.
+    let (_, _, xml) = get("/", None).await;
+    let (_, _, json) = get("/", Some("application/json")).await;
+
+    assert!(xml.contains("allowSync=\"1\""), "{xml}");
+    assert!(xml.contains("myPlex=\"0\""), "{xml}");
+
+    let container = &serde_json::from_str::<Value>(&json).expect("json body")["MediaContainer"];
+    assert_eq!(container["allowSync"], Value::Bool(true));
+    assert_eq!(container["size"], 25);
+    assert_eq!(
+        container["Directory"].as_array().map(Vec::len),
+        Some(25),
+        "size must match the number of directories"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// Library listings and item lookups.
+//
+// Expectations come from a field-by-field comparison against the reference server over real
+// items (`tools/compare_items.py`), not from invented fixtures: the derived rules — a media
+// duration overriding the metadata one, ratings to one decimal, bitrates in kilobits, the
+// aspect-ratio ladder — are only visible that way.
+// ---------------------------------------------------------------------------------------
+
+/// A catalog with one film library and one series library, each with contents.
+fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
+    let films = section_with_uuid(
+        4,
+        SectionKind::Movie,
+        "VF - Films",
+        false,
+        "2cd48489-54c0-41e9-ae62-f3dcb0f3c249",
+    );
+    let series = section_with_uuid(
+        5,
+        SectionKind::Show,
+        "VF - Series",
+        false,
+        "25858bde-d5e7-45f2-89f1-57005968c107",
+    );
+
+    let mut avatar = item(100, 4, ItemKind::Movie, None, "Avatar");
+    avatar.title_sort = Some("Avatar".to_owned());
+    avatar.studio = Some("Lightstorm".to_owned());
+    avatar.year = Some(2009);
+    avatar.released_on = Some("2009-12-16".to_owned());
+    avatar.duration_ms = Some(9_900_000);
+    avatar.audience_rating = Some(7.924);
+    avatar.content_rating = Some("fr/12".to_owned());
+    avatar.content_rating_age = Some(12);
+
+    let mut barbarella = item(101, 4, ItemKind::Movie, None, "Barbarella");
+    barbarella.title_sort = Some("Barbarella".to_owned());
+
+    let show = item(200, 5, ItemKind::Show, None, "Severance");
+    let season = item(201, 5, ItemKind::Season, Some(200), "Season 1");
+    let episode = item(202, 5, ItemKind::Episode, Some(201), "Good News About Hell");
+
+    let version = MediaVersion {
+        id: MediaId::new(900),
+        item_id: RatingKey::new(100),
+        width: Some(1920),
+        height: Some(808),
+        aspect_ratio: Some(2.376_237_630_844_116),
+        duration_ms: Some(9_890_048),
+        bitrate: Some(11_285_835),
+        container: Some("mkv".to_owned()),
+        video_codec: Some("h264".to_owned()),
+        audio_codec: Some("dca".to_owned()),
+        audio_channels: Some(6),
+        frame_rate: Some(23.976_024_627_685_547),
+        interlaced: false,
+        optimized_for_streaming: false,
+    };
+    let file = MediaFile {
+        id: PartId::new(910),
+        version_id: MediaId::new(900),
+        position: 0,
+        path: "/mnt/movies/Avatar.mkv".to_owned(),
+        size_bytes: Some(8_534_980_661),
+        duration_ms: Some(9_890_048),
+    };
+    let stream = MediaStream {
+        id: StreamId::new(920),
+        file_id: PartId::new(910),
+        kind: StreamKind::Audio,
+        position: 1,
+        codec: Some("dca".to_owned()),
+        language: Some("fra".to_owned()),
+        channels: Some(6),
+        bitrate: Some(1_536_000),
+        is_default: true,
+        is_forced: false,
+        external_path: None,
+    };
+
+    (
+        InMemoryLibrary::new(vec![films, series]),
+        InMemoryMetadata::new(vec![avatar, barbarella, show, season, episode]).with_media(
+            vec![version],
+            vec![file],
+            vec![stream],
+        ),
+    )
+}
+
+fn item(id: i64, section: i64, kind: ItemKind, parent: Option<i64>, title: &str) -> MetadataItem {
+    MetadataItem {
+        id: RatingKey::new(id),
+        section_id: SectionId::new(section),
+        parent_id: parent.map(RatingKey::new),
+        kind,
+        guid: format!("plex://item/{id}"),
+        title: Some(title.to_owned()),
+        title_sort: None,
+        original_title: None,
+        summary: Some(format!("Summary of {title}")),
+        tagline: None,
+        studio: None,
+        content_rating: None,
+        content_rating_age: None,
+        position: Some(1),
+        year: None,
+        released_on: None,
+        duration_ms: None,
+        rating: None,
+        audience_rating: None,
+        added_at: 1_500_000_000,
+        updated_at: 1_600_000_000,
+    }
+}
+
+fn items_app() -> axum::Router {
+    let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
+    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
+    let (library, metadata) = catalog();
+    let schema = build_schema(ApiContext {
+        capabilities: ServerCapabilities::new(identity.clone(), 0),
+        library: std::sync::Arc::new(library),
+        metadata: std::sync::Arc::new(metadata),
+    });
+    authenticated(router(PlexState::new(identity, schema, accounts)))
+}
+
+async fn get_from(app: axum::Router, uri: &str, accept: Option<&str>) -> (StatusCode, String) {
+    let mut request = Request::builder().uri(uri).header("X-Plex-Token", TOKEN);
+    if let Some(accept) = accept {
+        request = request.header(header::ACCEPT, accept);
+    }
+    let response = app
+        .oneshot(request.body(Body::empty()).expect("request builds"))
+        .await
+        .expect("router responds");
+    let status = response.status();
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    (status, String::from_utf8_lossy(&body).into_owned())
+}
+
+async fn listing(uri: &str) -> Value {
+    let (status, body) = get_from(items_app(), uri, Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    serde_json::from_str(&body).expect("json body")
+}
+
+#[tokio::test]
+async fn a_listing_describes_the_library_once_on_the_container() {
+    let body =
+        listing("/library/sections/4/all?X-Plex-Container-Start=0&X-Plex-Container-Size=10").await;
+    let container = &body["MediaContainer"];
+
+    assert_eq!(container["librarySectionID"], 4);
+    assert_eq!(container["librarySectionTitle"], "VF - Films");
+    assert_eq!(
+        container["librarySectionUUID"],
+        "2cd48489-54c0-41e9-ae62-f3dcb0f3c249"
+    );
+    assert_eq!(container["identifier"], "com.plexapp.plugins.library");
+    // Per media kind, not per library.
+    assert_eq!(container["art"], "/:/resources/movie-fanart.jpg");
+    assert_eq!(container["viewGroup"], "movie");
+    assert_eq!(container["title2"], "All VF - Films");
+    assert_eq!(container["size"], 2);
+    assert_eq!(container["totalSize"], 2);
+
+    // The library is stated once on the container, so the items must not repeat it — a
+    // client reading `librarySectionID` off an item in a listing finds nothing.
+    let first = &container["Metadata"][0];
+    assert!(first.get("librarySectionID").is_none(), "{first}");
+    assert!(first.get("librarySectionTitle").is_none(), "{first}");
+}
+
+#[tokio::test]
+async fn a_listing_covers_the_libraries_top_level_only() {
+    // The series library holds a show, a season and an episode. A reference server lists one
+    // item here: the show. Flattening all three is the bug this asserts against.
+    let body = listing("/library/sections/5/all").await;
+    let container = &body["MediaContainer"];
+
+    assert_eq!(container["totalSize"], 1);
+    assert_eq!(container["viewGroup"], "show");
+    assert_eq!(container["title2"], "All Shows");
+
+    let items = container["Metadata"].as_array().expect("items");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["type"], "show");
+    // A series is browsed into, so the key a client follows lists the children.
+    assert_eq!(items[0]["key"], "/library/metadata/200/children");
+    assert_eq!(items[0]["childCount"], 1);
+    assert_eq!(items[0]["leafCount"], 1);
+    // Playback state is not implemented; reporting anything else would mark episodes watched.
+    assert_eq!(items[0]["viewedLeafCount"], 0);
+}
+
+#[tokio::test]
+async fn an_explicit_type_reaches_past_the_top_level() {
+    // `type=4` asks for episodes, which all have parents. Honoring the default depth here
+    // would answer with nothing.
+    let body = listing("/library/sections/5/all?type=4").await;
+    let items = body["MediaContainer"]["Metadata"]
+        .as_array()
+        .expect("items");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["type"], "episode");
+    assert_eq!(items[0]["ratingKey"], "202");
+}
+
+#[tokio::test]
+async fn a_listing_names_each_element_after_its_kind_in_xml() {
+    // JSON puts every item under `Metadata`; XML names the element after what the item is.
+    let (_, films) = get_from(items_app(), "/library/sections/4/all", None).await;
+    let (_, series) = get_from(items_app(), "/library/sections/5/all", None).await;
+
+    assert!(films.contains("<Video ratingKey=\"100\""), "{films}");
+    assert!(series.contains("<Directory ratingKey=\"200\""), "{series}");
+    assert!(!films.contains("<Metadata"), "{films}");
+}
+
+#[tokio::test]
+async fn paging_is_reported_in_the_body_and_the_headers() {
+    let app = items_app();
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/library/sections/4/all?X-Plex-Container-Start=1&X-Plex-Container-Size=1")
+                .header("X-Plex-Token", TOKEN)
+                .header(header::ACCEPT, "application/json")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    // Note which header is absent: a response carries Start and Total-Size, never Size.
+    let headers = response.headers().clone();
+    assert_eq!(headers["X-Plex-Container-Start"], "1");
+    assert_eq!(headers["X-Plex-Container-Total-Size"], "2");
+    assert!(headers.get("X-Plex-Container-Size").is_none());
+
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    let body: Value = serde_json::from_slice(&body).expect("json body");
+    let container = &body["MediaContainer"];
+    assert_eq!(container["offset"], 1);
+    assert_eq!(container["totalSize"], 2);
+    // The offset skipped the first film, so the second is the only one left.
+    assert_eq!(container["size"], 1);
+    assert_eq!(container["Metadata"][0]["ratingKey"], "101");
+}
+
+#[tokio::test]
+async fn a_descending_sort_reverses_the_listing() {
+    let ascending = listing("/library/sections/4/all?sort=titleSort").await;
+    let descending = listing("/library/sections/4/all?sort=titleSort:desc").await;
+
+    assert_eq!(
+        ascending["MediaContainer"]["Metadata"][0]["title"],
+        "Avatar"
+    );
+    assert_eq!(
+        descending["MediaContainer"]["Metadata"][0]["title"],
+        "Barbarella"
+    );
+}
+
+#[tokio::test]
+async fn media_attributes_are_the_published_forms_not_the_measurements() {
+    let body = listing("/library/sections/4/all").await;
+    let media = &body["MediaContainer"]["Metadata"][0]["Media"][0];
+
+    // Each of these is a conversion the official API does not do: it publishes the
+    // measurement, and the wire format wants the display form.
+    assert_eq!(media["bitrate"], 11_286); // stored 11,285,835 bits/s
+    assert_eq!(media["aspectRatio"], 2.35); // stored 2.3762…, snapped to a cinema ratio
+    assert_eq!(media["videoFrameRate"], "24p"); // stored 23.976
+    assert_eq!(media["videoResolution"], "1080"); // from the width, not the height
+    assert_eq!(media["width"], 1920);
+    assert_eq!(media["height"], 808);
+
+    // A part repeats the version's container and publishes the path, as Plex does. No
+    // streaming `key` yet: playback has no handler, and a key into a route that answers 501
+    // would make the item look playable.
+    let part = &media["Part"][0];
+    assert_eq!(part["container"], "mkv");
+    assert_eq!(part["size"], 8_534_980_661_i64);
+    assert_eq!(part["file"], "/mnt/movies/Avatar.mkv");
+    assert!(part.get("key").is_none(), "{part}");
+
+    // Streams belong to a lookup, not a listing.
+    assert!(part.get("Stream").is_none(), "{part}");
+}
+
+#[tokio::test]
+async fn an_items_runtime_comes_from_its_media() {
+    // The metadata row says 9,900,000 ms and the file 9,890,048. A reference server reports
+    // the file's: a client seeking by percentage needs the one it is playing.
+    let body = listing("/library/sections/4/all").await;
+    let first = &body["MediaContainer"]["Metadata"][0];
+    assert_eq!(first["duration"], 9_890_048);
+    assert_eq!(first["Media"][0]["duration"], 9_890_048);
+}
+
+#[tokio::test]
+async fn a_sort_title_identical_to_the_title_is_omitted() {
+    // The importer stores one for every row; a reference server sends it only where it adds
+    // something.
+    let body = listing("/library/sections/4/all").await;
+    let first = &body["MediaContainer"]["Metadata"][0];
+    assert_eq!(first["title"], "Avatar");
+    assert!(first.get("titleSort").is_none(), "{first}");
+}
+
+#[tokio::test]
+async fn ratings_are_published_to_one_decimal() {
+    let body = listing("/library/sections/4/all").await;
+    assert_eq!(body["MediaContainer"]["Metadata"][0]["audienceRating"], 7.9);
+}
+
+#[tokio::test]
+async fn a_lookup_repeats_the_library_on_each_item_and_carries_streams() {
+    let body = listing("/library/metadata/100").await;
+    let container = &body["MediaContainer"];
+
+    // No window over a collection, so no view attributes and no totals.
+    assert_eq!(container["size"], 1);
+    assert!(container.get("totalSize").is_none(), "{container}");
+    assert!(container.get("viewGroup").is_none(), "{container}");
+
+    let item = &container["Metadata"][0];
+    // Unlike a listing, a lookup states the library on the item too.
+    assert_eq!(item["librarySectionID"], 4);
+    assert_eq!(item["librarySectionTitle"], "VF - Films");
+    assert_eq!(item["librarySectionKey"], "/library/sections/4");
+    assert_eq!(item["key"], "/library/metadata/100");
+    assert_eq!(item["guid"], "plex://item/100");
+    assert_eq!(item["contentRatingAge"], 12);
+
+    let stream = &item["Media"][0]["Part"][0]["Stream"][0];
+    assert_eq!(stream["streamType"], 2);
+    assert_eq!(stream["bitrate"], 1536);
+    assert_eq!(stream["language"], "fra");
+    assert_eq!(stream["default"], true);
+    // Reported only when true, as a reference server does.
+    assert!(stream.get("forced").is_none(), "{stream}");
+}
+
+#[tokio::test]
+async fn a_lookup_takes_several_identifiers_at_once() {
+    // How a client refreshes a screenful of items it already holds keys for.
+    let body = listing("/library/metadata/100,101").await;
+    let items = body["MediaContainer"]["Metadata"]
+        .as_array()
+        .expect("items");
+    assert_eq!(items.len(), 2);
+    assert_eq!(body["MediaContainer"]["size"], 2);
+}
+
+#[tokio::test]
+async fn an_episode_links_to_its_season_and_its_series() {
+    let body = listing("/library/metadata/202").await;
+    let episode = &body["MediaContainer"]["Metadata"][0];
+
+    assert_eq!(episode["type"], "episode");
+    assert_eq!(episode["parentRatingKey"], "201");
+    assert_eq!(episode["grandparentRatingKey"], "200");
+    assert_eq!(episode["grandparentTitle"], "Severance");
+}
+
+#[tokio::test]
+async fn an_unknown_library_or_item_is_not_found() {
+    // Not an empty listing: a client told "zero items" caches an empty library.
+    let (status, _) = get_from(items_app(), "/library/sections/999/all", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = get_from(items_app(), "/library/metadata/999999", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = get_from(items_app(), "/library/metadata/not-a-number", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn search_matches_a_prefix_of_any_word() {
+    // The reference's `title=` is a word prefix, not a column prefix: `hell` finds "Good
+    // News About Hell" through its fourth word, which a prefix on the title would miss.
+    for term in ["hell", "news", "good"] {
+        let body = listing(&format!("/library/sections/5/all?type=4&title={term}")).await;
+        let items = body["MediaContainer"]["Metadata"]
+            .as_array()
+            .unwrap_or_else(|| panic!("items for {term}"));
+        assert_eq!(items.len(), 1, "{term}");
+        assert_eq!(items[0]["title"], "Good News About Hell");
+    }
+
+    // Still a word boundary: a substring inside a word does not match.
+    let body = listing("/library/sections/5/all?type=4&title=ell").await;
+    assert!(body["MediaContainer"].get("Metadata").is_none(), "{body}");
+}
+
+#[tokio::test]
+async fn an_unsupported_filter_is_refused_rather_than_ignored() {
+    // Honoring the window and dropping the filter would answer with the whole library and
+    // let the client present it as the filtered result.
+    let (status, _) = get_from(items_app(), "/library/sections/4/all?genre=4025", None).await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+
+    // A parameter that is not a filter at all stays tolerated, as a real server tolerates it.
+    let (status, _) = get_from(
+        items_app(),
+        "/library/sections/4/all?includeMeta=1&nope=1",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn filters_narrow_the_total_not_just_the_page() {
+    // `totalSize` has to describe the filtered listing, or a client paging through it walks
+    // off the end.
+    let all = listing("/library/sections/4/all").await;
+    let filtered = listing("/library/sections/4/all?year=2009").await;
+
+    assert_eq!(all["MediaContainer"]["totalSize"], 2);
+    assert_eq!(filtered["MediaContainer"]["totalSize"], 1);
+    assert_eq!(filtered["MediaContainer"]["Metadata"][0]["title"], "Avatar");
+}
+
+#[tokio::test]
+async fn the_jump_bar_buckets_by_first_letter() {
+    let body = listing("/library/sections/4/firstCharacter?type=1").await;
+    let container = &body["MediaContainer"];
+
+    // A "secondary" view: buckets to jump into, not items, so no paging attributes.
+    assert_eq!(container["content"], "secondary");
+    assert_eq!(container["viewGroup"], "secondary");
+    assert_eq!(container["title2"], "By First Letter");
+    assert!(container.get("totalSize").is_none(), "{container}");
+
+    let buckets = container["Directory"].as_array().expect("buckets");
+    assert_eq!(buckets.len(), 2);
+    // The count attribute is `size` here, unlike every other Directory in the surface.
+    assert_eq!(buckets[0]["title"], "A");
+    assert_eq!(buckets[0]["key"], "A");
+    assert_eq!(buckets[0]["size"], 1);
+    assert_eq!(buckets[1]["title"], "B");
+}
+
+#[tokio::test]
+async fn the_jump_bar_buckets_seasons_by_their_stored_title() {
+    // The fixture's season is titled "Season 1", so it buckets under S — the same path the
+    // film library takes, exercised on a kind whose titles are generated rather than matched.
+    let body = listing("/library/sections/5/firstCharacter?type=3").await;
+    let buckets = body["MediaContainer"]["Directory"]
+        .as_array()
+        .expect("buckets");
+    assert_eq!(buckets.len(), 1);
+    assert_eq!(buckets[0]["title"], "S");
+}

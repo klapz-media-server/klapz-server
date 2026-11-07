@@ -1,0 +1,49 @@
+[workspace]
+members = ["crates/core", "crates/db", "crates/api", "crates/api-plex", "crates/server"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+
+[workspace.dependencies]
+open-plex-core = { path = "crates/core" }
+open-plex-db = { path = "crates/db" }
+open-plex-api = { path = "crates/api" }
+open-plex-api-plex = { path = "crates/api-plex" }
+
+async-graphql = { version = "7", features = ["dataloader"] }
+base64 = "0.22"
+async-graphql-axum = "7"
+async-trait = "0.1"
+axum = "0.8"
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "net", "fs", "signal"] }
+tower = "0.5"
+tower-http = { version = "0.6", default-features = false, features = ["trace", "timeout", "limit", "set-header"] }
+sea-orm = { version = "1", default-features = false, features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros", "with-chrono"] }
+sea-orm-migration = { version = "1", default-features = false, features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
+serde = { version = "1", features = ["derive"] }
+subtle = "2"
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+# Already in the tree transitively; declared so `core` can fold accents for the title
+# word index without a second normalization implementation.
+unicode-normalization = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+todo = "warn"
+# Annotating every getter and constructor with #[must_use] adds noise on every line it
+# touches without catching a bug we can plausibly write; the lint fires on ~all public fns.
+must_use_candidate = "allow"
+# Crate names are prefixed `open_plex_`, so types inevitably echo their module.
+module_name_repetitions = "allow"

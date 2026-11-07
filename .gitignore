@@ -1,0 +1,12 @@
+# Build and local database
+target/
+open-plex.db
+open-plex.db-*
+
+# Reference material too large or too personal to version
+captures/
+db/
+files/
+.work/
+
+__pycache__/

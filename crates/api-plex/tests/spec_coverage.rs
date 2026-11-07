@@ -1,0 +1,278 @@
+//! Every operation the spec declares must resolve to a route.
+//!
+//! This is the cheapest high-value test in the project: it walks `docs/openapi.json` and
+//! checks that nothing answers `404`. A mistyped or forgotten path is otherwise found by a
+//! client months later, and the failure looks like "the app does not work" rather than "this
+//! route is missing".
+//!
+//! `501` is a pass. A route we have deliberately not written yet is not a bug; a route the
+//! spec declares and we never registered is. That distinction is the whole reason the stub
+//! routes exist.
+
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
+use std::collections::BTreeSet;
+
+use axum::body::Body;
+use axum::http::{Method, Request, StatusCode};
+use open_plex_api::{build_schema, ApiContext};
+use open_plex_api_plex::{router, PlexState};
+use open_plex_core::library::{LibrarySection, SectionKind};
+use open_plex_core::metadata::{ItemKind, MetadataItem};
+use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
+use open_plex_core::{
+    Accounts, Credential, Principal, RatingKey, Scope, SectionId, ServerCapabilities,
+    ServerIdentity,
+};
+use serde_json::Value;
+use tower::ServiceExt;
+
+const TOKEN: &str = "coverage-token";
+
+/// Whether the spec writes this path in a shape no router can express.
+///
+/// Two shapes qualify: a trailing `.*` standing for "any extension", and a segment packing
+/// two parameters together, which cannot be split unambiguously. Both need handlers that
+/// parse the segment themselves.
+///
+/// This is the same rule `tools/gen_stub_routes.py` applies, deliberately expressed as a
+/// predicate rather than a list of paths — an earlier version listed them, and the list was
+/// already missing one by the time this test first ran.
+fn unroutable(path: &str) -> bool {
+    path.contains('*')
+        || path
+            .split('/')
+            .any(|segment| segment.matches('{').count() > 1)
+}
+
+/// Scanning, matching and media analysis are a separate binary on Plex and out of scope, so
+/// the operations that only drive them are not expected to be routed.
+const DEFERRED_FRAGMENTS: &[&str] = &[
+    "/refresh",
+    "/analyze",
+    "/analyzeLoudness",
+    "/match",
+    "/unmatch",
+    "/split",
+    "/merge",
+    "/addetect",
+    "/voiceActivity",
+    "/chapterThumbs",
+    "/library/optimize",
+    "/library/clean/bundles",
+    "/library/caches",
+    "/indexes",
+    "/intros",
+];
+
+const DEFERRED_TAGS: &[&str] = &["Metadata Agents"];
+
+/// A library and an item numbered 1, which is what [`substitute`] puts in every id slot.
+///
+/// Seeded rather than left empty because the handlers that really look an id up answer `404`
+/// when it is absent — correctly, and indistinguishably from an unrouted path by status
+/// alone. With the id present, a registered route cannot answer `404` for any reason, which
+/// is what makes the assertion below mean what it says.
+fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
+    let section = LibrarySection {
+        id: SectionId::new(1),
+        kind: SectionKind::Movie,
+        title: "Films".to_owned(),
+        title_sort: None,
+        language: "fr-FR".to_owned(),
+        uuid: "00000000-0000-0000-0000-000000000001".to_owned(),
+        created_at: 0,
+        updated_at: 0,
+        scanned_at: None,
+        content_changed_at: 0,
+        hidden: false,
+    };
+    let item = MetadataItem {
+        id: RatingKey::new(1),
+        section_id: SectionId::new(1),
+        parent_id: None,
+        kind: ItemKind::Movie,
+        guid: "plex://movie/1".to_owned(),
+        title: Some("A Film".to_owned()),
+        title_sort: None,
+        original_title: None,
+        summary: None,
+        tagline: None,
+        studio: None,
+        content_rating: None,
+        content_rating_age: None,
+        position: Some(1),
+        year: Some(2000),
+        released_on: None,
+        duration_ms: None,
+        rating: None,
+        audience_rating: None,
+        added_at: 0,
+        updated_at: 0,
+    };
+    (
+        InMemoryLibrary::new(vec![section]),
+        InMemoryMetadata::new(vec![item]),
+    )
+}
+
+fn app() -> axum::Router {
+    let identity = ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0");
+    let (library, metadata) = catalog();
+    let schema = build_schema(ApiContext {
+        capabilities: ServerCapabilities::new(identity.clone(), 0),
+        library: std::sync::Arc::new(library),
+        metadata: std::sync::Arc::new(metadata),
+    });
+    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
+
+    // A principal is attached directly: authentication lives in the `server` crate, and this
+    // test is about routing, not about credentials.
+    router(PlexState::new(identity, schema, accounts)).layer(axum::Extension(Principal {
+        name: "owner".to_owned(),
+        scope: Scope::Admin,
+    }))
+}
+
+/// Fills path parameters with values of a plausible shape.
+///
+/// `{sectionId}` is not a URI, so something has to stand in. The values only need to make the
+/// path well-formed — whether the id exists is irrelevant to whether the route is registered.
+fn concretize(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    let mut rest = path;
+
+    while let Some(open) = rest.find('{') {
+        out.push_str(&rest[..open]);
+        let close = rest[open..].find('}').map_or(rest.len(), |at| open + at);
+        let name = &rest[open + 1..close];
+        out.push_str(substitute(name));
+        rest = &rest[(close + 1).min(rest.len())..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Enumerated segments need a member of their set; a number there would 404 on its own.
+fn substitute(parameter: &str) -> &'static str {
+    match parameter.to_lowercase().as_str() {
+        "transcodetype" => "video",
+        "element" => "thumb",
+        "ext" => "jpg",
+        "action" => "play",
+        _ => "1",
+    }
+}
+
+fn spec_operations() -> Vec<(Method, String)> {
+    let spec: Value =
+        serde_json::from_str(include_str!("../../../docs/openapi.json")).expect("the spec parses");
+    let paths = spec["paths"].as_object().expect("paths object");
+
+    let mut operations = Vec::new();
+    for (path, item) in paths {
+        if unroutable(path) {
+            continue;
+        }
+        if DEFERRED_FRAGMENTS
+            .iter()
+            .any(|fragment| path.contains(fragment))
+        {
+            continue;
+        }
+
+        for (verb, operation) in item.as_object().expect("path item") {
+            let method = match verb.as_str() {
+                "get" => Method::GET,
+                "post" => Method::POST,
+                "put" => Method::PUT,
+                "patch" => Method::PATCH,
+                "delete" => Method::DELETE,
+                "head" => Method::HEAD,
+                _ => continue,
+            };
+            let tag = operation["tags"][0].as_str().unwrap_or_default();
+            if DEFERRED_TAGS.contains(&tag) {
+                continue;
+            }
+            operations.push((method, path.clone()));
+        }
+    }
+    operations
+}
+
+#[tokio::test]
+async fn every_spec_operation_resolves_to_a_route() {
+    let app = app();
+    let operations = spec_operations();
+    assert!(
+        operations.len() > 150,
+        "only {} operations found — did the spec move?",
+        operations.len()
+    );
+
+    // Collected rather than asserted in the loop: a test that stops at the first missing
+    // route makes you re-run it once per fix.
+    let mut unrouted = BTreeSet::new();
+
+    for (method, path) in &operations {
+        let uri = concretize(path);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method.clone())
+                    .uri(&uri)
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+            .expect("router responds");
+
+        if response.status() == StatusCode::NOT_FOUND {
+            unrouted.insert(format!("{method} {path}  (tried {uri})"));
+        }
+    }
+
+    assert!(
+        unrouted.is_empty(),
+        "{} of {} spec operations are not routed:\n{}",
+        unrouted.len(),
+        operations.len(),
+        unrouted.into_iter().collect::<Vec<_>>().join("\n")
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_path_still_answers_not_found() {
+    // The counterpart to the test above: if everything answered 501, it would pass for the
+    // wrong reason.
+    let response = app()
+        .oneshot(
+            Request::builder()
+                .uri("/this/is/not/a/plex/endpoint")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn an_unimplemented_route_answers_not_implemented() {
+    // And the other half: a declared route that has no handler says so, rather than pretending
+    // to be missing.
+    let response = app()
+        .oneshot(
+            Request::builder()
+                .uri("/status/sessions")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+}

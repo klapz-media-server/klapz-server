@@ -1,0 +1,31 @@
+//! Prints the schema as SDL.
+//!
+//! Client codegen and schema-diffing in CI both need the SDL as a file, and generating it
+//! from the code keeps it from drifting the way a hand-maintained copy would.
+//!
+//! Usage: `cargo run -p open-plex-api --example sdl > schema.graphql`
+
+// Build-time tooling: a failure here must stop the build loudly rather than emit a
+// half-written schema file that something downstream would then trust.
+#![allow(clippy::expect_used)]
+
+use std::sync::Arc;
+
+use open_plex_api::{build_schema, ApiContext};
+use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
+
+fn main() {
+    // The schema's shape does not depend on its data, so an empty repository is enough.
+    let schema = build_schema(ApiContext {
+        capabilities: open_plex_core::ServerCapabilities::new(
+            open_plex_core::ServerIdentity::new(
+                "0000000000000000000000000000000000000000",
+                "0.1.0",
+            ),
+            0,
+        ),
+        library: Arc::new(InMemoryLibrary::default()),
+        metadata: Arc::new(InMemoryMetadata::default()),
+    });
+    print!("{}", schema.sdl());
+}

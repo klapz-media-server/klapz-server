@@ -1,0 +1,23 @@
+[package]
+name = "open-plex-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+unicode-normalization.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[features]
+# Ships an in-memory repository so bindings can be tested without storage.
+testing = []
+default = []
+
+[lints]
+workspace = true
