@@ -249,6 +249,10 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
   filters on `/all`, the `/library/sections/{id}/firstCharacter` jump bar, and `/search` across
   every library; backed by a title-word index (`item_title_word`, 758,132 rows) and a `search`
   root field on the official API;
+- ✅ `/library/metadata/{id}/children` and `/grandchildren` — opening a series: seasons, a
+  season's episodes, and every episode of a show as one list, through a `grandchildren`
+  port and `Show.episodes` on the official API; zero differing fields against the reference
+  on seven parents across two libraries;
 - ⬜ the `X-Plex-*` client-identity extractor;
 - ⬜ `docs/ENDPOINTS.md` kept current as work lands.
 

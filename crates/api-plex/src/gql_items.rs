@@ -22,7 +22,10 @@ use serde::Deserialize;
 ///
 /// `VersionFields` stops short of `files` so each query can select its own depth: a listing
 /// takes the files, a lookup takes the tracks inside them. The alternative — one fragment per
-/// depth — duplicates the twelve scalars above and lets them drift.
+/// depth — duplicates the twelve scalars above and lets them drift. `SeasonFields` and
+/// `EpisodeFields` are the scalars and parents of those two kinds, shared by every endpoint
+/// that returns either; `EpisodeFields` likewise stops short of `versions`, for the same
+/// reason.
 const ITEM_FRAGMENTS: &str = r"
 fragment Shared on Item {
   __typename
@@ -49,6 +52,25 @@ fragment VersionFields on MediaVersion {
   durationMs
   frameRate
   optimizedForStreaming
+}
+
+fragment SeasonFields on Season {
+  number
+  year
+  show { id title guid studio number year }
+  seasonStats: stats { episodeCount }
+}
+
+fragment EpisodeFields on Episode {
+  number
+  originalTitle
+  year
+  releasedOn
+  contentRating
+  audienceRating
+  durationMs
+  season { id number title year guid }
+  show { id title guid }
 }
 ";
 
@@ -116,22 +138,9 @@ query PlexSectionItems(
               durationMs
               showStats: stats { seasonCount episodeCount }
             }
-            ... on Season {
-              number
-              year
-              show { id title }
-              seasonStats: stats { episodeCount }
-            }
+            ... on Season { ...SeasonFields }
             ... on Episode {
-              number
-              originalTitle
-              year
-              releasedOn
-              contentRating
-              audienceRating
-              durationMs
-              season { id number }
-              show { id title }
+              ...EpisodeFields
               versions { ...VersionFields files { id path sizeBytes durationMs } }
             }
           }
@@ -199,22 +208,9 @@ query PlexItems($ids: [ID!]!) {
       durationMs
       showStats: stats { seasonCount episodeCount }
     }
-    ... on Season {
-      number
-      year
-      show { id title }
-      seasonStats: stats { episodeCount }
-    }
+    ... on Season { ...SeasonFields }
     ... on Episode {
-      number
-      originalTitle
-      year
-      releasedOn
-      contentRating
-      audienceRating
-      durationMs
-      season { id number }
-      show { id title }
+      ...EpisodeFields
       versions {
         ...VersionFields
         files {
@@ -242,13 +238,45 @@ query PlexItems($ids: [ID!]!) {
     )
 });
 
-/// Appends the shared fragments to a query body.
+/// Appends the shared fragments a query body spreads, and only those.
 ///
-/// Concatenated at first use rather than written out twice: a fragment set that drifts
-/// between two copies is a bug nothing would catch until a field went missing from one
-/// endpoint.
+/// Concatenated at first use rather than written out per query: a fragment set that drifts
+/// between copies is a bug nothing would catch until a field went missing from one
+/// endpoint. Filtered because GraphQL rejects a document carrying a fragment it never
+/// spreads, and not every query lists every kind — one that never lists seasons must not
+/// carry `SeasonFields`.
 pub fn with_shared_fragments(query: &str) -> String {
-    format!("{query}{ITEM_FRAGMENTS}")
+    let fragments: Vec<(&str, &str)> = ITEM_FRAGMENTS
+        .split("\n\n")
+        .filter_map(|fragment| Some((fragment_name(fragment)?, fragment)))
+        .collect();
+
+    // Fragments spread other fragments, so the set closes over spreads until it stops
+    // growing.
+    let mut document = query.to_owned();
+    let mut included: Vec<&str> = Vec::new();
+    loop {
+        let next = fragments
+            .iter()
+            .copied()
+            .find(|(name, _)| !included.contains(name) && document.contains(&format!("...{name}")));
+        let Some((name, fragment)) = next else {
+            break;
+        };
+        included.push(name);
+        document.push('\n');
+        document.push_str(fragment.trim_end());
+        document.push('\n');
+    }
+    document
+}
+
+fn fragment_name(fragment: &str) -> Option<&str> {
+    fragment
+        .trim_start()
+        .strip_prefix("fragment ")?
+        .split_whitespace()
+        .next()
 }
 
 #[derive(Debug, Deserialize)]
@@ -392,48 +420,94 @@ impl GqlItem {
     }
 
     /// The item one level up: the season of an episode, the show of a season.
-    pub fn parent_rating_key(&self) -> Option<String> {
-        let parent = match self.typename.as_str() {
+    pub fn parent(&self) -> Option<&GqlParentRef> {
+        match self.typename.as_str() {
             "Episode" => self.season.as_ref(),
             "Season" => self.show.as_ref(),
             _ => None,
-        }?;
-        Some(database_id(&parent.id).to_string())
+        }
     }
 
     /// The show of an episode, two levels up. Clients read it to link an episode straight to
     /// its series without walking the season.
-    pub fn grandparent_rating_key(&self) -> Option<String> {
+    pub fn grandparent(&self) -> Option<&GqlParentRef> {
         if self.typename != "Episode" {
             return None;
         }
-        Some(database_id(&self.show.as_ref()?.id).to_string())
+        self.show.as_ref()
     }
 
-    /// The season number of an episode.
+    pub fn parent_rating_key(&self) -> Option<String> {
+        Some(self.parent()?.database_id().to_string())
+    }
+
+    pub fn grandparent_rating_key(&self) -> Option<String> {
+        Some(self.grandparent()?.database_id().to_string())
+    }
+
+    /// The parent's number: the season of an episode, the series' own index for a season.
     pub fn parent_index(&self) -> Option<i32> {
-        if self.typename != "Episode" {
-            return None;
+        self.parent()?.number
+    }
+
+    /// The parent's title as a client shows it. For an episode that is the season's, which
+    /// is derived — see [`season_title`].
+    pub fn parent_title(&self) -> Option<String> {
+        let parent = self.parent()?;
+        if self.typename == "Episode" {
+            return Some(season_title(parent.title.as_deref(), parent.number));
         }
-        self.season.as_ref()?.number
+        parent.title.clone()
     }
 
     pub fn grandparent_title(&self) -> Option<String> {
-        if self.typename != "Episode" {
-            return None;
+        self.grandparent()?.title.clone()
+    }
+
+    /// The title a client shows for this item.
+    ///
+    /// Only a season differs from its stored title: the source leaves 9,732 of 9,736 seasons
+    /// untitled, and the reference names them at read time.
+    pub fn display_title(&self) -> Option<String> {
+        if self.typename == "Season" {
+            return Some(season_title(self.title.as_deref(), self.number));
         }
-        self.show.as_ref()?.title.clone()
+        self.title.clone()
+    }
+}
+
+/// Names a season the way the reference does when the source stores no title.
+///
+/// `Season 1`, in English regardless of the library's language — a French library's seasons
+/// read `Season 1` on the reference too — and `Specials` for season zero, the convention
+/// scanners use for extras and specials. A stored title wins, as it does for *The Haunting
+/// of Bly Manor*, a season titled as its own series.
+pub fn season_title(stored: Option<&str>, number: Option<i32>) -> String {
+    match (stored, number) {
+        (Some(title), _) => title.to_owned(),
+        (None, Some(0)) => "Specials".to_owned(),
+        (None, Some(number)) => format!("Season {number}"),
+        (None, None) => String::new(),
     }
 }
 
 /// A parent item, as much of it as the child's attributes need.
 #[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct GqlParentRef {
     pub id: String,
-    #[serde(default)]
     pub title: Option<String>,
-    #[serde(default)]
     pub number: Option<i32>,
+    pub guid: Option<String>,
+    pub studio: Option<String>,
+    pub year: Option<i32>,
+    pub content_rating: Option<String>,
+}
+
+impl GqlParentRef {
+    pub fn database_id(&self) -> i64 {
+        database_id(&self.id)
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -515,4 +589,36 @@ impl GqlStream {
 /// visibly wrong key in the response is easier to diagnose than a dropped field.
 fn database_id(global_id: &str) -> i64 {
     open_plex_api::GlobalId::decode(global_id).map_or(0, |decoded| decoded.key)
+}
+
+#[cfg(test)]
+mod tests {
+    // A panicking test is a failing test, which is the intended reporting mechanism.
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn appends_only_the_fragments_a_query_spreads() {
+        let document = with_shared_fragments("query { node { ...Shared ...SeasonFields } }");
+        assert!(document.contains("fragment Shared on Item"));
+        assert!(document.contains("fragment SeasonFields on Season"));
+        // Never spread, so never appended: GraphQL would reject the document otherwise.
+        assert!(!document.contains("fragment EpisodeFields"));
+        assert!(!document.contains("fragment VersionFields"));
+    }
+
+    #[test]
+    fn every_listing_query_is_a_closed_document() {
+        // Each fragment the query spreads is defined, and each defined fragment is spread.
+        for document in [&*SECTION_ITEMS_QUERY, &*ITEMS_BY_ID_QUERY] {
+            for name in ["Shared", "VersionFields", "SeasonFields", "EpisodeFields"] {
+                assert_eq!(
+                    document.contains(&format!("...{name}")),
+                    document.contains(&format!("fragment {name} on")),
+                    "{name}"
+                );
+            }
+        }
+    }
 }

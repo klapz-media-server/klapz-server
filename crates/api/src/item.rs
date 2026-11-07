@@ -360,8 +360,38 @@ impl Show {
         #[graphql(desc = "Return at most this many items from the end of the range.")] last: Option<
             i32,
         >,
+        #[graphql(
+            desc = "Discard this many items before the page begins. Prefer cursors: an offset costs the database a traversal of every discarded row, and a concurrent insert shifts it. Provided because a client that renders a scrollbar needs to jump to an absolute position, which no cursor can express."
+        )]
+        offset: Option<u32>,
     ) -> Result<SeasonConnection> {
-        children_connection(context, self.0.id, after, before, first, last, Season).await
+        let page = Descent::Children.of(self.0.id, offset);
+        children_connection(context, page, after, before, first, last, Season).await
+    }
+
+    /// Every episode of this series across its seasons, ordered by season then episode
+    /// number.
+    ///
+    /// One list rather than a walk through `seasons`: a client opening a series shows its
+    /// episodes as a single scrollable sequence, and assembling that from one page per
+    /// season would leave every page boundary to the client.
+    async fn episodes(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return items after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return items before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many items from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many items from the end of the range.")] last: Option<
+            i32,
+        >,
+        #[graphql(
+            desc = "Discard this many items before the page begins. Prefer cursors: an offset costs the database a traversal of every discarded row, and a concurrent insert shifts it. Provided because a client that renders a scrollbar needs to jump to an absolute position, which no cursor can express."
+        )]
+        offset: Option<u32>,
+    ) -> Result<EpisodeConnection> {
+        let page = Descent::Grandchildren.of(self.0.id, offset);
+        children_connection(context, page, after, before, first, last, Episode).await
     }
 
     /// Aggregates over the contents of this series.
@@ -475,8 +505,13 @@ impl Season {
         #[graphql(desc = "Return at most this many items from the end of the range.")] last: Option<
             i32,
         >,
+        #[graphql(
+            desc = "Discard this many items before the page begins. Prefer cursors: an offset costs the database a traversal of every discarded row, and a concurrent insert shifts it. Provided because a client that renders a scrollbar needs to jump to an absolute position, which no cursor can express."
+        )]
+        offset: Option<u32>,
     ) -> Result<EpisodeConnection> {
-        children_connection(context, self.0.id, after, before, first, last, Episode).await
+        let page = Descent::Children.of(self.0.id, offset);
+        children_connection(context, page, after, before, first, last, Episode).await
     }
 
     /// Aggregates over the contents of this season.
@@ -640,14 +675,39 @@ async fn parent_of(
     Ok(loader.load_one(parent).await?)
 }
 
-/// One page of a parent's children, wrapped as the concrete type the caller wants.
+/// How far below a parent a connection reaches.
+#[derive(Debug, Clone, Copy)]
+enum Descent {
+    Children,
+    Grandchildren,
+}
+
+impl Descent {
+    const fn of(self, parent: RatingKey, offset: Option<u32>) -> ChildPage {
+        ChildPage {
+            parent,
+            descent: self,
+            skip: offset,
+        }
+    }
+}
+
+/// Which rows a child connection pages over, before Relay's window is applied.
+#[derive(Debug, Clone, Copy)]
+struct ChildPage {
+    parent: RatingKey,
+    descent: Descent,
+    skip: Option<u32>,
+}
+
+/// One page below a parent, wrapped as the concrete type the caller wants.
 ///
 /// Not batched across parents, unlike the loaders: each parent carries its own window, and a
 /// window cannot be shared. A client browsing a series fetches one, which is the shape this
 /// is for.
 async fn children_connection<T, F>(
     context: &Context<'_>,
-    parent: RatingKey,
+    page: ChildPage,
     after: Option<String>,
     before: Option<String>,
     first: Option<i32>,
@@ -664,10 +724,13 @@ where
         first,
         last,
         |after, before, first, last| async move {
-            let window = crate::schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?;
-            let page = crate::schema::metadata(context)?
-                .children(parent, window)
-                .await?;
+            let window = crate::schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?
+                .skipping(u64::from(page.skip.unwrap_or(0)));
+            let metadata = crate::schema::metadata(context)?;
+            let page = match page.descent {
+                Descent::Children => metadata.children(page.parent, window).await?,
+                Descent::Grandchildren => metadata.grandchildren(page.parent, window).await?,
+            };
 
             let mut connection = Connection::new(page.has_previous, page.has_next);
             connection.edges.extend(page.items.into_iter().map(|item| {

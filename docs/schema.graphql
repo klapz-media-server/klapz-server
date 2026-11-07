@@ -1060,7 +1060,11 @@ type Season implements Item & Node {
 		"""
 		Return at most this many items from the end of the range.
 		"""
-		last: Int
+		last: Int,
+		"""
+		Discard this many items before the page begins. Prefer cursors: an offset costs the database a traversal of every discarded row, and a concurrent insert shifts it. Provided because a client that renders a scrollbar needs to jump to an absolute position, which no cursor can express.
+		"""
+		offset: Int
 	): EpisodeConnection!
 	"""
 	Aggregates over the contents of this season.
@@ -1260,8 +1264,42 @@ type Show implements Item & Node {
 		"""
 		Return at most this many items from the end of the range.
 		"""
-		last: Int
+		last: Int,
+		"""
+		Discard this many items before the page begins. Prefer cursors: an offset costs the database a traversal of every discarded row, and a concurrent insert shifts it. Provided because a client that renders a scrollbar needs to jump to an absolute position, which no cursor can express.
+		"""
+		offset: Int
 	): SeasonConnection!
+	"""
+	Every episode of this series across its seasons, ordered by season then episode
+	number.
+	
+	One list rather than a walk through `seasons`: a client opening a series shows its
+	episodes as a single scrollable sequence, and assembling that from one page per
+	season would leave every page boundary to the client.
+	"""
+	episodes(
+		"""
+		Return items after this cursor.
+		"""
+		after: String,
+		"""
+		Return items before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many items from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many items from the end of the range.
+		"""
+		last: Int,
+		"""
+		Discard this many items before the page begins. Prefer cursors: an offset costs the database a traversal of every discarded row, and a concurrent insert shifts it. Provided because a client that renders a scrollbar needs to jump to an absolute position, which no cursor can express.
+		"""
+		offset: Int
+	): EpisodeConnection!
 	"""
 	Aggregates over the contents of this series.
 	"""

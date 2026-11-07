@@ -10,6 +10,10 @@ use open_plex_core::LibraryError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
+    /// The request names an operation that makes no sense on its target — the children of
+    /// a film, say. A reference server answers `400` here rather than an empty container.
+    #[error("bad request")]
+    BadRequest,
     #[error("not found")]
     NotFound,
     #[error("unauthorized")]
@@ -23,6 +27,7 @@ pub enum ApiError {
 impl ApiError {
     fn status(&self) -> StatusCode {
         match self {
+            Self::BadRequest => StatusCode::BAD_REQUEST,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::NotImplemented => StatusCode::NOT_IMPLEMENTED,

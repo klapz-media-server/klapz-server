@@ -431,6 +431,18 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
         window: Window,
     ) -> Result<Page<MetadataItem>, MetadataError>;
 
+    /// One page of a parent's grandchildren — every episode of a series, across its
+    /// seasons — ordered by the child's position, then their own.
+    ///
+    /// A separate port rather than `children` applied twice: a client opening a series
+    /// wants its episodes as one list, and walking each season in turn would cost a query
+    /// per season and leave the page boundary to the caller.
+    async fn grandchildren(
+        &self,
+        parent: RatingKey,
+        window: Window,
+    ) -> Result<Page<MetadataItem>, MetadataError>;
+
     /// How many direct children each parent has.
     async fn child_counts(
         &self,
@@ -504,6 +516,14 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         window: Window,
     ) -> Result<Page<MetadataItem>, MetadataError> {
         (**self).children(parent, window).await
+    }
+
+    async fn grandchildren(
+        &self,
+        parent: RatingKey,
+        window: Window,
+    ) -> Result<Page<MetadataItem>, MetadataError> {
+        (**self).grandchildren(parent, window).await
     }
 
     async fn child_counts(

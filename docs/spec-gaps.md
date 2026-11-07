@@ -14,15 +14,14 @@ library navigation, so the spec cannot be the only source for routing.
 
 | Endpoint | Verified | Purpose |
 | --- | --- | --- |
-| `GET /library/metadata/{id}/children` | `200` | Direct children: seasons of a show, albums of an artist. The main navigation step. |
-| `GET /library/metadata/{id}/grandchildren` | `200` | Two levels down: all episodes of a show, all tracks of an artist. |
+| `GET /library/metadata/{id}/children` | `200` | Direct children: seasons of a show, albums of an artist. The main navigation step. **Implemented**: zero differing and zero extra fields against the reference on seven parents across two libraries (see *Opening a series* below for the one deliberate omission). |
+| `GET /library/metadata/{id}/grandchildren` | `200` | Two levels down: all episodes of a show, all tracks of an artist. **Implemented**, same measurement. |
 | `GET /library/sections` | `200` | The library list — the entry point of all navigation, and what the bundled web client calls. The spec declares only the `/library/sections/all` alias. |
 | `GET /search?query=` | `200` | Global search across libraries. The spec declares only `/hubs/search`. **Implemented**, so the spec-coverage test cannot be what guards it — nothing the spec never mentions can be. |
 | `GET /library/sections/{id}/firstCharacter?type=` | `200` | The A–Z jump bar. Singular, and absent from the spec in that form (see *Wrong in the spec*). **Implemented**, with bucket sets and counts identical to the reference on four libraries. |
 
-`/children` returns a `MediaContainer` carrying parent context the listing endpoints do not —
-`parentIndex`, `parentTitle`, `parentYear`, `summary`, and a `nocache` attribute — alongside the
-usual `Metadata` array.
+Both carry containers the listing endpoints do not; they are described under *Opening a
+series* below.
 
 ## Wrong in the spec
 
@@ -85,6 +84,34 @@ derivable from the spec or from the database schema alone.
 | Jump-bar buckets | `/library/sections/{id}/firstCharacter?type=` groups by the first character of the sort title, **folded** — 594 films under `C` where a raw first character gives 593, because `Ç` folds to `C`. Ligatures do not fold and get their own bucket: `Œ` is a letter there, with two films. Everything not starting with a letter collapses into `#`. The `key` is percent-encoded (`%23`, `%C5%92`); the count attribute is `size`, not `count`, unlike every other `Directory` in the surface. |
 | Search-result attribute order | `/search` puts the library attributes (`allowSync`, `librarySectionID`, `librarySectionTitle`, `librarySectionUUID`, `personal`, `sourceTitle`) **before** `ratingKey`; `/library/metadata/{ids}` puts the same ones after `titleSort`. Order is observable in XML, so the two shapes are distinct types. |
 | Boolean stream flags | `default` and `forced` are sent only when true, never as `0`. |
+
+### Opening a series
+
+`/children` and `/grandchildren` are the navigation steps below a library listing, and their
+containers are shaped by what is being opened rather than by the library. Measured on seven
+parents across the French and English series libraries.
+
+| Behavior | Detail |
+| --- | --- |
+| `/children` below a show | The container describes the show: `key` (its bare rating key, as a string), `parentIndex`, `parentTitle`, `parentYear`, `summary` (omitted when empty), `title1` = library title, `title2` = show title, `viewGroup="season"`, `viewMode=65593` — one more than the grid every other listing reports. Plus `nocache=1`. |
+| `/children` below a season | The container names both levels above: `parentIndex`/`parentTitle`/`parentYear` for the season, and `grandparentContentRating`, `grandparentRatingKey`, `grandparentStudio`, `grandparentTitle` for the show. `title1` is the **show** title and `title2` the season's display title; `parentTitle` is the season's *stored* title, which is empty for nearly every season. `grandparentRatingKey` is a **number** in JSON where every item's `ratingKey` is a string. `viewGroup="episode"`, `viewMode=65592`, no `summary`. |
+| `/grandchildren` | A flat list: nothing about the series, only `art`, `title1` and `viewGroup` for the library, as `/all` reports them, plus `nocache=1`. Below a **season** it lists the season's own episodes — the reference reads "grandchildren" as "the leaves", not literally two levels down. |
+| Leaf nodes | `/children` on a film or an episode is a `400`. `/grandchildren` on one is a `200` with an empty container (`size="0"`, no `nocache`) that still names the library. An unknown key is `404` on both. |
+| Paging | Same as a listing: `totalSize`/`offset` and the two headers appear only when both container parameters are sent. We always window, as everywhere. |
+| The "All episodes" row | Unpaged, `/children` below a show opens with a `Directory` that has no `ratingKey` — `key="/library/metadata/{id}/allLeaves"`, `title="All episodes"`, `leafCount`, `viewedLeafCount`, `thumb` — and `size` counts it (3 for two seasons) while `totalSize` does not (2). It disappears when a window is sent. **Deliberately withheld** until `/allLeaves` has a handler: that route still answers `501`, and advertising a row a client cannot open is the same mistake as publishing `Part.key` without playback. Our `size` therefore counts what the body holds. |
+| Season title | The source stores no title for 9,732 of 9,736 seasons; the reference names them at read time as `Season N`, in **English regardless of the library's language** (a French library's seasons read `Season 1` too), and `Specials` for season zero. A stored title wins — *The Haunting of Bly Manor* is season 2 of *The Haunting*. The derivation happens in the Plex adapter: the official API keeps `title` null and exposes `number`. |
+| Season `titleSort` | Sent when a sort title is stored, and the stored title is compared, not the derived one: a season stored as (`NULL`, `Season 1`) reports both `title="Season 1"` and `titleSort="Season 1"`, where a film with equal values omits the second. |
+| Season `summary` | An empty string when the source holds none, where every other kind omits the attribute. |
+| Season `year` / `parentYear` | One or the other, never both: the season's own year when it has one, otherwise the show's as `parentYear`. |
+| Parent attributes on items | A season carries `parentGuid`, `parentStudio`, `parentTitle`, `parentIndex` (the show's own index) from the show; an episode carries `parentGuid`, `parentTitle` (the season's display title) and `grandparentGuid`. These appear in lookups too, so `/library/metadata/{ids}` gained them with this work. |
+| Episode attribute order | `grandparentKey` and `parentKey` come **before** the `librarySection*` trio in a lookup, where a film puts the trio right after `titleSort`. The earlier ordering had the trio first. |
+
+Still missing on these items, all pre-existing gaps: artwork (`thumb`, `art`, `parentThumb`,
+`grandparentArt`, `Image`, `UltraBlurColors`), tags (`Director`, `Writer`, `Role`), `parentSlug`
+and `grandparentSlug`, `audienceRatingImage`, `chapterSource`, `Part.key`, `videoProfile`, and
+the per-stream detail (`languageTag`, `displayTitle`, `bitDepth`, …). One divergence surfaced by
+the comparison and not yet fixed: `Stream.language` publishes the tag (`en`) where the
+reference publishes the name (`English`), with `languageTag` and `languageCode` beside it.
 
 ### Filtering on a listing
 

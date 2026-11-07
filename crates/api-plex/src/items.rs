@@ -5,7 +5,8 @@
 //! fetched through `/children` and `/grandchildren` because a library listing never returns
 //! them. The union of all observed orders has no cycle. XML attribute order is observable, so
 //! it is part of the contract; an earlier derivation that sampled only listings got the
-//! episode fields wrong, placing `grandparentTitle` after `index` instead of after `title`.
+//! episode fields wrong twice — `grandparentTitle` after `index` instead of after `title`,
+//! and the `librarySection*` trio before `grandparentKey` and `parentKey` instead of after.
 //!
 //! Everything is `Option` and skipped when absent, because that is how Plex distinguishes
 //! "no value" from "empty": an absent attribute, never an empty string.
@@ -18,13 +19,13 @@ use crate::gql_items::{GqlItem, GqlLibraryRef, GqlPart, GqlStream, GqlVersion};
 ///
 /// A constant: clients match on it to tell a library response from a channel or a provider
 /// response, and `com.plexapp.plugins.library` is the only value a server sends here.
-const LIBRARY_IDENTIFIER: &str = "com.plexapp.plugins.library";
+pub const LIBRARY_IDENTIFIER: &str = "com.plexapp.plugins.library";
 
 /// Prefix clients prepend to a tag name to build its flag image URL.
-const MEDIA_TAG_PREFIX: &str = "/system/bundle/media/flags/";
+pub const MEDIA_TAG_PREFIX: &str = "/system/bundle/media/flags/";
 
 /// Layout the web client restores for a library view. Opaque to the server.
-const GRID_VIEW_MODE: u32 = 65_592;
+pub const GRID_VIEW_MODE: u32 = 65_592;
 
 /// Generation of the tag flag images, which clients append to a tag image URL to bust their
 /// cache.
@@ -32,7 +33,7 @@ const GRID_VIEW_MODE: u32 = 65_592;
 /// Zero because there is no generation to report: tags are not imported yet, so the server
 /// publishes none and no client can build such a URL. A timestamp here would be an invented
 /// value that looks meaningful.
-const MEDIA_TAG_VERSION: i64 = 0;
+pub const MEDIA_TAG_VERSION: i64 = 0;
 
 /// Response body for `GET /library/sections/{id}/all`.
 ///
@@ -113,6 +114,14 @@ pub struct MetadataEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grandparent_rating_key: Option<String>,
     pub guid: String,
+    /// The season's identity for an episode, the series' for a season.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_guid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grandparent_guid: Option<String>,
+    /// The series' studio, which a season repeats: a season has none of its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_studio: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub studio: Option<String>,
     #[serde(rename = "type")]
@@ -121,6 +130,10 @@ pub struct MetadataEntry {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title_sort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grandparent_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_key: Option<String>,
     /// Set only on a lookup. In a listing the library is stated once on the container.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub library_section_title: Option<String>,
@@ -129,11 +142,10 @@ pub struct MetadataEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub library_section_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub grandparent_key: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_key: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub grandparent_title: Option<String>,
+    /// The season's display title for an episode, the series' title for a season.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original_title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -155,6 +167,9 @@ pub struct MetadataEntry {
     pub audience_rating: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub year: Option<i32>,
+    /// The series' year, on a season that has none of its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_year: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tagline: Option<String>,
     /// Runtime in milliseconds.
@@ -376,11 +391,16 @@ impl MetadataEntry {
                 format!("/library/metadata/{rating_key}")
             },
             guid: item.guid.clone(),
+            parent_guid: item.parent().and_then(|parent| parent.guid.clone()),
+            grandparent_guid: item.grandparent().and_then(|parent| parent.guid.clone()),
+            parent_studio: item.parent().and_then(|parent| parent.studio.clone()),
             studio: item.studio.clone(),
             kind,
-            title: item.title.clone(),
-            // Omitted when it says nothing the title does not: the importer stores a sort
-            // title for every row, while a reference server sends one only where it differs.
+            title: item.display_title(),
+            // Omitted when it says nothing the *stored* title does not: the importer stores
+            // a sort title for every row, while a reference server sends one only where it
+            // differs. Compared with the stored title, not the displayed one, because a
+            // season named at read time still reports `titleSort="Season 1"`.
             title_sort: item
                 .title_sort
                 .clone()
@@ -397,7 +417,12 @@ impl MetadataEntry {
             original_title: item.original_title.clone(),
             content_rating: item.content_rating.clone(),
             content_rating_age: item.content_rating_age,
-            summary: item.summary.clone(),
+            // A season with no synopsis reports an empty one, where every other kind omits
+            // the attribute. Measured on seven seasons across two libraries, no exception.
+            summary: item
+                .summary
+                .clone()
+                .or_else(|| (item.typename == "Season").then(String::new)),
             index: item.number,
             rating: item.rating.map(one_decimal),
             audience_rating: item.audience_rating.map(one_decimal),
@@ -412,7 +437,13 @@ impl MetadataEntry {
                 .map(|key| format!("/library/metadata/{key}")),
             parent_index: item.parent_index(),
             grandparent_title: item.grandparent_title(),
+            parent_title: item.parent_title(),
             year: item.year,
+            // Only a season falls back to its series' year, and only when it has none: the
+            // reference sends one or the other, never both.
+            parent_year: (item.typename == "Season" && item.year.is_none())
+                .then(|| item.parent().and_then(|parent| parent.year))
+                .flatten(),
             tagline: item.tagline.clone(),
             // The media's runtime wins where there is media: a reference server reports
             // 6,050,048 ms for an item whose metadata row says 6,060,000. The metadata value

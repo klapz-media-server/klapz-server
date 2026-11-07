@@ -364,8 +364,36 @@ impl MetadataRepository for InMemoryMetadata {
             .cloned()
             .collect();
         rows.sort_by_key(|item| (item.position.unwrap_or(0), item.id.get()));
-        rows.truncate(page_limit(&window));
-        Ok(Page::from_overfetch(rows, &window))
+        Ok(Self::page_of(rows, &window))
+    }
+
+    async fn grandchildren(
+        &self,
+        parent: RatingKey,
+        window: Window,
+    ) -> Result<Page<MetadataItem>, MetadataError> {
+        // Position of each child, so the grandchildren can be ordered season by season.
+        let children: BTreeMap<RatingKey, i32> = self
+            .items
+            .iter()
+            .filter(|item| item.parent_id == Some(parent))
+            .map(|item| (item.id, item.position.unwrap_or(0)))
+            .collect();
+        let mut rows: Vec<(i32, MetadataItem)> = self
+            .items
+            .iter()
+            .filter_map(|item| {
+                let child = item.parent_id?;
+                Some((*children.get(&child)?, item.clone()))
+            })
+            .collect();
+        rows.sort_by_key(|(child_position, item)| {
+            (*child_position, item.position.unwrap_or(0), item.id.get())
+        });
+        Ok(Self::page_of(
+            rows.into_iter().map(|(_, item)| item).collect(),
+            &window,
+        ))
     }
 
     async fn child_counts(
@@ -450,6 +478,17 @@ impl InMemoryMetadata {
             .iter()
             .filter(|item| item.parent_id == Some(parent))
             .count() as u64
+    }
+
+    /// Cuts one page out of rows already in their final order.
+    ///
+    /// Children are ordered by position, where the cursor is the id alone, so only the
+    /// offset and the limit apply — mirroring SQL `OFFSET` after `ORDER BY`.
+    fn page_of(mut rows: Vec<MetadataItem>, window: &Window) -> Page<MetadataItem> {
+        let skip = usize::try_from(window.skip).unwrap_or(usize::MAX);
+        rows.drain(..skip.min(rows.len()));
+        rows.truncate(page_limit(window));
+        Page::from_overfetch(rows, window)
     }
 }
 

@@ -11,6 +11,7 @@ use open_plex_core::page::MAX_ITEMS;
 use serde::Deserialize;
 
 use crate::auth::Caller;
+use crate::children;
 use crate::container::{kind_rank, LibraryKind, SectionDirectory, SectionsContainer};
 use crate::error::ApiError;
 use crate::gql;
@@ -35,6 +36,12 @@ pub fn router() -> Router<PlexState> {
         .route("/library/sections/all", get(sections))
         .route("/library/sections/{sectionId}/all", get(section_items))
         .route("/library/metadata/{ids}", get(items_by_id))
+        // Neither is in the spec; both are how a client opens a series.
+        .route("/library/metadata/{id}/children", get(children::children))
+        .route(
+            "/library/metadata/{id}/grandchildren",
+            get(children::grandchildren),
+        )
         // Singular, and not in the spec in that form: the declared
         // `firstCharacters` 404s on a real server.
         .route(
@@ -487,22 +494,9 @@ query PlexSearch($query: String!, $first: Int!) {
           durationMs
           showStats: stats { seasonCount episodeCount }
         }
-        ... on Season {
-          number
-          year
-          show { id title }
-          seasonStats: stats { episodeCount }
-        }
+        ... on Season { ...SeasonFields }
         ... on Episode {
-          number
-          originalTitle
-          year
-          releasedOn
-          contentRating
-          audienceRating
-          durationMs
-          season { id number }
-          show { id title }
+          ...EpisodeFields
           versions { ...VersionFields files { id path sizeBytes durationMs } }
         }
       }

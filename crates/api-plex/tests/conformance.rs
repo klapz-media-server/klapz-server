@@ -493,9 +493,21 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
     let mut barbarella = item(101, 4, ItemKind::Movie, None, "Barbarella");
     barbarella.title_sort = Some("Barbarella".to_owned());
 
-    let show = item(200, 5, ItemKind::Show, None, "Severance");
-    let season = item(201, 5, ItemKind::Season, Some(200), "Season 1");
+    let mut show = item(200, 5, ItemKind::Show, None, "Severance");
+    show.studio = Some("Fifth Season".to_owned());
+    show.year = Some(2022);
+    show.content_rating = Some("TV-MA".to_owned());
+    let mut season = item(201, 5, ItemKind::Season, Some(200), "Season 1");
+    season.year = Some(2022);
     let episode = item(202, 5, ItemKind::Episode, Some(201), "Good News About Hell");
+    let mut half_loop = item(205, 5, ItemKind::Episode, Some(201), "Half Loop");
+    half_loop.position = Some(2);
+    // A second season as the source stores nearly all of them: untitled, undated.
+    let mut untitled = item(203, 5, ItemKind::Season, Some(200), "");
+    untitled.title = None;
+    untitled.summary = None;
+    untitled.position = Some(2);
+    let hello = item(204, 5, ItemKind::Episode, Some(203), "The We We Are");
 
     let version = MediaVersion {
         id: MediaId::new(900),
@@ -537,11 +549,10 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
 
     (
         InMemoryLibrary::new(vec![films, series]),
-        InMemoryMetadata::new(vec![avatar, barbarella, show, season, episode]).with_media(
-            vec![version],
-            vec![file],
-            vec![stream],
-        ),
+        InMemoryMetadata::new(vec![
+            avatar, barbarella, show, season, episode, half_loop, untitled, hello,
+        ])
+        .with_media(vec![version], vec![file], vec![stream]),
     )
 }
 
@@ -651,8 +662,8 @@ async fn a_listing_covers_the_libraries_top_level_only() {
     assert_eq!(items[0]["type"], "show");
     // A series is browsed into, so the key a client follows lists the children.
     assert_eq!(items[0]["key"], "/library/metadata/200/children");
-    assert_eq!(items[0]["childCount"], 1);
-    assert_eq!(items[0]["leafCount"], 1);
+    assert_eq!(items[0]["childCount"], 2);
+    assert_eq!(items[0]["leafCount"], 3);
     // Playback state is not implemented; reporting anything else would mark episodes watched.
     assert_eq!(items[0]["viewedLeafCount"], 0);
 }
@@ -665,8 +676,8 @@ async fn an_explicit_type_reaches_past_the_top_level() {
     let items = body["MediaContainer"]["Metadata"]
         .as_array()
         .expect("items");
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["type"], "episode");
+    assert_eq!(items.len(), 3);
+    assert!(items.iter().all(|item| item["type"] == "episode"));
     assert_eq!(items[0]["ratingKey"], "202");
 }
 
@@ -836,6 +847,172 @@ async fn an_episode_links_to_its_season_and_its_series() {
 }
 
 #[tokio::test]
+async fn opening_a_series_lists_its_seasons_under_a_header() {
+    let body = listing("/library/metadata/200/children").await;
+    let container = &body["MediaContainer"];
+
+    // The container describes the series being opened: a client renders the header from it.
+    assert_eq!(container["key"], "200");
+    assert_eq!(container["parentTitle"], "Severance");
+    assert_eq!(container["parentYear"], 2022);
+    assert_eq!(container["parentIndex"], 1);
+    assert_eq!(container["summary"], "Summary of Severance");
+    assert_eq!(container["title1"], "VF - Series");
+    assert_eq!(container["title2"], "Severance");
+    assert_eq!(container["viewGroup"], "season");
+    assert_eq!(container["viewMode"], 65_593);
+    assert_eq!(container["nocache"], true);
+    assert_eq!(container["librarySectionID"], 5);
+    assert_eq!(container["size"], 2);
+    assert_eq!(container["totalSize"], 2);
+    assert!(container.get("grandparentTitle").is_none(), "{container}");
+
+    let seasons = container["Metadata"].as_array().expect("seasons");
+    assert_eq!(seasons[0]["ratingKey"], "201");
+    assert_eq!(seasons[0]["type"], "season");
+    assert_eq!(seasons[0]["key"], "/library/metadata/201/children");
+    assert_eq!(seasons[0]["parentRatingKey"], "200");
+    assert_eq!(seasons[0]["parentGuid"], "plex://item/200");
+    assert_eq!(seasons[0]["parentStudio"], "Fifth Season");
+    assert_eq!(seasons[0]["parentTitle"], "Severance");
+    assert_eq!(seasons[0]["parentIndex"], 1);
+    assert_eq!(seasons[0]["leafCount"], 2);
+    // A dated season reports its own year and not its series'.
+    assert_eq!(seasons[0]["year"], 2022);
+    assert!(seasons[0].get("parentYear").is_none(), "{}", seasons[0]);
+    // A listing: the library is on the container, not repeated on each season.
+    assert!(
+        seasons[0].get("librarySectionID").is_none(),
+        "{}",
+        seasons[0]
+    );
+}
+
+#[tokio::test]
+async fn an_untitled_season_is_named_at_read_time() {
+    let body = listing("/library/metadata/200/children").await;
+    let season = &body["MediaContainer"]["Metadata"][1];
+
+    // The source stores no title for 9,732 of 9,736 seasons; the reference names them
+    // `Season N` on the way out, and reports an empty synopsis rather than none.
+    assert_eq!(season["ratingKey"], "203");
+    assert_eq!(season["title"], "Season 2");
+    assert_eq!(season["summary"], "");
+    // Undated, so it borrows the series' year — and reports it as such.
+    assert!(season.get("year").is_none(), "{season}");
+    assert_eq!(season["parentYear"], 2022);
+}
+
+#[tokio::test]
+async fn opening_a_season_lists_its_episodes_below_the_series() {
+    let body = listing("/library/metadata/203/children").await;
+    let container = &body["MediaContainer"];
+
+    // Below a season the header names both levels above: the season as the parent and the
+    // series as the grandparent, with the series' rating key as a number.
+    assert_eq!(container["key"], "203");
+    assert_eq!(container["grandparentRatingKey"], 200);
+    assert_eq!(container["grandparentTitle"], "Severance");
+    assert_eq!(container["grandparentStudio"], "Fifth Season");
+    assert_eq!(container["grandparentContentRating"], "TV-MA");
+    // The stored title, which is empty, next to the display form.
+    assert_eq!(container["parentTitle"], "");
+    assert_eq!(container["title1"], "Severance");
+    assert_eq!(container["title2"], "Season 2");
+    assert_eq!(container["parentIndex"], 2);
+    assert_eq!(container["viewGroup"], "episode");
+    assert_eq!(container["viewMode"], 65_592);
+    assert!(container.get("summary").is_none(), "{container}");
+
+    let episode = &container["Metadata"][0];
+    assert_eq!(episode["ratingKey"], "204");
+    assert_eq!(episode["parentTitle"], "Season 2");
+    assert_eq!(episode["parentGuid"], "plex://item/203");
+    assert_eq!(episode["grandparentGuid"], "plex://item/200");
+    assert_eq!(episode["grandparentTitle"], "Severance");
+}
+
+#[tokio::test]
+async fn a_series_grandchildren_are_its_episodes_season_by_season() {
+    let body = listing("/library/metadata/200/grandchildren").await;
+    let container = &body["MediaContainer"];
+
+    // A flat list: nothing about the series, only the library's view style.
+    assert_eq!(container["art"], "/:/resources/show-fanart.jpg");
+    assert_eq!(container["viewGroup"], "show");
+    assert_eq!(container["title1"], "VF - Series");
+    assert_eq!(container["nocache"], true);
+    assert_eq!(container["totalSize"], 3);
+    assert!(container.get("key").is_none(), "{container}");
+    assert!(container.get("librarySectionID").is_none(), "{container}");
+
+    let keys: Vec<&str> = container["Metadata"]
+        .as_array()
+        .expect("episodes")
+        .iter()
+        .filter_map(|episode| episode["ratingKey"].as_str())
+        .collect();
+    // Season 1's two episodes in number order, then season 2's — not by id.
+    assert_eq!(keys, vec!["202", "205", "204"]);
+
+    // Below a season the same list is the season's own episodes.
+    let body = listing("/library/metadata/201/grandchildren").await;
+    assert_eq!(body["MediaContainer"]["totalSize"], 2);
+}
+
+#[tokio::test]
+async fn children_page_by_absolute_offset() {
+    let body = listing(
+        "/library/metadata/200/grandchildren?X-Plex-Container-Start=1&X-Plex-Container-Size=1",
+    )
+    .await;
+    let container = &body["MediaContainer"];
+
+    assert_eq!(container["offset"], 1);
+    assert_eq!(container["size"], 1);
+    assert_eq!(container["totalSize"], 3);
+    assert_eq!(container["Metadata"][0]["ratingKey"], "205");
+}
+
+#[tokio::test]
+async fn children_of_a_leaf_are_a_bad_request_and_its_grandchildren_are_empty() {
+    // A reference server distinguishes the two: `/children` on a film is a 400, while
+    // `/grandchildren` on one is an empty container that still names the library.
+    let (status, _) = get_from(items_app(), "/library/metadata/100/children", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = get_from(items_app(), "/library/metadata/202/children", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let body = listing("/library/metadata/100/grandchildren").await;
+    let container = &body["MediaContainer"];
+    assert_eq!(container["size"], 0);
+    assert_eq!(container["viewGroup"], "movie");
+    assert_eq!(container["art"], "/:/resources/movie-fanart.jpg");
+    assert!(container.get("nocache").is_none(), "{container}");
+    assert!(container.get("Metadata").is_none(), "{container}");
+
+    let (status, _) = get_from(items_app(), "/library/metadata/999999/children", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn children_name_each_element_after_its_kind_in_xml() {
+    let (_, seasons) = get_from(items_app(), "/library/metadata/200/children", None).await;
+    let (_, episodes) = get_from(items_app(), "/library/metadata/201/children", None).await;
+
+    assert!(
+        seasons.contains("<Directory ratingKey=\"201\""),
+        "{seasons}"
+    );
+    assert!(seasons.contains(" nocache=\"1\""), "{seasons}");
+    assert!(episodes.contains("<Video ratingKey=\"202\""), "{episodes}");
+    assert!(
+        episodes.contains(" grandparentRatingKey=\"200\""),
+        "{episodes}"
+    );
+}
+
+#[tokio::test]
 async fn an_unknown_library_or_item_is_not_found() {
     // Not an empty listing: a client told "zero items" caches an empty library.
     let (status, _) = get_from(items_app(), "/library/sections/999/all", None).await;
@@ -917,12 +1094,13 @@ async fn the_jump_bar_buckets_by_first_letter() {
 
 #[tokio::test]
 async fn the_jump_bar_buckets_seasons_by_their_stored_title() {
-    // The fixture's season is titled "Season 1", so it buckets under S — the same path the
-    // film library takes, exercised on a kind whose titles are generated rather than matched.
+    // One season is titled "Season 1", so it buckets under S — the same path the film
+    // library takes, exercised on a kind whose titles are generated rather than matched.
+    // The untitled one has no character to bucket by.
     let body = listing("/library/sections/5/firstCharacter?type=3").await;
     let buckets = body["MediaContainer"]["Directory"]
         .as_array()
         .expect("buckets");
-    assert_eq!(buckets.len(), 1);
-    assert_eq!(buckets[0]["title"], "S");
+    let titles: Vec<&str> = buckets.iter().filter_map(|b| b["title"].as_str()).collect();
+    assert!(titles.contains(&"S"), "{titles:?}");
 }
