@@ -4,14 +4,21 @@
 //! both need it, and neither should depend on the other. The middleware resolves the token
 //! to a [`Principal`] and attaches it to the request; each surface then enforces scope in
 //! its own idiom.
+//!
+//! A request with no valid token is still admitted when it comes from a network the operator
+//! trusts, which is Plex's `allowedNetworks`: the one way a client with no plex.tv account,
+//! Plex Web among them, can talk to the server at all. It is an authentication bypass by
+//! design, so it is off unless configured, and it trusts the socket's address alone.
 
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
-use axum::extract::{Request, State};
+use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use open_plex_core::Accounts;
+use ipnet::IpNet;
+use open_plex_core::{Accounts, Principal, Scope};
 
 /// The header and query parameter carrying the token.
 ///
@@ -27,8 +34,54 @@ const TOKEN_KEY: &str = "X-Plex-Token";
 /// they hold any token. Requiring one would make the server undiscoverable.
 const PUBLIC_PATHS: &[&str] = &["/", "/identity"];
 
+/// Who may use the server: the accepted tokens, and the networks trusted without one.
+#[derive(Debug, Clone, Default)]
+pub struct Access {
+    accounts: Accounts,
+    trusted_networks: Vec<IpNet>,
+}
+
+impl Access {
+    pub const fn new(accounts: Accounts, trusted_networks: Vec<IpNet>) -> Self {
+        Self {
+            accounts,
+            trusted_networks,
+        }
+    }
+
+    /// Whether a peer address falls in a trusted network.
+    ///
+    /// Reduced to its canonical form first: a dual-stack socket reports an IPv4 client as
+    /// `::ffff:127.0.0.1`, which `127.0.0.1/32` would otherwise fail to match.
+    fn trusts(&self, peer: IpAddr) -> bool {
+        let peer = peer.to_canonical();
+        self.trusted_networks
+            .iter()
+            .any(|network| network.contains(&peer))
+    }
+}
+
+/// Reads a comma-separated list of networks, each an address or a CIDR range.
+///
+/// # Errors
+///
+/// Fails on the first entry that is neither, naming it: a typo in a security setting must
+/// stop the server rather than leave it quietly trusting less, or more, than intended.
+pub fn parse_networks(list: &str) -> Result<Vec<IpNet>, String> {
+    list.split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            entry
+                .parse::<IpNet>()
+                .or_else(|_| entry.parse::<IpAddr>().map(IpNet::from))
+                .map_err(|_| format!("`{entry}` is not an address or a network"))
+        })
+        .collect()
+}
+
 pub async fn require_token(
-    State(accounts): State<Arc<Accounts>>,
+    State(access): State<Arc<Access>>,
     mut request: Request,
     next: Next,
 ) -> Response {
@@ -38,13 +91,13 @@ pub async fn require_token(
         return next.run(request).await;
     }
 
-    let Some(presented) = token_from(&request) else {
+    let by_token = token_from(&request)
+        .and_then(|presented| access.accounts.authenticate(&presented).cloned());
+    // A token that does not match still lets a trusted peer in: a client that once signed in
+    // elsewhere keeps sending its stale one, and refusing it would refuse the peer we trust.
+    let Some(principal) = by_token.or_else(|| trusted_peer(&access, &request)) else {
         return unauthorized();
     };
-    let Some(principal) = accounts.authenticate(&presented) else {
-        return unauthorized();
-    };
-    let principal = principal.clone();
 
     // Logged without the URI: the token travels in the query string, so logging the full
     // target would write credentials to disk.
@@ -52,6 +105,18 @@ pub async fn require_token(
 
     request.extensions_mut().insert(principal);
     next.run(request).await
+}
+
+/// The principal of a request admitted for where it comes from.
+///
+/// The address is the socket's, never `X-Forwarded-For` or `X-Real-IP`: those are written by
+/// the client, and `X-Forwarded-For: 127.0.0.1` would otherwise grant anyone access.
+fn trusted_peer(access: &Access, request: &Request) -> Option<Principal> {
+    let ConnectInfo(peer) = request.extensions().get::<ConnectInfo<SocketAddr>>()?;
+    access.trusts(peer.ip()).then(|| Principal {
+        name: "trusted network".to_owned(),
+        scope: Scope::Admin,
+    })
 }
 
 /// Reads the token from the header, falling back to the query string.
@@ -96,7 +161,11 @@ mod tests {
     use open_plex_core::{Credential, Scope};
     use tower::ServiceExt;
 
-    use super::{require_token, Accounts, Arc, StatusCode};
+    use std::net::SocketAddr;
+
+    use axum::extract::ConnectInfo;
+
+    use super::{parse_networks, require_token, Access, Accounts, Arc, StatusCode};
 
     const TOKEN: &str = "owner-token";
 
@@ -109,18 +178,89 @@ mod tests {
     }
 
     fn app() -> Router {
-        let accounts = Arc::new(Accounts::new(vec![Credential::new(
-            TOKEN,
-            "owner",
-            Scope::Admin,
-        )]));
+        app_trusting("")
+    }
+
+    fn app_trusting(networks: &str) -> Router {
+        let access = Arc::new(Access::new(
+            Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]),
+            parse_networks(networks).unwrap(),
+        ));
         Router::new()
             .route("/library/sections", get(whoami))
             .route("/identity", get(whoami))
-            .layer(axum::middleware::from_fn_with_state(
-                accounts,
-                require_token,
-            ))
+            .layer(axum::middleware::from_fn_with_state(access, require_token))
+    }
+
+    /// A request as it arrives from `peer`, with no token, through a router trusting
+    /// `networks`.
+    async fn call_from(networks: &str, peer: &str, forwarded_for: Option<&str>) -> StatusCode {
+        let mut request = Request::builder().uri("/library/sections");
+        if let Some(forwarded) = forwarded_for {
+            request = request.header("X-Forwarded-For", forwarded);
+        }
+        let mut request = request.body(Body::empty()).unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(peer.parse::<SocketAddr>().unwrap()));
+        app_trusting(networks)
+            .oneshot(request)
+            .await
+            .unwrap()
+            .status()
+    }
+
+    #[tokio::test]
+    async fn admits_a_peer_from_a_trusted_network_without_a_token() {
+        assert_eq!(
+            call_from("127.0.0.1/32", "127.0.0.1:51000", None).await,
+            StatusCode::OK
+        );
+        assert_eq!(
+            call_from("::1/128", "[::1]:51000", None).await,
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn trusts_nobody_by_default() {
+        assert_eq!(
+            call_from("", "127.0.0.1:51000", None).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn refuses_a_peer_outside_the_trusted_networks() {
+        assert_eq!(
+            call_from("127.0.0.1/32", "192.168.1.20:51000", None).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn never_trusts_a_forwarded_address() {
+        // The header is the client's word for where it comes from; the socket is the fact.
+        assert_eq!(
+            call_from("127.0.0.1/32", "192.168.1.20:51000", Some("127.0.0.1")).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn matches_an_ipv4_peer_seen_through_a_dual_stack_socket() {
+        assert_eq!(
+            call_from("127.0.0.1/32", "[::ffff:127.0.0.1]:51000", None).await,
+            StatusCode::OK
+        );
+    }
+
+    #[test]
+    fn reads_addresses_and_ranges_and_refuses_anything_else() {
+        assert_eq!(parse_networks("127.0.0.1/32, ::1").unwrap().len(), 2);
+        assert!(parse_networks("").unwrap().is_empty());
+        assert!(parse_networks("127.0.0.1/33").is_err());
+        assert!(parse_networks("localhost").is_err());
     }
 
     async fn call(uri: &str, header: Option<&str>) -> (StatusCode, String) {

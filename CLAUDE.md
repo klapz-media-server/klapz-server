@@ -221,6 +221,7 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
 | --- | --- | --- |
 | `OPENPLEX_DATABASE_URL` | `sqlite://open-plex.db?mode=rwc` | Any SeaORM backend; migrations run on connect. |
 | `OPENPLEX_TOKEN` | *(none)* | The accepted admin token. Unset means no authenticated route is reachable — the safe failure. |
+| `OPENPLEX_ALLOWED_NETWORKS` | *(none)* | Comma-separated addresses or CIDR ranges admitted **without a token**, with admin rights — Plex's `allowedNetworks`, and the only way Plex Web gets in without plex.tv. Checked against the socket address, never `X-Forwarded-For`. A malformed entry stops the server. For local use: `127.0.0.1/32,::1/128`. |
 | `OPENPLEX_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |

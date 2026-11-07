@@ -75,7 +75,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         library,
         metadata,
     });
-    let accounts = Arc::new(accounts());
+    let accounts = accounts();
+    let access = Arc::new(auth::Access::new(accounts.clone(), trusted_networks()?));
 
     // The Plex surface is the base and GraphQL is merged into it, which inverts the
     // relationship the architecture describes. The reason is mechanical: Plex has paths whose
@@ -83,12 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // those unless the router has `without_v07_checks`, and `merge` re-validates whatever is
     // merged *in* with the default rules. So the router holding those paths cannot be the one
     // merged in. GraphQL has no such paths and merges cleanly either way.
-    let mut app = open_plex_api_plex::router(PlexState::new(
-        identity(),
-        schema.clone(),
-        (*accounts).clone(),
-    ))
-    .merge(graphql::router(schema));
+    let mut app = open_plex_api_plex::router(PlexState::new(identity(), schema.clone(), accounts))
+        .merge(graphql::router(schema));
     let web_dir = web::directory();
     if let Some(client) = web::router(&web_dir) {
         tracing::info!(directory = %web_dir.display(), "serving the web client at /web");
@@ -100,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // One token middleware for every surface, so neither can be left unauthenticated by
         // omission.
         .layer(axum::middleware::from_fn_with_state(
-            Arc::clone(&accounts),
+            access,
             auth::require_token,
         ))
         .layer((
@@ -121,7 +118,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind = std::env::var("OPENPLEX_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     tracing::info!(address = %bind, "open-plex listening");
-    axum::serve(listener, app).await?;
+    // With the peer's address attached, which is what a trusted network is checked against.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -142,6 +144,24 @@ fn accounts() -> Accounts {
             Accounts::default()
         }
     }
+}
+
+/// The networks admitted without a token, from `OPENPLEX_ALLOWED_NETWORKS`.
+///
+/// None unless configured. Each one is an authentication bypass, so the server says so when
+/// it starts with any.
+fn trusted_networks() -> Result<Vec<ipnet::IpNet>, String> {
+    let networks =
+        auth::parse_networks(&std::env::var("OPENPLEX_ALLOWED_NETWORKS").unwrap_or_default())
+            .map_err(|error| format!("OPENPLEX_ALLOWED_NETWORKS: {error}"))?;
+    if !networks.is_empty() {
+        let list: Vec<String> = networks.iter().map(ToString::to_string).collect();
+        tracing::warn!(
+            networks = %list.join(","),
+            "requests from these networks are admitted without a token"
+        );
+    }
+    Ok(networks)
 }
 
 /// The identity the server announces.
