@@ -13,7 +13,9 @@
 
 use serde::Serialize;
 
-use crate::gql_items::{GqlItem, GqlLibraryRef, GqlPart, GqlStream, GqlVersion};
+use crate::gql_items::{
+    GqlCastMember, GqlItem, GqlLibraryRef, GqlPart, GqlStream, GqlTag, GqlVersion,
+};
 
 /// Identifier of the metadata provider every library response claims.
 ///
@@ -30,9 +32,9 @@ pub const GRID_VIEW_MODE: u32 = 65_592;
 /// Generation of the tag flag images, which clients append to a tag image URL to bust their
 /// cache.
 ///
-/// Zero because there is no generation to report: tags are not imported yet, so the server
-/// publishes none and no client can build such a URL. A timestamp here would be an invented
-/// value that looks meaningful.
+/// Zero because there is no generation to report: the flag images it versions are not
+/// served, so no client can build such a URL. A timestamp here would be an invented value
+/// that looks meaningful.
 pub const MEDIA_TAG_VERSION: i64 = 0;
 
 /// Response body for `GET /library/sections/{id}/all`.
@@ -191,6 +193,79 @@ pub struct MetadataEntry {
     pub updated_at: i64,
     #[serde(rename = "Media", skip_serializing_if = "Vec::is_empty")]
     pub media: Vec<MediaEntry>,
+    #[serde(rename = "Genre", skip_serializing_if = "Vec::is_empty")]
+    pub genre: Vec<TagEntry>,
+    #[serde(rename = "Country", skip_serializing_if = "Vec::is_empty")]
+    pub country: Vec<TagEntry>,
+    #[serde(rename = "Director", skip_serializing_if = "Vec::is_empty")]
+    pub director: Vec<TagEntry>,
+    #[serde(rename = "Writer", skip_serializing_if = "Vec::is_empty")]
+    pub writer: Vec<TagEntry>,
+    /// The cast. Plex names the element after the credit, not the person.
+    #[serde(rename = "Role", skip_serializing_if = "Vec::is_empty")]
+    pub role: Vec<TagEntry>,
+    #[serde(rename = "Producer", skip_serializing_if = "Vec::is_empty")]
+    pub producer: Vec<TagEntry>,
+}
+
+/// A genre, a country or a credit.
+///
+/// In a lookup every attribute that applies is present; in a listing only `tag`, because
+/// that is all the reference sends there. Which form comes out depends on what the query
+/// selected, so the two endpoints share this type.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagEntry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    /// The listing filter that selects this tag, for example `genre=38`. Clients follow it
+    /// as is rather than building it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    pub tag: String,
+    /// The metadata provider's key for a person.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag_key: Option<String>,
+    /// The character an actor plays.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thumb: Option<String>,
+}
+
+impl TagEntry {
+    /// `field` is the listing filter's name for this kind — `actor` for a `Role` element,
+    /// which is the one place the two names differ.
+    fn from_graphql(tag: &GqlTag, field: &str, role: Option<&str>) -> Self {
+        let id = tag.database_id();
+        Self {
+            id,
+            filter: id.map(|id| format!("{field}={id}")),
+            tag: tag.name.clone(),
+            tag_key: tag.provider_key.clone(),
+            role: role.map(ToOwned::to_owned),
+            thumb: tag.thumb_url.clone(),
+        }
+    }
+
+    /// A cast entry. In a lookup it always carries `role`, as the reference's does: the
+    /// character's name with an ASCII first letter capitalized, or empty when the source
+    /// names none.
+    fn from_cast_member(member: &GqlCastMember) -> Self {
+        let mut entry = Self::from_graphql(&member.person, "actor", None);
+        if entry.id.is_some() {
+            entry.role = Some(credited_character(
+                member.character.as_deref().unwrap_or(""),
+            ));
+        }
+        entry
+    }
+
+    fn all(tags: &[GqlTag], field: &str) -> Vec<Self> {
+        tags.iter()
+            .map(|tag| Self::from_graphql(tag, field, None))
+            .collect()
+    }
 }
 
 /// One encoding of an item.
@@ -461,6 +536,12 @@ impl MetadataEntry {
             added_at: item.added_at,
             updated_at: item.updated_at,
             media: item.versions.iter().map(MediaEntry::from_graphql).collect(),
+            genre: TagEntry::all(&item.genres, "genre"),
+            country: TagEntry::all(&item.countries, "country"),
+            director: TagEntry::all(&item.directors, "director"),
+            writer: TagEntry::all(&item.writers, "writer"),
+            role: item.cast.iter().map(TagEntry::from_cast_member).collect(),
+            producer: TagEntry::all(&item.producers, "producer"),
         })
     }
 }
@@ -523,6 +604,22 @@ impl StreamEntry {
             bitrate: kilobits(stream.bitrate),
             language: stream.language.clone(),
         }
+    }
+}
+
+/// A character's name as the reference publishes it: the first letter capitalized when it is
+/// ASCII, everything else untouched.
+///
+/// Measured on 25 credits the source stores in lower case, all capitalized on the way out —
+/// `actor` becomes `Actor` — while `čarodějobijec`, `министр` and `(uncredited)` come back as
+/// stored. The official API keeps the source text; this is presentation.
+fn credited_character(stored: &str) -> String {
+    let mut characters = stored.chars();
+    match characters.next() {
+        Some(first) if first.is_ascii_lowercase() => {
+            first.to_ascii_uppercase().to_string() + characters.as_str()
+        }
+        _ => stored.to_owned(),
     }
 }
 
@@ -608,6 +705,16 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
+
+    #[test]
+    fn a_characters_ascii_first_letter_is_capitalized_and_nothing_else() {
+        assert_eq!(credited_character("actor"), "Actor");
+        assert_eq!(credited_character("self - host"), "Self - host");
+        assert_eq!(credited_character("Frank Martin"), "Frank Martin");
+        assert_eq!(credited_character("čarodějobijec"), "čarodějobijec");
+        assert_eq!(credited_character("(uncredited)"), "(uncredited)");
+        assert_eq!(credited_character(""), "");
+    }
 
     #[test]
     fn labels_resolution_by_width_as_the_reference_does() {

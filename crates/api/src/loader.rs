@@ -11,7 +11,7 @@ use std::sync::Arc;
 use async_graphql::dataloader::Loader;
 use open_plex_core::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use open_plex_core::metadata::{
-    MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem, MetadataRepository,
+    ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem, MetadataRepository,
 };
 use open_plex_core::{MediaId, PartId, RatingKey, SectionId};
 
@@ -240,5 +240,35 @@ impl Loader<RatingKey> for LeafCountLoader {
     ) -> Result<HashMap<RatingKey, Self::Value>, Self::Error> {
         let counts = self.repository.leaf_counts(keys).await.map_err(Arc::new)?;
         Ok(counts.into_iter().collect())
+    }
+}
+
+/// Loads the tags of several items in one call: genres, countries and credits together.
+#[derive(Debug, Clone)]
+pub struct TagsLoader {
+    repository: Arc<dyn MetadataRepository>,
+}
+
+impl TagsLoader {
+    pub const fn new(repository: Arc<dyn MetadataRepository>) -> Self {
+        Self { repository }
+    }
+}
+
+impl Loader<RatingKey> for TagsLoader {
+    type Value = Vec<ItemTag>;
+    type Error = Shared<MetadataError>;
+
+    async fn load(
+        &self,
+        keys: &[RatingKey],
+    ) -> Result<HashMap<RatingKey, Self::Value>, Self::Error> {
+        let tags = self.repository.tags_for(keys).await.map_err(Arc::new)?;
+
+        let mut grouped: HashMap<RatingKey, Self::Value> = HashMap::new();
+        for tag in tags {
+            grouped.entry(tag.item_id).or_default().push(tag);
+        }
+        Ok(grouped)
     }
 }

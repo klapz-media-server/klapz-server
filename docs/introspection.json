@@ -19,6 +19,45 @@
         },
         {
           "kind": "OBJECT",
+          "name": "CastMember",
+          "description": null,
+          "fields": [
+            {
+              "name": "person",
+              "description": "Who plays.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Tag",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "character",
+              "description": "The character played, as the metadata source credits it — sometimes several, as in\n`Homer Simpson / Barney Gumble`. Null when the source does not say.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
           "name": "Episode",
           "description": null,
           "fields": [
@@ -258,6 +297,146 @@
                     "ofType": {
                       "kind": "OBJECT",
                       "name": "MediaVersion",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "directors",
+              "description": "People credited as director.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Tag",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "writers",
+              "description": "People credited as writer.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Tag",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cast",
+              "description": "The episode's own cast, guest stars included, in billing order, each with the character played.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "CastMember",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "producers",
+              "description": "People credited as producer.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Tag",
                       "ofType": null
                     }
                   }
@@ -1109,6 +1288,24 @@
                 "kind": "SCALAR",
                 "name": "Int",
                 "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "tags",
+              "description": "Keep only items carrying the named tags. Every condition must hold.",
+              "type": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "INPUT_OBJECT",
+                    "name": "TagFilterInput",
+                    "ofType": null
+                  }
+                }
               },
               "defaultValue": null
             }
@@ -2471,6 +2668,216 @@
               },
               "isDeprecated": false,
               "deprecationReason": null
+            },
+            {
+              "name": "genres",
+              "description": "Genres, in the library's metadata language, most significant first.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Tag",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "countries",
+              "description": "Countries of production.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Tag",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "directors",
+              "description": "People credited as director.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Tag",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "writers",
+              "description": "People credited as writer.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Tag",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cast",
+              "description": "The cast, in billing order, each with the character played.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "CastMember",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "producers",
+              "description": "People credited as producer.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Tag",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
             }
           ],
           "inputFields": null,
@@ -2563,6 +2970,11 @@
             {
               "kind": "OBJECT",
               "name": "MediaStream",
+              "ofType": null
+            },
+            {
+              "kind": "OBJECT",
+              "name": "Tag",
               "ofType": null
             }
           ]
@@ -3881,6 +4293,111 @@
               "deprecationReason": null
             },
             {
+              "name": "genres",
+              "description": "Genres, in the library's metadata language, most significant first.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Tag",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "countries",
+              "description": "Countries of production.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Tag",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cast",
+              "description": "The series' regular cast, in billing order. Each episode carries its own, guest\nstars included.",
+              "args": [
+                {
+                  "name": "first",
+                  "description": "Return at most this many, in billing order.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "CastMember",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "stats",
               "description": "Aggregates over the contents of this series.",
               "args": [],
@@ -3987,6 +4504,203 @@
           "inputFields": null,
           "interfaces": null,
           "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "Tag",
+          "description": null,
+          "fields": [
+            {
+              "name": "id",
+              "description": "Globally unique, opaque identifier. Pass it to `node` to refetch this tag, or to an\nitem filter to list what carries it.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "kind",
+              "description": "What the tag classifies or credits.\n\nA person credited in two roles is two tags: the writer and the producer are filtered\non separately, because \"films she wrote\" is not \"films she produced\".",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "TagType",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "name",
+              "description": "The genre, the country, or the person's name.\n\nNot unique among people: two people can share a name, and `providerKey` tells them\napart.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "providerKey",
+              "description": "The metadata provider's identifier for a person. Null for genres and countries, and\nfor the people the provider does not know.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "thumbUrl",
+              "description": "A portrait of the person, hosted by the metadata provider. Null for genres and\ncountries.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [
+            {
+              "kind": "INTERFACE",
+              "name": "Node",
+              "ofType": null
+            }
+          ],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "TagFilterInput",
+          "description": "Keeps items carrying at least one of the named tags of one kind.\n\n`ids` and `names` combine with `OR`, so a condition can mix both. Several conditions in\none filter combine with `AND`: \"a comedy and a drama\" is two conditions, \"a comedy or a\ndrama\" is one.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "kind",
+              "description": "The kind of tag to match.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "TagType",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "ids",
+              "description": "Tags by identifier, as returned in `Tag.id`.",
+              "type": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "ID",
+                    "ofType": null
+                  }
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "names",
+              "description": "Tags by name, matched exactly and ignoring ASCII case only: `ACTION` matches\n`Action`, but `COMÉDIE` does not match `Comédie`, and spaces are not trimmed. A name\nshared by two people matches both.",
+              "type": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "TagType",
+          "description": "What a tag classifies or credits.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "GENRE",
+              "description": "A genre, in the library's metadata language: `Comédie` in a French library.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "COUNTRY",
+              "description": "A country of production.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DIRECTOR",
+              "description": "A person credited as director.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "WRITER",
+              "description": "A person credited as writer.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ACTOR",
+              "description": "A person credited in the cast.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PRODUCER",
+              "description": "A person credited as producer.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
           "possibleTypes": null
         },
         {

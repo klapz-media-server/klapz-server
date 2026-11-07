@@ -13,12 +13,12 @@ use http_body_util::BodyExt;
 use open_plex_api::{build_schema, ApiContext};
 use open_plex_api_plex::{router, PlexState};
 use open_plex_core::metadata::{
-    ItemKind, MediaFile, MediaStream, MediaVersion, MetadataItem, StreamKind,
+    ItemKind, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataItem, StreamKind, Tag, TagKind,
 };
 use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
 use open_plex_core::{
     Accounts, Credential, LibrarySection, MediaId, PartId, Principal, RatingKey, Scope, SectionId,
-    SectionKind, SectionRoot, ServerCapabilities, ServerIdentity, StreamId,
+    SectionKind, SectionRoot, ServerCapabilities, ServerIdentity, StreamId, TagId,
 };
 use serde_json::Value;
 use tower::ServiceExt;
@@ -552,8 +552,145 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
         InMemoryMetadata::new(vec![
             avatar, barbarella, show, season, episode, half_loop, untitled, hello,
         ])
-        .with_media(vec![version], vec![file], vec![stream]),
+        .with_media(vec![version], vec![file], vec![stream])
+        .with_tags(tags()),
     )
+}
+
+/// One attached tag: the item, then the tag's id, kind and name, the provider key and the
+/// portrait path of a person, and the character an actor plays.
+type Attached = (
+    i64,
+    i64,
+    TagKind,
+    &'static str,
+    Option<&'static str>,
+    Option<&'static str>,
+    Option<&'static str>,
+);
+
+/// The Transporter's tags as the reference server publishes them, attached to the film, and
+/// an episode's director. Four of the twenty-six in the cast: enough to see a listing cut.
+const TAGS: &[Attached] = &[
+    (100, 38, TagKind::Genre, "Action", None, None, None),
+    (100, 198, TagKind::Genre, "Crime", None, None, None),
+    (100, 39, TagKind::Genre, "Thriller", None, None, None),
+    (
+        100,
+        189_878,
+        TagKind::Country,
+        "United States of America",
+        None,
+        None,
+        None,
+    ),
+    (100, 10_097, TagKind::Country, "France", None, None, None),
+    (
+        100,
+        623_027,
+        TagKind::Director,
+        "Corey Yuen",
+        Some("5d77682d103a2d001f565d0f"),
+        Some("8/people/8a2234c508d280ed4c32b2b77b500f3d"),
+        None,
+    ),
+    (
+        100,
+        473_529,
+        TagKind::Writer,
+        "Luc Besson",
+        Some("5d776824103a2d001f563ac4"),
+        Some("4/people/40d0cdeec61238c85a109bdc72667fbd"),
+        None,
+    ),
+    (
+        100,
+        473_530,
+        TagKind::Writer,
+        "Robert Mark Kamen",
+        Some("5d776824103a2d001f563b3b"),
+        Some("d/people/dce9a97d3f59278bbb39ea025e32c41f"),
+        None,
+    ),
+    (
+        100,
+        472_942,
+        TagKind::Actor,
+        "Jason Statham",
+        Some("5d776826e6d55c002040af58"),
+        Some("c/people/c540bdd39873ee8e8612b0af06fc0d4c"),
+        Some("Frank Martin"),
+    ),
+    (
+        100,
+        603_622,
+        TagKind::Actor,
+        "Shu Qi",
+        Some("5d77682b961905001eb92495"),
+        Some("0/people/08390c853f95fd5804434217ba9725ce"),
+        Some("Lai"),
+    ),
+    (
+        100,
+        480_672,
+        TagKind::Actor,
+        "François Berléand",
+        Some("5d77682a5af944001f1f7834"),
+        Some("f/people/ffd18db93fb63a9808e4758a6ae1e4fb"),
+        Some("Tarconi"),
+    ),
+    (
+        100,
+        783_495,
+        TagKind::Actor,
+        "Matt Schulze",
+        Some("5d77682d4de0ee001fcc9d0d"),
+        Some("1/people/1ccf176b4e93793e48d51085b9372894"),
+        Some("Wall Street"),
+    ),
+    (
+        100,
+        475_888,
+        TagKind::Producer,
+        "Luc Besson",
+        Some("5d776824103a2d001f563ac4"),
+        Some("4/people/40d0cdeec61238c85a109bdc72667fbd"),
+        None,
+    ),
+    (
+        100,
+        720_202,
+        TagKind::Producer,
+        "Steven Chasman",
+        Some("5d77682b961905001eb9251c"),
+        Some("3/people/34ec649e4f0fd848499d4a2b29be78f2"),
+        None,
+    ),
+    (
+        202,
+        705_517,
+        TagKind::Director,
+        "David Silverman",
+        Some("5d7768267e9a3c0020c6ab00"),
+        None,
+        None,
+    ),
+];
+
+fn tags() -> Vec<ItemTag> {
+    TAGS.iter()
+        .map(|&(item, id, kind, name, key, thumb, role)| ItemTag {
+            item_id: RatingKey::new(item),
+            tag: Tag {
+                id: TagId::new(id),
+                kind,
+                name: name.to_owned(),
+                provider_key: key.map(ToOwned::to_owned),
+                thumb_url: thumb.map(|path| format!("https://metadata-static.plex.tv/{path}.jpg")),
+            },
+            role: role.map(ToOwned::to_owned),
+        })
+        .collect()
 }
 
 fn item(id: i64, section: i64, kind: ItemKind, parent: Option<i64>, title: &str) -> MetadataItem {
@@ -1047,7 +1184,7 @@ async fn search_matches_a_prefix_of_any_word() {
 async fn an_unsupported_filter_is_refused_rather_than_ignored() {
     // Honoring the window and dropping the filter would answer with the whole library and
     // let the client present it as the filtered result.
-    let (status, _) = get_from(items_app(), "/library/sections/4/all?genre=4025", None).await;
+    let (status, _) = get_from(items_app(), "/library/sections/4/all?collection=4058", None).await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
 
     // A parameter that is not a filter at all stays tolerated, as a real server tolerates it.
@@ -1103,4 +1240,123 @@ async fn the_jump_bar_buckets_seasons_by_their_stored_title() {
         .expect("buckets");
     let titles: Vec<&str> = buckets.iter().filter_map(|b| b["title"].as_str()).collect();
     assert!(titles.contains(&"S"), "{titles:?}");
+}
+
+#[tokio::test]
+async fn a_listing_carries_the_first_tag_names_only() {
+    // Captured on The Transporter: three genres, four of the cast credited here, and the
+    // listing keeps two genres and three actors, by name alone, and no producer.
+    let body = listing("/library/sections/4/all").await;
+    let film = &body["MediaContainer"]["Metadata"][0];
+
+    let names = |element: &str| -> Vec<Value> {
+        film[element]
+            .as_array()
+            .map(|tags| tags.iter().map(|tag| tag["tag"].clone()).collect())
+            .unwrap_or_default()
+    };
+    assert_eq!(names("Genre"), ["Action", "Crime"]);
+    assert_eq!(names("Country"), ["United States of America", "France"]);
+    assert_eq!(names("Director"), ["Corey Yuen"]);
+    assert_eq!(names("Writer"), ["Luc Besson", "Robert Mark Kamen"]);
+    assert_eq!(
+        names("Role"),
+        ["Jason Statham", "Shu Qi", "François Berléand"]
+    );
+    assert!(film.get("Producer").is_none(), "{film}");
+
+    let first_role = film["Role"][0].as_object().expect("a role");
+    assert_eq!(first_role.len(), 1, "{first_role:?}");
+}
+
+#[tokio::test]
+async fn a_lookup_carries_every_tag_with_its_identity() {
+    let body = listing("/library/metadata/100").await;
+    let film = &body["MediaContainer"]["Metadata"][0];
+
+    assert_eq!(film["Genre"].as_array().map(Vec::len), Some(3));
+    assert_eq!(film["Role"].as_array().map(Vec::len), Some(4));
+    assert_eq!(
+        film["Genre"][0],
+        serde_json::json!({"id": 38, "filter": "genre=38", "tag": "Action"})
+    );
+    // Luc Besson the producer is not Luc Besson the writer: another tag, another id.
+    assert_eq!(film["Producer"][0]["filter"], "producer=475888");
+    assert_eq!(film["Writer"][0]["filter"], "writer=473529");
+    // The one element whose filter is not named after it.
+    assert_eq!(film["Role"][0]["filter"], "actor=472942");
+    assert_eq!(film["Role"][0]["role"], "Frank Martin");
+    // The listing form never carries one.
+    let listed = listing("/library/sections/4/all").await;
+    assert!(listed["MediaContainer"]["Metadata"][0]["Role"][0]
+        .get("role")
+        .is_none());
+}
+
+#[tokio::test]
+async fn a_lookup_writes_tags_as_the_reference_does_in_xml() {
+    // Byte for byte against the capture of The Transporter on the reference server.
+    let (_, body) = get_from(items_app(), "/library/metadata/100", None).await;
+    for line in [
+        r#"<Genre id="38" filter="genre=38" tag="Action" />"#,
+        r#"<Country id="189878" filter="country=189878" tag="United States of America" />"#,
+        r#"<Role id="472942" filter="actor=472942" tag="Jason Statham" tagKey="5d776826e6d55c002040af58" role="Frank Martin" thumb="https://metadata-static.plex.tv/c/people/c540bdd39873ee8e8612b0af06fc0d4c.jpg" />"#,
+        r#"<Producer id="720202" filter="producer=720202" tag="Steven Chasman" tagKey="5d77682b961905001eb9251c" thumb="https://metadata-static.plex.tv/3/people/34ec649e4f0fd848499d4a2b29be78f2.jpg" />"#,
+    ] {
+        assert!(body.contains(line), "missing {line} in {body}");
+    }
+
+    // Element order after the media, as captured.
+    let order: Vec<usize> = [
+        "<Media ",
+        "<Genre ",
+        "<Country ",
+        "<Director ",
+        "<Writer ",
+        "<Role ",
+        "<Producer ",
+    ]
+    .iter()
+    .map(|element| body.find(element).expect(element))
+    .collect();
+    assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{body}");
+}
+
+#[tokio::test]
+async fn an_episode_listed_under_its_season_carries_its_crew() {
+    let body = listing("/library/metadata/201/children").await;
+    let episode = &body["MediaContainer"]["Metadata"][0];
+    assert_eq!(episode["Director"][0]["tag"], "David Silverman");
+    assert!(episode["Director"][0].get("id").is_none(), "{episode}");
+    assert!(episode.get("Producer").is_none(), "{episode}");
+}
+
+#[tokio::test]
+async fn filters_by_tag_id_or_name() {
+    let total = |body: Value| body["MediaContainer"]["totalSize"].clone();
+
+    assert_eq!(total(listing("/library/sections/4/all?genre=38").await), 1);
+    // Measured on the reference: a name works where an id does, ASCII case aside.
+    assert_eq!(
+        total(listing("/library/sections/4/all?genre=action").await),
+        1
+    );
+    assert_eq!(
+        total(listing("/library/sections/4/all?actor=472942").await),
+        1
+    );
+    // A comma is an `OR`, a repeated parameter an `AND`.
+    assert_eq!(
+        total(listing("/library/sections/4/all?genre=999,38").await),
+        1
+    );
+    assert_eq!(
+        total(listing("/library/sections/4/all?genre=38&genre=999").await),
+        0
+    );
+    // A writer's id does not select under `producer`, even for the same person.
+    assert_eq!(
+        total(listing("/library/sections/4/all?producer=473529").await),
+        0
+    );
 }

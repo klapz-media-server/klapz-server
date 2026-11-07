@@ -264,6 +264,15 @@ Milestone 1 is complete.
 
 Then: iterate endpoint by endpoint, following `docs/ENDPOINTS.md`.
 
+Since then:
+
+- ✅ **tags** — genres, countries, directors, writers, cast and producers, imported with
+  Plex's own ids (292,549 tags, 3,564,487 attachments) and published on both surfaces: full on
+  `/library/metadata/{ids}`, cut to the listing form on `/all`, `/children` and
+  `/grandchildren`; the six tag filters on `/all`, by id or by name. Measured rules and the one
+  divergence (listings derived from the tags, not from the reference's stale cache) are in
+  `docs/spec-gaps.md`.
+
 ## Reference server
 
 A live Plex server runs at `http://127.0.0.1:32400`. It is the arbiter for every behavioral
@@ -306,6 +315,12 @@ absent.
 
 ## Open questions
 
+- **An item's tags are plain lists on the official API, not connections.** `Movie.cast`,
+  `genres` and the rest are `[CastMember!]!` / `[Tag!]!` with a `first` argument, like
+  `versions` before them, which departs from "lists are cursor connections". The reason: they
+  are loaded for a whole page of items in one batched query, and a cursor per item would cost
+  a query per item. A series can carry 200 credits, so the question is real; it needs a
+  decision either way.
 - **Stream profiles are not imported.** `Media.audioProfile`, `videoProfile` and the
   `audioCodec` composition (`dca` + profile `ma` → `dca-ma`) all come from one value packed
   inside `media_streams.extra_data`. Unpacking packed columns into real ones at import is

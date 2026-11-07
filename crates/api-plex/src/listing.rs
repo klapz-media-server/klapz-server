@@ -15,6 +15,9 @@
 use std::fmt::Write as _;
 
 use async_graphql::{Name, Value};
+use open_plex_api::tag::TAG_TYPE;
+use open_plex_api::GlobalId;
+use open_plex_core::metadata::TagCondition;
 
 /// Filters a film library advertises, captured from the reference server's own
 /// `Meta/Type/Filter` declaration.
@@ -70,6 +73,26 @@ pub enum ListingError {
     UnsupportedFilter(String),
     #[error("the `{operator}` operator on `{field}` is not implemented")]
     UnsupportedOperator { field: String, operator: String },
+    /// More alternatives in one tag filter than the server accepts. The reference has no
+    /// such ceiling; we do, because every value becomes a bound parameter.
+    #[error("the `{field}` filter lists {count} values, past the maximum of {max}", max = TagCondition::MAX_VALUES)]
+    TooManyValues { field: String, count: usize },
+}
+
+/// The filters that select by tag, with the schema's name for each kind.
+///
+/// `actor` is the one whose name differs from its element: the reference emits `<Role>` and
+/// filters with `actor=`.
+const fn tag_type(field: &str) -> Option<&'static str> {
+    Some(match field.as_bytes() {
+        b"genre" => "GENRE",
+        b"country" => "COUNTRY",
+        b"director" => "DIRECTOR",
+        b"writer" => "WRITER",
+        b"actor" => "ACTOR",
+        b"producer" => "PRODUCER",
+        _ => return None,
+    })
 }
 
 /// How a filter compares.
@@ -140,6 +163,61 @@ pub struct Filters {
     pub content_rating: Option<String>,
     pub studio_contains: Option<String>,
     pub min_width: Option<i32>,
+    /// One entry per tag parameter; several combine with `AND`.
+    pub tags: Vec<TagFilter>,
+}
+
+/// One tag parameter: `genre=38,Crime` is one filter with an id and a name.
+#[derive(Debug, PartialEq, Eq)]
+pub struct TagFilter {
+    /// The schema's enum value for the kind.
+    pub kind: &'static str,
+    pub ids: Vec<i64>,
+    pub names: Vec<String>,
+}
+
+impl TagFilter {
+    /// Reads a comma list, where an integer is an id and anything else a name.
+    ///
+    /// The rule the reference follows, measured: `genre=038` is genre 38, while `genre=38.0`,
+    /// `genre=%2038` and `genre=Act` match nothing, being names no genre has. A name is
+    /// passed through untouched; the matching rule lives in storage.
+    fn parse(kind: &'static str, value: &str) -> Self {
+        let mut filter = Self {
+            kind,
+            ids: Vec::new(),
+            names: Vec::new(),
+        };
+        for part in value.split(',') {
+            match part.parse::<i64>() {
+                Ok(id) => filter.ids.push(id),
+                Err(_) => filter.names.push(part.to_owned()),
+            }
+        }
+        filter
+    }
+
+    fn len(&self) -> usize {
+        self.ids.len() + self.names.len()
+    }
+
+    fn to_graphql(&self) -> Value {
+        let mut fields = async_graphql::indexmap::IndexMap::new();
+        fields.insert(Name::new("kind"), Value::Enum(Name::new(self.kind)));
+        if !self.ids.is_empty() {
+            let ids = self
+                .ids
+                .iter()
+                .map(|id| Value::String(GlobalId::encode(TAG_TYPE, *id)))
+                .collect();
+            fields.insert(Name::new("ids"), Value::List(ids));
+        }
+        if !self.names.is_empty() {
+            let names = self.names.iter().cloned().map(Value::String).collect();
+            fields.insert(Name::new("names"), Value::List(names));
+        }
+        Value::Object(fields)
+    }
 }
 
 impl Filters {
@@ -173,6 +251,12 @@ impl Filters {
         }
         if let Some(width) = self.min_width {
             set("minWidth", Value::Number(width.into()));
+        }
+        if !self.tags.is_empty() {
+            set(
+                "tags",
+                Value::List(self.tags.iter().map(TagFilter::to_graphql).collect()),
+            );
         }
 
         if fields.is_empty() {
@@ -244,6 +328,20 @@ pub fn parse(pairs: &[(String, String)]) -> Result<ListingRequest, ListingError>
             });
         };
 
+        if let (Some(kind), Operator::Equals) = (tag_type(field), operator) {
+            // The one family where both combinations are expressible: a comma is an `OR`
+            // inside one tag condition, a repeated parameter another condition, `AND`ed.
+            let filter = TagFilter::parse(kind, value);
+            if filter.len() > TagCondition::MAX_VALUES {
+                return Err(ListingError::TooManyValues {
+                    field: field.to_owned(),
+                    count: filter.len(),
+                });
+            }
+            request.filters.tags.push(filter);
+            continue;
+        }
+
         // A comma means OR, which `ItemFilterInput` cannot express: each of its fields is one
         // value combined with AND.
         if value.contains(',') {
@@ -314,6 +412,12 @@ pub fn supported_filters() -> String {
         "contentRating",
         "studio",
         "resolution",
+        "genre",
+        "country",
+        "director",
+        "writer",
+        "actor",
+        "producer",
     ] {
         if !out.is_empty() {
             out.push_str(", ");
@@ -427,7 +531,7 @@ mod tests {
     fn an_advertised_filter_we_cannot_honor_is_refused_not_dropped() {
         // The whole point: dropping `genre` would answer with the entire library and let the
         // client present it as the filtered result.
-        for field in ["genre", "actor", "collection", "label", "unwatched", "hdr"] {
+        for field in ["collection", "label", "unwatched", "hdr"] {
             let error = parse(&pairs(&[(field, "1")])).expect_err("refused");
             assert!(
                 matches!(&error, ListingError::UnsupportedFilter(name) if name == field),
@@ -483,6 +587,92 @@ mod tests {
         // A parameter that merely starts with the same letters is still none of our business.
         assert!(parse(&pairs(&[("yearbook", "1")])).is_ok());
         assert!(parse(&pairs(&[("titleish", "x")])).is_ok());
+    }
+
+    #[test]
+    fn a_tag_value_is_an_id_when_it_is_an_integer_and_a_name_otherwise() {
+        // Measured: `genre=038` is genre 38; `genre=38.0` and `genre=%2038` match nothing.
+        let filters = parse(&pairs(&[("genre", "038,Crime,38.0, 38")]))
+            .expect("parses")
+            .filters;
+        assert_eq!(
+            filters.tags,
+            vec![TagFilter {
+                kind: "GENRE",
+                ids: vec![38],
+                names: vec!["Crime".to_owned(), "38.0".to_owned(), " 38".to_owned()],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_comma_is_or_and_a_repeat_is_and_for_tags() {
+        // Measured: `genre=38,198` returns 1,629 films on the reference and
+        // `genre=38&genre=198` 404.
+        let filters = parse(&pairs(&[("genre", "38,198"), ("genre", "74")]))
+            .expect("parses")
+            .filters;
+        assert_eq!(filters.tags.len(), 2);
+        assert_eq!(filters.tags[0].ids, vec![38, 198]);
+        assert_eq!(filters.tags[1].ids, vec![74]);
+    }
+
+    #[test]
+    fn each_tag_filter_names_its_kind() {
+        for (field, kind) in [
+            ("genre", "GENRE"),
+            ("country", "COUNTRY"),
+            ("director", "DIRECTOR"),
+            ("writer", "WRITER"),
+            ("actor", "ACTOR"),
+            ("producer", "PRODUCER"),
+        ] {
+            let filters = parse(&pairs(&[(field, "1")])).expect("parses").filters;
+            assert_eq!(filters.tags[0].kind, kind, "{field}");
+        }
+    }
+
+    #[test]
+    fn a_tag_operator_we_cannot_honor_is_refused() {
+        // `genre!=38` is a negation the filter input cannot express.
+        assert!(parse(&pairs(&[("genre!=", "38")])).is_err());
+    }
+
+    #[test]
+    fn too_many_tag_values_are_refused() {
+        let value = vec!["1"; TagCondition::MAX_VALUES + 1].join(",");
+        let error = parse(&pairs(&[("actor", &value)])).expect_err("refused");
+        assert!(
+            matches!(error, ListingError::TooManyValues { .. }),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_tag_filter_renders_ids_as_global_ids() {
+        let filters = parse(&pairs(&[("genre", "38,Crime")]))
+            .expect("parses")
+            .filters;
+        let Value::Object(fields) = filters.to_graphql(None) else {
+            panic!("an object");
+        };
+        let Some(Value::List(tags)) = fields.get("tags") else {
+            panic!("a tag list");
+        };
+        let Value::Object(tag) = &tags[0] else {
+            panic!("a tag condition");
+        };
+        assert_eq!(tag.get("kind"), Some(&Value::Enum(Name::new("GENRE"))));
+        assert_eq!(
+            tag.get("ids"),
+            Some(&Value::List(vec![Value::String(GlobalId::encode(
+                TAG_TYPE, 38
+            ))]))
+        );
+        assert_eq!(
+            tag.get("names"),
+            Some(&Value::List(vec![Value::String("Crime".to_owned())]))
+        );
     }
 
     #[test]

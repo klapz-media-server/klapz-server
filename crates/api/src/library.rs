@@ -209,7 +209,7 @@ impl Library {
         )]
         offset: Option<u32>,
     ) -> Result<ItemConnection> {
-        let item_query = self.item_query(filter, order_by, direction);
+        let item_query = self.item_query(filter, order_by, direction)?;
         let skip = u64::from(offset.unwrap_or(0));
 
         query(
@@ -239,32 +239,37 @@ impl Library {
     }
 
     /// Aggregates over the contents of this library.
+    // async-graphql rejects a synchronous resolver, and this one awaits nothing.
+    #[allow(clippy::unused_async)]
     async fn stats(
         &self,
         #[graphql(desc = "Count only the items this filter keeps.")] filter: Option<
             ItemFilterInput,
         >,
-    ) -> LibraryStats {
-        LibraryStats {
-            query: self.item_query(filter, None, None),
-        }
+    ) -> Result<LibraryStats> {
+        Ok(LibraryStats {
+            query: self.item_query(filter, None, None)?,
+        })
     }
 }
 
 impl Library {
     /// Builds the storage query from the arguments a client supplied.
+    ///
+    /// Fails on a tag condition that cannot be honored — a malformed identifier, or one
+    /// naming nothing — rather than dropping it and answering with more than was asked.
     fn item_query(
         &self,
         filter: Option<ItemFilterInput>,
         order_by: Option<ItemOrder>,
         direction: Option<SortDirection>,
-    ) -> ItemQuery {
-        ItemQuery::new(self.section.id)
-            .filtered(filter.unwrap_or_default().into())
+    ) -> Result<ItemQuery> {
+        Ok(ItemQuery::new(self.section.id)
+            .filtered(filter.unwrap_or_default().try_into()?)
             .sorted_by(
                 order_by.unwrap_or_default().into(),
                 direction.unwrap_or_default().into(),
-            )
+            ))
     }
 }
 

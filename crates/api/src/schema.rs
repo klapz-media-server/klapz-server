@@ -10,18 +10,19 @@ use async_graphql::{
 use open_plex_core::library::LibraryRepository;
 use open_plex_core::metadata::{MetadataRepository, SearchQuery};
 use open_plex_core::page::{Cursor, Window, WindowError};
-use open_plex_core::{MediaId, PartId, RatingKey, SectionId, StreamId};
+use open_plex_core::{MediaId, PartId, RatingKey, SectionId, StreamId, TagId};
 
 use crate::cursor::OpaqueCursor;
 use crate::item::{Episode, Item, Movie, Season, Show, ITEM_TYPE};
 use crate::library::{Library, Root, LIBRARY_TYPE, ROOT_TYPE};
 use crate::loader::{
     ChildCountLoader, FilesLoader, ItemLoader, LeafCountLoader, LibraryLoader, RootsLoader,
-    StreamsLoader, VersionsLoader,
+    StreamsLoader, TagsLoader, VersionsLoader,
 };
 use crate::media::{File, Track, Version, FILE_TYPE, STREAM_TYPE, VERSION_TYPE};
 use crate::node::GlobalId;
 use crate::server::{Server, SERVER_TYPE};
+use crate::tag::{TagObject, TAG_TYPE};
 
 pub type ApiSchema = Schema<Query, EmptyMutation, EmptySubscription>;
 
@@ -66,6 +67,8 @@ pub enum Node {
     MediaFile(File),
     /// One track inside a file.
     MediaStream(Track),
+    /// A genre, a country, or a person in one credit role.
+    Tag(TagObject),
 }
 
 /// Default page size when the client requests neither end of a range.
@@ -128,6 +131,10 @@ impl Query {
             STREAM_TYPE => Ok(load_track(context, StreamId::new(global.key))
                 .await?
                 .map(Node::MediaStream)),
+            TAG_TYPE => Ok(metadata(context)?
+                .tag(TagId::new(global.key))
+                .await?
+                .map(|tag| Node::Tag(TagObject(tag)))),
             other => Err(async_graphql::Error::new(format!(
                 "`{other}` is not an identifiable type"
             ))),
@@ -389,8 +396,9 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
             tokio::spawn,
         ))
         .data(DataLoader::new(
-            LeafCountLoader::new(metadata),
+            LeafCountLoader::new(Arc::clone(&metadata)),
             tokio::spawn,
         ))
+        .data(DataLoader::new(TagsLoader::new(metadata), tokio::spawn))
         .finish()
 }

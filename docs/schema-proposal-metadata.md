@@ -173,29 +173,47 @@ that is what the transcoder command line needs.
 
 ### `tag` and `item_tag`
 
+**Implemented** in migration `m0005_tags`, with three corrections to what this section first
+proposed.
+
 Tag values are global; attachment is per item and ordered.
 
 ```sql
 CREATE TABLE tag (
-  id   bigint  PRIMARY KEY,
-  kind varchar NOT NULL,    -- genre|collection|director|writer|actor|producer|country|studio
-  name varchar NOT NULL,
-  UNIQUE (kind, name)
+  id           bigint  PRIMARY KEY,  -- Plex's own id, kept: clients hold it in `filter=genre=38`
+  kind         varchar NOT NULL,     -- genre|country|director|writer|actor|producer
+  name         varchar NOT NULL,
+  name_key     varchar NOT NULL,     -- name with ASCII case folded, what a filter by name matches
+  provider_key varchar NULL,         -- the provider's id for a person: tells homonyms apart
+  thumb_url    varchar NULL          -- a person's portrait
 );
+CREATE INDEX idx_tag_name ON tag (kind, name_key);
 
 CREATE TABLE item_tag (
-  metadata_item_id bigint  NOT NULL REFERENCES metadata_item(id) ON DELETE CASCADE,
-  tag_id           bigint  NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
-  position         integer NOT NULL DEFAULT 0,  -- billing order for a cast list
-  role             varchar NULL,                -- character name, for actors
-  PRIMARY KEY (metadata_item_id, tag_id, position)
+  item_id  bigint  NOT NULL REFERENCES metadata_item(id) ON DELETE CASCADE,
+  tag_id   bigint  NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
+  position integer NOT NULL,  -- billing order within the item and the kind
+  role     varchar NULL,      -- character name, for actors only
+  PRIMARY KEY (item_id, tag_id, position)
 );
-CREATE INDEX idx_item_tag_tag ON item_tag (tag_id);
+CREATE INDEX idx_item_tag_tag ON item_tag (tag_id, item_id);
 ```
 
-`UNIQUE (kind, name)` is what Plex lacks: its `tags` table holds `Action`, `Action/Adventure`
-and `Action/Aventure` as separate rows, which is how a genre filter ends up with near-duplicate
-entries.
+The corrections:
+
+- **No `UNIQUE (kind, name)`.** The first draft proposed it as what Plex lacks. The data says
+  otherwise: every same-name group of person tags in the reference — 715 directors, 1,410
+  writers, 11,879 actors, 410 producers — carries a distinct provider key per row. They are
+  homonyms, different people, and the constraint would have merged them. Genres and countries
+  have no duplicates at all. Identity is the id.
+- **No `collection` and no `studio` kind.** A collection is an item of its own in Plex, with its
+  own endpoints and artwork; studio is already a column on the item.
+- **`name_key`.** The reference matches a filter by name ignoring ASCII case only, which is
+  `SQLite`'s `NOCASE`; PostgreSQL's `LOWER` folds Unicode and would match more. Storing the
+  folded form keeps the rule identical on every engine.
+
+Volumes for the 171,018 imported items: 292,549 tags and 3,564,487 attachments. The full
+import, tags included, takes 3 min 26 s on the reference library.
 
 ### `item_external_id`
 
@@ -277,10 +295,13 @@ reading — see `security.md`.
 its own id, metadata language and tags. Nothing should deduplicate by path or title; the only
 thing shared is `guid`, and the only thing keyed on it is `view_state`.
 
-**Tag type coverage is incomplete.** The reference library uses `tag_type` values beyond the
-eight mapped above — 9, 12, 305, 318 all appear in volume. Each needs identifying before the
-importer can claim to be lossless, and the proposal should grow a row per confirmed type rather
-than guessing.
+**Tag type coverage.** The six imported kinds were identified by matching the reference's
+output element by element: `1` is `<Genre>`, `4` `<Director>`, `5` `<Writer>`, `6` `<Role>`,
+`7` `<Producer>`, `8` `<Country>`; `2` is `<Collection>`, left out on purpose. `314` and `316`
+come out as `<Guid>` and `<Rating>`, which belong in `item_external_id` and a ratings table, not
+here. The rest — 9, 10, 12, 305, 312, 313, 315, 317–319, 322–325 — never come out as tag
+elements on a lookup; some feed `<Image>` and `<CommonSenseMedia>`, and none is identified
+individually yet.
 
 **Accounts and rights are ours to design, and must come before `view_state` is usable.** The
 table is specified here because the metadata schema has to account for it, but nothing can be

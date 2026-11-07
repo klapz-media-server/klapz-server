@@ -9,11 +9,11 @@
 
 use std::collections::BTreeMap;
 
-use crate::ids::{MediaId, PartId, RatingKey, SectionId, StreamId};
+use crate::ids::{MediaId, PartId, RatingKey, SectionId, StreamId, TagId};
 use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use crate::metadata::{
-    self, FirstCharacter, ItemQuery, ItemSort, MediaFile, MediaStream, MediaVersion, MetadataError,
-    MetadataItem, MetadataRepository, SearchQuery,
+    self, FirstCharacter, ItemQuery, ItemSort, ItemTag, MediaFile, MediaStream, MediaVersion,
+    MetadataError, MetadataItem, MetadataRepository, SearchQuery, Tag, TagCondition, TagRef,
 };
 use crate::page::{Cursor, Page, Window};
 
@@ -94,6 +94,7 @@ pub struct InMemoryMetadata {
     versions: Vec<MediaVersion>,
     files: Vec<MediaFile>,
     streams: Vec<MediaStream>,
+    tags: Vec<ItemTag>,
 }
 
 impl InMemoryMetadata {
@@ -103,7 +104,30 @@ impl InMemoryMetadata {
             versions: Vec::new(),
             files: Vec::new(),
             streams: Vec::new(),
+            tags: Vec::new(),
         }
+    }
+
+    /// Attaches tags, which are kept in the order given: that order is the billing order.
+    #[must_use]
+    pub fn with_tags(mut self, tags: Vec<ItemTag>) -> Self {
+        self.tags = tags;
+        self
+    }
+
+    /// Whether an item satisfies one tag condition, by the rule storage applies.
+    fn carries(&self, item: RatingKey, condition: &TagCondition) -> bool {
+        self.tags
+            .iter()
+            .filter(|attached| attached.item_id == item && attached.tag.kind == condition.kind)
+            .any(|attached| {
+                condition.any_of.iter().any(|wanted| match wanted {
+                    TagRef::Id(id) => attached.tag.id == *id,
+                    TagRef::Name(name) => {
+                        metadata::tag_name_key(name) == metadata::tag_name_key(&attached.tag.name)
+                    }
+                })
+            })
     }
 
     #[must_use]
@@ -176,6 +200,12 @@ impl InMemoryMetadata {
                             && version.width.is_some_and(|value| value >= width)
                     })
                 })
+            })
+            .filter(|item| {
+                filter
+                    .tags
+                    .iter()
+                    .all(|condition| self.carries(item.id, condition))
             })
             .cloned()
             .collect();
@@ -469,6 +499,23 @@ impl MetadataRepository for InMemoryMetadata {
 
     async fn stream(&self, id: StreamId) -> Result<Option<MediaStream>, MetadataError> {
         Ok(self.streams.iter().find(|item| item.id == id).cloned())
+    }
+
+    async fn tags_for(&self, items: &[RatingKey]) -> Result<Vec<ItemTag>, MetadataError> {
+        Ok(self
+            .tags
+            .iter()
+            .filter(|attached| items.contains(&attached.item_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn tag(&self, id: TagId) -> Result<Option<Tag>, MetadataError> {
+        Ok(self
+            .tags
+            .iter()
+            .find(|attached| attached.tag.id == id)
+            .map(|attached| attached.tag.clone()))
     }
 }
 

@@ -78,6 +78,7 @@ query PlexChildren($id: ID!, $first: Int!, $offset: Int!) {
             ... on Episode {
               ...EpisodeFields
               versions { ...VersionFields files { id path sizeBytes durationMs } }
+              ...ListedEpisodeTags
             }
           }
         }
@@ -110,6 +111,7 @@ query PlexGrandchildren($id: ID!, $first: Int!, $offset: Int!) {
             ... on Episode {
               ...EpisodeFields
               versions { ...VersionFields files { id path sizeBytes durationMs } }
+              ...ListedEpisodeTags
             }
           }
         }
@@ -125,6 +127,7 @@ query PlexGrandchildren($id: ID!, $first: Int!, $offset: Int!) {
             ... on Episode {
               ...EpisodeFields
               versions { ...VersionFields files { id path sizeBytes durationMs } }
+              ...ListedEpisodeTags
             }
           }
         }

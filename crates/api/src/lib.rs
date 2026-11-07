@@ -17,6 +17,7 @@ pub mod media;
 pub mod node;
 pub mod schema;
 pub mod server;
+pub mod tag;
 
 pub use cursor::{CursorError, OpaqueCursor};
 pub use filter::{ItemFilterInput, ItemOrder, ItemType, SortDirection};
@@ -26,3 +27,4 @@ pub use media::{File, Track, Version};
 pub use node::{GlobalId, GlobalIdError};
 pub use schema::{build_schema, ApiContext, ApiSchema, Node, Query};
 pub use server::{Features, Server, Transcoder};
+pub use tag::{CastMember, TagFilterInput, TagObject, TagType};

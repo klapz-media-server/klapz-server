@@ -1,6 +1,6 @@
 //! Library contents: items, their media, and the queries bindings run against them.
 
-use crate::ids::{MediaId, PartId, RatingKey, SectionId, StreamId};
+use crate::ids::{MediaId, PartId, RatingKey, SectionId, StreamId, TagId};
 use crate::page::{CursorKey, Direction, Page, Window};
 
 #[derive(Debug, thiserror::Error)]
@@ -140,6 +140,93 @@ pub struct MediaStream {
     pub external_path: Option<String>,
 }
 
+/// What a tag classifies or credits.
+///
+/// The six the reference server publishes on an item and filters by. Collections are not
+/// among them: a collection is an item of its own, with its own endpoints, and treating it
+/// as a label would leave nowhere to put its artwork and summary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TagKind {
+    Genre,
+    Country,
+    Director,
+    Writer,
+    Actor,
+    Producer,
+}
+
+impl TagKind {
+    /// Whether tags of this kind name a person.
+    ///
+    /// Only people carry a provider key and a portrait, and two of them may share a name:
+    /// the reference library holds 11,879 actor names belonging to more than one person.
+    pub const fn is_person(self) -> bool {
+        !matches!(self, Self::Genre | Self::Country)
+    }
+}
+
+/// A genre, a country, or a person in one credit role.
+///
+/// A person credited in two roles is two tags — Luc Besson the writer and Luc Besson the
+/// producer are distinct rows with distinct ids, as they are in the source — because what a
+/// filter asks for is "films he wrote", not "films he touched".
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tag {
+    pub id: TagId,
+    pub kind: TagKind,
+    pub name: String,
+    /// The metadata provider's identifier for a person, which tells homonyms apart.
+    pub provider_key: Option<String>,
+    /// Portrait of a person, hosted by the metadata provider.
+    pub thumb_url: Option<String>,
+}
+
+/// A tag as attached to one item.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ItemTag {
+    pub item_id: RatingKey,
+    pub tag: Tag,
+    /// The character an actor plays. Never set for any other kind.
+    pub role: Option<String>,
+}
+
+/// Which tag a filter names: by identifier, or by name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TagRef {
+    Id(TagId),
+    /// Matched exactly, ignoring ASCII case only — see [`tag_name_key`].
+    Name(String),
+}
+
+/// Keeps items carrying at least one of the listed tags of one kind.
+///
+/// Several conditions combine with `AND`, the values inside one with `OR`: "a comedy *and* a
+/// drama" is two conditions, "a comedy *or* a drama" is one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagCondition {
+    pub kind: TagKind,
+    pub any_of: Vec<TagRef>,
+}
+
+impl TagCondition {
+    /// How many tags one condition may name.
+    ///
+    /// The list comes from the client and each value becomes a bound parameter, so it needs
+    /// a ceiling like any other client-sized input. Fifty is far past what a filter UI
+    /// builds and far below what an engine's parameter limit tolerates.
+    pub const MAX_VALUES: usize = 50;
+}
+
+/// The form a tag name is matched in.
+///
+/// ASCII case folded and nothing else, which is the reference server's rule: `genre=ACTION`
+/// finds Action, `genre=COMÉDIE` does not find Comédie, and neither accents nor surrounding
+/// spaces are forgiven. It is `SQLite`'s `NOCASE`, made explicit so that an engine whose
+/// `LOWER` understands Unicode does not quietly match more.
+pub fn tag_name_key(name: &str) -> String {
+    name.to_ascii_lowercase()
+}
+
 /// How a listing is ordered.
 ///
 /// Deliberately short. Every variant here is backed by a `NOT NULL` column, which is what
@@ -198,6 +285,8 @@ pub struct ItemFilter {
     /// A resolution filter is a property of the file rather than the item, so it is a join
     /// rather than a column — which is why it is the one filter that can slow a listing.
     pub min_width: Option<i32>,
+    /// Keeps only items carrying the named tags. Each condition must hold.
+    pub tags: Vec<TagCondition>,
 }
 
 impl ItemFilter {
@@ -469,6 +558,18 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
 
     /// One track by id, for a Relay refetch.
     async fn stream(&self, id: StreamId) -> Result<Option<MediaStream>, MetadataError>;
+
+    /// Every tag of several items, in billing order within each item and kind.
+    ///
+    /// The order *across* kinds is unspecified: a consumer groups by kind, and promising one
+    /// would constrain storage for nothing.
+    ///
+    /// All kinds at once: an item page shows genres, cast and crew together, and one query
+    /// for the six is cheaper than six for one each.
+    async fn tags_for(&self, items: &[RatingKey]) -> Result<Vec<ItemTag>, MetadataError>;
+
+    /// One tag by id, for a Relay refetch.
+    async fn tag(&self, id: TagId) -> Result<Option<Tag>, MetadataError>;
 }
 
 /// Lets an `Arc<dyn MetadataRepository>` be used wherever a repository is expected, so the
@@ -563,6 +664,14 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
     async fn stream(&self, id: StreamId) -> Result<Option<MediaStream>, MetadataError> {
         (**self).stream(id).await
     }
+
+    async fn tags_for(&self, items: &[RatingKey]) -> Result<Vec<ItemTag>, MetadataError> {
+        (**self).tags_for(items).await
+    }
+
+    async fn tag(&self, id: TagId) -> Result<Option<Tag>, MetadataError> {
+        (**self).tag(id).await
+    }
 }
 
 #[cfg(test)]
@@ -653,6 +762,24 @@ mod tests {
             query.cursor_key(&item(Some("Avatar"), None, 1_655_072_133)),
             CursorKey::Int(1_655_072_133)
         );
+    }
+
+    #[test]
+    fn a_tag_name_folds_ascii_case_and_nothing_else() {
+        // Each half measured on the reference: `genre=ACTION` finds Action, while
+        // `genre=COMÉDIE` and `genre=Comedie` both miss Comédie.
+        assert_eq!(tag_name_key("ACTION"), tag_name_key("Action"));
+        assert_ne!(tag_name_key("COMÉDIE"), tag_name_key("Comédie"));
+        assert_ne!(tag_name_key("Comedie"), tag_name_key("Comédie"));
+        assert_ne!(tag_name_key(" Action"), tag_name_key("Action"));
+    }
+
+    #[test]
+    fn only_people_are_people() {
+        assert!(TagKind::Actor.is_person());
+        assert!(TagKind::Producer.is_person());
+        assert!(!TagKind::Genre.is_person());
+        assert!(!TagKind::Country.is_person());
     }
 
     #[test]

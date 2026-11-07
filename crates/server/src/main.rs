@@ -55,6 +55,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             media = summary.media,
             files = summary.files,
             streams = summary.streams,
+            tags = summary.tags,
+            item_tags = summary.item_tags,
             orphans = summary.orphans,
             "import complete"
         );

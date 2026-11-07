@@ -20,6 +20,21 @@ use serde::Deserialize;
 /// side: no show carries a critic rating, no episode a studio or tagline, and no season a
 /// duration — so those fields do not exist on those types rather than resolving to null.
 ///
+/// Tags come in two forms, one fragment per kind and form. A lookup carries every tag with
+/// its identity; a listing carries names only, and only the first few of each kind:
+///
+/// | Element | Listing keeps |
+/// | --- | --- |
+/// | `Genre`, `Country`, `Writer` | 2 |
+/// | `Director`, `Role` | 3 |
+/// | `Producer` | none |
+///
+/// Measured over every film, series and episode of the reference library by comparing the
+/// listing against the item's full tag set: the listing is the first *n* in billing order,
+/// with these *n* and no others. The reference reads them from denormalized columns that a
+/// metadata refresh rewrites, and on 0.5% of items those columns are stale — a renamed
+/// person, a dropped country. We derive from the tags themselves and differ on those.
+///
 /// `VersionFields` stops short of `files` so each query can select its own depth: a listing
 /// takes the files, a lookup takes the tracks inside them. The alternative — one fragment per
 /// depth — duplicates the twelve scalars above and lets them drift. `SeasonFields` and
@@ -71,6 +86,55 @@ fragment EpisodeFields on Episode {
   durationMs
   season { id number title year guid }
   show { id title guid }
+}
+
+fragment ListedMovieTags on Movie {
+  genres(first: 2) { name }
+  countries(first: 2) { name }
+  directors(first: 3) { name }
+  writers(first: 2) { name }
+  cast(first: 3) { person { name } }
+}
+
+fragment ListedShowTags on Show {
+  genres(first: 2) { name }
+  countries(first: 2) { name }
+  cast(first: 3) { person { name } }
+}
+
+fragment ListedEpisodeTags on Episode {
+  directors(first: 3) { name }
+  writers(first: 2) { name }
+  cast(first: 3) { person { name } }
+}
+
+fragment TagFields on Tag {
+  id
+  name
+  providerKey
+  thumbUrl
+}
+
+fragment MovieTags on Movie {
+  genres { ...TagFields }
+  countries { ...TagFields }
+  directors { ...TagFields }
+  writers { ...TagFields }
+  cast { character person { ...TagFields } }
+  producers { ...TagFields }
+}
+
+fragment ShowTags on Show {
+  genres { ...TagFields }
+  countries { ...TagFields }
+  cast { character person { ...TagFields } }
+}
+
+fragment EpisodeTags on Episode {
+  directors { ...TagFields }
+  writers { ...TagFields }
+  cast { character person { ...TagFields } }
+  producers { ...TagFields }
 }
 ";
 
@@ -124,6 +188,7 @@ query PlexSectionItems(
               audienceRating
               durationMs
               versions { ...VersionFields files { id path sizeBytes durationMs } }
+              ...ListedMovieTags
             }
             ... on Show {
               number
@@ -137,11 +202,13 @@ query PlexSectionItems(
               audienceRating
               durationMs
               showStats: stats { seasonCount episodeCount }
+              ...ListedShowTags
             }
             ... on Season { ...SeasonFields }
             ... on Episode {
               ...EpisodeFields
               versions { ...VersionFields files { id path sizeBytes durationMs } }
+              ...ListedEpisodeTags
             }
           }
         }
@@ -194,6 +261,7 @@ query PlexItems($ids: [ID!]!) {
           }
         }
       }
+      ...MovieTags
     }
     ... on Show {
       number
@@ -207,10 +275,12 @@ query PlexItems($ids: [ID!]!) {
       audienceRating
       durationMs
       showStats: stats { seasonCount episodeCount }
+      ...ShowTags
     }
     ... on Season { ...SeasonFields }
     ... on Episode {
       ...EpisodeFields
+      ...EpisodeTags
       versions {
         ...VersionFields
         files {
@@ -379,6 +449,12 @@ pub struct GqlItem {
     pub show_stats: Option<GqlShowStats>,
     pub season_stats: Option<GqlSeasonStats>,
     pub versions: Vec<GqlVersion>,
+    pub genres: Vec<GqlTag>,
+    pub countries: Vec<GqlTag>,
+    pub directors: Vec<GqlTag>,
+    pub writers: Vec<GqlTag>,
+    pub cast: Vec<GqlCastMember>,
+    pub producers: Vec<GqlTag>,
 }
 
 impl GqlItem {
@@ -510,6 +586,31 @@ impl GqlParentRef {
     }
 }
 
+/// A tag, with as much of it as the query selected: a listing asks for the name alone.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlTag {
+    pub id: Option<String>,
+    pub name: String,
+    pub provider_key: Option<String>,
+    pub thumb_url: Option<String>,
+}
+
+impl GqlTag {
+    /// The server-local number, which Plex publishes as the tag's `id` and in its `filter`.
+    /// `None` when the query did not select the id, as a listing does not.
+    pub fn database_id(&self) -> Option<i64> {
+        self.id.as_deref().map(database_id)
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlCastMember {
+    pub character: Option<String>,
+    pub person: GqlTag,
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GqlShowStats {
@@ -612,7 +713,19 @@ mod tests {
     fn every_listing_query_is_a_closed_document() {
         // Each fragment the query spreads is defined, and each defined fragment is spread.
         for document in [&*SECTION_ITEMS_QUERY, &*ITEMS_BY_ID_QUERY] {
-            for name in ["Shared", "VersionFields", "SeasonFields", "EpisodeFields"] {
+            for name in [
+                "Shared",
+                "VersionFields",
+                "SeasonFields",
+                "EpisodeFields",
+                "ListedMovieTags",
+                "ListedShowTags",
+                "ListedEpisodeTags",
+                "TagFields",
+                "MovieTags",
+                "ShowTags",
+                "EpisodeTags",
+            ] {
                 assert_eq!(
                     document.contains(&format!("...{name}")),
                     document.contains(&format!("fragment {name} on")),

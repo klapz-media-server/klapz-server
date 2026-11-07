@@ -18,10 +18,11 @@ pub use auth::{Accounts, Credential, Principal, Scope};
 pub use identity::{
     now_epoch, ServerCapabilities, ServerFeatures, ServerIdentity, TranscoderCapabilities,
 };
-pub use ids::{MediaId, PartId, RatingKey, SectionId, StreamId};
+pub use ids::{MediaId, PartId, RatingKey, SectionId, StreamId, TagId};
 pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot};
 pub use metadata::{
-    ItemFilter, ItemKind, ItemQuery, ItemSort, MediaFile, MediaStream, MediaVersion, MetadataError,
-    MetadataItem, MetadataRepository, SearchQuery, StreamKind,
+    ItemFilter, ItemKind, ItemQuery, ItemSort, ItemTag, MediaFile, MediaStream, MediaVersion,
+    MetadataError, MetadataItem, MetadataRepository, SearchQuery, StreamKind, Tag, TagCondition,
+    TagKind, TagRef,
 };
 pub use page::{Bound, Cursor, CursorKey, Direction, Page, Window, WindowError};

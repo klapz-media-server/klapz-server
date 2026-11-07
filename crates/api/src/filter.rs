@@ -1,8 +1,10 @@
 //! Listing arguments: what to keep, and in what order.
 
 use async_graphql::{Enum, InputObject};
-use open_plex_core::metadata::{ItemDepth, ItemFilter, ItemKind, ItemSort};
+use open_plex_core::metadata::{ItemDepth, ItemFilter, ItemKind, ItemSort, TagCondition};
 use open_plex_core::page::Direction;
+
+use crate::tag::{TagFilterError, TagFilterInput};
 
 /// The kind of media an item is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
@@ -146,11 +148,21 @@ pub struct ItemFilterInput {
     ///
     /// The one filter that reaches past the item table, so the one that can slow a listing.
     pub min_width: Option<i32>,
+    /// Keep only items carrying the named tags. Every condition must hold.
+    pub tags: Option<Vec<TagFilterInput>>,
 }
 
-impl From<ItemFilterInput> for ItemFilter {
-    fn from(input: ItemFilterInput) -> Self {
-        Self {
+impl TryFrom<ItemFilterInput> for ItemFilter {
+    type Error = TagFilterError;
+
+    fn try_from(input: ItemFilterInput) -> Result<Self, Self::Error> {
+        let tags = input
+            .tags
+            .unwrap_or_default()
+            .into_iter()
+            .map(TagCondition::try_from)
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
             kind: input.kind.map(Into::into),
             depth: input.depth.unwrap_or_default().into(),
             year_from: input.year_from,
@@ -163,7 +175,8 @@ impl From<ItemFilterInput> for ItemFilter {
                 .title_word_prefix
                 .filter(|text| !text.trim().is_empty()),
             min_width: input.min_width,
-        }
+            tags,
+        })
     }
 }
 
@@ -180,20 +193,22 @@ mod tests {
             title_word_prefix: Some("   ".to_owned()),
             ..ItemFilterInput::default()
         };
-        assert_eq!(ItemFilter::from(input).title_word_prefix, None);
+        assert_eq!(ItemFilter::try_from(input).unwrap().title_word_prefix, None);
     }
 
     #[test]
     fn a_listing_covers_the_top_level_unless_told_otherwise() {
         // What `/library/sections/{id}/all` shows on a series library: 1,980 series rather
         // than the 86,655 rows the section holds.
-        assert!(ItemFilter::from(ItemFilterInput::default()).top_level_only());
+        assert!(ItemFilter::try_from(ItemFilterInput::default())
+            .unwrap()
+            .top_level_only());
 
         let deep = ItemFilterInput {
             depth: Some(ItemDepthInput::All),
             ..ItemFilterInput::default()
         };
-        assert!(!ItemFilter::from(deep).top_level_only());
+        assert!(!ItemFilter::try_from(deep).unwrap().top_level_only());
 
         // A named kind wins over the default depth, or asking for episodes would answer
         // with nothing.
@@ -201,7 +216,7 @@ mod tests {
             kind: Some(ItemType::Episode),
             ..ItemFilterInput::default()
         };
-        assert!(!ItemFilter::from(episodes).top_level_only());
+        assert!(!ItemFilter::try_from(episodes).unwrap().top_level_only());
     }
 
     #[test]
@@ -215,8 +230,13 @@ mod tests {
             title_word_prefix: Some("the".to_owned()),
             min_width: Some(3840),
             depth: Some(ItemDepthInput::All),
+            tags: Some(vec![TagFilterInput {
+                kind: crate::tag::TagType::Genre,
+                ids: None,
+                names: Some(vec!["Drama".to_owned()]),
+            }]),
         };
-        let filter = ItemFilter::from(input);
+        let filter = ItemFilter::try_from(input).unwrap();
         assert_eq!(filter.kind, Some(ItemKind::Show));
         assert_eq!(filter.year_from, Some(2000));
         assert_eq!(filter.year_to, Some(2010));
@@ -226,6 +246,7 @@ mod tests {
         assert_eq!(filter.min_width, Some(3840));
         assert_eq!(filter.depth, ItemDepth::All);
         assert!(filter.needs_media());
+        assert_eq!(filter.tags.len(), 1);
     }
 
     #[test]

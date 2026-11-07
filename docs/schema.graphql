@@ -1,3 +1,15 @@
+type CastMember {
+	"""
+	Who plays.
+	"""
+	person: Tag!
+	"""
+	The character played, as the metadata source credits it — sometimes several, as in
+	`Homer Simpson / Barney Gumble`. Null when the source does not say.
+	"""
+	character: String
+}
+
 type Episode implements Item & Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this item.
@@ -88,6 +100,42 @@ type Episode implements Item & Node {
 	The available encodings of this episode.
 	"""
 	versions: [MediaVersion!]!
+	"""
+	People credited as director.
+	"""
+	directors(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [Tag!]!
+	"""
+	People credited as writer.
+	"""
+	writers(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [Tag!]!
+	"""
+	The episode's own cast, guest stars included, in billing order, each with the character played.
+	"""
+	cast(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [CastMember!]!
+	"""
+	People credited as producer.
+	"""
+	producers(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [Tag!]!
 }
 
 type EpisodeConnection {
@@ -350,6 +398,10 @@ input ItemFilterInput {
 	The one filter that reaches past the item table, so the one that can slow a listing.
 	"""
 	minWidth: Int
+	"""
+	Keep only items carrying the named tags. Every condition must hold.
+	"""
+	tags: [TagFilterInput!]
 }
 
 """
@@ -827,6 +879,60 @@ type Movie implements Item & Node {
 	the reference library.
 	"""
 	versions: [MediaVersion!]!
+	"""
+	Genres, in the library's metadata language, most significant first.
+	"""
+	genres(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [Tag!]!
+	"""
+	Countries of production.
+	"""
+	countries(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [Tag!]!
+	"""
+	People credited as director.
+	"""
+	directors(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [Tag!]!
+	"""
+	People credited as writer.
+	"""
+	writers(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [Tag!]!
+	"""
+	The cast, in billing order, each with the character played.
+	"""
+	cast(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [CastMember!]!
+	"""
+	People credited as producer.
+	"""
+	producers(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [Tag!]!
 }
 
 """
@@ -1301,6 +1407,34 @@ type Show implements Item & Node {
 		offset: Int
 	): EpisodeConnection!
 	"""
+	Genres, in the library's metadata language, most significant first.
+	"""
+	genres(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [Tag!]!
+	"""
+	Countries of production.
+	"""
+	countries(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [Tag!]!
+	"""
+	The series' regular cast, in billing order. Each episode carries its own, guest
+	stars included.
+	"""
+	cast(
+		"""
+		Return at most this many, in billing order.
+		"""
+		first: Int
+	): [CastMember!]!
+	"""
 	Aggregates over the contents of this series.
 	"""
 	stats: ShowStats!
@@ -1329,6 +1463,92 @@ enum SortDirection {
 	Largest or latest first.
 	"""
 	DESCENDING
+}
+
+type Tag implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this tag, or to an
+	item filter to list what carries it.
+	"""
+	id: ID!
+	"""
+	What the tag classifies or credits.
+	
+	A person credited in two roles is two tags: the writer and the producer are filtered
+	on separately, because "films she wrote" is not "films she produced".
+	"""
+	kind: TagType!
+	"""
+	The genre, the country, or the person's name.
+	
+	Not unique among people: two people can share a name, and `providerKey` tells them
+	apart.
+	"""
+	name: String!
+	"""
+	The metadata provider's identifier for a person. Null for genres and countries, and
+	for the people the provider does not know.
+	"""
+	providerKey: String
+	"""
+	A portrait of the person, hosted by the metadata provider. Null for genres and
+	countries.
+	"""
+	thumbUrl: String
+}
+
+"""
+Keeps items carrying at least one of the named tags of one kind.
+
+`ids` and `names` combine with `OR`, so a condition can mix both. Several conditions in
+one filter combine with `AND`: "a comedy and a drama" is two conditions, "a comedy or a
+drama" is one.
+"""
+input TagFilterInput {
+	"""
+	The kind of tag to match.
+	"""
+	kind: TagType!
+	"""
+	Tags by identifier, as returned in `Tag.id`.
+	"""
+	ids: [ID!]
+	"""
+	Tags by name, matched exactly and ignoring ASCII case only: `ACTION` matches
+	`Action`, but `COMÉDIE` does not match `Comédie`, and spaces are not trimmed. A name
+	shared by two people matches both.
+	"""
+	names: [String!]
+}
+
+"""
+What a tag classifies or credits.
+"""
+enum TagType {
+	"""
+	A genre, in the library's metadata language: `Comédie` in a French library.
+	"""
+	GENRE
+	"""
+	A country of production.
+	"""
+	COUNTRY
+	"""
+	A person credited as director.
+	"""
+	DIRECTOR
+	"""
+	A person credited as writer.
+	"""
+	WRITER
+	"""
+	A person credited in the cast.
+	"""
+	ACTOR
+	"""
+	A person credited as producer.
+	"""
+	PRODUCER
 }
 
 """

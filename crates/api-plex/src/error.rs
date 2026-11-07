@@ -38,6 +38,11 @@ impl ApiError {
 
 impl From<crate::listing::ListingError> for ApiError {
     fn from(error: crate::listing::ListingError) -> Self {
+        if let crate::listing::ListingError::TooManyValues { .. } = error {
+            // A ceiling on client-sized input, not a missing feature.
+            tracing::warn!(%error, "refused an oversized listing filter");
+            return Self::BadRequest;
+        }
         // `501`, not `400`: the request is well-formed and a real server honors it, we simply
         // have not built it. Refusing visibly is the point — honoring the rest of the query
         // and dropping this filter would answer with the whole library and let the client

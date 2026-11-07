@@ -142,7 +142,7 @@ the reference server against section 4 (9,667 films):
 | `title=avatar` | 4 items | **Prefix** match, case-insensitive. `title=atar` returns nothing, so it is not a substring search. Matches our GraphQL `titlePrefix` exactly. |
 | `year=2022` | 488 items | Exact year. |
 | `studio=Netflix` | 12 items | Exact studio name. |
-| `genre=4025` | 2,416 items | By tag **id**, not name — so it needs the tag tables. |
+| `genre=4025` | 2,416 items | By tag id or by name — see *Tag filters* below. |
 | `title~=avatar` | 9,667 items | Silently ignored: the reference drops an operator it does not recognize rather than failing. |
 
 The field list is not guesswork: the server publishes it per library under
@@ -150,13 +150,51 @@ The field list is not guesswork: the server publishes it per library under
 for a film library.
 
 **Implemented**: `title`, `year` (with `>=`/`<=`), `decade`, `contentRating`, `studio`,
-`resolution`. Verified against the reference on 11 of 12 probes, exact totals.
+`resolution`, verified against the reference on 11 of 12 probes with exact totals; and the six
+tag filters, `genre`, `country`, `director`, `writer`, `actor` and `producer`.
 
 **Refused with `501`**, not silently dropped: every other field on the published list, plus the
-operators (`!=`) and the comma-OR form we cannot express. Dropping one would answer with the
+operators (`!=`) and the comma-OR form outside the tag filters, which `ItemFilterInput`
+cannot express. Dropping one would answer with the
 whole library and let the client present it as the filtered result — an ignored filter is worse
 than a rejected one. Parameters that are *not* on the list (`includeMeta`, `X-Plex-Product`,
 nonsense) stay tolerated, exactly as the reference tolerates them.
+
+#### Tag filters: by id or by name
+
+`genre`, `country`, `director`, `writer`, `actor` and `producer` select by tag. The spec
+documents none of the value grammar; all of it measured on the reference, section 6 (7,167
+films):
+
+| Probe | Reference | Rule |
+| --- | --- | --- |
+| `genre=38` | 1,220 | by tag id; ids are global, so a genre id from another library works |
+| `genre=Action`, `genre=action`, `genre=ACTION` | 1,220 each | by name, ASCII case folded |
+| `genre=COMÉDIE` (section 4) | 0 | only ASCII case: `É` does not fold to `é` |
+| `genre=Comedie`, `genre=Act` | 0 | exact: no accent folding, no prefix |
+| `genre=%2038`, `genre=38.0` | 0 | a value that is not an integer is a name, and no genre has that one |
+| `genre=038` | 1,220 | an integer is an id, leading zeros and all |
+| `genre=38,198` | 1,629 | a comma is an `OR` |
+| `genre=38,Crime` | 1,629 | ids and names mix inside one list |
+| `genre=38&genre=198` | 404 | a repeated parameter is an `AND` |
+| `genre!=38` | 5,947 | negation, which we refuse with `501` |
+| `genre=` | 0 | an empty name matches nothing, rather than everything |
+
+The element and the filter disagree on one name: the cast is `<Role>` and filters with
+`actor=`. A person credited in two roles is two tags — Luc Besson is writer `473529` and
+producer `475888` — so `producer=473529` finds nothing.
+
+**Implemented** exactly, totals identical to the snapshot on 16 probes across the six kinds
+and both library types. The live reference returns 3–5% more on some probes: it has refreshed
+metadata since the snapshot was taken (Snowpiercer has four genres there and none in the
+snapshot), which no import of the snapshot can reproduce.
+
+One deviation of ours: a tag filter listing more than 50 values answers `400`. The reference
+has no such ceiling; we need one, since each value becomes a bound parameter.
+
+`collection` stays refused with `501`. In Plex a collection is an item of its own, with its own
+endpoints and artwork, and its tag form is unreliable even on the reference: 40% of the films
+tagged with a collection do not list it.
 
 #### `title=` is a word-prefix match
 
@@ -201,6 +239,43 @@ line with `400` before any handler runs — confirmed by `GET /identity?year>=20
 `400`s and reads no query at all. The percent-encoded form `year%3E%3D2020` is in turn rejected
 by the reference. So the equality filters work and the range filters are unreachable over this
 stack; the parser handles them, and is tested, for the day something can deliver them.
+
+### Tags on an item
+
+A lookup carries every genre, country and credit; a listing — `/all`, `/children`,
+`/grandchildren` — carries only the first few, by name alone. Measured over every film, series
+and episode of the reference library:
+
+| Element | Listing keeps | Lookup attributes, in order |
+| --- | --- | --- |
+| `Genre` | 2 | `id`, `filter`, `tag` |
+| `Country` | 2 | `id`, `filter`, `tag` |
+| `Director` | 3 | `id`, `filter`, `tag`, `tagKey`, `thumb` |
+| `Writer` | 2 | `id`, `filter`, `tag`, `tagKey`, `thumb` |
+| `Role` | 3 | `id`, `filter`, `tag`, `tagKey`, `role`, `thumb` |
+| `Producer` | none | `id`, `filter`, `tag`, `tagKey`, `thumb` |
+
+They follow `Media`, in that order. `tagKey` and `thumb` are absent when the provider knows
+nothing of the person; `filter` is the listing filter selecting the tag (`actor=472942` for a
+`Role`).
+
+**`role` is always present on a cast entry in a lookup**, empty when the source names no
+character — the source stores an empty string for 22,518 credits, and the reference emits
+`role=""` for each. Its first letter is **capitalized when it is ASCII**: 25 of 25 credits the
+source stores as `actor` or `self - host` come out as `Actor` and `Self - host`, while
+`čarodějobijec`, `министр` and `(uncredited)` come out as stored. Both are presentation, done
+in the adapter; the official API publishes the source text.
+
+**The listing comes from a cache, and ours does not.** The reference reads the listing form
+from denormalized `tags_*` columns that a metadata refresh rewrites. On 0.5% of items those
+columns are stale against the item's own tags — `Wong Kar-wai` cached where the tag now reads
+`Wong Kar-Wai`, a country tagged but absent from the cache. We derive the listing from the tags,
+the first *n* by billing order, and differ on those items. Measured against the live reference:
+1,122 of 1,151 listed items identical; of the 69 differing elements, 3 are this cache and 66
+are metadata the live server refreshed after the snapshot.
+
+Lookups: 326 of 380 sampled items identical, and every one of the other 54 is an item whose
+live tags no longer match the snapshot's.
 
 ### Global search is ranked, ours is not
 

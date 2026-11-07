@@ -53,6 +53,11 @@ numeric_id! {
     StreamId
 }
 
+numeric_id! {
+    /// Identifies a tag: one genre, one country, or one person in one credit role.
+    TagId
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
