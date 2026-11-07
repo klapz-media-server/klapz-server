@@ -59,6 +59,17 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Collections](#collections) | 1 | 0 | 0 | 1 | 0 | 0 |
 | [Rate](#rate) | 1 | 0 | 0 | 1 | 0 | 0 |
 
+## Outside the spec
+
+Served, but absent from `docs/openapi.json` and therefore from the counts above.
+
+| Status | Method | Path | Scope | Description | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `done` | `GET` | `/library/sections` | user | Library sections | Byte-identical to the reference. The spec declares only its `/all` alias. |
+| `partial` | `GET` | `/library/metadata/{id}/children` | user | Seasons of a series, episodes of a season | Zero differing fields against the reference on seven parents across two libraries; `400` on a film or an episode, as the reference. Gaps: the leading `All episodes` `Directory` is omitted while `/allLeaves` answers 501, so `size` is one short. |
+| `partial` | `GET` | `/library/metadata/{id}/grandchildren` | user | Every episode of a series, season by season | Same field fidelity as `/children`. Gaps: those of `/library/metadata/{ids}`. |
+| `partial` | `GET` | `/search` | user | Global search across libraries | Matches exactly as the reference (word prefix over title, sort title, original title) but returns matches in title order, unranked and uncut. The spec declares only `/hubs/search`. |
+
 ## Library
 
 | Status | Method | Path | Scope | Description | Notes |
@@ -296,7 +307,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | --- | --- | --- | --- | --- | --- |
 | `stub` | `POST` | `/downloadQueue` | user | Get or create a download queue |  |
 | `stub` | `GET` | `/downloadQueue/{queueId}` | user | Get a download queue |  |
-| `stub` | `POST` | `/downloadQueue/{queueId}/add` | user | Add to download queue |  |
+| `stub` | `POST` | `/downloadQueue/{queueId}/add` | user | Add to download queue | Spec marks `X-Plex-Client-Identifier` required; the reference does not enforce it — see spec-gaps.md. |
 | `stub` | `GET` | `/downloadQueue/{queueId}/item/{itemId}/decision` | user | Grab download queue item decision |  |
 | `stub` | `GET` | `/downloadQueue/{queueId}/item/{itemId}/media` | user | Grab download queue media |  |
 | `stub` | `GET` | `/downloadQueue/{queueId}/items` | user | Get download queue items |  |
@@ -344,10 +355,10 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `stub` | `GET` | `/photo/:/transcode` | user | Transcode an image |  |
-| `stub` | `GET` | `/{transcodeType}/:/transcode/universal/decision` | user | Make a decision on media playback |  |
+| `stub` | `GET` | `/{transcodeType}/:/transcode/universal/decision` | user | Make a decision on media playback | The reference serves it without `X-Plex-Client-Identifier` despite the spec, but refuses a request with no resolvable client profile (`X-Plex-Platform`) — see spec-gaps.md. |
 | `stub` | `POST` | `/{transcodeType}/:/transcode/universal/fallback` | user | Manually trigger a transcoder fallback |  |
-| `todo` | `GET` | `/{transcodeType}/:/transcode/universal/start.*` | user | Start A Transcoding Session | needs a hand-written handler: wildcard in path |
-| `stub` | `GET` | `/{transcodeType}/:/transcode/universal/subtitles` | user | Transcode subtitles |  |
+| `todo` | `GET` | `/{transcodeType}/:/transcode/universal/start.*` | user | Start A Transcoding Session | needs a hand-written handler: wildcard in path. Spec marks `X-Plex-Client-Identifier` required; the reference does not enforce it — see spec-gaps.md. |
+| `stub` | `GET` | `/{transcodeType}/:/transcode/universal/subtitles` | user | Transcode subtitles | The reference serves it without `X-Plex-Client-Identifier` despite the spec, but refuses a request with no resolvable client profile (`X-Plex-Platform`) — see spec-gaps.md. |
 
 ## General
 
@@ -413,7 +424,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `stub` | `PUT` | `/:/scrobble` | user | Mark an item as played |  |
-| `stub` | `POST` | `/:/timeline` | user | Report media timeline |  |
+| `stub` | `POST` | `/:/timeline` | user | Report media timeline | Spec marks `X-Plex-Client-Identifier` required; the reference does not enforce it — see spec-gaps.md. |
 | `stub` | `PUT` | `/:/unscrobble` | user | Mark an item as unplayed |  |
 
 ## Updater

@@ -177,8 +177,9 @@ that is observable:
 | `title=soiree` finds `# Pire Soirée` | found | accents fold |
 
 Since the match is a prefix, only *leading* punctuation hides a word; trailing punctuation is
-absorbed. Served by the `item_title_word` table (migration `m0004`), 758,132 rows for 171,018
-items, queried as a range scan.
+absorbed. Served by the `item_title_word` table (migration `m0004`), 736,105 rows covering
+160,157 of 171,018 items — the rest are untitled seasons and episodes, named at read time —
+queried as a range scan.
 
 One residual divergence: we return 1,840 for `title=le` where the reference returns 1,839. The
 extra item is `Corps et âme`, matched through the Hungarian original title `Testről és

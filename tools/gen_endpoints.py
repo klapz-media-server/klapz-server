@@ -54,6 +54,48 @@ IMPLEMENTED = frozenset(
     }
 )
 
+# Served by a real handler but absent from the spec, so the loop over the spec never sees them.
+# Status and notes are written here rather than carried over from the file, since there is no
+# spec row for the carry-over to key on. Each is described in docs/spec-gaps.md.
+OFF_SPEC = (
+    (
+        "done",
+        "GET",
+        "/library/sections",
+        "user",
+        "Library sections",
+        "Byte-identical to the reference. The spec declares only its `/all` alias.",
+    ),
+    (
+        "partial",
+        "GET",
+        "/library/metadata/{id}/children",
+        "user",
+        "Seasons of a series, episodes of a season",
+        "Zero differing fields against the reference on seven parents across two libraries; "
+        "`400` on a film or an episode, as the reference. Gaps: the leading `All episodes` "
+        "`Directory` is omitted while `/allLeaves` answers 501, so `size` is one short.",
+    ),
+    (
+        "partial",
+        "GET",
+        "/library/metadata/{id}/grandchildren",
+        "user",
+        "Every episode of a series, season by season",
+        "Same field fidelity as `/children`. Gaps: those of `/library/metadata/{ids}`.",
+    ),
+    (
+        "partial",
+        "GET",
+        "/search",
+        "user",
+        "Global search across libraries",
+        "Matches exactly as the reference (word prefix over title, sort title, original "
+        "title) but returns matches in title order, unranked and uncut. The spec declares "
+        "only `/hubs/search`.",
+    ),
+)
+
 # Scanning, matching and media analysis live in a separate binary on Plex
 # (Plex Media Scanner / Plex Transcoder), so the endpoints that only drive them are
 # out of scope until that component exists. Matched as substrings against the path.
@@ -230,6 +272,18 @@ def main() -> None:
             f"| [{tag}](#{anchor}) | {len(rows)} | {per['done']} | {per['partial']} "
             f"| {per['stub']} | {per['todo']} | {per['deferred']} |"
         )
+    lines.append("")
+
+    lines += [
+        "## Outside the spec",
+        "",
+        "Served, but absent from `docs/openapi.json` and therefore from the counts above.",
+        "",
+        "| Status | Method | Path | Scope | Description | Notes |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for status, method, path, scope, summary, notes in OFF_SPEC:
+        lines.append(f"| `{status}` | `{method}` | `{path}` | {scope} | {summary} | {notes} |")
     lines.append("")
 
     for tag in sorted(by_tag, key=lambda t: (-len(by_tag[t]), t)):

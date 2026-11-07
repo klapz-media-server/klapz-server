@@ -226,7 +226,7 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
 
 ## Current milestone
 
-**Milestone 1 — skeleton and conformance first.** Before any feature work:
+**Milestone 1 — skeleton and conformance first.** Done:
 
 - ✅ a Cargo workspace split along the layers, with GraphQL as the official API and Plex as an
   adapter over it;
@@ -247,7 +247,7 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
   (`tools/compare_items.py`): zero differing fields and zero extra fields on shared items;
 - ✅ **library search** — the `title`/`year`/`decade`/`contentRating`/`studio`/`resolution`
   filters on `/all`, the `/library/sections/{id}/firstCharacter` jump bar, and `/search` across
-  every library; backed by a title-word index (`item_title_word`, 758,132 rows) and a `search`
+  every library; backed by a title-word index (`item_title_word`, 736,105 rows) and a `search`
   root field on the official API;
 - ✅ `/library/metadata/{id}/children` and `/grandchildren` — opening a series: seasons, a
   season's episodes, and every episode of a show as one list, through a `grandchildren`
@@ -257,7 +257,10 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
   precedence, case and repetition rules measured on the reference. It never rejects —
   the spec marks `X-Plex-Client-Identifier` required, the reference does not enforce it.
   No handler takes it yet; transcoding and timelines will be its first consumers;
-- ⬜ `docs/ENDPOINTS.md` kept current as work lands.
+- ✅ `docs/ENDPOINTS.md` kept current as work lands, including the endpoints served outside
+  the spec (`OFF_SPEC` in `tools/gen_endpoints.py`).
+
+Milestone 1 is complete.
 
 Then: iterate endpoint by endpoint, following `docs/ENDPOINTS.md`.
 
@@ -290,6 +293,9 @@ absent.
 - **Pagination is activated by both parameters together**: the window applies only when
   `X-Plex-Container-Start` *and* `X-Plex-Container-Size` are present. Either alone is ignored.
 - Every response carries `X-Plex-Protocol: 1.0` and `Cache-Control: no-cache`.
+- **`X-Plex-*` values** come from the header or the query parameter of the same name. A header
+  wins even when empty; header names are case-insensitive, query names are not; a repeated
+  query parameter takes its last value; nothing is trimmed.
 - **The XML element of a listing item is named after its `type`**, not after the JSON key:
   `<Video>` for a film or episode, `<Directory>` for a series or season, in the same response.
   The one place the two formats are not isomorphic.
