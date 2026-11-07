@@ -122,11 +122,24 @@ async fn capabilities(
     State(state): State<PlexState>,
     format: ResponseFormat,
 ) -> Result<PlexResponse<CapabilitiesContainer>, ApiError> {
-    let data: ServerData = gql::execute(&state.schema, SERVER_QUERY, Variables::default()).await?;
+    let server = server(&state).await?;
     Ok(PlexResponse::new(
-        CapabilitiesContainer::from_graphql(&data.server),
+        CapabilitiesContainer::from_graphql(&server),
         format,
     ))
+}
+
+/// What the server is and can do, as the official API reports it.
+///
+/// Shared by `GET /` and `/media/providers`, which publish the same capabilities under two
+/// envelopes: reading them once keeps the two from ever disagreeing.
+///
+/// # Errors
+///
+/// Fails when the query fails, which is a defect in the schema rather than client input.
+pub(crate) async fn server(state: &PlexState) -> Result<GqlServer, ApiError> {
+    let data: ServerData = gql::execute(&state.schema, SERVER_QUERY, Variables::default()).await?;
+    Ok(data.server)
 }
 
 /// `GET /identity` — unauthenticated by design.

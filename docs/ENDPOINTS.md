@@ -18,10 +18,10 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 12 | 4.6 % |
-| `stub` | 205 | 78.8 % |
+| `todo` | 13 | 5.0 % |
+| `stub` | 203 | 78.1 % |
 | `partial` | 3 | 1.2 % |
-| `done` | 3 | 1.2 % |
+| `done` | 4 | 1.5 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -45,7 +45,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Transcoder](#transcoder) | 5 | 0 | 0 | 4 | 1 | 0 |
 | [General](#general) | 4 | 2 | 0 | 2 | 0 | 0 |
 | [Live TV](#live-tv) | 4 | 0 | 0 | 4 | 0 | 0 |
-| [Provider](#provider) | 4 | 0 | 0 | 3 | 0 | 1 |
+| [Provider](#provider) | 4 | 1 | 0 | 1 | 1 | 1 |
 | [Library Collections](#library-collections) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Log](#log) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Playlist](#playlist) | 3 | 0 | 0 | 3 | 0 | 0 |
@@ -382,8 +382,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/media/providers` | user | Get the list of available media providers |  |
-| `stub` | `POST` | `/media/providers` | user | Add a media provider |  |
+| `done` | `GET` | `/media/providers` | user | Get the list of available media providers | The 17 features and the per-library content directories (with pivots) identical to the reference; the capability attributes are those of `GET /`, so they differ where that one does on purpose. Plex Web reads it first, to build its sidebar. |
+| `todo` | `POST` | `/media/providers` | user | Add a media provider |  |
 | `deferred` | `POST` | `/media/providers/refresh` | user | Refresh media providers | scanner/analysis, separate binary |
 | `stub` | `DELETE` | `/media/providers/{provider}` | user | Delete a media provider |  |
 

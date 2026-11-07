@@ -166,6 +166,28 @@ async fn sections(
     State(state): State<PlexState>,
     format: ResponseFormat,
 ) -> Result<PlexResponse<SectionsContainer>, ApiError> {
+    let libraries = libraries(&state).await?;
+    let body = SectionsContainer {
+        size: u32::try_from(libraries.len()).unwrap_or(u32::MAX),
+        allow_sync: false,
+        title1: "Plex Library".to_owned(),
+        directory: libraries
+            .iter()
+            .map(SectionDirectory::from_graphql)
+            .collect(),
+    };
+    Ok(PlexResponse::new(body, format))
+}
+
+/// Every library, in the order the reference lists them: by media type, then by title.
+///
+/// Shared by `/library/sections` and `/media/providers`, which must list the same libraries
+/// in the same order.
+///
+/// # Errors
+///
+/// Fails when the query fails, which is a defect in the schema rather than client input.
+pub(crate) async fn libraries(state: &PlexState) -> Result<Vec<GqlLibrary>, ApiError> {
     let mut libraries = Vec::new();
     let mut after: Option<String> = None;
 
@@ -193,17 +215,7 @@ async fn sections(
             .cmp(&kind_rank(right.kind))
             .then_with(|| left.title.cmp(&right.title))
     });
-
-    let body = SectionsContainer {
-        size: u32::try_from(libraries.len()).unwrap_or(u32::MAX),
-        allow_sync: false,
-        title1: "Plex Library".to_owned(),
-        directory: libraries
-            .iter()
-            .map(SectionDirectory::from_graphql)
-            .collect(),
-    };
-    Ok(PlexResponse::new(body, format))
+    Ok(libraries)
 }
 
 /// Item type as Plex numbers it on the wire.

@@ -352,4 +352,9 @@ it describes almost nothing about responses. The authoritative per-field type ma
 - Booleans are inconsistent in JSON: `allowSync` is `true`, `hasPremiumPrimaryExtra` is `"1"`.
 - `Meta` and `UltraBlurColors` are JSON objects; every other child is an array.
 - XML escapes non-ASCII as numeric character references despite declaring UTF-8.
+- `/media/providers` writes an empty `Feature` or `Directory` in long form,
+  `<Feature type="manage">
+</Feature>`, where the same server self-closes an empty
+  `Directory` in every other response we have captured (`GET /`, the A–Z bar). We self-close it
+  there too: the two forms are the same document to an XML parser, and Plex Web reads JSON.
 - Errors are `text/html` and ignore content negotiation entirely.

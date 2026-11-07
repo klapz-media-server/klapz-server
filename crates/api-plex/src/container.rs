@@ -121,7 +121,7 @@ impl SectionDirectory {
 /// is a typed call rather than guessing at a string. A value that does not decode is a defect
 /// in our own query, not client input; emitting `0` keeps the listing usable and is visible
 /// in the response rather than silent.
-fn decode_key(global_id: &str) -> i64 {
+pub(crate) fn decode_key(global_id: &str) -> i64 {
     open_plex_api::GlobalId::decode(global_id).map_or(0, |decoded| decoded.key)
 }
 
@@ -171,7 +171,7 @@ pub const fn kind_name(kind: LibraryKind) -> &'static str {
     }
 }
 
-const fn agent_for(kind: LibraryKind) -> &'static str {
+pub(crate) const fn agent_for(kind: LibraryKind) -> &'static str {
     match kind {
         LibraryKind::Movie => "tv.plex.agents.movie",
         LibraryKind::Show => "tv.plex.agents.series",
@@ -180,7 +180,7 @@ const fn agent_for(kind: LibraryKind) -> &'static str {
     }
 }
 
-const fn scanner_for(kind: LibraryKind) -> &'static str {
+pub(crate) const fn scanner_for(kind: LibraryKind) -> &'static str {
     match kind {
         LibraryKind::Movie => "Plex Movie",
         LibraryKind::Show => "Plex TV Series",

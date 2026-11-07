@@ -1454,3 +1454,137 @@ async fn a_lookup_carries_external_ids_and_ratings_and_a_listing_does_not() {
         .collect();
     assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{xml}");
 }
+
+#[tokio::test]
+async fn media_providers_lists_the_libraries_and_features_the_reference_does() {
+    let (status, _, body) = get("/media/providers", Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let json: Value = serde_json::from_str(&body).expect("json body");
+    let container = &json["MediaContainer"];
+    assert_eq!(container["size"], 1);
+    // The same capabilities as `GET /`, read through the same query.
+    assert_eq!(container["myPlexSubscription"], true);
+    assert!(container.get("Directory").is_none(), "{container}");
+
+    let provider = &container["MediaProvider"][0];
+    assert_eq!(provider["identifier"], "com.plexapp.plugins.library");
+    assert_eq!(provider["protocols"], "stream,download");
+    // The reference's seventeen features, in its order.
+    let features: Vec<&str> = provider["Feature"]
+        .as_array()
+        .expect("features")
+        .iter()
+        .map(|feature| feature["type"].as_str().expect("a type"))
+        .collect();
+    assert_eq!(
+        features,
+        [
+            "content",
+            "search",
+            "match",
+            "metadata",
+            "rate",
+            "imagetranscoder",
+            "promoted",
+            "continuewatching",
+            "actions",
+            "playlist",
+            "playqueue",
+            "collection",
+            "timeline",
+            "manage",
+            "queryParser",
+            "subscribe",
+            "universalsearch",
+        ]
+    );
+    assert_eq!(
+        provider["Feature"][12],
+        serde_json::json!({
+            "scrobbleKey": "/:/scrobble",
+            "unscrobbleKey": "/:/unscrobble",
+            "key": "/:/timeline",
+            "type": "timeline"
+        })
+    );
+
+    // Home, the library, then the playlists; the library exactly as captured on section 4.
+    let directories = provider["Feature"][0]["Directory"]
+        .as_array()
+        .expect("directories");
+    assert_eq!(directories.len(), 3);
+    assert_eq!(
+        directories[0],
+        serde_json::json!({"hubKey": "/hubs", "title": "Home"})
+    );
+    let mut films = directories[1].clone();
+    let pivots = films
+        .as_object_mut()
+        .expect("an object")
+        .remove("Pivot")
+        .expect("pivots");
+    assert_eq!(
+        films,
+        serde_json::json!({
+            "agent": "tv.plex.agents.movie",
+            "language": "fr-FR",
+            "refreshing": false,
+            "scanner": "Plex Movie",
+            "uuid": "2cd48489-54c0-41e9-ae62-f3dcb0f3c249",
+            "id": "4",
+            "key": "/library/sections/4",
+            "hubKey": "/hubs/sections/4",
+            "type": "movie",
+            "title": "VF - Films",
+            "updatedAt": 1_792_916_300,
+            "scannedAt": 1_792_916_245
+        })
+    );
+    assert_eq!(
+        pivots[1],
+        serde_json::json!({
+            "id": "library",
+            "key": "/library/sections/4/all?type=1",
+            "type": "list",
+            "title": "Library",
+            "context": "content.library",
+            "symbol": "library"
+        })
+    );
+    assert_eq!(directories[2]["id"], "playlists");
+}
+
+#[tokio::test]
+async fn media_providers_writes_nested_elements_in_xml() {
+    let (status, _, body) = get("/media/providers", None).await;
+    assert_eq!(status, StatusCode::OK);
+    // Opening tags only: the reference writes an empty `Feature` or `Directory` here as
+    // `<Feature …></Feature>` where we self-close it — the same document to any XML parser,
+    // and the reference itself self-closes an empty `Directory` everywhere else.
+    for fragment in [
+        "<MediaProvider identifier=\"com.plexapp.plugins.library\" title=\"Library\" types=\"video,audio,photo\" protocols=\"stream,download\">",
+        "<Feature key=\"/library/sections\" type=\"content\">",
+        "<Directory hubKey=\"/hubs\" title=\"Home\"",
+        "<Pivot id=\"recommended\" key=\"/hubs/sections/4\" type=\"hub\" title=\"Recommended\" context=\"content.discover\" symbol=\"star\" />",
+        "<Feature flavor=\"universal\" key=\"/playlists\" type=\"playlist\"",
+        "<Action id=\"removeFromContinueWatching\" key=\"/actions/removeFromContinueWatching\" />",
+        "<Feature type=\"manage\"",
+    ] {
+        assert!(body.contains(fragment), "missing {fragment} in {body}");
+    }
+}
+
+#[tokio::test]
+async fn media_providers_refuses_a_request_with_no_authenticated_caller() {
+    // Unlike `GET /`, which a client calls before it holds a token.
+    let response = unauthenticated(InMemoryLibrary::default())
+        .oneshot(
+            Request::builder()
+                .uri("/media/providers")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
