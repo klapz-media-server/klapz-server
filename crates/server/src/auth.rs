@@ -32,7 +32,9 @@ pub async fn require_token(
     mut request: Request,
     next: Next,
 ) -> Response {
-    if PUBLIC_PATHS.contains(&request.uri().path()) {
+    let path = request.uri().path();
+    // The web client is public on the reference too: it has to load before it can sign in.
+    if PUBLIC_PATHS.contains(&path) || crate::web::is_client_path(path) {
         return next.run(request).await;
     }
 

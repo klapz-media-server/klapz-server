@@ -9,5 +9,7 @@ open-plex.db-*
 /db/
 /files/
 /.work/
+# Plex Web, the reference's bundled client: Plex's code, served locally, not ours to version.
+/web/
 
 __pycache__/

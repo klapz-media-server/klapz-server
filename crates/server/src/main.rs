@@ -6,6 +6,7 @@
 
 mod auth;
 mod graphql;
+mod web;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -82,32 +83,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // those unless the router has `without_v07_checks`, and `merge` re-validates whatever is
     // merged *in* with the default rules. So the router holding those paths cannot be the one
     // merged in. GraphQL has no such paths and merges cleanly either way.
-    let app = open_plex_api_plex::router(PlexState::new(
+    let mut app = open_plex_api_plex::router(PlexState::new(
         identity(),
         schema.clone(),
         (*accounts).clone(),
     ))
-    .merge(graphql::router(schema))
-    // One token middleware for every surface, so neither can be left unauthenticated by
-    // omission.
-    .layer(axum::middleware::from_fn_with_state(
-        Arc::clone(&accounts),
-        auth::require_token,
-    ))
-    .layer((
-        TraceLayer::new_for_http(),
-        TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, Duration::from_secs(30)),
-        // A real server sends both of these on every response, errors included, so they
-        // belong in a layer rather than in the response wrapper.
-        SetResponseHeaderLayer::overriding(
-            header::HeaderName::from_static("x-plex-protocol"),
-            HeaderValue::from_static("1.0"),
-        ),
-        SetResponseHeaderLayer::overriding(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("no-cache"),
-        ),
-    ));
+    .merge(graphql::router(schema));
+    let web_dir = web::directory();
+    if let Some(client) = web::router(&web_dir) {
+        tracing::info!(directory = %web_dir.display(), "serving the web client at /web");
+        app = app.merge(client);
+    } else {
+        tracing::info!(directory = %web_dir.display(), "no web client found, /web is not served");
+    }
+    let app = app
+        // One token middleware for every surface, so neither can be left unauthenticated by
+        // omission.
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&accounts),
+            auth::require_token,
+        ))
+        .layer((
+            TraceLayer::new_for_http(),
+            TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, Duration::from_secs(30)),
+            // A real server sends both of these on every response, errors included, so they
+            // belong in a layer rather than in the response wrapper.
+            SetResponseHeaderLayer::overriding(
+                header::HeaderName::from_static("x-plex-protocol"),
+                HeaderValue::from_static("1.0"),
+            ),
+            SetResponseHeaderLayer::overriding(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("no-cache"),
+            ),
+        ));
 
     let bind = std::env::var("OPENPLEX_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
     let listener = tokio::net::TcpListener::bind(&bind).await?;

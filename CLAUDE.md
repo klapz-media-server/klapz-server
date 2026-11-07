@@ -223,6 +223,7 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
 | `OPENPLEX_TOKEN` | *(none)* | The accepted admin token. Unset means no authenticated route is reachable — the safe failure. |
 | `OPENPLEX_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
+| `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
 
 ## Current milestone
 
