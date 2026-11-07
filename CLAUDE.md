@@ -284,6 +284,16 @@ Since then:
   Measured rules and the one divergence (listings derived from the tags, not from the
   reference's stale cache) are in `docs/spec-gaps.md`.
 
+Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still leaves out.
+
+- ⬜ a series library's **recently added**: the reference's `mixed` shelf groups new episodes
+  into their season or series (an episode alone, a season when several arrived together, the
+  series when it is new) — measure the rule, then reproduce it;
+- ⬜ **recently released**, which needs ordering by release date — the nullable-column sort
+  in *Open questions*;
+- ⬜ the shelves that need watch state — continue watching with content, recently watched,
+  top unwatched, top of a genre or of a person — once accounts and `view_state` exist.
+
 ## Reference server
 
 A live Plex server runs at `http://127.0.0.1:32400`. It is the arbiter for every behavioral
