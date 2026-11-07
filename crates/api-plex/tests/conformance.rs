@@ -1670,3 +1670,45 @@ async fn changing_prefs_is_declared_but_not_implemented() {
         .expect("router responds");
     assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
 }
+
+#[tokio::test]
+async fn the_updater_reports_an_install_that_cannot_update_itself() {
+    let (status, _, body) = get("/updater/status", Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body,
+        r#"{"MediaContainer":{"size":0,"autoUpdateVersion":1,"canInstall":false,"status":0}}"#
+    );
+    let (_, _, xml) = get("/updater/status", None).await;
+    assert!(
+        xml.contains(
+            r#"<MediaContainer size="0" autoUpdateVersion="1" canInstall="0" status="0">"#
+        ),
+        "{xml}"
+    );
+}
+
+#[tokio::test]
+async fn an_update_check_is_acknowledged_with_an_empty_ok() {
+    // As the reference answers `PUT /updater/check?download=0`: 200, no body, `text/html`.
+    let response = app()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/updater/check?download=0")
+                .header("X-Plex-Token", TOKEN)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html");
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    assert!(body.is_empty());
+}

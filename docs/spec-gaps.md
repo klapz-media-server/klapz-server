@@ -362,6 +362,9 @@ it describes almost nothing about responses. The authoritative per-field type ma
 - Booleans are inconsistent in JSON: `allowSync` is `true`, `hasPremiumPrimaryExtra` is `"1"`.
 - `Meta` and `UltraBlurColors` are JSON objects; every other child is an array.
 - XML escapes non-ASCII as numeric character references despite declaring UTF-8.
+- Line breaks in an attribute are written `&#xD;` and `&#xA;`, in hex unlike the other
+  character references. We do the same, and it matters beyond bytes: a parser turns a raw
+  newline inside an attribute into a space, so a synopsis written raw loses its paragraphs.
 - An apostrophe in an attribute is written `&#39;` (`Homer&#39;s Odyssey`), though the
   attributes are double-quoted and need no escaping of it. We do the same.
 - `/media/providers` writes an empty `Feature` or `Directory` in long form,

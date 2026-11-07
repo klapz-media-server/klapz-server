@@ -54,6 +54,8 @@ IMPLEMENTED = frozenset(
         "/media/providers",
         "/status/sessions",
         "/:/prefs",
+        "/updater/status",
+        "/updater/check",
     }
 )
 

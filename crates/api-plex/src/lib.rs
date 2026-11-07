@@ -20,6 +20,7 @@ pub mod providers;
 pub mod response;
 pub mod sessions;
 pub mod stubs;
+pub mod updater;
 pub mod xml;
 
 pub mod general;
@@ -76,6 +77,7 @@ pub fn router(state: PlexState) -> Router {
         .merge(library::router())
         .merge(providers::router())
         .merge(sessions::router())
+        .merge(updater::router())
         // Plex has paths whose segments literally start with a colon — `/:/prefs`,
         // `/:/timeline`, `/photo/:/transcode`. Axum 0.8 rejects those by default as a guard
         // against its own older `:param` syntax.

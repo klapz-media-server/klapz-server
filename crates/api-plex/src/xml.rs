@@ -127,6 +127,10 @@ fn scalar(value: &Value) -> Option<String> {
 /// `Ann&#233;e` despite declaring `encoding="UTF-8"`, so byte-exact fixture comparison
 /// requires reproducing it. The apostrophe is escaped for the same reason — attributes are
 /// double-quoted, so it needs none, yet the reference writes `Homer&#39;s Odyssey`.
+///
+/// Line breaks are escaped for a reason beyond fidelity: a parser normalizes a raw newline
+/// inside an attribute to a space, so a synopsis written raw loses its paragraphs. The
+/// reference writes `\r\n` as `&#xD;&#xA;`, in hex unlike the other references.
 fn escape_into(out: &mut String, text: &str) {
     for character in text.chars() {
         match character {
@@ -135,6 +139,9 @@ fn escape_into(out: &mut String, text: &str) {
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
             '\'' => out.push_str("&#39;"),
+            '\n' => out.push_str("&#xA;"),
+            '\r' => out.push_str("&#xD;"),
+            '\t' => out.push_str("&#x9;"),
             c if c.is_ascii() => out.push(c),
             c => {
                 out.push_str("&#");
@@ -324,6 +331,14 @@ mod tests {
         let mut out = String::new();
         escape_into(&mut out, "Homer's Odyssey");
         assert_eq!(out, "Homer&#39;s Odyssey");
+    }
+
+    #[test]
+    fn escapes_line_breaks_so_a_parser_keeps_them() {
+        // Captured on a synopsis: `…attives.&#xD;&#xA;https://…`.
+        let mut out = String::new();
+        escape_into(&mut out, "attives.\r\nhttps");
+        assert_eq!(out, "attives.&#xD;&#xA;https");
     }
 
     #[test]

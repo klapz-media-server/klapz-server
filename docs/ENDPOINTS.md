@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 14 | 5.4 % |
-| `stub` | 200 | 76.9 % |
+| `stub` | 198 | 76.2 % |
 | `partial` | 4 | 1.5 % |
-| `done` | 5 | 1.9 % |
+| `done` | 7 | 2.7 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -51,7 +51,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Playlist](#playlist) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Preferences](#preferences) | 3 | 0 | 1 | 1 | 1 | 0 |
 | [Timeline](#timeline) | 3 | 0 | 0 | 3 | 0 | 0 |
-| [Updater](#updater) | 3 | 0 | 0 | 3 | 0 | 0 |
+| [Updater](#updater) | 3 | 2 | 0 | 1 | 0 | 0 |
 | [Activities](#activities) | 2 | 0 | 0 | 2 | 0 | 0 |
 | [Events](#events) | 2 | 0 | 0 | 2 | 0 | 0 |
 | [Search](#search) | 2 | 0 | 0 | 2 | 0 | 0 |
@@ -432,8 +432,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `stub` | `PUT` | `/updater/apply` | admin | Applying updates |  |
-| `stub` | `PUT` | `/updater/check` | admin | Checking for updates |  |
-| `stub` | `GET` | `/updater/status` | admin | Querying status of updates |  |
+| `done` | `PUT` | `/updater/check` | admin | Checking for updates | Acknowledged with an empty `200` typed `text/html`, as the reference does; there is no channel to look in. |
+| `done` | `GET` | `/updater/status` | admin | Querying status of updates | An install that cannot update itself: `canInstall` false, no release. open-plex is not updated through plex.tv. |
 
 ## Activities
 
