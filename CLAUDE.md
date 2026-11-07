@@ -160,6 +160,11 @@ Places where we knowingly answer differently, each decided rather than overlooke
   `offset` and sends the paging headers, so `size` never claims more than the body holds.
 - **`myPlexSubscription` reports true** while `myPlex` reports false: no paywall, and no
   plex.tv link to pretend about.
+- **The Plex surface announces a Plex version, not ours.** `/identity`, `GET /` and
+  `/media/providers` report `1.43.5.11029-6bf8af3f0`, the reference server every capture comes
+  from: Plex Web refuses a server older than 1.18.3, and `0.1.0` reads as one. Clients that
+  enable features by version then expect exactly the behavior we copied. The official API keeps
+  open-plex's own version (`api-plex::general::PLEX_VERSION`).
 
 ### Data model
 

@@ -184,7 +184,7 @@ impl CapabilitiesContainer {
             transcoder_video_resolutions: TRANSCODER_RESOLUTIONS.to_owned(),
             updated_at: server.updated_at,
             updater: true,
-            version: server.version.clone(),
+            version: crate::general::PLEX_VERSION.to_owned(),
             voice_search: features.voice_search,
             directory: CAPABILITY_DIRECTORIES
                 .iter()

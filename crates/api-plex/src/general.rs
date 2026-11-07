@@ -13,6 +13,15 @@ use crate::gql;
 use crate::response::{PlexResponse, ResponseFormat};
 use crate::PlexState;
 
+/// The Plex Media Server version this server announces to Plex clients.
+///
+/// Not our own version: clients gate on the server's, and Plex Web refuses to run against
+/// anything older than 1.18.3 — `0.1.0` reads as a very old Plex. This is the version of the
+/// reference server every capture in this repository was taken from, so a client that
+/// enables a feature by version expects exactly the behavior we copied. The official API
+/// keeps publishing open-plex's own version.
+pub const PLEX_VERSION: &str = "1.43.5.11029-6bf8af3f0";
+
 pub fn router() -> Router<PlexState> {
     Router::new()
         .route("/", get(capabilities))
@@ -25,7 +34,6 @@ query PlexCapabilities {
   server {
     machineIdentifier
     friendlyName
-    version
     apiVersion
     platform
     platformVersion
@@ -70,7 +78,6 @@ struct ServerData {
 pub struct GqlServer {
     pub machine_identifier: String,
     pub friendly_name: String,
-    pub version: String,
     pub api_version: String,
     pub platform: String,
     pub platform_version: String,
@@ -155,7 +162,7 @@ async fn identity(
         api_version: state.identity.api_version.clone(),
         claimed: true,
         machine_identifier: state.identity.machine_identifier.clone(),
-        version: state.identity.version.clone(),
+        version: PLEX_VERSION.to_owned(),
     };
     PlexResponse::new(body, format)
 }

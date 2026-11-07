@@ -1712,3 +1712,18 @@ async fn an_update_check_is_acknowledged_with_an_empty_ok() {
         .to_bytes();
     assert!(body.is_empty());
 }
+
+#[tokio::test]
+async fn announces_the_plex_version_the_captures_come_from() {
+    // Plex Web refuses a server older than 1.18.3, and our own `0.1.0` reads as one. Every
+    // surface a client reads the version from announces the reference's.
+    for uri in ["/identity", "/", "/media/providers"] {
+        let (status, _, body) = get(uri, Some("application/json")).await;
+        assert_eq!(status, StatusCode::OK, "{uri}");
+        let json: Value = serde_json::from_str(&body).expect("json body");
+        assert_eq!(
+            json["MediaContainer"]["version"], "1.43.5.11029-6bf8af3f0",
+            "{uri}"
+        );
+    }
+}
