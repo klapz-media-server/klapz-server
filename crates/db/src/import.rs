@@ -9,6 +9,7 @@
 
 pub mod library;
 pub mod metadata;
+pub mod tags;
 
 use std::path::Path;
 
@@ -16,6 +17,7 @@ use sea_orm::{Database, DatabaseConnection, DbErr, QueryResult, TryGetable};
 
 pub use library::LibrarySummary;
 pub use metadata::MetadataSummary;
+pub use tags::TagSummary;
 
 /// How many source rows to read per statement.
 ///
@@ -54,8 +56,7 @@ pub struct ImportSummary {
     pub media: usize,
     pub files: usize,
     pub streams: usize,
-    pub tags: usize,
-    pub item_tags: usize,
+    pub tags: TagSummary,
     /// Rows skipped because the parent they reference does not exist.
     pub orphans: usize,
 }
@@ -87,7 +88,6 @@ pub async fn import_library(
         files: contents.files,
         streams: contents.streams,
         tags: contents.tags,
-        item_tags: contents.item_tags,
         orphans: contents.orphans,
     })
 }

@@ -8,22 +8,34 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: i64,
     pub kind: String,
+    /// The name as credited.
     pub name: String,
-    /// `name` with ASCII case folded, the form a filter by name compares in.
-    pub name_key: String,
-    pub provider_key: Option<String>,
-    pub thumb_url: Option<String>,
+    /// Set for a credit, null for a genre or a country.
+    pub person_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::item_tag::Entity")]
     ItemTag,
+    #[sea_orm(
+        belongs_to = "super::person::Entity",
+        from = "Column::PersonId",
+        to = "super::person::Column::Id",
+        on_delete = "Cascade"
+    )]
+    Person,
 }
 
 impl Related<super::item_tag::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ItemTag.def()
+    }
+}
+
+impl Related<super::person::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Person.def()
     }
 }
 

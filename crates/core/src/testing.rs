@@ -9,11 +9,12 @@
 
 use std::collections::BTreeMap;
 
-use crate::ids::{MediaId, PartId, RatingKey, SectionId, StreamId, TagId};
+use crate::ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use crate::metadata::{
-    self, FirstCharacter, ItemQuery, ItemSort, ItemTag, MediaFile, MediaStream, MediaVersion,
-    MetadataError, MetadataItem, MetadataRepository, SearchQuery, Tag, TagCondition, TagRef,
+    self, EpisodeCredit, ExternalId, FirstCharacter, ItemKind, ItemQuery, ItemSort, ItemTag,
+    MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem, MetadataRepository, Person,
+    Rating, SearchQuery, Tag, TagCondition, TagKind, TagRef,
 };
 use crate::page::{Cursor, Page, Window};
 
@@ -95,6 +96,8 @@ pub struct InMemoryMetadata {
     files: Vec<MediaFile>,
     streams: Vec<MediaStream>,
     tags: Vec<ItemTag>,
+    external_ids: Vec<ExternalId>,
+    ratings: Vec<Rating>,
 }
 
 impl InMemoryMetadata {
@@ -105,7 +108,17 @@ impl InMemoryMetadata {
             files: Vec::new(),
             streams: Vec::new(),
             tags: Vec::new(),
+            external_ids: Vec::new(),
+            ratings: Vec::new(),
         }
+    }
+
+    /// Attaches external identifiers and ratings, kept in the order given.
+    #[must_use]
+    pub fn with_references(mut self, external_ids: Vec<ExternalId>, ratings: Vec<Rating>) -> Self {
+        self.external_ids = external_ids;
+        self.ratings = ratings;
+        self
     }
 
     /// Attaches tags, which are kept in the order given: that order is the billing order.
@@ -123,9 +136,7 @@ impl InMemoryMetadata {
             .any(|attached| {
                 condition.any_of.iter().any(|wanted| match wanted {
                     TagRef::Id(id) => attached.tag.id == *id,
-                    TagRef::Name(name) => {
-                        metadata::tag_name_key(name) == metadata::tag_name_key(&attached.tag.name)
-                    }
+                    TagRef::Name(name) => name.to_lowercase() == attached.tag.name.to_lowercase(),
                 })
             })
     }
@@ -508,6 +519,85 @@ impl MetadataRepository for InMemoryMetadata {
             .filter(|attached| items.contains(&attached.item_id))
             .cloned()
             .collect())
+    }
+
+    async fn credits_below(
+        &self,
+        parents: &[RatingKey],
+    ) -> Result<Vec<EpisodeCredit>, MetadataError> {
+        let mut credits: Vec<EpisodeCredit> = Vec::new();
+        for &parent in parents {
+            let episodes: Vec<RatingKey> = self
+                .items
+                .iter()
+                .filter(|item| item.kind == ItemKind::Episode)
+                .filter(|episode| {
+                    episode.parent_id == Some(parent)
+                        || episode.parent_id.is_some_and(|season| {
+                            self.items
+                                .iter()
+                                .any(|item| item.id == season && item.parent_id == Some(parent))
+                        })
+                })
+                .map(|episode| episode.id)
+                .collect();
+            let mut tallied: Vec<EpisodeCredit> = Vec::new();
+            for attached in self.tags.iter().filter(|attached| {
+                episodes.contains(&attached.item_id)
+                    && !matches!(attached.tag.kind, TagKind::Genre | TagKind::Country)
+            }) {
+                match tallied
+                    .iter_mut()
+                    .find(|credit| credit.tag.id == attached.tag.id)
+                {
+                    Some(credit) => credit.episodes += 1,
+                    None => tallied.push(EpisodeCredit {
+                        parent,
+                        tag: attached.tag.clone(),
+                        episodes: 1,
+                    }),
+                }
+            }
+            // Most episodes first, then by name: the order storage promises.
+            tallied.sort_by(|left, right| {
+                right
+                    .episodes
+                    .cmp(&left.episodes)
+                    .then_with(|| left.tag.name.cmp(&right.tag.name))
+            });
+            credits.extend(tallied);
+        }
+        Ok(credits)
+    }
+
+    async fn external_ids_for(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<ExternalId>, MetadataError> {
+        Ok(self
+            .external_ids
+            .iter()
+            .filter(|id| items.contains(&id.item_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn ratings_for(&self, items: &[RatingKey]) -> Result<Vec<Rating>, MetadataError> {
+        Ok(self
+            .ratings
+            .iter()
+            .filter(|rating| items.contains(&rating.item_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn person(&self, id: PersonId) -> Result<Option<Person>, MetadataError> {
+        Ok(self
+            .tags
+            .iter()
+            .filter_map(|attached| attached.tag.person.as_ref())
+            .find(|person| person.id == id)
+            .cloned())
     }
 
     async fn tag(&self, id: TagId) -> Result<Option<Tag>, MetadataError> {

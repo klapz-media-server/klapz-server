@@ -58,6 +58,11 @@ numeric_id! {
     TagId
 }
 
+numeric_id! {
+    /// Identifies a person, whatever roles they are credited in.
+    PersonId
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

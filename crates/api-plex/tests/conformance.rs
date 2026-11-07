@@ -13,12 +13,13 @@ use http_body_util::BodyExt;
 use open_plex_api::{build_schema, ApiContext};
 use open_plex_api_plex::{router, PlexState};
 use open_plex_core::metadata::{
-    ItemKind, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataItem, StreamKind, Tag, TagKind,
+    ExternalId, ItemKind, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataItem, Person,
+    Rating, RatingKind, StreamKind, Tag, TagKind,
 };
 use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
 use open_plex_core::{
-    Accounts, Credential, LibrarySection, MediaId, PartId, Principal, RatingKey, Scope, SectionId,
-    SectionKind, SectionRoot, ServerCapabilities, ServerIdentity, StreamId, TagId,
+    Accounts, Credential, LibrarySection, MediaId, PartId, PersonId, Principal, RatingKey, Scope,
+    SectionId, SectionKind, SectionRoot, ServerCapabilities, ServerIdentity, StreamId, TagId,
 };
 use serde_json::Value;
 use tower::ServiceExt;
@@ -547,13 +548,15 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
         external_path: None,
     };
 
+    let (external_ids, ratings) = references();
     (
         InMemoryLibrary::new(vec![films, series]),
         InMemoryMetadata::new(vec![
             avatar, barbarella, show, season, episode, half_loop, untitled, hello,
         ])
         .with_media(vec![version], vec![file], vec![stream])
-        .with_tags(tags()),
+        .with_tags(tags())
+        .with_references(external_ids, ratings),
     )
 }
 
@@ -685,12 +688,63 @@ fn tags() -> Vec<ItemTag> {
                 id: TagId::new(id),
                 kind,
                 name: name.to_owned(),
-                provider_key: key.map(ToOwned::to_owned),
-                thumb_url: thumb.map(|path| format!("https://metadata-static.plex.tv/{path}.jpg")),
+                // The adapter never shows a person's id, so the tag's stands in for it.
+                person: key.map(|key| Person {
+                    id: PersonId::new(id),
+                    name: name.to_owned(),
+                    provider_key: Some(key.to_owned()),
+                    thumb_url: thumb
+                        .map(|path| format!("https://metadata-static.plex.tv/{path}.jpg")),
+                }),
             },
             role: role.map(ToOwned::to_owned),
         })
         .collect()
+}
+
+/// The Transporter's external identifiers and ratings, as captured.
+fn references() -> (Vec<ExternalId>, Vec<Rating>) {
+    let film = RatingKey::new(100);
+    let id = |source: &str, value: &str| ExternalId {
+        item_id: film,
+        source: source.to_owned(),
+        value: value.to_owned(),
+    };
+    let rating = |source: &str, kind: RatingKind, value: f64, image: &str| Rating {
+        item_id: film,
+        source: source.to_owned(),
+        kind,
+        value,
+        image: image.to_owned(),
+    };
+    (
+        vec![
+            id("imdb", "tt0293662"),
+            id("tmdb", "4108"),
+            id("tvdb", "1601"),
+        ],
+        vec![
+            rating("imdb", RatingKind::Audience, 6.8, "imdb://image.rating"),
+            rating(
+                "rottentomatoes",
+                RatingKind::Critic,
+                5.3,
+                "rottentomatoes://image.rating.rotten",
+            ),
+            rating(
+                "rottentomatoes",
+                RatingKind::Audience,
+                7.3,
+                "rottentomatoes://image.rating.upright",
+            ),
+            rating(
+                "themoviedb",
+                RatingKind::Audience,
+                6.7,
+                "themoviedb://image.rating",
+            ),
+        ],
+    )
 }
 
 fn item(id: i64, section: i64, kind: ItemKind, parent: Option<i64>, title: &str) -> MetadataItem {
@@ -1359,4 +1413,44 @@ async fn filters_by_tag_id_or_name() {
         total(listing("/library/sections/4/all?producer=473529").await),
         0
     );
+}
+
+#[tokio::test]
+async fn a_lookup_carries_external_ids_and_ratings_and_a_listing_does_not() {
+    let body = listing("/library/metadata/100").await;
+    let film = &body["MediaContainer"]["Metadata"][0];
+    assert_eq!(
+        film["Guid"],
+        serde_json::json!([
+            {"id": "imdb://tt0293662"},
+            {"id": "tmdb://4108"},
+            {"id": "tvdb://1601"}
+        ])
+    );
+    assert_eq!(
+        film["Rating"][1],
+        serde_json::json!({
+            "image": "rottentomatoes://image.rating.rotten",
+            "value": 5.3,
+            "type": "critic"
+        })
+    );
+
+    let listed = listing("/library/sections/4/all").await;
+    let first = &listed["MediaContainer"]["Metadata"][0];
+    assert!(first.get("Guid").is_none(), "{first}");
+    assert!(first.get("Rating").is_none(), "{first}");
+
+    // In XML, between the countries and the crew, as captured.
+    let (_, xml) = get_from(items_app(), "/library/metadata/100", None).await;
+    assert!(xml.contains(r#"<Guid id="imdb://tt0293662" />"#), "{xml}");
+    assert!(
+        xml.contains(r#"<Rating image="imdb://image.rating" value="6.8" type="audience" />"#),
+        "{xml}"
+    );
+    let order: Vec<usize> = ["<Country ", "<Guid ", "<Rating ", "<Director "]
+        .iter()
+        .map(|element| xml.find(element).expect(element))
+        .collect();
+    assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{xml}");
 }

@@ -13,15 +13,14 @@
 //! dangling parent, and skipping it orphans its 32 episodes too — 34 rows reported, from two
 //! corrupt references.
 //!
-//! Tags come last, as two more passes: the tag values, then their attachment to items.
+//! Tags, people, external identifiers and ratings come last; see [`super::tags`].
 
 use std::collections::HashSet;
 
-use open_plex_core::{Tag, TagId, TagKind};
 use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 
-use super::{source_error, ImportError, PlexRow, SOURCE_PAGE};
-use crate::entity::{item_tag, media, media_part, media_stream, metadata_item, tag};
+use super::{source_error, tags, ImportError, PlexRow, SOURCE_PAGE};
+use crate::entity::{media, media_part, media_stream, metadata_item};
 use crate::write;
 
 /// How many rows to write per statement.
@@ -42,9 +41,7 @@ pub struct MetadataSummary {
     pub media: usize,
     pub files: usize,
     pub streams: usize,
-    pub tags: usize,
-    /// Tags attached to items: one row per genre, country or credit.
-    pub item_tags: usize,
+    pub tags: tags::TagSummary,
     /// Rows skipped because the parent they reference does not exist.
     pub orphans: usize,
 }
@@ -89,13 +86,15 @@ pub async fn import(
     summary.streams = import_streams(destination, source, source_path, &part_ids).await?;
     tracing::info!(count = summary.streams, "imported streams");
 
-    let tag_ids = import_tags(destination, source, source_path).await?;
-    summary.tags = tag_ids.len();
-    tracing::info!(count = summary.tags, "imported tags");
-
-    summary.item_tags =
-        import_item_tags(destination, source, source_path, &item_ids, &tag_ids).await?;
-    tracing::info!(count = summary.item_tags, "imported item tags");
+    summary.tags = tags::import(destination, source, source_path, &item_ids).await?;
+    tracing::info!(
+        people = summary.tags.people,
+        tags = summary.tags.tags,
+        item_tags = summary.tags.item_tags,
+        external_ids = summary.tags.external_ids,
+        ratings = summary.tags.ratings,
+        "imported tags"
+    );
 
     Ok(summary)
 }
@@ -401,149 +400,6 @@ async fn import_streams(
     }
 
     Ok(written)
-}
-
-/// Replaces the stored tags with the source's.
-///
-/// Every tag of the six kinds, referenced or not: 292,000 rows, against the cost of first
-/// collecting which ones the imported items use. Deleting first is what makes a re-import
-/// idempotent, since tags outlive the items that a re-import replaces; the attachments go
-/// with them by cascade.
-async fn import_tags(
-    destination: &DatabaseConnection,
-    source: &DatabaseConnection,
-    source_path: &str,
-) -> Result<HashSet<i64>, ImportError> {
-    tag::Entity::delete_many().exec(destination).await?;
-
-    let mut written = HashSet::new();
-    let mut last_id = 0_i64;
-    loop {
-        // Keyset rather than `OFFSET`: an offset re-reads every row before it, which turns
-        // a pass over a large table quadratic.
-        let rows = source
-            .query_all(Statement::from_string(
-                sea_orm::DbBackend::Sqlite,
-                format!(
-                    "SELECT id, tag, tag_type, key, user_thumb_url FROM tags \
-                     WHERE tag_type IN (1, 4, 5, 6, 7, 8) AND id > {last_id} \
-                     ORDER BY id LIMIT {SOURCE_PAGE}"
-                ),
-            ))
-            .await
-            .map_err(|error| source_error(source_path, error))?;
-        let Some(last) = rows.last() else {
-            break;
-        };
-        last_id = last.plex_get("id")?;
-
-        let mut batch = Vec::with_capacity(rows.len());
-        for row in &rows {
-            let Some(kind) = row.plex_opt::<i32>("tag_type").and_then(tag_kind) else {
-                continue;
-            };
-            let Some(name) = row.plex_text("tag") else {
-                continue;
-            };
-            let id: i64 = row.plex_get("id")?;
-            batch.push(Tag {
-                id: TagId::new(id),
-                kind,
-                name,
-                provider_key: row.plex_text("key"),
-                thumb_url: row.plex_text("user_thumb_url"),
-            });
-            written.insert(id);
-        }
-        write::insert_tags(destination, &batch).await?;
-    }
-
-    Ok(written)
-}
-
-/// Attaches tags to the imported items.
-///
-/// `text` is kept for actors only, where it is the character played. The source fills it
-/// for directors, writers and producers too, and the reference publishes it for none of
-/// them, so neither do we.
-async fn import_item_tags(
-    destination: &DatabaseConnection,
-    source: &DatabaseConnection,
-    source_path: &str,
-    item_ids: &HashSet<i64>,
-    tag_ids: &HashSet<i64>,
-) -> Result<usize, ImportError> {
-    let mut written = 0_usize;
-    let mut last_id = 0_i64;
-    loop {
-        let rows = source
-            .query_all(Statement::from_string(
-                sea_orm::DbBackend::Sqlite,
-                format!(
-                    "SELECT tg.id, tg.metadata_item_id, tg.tag_id, tg.\"index\", tg.text, \
-                     t.tag_type FROM taggings tg JOIN tags t ON t.id = tg.tag_id \
-                     WHERE tg.id > {last_id} ORDER BY tg.id LIMIT {SOURCE_PAGE}"
-                ),
-            ))
-            .await
-            .map_err(|error| source_error(source_path, error))?;
-        let Some(last) = rows.last() else {
-            break;
-        };
-        last_id = last.plex_get("id")?;
-
-        let mut batch = Vec::with_capacity(rows.len());
-        for row in &rows {
-            let (Some(item_id), Some(tag_id)) = (
-                row.plex_opt::<i64>("metadata_item_id"),
-                row.plex_opt::<i64>("tag_id"),
-            ) else {
-                continue;
-            };
-            // Attachments to kinds we do not import, on either side: extras and collections
-            // among items, artwork and external ids among tags.
-            if !item_ids.contains(&item_id) || !tag_ids.contains(&tag_id) {
-                continue;
-            }
-            let is_actor =
-                row.plex_opt::<i32>("tag_type").and_then(tag_kind) == Some(TagKind::Actor);
-            batch.push(item_tag::ActiveModel {
-                item_id: ActiveValue::Set(item_id),
-                tag_id: ActiveValue::Set(tag_id),
-                position: ActiveValue::Set(row.plex_opt("index").unwrap_or(0)),
-                role: ActiveValue::Set(if is_actor {
-                    row.plex_text("text")
-                } else {
-                    None
-                }),
-            });
-        }
-
-        for chunk in batch.chunks(WRITE_CHUNK) {
-            item_tag::Entity::insert_many(chunk.to_vec())
-                .exec(destination)
-                .await?;
-        }
-        written += batch.len();
-    }
-
-    Ok(written)
-}
-
-/// Plex's `tag_type` discriminants for the kinds we import, identified by matching the
-/// reference server's output element by element: 1 is `<Genre>`, 6 is `<Role>`, and so on.
-/// The source uses some twenty others — artwork, external ids, reviews, ratings — which are
-/// not tags in our model.
-const fn tag_kind(tag_type: i32) -> Option<TagKind> {
-    match tag_type {
-        1 => Some(TagKind::Genre),
-        4 => Some(TagKind::Director),
-        5 => Some(TagKind::Writer),
-        6 => Some(TagKind::Actor),
-        7 => Some(TagKind::Producer),
-        8 => Some(TagKind::Country),
-        _ => None,
-    }
 }
 
 /// Plex's `stream_type_id` discriminants. Anything else is a kind we do not model.

@@ -8,21 +8,23 @@
 use std::collections::BTreeMap;
 
 use open_plex_core::metadata::{
-    first_character_bucket, tag_name_key, FirstCharacter, ItemKind, ItemQuery, ItemSort, ItemTag,
-    MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem, MetadataRepository,
-    SearchQuery, StreamKind, Tag, TagCondition, TagRef,
+    first_character_bucket, EpisodeCredit, ExternalId, FirstCharacter, ItemKind, ItemQuery,
+    ItemSort, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
+    MetadataRepository, Person, Rating, SearchQuery, StreamKind, Tag, TagCondition, TagKind,
+    TagRef,
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::search;
-use open_plex_core::{MediaId, PartId, RatingKey, SectionId, StreamId, TagId};
+use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromQueryResult, Order,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromQueryResult, JoinType, Order,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
 };
 
 use crate::entity::{
-    item_tag, item_title_word, media, media_part, media_stream, metadata_item, tag,
+    item_external_id, item_rating, item_tag, item_title_word, media, media_part, media_stream,
+    metadata_item, person, tag,
 };
 
 #[derive(Debug, Clone)]
@@ -109,26 +111,23 @@ impl SqlMetadataRepository {
 /// inside the correlated part instead checks every tag of every item against the names:
 /// measured at 300 to 500 ms for `genre=action` over 7,167 films, against 40 ms by id.
 fn carries_tag(condition: &TagCondition) -> Condition {
-    let mut ids = Vec::new();
-    let mut names = Vec::new();
-    for wanted in &condition.any_of {
-        match wanted {
-            TagRef::Id(id) => ids.push(id.get()),
-            TagRef::Name(name) => names.push(tag_name_key(name)),
-        }
-    }
-    if ids.is_empty() && names.is_empty() {
+    if condition.any_of.is_empty() {
         // An empty `OR` renders as no constraint at all, which would turn "carries none of
         // these" into "matches everything". The bindings refuse an empty condition; this
         // keeps storage safe if one gets through.
         return Condition::all().add(Expr::val(1).eq(0));
     }
     let mut which = Condition::any();
-    if !ids.is_empty() {
-        which = which.add(Expr::col((tag::Entity, tag::Column::Id)).is_in(ids));
-    }
-    if !names.is_empty() {
-        which = which.add(Expr::col((tag::Entity, tag::Column::NameKey)).is_in(names));
+    for wanted in &condition.any_of {
+        which = which.add(match wanted {
+            TagRef::Id(id) => Expr::col((tag::Entity, tag::Column::Id)).eq(id.get()),
+            // `LOWER` on both sides rather than lowercasing the value here, so the stored
+            // name and the wanted one fold by the same engine's rules, whatever they are.
+            TagRef::Name(name) => {
+                Expr::expr(Func::lower(Expr::col((tag::Entity, tag::Column::Name))))
+                    .eq(Func::lower(Expr::val(name.clone())))
+            }
+        });
     }
 
     let wanted = Query::select()
@@ -530,35 +529,196 @@ impl MetadataRepository for SqlMetadataRepository {
             return Ok(Vec::new());
         }
         let keys: Vec<i64> = items.iter().map(|id| id.get()).collect();
-        let rows = item_tag::Entity::find()
-            .find_also_related(tag::Entity)
+        let rows = with_tag_columns(item_tag::Entity::find().select_only())
+            .column(item_tag::Column::ItemId)
+            .column(item_tag::Column::Role)
+            .join(JoinType::InnerJoin, item_tag::Relation::Tag.def())
+            .join(JoinType::LeftJoin, tag::Relation::Person.def())
             .filter(item_tag::Column::ItemId.is_in(keys))
             .order_by_asc(item_tag::Column::ItemId)
             .order_by_asc(tag::Column::Kind)
             .order_by_asc(item_tag::Column::Position)
+            .into_model::<AttachedRow>()
             .all(&self.connection)
             .await
             .map_err(storage)?;
 
         Ok(rows
             .into_iter()
-            .filter_map(|(attached, tag)| {
+            .filter_map(|row| {
                 Some(ItemTag {
-                    item_id: RatingKey::new(attached.item_id),
-                    tag: to_tag(tag?)?,
-                    role: attached.role,
+                    item_id: RatingKey::new(row.item_id),
+                    role: row.role.clone(),
+                    tag: row.tag.into_tag()?,
+                })
+            })
+            .collect())
+    }
+
+    async fn credits_below(
+        &self,
+        parents: &[RatingKey],
+    ) -> Result<Vec<EpisodeCredit>, MetadataError> {
+        if parents.is_empty() {
+            return Ok(Vec::new());
+        }
+        // Seasons and series in one list, each matched at its own depth. An id is one or
+        // the other, so no episode is counted twice.
+        let mut credits = self.credits_at_depth(parents, false).await?;
+        credits.extend(self.credits_at_depth(parents, true).await?);
+        Ok(credits)
+    }
+
+    async fn external_ids_for(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<ExternalId>, MetadataError> {
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+        let keys: Vec<i64> = items.iter().map(|id| id.get()).collect();
+        let rows = item_external_id::Entity::find()
+            .filter(item_external_id::Column::ItemId.is_in(keys))
+            .order_by_asc(item_external_id::Column::ItemId)
+            .order_by_asc(item_external_id::Column::Position)
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| ExternalId {
+                item_id: RatingKey::new(row.item_id),
+                source: row.source,
+                value: row.value,
+            })
+            .collect())
+    }
+
+    async fn ratings_for(&self, items: &[RatingKey]) -> Result<Vec<Rating>, MetadataError> {
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+        let keys: Vec<i64> = items.iter().map(|id| id.get()).collect();
+        let rows = item_rating::Entity::find()
+            .filter(item_rating::Column::ItemId.is_in(keys))
+            .order_by_asc(item_rating::Column::ItemId)
+            .order_by_asc(item_rating::Column::Position)
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                Some(Rating {
+                    item_id: RatingKey::new(row.item_id),
+                    kind: item_rating::parse_kind(&row.kind)?,
+                    source: row.source,
+                    value: row.value,
+                    image: row.image,
                 })
             })
             .collect())
     }
 
     async fn tag(&self, id: TagId) -> Result<Option<Tag>, MetadataError> {
-        Ok(tag::Entity::find_by_id(id.get())
+        Ok(
+            with_tag_columns(tag::Entity::find_by_id(id.get()).select_only())
+                .join(JoinType::LeftJoin, tag::Relation::Person.def())
+                .into_model::<TagRow>()
+                .one(&self.connection)
+                .await
+                .map_err(storage)?
+                .and_then(TagRow::into_tag),
+        )
+    }
+
+    async fn person(&self, id: PersonId) -> Result<Option<Person>, MetadataError> {
+        Ok(person::Entity::find_by_id(id.get())
             .one(&self.connection)
             .await
             .map_err(storage)?
-            .and_then(to_tag))
+            .map(|row| Person {
+                id: PersonId::new(row.id),
+                name: row.name,
+                provider_key: row.provider_key,
+                thumb_url: row.thumb_url,
+            }))
     }
+}
+
+/// Selects a tag and its person, as [`TagRow`] reads them back. The person's name is
+/// aliased, or it would collide with the tag's.
+fn with_tag_columns<E: EntityTrait>(select: Select<E>) -> Select<E> {
+    select
+        .column(tag::Column::Id)
+        .column(tag::Column::Kind)
+        .column(tag::Column::Name)
+        .column(tag::Column::PersonId)
+        .column_as(person::Column::Name, "person_name")
+        .column(person::Column::ProviderKey)
+        .column(person::Column::ThumbUrl)
+}
+
+/// A tag joined to its person, as a read selects it.
+#[derive(Debug, FromQueryResult)]
+struct TagRow {
+    id: i64,
+    kind: String,
+    name: String,
+    person_id: Option<i64>,
+    person_name: Option<String>,
+    provider_key: Option<String>,
+    thumb_url: Option<String>,
+}
+
+impl TagRow {
+    /// `None` for a kind this build does not know, which is skipped rather than guessed at:
+    /// a genre presented as a director would be worse than a missing one.
+    fn into_tag(self) -> Option<Tag> {
+        let Some(kind) = tag::parse_kind(&self.kind) else {
+            tracing::warn!(
+                kind = self.kind,
+                id = self.id,
+                "unknown tag kind in storage, skipped"
+            );
+            return None;
+        };
+        let person = match (self.person_id, self.person_name) {
+            (Some(id), Some(name)) => Some(Person {
+                id: PersonId::new(id),
+                name,
+                provider_key: self.provider_key,
+                thumb_url: self.thumb_url,
+            }),
+            _ => None,
+        };
+        Some(Tag {
+            id: TagId::new(self.id),
+            kind,
+            name: self.name,
+            person,
+        })
+    }
+}
+
+/// A tag as attached to an item.
+#[derive(Debug, FromQueryResult)]
+struct AttachedRow {
+    item_id: i64,
+    role: Option<String>,
+    #[sea_orm(nested)]
+    tag: TagRow,
+}
+
+/// A credit counted over the episodes below one parent.
+#[derive(Debug, FromQueryResult)]
+struct TalliedRow {
+    parent: i64,
+    episodes: i64,
+    #[sea_orm(nested)]
+    tag: TagRow,
 }
 
 /// One row of a grouped count.
@@ -569,6 +729,76 @@ struct ParentCount {
 }
 
 impl SqlMetadataRepository {
+    /// The credits of the episodes directly below `parents` — seasons — or, when `deep`, two
+    /// levels below — series.
+    async fn credits_at_depth(
+        &self,
+        parents: &[RatingKey],
+        deep: bool,
+    ) -> Result<Vec<EpisodeCredit>, MetadataError> {
+        let keys: Vec<i64> = parents.iter().map(|id| id.get()).collect();
+        let season = Alias::new("season");
+        let parent = if deep {
+            Expr::col((season.clone(), metadata_item::Column::ParentId))
+        } else {
+            Expr::col((metadata_item::Entity, metadata_item::Column::ParentId))
+        };
+        let credit_kinds = [
+            TagKind::Director,
+            TagKind::Writer,
+            TagKind::Actor,
+            TagKind::Producer,
+        ]
+        .map(tag::kind_name);
+
+        let mut select = with_tag_columns(metadata_item::Entity::find().select_only())
+            .column_as(parent.clone(), "parent")
+            .column_as(
+                Expr::col((metadata_item::Entity, metadata_item::Column::Id)).count_distinct(),
+                "episodes",
+            )
+            .join(JoinType::InnerJoin, metadata_item::Relation::ItemTag.def())
+            .join(JoinType::InnerJoin, item_tag::Relation::Tag.def())
+            .join(JoinType::LeftJoin, tag::Relation::Person.def())
+            .filter(Expr::col((tag::Entity, tag::Column::Kind)).is_in(credit_kinds))
+            .filter(parent.clone().is_in(keys))
+            .group_by(parent.clone())
+            .group_by(tag::Column::Id)
+            .group_by(tag::Column::Kind)
+            .group_by(tag::Column::Name)
+            .group_by(tag::Column::PersonId)
+            .group_by(person::Column::Name)
+            .group_by(person::Column::ProviderKey)
+            .group_by(person::Column::ThumbUrl);
+        if deep {
+            select = select.join_as(
+                JoinType::InnerJoin,
+                metadata_item::Relation::Parent.def(),
+                season,
+            );
+        }
+
+        let rows = select
+            .order_by_asc(parent)
+            .order_by_desc(Expr::col(Alias::new("episodes")))
+            .order_by_asc(tag::Column::Name)
+            .into_model::<TalliedRow>()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                Some(EpisodeCredit {
+                    parent: RatingKey::new(row.parent),
+                    episodes: u32::try_from(row.episodes).unwrap_or(u32::MAX),
+                    tag: row.tag.into_tag()?,
+                })
+            })
+            .collect())
+    }
+
     /// Counts children, or grandchildren when `deep`.
     ///
     /// A show's episode count is two levels down, so it groups by the grandparent — one query
@@ -816,26 +1046,6 @@ fn to_track(row: media_stream::Model) -> MediaStream {
         is_forced: row.is_forced,
         external_path: row.external_path,
     }
-}
-
-/// `None` for a kind this build does not know, which is skipped rather than guessed at: a
-/// genre presented as a director would be worse than a missing one.
-fn to_tag(row: tag::Model) -> Option<Tag> {
-    let Some(kind) = tag::parse_kind(&row.kind) else {
-        tracing::warn!(
-            kind = row.kind,
-            id = row.id,
-            "unknown tag kind in storage, skipped"
-        );
-        return None;
-    };
-    Some(Tag {
-        id: TagId::new(row.id),
-        kind,
-        name: row.name,
-        provider_key: row.provider_key,
-        thumb_url: row.thumb_url,
-    })
 }
 
 fn storage(error: sea_orm::DbErr) -> MetadataError {

@@ -32,6 +32,12 @@ pub enum Relation {
     Tag,
 }
 
+impl Related<super::metadata_item::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MetadataItem.def()
+    }
+}
+
 impl Related<super::tag::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Tag.def()

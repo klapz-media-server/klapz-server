@@ -11,7 +11,8 @@ use std::sync::Arc;
 use async_graphql::dataloader::Loader;
 use open_plex_core::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use open_plex_core::metadata::{
-    ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem, MetadataRepository,
+    EpisodeCredit, ExternalId, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError,
+    MetadataItem, MetadataRepository, Rating,
 };
 use open_plex_core::{MediaId, PartId, RatingKey, SectionId};
 
@@ -268,6 +269,104 @@ impl Loader<RatingKey> for TagsLoader {
         let mut grouped: HashMap<RatingKey, Self::Value> = HashMap::new();
         for tag in tags {
             grouped.entry(tag.item_id).or_default().push(tag);
+        }
+        Ok(grouped)
+    }
+}
+
+/// Loads the credits of the episodes below several series or seasons in one call.
+#[derive(Debug, Clone)]
+pub struct CreditsBelowLoader {
+    repository: Arc<dyn MetadataRepository>,
+}
+
+impl CreditsBelowLoader {
+    pub const fn new(repository: Arc<dyn MetadataRepository>) -> Self {
+        Self { repository }
+    }
+}
+
+impl Loader<RatingKey> for CreditsBelowLoader {
+    type Value = Vec<EpisodeCredit>;
+    type Error = Shared<MetadataError>;
+
+    async fn load(
+        &self,
+        keys: &[RatingKey],
+    ) -> Result<HashMap<RatingKey, Self::Value>, Self::Error> {
+        let rows = self
+            .repository
+            .credits_below(keys)
+            .await
+            .map_err(Arc::new)?;
+
+        let mut grouped: HashMap<RatingKey, Self::Value> = HashMap::new();
+        for row in rows {
+            grouped.entry(row.parent).or_default().push(row);
+        }
+        Ok(grouped)
+    }
+}
+
+/// Loads the external identifiers of several items in one call.
+#[derive(Debug, Clone)]
+pub struct ExternalIdsLoader {
+    repository: Arc<dyn MetadataRepository>,
+}
+
+impl ExternalIdsLoader {
+    pub const fn new(repository: Arc<dyn MetadataRepository>) -> Self {
+        Self { repository }
+    }
+}
+
+impl Loader<RatingKey> for ExternalIdsLoader {
+    type Value = Vec<ExternalId>;
+    type Error = Shared<MetadataError>;
+
+    async fn load(
+        &self,
+        keys: &[RatingKey],
+    ) -> Result<HashMap<RatingKey, Self::Value>, Self::Error> {
+        let rows = self
+            .repository
+            .external_ids_for(keys)
+            .await
+            .map_err(Arc::new)?;
+
+        let mut grouped: HashMap<RatingKey, Self::Value> = HashMap::new();
+        for row in rows {
+            grouped.entry(row.item_id).or_default().push(row);
+        }
+        Ok(grouped)
+    }
+}
+
+/// Loads the ratings of several items in one call.
+#[derive(Debug, Clone)]
+pub struct RatingsLoader {
+    repository: Arc<dyn MetadataRepository>,
+}
+
+impl RatingsLoader {
+    pub const fn new(repository: Arc<dyn MetadataRepository>) -> Self {
+        Self { repository }
+    }
+}
+
+impl Loader<RatingKey> for RatingsLoader {
+    type Value = Vec<Rating>;
+    type Error = Shared<MetadataError>;
+
+    async fn load(
+        &self,
+        keys: &[RatingKey],
+    ) -> Result<HashMap<RatingKey, Self::Value>, Self::Error> {
+        let rows = self.repository.ratings_for(keys).await.map_err(Arc::new)?;
+
+        let mut grouped: HashMap<RatingKey, Self::Value> = HashMap::new();
+        for row in rows {
+            grouped.entry(row.item_id).or_default().push(row);
         }
         Ok(grouped)
     }

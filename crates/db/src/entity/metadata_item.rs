@@ -45,6 +45,8 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     LibrarySection,
+    #[sea_orm(has_many = "super::item_tag::Entity")]
+    ItemTag,
     #[sea_orm(has_many = "super::media::Entity")]
     Media,
     /// The self-join that walks up the hierarchy: an episode to its season, a season to its

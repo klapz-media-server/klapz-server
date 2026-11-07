@@ -10,19 +10,20 @@ use async_graphql::{
 use open_plex_core::library::LibraryRepository;
 use open_plex_core::metadata::{MetadataRepository, SearchQuery};
 use open_plex_core::page::{Cursor, Window, WindowError};
-use open_plex_core::{MediaId, PartId, RatingKey, SectionId, StreamId, TagId};
+use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 
 use crate::cursor::OpaqueCursor;
 use crate::item::{Episode, Item, Movie, Season, Show, ITEM_TYPE};
 use crate::library::{Library, Root, LIBRARY_TYPE, ROOT_TYPE};
 use crate::loader::{
-    ChildCountLoader, FilesLoader, ItemLoader, LeafCountLoader, LibraryLoader, RootsLoader,
-    StreamsLoader, TagsLoader, VersionsLoader,
+    ChildCountLoader, CreditsBelowLoader, ExternalIdsLoader, FilesLoader, ItemLoader,
+    LeafCountLoader, LibraryLoader, RatingsLoader, RootsLoader, StreamsLoader, TagsLoader,
+    VersionsLoader,
 };
 use crate::media::{File, Track, Version, FILE_TYPE, STREAM_TYPE, VERSION_TYPE};
 use crate::node::GlobalId;
 use crate::server::{Server, SERVER_TYPE};
-use crate::tag::{TagObject, TAG_TYPE};
+use crate::tag::{PersonObject, TagObject, PERSON_TYPE, TAG_TYPE};
 
 pub type ApiSchema = Schema<Query, EmptyMutation, EmptySubscription>;
 
@@ -69,6 +70,8 @@ pub enum Node {
     MediaStream(Track),
     /// A genre, a country, or a person in one credit role.
     Tag(TagObject),
+    /// Someone credited on an item.
+    Person(PersonObject),
 }
 
 /// Default page size when the client requests neither end of a range.
@@ -135,6 +138,10 @@ impl Query {
                 .tag(TagId::new(global.key))
                 .await?
                 .map(|tag| Node::Tag(TagObject(tag)))),
+            PERSON_TYPE => Ok(metadata(context)?
+                .person(PersonId::new(global.key))
+                .await?
+                .map(|person| Node::Person(PersonObject(person)))),
             other => Err(async_graphql::Error::new(format!(
                 "`{other}` is not an identifiable type"
             ))),
@@ -399,6 +406,18 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
             LeafCountLoader::new(Arc::clone(&metadata)),
             tokio::spawn,
         ))
-        .data(DataLoader::new(TagsLoader::new(metadata), tokio::spawn))
+        .data(DataLoader::new(
+            TagsLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            CreditsBelowLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            ExternalIdsLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(RatingsLoader::new(metadata), tokio::spawn))
         .finish()
 }

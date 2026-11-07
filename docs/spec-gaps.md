@@ -189,8 +189,12 @@ and both library types. The live reference returns 3–5% more on some probes: i
 metadata since the snapshot was taken (Snowpiercer has four genres there and none in the
 snapshot), which no import of the snapshot can reproduce.
 
-One deviation of ours: a tag filter listing more than 50 values answers `400`. The reference
-has no such ceiling; we need one, since each value becomes a bound parameter.
+Two deviations of ours. A tag filter listing more than 50 values answers `400`: the reference
+has no such ceiling, and we need one since each value becomes a bound parameter. And a name is
+compared with `LOWER` on both sides, which folds exactly what the engine folds: ASCII only on
+`SQLite`, as the reference does, but all of Unicode on PostgreSQL, where `genre=COMÉDIE` would
+find Comédie. Matching the reference to the letter on every engine was not judged worth a
+stored column.
 
 `collection` stays refused with `501`. In Plex a collection is an item of its own, with its own
 endpoints and artwork, and its tag form is unreliable even on the reference: 40% of the films
@@ -254,8 +258,13 @@ and episode of the reference library:
 | `Writer` | 2 | `id`, `filter`, `tag`, `tagKey`, `thumb` |
 | `Role` | 3 | `id`, `filter`, `tag`, `tagKey`, `role`, `thumb` |
 | `Producer` | none | `id`, `filter`, `tag`, `tagKey`, `thumb` |
+| `Guid` | none | `id`, as `imdb://tt0293662` |
+| `Rating` | none | `image`, `value`, `type` |
 
-They follow `Media`, in that order. `tagKey` and `thumb` are absent when the provider knows
+They follow `Media` in the order `Genre`, `Country`, `Guid`, `Rating`, then the four credits.
+Plex stores identifiers and ratings as tags too (`tag_type` 314 and 316); we keep them in tables
+of their own. A rating's `value` is published to **one decimal**, as an item's own ratings are:
+TMDB's stored 5.525 comes out as 5.5. `tagKey` and `thumb` are absent when the provider knows
 nothing of the person; `filter` is the listing filter selecting the tag (`actor=472942` for a
 `Role`).
 
@@ -274,8 +283,16 @@ the first *n* by billing order, and differ on those items. Measured against the 
 1,122 of 1,151 listed items identical; of the 69 differing elements, 3 are this cache and 66
 are metadata the live server refreshed after the snapshot.
 
-Lookups: 326 of 380 sampled items identical, and every one of the other 54 is an item whose
-live tags no longer match the snapshot's.
+**A person has one portrait, the reference one per credit.** The reference shows each tag's own
+`thumb`, and 964 people carry two across their credits. People live in a table of their own
+here, so one portrait is kept: the one most of their credits show. That leaves 6,717 of 3.45
+million credits showing a different portrait from the reference's, against 29,094 had the
+most recent tag's portrait been kept.
+
+Lookups, over 420 sampled films, series, seasons and episodes: 355 identical; 44 are items
+whose live tags no longer match the snapshot's, and the other 21 differ by a credit's portrait
+alone. `Guid` identical on 419 and `Rating` on 414, every difference being an item the live
+server refreshed after the snapshot.
 
 ### Global search is ranked, ours is not
 

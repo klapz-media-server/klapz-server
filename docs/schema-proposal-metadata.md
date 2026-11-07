@@ -171,23 +171,25 @@ CREATE INDEX idx_stream_part ON media_stream (media_part_id, kind, position);
 947,346 rows here, so this index is not optional. `position` keeps its ffmpeg meaning because
 that is what the transcoder command line needs.
 
-### `tag` and `item_tag`
+### `person`, `tag` and `item_tag`
 
-**Implemented** in migration `m0005_tags`, with three corrections to what this section first
+**Implemented** in migration `m0005_tags`, with four corrections to what this section first
 proposed.
 
-Tag values are global; attachment is per item and ordered.
-
 ```sql
-CREATE TABLE tag (
-  id           bigint  PRIMARY KEY,  -- Plex's own id, kept: clients hold it in `filter=genre=38`
-  kind         varchar NOT NULL,     -- genre|country|director|writer|actor|producer
+CREATE TABLE person (
+  id           bigint  PRIMARY KEY,  -- our own: Plex has no person table
   name         varchar NOT NULL,
-  name_key     varchar NOT NULL,     -- name with ASCII case folded, what a filter by name matches
-  provider_key varchar NULL,         -- the provider's id for a person: tells homonyms apart
-  thumb_url    varchar NULL          -- a person's portrait
+  provider_key varchar NULL,         -- the provider's id: what tells homonyms apart
+  thumb_url    varchar NULL
 );
-CREATE INDEX idx_tag_name ON tag (kind, name_key);
+
+CREATE TABLE tag (
+  id        bigint  PRIMARY KEY,     -- Plex's own id, kept: clients hold it in `filter=genre=38`
+  kind      varchar NOT NULL,        -- genre|country|director|writer|actor|producer
+  name      varchar NOT NULL,        -- as credited
+  person_id bigint  NULL REFERENCES person(id) ON DELETE CASCADE  -- set for a credit
+);
 
 CREATE TABLE item_tag (
   item_id  bigint  NOT NULL REFERENCES metadata_item(id) ON DELETE CASCADE,
@@ -201,36 +203,56 @@ CREATE INDEX idx_item_tag_tag ON item_tag (tag_id, item_id);
 
 The corrections:
 
+- **People in their own table.** A credit stays a tag — Luc Besson the writer and Luc Besson
+  the producer are two tags, filtered on separately — but both point at one person, who
+  carries the name and the portrait. Plex has no such table; people are rebuilt at import by
+  grouping credit tags on the provider key: 255,011 keyed people, plus one person per keyless
+  credit tag, 279,255 in all. A keyless credit is not matched by name, since a namesake and the
+  same person cannot be told apart and merging two people is the worse mistake.
 - **No `UNIQUE (kind, name)`.** The first draft proposed it as what Plex lacks. The data says
   otherwise: every same-name group of person tags in the reference — 715 directors, 1,410
   writers, 11,879 actors, 410 producers — carries a distinct provider key per row. They are
-  homonyms, different people, and the constraint would have merged them. Genres and countries
-  have no duplicates at all. Identity is the id.
-- **No `collection` and no `studio` kind.** A collection is an item of its own in Plex, with its
-  own endpoints and artwork; studio is already a column on the item.
-- **`name_key`.** The reference matches a filter by name ignoring ASCII case only, which is
-  `SQLite`'s `NOCASE`; PostgreSQL's `LOWER` folds Unicode and would match more. Storing the
-  folded form keeps the rule identical on every engine.
+  homonyms, and the constraint would have merged them.
+- **A credit keeps its own name.** 949 people are credited under two spellings (`Andy Garcia`,
+  `Andy García`), and the reference publishes the tag's. The person takes the most recent.
+  The portrait is the person's alone: of the 964 people with two, the one most credits show
+  is kept, which leaves 6,717 of 3.45 million credits showing another portrait than the
+  reference does — against 29,094 had the most recent been kept.
+- **No `collection` and no `studio` kind.** A collection is an item of its own in Plex, with
+  its own endpoints and artwork; studio is already a column on the item.
 
-Volumes for the 171,018 imported items: 292,549 tags and 3,564,487 attachments. The full
-import, tags included, takes 3 min 26 s on the reference library.
+### `item_external_id` and `item_rating`
 
-### `item_external_id`
-
-External identifiers, which Plex stores as `tag_type = 314`.
+**Implemented** in migration `m0006_references`. Plex stores both as tags (`tag_type` 314 and
+316), the identifier or the badge as the tag and the score in the attachment's text.
 
 ```sql
 CREATE TABLE item_external_id (
-  metadata_item_id bigint  NOT NULL REFERENCES metadata_item(id) ON DELETE CASCADE,
-  source           varchar NOT NULL,   -- imdb|tmdb|tvdb, the only three observed
-  value            varchar NOT NULL,
-  PRIMARY KEY (metadata_item_id, source)
+  item_id  bigint  NOT NULL REFERENCES metadata_item(id) ON DELETE CASCADE,
+  source   varchar NOT NULL,   -- imdb|tmdb|tvdb, the only three observed
+  value    varchar NOT NULL,
+  position integer NOT NULL,
+  PRIMARY KEY (item_id, source, value)
 );
-CREATE INDEX idx_external_lookup ON item_external_id (source, value);
+CREATE INDEX idx_external_id_lookup ON item_external_id (source, value);
+
+CREATE TABLE item_rating (
+  item_id  bigint  NOT NULL REFERENCES metadata_item(id) ON DELETE CASCADE,
+  source   varchar NOT NULL,   -- imdb|rottentomatoes|themoviedb
+  kind     varchar NOT NULL,   -- critic|audience, unpacked from the badge's `extra_data`
+  value    double  NOT NULL,   -- out of 10, as stored: rounding is presentation
+  image    varchar NOT NULL,   -- the badge, `rottentomatoes://image.rating.ripe`
+  position integer NOT NULL,
+  PRIMARY KEY (item_id, source, kind)
+);
 ```
 
-The API emits these as `<Guid id="imdb://tt8041270"/>`; splitting source from value makes
-"find by IMDb id" an indexed lookup instead of a `LIKE`.
+The identifier key is `(item, source, value)` rather than `(item, source)`: 65 items carry two
+identifiers from one source. The API emits these as `<Guid id="imdb://tt8041270"/>`; splitting
+source from value makes "find by IMDb id" an indexed lookup instead of a `LIKE`.
+
+Volumes for the 171,018 imported items: 292,549 tags, 3,564,487 attachments, 424,487 external
+identifiers and 256,243 ratings. The full import takes 3 min 33 s on the reference library.
 
 ### Rejected: a `work` table
 
@@ -298,9 +320,9 @@ thing shared is `guid`, and the only thing keyed on it is `view_state`.
 **Tag type coverage.** The six imported kinds were identified by matching the reference's
 output element by element: `1` is `<Genre>`, `4` `<Director>`, `5` `<Writer>`, `6` `<Role>`,
 `7` `<Producer>`, `8` `<Country>`; `2` is `<Collection>`, left out on purpose. `314` and `316`
-come out as `<Guid>` and `<Rating>`, which belong in `item_external_id` and a ratings table, not
-here. The rest — 9, 10, 12, 305, 312, 313, 315, 317–319, 322–325 — never come out as tag
-elements on a lookup; some feed `<Image>` and `<CommonSenseMedia>`, and none is identified
+come out as `<Guid>` and `<Rating>`, and live in `item_external_id` and `item_rating`.
+The rest — 9, 10, 12, 305, 312, 313, 315, 317–319, 322–325 — never come out as tag elements
+on a lookup; some feed `<Image>` and `<CommonSenseMedia>`, and none is identified
 individually yet.
 
 **Accounts and rights are ours to design, and must come before `view_state` is usable.** The

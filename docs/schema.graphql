@@ -1,15 +1,3 @@
-type CastMember {
-	"""
-	Who plays.
-	"""
-	person: Tag!
-	"""
-	The character played, as the metadata source credits it — sometimes several, as in
-	`Homer Simpson / Barney Gumble`. Null when the source does not say.
-	"""
-	character: String
-}
-
 type Episode implements Item & Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this item.
@@ -101,41 +89,51 @@ type Episode implements Item & Node {
 	"""
 	versions: [MediaVersion!]!
 	"""
-	People credited as director.
+	Genres and countries, which are the series', and the episode's own credits.
 	"""
-	directors(
-		"""
-		Return at most this many, in billing order.
-		"""
-		first: Int
-	): [Tag!]!
+	tags: ItemTags!
 	"""
-	People credited as writer.
+	Identifiers this item has at external metadata providers.
 	"""
-	writers(
+	externalIds(
 		"""
-		Return at most this many, in billing order.
+		Return entries after this cursor.
 		"""
-		first: Int
-	): [Tag!]!
+		after: String,
+		"""
+		Return entries before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many entries from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many entries from the end of the range.
+		"""
+		last: Int
+	): ExternalIdConnection!
 	"""
-	The episode's own cast, guest stars included, in billing order, each with the character played.
+	Scores external providers give this item.
 	"""
-	cast(
+	ratings(
 		"""
-		Return at most this many, in billing order.
+		Return entries after this cursor.
 		"""
-		first: Int
-	): [CastMember!]!
-	"""
-	People credited as producer.
-	"""
-	producers(
+		after: String,
 		"""
-		Return at most this many, in billing order.
+		Return entries before this cursor.
 		"""
-		first: Int
-	): [Tag!]!
+		before: String,
+		"""
+		Return at most this many entries from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many entries from the end of the range.
+		"""
+		last: Int
+	): RatingConnection!
 }
 
 type EpisodeConnection {
@@ -161,6 +159,46 @@ type EpisodeEdge {
 	The item at the end of the edge
 	"""
 	node: Episode!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type ExternalId {
+	"""
+	The provider: `imdb`, `tmdb` or `tvdb` in the reference library.
+	"""
+	source: String!
+	"""
+	The identifier at that provider, for example `tt0293662`.
+	"""
+	value: String!
+}
+
+type ExternalIdConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ExternalIdEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ExternalId!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ExternalIdEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: ExternalId!
 	"""
 	A cursor for use in pagination
 	"""
@@ -424,6 +462,142 @@ enum ItemOrder {
 	By when the item was added to the library.
 	"""
 	ADDED_AT
+}
+
+"""
+One item's genres, countries and credits.
+"""
+type ItemTags {
+	"""
+	Genres, most significant first. A season's and an episode's are their series'.
+	"""
+	genres(
+		"""
+		Return tags after this cursor.
+		"""
+		after: String,
+		"""
+		Return tags before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many tags from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many tags from the end of the range.
+		"""
+		last: Int
+	): TagConnection!
+	"""
+	Countries of production. A season's and an episode's are their series'.
+	"""
+	countries(
+		"""
+		Return tags after this cursor.
+		"""
+		after: String,
+		"""
+		Return tags before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many tags from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many tags from the end of the range.
+		"""
+		last: Int
+	): TagConnection!
+	"""
+	People credited as director. On a series or a season, its own first, then those of
+	its episodes, most episodes first.
+	"""
+	directors(
+		"""
+		Return tags after this cursor.
+		"""
+		after: String,
+		"""
+		Return tags before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many tags from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many tags from the end of the range.
+		"""
+		last: Int
+	): TagConnection!
+	"""
+	People credited as writer. On a series or a season, its own first, then those of its
+	episodes, most episodes first.
+	"""
+	writers(
+		"""
+		Return tags after this cursor.
+		"""
+		after: String,
+		"""
+		Return tags before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many tags from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many tags from the end of the range.
+		"""
+		last: Int
+	): TagConnection!
+	"""
+	The cast, in billing order, with the character each plays. On a series or a season,
+	the regular cast first, then the episodes' guests, most episodes first.
+	"""
+	cast(
+		"""
+		Return tags after this cursor.
+		"""
+		after: String,
+		"""
+		Return tags before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many tags from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many tags from the end of the range.
+		"""
+		last: Int
+	): TagConnection!
+	"""
+	People credited as producer. On a series or a season, its own first, then those of
+	its episodes, most episodes first.
+	"""
+	producers(
+		"""
+		Return tags after this cursor.
+		"""
+		after: String,
+		"""
+		Return tags before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many tags from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many tags from the end of the range.
+		"""
+		last: Int
+	): TagConnection!
 }
 
 """
@@ -880,59 +1054,51 @@ type Movie implements Item & Node {
 	"""
 	versions: [MediaVersion!]!
 	"""
-	Genres, in the library's metadata language, most significant first.
+	Genres, countries and credits.
 	"""
-	genres(
-		"""
-		Return at most this many, in billing order.
-		"""
-		first: Int
-	): [Tag!]!
+	tags: ItemTags!
 	"""
-	Countries of production.
+	Identifiers this item has at external metadata providers.
 	"""
-	countries(
+	externalIds(
 		"""
-		Return at most this many, in billing order.
+		Return entries after this cursor.
 		"""
-		first: Int
-	): [Tag!]!
+		after: String,
+		"""
+		Return entries before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many entries from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many entries from the end of the range.
+		"""
+		last: Int
+	): ExternalIdConnection!
 	"""
-	People credited as director.
+	Scores external providers give this item.
 	"""
-	directors(
+	ratings(
 		"""
-		Return at most this many, in billing order.
+		Return entries after this cursor.
 		"""
-		first: Int
-	): [Tag!]!
-	"""
-	People credited as writer.
-	"""
-	writers(
+		after: String,
 		"""
-		Return at most this many, in billing order.
+		Return entries before this cursor.
 		"""
-		first: Int
-	): [Tag!]!
-	"""
-	The cast, in billing order, each with the character played.
-	"""
-	cast(
+		before: String,
 		"""
-		Return at most this many, in billing order.
+		Return at most this many entries from the start of the range.
 		"""
-		first: Int
-	): [CastMember!]!
-	"""
-	People credited as producer.
-	"""
-	producers(
+		first: Int,
 		"""
-		Return at most this many, in billing order.
+		Return at most this many entries from the end of the range.
 		"""
-		first: Int
-	): [Tag!]!
+		last: Int
+	): RatingConnection!
 }
 
 """
@@ -969,6 +1135,27 @@ type PageInfo {
 	When paginating forwards, the cursor to continue.
 	"""
 	endCursor: String
+}
+
+type Person implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this person.
+	"""
+	id: ID!
+	"""
+	The person's name. Not unique: two people can share one, and `providerKey` is what
+	tells them apart.
+	"""
+	name: String!
+	"""
+	The metadata provider's identifier for this person. Null for the people the provider
+	does not know.
+	"""
+	providerKey: String
+	"""
+	A portrait, hosted by the metadata provider.
+	"""
+	thumbUrl: String
 }
 
 type Query {
@@ -1076,6 +1263,70 @@ type Query {
 	): LibraryConnection!
 }
 
+type Rating {
+	"""
+	The provider: `imdb`, `rottentomatoes` or `themoviedb` in the reference library.
+	"""
+	source: String!
+	"""
+	Who the score speaks for.
+	"""
+	kind: RatingType!
+	"""
+	The score out of 10, as the provider states it.
+	"""
+	value: Float!
+	"""
+	The provider's badge for this score, for example
+	`rottentomatoes://image.rating.ripe` — which for Rotten Tomatoes also says whether the
+	score counts as fresh.
+	"""
+	image: String!
+}
+
+type RatingConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [RatingEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Rating!]!
+}
+
+"""
+An edge in a connection.
+"""
+type RatingEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Rating!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+Who a rating speaks for.
+"""
+enum RatingType {
+	"""
+	Professional critics.
+	"""
+	CRITIC
+	"""
+	The provider's users.
+	"""
+	AUDIENCE
+}
+
 type Root implements Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this root.
@@ -1172,6 +1423,58 @@ type Season implements Item & Node {
 		"""
 		offset: Int
 	): EpisodeConnection!
+	"""
+	Genres and countries, which are the series', and the credits of the season's
+	episodes.
+	"""
+	tags(
+		"""
+		Also list the credits of the episodes, after the season's own.
+		"""
+		includeEpisodes: Boolean! = true
+	): ItemTags!
+	"""
+	Identifiers this item has at external metadata providers.
+	"""
+	externalIds(
+		"""
+		Return entries after this cursor.
+		"""
+		after: String,
+		"""
+		Return entries before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many entries from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many entries from the end of the range.
+		"""
+		last: Int
+	): ExternalIdConnection!
+	"""
+	Scores external providers give this item.
+	"""
+	ratings(
+		"""
+		Return entries after this cursor.
+		"""
+		after: String,
+		"""
+		Return entries before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many entries from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many entries from the end of the range.
+		"""
+		last: Int
+	): RatingConnection!
 	"""
 	Aggregates over the contents of this season.
 	"""
@@ -1407,33 +1710,57 @@ type Show implements Item & Node {
 		offset: Int
 	): EpisodeConnection!
 	"""
-	Genres, in the library's metadata language, most significant first.
+	Genres, countries and credits — the series' own, and by default those of its
+	episodes after them.
 	"""
-	genres(
+	tags(
 		"""
-		Return at most this many, in billing order.
+		Also list the credits of the episodes, after the series' own.
 		"""
-		first: Int
-	): [Tag!]!
+		includeEpisodes: Boolean! = true
+	): ItemTags!
 	"""
-	Countries of production.
+	Identifiers this item has at external metadata providers.
 	"""
-	countries(
+	externalIds(
 		"""
-		Return at most this many, in billing order.
+		Return entries after this cursor.
 		"""
-		first: Int
-	): [Tag!]!
+		after: String,
+		"""
+		Return entries before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many entries from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many entries from the end of the range.
+		"""
+		last: Int
+	): ExternalIdConnection!
 	"""
-	The series' regular cast, in billing order. Each episode carries its own, guest
-	stars included.
+	Scores external providers give this item.
 	"""
-	cast(
+	ratings(
 		"""
-		Return at most this many, in billing order.
+		Return entries after this cursor.
 		"""
-		first: Int
-	): [CastMember!]!
+		after: String,
+		"""
+		Return entries before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many entries from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many entries from the end of the range.
+		"""
+		last: Int
+	): RatingConnection!
 	"""
 	Aggregates over the contents of this series.
 	"""
@@ -1474,27 +1801,59 @@ type Tag implements Node {
 	"""
 	What the tag classifies or credits.
 	
-	A person credited in two roles is two tags: the writer and the producer are filtered
-	on separately, because "films she wrote" is not "films she produced".
+	A person credited in two roles has two tags, one per role: "films she wrote" and
+	"films she produced" are different filters.
 	"""
 	kind: TagType!
 	"""
-	The genre, the country, or the person's name.
-	
-	Not unique among people: two people can share a name, and `providerKey` tells them
-	apart.
+	The genre, the country, or the name as credited — which can differ from the person's
+	current name, as `Andy Garcia` does from `Andy García`.
 	"""
 	name: String!
 	"""
-	The metadata provider's identifier for a person. Null for genres and countries, and
-	for the people the provider does not know.
+	Who a credit names. Null for a genre or a country.
 	"""
-	providerKey: String
+	person: Person
+}
+
+type TagConnection {
 	"""
-	A portrait of the person, hosted by the metadata provider. Null for genres and
-	countries.
+	Information to aid in pagination.
 	"""
-	thumbUrl: String
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [TagEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Tag!]!
+}
+
+"""
+An edge in a connection.
+"""
+type TagEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Tag!
+	"""
+	The character played, for a cast member, as the source credits it — sometimes
+	several, as in `Homer Simpson / Barney Gumble`. Null for any other kind, and for a
+	guest gathered from episodes, whose character varies from one to the next.
+	"""
+	character: String
+	"""
+	How many episodes below the item carry this credit. Null on an item with no episodes:
+	a film, or an episode itself.
+	"""
+	episodeCount: Int
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 """
@@ -1514,9 +1873,8 @@ input TagFilterInput {
 	"""
 	ids: [ID!]
 	"""
-	Tags by name, matched exactly and ignoring ASCII case only: `ACTION` matches
-	`Action`, but `COMÉDIE` does not match `Comédie`, and spaces are not trimmed. A name
-	shared by two people matches both.
+	Tags by name, matched exactly but ignoring case. A name shared by two people matches
+	both.
 	"""
 	names: [String!]
 }

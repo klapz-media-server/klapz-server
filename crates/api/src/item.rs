@@ -12,18 +12,16 @@
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Interface, Object, Result, ID};
-use open_plex_core::metadata::{ItemKind, ItemTag, MetadataItem, TagKind};
+use open_plex_core::metadata::{ItemKind, MetadataItem};
 use open_plex_core::page::Cursor;
 use open_plex_core::RatingKey;
 
 use crate::cursor::OpaqueCursor;
 use crate::library::Library;
-use crate::loader::{
-    ChildCountLoader, ItemLoader, LeafCountLoader, LibraryLoader, TagsLoader, VersionsLoader,
-};
+use crate::loader::{ChildCountLoader, ItemLoader, LeafCountLoader, LibraryLoader, VersionsLoader};
 use crate::media::Version;
 use crate::node::GlobalId;
-use crate::tag::{CastMember, TagObject};
+use crate::tag::{external_ids_of, ratings_of, ExternalIdConnection, ItemTags, RatingConnection};
 
 /// The type tag all four item kinds share in their global id.
 ///
@@ -236,58 +234,41 @@ impl Movie {
         versions_of(context, self.0.id).await
     }
 
-    /// Genres, in the library's metadata language, most significant first.
-    async fn genres(
-        &self,
-        context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<TagObject>> {
-        tags_of(context, self.0.id, TagKind::Genre, first).await
+    /// Genres, countries and credits.
+    async fn tags(&self) -> ItemTags {
+        ItemTags {
+            item: self.0.id,
+            classified_by: self.0.id,
+            with_episodes: false,
+        }
     }
 
-    /// Countries of production.
-    async fn countries(
+    /// Identifiers this item has at external metadata providers.
+    async fn external_ids(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<TagObject>> {
-        tags_of(context, self.0.id, TagKind::Country, first).await
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return entries before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many entries from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many entries from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<ExternalIdConnection> {
+        external_ids_of(context, self.0.id, after, before, first, last).await
     }
 
-    /// People credited as director.
-    async fn directors(
+    /// Scores external providers give this item.
+    async fn ratings(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<TagObject>> {
-        tags_of(context, self.0.id, TagKind::Director, first).await
-    }
-
-    /// People credited as writer.
-    async fn writers(
-        &self,
-        context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<TagObject>> {
-        tags_of(context, self.0.id, TagKind::Writer, first).await
-    }
-
-    /// The cast, in billing order, each with the character played.
-    async fn cast(
-        &self,
-        context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<CastMember>> {
-        cast_of(context, self.0.id, first).await
-    }
-
-    /// People credited as producer.
-    async fn producers(
-        &self,
-        context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<TagObject>> {
-        tags_of(context, self.0.id, TagKind::Producer, first).await
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return entries before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many entries from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many entries from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<RatingConnection> {
+        ratings_of(context, self.0.id, after, before, first, last).await
     }
 }
 
@@ -451,32 +432,48 @@ impl Show {
         children_connection(context, page, after, before, first, last, Episode).await
     }
 
-    /// Genres, in the library's metadata language, most significant first.
-    async fn genres(
+    /// Genres, countries and credits — the series' own, and by default those of its
+    /// episodes after them.
+    async fn tags(
+        &self,
+        #[graphql(
+            desc = "Also list the credits of the episodes, after the series' own.",
+            default = true
+        )]
+        include_episodes: bool,
+    ) -> ItemTags {
+        ItemTags {
+            item: self.0.id,
+            classified_by: self.0.id,
+            with_episodes: include_episodes,
+        }
+    }
+    /// Identifiers this item has at external metadata providers.
+    async fn external_ids(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<TagObject>> {
-        tags_of(context, self.0.id, TagKind::Genre, first).await
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return entries before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many entries from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many entries from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<ExternalIdConnection> {
+        external_ids_of(context, self.0.id, after, before, first, last).await
     }
 
-    /// Countries of production.
-    async fn countries(
+    /// Scores external providers give this item.
+    async fn ratings(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<TagObject>> {
-        tags_of(context, self.0.id, TagKind::Country, first).await
-    }
-
-    /// The series' regular cast, in billing order. Each episode carries its own, guest
-    /// stars included.
-    async fn cast(
-        &self,
-        context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<CastMember>> {
-        cast_of(context, self.0.id, first).await
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return entries before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many entries from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many entries from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<RatingConnection> {
+        ratings_of(context, self.0.id, after, before, first, last).await
     }
 
     /// Aggregates over the contents of this series.
@@ -597,6 +594,50 @@ impl Season {
     ) -> Result<EpisodeConnection> {
         let page = Descent::Children.of(self.0.id, offset);
         children_connection(context, page, after, before, first, last, Episode).await
+    }
+
+    /// Genres and countries, which are the series', and the credits of the season's
+    /// episodes.
+    async fn tags(
+        &self,
+        #[graphql(
+            desc = "Also list the credits of the episodes, after the season's own.",
+            default = true
+        )]
+        include_episodes: bool,
+    ) -> ItemTags {
+        ItemTags {
+            item: self.0.id,
+            classified_by: self.0.parent_id.unwrap_or(self.0.id),
+            with_episodes: include_episodes,
+        }
+    }
+    /// Identifiers this item has at external metadata providers.
+    async fn external_ids(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return entries before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many entries from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many entries from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<ExternalIdConnection> {
+        external_ids_of(context, self.0.id, after, before, first, last).await
+    }
+
+    /// Scores external providers give this item.
+    async fn ratings(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return entries before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many entries from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many entries from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<RatingConnection> {
+        ratings_of(context, self.0.id, after, before, first, last).await
     }
 
     /// Aggregates over the contents of this season.
@@ -737,40 +778,45 @@ impl Episode {
         versions_of(context, self.0.id).await
     }
 
-    /// People credited as director.
-    async fn directors(
-        &self,
-        context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<TagObject>> {
-        tags_of(context, self.0.id, TagKind::Director, first).await
+    /// Genres and countries, which are the series', and the episode's own credits.
+    async fn tags(&self, context: &Context<'_>) -> Result<ItemTags> {
+        let show = match parent_of(context, self.0.parent_id).await? {
+            Some(season) => season.parent_id,
+            None => None,
+        };
+        Ok(ItemTags {
+            item: self.0.id,
+            classified_by: show.unwrap_or(self.0.id),
+            with_episodes: false,
+        })
     }
 
-    /// People credited as writer.
-    async fn writers(
+    /// Identifiers this item has at external metadata providers.
+    async fn external_ids(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<TagObject>> {
-        tags_of(context, self.0.id, TagKind::Writer, first).await
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return entries before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many entries from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many entries from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<ExternalIdConnection> {
+        external_ids_of(context, self.0.id, after, before, first, last).await
     }
 
-    /// The episode's own cast, guest stars included, in billing order, each with the character played.
-    async fn cast(
+    /// Scores external providers give this item.
+    async fn ratings(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<CastMember>> {
-        cast_of(context, self.0.id, first).await
-    }
-
-    /// People credited as producer.
-    async fn producers(
-        &self,
-        context: &Context<'_>,
-        #[graphql(desc = "Return at most this many, in billing order.")] first: Option<u32>,
-    ) -> Result<Vec<TagObject>> {
-        tags_of(context, self.0.id, TagKind::Producer, first).await
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return entries before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many entries from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many entries from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<RatingConnection> {
+        ratings_of(context, self.0.id, after, before, first, last).await
     }
 }
 
@@ -782,55 +828,6 @@ async fn versions_of(context: &Context<'_>, item: RatingKey) -> Result<Vec<Versi
         .unwrap_or_default()
         .into_iter()
         .map(Version)
-        .collect())
-}
-
-/// An item's tags of one kind, in billing order, cut at `first`.
-///
-/// Every kind arrives in the same batched load, so asking for genres and cast on a page of
-/// fifty items costs one query, not a hundred.
-async fn attached(
-    context: &Context<'_>,
-    item: RatingKey,
-    kind: TagKind,
-    first: Option<u32>,
-) -> Result<Vec<ItemTag>> {
-    let loader = context.data::<DataLoader<TagsLoader>>()?;
-    let limit = first.map_or(usize::MAX, |count| {
-        usize::try_from(count).unwrap_or(usize::MAX)
-    });
-    Ok(loader
-        .load_one(item)
-        .await?
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|attached| attached.tag.kind == kind)
-        .take(limit)
-        .collect())
-}
-
-async fn tags_of(
-    context: &Context<'_>,
-    item: RatingKey,
-    kind: TagKind,
-    first: Option<u32>,
-) -> Result<Vec<TagObject>> {
-    Ok(attached(context, item, kind, first)
-        .await?
-        .into_iter()
-        .map(|attached| TagObject(attached.tag))
-        .collect())
-}
-
-async fn cast_of(
-    context: &Context<'_>,
-    item: RatingKey,
-    first: Option<u32>,
-) -> Result<Vec<CastMember>> {
-    Ok(attached(context, item, TagKind::Actor, first)
-        .await?
-        .into_iter()
-        .map(CastMember)
         .collect())
 }
 

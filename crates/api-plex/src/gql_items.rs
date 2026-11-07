@@ -29,6 +29,12 @@ use serde::Deserialize;
 /// | `Director`, `Role` | 3 |
 /// | `Producer` | none |
 ///
+/// A series' own credits only: the official API appends those of its episodes unless told
+/// not to, and the reference shows a series' regular cast alone. Neither form carries
+/// a season's or an episode's genres, which the official API inherits from the series and
+/// the reference does not publish. `References` — external identifiers and ratings — appear
+/// in a lookup only.
+///
 /// Measured over every film, series and episode of the reference library by comparing the
 /// listing against the item's full tag set: the listing is the first *n* in billing order,
 /// with these *n* and no others. The reference reads them from denormalized columns that a
@@ -89,52 +95,82 @@ fragment EpisodeFields on Episode {
 }
 
 fragment ListedMovieTags on Movie {
-  genres(first: 2) { name }
-  countries(first: 2) { name }
-  directors(first: 3) { name }
-  writers(first: 2) { name }
-  cast(first: 3) { person { name } }
+  tags {
+    genres(first: 2) { edges { node { name } } }
+    countries(first: 2) { edges { node { name } } }
+    directors(first: 3) { edges { node { name } } }
+    writers(first: 2) { edges { node { name } } }
+    cast(first: 3) { edges { node { name } } }
+  }
 }
 
 fragment ListedShowTags on Show {
-  genres(first: 2) { name }
-  countries(first: 2) { name }
-  cast(first: 3) { person { name } }
+  tags(includeEpisodes: false) {
+    genres(first: 2) { edges { node { name } } }
+    countries(first: 2) { edges { node { name } } }
+    cast(first: 3) { edges { node { name } } }
+  }
 }
 
 fragment ListedEpisodeTags on Episode {
-  directors(first: 3) { name }
-  writers(first: 2) { name }
-  cast(first: 3) { person { name } }
+  tags {
+    directors(first: 3) { edges { node { name } } }
+    writers(first: 2) { edges { node { name } } }
+    cast(first: 3) { edges { node { name } } }
+  }
 }
 
 fragment TagFields on Tag {
   id
   name
-  providerKey
-  thumbUrl
+  person { providerKey thumbUrl }
+}
+
+fragment References on Item {
+  ... on Movie {
+    externalIds(first: 50) { edges { node { source value } } }
+    ratings(first: 50) { edges { node { source kind value image } } }
+  }
+  ... on Show {
+    externalIds(first: 50) { edges { node { source value } } }
+    ratings(first: 50) { edges { node { source kind value image } } }
+  }
+  ... on Season {
+    externalIds(first: 50) { edges { node { source value } } }
+    ratings(first: 50) { edges { node { source kind value image } } }
+  }
+  ... on Episode {
+    externalIds(first: 50) { edges { node { source value } } }
+    ratings(first: 50) { edges { node { source kind value image } } }
+  }
 }
 
 fragment MovieTags on Movie {
-  genres { ...TagFields }
-  countries { ...TagFields }
-  directors { ...TagFields }
-  writers { ...TagFields }
-  cast { character person { ...TagFields } }
-  producers { ...TagFields }
+  tags {
+    genres(first: 500) { edges { node { ...TagFields } } }
+    countries(first: 500) { edges { node { ...TagFields } } }
+    directors(first: 500) { edges { node { ...TagFields } } }
+    writers(first: 500) { edges { node { ...TagFields } } }
+    cast(first: 500) { edges { character node { ...TagFields } } }
+    producers(first: 500) { edges { node { ...TagFields } } }
+  }
 }
 
 fragment ShowTags on Show {
-  genres { ...TagFields }
-  countries { ...TagFields }
-  cast { character person { ...TagFields } }
+  tags(includeEpisodes: false) {
+    genres(first: 500) { edges { node { ...TagFields } } }
+    countries(first: 500) { edges { node { ...TagFields } } }
+    cast(first: 500) { edges { character node { ...TagFields } } }
+  }
 }
 
 fragment EpisodeTags on Episode {
-  directors { ...TagFields }
-  writers { ...TagFields }
-  cast { character person { ...TagFields } }
-  producers { ...TagFields }
+  tags {
+    directors(first: 500) { edges { node { ...TagFields } } }
+    writers(first: 500) { edges { node { ...TagFields } } }
+    cast(first: 500) { edges { character node { ...TagFields } } }
+    producers(first: 500) { edges { node { ...TagFields } } }
+  }
 }
 ";
 
@@ -230,6 +266,7 @@ pub static ITEMS_BY_ID_QUERY: LazyLock<String> = LazyLock::new(|| {
 query PlexItems($ids: [ID!]!) {
   items: nodes(ids: $ids) {
     ...Shared
+    ...References
     ... on Movie {
       originalTitle
       year
@@ -449,12 +486,9 @@ pub struct GqlItem {
     pub show_stats: Option<GqlShowStats>,
     pub season_stats: Option<GqlSeasonStats>,
     pub versions: Vec<GqlVersion>,
-    pub genres: Vec<GqlTag>,
-    pub countries: Vec<GqlTag>,
-    pub directors: Vec<GqlTag>,
-    pub writers: Vec<GqlTag>,
-    pub cast: Vec<GqlCastMember>,
-    pub producers: Vec<GqlTag>,
+    pub tags: GqlItemTags,
+    pub external_ids: GqlConnection<GqlExternalId>,
+    pub ratings: GqlConnection<GqlRating>,
 }
 
 impl GqlItem {
@@ -586,14 +620,76 @@ impl GqlParentRef {
     }
 }
 
+/// A connection, reduced to what the adapter reads: its edges.
+#[derive(Debug, Deserialize)]
+#[serde(bound(deserialize = "T: Deserialize<'de>"))]
+pub struct GqlConnection<T> {
+    pub edges: Vec<GqlEdge<T>>,
+}
+
+impl<T> Default for GqlConnection<T> {
+    fn default() -> Self {
+        Self { edges: Vec::new() }
+    }
+}
+
+impl<T> GqlConnection<T> {
+    pub fn nodes(&self) -> impl Iterator<Item = &T> {
+        self.edges.iter().map(|edge| &edge.node)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GqlEdge<T> {
+    pub node: T,
+    /// Set on a cast edge only.
+    #[serde(default)]
+    pub character: Option<String>,
+}
+
+/// An item's tags, by kind. A kind the query did not select stays empty.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct GqlItemTags {
+    pub genres: GqlConnection<GqlTag>,
+    pub countries: GqlConnection<GqlTag>,
+    pub directors: GqlConnection<GqlTag>,
+    pub writers: GqlConnection<GqlTag>,
+    pub cast: GqlConnection<GqlTag>,
+    pub producers: GqlConnection<GqlTag>,
+}
+
 /// A tag, with as much of it as the query selected: a listing asks for the name alone.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct GqlTag {
     pub id: Option<String>,
     pub name: String,
+    pub person: Option<GqlPerson>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlPerson {
     pub provider_key: Option<String>,
     pub thumb_url: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct GqlExternalId {
+    pub source: String,
+    pub value: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct GqlRating {
+    pub source: String,
+    /// `CRITIC` or `AUDIENCE`.
+    pub kind: String,
+    pub value: f64,
+    pub image: String,
 }
 
 impl GqlTag {
@@ -602,13 +698,6 @@ impl GqlTag {
     pub fn database_id(&self) -> Option<i64> {
         self.id.as_deref().map(database_id)
     }
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct GqlCastMember {
-    pub character: Option<String>,
-    pub person: GqlTag,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -722,6 +811,7 @@ mod tests {
                 "ListedShowTags",
                 "ListedEpisodeTags",
                 "TagFields",
+                "References",
                 "MovieTags",
                 "ShowTags",
                 "EpisodeTags",

@@ -4,16 +4,13 @@
 //! `tags`/`taggings`, minus what we reject there: no packed `extra_data`, no tag pointing at
 //! one item, no artwork or external identifier disguised as a tag type.
 //!
-//! No uniqueness on `(kind, name)`. It looks natural and is wrong: two different people can
-//! share a name, and the reference library has 11,879 actor names belonging to more than
-//! one person, each told apart by the provider key. Identity is the id.
-//!
-//! `name_key` is the name with ASCII case folded, which is the form a filter by name compares
-//! in. Stored rather than computed in the query because `LOWER` folds Unicode on `PostgreSQL`
-//! and ASCII only on `SQLite`, and the reference behaves like the latter.
+//! People live in their own table. A credit is still a tag — Luc Besson the writer and Luc
+//! Besson the producer are two tags, filtered on separately — but both point at one person,
+//! who carries the name and portrait. No uniqueness on a person's name: 11,879 actor names in
+//! the reference library belong to more than one person.
 
 use sea_orm_migration::prelude::*;
-use sea_orm_migration::schema::{big_integer, integer, string, string_null};
+use sea_orm_migration::schema::{big_integer, big_integer_null, integer, string, string_null};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -24,27 +21,43 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table(Tag::Table)
+                    .table(Person::Table)
                     .if_not_exists()
-                    .col(big_integer(Tag::Id).primary_key())
-                    .col(string(Tag::Kind))
-                    .col(string(Tag::Name))
-                    .col(string(Tag::NameKey))
-                    .col(string_null(Tag::ProviderKey))
-                    .col(string_null(Tag::ThumbUrl))
+                    .col(big_integer(Person::Id).primary_key())
+                    .col(string(Person::Name))
+                    .col(string_null(Person::ProviderKey))
+                    .col(string_null(Person::ThumbUrl))
                     .to_owned(),
             )
             .await?;
 
-        // A filter by name seeks here; a filter by id uses the primary key.
+        manager
+            .create_table(
+                Table::create()
+                    .table(Tag::Table)
+                    .if_not_exists()
+                    .col(big_integer(Tag::Id).primary_key())
+                    .col(string(Tag::Kind))
+                    // As credited, which can differ from the person's current name.
+                    .col(string(Tag::Name))
+                    .col(big_integer_null(Tag::PersonId))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(Tag::Table, Tag::PersonId)
+                            .to(Person::Table, Person::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
         manager
             .create_index(
                 Index::create()
                     .if_not_exists()
-                    .name("idx_tag_name")
+                    .name("idx_tag_person")
                     .table(Tag::Table)
-                    .col(Tag::Kind)
-                    .col(Tag::NameKey)
+                    .col(Tag::PersonId)
                     .to_owned(),
             )
             .await?;
@@ -104,8 +117,20 @@ impl MigrationTrait for Migration {
             .await?;
         manager
             .drop_table(Table::drop().table(Tag::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Person::Table).to_owned())
             .await
     }
+}
+
+#[derive(DeriveIden)]
+enum Person {
+    Table,
+    Id,
+    Name,
+    ProviderKey,
+    ThumbUrl,
 }
 
 #[derive(DeriveIden)]
@@ -114,9 +139,7 @@ enum Tag {
     Id,
     Kind,
     Name,
-    NameKey,
-    ProviderKey,
-    ThumbUrl,
+    PersonId,
 }
 
 #[derive(DeriveIden)]

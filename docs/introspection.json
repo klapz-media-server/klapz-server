@@ -19,45 +19,6 @@
         },
         {
           "kind": "OBJECT",
-          "name": "CastMember",
-          "description": null,
-          "fields": [
-            {
-              "name": "person",
-              "description": "Who plays.",
-              "args": [],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "OBJECT",
-                  "name": "Tag",
-                  "ofType": null
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
-              "name": "character",
-              "description": "The character played, as the metadata source credits it — sometimes several, as in\n`Homer Simpson / Barney Gumble`. Null when the source does not say.",
-              "args": [],
-              "type": {
-                "kind": "SCALAR",
-                "name": "String",
-                "ofType": null
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            }
-          ],
-          "inputFields": null,
-          "interfaces": [],
-          "enumValues": null,
-          "possibleTypes": null
-        },
-        {
-          "kind": "OBJECT",
           "name": "Episode",
           "description": null,
           "fields": [
@@ -306,47 +267,58 @@
               "deprecationReason": null
             },
             {
-              "name": "directors",
-              "description": "People credited as director.",
-              "args": [
-                {
-                  "name": "first",
-                  "description": "Return at most this many, in billing order.",
-                  "type": {
-                    "kind": "SCALAR",
-                    "name": "Int",
-                    "ofType": null
-                  },
-                  "defaultValue": null
-                }
-              ],
+              "name": "tags",
+              "description": "Genres and countries, which are the series', and the episode's own credits.",
+              "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "Tag",
-                      "ofType": null
-                    }
-                  }
+                  "kind": "OBJECT",
+                  "name": "ItemTags",
+                  "ofType": null
                 }
               },
               "isDeprecated": false,
               "deprecationReason": null
             },
             {
-              "name": "writers",
-              "description": "People credited as writer.",
+              "name": "externalIds",
+              "description": "Identifiers this item has at external metadata providers.",
               "args": [
                 {
+                  "name": "after",
+                  "description": "Return entries after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return entries before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
                   "name": "first",
-                  "description": "Return at most this many, in billing order.",
+                  "description": "Return at most this many entries from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many entries from the end of the range.",
                   "type": {
                     "kind": "SCALAR",
                     "name": "Int",
@@ -359,29 +331,51 @@
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "Tag",
-                      "ofType": null
-                    }
-                  }
+                  "kind": "OBJECT",
+                  "name": "ExternalIdConnection",
+                  "ofType": null
                 }
               },
               "isDeprecated": false,
               "deprecationReason": null
             },
             {
-              "name": "cast",
-              "description": "The episode's own cast, guest stars included, in billing order, each with the character played.",
+              "name": "ratings",
+              "description": "Scores external providers give this item.",
               "args": [
                 {
+                  "name": "after",
+                  "description": "Return entries after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return entries before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
                   "name": "first",
-                  "description": "Return at most this many, in billing order.",
+                  "description": "Return at most this many entries from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many entries from the end of the range.",
                   "type": {
                     "kind": "SCALAR",
                     "name": "Int",
@@ -394,52 +388,9 @@
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "CastMember",
-                      "ofType": null
-                    }
-                  }
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
-              "name": "producers",
-              "description": "People credited as producer.",
-              "args": [
-                {
-                  "name": "first",
-                  "description": "Return at most this many, in billing order.",
-                  "type": {
-                    "kind": "SCALAR",
-                    "name": "Int",
-                    "ofType": null
-                  },
-                  "defaultValue": null
-                }
-              ],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "Tag",
-                      "ofType": null
-                    }
-                  }
+                  "kind": "OBJECT",
+                  "name": "RatingConnection",
+                  "ofType": null
                 }
               },
               "isDeprecated": false,
@@ -552,6 +503,167 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "Episode",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cursor",
+              "description": "A cursor for use in pagination",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ExternalId",
+          "description": null,
+          "fields": [
+            {
+              "name": "source",
+              "description": "The provider: `imdb`, `tmdb` or `tvdb` in the reference library.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "value",
+              "description": "The identifier at that provider, for example `tt0293662`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ExternalIdConnection",
+          "description": null,
+          "fields": [
+            {
+              "name": "pageInfo",
+              "description": "Information to aid in pagination.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PageInfo",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "edges",
+              "description": "A list of edges.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ExternalIdEdge",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nodes",
+              "description": "A list of nodes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ExternalId",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ExternalIdEdge",
+          "description": "An edge in a connection.",
+          "fields": [
+            {
+              "name": "node",
+              "description": "The item at the end of the edge",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "ExternalId",
                   "ofType": null
                 }
               },
@@ -1335,6 +1447,359 @@
               "deprecationReason": null
             }
           ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ItemTags",
+          "description": "One item's genres, countries and credits.",
+          "fields": [
+            {
+              "name": "genres",
+              "description": "Genres, most significant first. A season's and an episode's are their series'.",
+              "args": [
+                {
+                  "name": "after",
+                  "description": "Return tags after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return tags before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many tags from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many tags from the end of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "TagConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "countries",
+              "description": "Countries of production. A season's and an episode's are their series'.",
+              "args": [
+                {
+                  "name": "after",
+                  "description": "Return tags after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return tags before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many tags from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many tags from the end of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "TagConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "directors",
+              "description": "People credited as director. On a series or a season, its own first, then those of\nits episodes, most episodes first.",
+              "args": [
+                {
+                  "name": "after",
+                  "description": "Return tags after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return tags before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many tags from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many tags from the end of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "TagConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "writers",
+              "description": "People credited as writer. On a series or a season, its own first, then those of its\nepisodes, most episodes first.",
+              "args": [
+                {
+                  "name": "after",
+                  "description": "Return tags after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return tags before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many tags from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many tags from the end of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "TagConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cast",
+              "description": "The cast, in billing order, with the character each plays. On a series or a season,\nthe regular cast first, then the episodes' guests, most episodes first.",
+              "args": [
+                {
+                  "name": "after",
+                  "description": "Return tags after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return tags before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many tags from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many tags from the end of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "TagConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "producers",
+              "description": "People credited as producer. On a series or a season, its own first, then those of\nits episodes, most episodes first.",
+              "args": [
+                {
+                  "name": "after",
+                  "description": "Return tags after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return tags before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many tags from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many tags from the end of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "TagConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
           "possibleTypes": null
         },
         {
@@ -2670,47 +3135,58 @@
               "deprecationReason": null
             },
             {
-              "name": "genres",
-              "description": "Genres, in the library's metadata language, most significant first.",
-              "args": [
-                {
-                  "name": "first",
-                  "description": "Return at most this many, in billing order.",
-                  "type": {
-                    "kind": "SCALAR",
-                    "name": "Int",
-                    "ofType": null
-                  },
-                  "defaultValue": null
-                }
-              ],
+              "name": "tags",
+              "description": "Genres, countries and credits.",
+              "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "Tag",
-                      "ofType": null
-                    }
-                  }
+                  "kind": "OBJECT",
+                  "name": "ItemTags",
+                  "ofType": null
                 }
               },
               "isDeprecated": false,
               "deprecationReason": null
             },
             {
-              "name": "countries",
-              "description": "Countries of production.",
+              "name": "externalIds",
+              "description": "Identifiers this item has at external metadata providers.",
               "args": [
                 {
+                  "name": "after",
+                  "description": "Return entries after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return entries before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
                   "name": "first",
-                  "description": "Return at most this many, in billing order.",
+                  "description": "Return at most this many entries from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many entries from the end of the range.",
                   "type": {
                     "kind": "SCALAR",
                     "name": "Int",
@@ -2723,29 +3199,51 @@
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "Tag",
-                      "ofType": null
-                    }
-                  }
+                  "kind": "OBJECT",
+                  "name": "ExternalIdConnection",
+                  "ofType": null
                 }
               },
               "isDeprecated": false,
               "deprecationReason": null
             },
             {
-              "name": "directors",
-              "description": "People credited as director.",
+              "name": "ratings",
+              "description": "Scores external providers give this item.",
               "args": [
                 {
+                  "name": "after",
+                  "description": "Return entries after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return entries before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
                   "name": "first",
-                  "description": "Return at most this many, in billing order.",
+                  "description": "Return at most this many entries from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many entries from the end of the range.",
                   "type": {
                     "kind": "SCALAR",
                     "name": "Int",
@@ -2758,122 +3256,9 @@
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "Tag",
-                      "ofType": null
-                    }
-                  }
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
-              "name": "writers",
-              "description": "People credited as writer.",
-              "args": [
-                {
-                  "name": "first",
-                  "description": "Return at most this many, in billing order.",
-                  "type": {
-                    "kind": "SCALAR",
-                    "name": "Int",
-                    "ofType": null
-                  },
-                  "defaultValue": null
-                }
-              ],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "Tag",
-                      "ofType": null
-                    }
-                  }
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
-              "name": "cast",
-              "description": "The cast, in billing order, each with the character played.",
-              "args": [
-                {
-                  "name": "first",
-                  "description": "Return at most this many, in billing order.",
-                  "type": {
-                    "kind": "SCALAR",
-                    "name": "Int",
-                    "ofType": null
-                  },
-                  "defaultValue": null
-                }
-              ],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "CastMember",
-                      "ofType": null
-                    }
-                  }
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
-              "name": "producers",
-              "description": "People credited as producer.",
-              "args": [
-                {
-                  "name": "first",
-                  "description": "Return at most this many, in billing order.",
-                  "type": {
-                    "kind": "SCALAR",
-                    "name": "Int",
-                    "ofType": null
-                  },
-                  "defaultValue": null
-                }
-              ],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "Tag",
-                      "ofType": null
-                    }
-                  }
+                  "kind": "OBJECT",
+                  "name": "RatingConnection",
+                  "ofType": null
                 }
               },
               "isDeprecated": false,
@@ -2976,6 +3361,11 @@
               "kind": "OBJECT",
               "name": "Tag",
               "ofType": null
+            },
+            {
+              "kind": "OBJECT",
+              "name": "Person",
+              "ofType": null
             }
           ]
         },
@@ -3043,6 +3433,79 @@
           ],
           "inputFields": null,
           "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "Person",
+          "description": null,
+          "fields": [
+            {
+              "name": "id",
+              "description": "Globally unique, opaque identifier. Pass it to `node` to refetch this person.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "name",
+              "description": "The person's name. Not unique: two people can share one, and `providerKey` is what\ntells them apart.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "providerKey",
+              "description": "The metadata provider's identifier for this person. Null for the people the provider\ndoes not know.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "thumbUrl",
+              "description": "A portrait, hosted by the metadata provider.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [
+            {
+              "kind": "INTERFACE",
+              "name": "Node",
+              "ofType": null
+            }
+          ],
           "enumValues": null,
           "possibleTypes": null
         },
@@ -3279,6 +3742,222 @@
           "inputFields": null,
           "interfaces": [],
           "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "Rating",
+          "description": null,
+          "fields": [
+            {
+              "name": "source",
+              "description": "The provider: `imdb`, `rottentomatoes` or `themoviedb` in the reference library.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "kind",
+              "description": "Who the score speaks for.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "RatingType",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "value",
+              "description": "The score out of 10, as the provider states it.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Float",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "image",
+              "description": "The provider's badge for this score, for example\n`rottentomatoes://image.rating.ripe` — which for Rotten Tomatoes also says whether the\nscore counts as fresh.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "RatingConnection",
+          "description": null,
+          "fields": [
+            {
+              "name": "pageInfo",
+              "description": "Information to aid in pagination.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PageInfo",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "edges",
+              "description": "A list of edges.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "RatingEdge",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nodes",
+              "description": "A list of nodes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Rating",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "RatingEdge",
+          "description": "An edge in a connection.",
+          "fields": [
+            {
+              "name": "node",
+              "description": "The item at the end of the edge",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Rating",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cursor",
+              "description": "A cursor for use in pagination",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "RatingType",
+          "description": "Who a rating speaks for.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "CRITIC",
+              "description": "Professional critics.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AUDIENCE",
+              "description": "The provider's users.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
           "possibleTypes": null
         },
         {
@@ -3560,6 +4239,151 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "EpisodeConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "tags",
+              "description": "Genres and countries, which are the series', and the credits of the season's\nepisodes.",
+              "args": [
+                {
+                  "name": "includeEpisodes",
+                  "description": "Also list the credits of the episodes, after the season's own.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "Boolean",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": "true"
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "ItemTags",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "externalIds",
+              "description": "Identifiers this item has at external metadata providers.",
+              "args": [
+                {
+                  "name": "after",
+                  "description": "Return entries after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return entries before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many entries from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many entries from the end of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "ExternalIdConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ratings",
+              "description": "Scores external providers give this item.",
+              "args": [
+                {
+                  "name": "after",
+                  "description": "Return entries after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return entries before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many entries from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many entries from the end of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "RatingConnection",
                   "ofType": null
                 }
               },
@@ -4293,47 +5117,73 @@
               "deprecationReason": null
             },
             {
-              "name": "genres",
-              "description": "Genres, in the library's metadata language, most significant first.",
+              "name": "tags",
+              "description": "Genres, countries and credits — the series' own, and by default those of its\nepisodes after them.",
               "args": [
                 {
-                  "name": "first",
-                  "description": "Return at most this many, in billing order.",
+                  "name": "includeEpisodes",
+                  "description": "Also list the credits of the episodes, after the series' own.",
                   "type": {
-                    "kind": "SCALAR",
-                    "name": "Int",
-                    "ofType": null
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "Boolean",
+                      "ofType": null
+                    }
                   },
-                  "defaultValue": null
+                  "defaultValue": "true"
                 }
               ],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "Tag",
-                      "ofType": null
-                    }
-                  }
+                  "kind": "OBJECT",
+                  "name": "ItemTags",
+                  "ofType": null
                 }
               },
               "isDeprecated": false,
               "deprecationReason": null
             },
             {
-              "name": "countries",
-              "description": "Countries of production.",
+              "name": "externalIds",
+              "description": "Identifiers this item has at external metadata providers.",
               "args": [
                 {
+                  "name": "after",
+                  "description": "Return entries after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return entries before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
                   "name": "first",
-                  "description": "Return at most this many, in billing order.",
+                  "description": "Return at most this many entries from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many entries from the end of the range.",
                   "type": {
                     "kind": "SCALAR",
                     "name": "Int",
@@ -4346,29 +5196,51 @@
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "Tag",
-                      "ofType": null
-                    }
-                  }
+                  "kind": "OBJECT",
+                  "name": "ExternalIdConnection",
+                  "ofType": null
                 }
               },
               "isDeprecated": false,
               "deprecationReason": null
             },
             {
-              "name": "cast",
-              "description": "The series' regular cast, in billing order. Each episode carries its own, guest\nstars included.",
+              "name": "ratings",
+              "description": "Scores external providers give this item.",
               "args": [
                 {
+                  "name": "after",
+                  "description": "Return entries after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return entries before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
                   "name": "first",
-                  "description": "Return at most this many, in billing order.",
+                  "description": "Return at most this many entries from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many entries from the end of the range.",
                   "type": {
                     "kind": "SCALAR",
                     "name": "Int",
@@ -4381,17 +5253,9 @@
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "LIST",
-                  "name": null,
-                  "ofType": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "CastMember",
-                      "ofType": null
-                    }
-                  }
+                  "kind": "OBJECT",
+                  "name": "RatingConnection",
+                  "ofType": null
                 }
               },
               "isDeprecated": false,
@@ -4529,7 +5393,7 @@
             },
             {
               "name": "kind",
-              "description": "What the tag classifies or credits.\n\nA person credited in two roles is two tags: the writer and the producer are filtered\non separately, because \"films she wrote\" is not \"films she produced\".",
+              "description": "What the tag classifies or credits.\n\nA person credited in two roles has two tags, one per role: \"films she wrote\" and\n\"films she produced\" are different filters.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
@@ -4545,7 +5409,7 @@
             },
             {
               "name": "name",
-              "description": "The genre, the country, or the person's name.\n\nNot unique among people: two people can share a name, and `providerKey` tells them\napart.",
+              "description": "The genre, the country, or the name as credited — which can differ from the person's\ncurrent name, as `Andy Garcia` does from `Andy García`.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
@@ -4560,24 +5424,12 @@
               "deprecationReason": null
             },
             {
-              "name": "providerKey",
-              "description": "The metadata provider's identifier for a person. Null for genres and countries, and\nfor the people the provider does not know.",
+              "name": "person",
+              "description": "Who a credit names. Null for a genre or a country.",
               "args": [],
               "type": {
-                "kind": "SCALAR",
-                "name": "String",
-                "ofType": null
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
-              "name": "thumbUrl",
-              "description": "A portrait of the person, hosted by the metadata provider. Null for genres and\ncountries.",
-              "args": [],
-              "type": {
-                "kind": "SCALAR",
-                "name": "String",
+                "kind": "OBJECT",
+                "name": "Person",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -4592,6 +5444,148 @@
               "ofType": null
             }
           ],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "TagConnection",
+          "description": null,
+          "fields": [
+            {
+              "name": "pageInfo",
+              "description": "Information to aid in pagination.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PageInfo",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "edges",
+              "description": "A list of edges.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "TagEdge",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nodes",
+              "description": "A list of nodes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Tag",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "TagEdge",
+          "description": "An edge in a connection.",
+          "fields": [
+            {
+              "name": "node",
+              "description": "The item at the end of the edge",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Tag",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "character",
+              "description": "The character played, for a cast member, as the source credits it — sometimes\nseveral, as in `Homer Simpson / Barney Gumble`. Null for any other kind, and for a\nguest gathered from episodes, whose character varies from one to the next.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "episodeCount",
+              "description": "How many episodes below the item carry this credit. Null on an item with no episodes:\na film, or an episode itself.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cursor",
+              "description": "A cursor for use in pagination",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
           "enumValues": null,
           "possibleTypes": null
         },
@@ -4635,7 +5629,7 @@
             },
             {
               "name": "names",
-              "description": "Tags by name, matched exactly and ignoring ASCII case only: `ACTION` matches\n`Action`, but `COMÉDIE` does not match `Comédie`, and spaces are not trimmed. A name\nshared by two people matches both.",
+              "description": "Tags by name, matched exactly but ignoring case. A name shared by two people matches\nboth.",
               "type": {
                 "kind": "LIST",
                 "name": null,

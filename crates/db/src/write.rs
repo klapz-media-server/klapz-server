@@ -7,13 +7,12 @@
 //! easy way, by inserting items directly and then matching nothing.
 //!
 //! So the words are derived here, from the models themselves, and there is no path that
-//! inserts an item without them. Tags follow the same rule for the same reason: the folded
-//! name a filter matches against is derived here, never handed in.
+//! inserts an item without them.
 
-use open_plex_core::{metadata, search, Tag};
+use open_plex_core::search;
 use sea_orm::{ActiveValue, ConnectionTrait, DbErr, EntityTrait};
 
-use crate::entity::{item_title_word, metadata_item, tag};
+use crate::entity::{item_title_word, metadata_item};
 
 /// Rows per statement.
 ///
@@ -47,32 +46,6 @@ pub async fn insert_items<C: ConnectionTrait>(
     }
 
     Ok(words.len())
-}
-
-/// Inserts tags, with the folded name a filter by name compares against.
-///
-/// # Errors
-///
-/// Fails if any insert fails.
-pub async fn insert_tags<C: ConnectionTrait>(connection: &C, tags: &[Tag]) -> Result<(), DbErr> {
-    let rows: Vec<tag::ActiveModel> = tags
-        .iter()
-        .map(|value| tag::ActiveModel {
-            id: ActiveValue::Set(value.id.get()),
-            kind: ActiveValue::Set(tag::kind_name(value.kind).to_owned()),
-            name: ActiveValue::Set(value.name.clone()),
-            name_key: ActiveValue::Set(metadata::tag_name_key(&value.name)),
-            provider_key: ActiveValue::Set(value.provider_key.clone()),
-            thumb_url: ActiveValue::Set(value.thumb_url.clone()),
-        })
-        .collect();
-
-    for chunk in rows.chunks(WRITE_CHUNK) {
-        tag::Entity::insert_many(chunk.to_vec())
-            .exec(connection)
-            .await?;
-    }
-    Ok(())
 }
 
 /// The word rows for one item, read back off the model being written.

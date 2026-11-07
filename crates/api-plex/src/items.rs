@@ -14,7 +14,8 @@
 use serde::Serialize;
 
 use crate::gql_items::{
-    GqlCastMember, GqlItem, GqlLibraryRef, GqlPart, GqlStream, GqlTag, GqlVersion,
+    GqlConnection, GqlEdge, GqlItem, GqlLibraryRef, GqlPart, GqlRating, GqlStream, GqlTag,
+    GqlVersion,
 };
 
 /// Identifier of the metadata provider every library response claims.
@@ -197,6 +198,11 @@ pub struct MetadataEntry {
     pub genre: Vec<TagEntry>,
     #[serde(rename = "Country", skip_serializing_if = "Vec::is_empty")]
     pub country: Vec<TagEntry>,
+    /// External identifiers, `imdb://tt0293662`. A lookup carries them, a listing does not.
+    #[serde(rename = "Guid", skip_serializing_if = "Vec::is_empty")]
+    pub guids: Vec<GuidEntry>,
+    #[serde(rename = "Rating", skip_serializing_if = "Vec::is_empty")]
+    pub ratings: Vec<RatingEntry>,
     #[serde(rename = "Director", skip_serializing_if = "Vec::is_empty")]
     pub director: Vec<TagEntry>,
     #[serde(rename = "Writer", skip_serializing_if = "Vec::is_empty")]
@@ -206,6 +212,38 @@ pub struct MetadataEntry {
     pub role: Vec<TagEntry>,
     #[serde(rename = "Producer", skip_serializing_if = "Vec::is_empty")]
     pub producer: Vec<TagEntry>,
+}
+
+/// An external identifier, as one `source://value` string.
+#[derive(Debug, Serialize)]
+pub struct GuidEntry {
+    pub id: String,
+}
+
+/// A provider's score, with the badge clients draw beside it.
+#[derive(Debug, Serialize)]
+pub struct RatingEntry {
+    pub image: String,
+    pub value: f64,
+    /// `critic` or `audience`.
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+}
+
+impl RatingEntry {
+    fn from_graphql(rating: &GqlRating) -> Self {
+        Self {
+            image: rating.image.clone(),
+            // Published to one decimal, like an item's own ratings: TMDB's 5.525 comes out as
+            // 5.5 on the reference.
+            value: one_decimal(rating.value),
+            kind: if rating.kind == "CRITIC" {
+                "critic"
+            } else {
+                "audience"
+            },
+        }
+    }
 }
 
 /// A genre, a country or a credit.
@@ -242,17 +280,23 @@ impl TagEntry {
             id,
             filter: id.map(|id| format!("{field}={id}")),
             tag: tag.name.clone(),
-            tag_key: tag.provider_key.clone(),
+            tag_key: tag
+                .person
+                .as_ref()
+                .and_then(|person| person.provider_key.clone()),
             role: role.map(ToOwned::to_owned),
-            thumb: tag.thumb_url.clone(),
+            thumb: tag
+                .person
+                .as_ref()
+                .and_then(|person| person.thumb_url.clone()),
         }
     }
 
     /// A cast entry. In a lookup it always carries `role`, as the reference's does: the
     /// character's name with an ASCII first letter capitalized, or empty when the source
     /// names none.
-    fn from_cast_member(member: &GqlCastMember) -> Self {
-        let mut entry = Self::from_graphql(&member.person, "actor", None);
+    fn from_cast_member(member: &GqlEdge<GqlTag>) -> Self {
+        let mut entry = Self::from_graphql(&member.node, "actor", None);
         if entry.id.is_some() {
             entry.role = Some(credited_character(
                 member.character.as_deref().unwrap_or(""),
@@ -261,8 +305,8 @@ impl TagEntry {
         entry
     }
 
-    fn all(tags: &[GqlTag], field: &str) -> Vec<Self> {
-        tags.iter()
+    fn all(tags: &GqlConnection<GqlTag>, field: &str) -> Vec<Self> {
+        tags.nodes()
             .map(|tag| Self::from_graphql(tag, field, None))
             .collect()
     }
@@ -536,12 +580,30 @@ impl MetadataEntry {
             added_at: item.added_at,
             updated_at: item.updated_at,
             media: item.versions.iter().map(MediaEntry::from_graphql).collect(),
-            genre: TagEntry::all(&item.genres, "genre"),
-            country: TagEntry::all(&item.countries, "country"),
-            director: TagEntry::all(&item.directors, "director"),
-            writer: TagEntry::all(&item.writers, "writer"),
-            role: item.cast.iter().map(TagEntry::from_cast_member).collect(),
-            producer: TagEntry::all(&item.producers, "producer"),
+            genre: TagEntry::all(&item.tags.genres, "genre"),
+            country: TagEntry::all(&item.tags.countries, "country"),
+            guids: item
+                .external_ids
+                .nodes()
+                .map(|id| GuidEntry {
+                    id: format!("{}://{}", id.source, id.value),
+                })
+                .collect(),
+            ratings: item
+                .ratings
+                .nodes()
+                .map(RatingEntry::from_graphql)
+                .collect(),
+            director: TagEntry::all(&item.tags.directors, "director"),
+            writer: TagEntry::all(&item.tags.writers, "writer"),
+            role: item
+                .tags
+                .cast
+                .edges
+                .iter()
+                .map(TagEntry::from_cast_member)
+                .collect(),
+            producer: TagEntry::all(&item.tags.producers, "producer"),
         })
     }
 }

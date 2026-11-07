@@ -27,4 +27,7 @@ pub use media::{File, Track, Version};
 pub use node::{GlobalId, GlobalIdError};
 pub use schema::{build_schema, ApiContext, ApiSchema, Node, Query};
 pub use server::{Features, Server, Transcoder};
-pub use tag::{CastMember, TagFilterInput, TagObject, TagType};
+pub use tag::{
+    Attachment, ExternalIdObject, ItemTags, PersonObject, RatingObject, RatingType, TagFilterInput,
+    TagObject, TagType,
+};

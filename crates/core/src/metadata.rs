@@ -1,6 +1,6 @@
 //! Library contents: items, their media, and the queries bindings run against them.
 
-use crate::ids::{MediaId, PartId, RatingKey, SectionId, StreamId, TagId};
+use crate::ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use crate::page::{CursorKey, Direction, Page, Window};
 
 #[derive(Debug, thiserror::Error)]
@@ -155,14 +155,20 @@ pub enum TagKind {
     Producer,
 }
 
-impl TagKind {
-    /// Whether tags of this kind name a person.
-    ///
-    /// Only people carry a provider key and a portrait, and two of them may share a name:
-    /// the reference library holds 11,879 actor names belonging to more than one person.
-    pub const fn is_person(self) -> bool {
-        !matches!(self, Self::Genre | Self::Country)
-    }
+/// Someone credited on an item.
+///
+/// Stored apart from their credits, which are tags: the name and portrait belong to the
+/// person, while what they did on an item belongs to the tag. Two people may share a name —
+/// 11,879 actor names in the reference library belong to more than one person — so identity
+/// is the id, and the provider key is what told them apart at import.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Person {
+    pub id: PersonId,
+    pub name: String,
+    /// The metadata provider's identifier for this person.
+    pub provider_key: Option<String>,
+    /// A portrait, hosted by the metadata provider.
+    pub thumb_url: Option<String>,
 }
 
 /// A genre, a country, or a person in one credit role.
@@ -174,11 +180,11 @@ impl TagKind {
 pub struct Tag {
     pub id: TagId,
     pub kind: TagKind,
+    /// The name as credited, which can differ from the person's current name: the source
+    /// credits `Andy Garcia` on some items and `Andy García` on others.
     pub name: String,
-    /// The metadata provider's identifier for a person, which tells homonyms apart.
-    pub provider_key: Option<String>,
-    /// Portrait of a person, hosted by the metadata provider.
-    pub thumb_url: Option<String>,
+    /// Who a credit names. `None` for a genre or a country.
+    pub person: Option<Person>,
 }
 
 /// A tag as attached to one item.
@@ -190,11 +196,95 @@ pub struct ItemTag {
     pub role: Option<String>,
 }
 
+/// A credit counted across the episodes below a series or a season.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EpisodeCredit {
+    /// The series or season the episodes belong to.
+    pub parent: RatingKey,
+    pub tag: Tag,
+    /// How many of those episodes carry the credit.
+    pub episodes: u32,
+}
+
+/// A credit as an item presents it, its own or gathered from its episodes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Credit {
+    pub tag: Tag,
+    pub role: Option<String>,
+    /// How many episodes below the item carry it. `None` on an item with no episodes.
+    pub episodes: Option<u32>,
+}
+
+/// An item's own credits followed by the ones only its episodes carry.
+///
+/// The item's own come first, in billing order: a series' regular cast is what its page
+/// leads with. Then everyone else credited on an episode, most episodes first — the
+/// director of twenty-five episodes before the guest of one. A credit present in both keeps
+/// its own position and gains the episode count.
+///
+/// A guest's character is not carried over: it varies from one episode to the next, and
+/// any one choice would misdescribe the others.
+pub fn credits_with_episodes(own: Vec<ItemTag>, below: &[EpisodeCredit]) -> Vec<Credit> {
+    let count = |tag: &Tag| {
+        below
+            .iter()
+            .find(|credit| credit.tag.id == tag.id)
+            .map(|credit| credit.episodes)
+    };
+    let mut credits: Vec<Credit> = own
+        .into_iter()
+        .map(|attached| Credit {
+            episodes: Some(count(&attached.tag).unwrap_or(0)),
+            tag: attached.tag,
+            role: attached.role,
+        })
+        .collect();
+    for credit in below {
+        if !credits.iter().any(|known| known.tag.id == credit.tag.id) {
+            credits.push(Credit {
+                tag: credit.tag.clone(),
+                role: None,
+                episodes: Some(credit.episodes),
+            });
+        }
+    }
+    credits
+}
+
+/// An identifier the item has at an external metadata provider: `imdb` / `tt0293662`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalId {
+    pub item_id: RatingKey,
+    pub source: String,
+    pub value: String,
+}
+
+/// Who a rating speaks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RatingKind {
+    Critic,
+    Audience,
+}
+
+/// A score an external provider gives the item.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Rating {
+    pub item_id: RatingKey,
+    /// The provider: `imdb`, `rottentomatoes`, `themoviedb`.
+    pub source: String,
+    pub kind: RatingKind,
+    /// Out of 10, as the provider states it.
+    pub value: f64,
+    /// The provider's badge for this score, `rottentomatoes://image.rating.ripe` — which
+    /// for Rotten Tomatoes also says whether the score is fresh or rotten.
+    pub image: String,
+}
+
 /// Which tag a filter names: by identifier, or by name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TagRef {
     Id(TagId),
-    /// Matched exactly, ignoring ASCII case only — see [`tag_name_key`].
+    /// Matched exactly, ignoring case.
     Name(String),
 }
 
@@ -215,16 +305,6 @@ impl TagCondition {
     /// a ceiling like any other client-sized input. Fifty is far past what a filter UI
     /// builds and far below what an engine's parameter limit tolerates.
     pub const MAX_VALUES: usize = 50;
-}
-
-/// The form a tag name is matched in.
-///
-/// ASCII case folded and nothing else, which is the reference server's rule: `genre=ACTION`
-/// finds Action, `genre=COMÉDIE` does not find Comédie, and neither accents nor surrounding
-/// spaces are forgiven. It is `SQLite`'s `NOCASE`, made explicit so that an engine whose
-/// `LOWER` understands Unicode does not quietly match more.
-pub fn tag_name_key(name: &str) -> String {
-    name.to_ascii_lowercase()
 }
 
 /// How a listing is ordered.
@@ -568,8 +648,27 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
     /// for the six is cheaper than six for one each.
     async fn tags_for(&self, items: &[RatingKey]) -> Result<Vec<ItemTag>, MetadataError>;
 
+    /// The credits carried by the episodes below several series or seasons, each counted
+    /// once per episode, most frequent first within a parent.
+    ///
+    /// Genres and countries are not counted: no episode carries any.
+    async fn credits_below(
+        &self,
+        parents: &[RatingKey],
+    ) -> Result<Vec<EpisodeCredit>, MetadataError>;
+
+    /// The external identifiers of several items, in the order the source lists them.
+    async fn external_ids_for(&self, items: &[RatingKey])
+        -> Result<Vec<ExternalId>, MetadataError>;
+
+    /// The ratings of several items, in the order the source lists them.
+    async fn ratings_for(&self, items: &[RatingKey]) -> Result<Vec<Rating>, MetadataError>;
+
     /// One tag by id, for a Relay refetch.
     async fn tag(&self, id: TagId) -> Result<Option<Tag>, MetadataError>;
+
+    /// One person by id, for a Relay refetch.
+    async fn person(&self, id: PersonId) -> Result<Option<Person>, MetadataError>;
 }
 
 /// Lets an `Arc<dyn MetadataRepository>` be used wherever a repository is expected, so the
@@ -669,8 +768,30 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         (**self).tags_for(items).await
     }
 
+    async fn credits_below(
+        &self,
+        parents: &[RatingKey],
+    ) -> Result<Vec<EpisodeCredit>, MetadataError> {
+        (**self).credits_below(parents).await
+    }
+
+    async fn external_ids_for(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<ExternalId>, MetadataError> {
+        (**self).external_ids_for(items).await
+    }
+
+    async fn ratings_for(&self, items: &[RatingKey]) -> Result<Vec<Rating>, MetadataError> {
+        (**self).ratings_for(items).await
+    }
+
     async fn tag(&self, id: TagId) -> Result<Option<Tag>, MetadataError> {
         (**self).tag(id).await
+    }
+
+    async fn person(&self, id: PersonId) -> Result<Option<Person>, MetadataError> {
+        (**self).person(id).await
     }
 }
 
@@ -764,22 +885,68 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_tag_name_folds_ascii_case_and_nothing_else() {
-        // Each half measured on the reference: `genre=ACTION` finds Action, while
-        // `genre=COMÉDIE` and `genre=Comedie` both miss Comédie.
-        assert_eq!(tag_name_key("ACTION"), tag_name_key("Action"));
-        assert_ne!(tag_name_key("COMÉDIE"), tag_name_key("Comédie"));
-        assert_ne!(tag_name_key("Comedie"), tag_name_key("Comédie"));
-        assert_ne!(tag_name_key(" Action"), tag_name_key("Action"));
+    fn director(id: i64, name: &str) -> Tag {
+        Tag {
+            id: TagId::new(id),
+            kind: TagKind::Director,
+            name: name.to_owned(),
+            person: None,
+        }
     }
 
     #[test]
-    fn only_people_are_people() {
-        assert!(TagKind::Actor.is_person());
-        assert!(TagKind::Producer.is_person());
-        assert!(!TagKind::Genre.is_person());
-        assert!(!TagKind::Country.is_person());
+    fn a_series_leads_with_its_own_credits_then_its_episodes_by_count() {
+        let series = RatingKey::new(32_803);
+        let own = vec![ItemTag {
+            item_id: series,
+            tag: director(1, "Jenji Kohan"),
+            role: None,
+        }];
+        let below = [
+            EpisodeCredit {
+                parent: series,
+                tag: director(2, "Craig Zisk"),
+                episodes: 12,
+            },
+            EpisodeCredit {
+                parent: series,
+                tag: director(1, "Jenji Kohan"),
+                episodes: 3,
+            },
+            EpisodeCredit {
+                parent: series,
+                tag: director(3, "Scott Ellis"),
+                episodes: 1,
+            },
+        ];
+
+        let credits = credits_with_episodes(own, &below);
+        let summary: Vec<(&str, Option<u32>)> = credits
+            .iter()
+            .map(|credit| (credit.tag.name.as_str(), credit.episodes))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("Jenji Kohan", Some(3)),
+                ("Craig Zisk", Some(12)),
+                ("Scott Ellis", Some(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_own_credit_no_episode_carries_counts_zero() {
+        let series = RatingKey::new(32_803);
+        let credits = credits_with_episodes(
+            vec![ItemTag {
+                item_id: series,
+                tag: director(1, "Jenji Kohan"),
+                role: None,
+            }],
+            &[],
+        );
+        assert_eq!(credits[0].episodes, Some(0));
     }
 
     #[test]

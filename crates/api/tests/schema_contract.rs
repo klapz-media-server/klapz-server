@@ -8,9 +8,11 @@
 use std::sync::Arc;
 
 use open_plex_api::{build_schema, ApiContext, ApiSchema, GlobalId};
-use open_plex_core::metadata::{ItemKind, MetadataItem};
+use open_plex_core::metadata::{ItemKind, ItemTag, MetadataItem, Person, Tag, TagKind};
 use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{LibrarySection, RatingKey, SectionId, SectionKind, SectionRoot};
+use open_plex_core::{
+    LibrarySection, PersonId, RatingKey, SectionId, SectionKind, SectionRoot, TagId,
+};
 use serde_json::Value;
 
 fn schema() -> ApiSchema {
@@ -378,4 +380,229 @@ async fn search_results_are_refetchable_by_their_global_id() {
 
     let refetched = run_on(&searchable(), &format!("{{ node(id: \"{id}\") {{ id }} }}")).await;
     assert_eq!(refetched["node"]["id"], id.as_str());
+}
+
+/// A series with one season of two episodes, credited as the reference credits The Simpsons:
+/// the series carries its genre and its regular cast, the episodes their crew and guests.
+fn series_with_episodes() -> ApiSchema {
+    let series = section(5, SectionKind::Show, "Series");
+    let child = |id: i64, kind: ItemKind, parent: i64, title: &str| MetadataItem {
+        parent_id: Some(RatingKey::new(parent)),
+        ..item(id, 5, kind, title, None)
+    };
+    let items = vec![
+        item(22_053, 5, ItemKind::Show, "The Simpsons", None),
+        child(22_077, ItemKind::Season, 22_053, "Season 14"),
+        child(
+            22_078,
+            ItemKind::Episode,
+            22_077,
+            "Treehouse of Horror XIII",
+        ),
+        child(
+            22_079,
+            ItemKind::Episode,
+            22_077,
+            "How I Spent My Strummer Vacation",
+        ),
+    ];
+
+    let person = |id: i64, name: &str| Person {
+        id: PersonId::new(id),
+        name: name.to_owned(),
+        provider_key: None,
+        thumb_url: None,
+    };
+    let tag = |id: i64, kind: TagKind, name: &str, who: Option<Person>| Tag {
+        id: TagId::new(id),
+        kind,
+        name: name.to_owned(),
+        person: who,
+    };
+    let on = |item: i64, tag: Tag, role: Option<&str>| ItemTag {
+        item_id: RatingKey::new(item),
+        tag,
+        role: role.map(ToOwned::to_owned),
+    };
+    let comedy = tag(4025, TagKind::Genre, "Comedy", None);
+    let homer = tag(
+        486_047,
+        TagKind::Actor,
+        "Dan Castellaneta",
+        Some(person(1, "Dan Castellaneta")),
+    );
+    let silverman = tag(
+        705_517,
+        TagKind::Director,
+        "David Silverman",
+        Some(person(2, "David Silverman")),
+    );
+    let guest = tag(
+        900_001,
+        TagKind::Actor,
+        "Mick Jagger",
+        Some(person(3, "Mick Jagger")),
+    );
+    let tags = vec![
+        on(22_053, comedy, None),
+        on(22_053, homer.clone(), Some("Homer Simpson")),
+        on(22_078, silverman.clone(), None),
+        on(22_078, homer.clone(), Some("Homer Simpson")),
+        on(22_079, silverman, None),
+        on(22_079, homer, Some("Homer Simpson")),
+        on(22_079, guest, Some("Mick Jagger")),
+    ];
+
+    build_schema(ApiContext {
+        capabilities: open_plex_core::ServerCapabilities::new(
+            open_plex_core::ServerIdentity::new(
+                "0000000000000000000000000000000000000000",
+                "0.1.0",
+            ),
+            0,
+        ),
+        library: Arc::new(InMemoryLibrary::new(vec![series])),
+        metadata: Arc::new(InMemoryMetadata::new(items).with_tags(tags)),
+    })
+}
+
+fn names(connection: &Value) -> Vec<(String, Value)> {
+    connection["edges"]
+        .as_array()
+        .expect("edges")
+        .iter()
+        .map(|edge| {
+            (
+                edge["node"]["name"].as_str().expect("a name").to_owned(),
+                edge["episodeCount"].clone(),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_series_gathers_the_credits_of_its_episodes_after_its_own() {
+    let schema = series_with_episodes();
+    let id = GlobalId::encode("Item", 22_053);
+    let data = run_on(
+        &schema,
+        &format!(
+            r#"{{ node(id: "{id}") {{ ... on Show {{
+                tags {{
+                  cast {{ edges {{ episodeCount character node {{ name }} }} }}
+                  directors {{ edges {{ episodeCount node {{ name }} }} }}
+                }}
+                own: tags(includeEpisodes: false) {{ cast {{ edges {{ episodeCount node {{ name }} }} }} }}
+            }} }} }}"#
+        ),
+    )
+    .await;
+    let show = &data["node"];
+
+    // The regular cast first, counted across the episodes; then the guest of one episode.
+    assert_eq!(
+        names(&show["tags"]["cast"]),
+        [
+            ("Dan Castellaneta".to_owned(), Value::from(2)),
+            ("Mick Jagger".to_owned(), Value::from(1)),
+        ]
+    );
+    // A guest's character varies by episode, so none is claimed for the series.
+    assert_eq!(
+        show["tags"]["cast"]["edges"][0]["character"],
+        "Homer Simpson"
+    );
+    assert_eq!(show["tags"]["cast"]["edges"][1]["character"], Value::Null);
+    assert_eq!(
+        names(&show["tags"]["directors"]),
+        [("David Silverman".to_owned(), Value::from(2))]
+    );
+    // Asked not to, the series lists its own credits only, as an item without episodes.
+    assert_eq!(
+        names(&show["own"]["cast"]),
+        [("Dan Castellaneta".to_owned(), Value::Null)]
+    );
+}
+
+#[tokio::test]
+async fn a_season_and_an_episode_inherit_their_series_genres() {
+    let schema = series_with_episodes();
+    for key in [22_077, 22_078] {
+        let id = GlobalId::encode("Item", key);
+        let data = run_on(
+            &schema,
+            &format!(
+                r#"{{ node(id: "{id}") {{
+                    ... on Season {{ tags {{ genres {{ edges {{ node {{ name }} }} }} }} }}
+                    ... on Episode {{ tags {{ genres {{ edges {{ node {{ name }} }} }} }} }}
+                }} }}"#
+            ),
+        )
+        .await;
+        assert_eq!(
+            data["node"]["tags"]["genres"]["edges"][0]["node"]["name"], "Comedy",
+            "{key}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_season_lists_its_episodes_crew() {
+    let schema = series_with_episodes();
+    let id = GlobalId::encode("Item", 22_077);
+    let data = run_on(
+        &schema,
+        &format!(
+            r#"{{ node(id: "{id}") {{ ... on Season {{
+                tags {{ directors {{ edges {{ episodeCount node {{ name person {{ id }} }} }} }} }}
+            }} }} }}"#
+        ),
+    )
+    .await;
+    let director = &data["node"]["tags"]["directors"]["edges"][0];
+    assert_eq!(director["node"]["name"], "David Silverman");
+    assert_eq!(director["episodeCount"], 2);
+
+    // The person behind the credit is refetchable on its own.
+    let person = director["node"]["person"]["id"].as_str().expect("an id");
+    let refetched = run_on(
+        &schema,
+        &format!(r#"{{ node(id: "{person}") {{ ... on Person {{ name }} }} }}"#),
+    )
+    .await;
+    assert_eq!(refetched["node"]["name"], "David Silverman");
+}
+
+#[tokio::test]
+async fn a_tag_list_pages_by_cursor() {
+    let schema = series_with_episodes();
+    let id = GlobalId::encode("Item", 22_053);
+    let data = run_on(
+        &schema,
+        &format!(
+            r#"{{ node(id: "{id}") {{ ... on Show {{ tags {{ cast(first: 1) {{
+                pageInfo {{ hasNextPage endCursor }}
+                edges {{ node {{ name }} }}
+            }} }} }} }} }}"#
+        ),
+    )
+    .await;
+    let cast = &data["node"]["tags"]["cast"];
+    assert_eq!(cast["edges"][0]["node"]["name"], "Dan Castellaneta");
+    assert_eq!(cast["pageInfo"]["hasNextPage"], true);
+
+    let after = cast["pageInfo"]["endCursor"].as_str().expect("a cursor");
+    let next = run_on(
+        &schema,
+        &format!(
+            r#"{{ node(id: "{id}") {{ ... on Show {{ tags {{ cast(first: 1, after: "{after}") {{
+                pageInfo {{ hasNextPage }}
+                edges {{ node {{ name }} }}
+            }} }} }} }} }}"#
+        ),
+    )
+    .await;
+    let cast = &next["node"]["tags"]["cast"];
+    assert_eq!(cast["edges"][0]["node"]["name"], "Mick Jagger");
+    assert_eq!(cast["pageInfo"]["hasNextPage"], false);
 }
