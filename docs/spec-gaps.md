@@ -294,6 +294,27 @@ whose live tags no longer match the snapshot's, and the other 21 differ by a cre
 alone. `Guid` identical on 419 and `Rating` on 414, every difference being an item the live
 server refreshed after the snapshot.
 
+### A library's shelves
+
+`GET /hubs/sections/{id}` answers up to eight shelves on the reference. Measured on a film
+library: continue watching, recently released, recently added, recent playlists (only with
+`includeLibraryPlaylists=1`), top films of a genre, of a person, top unwatched, recently
+watched; on a series library, recently added is a `mixed` shelf of seasons, episodes and
+series. `count` defaults to six, `count=abc` too; `excludeFields=summary` drops the synopsis
+from every item; an empty shelf is still listed, as continue watching is when nothing is in
+progress.
+
+Shelf titles are written by the server, in the client's `X-Plex-Language`, from gettext
+catalogs shipped with it (`Resources/locale/*/LC_MESSAGES/plex.mo`): `Récemment ajouté dans
+VF - Films` in French. We translate the three titles we serve into French from that catalog,
+and fall back to English for every other language.
+
+We serve continue watching (empty), recently added for a film library, and recent playlists
+(empty). Against the reference on section 4: recently added holds the same twelve films in the
+same order, every shelf attribute identical, no field differing on any film. Every other shelf
+is absent rather than approximated, since each needs watch state, a sort by release date or
+rating, or the series grouping rule, none of which exists yet.
+
 ### Server settings
 
 `GET /:/prefs` on the reference lists 162 settings: transcoder, DLNA, maintenance tasks,

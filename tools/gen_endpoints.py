@@ -56,6 +56,7 @@ IMPLEMENTED = frozenset(
         "/:/prefs",
         "/updater/status",
         "/updater/check",
+        "/hubs/sections/{sectionId}",
     }
 )
 

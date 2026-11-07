@@ -19,8 +19,8 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 14 | 5.4 % |
-| `stub` | 198 | 76.2 % |
-| `partial` | 4 | 1.5 % |
+| `stub` | 197 | 75.8 % |
+| `partial` | 5 | 1.9 % |
 | `done` | 7 | 2.7 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -30,7 +30,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
 | [Library](#library) | 85 | 1 | 1 | 52 | 7 | 24 |
-| [Hubs](#hubs) | 15 | 0 | 0 | 15 | 0 | 0 |
+| [Hubs](#hubs) | 15 | 0 | 1 | 14 | 0 | 0 |
 | [Content](#content) | 13 | 0 | 2 | 11 | 0 | 0 |
 | [Devices](#devices) | 13 | 0 | 0 | 13 | 0 | 0 |
 | [EPG](#epg) | 13 | 0 | 0 | 9 | 4 | 0 |
@@ -172,7 +172,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `GET` | `/hubs/metadata/{metadataId}/related` | user | Get related hubs |  |
 | `stub` | `GET` | `/hubs/popularInLibraries` | user | Get the popular in your libraries hub |  |
 | `stub` | `GET` | `/hubs/promoted` | user | Get the hubs which are promoted |  |
-| `stub` | `GET` | `/hubs/sections/{sectionId}` | user | Get section hubs |  |
+| `partial` | `GET` | `/hubs/sections/{sectionId}` | user | Get section hubs | Continue watching (empty: nothing can be in progress), recently added for a film library (same 12 films, attributes and fields as the reference), recent playlists (empty) on `includeLibraryPlaylists=1`; titles in French or English from `X-Plex-Language`. Not served: shelves needing watch state or release-date and rating sorts, and a series library's grouped recently added. |
 | `stub` | `DELETE` | `/hubs/sections/{sectionId}/manage` | admin | Reset hubs to defaults |  |
 | `stub` | `GET` | `/hubs/sections/{sectionId}/manage` | admin | Get hubs |  |
 | `stub` | `POST` | `/hubs/sections/{sectionId}/manage` | admin | Create a custom hub |  |

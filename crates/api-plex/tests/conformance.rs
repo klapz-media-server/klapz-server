@@ -1727,3 +1727,81 @@ async fn announces_the_plex_version_the_captures_come_from() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_film_library_recommends_its_recent_films_under_the_reference_shelves() {
+    let body = listing(
+        "/hubs/sections/4?count=1&includeLibraryPlaylists=1&excludeFields=summary&X-Plex-Language=fr",
+    )
+    .await;
+    let container = &body["MediaContainer"];
+    assert_eq!(container["librarySectionID"], 4);
+    assert_eq!(
+        container["librarySectionUUID"],
+        "2cd48489-54c0-41e9-ae62-f3dcb0f3c249"
+    );
+
+    let hubs = container["Hub"].as_array().expect("hubs");
+    let identifiers: Vec<&str> = hubs
+        .iter()
+        .map(|hub| hub["hubIdentifier"].as_str().expect("an identifier"))
+        .collect();
+    assert_eq!(
+        identifiers,
+        [
+            "movie.inprogress.4",
+            "movie.recentlyadded.4",
+            "recent.library.playlists.4"
+        ]
+    );
+    assert_eq!(container["size"], 3);
+
+    // Nothing is in progress: an empty shelf, as the reference shows one, with no hubKey.
+    assert_eq!(hubs[0]["size"], 0);
+    assert_eq!(hubs[0]["title"], "Continuer à regarder");
+    assert!(hubs[0].get("hubKey").is_none(), "{}", hubs[0]);
+
+    let recent = &hubs[1];
+    assert_eq!(recent["title"], "Récemment ajouté dans VF - Films");
+    assert_eq!(recent["key"], "/library/sections/4/all?sort=addedAt:desc");
+    assert_eq!(recent["size"], 1);
+    assert_eq!(recent["more"], true);
+    assert_eq!(recent["promoted"], true);
+    let film = &recent["Metadata"][0];
+    assert_eq!(
+        recent["hubKey"],
+        format!(
+            "/library/metadata/{}",
+            film["ratingKey"].as_str().expect("a key")
+        )
+    );
+    // Shelf items state their library, like a lookup, and drop the synopsis on request.
+    assert_eq!(film["librarySectionID"], 4);
+    assert!(film.get("summary").is_none(), "{film}");
+}
+
+#[tokio::test]
+async fn hub_titles_default_to_english() {
+    let body = listing("/hubs/sections/4").await;
+    let hubs = body["MediaContainer"]["Hub"].as_array().expect("hubs");
+    assert_eq!(hubs[0]["title"], "Continue Watching");
+    assert_eq!(hubs[1]["title"], "Recently Added in VF - Films");
+    // Not asked for, so not there.
+    assert_eq!(hubs.len(), 2);
+    assert!(hubs[1]["Metadata"][0].get("summary").is_some());
+}
+
+#[tokio::test]
+async fn a_series_library_offers_only_what_it_can_answer() {
+    let body = listing("/hubs/sections/5").await;
+    let hubs = body["MediaContainer"]["Hub"].as_array().expect("hubs");
+    assert_eq!(hubs.len(), 1);
+    assert_eq!(hubs[0]["hubIdentifier"], "tv.inprogress.5");
+    assert_eq!(hubs[0]["type"], "episode");
+}
+
+#[tokio::test]
+async fn hubs_of_an_unknown_library_are_not_found() {
+    let (status, _) = get_from(items_app(), "/hubs/sections/999", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

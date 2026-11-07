@@ -51,6 +51,9 @@ pub struct ClientIdentity {
     pub device_vendor: Option<String>,
     pub device_name: Option<String>,
     pub marketplace: Option<String>,
+    /// The language the client's interface is in, `fr` or `en-US`: the server translates
+    /// the strings it writes itself, hub titles among them.
+    pub language: Option<String>,
 }
 
 impl ClientIdentity {
@@ -81,6 +84,7 @@ impl ClientIdentity {
             device_vendor: field("X-Plex-Device-Vendor"),
             device_name: field("X-Plex-Device-Name"),
             marketplace: field("X-Plex-Marketplace"),
+            language: field("X-Plex-Language"),
         }
     }
 }
@@ -137,7 +141,8 @@ mod tests {
                 "X-Plex-Client-Identifier=abc123&X-Plex-Product=Plex%20Web\
                  &X-Plex-Version=4.1&X-Plex-Platform=Chrome&X-Plex-Platform-Version=120.0\
                  &X-Plex-Device=Windows&X-Plex-Model=hosted&X-Plex-Device-Vendor=Microsoft\
-                 &X-Plex-Device-Name=Living%20Room&X-Plex-Marketplace=googlePlay",
+                 &X-Plex-Device-Name=Living%20Room&X-Plex-Marketplace=googlePlay\
+                 &X-Plex-Language=fr",
             ),
         );
         assert_eq!(
@@ -153,6 +158,7 @@ mod tests {
                 device_vendor: Some("Microsoft".to_owned()),
                 device_name: Some("Living Room".to_owned()),
                 marketplace: Some("googlePlay".to_owned()),
+                language: Some("fr".to_owned()),
             }
         );
     }
