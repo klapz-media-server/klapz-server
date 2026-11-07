@@ -1805,3 +1805,18 @@ async fn hubs_of_an_unknown_library_are_not_found() {
     let (status, _) = get_from(items_app(), "/hubs/sections/999", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn activities_answer_the_empty_container_the_reference_sends_when_idle() {
+    // Captured on the reference with no scan or refresh running, in both formats.
+    let (status, _, body) = get("/activities", Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, r#"{"MediaContainer":{"size":0}}"#);
+
+    let (_, content_type, xml) = get("/activities", None).await;
+    assert_eq!(content_type, "text/xml;charset=utf-8");
+    assert_eq!(
+        xml,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer size=\"0\">\n</MediaContainer>\n"
+    );
+}

@@ -57,6 +57,7 @@ IMPLEMENTED = frozenset(
         "/updater/status",
         "/updater/check",
         "/hubs/sections/{sectionId}",
+        "/activities",
     }
 )
 

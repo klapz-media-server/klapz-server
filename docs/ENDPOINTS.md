@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 14 | 5.4 % |
-| `stub` | 197 | 75.8 % |
+| `stub` | 196 | 75.4 % |
 | `partial` | 5 | 1.9 % |
-| `done` | 7 | 2.7 % |
+| `done` | 8 | 3.1 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -52,7 +52,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Preferences](#preferences) | 3 | 0 | 1 | 1 | 1 | 0 |
 | [Timeline](#timeline) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Updater](#updater) | 3 | 2 | 0 | 1 | 0 | 0 |
-| [Activities](#activities) | 2 | 0 | 0 | 2 | 0 | 0 |
+| [Activities](#activities) | 2 | 1 | 0 | 1 | 0 | 0 |
 | [Events](#events) | 2 | 0 | 0 | 2 | 0 | 0 |
 | [Search](#search) | 2 | 0 | 0 | 2 | 0 | 0 |
 | [UltraBlur](#ultrablur) | 2 | 0 | 0 | 2 | 0 | 0 |
@@ -439,7 +439,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/activities` | user | Get all activities |  |
+| `done` | `GET` | `/activities` | user | Get all activities | Always the empty container, as the reference sends it when idle: this server runs no scan, refresh or analysis. Identical in both formats. |
 | `stub` | `DELETE` | `/activities/{activityId}` | admin | Cancel a running activity |  |
 
 ## Events
