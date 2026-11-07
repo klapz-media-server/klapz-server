@@ -600,6 +600,51 @@ impl MetadataRepository for InMemoryMetadata {
             .cloned())
     }
 
+    async fn episode_additions(
+        &self,
+        section: SectionId,
+        after: Option<(i64, RatingKey)>,
+        limit: u32,
+    ) -> Result<Vec<crate::recent::EpisodeAddition>, MetadataError> {
+        let mut additions: Vec<crate::recent::EpisodeAddition> = self
+            .items
+            .iter()
+            .filter(|item| item.section_id == section && item.kind == ItemKind::Episode)
+            .filter_map(|episode| {
+                let season = self
+                    .items
+                    .iter()
+                    .find(|item| Some(item.id) == episode.parent_id)?;
+                Some(crate::recent::EpisodeAddition {
+                    episode: episode.id,
+                    season: season.id,
+                    show: season.parent_id?,
+                    added_at: episode.added_at,
+                })
+            })
+            .collect();
+        // Newest first, the id breaking ties downward, as storage orders them.
+        additions.sort_by(|left, right| {
+            right
+                .added_at
+                .cmp(&left.added_at)
+                .then(right.episode.get().cmp(&left.episode.get()))
+        });
+        let start = after.map_or(0, |(added_at, episode)| {
+            additions
+                .iter()
+                .position(|addition| {
+                    (addition.added_at, addition.episode.get()) < (added_at, episode.get())
+                })
+                .unwrap_or(additions.len())
+        });
+        Ok(additions
+            .into_iter()
+            .skip(start)
+            .take(usize::try_from(limit).unwrap_or(usize::MAX))
+            .collect())
+    }
+
     async fn tag(&self, id: TagId) -> Result<Option<Tag>, MetadataError> {
         Ok(self
             .tags

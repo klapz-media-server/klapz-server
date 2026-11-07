@@ -306,14 +306,37 @@ progress.
 
 Shelf titles are written by the server, in the client's `X-Plex-Language`, from gettext
 catalogs shipped with it (`Resources/locale/*/LC_MESSAGES/plex.mo`): `Récemment ajouté dans
-VF - Films` in French. We translate the three titles we serve into French from that catalog,
-and fall back to English for every other language.
+VF - Films` in French. `tools/gen_translations.py` extracts the strings we write from all 32
+catalogs; a regional tag falls back to its language (`fr-CA` reads `fr`), anything else to
+English. Season names come from the same catalogs: a season with no stored title is `Saison 3`
+in French, `Staffel 3` in German, `Season 3` with no language, and season zero the language's
+word for specials — on every surface that names a season, listings and `parentTitle`
+included. A stored title is never translated.
 
-We serve continue watching (empty), recently added for a film library, and recent playlists
-(empty). Against the reference on section 4: recently added holds the same twelve films in the
-same order, every shelf attribute identical, no field differing on any film. Every other shelf
-is absent rather than approximated, since each needs watch state, a sort by release date or
-rating, or the series grouping rule, none of which exists yet.
+On a series library, recently added groups new episodes. Rule, reproduced on 200 of 200
+entries across four series libraries:
+
+- per series, walk its episodes newest first; an episode joins the current batch when it was
+  added within 20 hours of the batch's **oldest** episode, so a batch chains;
+- a batch spanning several seasons is shown as the series, several episodes of one season as
+  the season, a lone episode as itself;
+- entries are ordered by their batch's newest addition, and carry it as `addedAt` — a season
+  is dated by its newest episode, not by its own row;
+- an item appears once, at its newest batch.
+
+The window is not a round guess: every value between 1156 and 1215 minutes yields the same
+200 entries, and nothing outside does. Series, seasons and episodes on this shelf come in the
+lookup's form (tags with ids, `Guid`, `Rating`), films in the listing's — measured on both.
+
+An episode with no content rating of its own carries its series': 14 of 15 such episodes on
+the reference, the fifteenth a rating edited after the snapshot.
+
+We serve continue watching (empty), recently added, and recent playlists (empty). Against the
+reference on section 4: the same twelve films in the same order, every shelf attribute
+identical, no field differing. On sections 5, 7, 19 and 20: the same 48 entries in the same
+order; the field differences left are titles and credits edited on the live server since the
+snapshot. Every other shelf is absent rather than approximated, since each needs watch state
+or a sort by release date or rating.
 
 ### Server settings
 

@@ -16,12 +16,14 @@ pub mod gql;
 pub mod gql_items;
 pub mod hubs;
 pub mod items;
+pub mod language;
 pub mod listing;
 pub mod prefs;
 pub mod providers;
 pub mod response;
 pub mod sessions;
 pub mod stubs;
+pub mod translations;
 pub mod updater;
 pub mod xml;
 

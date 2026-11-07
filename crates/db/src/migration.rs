@@ -9,6 +9,7 @@ mod m0003_top_level_index;
 mod m0004_title_word;
 mod m0005_tags;
 mod m0006_references;
+mod m0007_added_index;
 
 use sea_orm_migration::prelude::*;
 
@@ -25,6 +26,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0004_title_word::Migration),
             Box::new(m0005_tags::Migration),
             Box::new(m0006_references::Migration),
+            Box::new(m0007_added_index::Migration),
         ]
     }
 }

@@ -669,6 +669,18 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
 
     /// One person by id, for a Relay refetch.
     async fn person(&self, id: PersonId) -> Result<Option<Person>, MetadataError>;
+
+    /// Up to `limit` episodes of a library by when they were added, newest first, starting
+    /// strictly after `after` — the `(added_at, episode)` of the last one already read.
+    ///
+    /// Keyset rather than offset: grouping reads page after page, and an offset would make
+    /// each page cost every row before it.
+    async fn episode_additions(
+        &self,
+        section: SectionId,
+        after: Option<(i64, RatingKey)>,
+        limit: u32,
+    ) -> Result<Vec<crate::recent::EpisodeAddition>, MetadataError>;
 }
 
 /// Lets an `Arc<dyn MetadataRepository>` be used wherever a repository is expected, so the
@@ -792,6 +804,15 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
 
     async fn person(&self, id: PersonId) -> Result<Option<Person>, MetadataError> {
         (**self).person(id).await
+    }
+
+    async fn episode_additions(
+        &self,
+        section: SectionId,
+        after: Option<(i64, RatingKey)>,
+        limit: u32,
+    ) -> Result<Vec<crate::recent::EpisodeAddition>, MetadataError> {
+        (**self).episode_additions(section, after, limit).await
     }
 }
 

@@ -62,7 +62,12 @@ type Episode implements Item & Node {
 	"""
 	releasedOn: String
 	"""
-	Age-rating label, as the metadata source expresses it.
+	Age-rating label, as the metadata source expresses it — the series' when the episode
+	has none of its own.
+	
+	Sources rate the series and rarely the episode; an episode that says nothing is rated
+	as its series is. Measured: the reference reports the series' label for 14 of 15
+	episodes stored without one.
 	"""
 	contentRating: String
 	"""
@@ -676,6 +681,28 @@ type Library implements Node {
 	inequality to detect a change, do not read it as a time.
 	"""
 	contentChangedAt: String!
+	"""
+	What was added to this library most recently, newest first.
+	
+	For a film library, its films by date added. For a series library, new episodes
+	grouped as the reference groups them: a batch of episodes added within twenty hours
+	of one another stands for its season, or its series when it spans several seasons,
+	and a lone episode for itself; each item appears once, at its newest batch. So the
+	list mixes series, seasons and episodes.
+	
+	Pages forward only: the grouping is computed from the newest addition down, so there
+	is no end to page back from.
+	"""
+	recentlyAdded(
+		"""
+		Return entries after this cursor.
+		"""
+		after: String,
+		"""
+		Return at most this many entries.
+		"""
+		first: Int
+	): RecentlyAddedConnection!
 	"""
 	Filesystem locations this library scans.
 	
@@ -1325,6 +1352,40 @@ enum RatingType {
 	The provider's users.
 	"""
 	AUDIENCE
+}
+
+type RecentlyAddedConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [RecentlyAddedEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Item!]!
+}
+
+"""
+An edge in a connection.
+"""
+type RecentlyAddedEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Item!
+	"""
+	When the entry was added, in seconds since the Unix epoch: the item's own time for a
+	film, its newest episode's for a series or season gathered from a batch.
+	"""
+	addedAt: Int!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type Root implements Node {

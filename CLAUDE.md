@@ -286,9 +286,10 @@ Since then:
 
 Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still leaves out.
 
-- ⬜ a series library's **recently added**: the reference's `mixed` shelf groups new episodes
-  into their season or series (an episode alone, a season when several arrived together, the
-  series when it is new) — measure the rule, then reproduce it;
+- ✅ a series library's **recently added**: new episodes grouped into their season or series
+  by a measured 20-hour batching rule (`core::recent`, `Library.recentlyAdded` on the official
+  API), identical in order to the reference on four libraries; seasons named in the client's
+  language from Plex's own catalogs, and an episode without a rating carrying its series';
 - ⬜ **recently released**, which needs ordering by release date — the nullable-column sort
   in *Open questions*;
 - ⬜ the shelves that need watch state — continue watching with content, recently watched,

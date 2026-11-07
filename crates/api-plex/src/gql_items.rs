@@ -9,6 +9,8 @@ use std::sync::LazyLock;
 
 use serde::Deserialize;
 
+use crate::language::Language;
+
 /// The item fields both endpoints read.
 ///
 /// One fragment set rather than one per endpoint: the two differ in which *container*
@@ -92,6 +94,86 @@ fragment EpisodeFields on Episode {
   durationMs
   season { id number title year guid }
   show { id title guid }
+}
+
+fragment ListedItem on Item {
+  ...Shared
+  ... on Movie { ...MovieListing }
+  ... on Show {
+    number
+    originalTitle
+    year
+    releasedOn
+    studio
+    tagline
+    contentRating
+    contentRatingAge
+    audienceRating
+    durationMs
+    showStats: stats { seasonCount episodeCount }
+    ...ListedShowTags
+  }
+  ... on Season { ...SeasonFields }
+  ... on Episode {
+    ...EpisodeFields
+    versions { ...VersionFields files { id path sizeBytes durationMs } }
+    ...ListedEpisodeTags
+  }
+}
+
+fragment MovieListing on Movie {
+  originalTitle
+  year
+  releasedOn
+  studio
+  tagline
+  contentRating
+  contentRatingAge
+  rating
+  audienceRating
+  durationMs
+  versions { ...VersionFields files { id path sizeBytes durationMs } }
+  ...ListedMovieTags
+}
+
+fragment StreamedVersion on MediaVersion {
+  ...VersionFields
+  files {
+    id
+    path
+    sizeBytes
+    durationMs
+    streams { id kind position codec language channels bitrate isDefault isForced }
+  }
+}
+
+fragment ShowLookup on Show {
+  number
+  originalTitle
+  year
+  releasedOn
+  studio
+  tagline
+  contentRating
+  contentRatingAge
+  audienceRating
+  durationMs
+  showStats: stats { seasonCount episodeCount }
+  ...ShowTags
+}
+
+fragment EpisodeLookup on Episode {
+  ...EpisodeFields
+  ...EpisodeTags
+  versions { ...StreamedVersion }
+}
+
+fragment RecentItem on Item {
+  ...Shared
+  ... on Movie { ...MovieListing }
+  ... on Show { ...ShowLookup ...References }
+  ... on Season { ...SeasonFields ...References }
+  ... on Episode { ...EpisodeLookup ...References }
 }
 
 fragment ListedMovieTags on Movie {
@@ -211,41 +293,7 @@ query PlexSectionItems(
       ) {
         edges {
           node {
-            ...Shared
-            ... on Movie {
-              originalTitle
-              year
-              releasedOn
-              studio
-              tagline
-              contentRating
-              contentRatingAge
-              rating
-              audienceRating
-              durationMs
-              versions { ...VersionFields files { id path sizeBytes durationMs } }
-              ...ListedMovieTags
-            }
-            ... on Show {
-              number
-              originalTitle
-              year
-              releasedOn
-              studio
-              tagline
-              contentRating
-              contentRatingAge
-              audienceRating
-              durationMs
-              showStats: stats { seasonCount episodeCount }
-              ...ListedShowTags
-            }
-            ... on Season { ...SeasonFields }
-            ... on Episode {
-              ...EpisodeFields
-              versions { ...VersionFields files { id path sizeBytes durationMs } }
-              ...ListedEpisodeTags
-            }
+            ...ListedItem
           }
         }
       }
@@ -255,6 +303,70 @@ query PlexSectionItems(
 ",
     )
 });
+
+/// A library's recently added items, for its shelves.
+///
+/// In the form the reference shows each kind in on that shelf, which is not the same: a
+/// film as a listing shows it, while a series, a season or an episode comes as a lookup
+/// does — every tag with its id, the external identifiers and ratings, the streams.
+/// Measured on both shelves; a film library holds films only and a series library none, so
+/// the type alone decides.
+pub static RECENTLY_ADDED_QUERY: LazyLock<String> = LazyLock::new(|| {
+    with_shared_fragments(
+        r"
+query PlexRecentlyAdded($id: ID!, $first: Int!) {
+  node(id: $id) {
+    ... on Library {
+      id
+      title
+      uuid
+      kind
+      recentlyAdded(first: $first) {
+        pageInfo { hasNextPage }
+        edges { addedAt node { ...RecentItem } }
+      }
+    }
+  }
+}
+",
+    )
+});
+
+#[derive(Debug, Deserialize)]
+pub struct RecentlyAddedData {
+    pub node: Option<GqlRecentlyAdded>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlRecentlyAdded {
+    pub id: String,
+    pub title: String,
+    pub uuid: String,
+    pub kind: String,
+    pub recently_added: GqlRecentConnection,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlRecentConnection {
+    pub page_info: GqlForwardPageInfo,
+    pub edges: Vec<GqlRecentEdge>,
+}
+
+/// An entry, with when it was added as far as the shelf is concerned.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlRecentEdge {
+    pub added_at: i64,
+    pub node: GqlItem,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlForwardPageInfo {
+    pub has_next_page: bool,
+}
 
 /// `GET /library/metadata/{ids}`.
 ///
@@ -278,67 +390,12 @@ query PlexItems($ids: [ID!]!) {
       rating
       audienceRating
       durationMs
-      versions {
-        ...VersionFields
-        files {
-          id
-          path
-          sizeBytes
-          durationMs
-          streams {
-            id
-            kind
-            position
-            codec
-            language
-            channels
-            bitrate
-            isDefault
-            isForced
-          }
-        }
-      }
+      versions { ...StreamedVersion }
       ...MovieTags
     }
-    ... on Show {
-      number
-      originalTitle
-      year
-      releasedOn
-      studio
-      tagline
-      contentRating
-      contentRatingAge
-      audienceRating
-      durationMs
-      showStats: stats { seasonCount episodeCount }
-      ...ShowTags
-    }
+    ... on Show { ...ShowLookup }
     ... on Season { ...SeasonFields }
-    ... on Episode {
-      ...EpisodeFields
-      ...EpisodeTags
-      versions {
-        ...VersionFields
-        files {
-          id
-          path
-          sizeBytes
-          durationMs
-          streams {
-            id
-            kind
-            position
-            codec
-            language
-            channels
-            bitrate
-            isDefault
-            isForced
-          }
-        }
-      }
-    }
+    ... on Episode { ...EpisodeLookup }
   }
 }
 ",
@@ -561,11 +618,11 @@ impl GqlItem {
     }
 
     /// The parent's title as a client shows it. For an episode that is the season's, which
-    /// is derived — see [`season_title`].
-    pub fn parent_title(&self) -> Option<String> {
+    /// is derived — see [`Language::season_title`].
+    pub fn parent_title(&self, language: Language) -> Option<String> {
         let parent = self.parent()?;
         if self.typename == "Episode" {
-            return Some(season_title(parent.title.as_deref(), parent.number));
+            return Some(language.season_title(parent.title.as_deref(), parent.number));
         }
         parent.title.clone()
     }
@@ -578,26 +635,11 @@ impl GqlItem {
     ///
     /// Only a season differs from its stored title: the source leaves 9,732 of 9,736 seasons
     /// untitled, and the reference names them at read time.
-    pub fn display_title(&self) -> Option<String> {
+    pub fn display_title(&self, language: Language) -> Option<String> {
         if self.typename == "Season" {
-            return Some(season_title(self.title.as_deref(), self.number));
+            return Some(language.season_title(self.title.as_deref(), self.number));
         }
         self.title.clone()
-    }
-}
-
-/// Names a season the way the reference does when the source stores no title.
-///
-/// `Season 1`, in English regardless of the library's language — a French library's seasons
-/// read `Season 1` on the reference too — and `Specials` for season zero, the convention
-/// scanners use for extras and specials. A stored title wins, as it does for *The Haunting
-/// of Bly Manor*, a season titled as its own series.
-pub fn season_title(stored: Option<&str>, number: Option<i32>) -> String {
-    match (stored, number) {
-        (Some(title), _) => title.to_owned(),
-        (None, Some(0)) => "Specials".to_owned(),
-        (None, Some(number)) => format!("Season {number}"),
-        (None, None) => String::new(),
     }
 }
 
@@ -801,8 +843,18 @@ mod tests {
     #[test]
     fn every_listing_query_is_a_closed_document() {
         // Each fragment the query spreads is defined, and each defined fragment is spread.
-        for document in [&*SECTION_ITEMS_QUERY, &*ITEMS_BY_ID_QUERY] {
+        for document in [
+            &*SECTION_ITEMS_QUERY,
+            &*ITEMS_BY_ID_QUERY,
+            &*RECENTLY_ADDED_QUERY,
+        ] {
             for name in [
+                "ListedItem",
+                "MovieListing",
+                "StreamedVersion",
+                "ShowLookup",
+                "EpisodeLookup",
+                "RecentItem",
                 "Shared",
                 "VersionFields",
                 "SeasonFields",

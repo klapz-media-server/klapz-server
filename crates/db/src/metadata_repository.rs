@@ -14,6 +14,7 @@ use open_plex_core::metadata::{
     TagRef,
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
+use open_plex_core::recent::EpisodeAddition;
 use open_plex_core::search;
 use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
@@ -634,6 +635,68 @@ impl MetadataRepository for SqlMetadataRepository {
         )
     }
 
+    async fn episode_additions(
+        &self,
+        section: SectionId,
+        after: Option<(i64, RatingKey)>,
+        limit: u32,
+    ) -> Result<Vec<EpisodeAddition>, MetadataError> {
+        let season = Alias::new("season");
+        let mut select = metadata_item::Entity::find()
+            .select_only()
+            .column_as(metadata_item::Column::Id, "episode")
+            .column_as(metadata_item::Column::AddedAt, "added_at")
+            .column_as(
+                Expr::col((season.clone(), metadata_item::Column::Id)),
+                "season",
+            )
+            .column_as(
+                Expr::col((season.clone(), metadata_item::Column::ParentId)),
+                "show",
+            )
+            .join_as(
+                JoinType::InnerJoin,
+                metadata_item::Relation::Parent.def(),
+                season,
+            )
+            .filter(metadata_item::Column::LibrarySectionId.eq(section.get()))
+            .filter(metadata_item::Column::Kind.eq(kind_name(ItemKind::Episode)));
+        if let Some((added_at, episode)) = after {
+            // Strictly after, in the newest-first order the index serves.
+            select = select.filter(
+                Condition::any()
+                    .add(metadata_item::Column::AddedAt.lt(added_at))
+                    .add(
+                        Condition::all()
+                            .add(metadata_item::Column::AddedAt.eq(added_at))
+                            .add(metadata_item::Column::Id.lt(episode.get())),
+                    ),
+            );
+        }
+        let rows = select
+            .order_by_desc(metadata_item::Column::AddedAt)
+            .order_by_desc(metadata_item::Column::Id)
+            .limit(u64::from(limit))
+            .into_model::<AdditionRow>()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                Some(EpisodeAddition {
+                    episode: RatingKey::new(row.episode),
+                    season: RatingKey::new(row.season),
+                    // A season with no series is an orphan the importer skips; reading one
+                    // back would be a defect, and it is left out rather than guessed at.
+                    show: RatingKey::new(row.show?),
+                    added_at: row.added_at,
+                })
+            })
+            .collect())
+    }
+
     async fn person(&self, id: PersonId) -> Result<Option<Person>, MetadataError> {
         Ok(person::Entity::find_by_id(id.get())
             .one(&self.connection)
@@ -701,6 +764,15 @@ impl TagRow {
             person,
         })
     }
+}
+
+/// One episode addition, with the season and series it belongs to.
+#[derive(Debug, FromQueryResult)]
+struct AdditionRow {
+    episode: i64,
+    added_at: i64,
+    season: i64,
+    show: Option<i64>,
 }
 
 /// A tag as attached to an item.

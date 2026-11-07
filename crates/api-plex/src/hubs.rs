@@ -10,13 +10,10 @@
 //!
 //! - **Continue watching**, empty: nothing is in progress, since nothing can be played yet.
 //!   The reference shows the shelf empty too when that is the case.
-//! - **Recently added**, for a film library: the library's films by date added.
+//! - **Recently added**: a film library's films by date added; a series library's new
+//!   episodes grouped into their season or series, by the rule `core::recent` measured.
 //! - **Recent playlists**, empty, when the client asks for library playlists: there are
 //!   none.
-//!
-//! A series library's "recently added" is left out. The reference groups new episodes into
-//! their season or series — an episode alone, a season when several arrived together, the
-//! series when it is new — and that rule has to be measured before it is reproduced.
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};
@@ -31,8 +28,9 @@ use crate::auth::Caller;
 use crate::client::ClientIdentity;
 use crate::error::ApiError;
 use crate::gql;
-use crate::gql_items::{GqlLibraryItems, SectionItemsData, SECTION_ITEMS_QUERY};
+use crate::gql_items::{GqlRecentlyAdded, RecentlyAddedData, RECENTLY_ADDED_QUERY};
 use crate::items::{MetadataEntry, LIBRARY_IDENTIFIER};
+use crate::language::Language;
 use crate::response::{PlexResponse, ResponseFormat};
 use crate::PlexState;
 
@@ -129,31 +127,36 @@ async fn section_hubs(
     format: ResponseFormat,
 ) -> Result<PlexResponse<HubsContainer>, ApiError> {
     let count = params.count();
-    let library = recently_added(&state, section, count).await?;
     let language = Language::of(&client);
+    let library = recently_added(&state, section, count).await?;
     let is_film_library = library.kind == "MOVIE";
 
-    let mut hubs = vec![continue_watching(section, is_film_library, language)];
-    if is_film_library {
-        let mut items: Vec<MetadataEntry> = library
-            .items
-            .edges
-            .iter()
-            .filter_map(|edge| MetadataEntry::from_graphql(&edge.node, true))
-            .collect();
-        if params.excludes_summary() {
-            for item in &mut items {
-                item.summary = None;
-            }
+    let mut items: Vec<MetadataEntry> = library
+        .recently_added
+        .edges
+        .iter()
+        .filter_map(|edge| {
+            let mut item = MetadataEntry::from_graphql(&edge.node, true, language)?;
+            // The entry's time, which for a season gathered from a batch is its newest
+            // episode's rather than the season's own.
+            item.added_at = edge.added_at;
+            Some(item)
+        })
+        .collect();
+    if params.excludes_summary() {
+        for item in &mut items {
+            item.summary = None;
         }
-        hubs.push(recently_added_films(
-            section,
-            &library.title,
-            items,
-            library.stats.item_count,
-            language,
-        ));
     }
+    let shelf = RecentShelf {
+        section,
+        library_title: &library.title,
+        is_film_library,
+        more: library.recently_added.page_info.has_next_page,
+    };
+
+    let mut hubs = vec![continue_watching(section, is_film_library, language)];
+    hubs.push(shelf.hub(items, language));
     if params.includes_playlists() {
         hubs.push(recent_playlists(section, language));
     }
@@ -172,26 +175,21 @@ async fn section_hubs(
     ))
 }
 
-/// The library and its `count` most recently added top-level items, through the listing
-/// query every library listing uses.
+/// The library and its `count` most recently added items, as the official API groups them.
 async fn recently_added(
     state: &PlexState,
     section: i64,
     count: u32,
-) -> Result<GqlLibraryItems, ApiError> {
+) -> Result<GqlRecentlyAdded, ApiError> {
     let mut variables = Variables::default();
     variables.insert(
         Name::new("id"),
         Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
     );
     variables.insert(Name::new("first"), Value::Number(count.into()));
-    variables.insert(Name::new("offset"), Value::Number(0.into()));
-    variables.insert(Name::new("orderBy"), Value::Enum(Name::new("ADDED_AT")));
-    variables.insert(Name::new("direction"), Value::Enum(Name::new("DESCENDING")));
-    variables.insert(Name::new("filter"), Value::Null);
 
-    let data: SectionItemsData =
-        gql::execute(&state.schema, &SECTION_ITEMS_QUERY, variables).await?;
+    let data: RecentlyAddedData =
+        gql::execute(&state.schema, &RECENTLY_ADDED_QUERY, variables).await?;
     data.node.ok_or(ApiError::NotFound)
 }
 
@@ -220,27 +218,51 @@ fn continue_watching(section: i64, is_film_library: bool, language: Language) ->
     }
 }
 
-fn recently_added_films(
+/// The "recently added" shelf, in the form the library's kind calls for.
+struct RecentShelf<'a> {
     section: i64,
-    library_title: &str,
-    items: Vec<MetadataEntry>,
-    total: u64,
-    language: Language,
-) -> Hub {
-    let size = u32::try_from(items.len()).unwrap_or(u32::MAX);
-    let keys: Vec<&str> = items.iter().map(|item| item.rating_key.as_str()).collect();
-    Hub {
-        hub_key: (!keys.is_empty()).then(|| format!("/library/metadata/{}", keys.join(","))),
-        key: format!("/library/sections/{section}/all?sort=addedAt:desc"),
-        title: language.recently_added_in(library_title),
-        kind: "movie",
-        hub_identifier: format!("movie.recentlyadded.{section}"),
-        context: "hub.movie.recentlyadded",
-        size,
-        more: total > u64::from(size),
-        style: "shelf",
-        promoted: Some(true),
-        metadata: items,
+    library_title: &'a str,
+    is_film_library: bool,
+    more: bool,
+}
+
+impl RecentShelf<'_> {
+    /// A film library's shelf holds films; a series library's mixes series, seasons and
+    /// episodes, and its full list lives under the home hub rather than the library listing.
+    fn hub(&self, items: Vec<MetadataEntry>, language: Language) -> Hub {
+        let section = self.section;
+        let size = u32::try_from(items.len()).unwrap_or(u32::MAX);
+        let keys: Vec<&str> = items.iter().map(|item| item.rating_key.as_str()).collect();
+        let (key, kind, prefix) = if self.is_film_library {
+            (
+                format!("/library/sections/{section}/all?sort=addedAt:desc"),
+                "movie",
+                "movie",
+            )
+        } else {
+            (
+                format!("/hubs/home/recentlyAdded?type=2&sectionID={section}"),
+                "mixed",
+                "tv",
+            )
+        };
+        Hub {
+            hub_key: (!keys.is_empty()).then(|| format!("/library/metadata/{}", keys.join(","))),
+            key,
+            title: language.recently_added_in(self.library_title),
+            kind,
+            hub_identifier: format!("{prefix}.recentlyadded.{section}"),
+            context: if self.is_film_library {
+                "hub.movie.recentlyadded"
+            } else {
+                "hub.tv.recentlyadded"
+            },
+            size,
+            more: self.more,
+            style: "shelf",
+            promoted: Some(true),
+            metadata: items,
+        }
     }
 }
 
@@ -262,55 +284,6 @@ fn recent_playlists(section: i64, language: Language) -> Hub {
     }
 }
 
-/// The languages hub titles are written in.
-///
-/// The server writes these titles itself, in the client's `X-Plex-Language`. French is
-/// taken from the reference's own catalog (`Resources/locale/fr/LC_MESSAGES/plex.mo`), so
-/// the wording matches what a French client already shows; anything else gets English, the
-/// catalog's source language.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Language {
-    English,
-    French,
-}
-
-impl Language {
-    /// Reads the primary subtag, so `fr` and `fr-FR` are both French.
-    fn of(client: &ClientIdentity) -> Self {
-        let primary = client
-            .language
-            .as_deref()
-            .and_then(|tag| tag.split(['-', '_']).next())
-            .unwrap_or_default();
-        if primary.eq_ignore_ascii_case("fr") {
-            Self::French
-        } else {
-            Self::English
-        }
-    }
-
-    const fn continue_watching(self) -> &'static str {
-        match self {
-            Self::English => "Continue Watching",
-            Self::French => "Continuer à regarder",
-        }
-    }
-
-    fn recently_added_in(self, library: &str) -> String {
-        match self {
-            Self::English => format!("Recently Added in {library}"),
-            Self::French => format!("Récemment ajouté dans {library}"),
-        }
-    }
-
-    const fn recent_playlists(self) -> &'static str {
-        match self {
-            Self::English => "Recent Playlists",
-            Self::French => "Listes de lecture récentes",
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,21 +302,5 @@ mod tests {
         assert_eq!(params(Some("abc")).count(), 6);
         assert_eq!(params(Some("12")).count(), 12);
         assert_eq!(params(Some("100000")).count(), MAX_ITEMS);
-    }
-
-    #[test]
-    fn reads_the_primary_language_subtag() {
-        let client = |language: &str| ClientIdentity {
-            language: Some(language.to_owned()),
-            ..ClientIdentity::default()
-        };
-        assert_eq!(Language::of(&client("fr")), Language::French);
-        assert_eq!(Language::of(&client("fr-CA")), Language::French);
-        assert_eq!(Language::of(&client("en-US")), Language::English);
-        assert_eq!(Language::of(&ClientIdentity::default()), Language::English);
-        assert_eq!(
-            Language::French.recently_added_in("VF - Films"),
-            "Récemment ajouté dans VF - Films"
-        );
     }
 }

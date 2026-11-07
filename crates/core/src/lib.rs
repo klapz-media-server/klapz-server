@@ -9,6 +9,7 @@ pub mod ids;
 pub mod library;
 pub mod metadata;
 pub mod page;
+pub mod recent;
 pub mod search;
 
 #[cfg(feature = "testing")]

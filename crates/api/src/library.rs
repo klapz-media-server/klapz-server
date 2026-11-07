@@ -1,16 +1,20 @@
 //! GraphQL types for libraries.
 
-use async_graphql::connection::{query, Connection, Edge, EmptyFields};
+use async_graphql::connection::{
+    query, Connection, ConnectionNameType, Edge, EdgeNameType, EmptyFields,
+};
 use async_graphql::dataloader::DataLoader;
-use async_graphql::{Context, Enum, Object, Result, SimpleObject, ID};
+use async_graphql::{Context, Enum, Object, OutputType, Result, SimpleObject, ID};
 use open_plex_core::library::{LibrarySection, SectionKind, SectionRoot};
-use open_plex_core::metadata::{FirstCharacter as DomainFirstCharacter, ItemQuery};
-use open_plex_core::page::Cursor;
+use open_plex_core::metadata::{FirstCharacter as DomainFirstCharacter, ItemQuery, ItemSort};
+use open_plex_core::page::{Cursor, Direction, Window, MAX_ITEMS};
+use open_plex_core::recent::recently_added_episodes;
+use open_plex_core::RatingKey;
 
 use crate::cursor::OpaqueCursor;
 use crate::filter::{ItemFilterInput, ItemOrder, SortDirection};
 use crate::item::{Item, ItemConnection};
-use crate::loader::RootsLoader;
+use crate::loader::{ItemLoader, RootsLoader};
 use crate::node::GlobalId;
 use crate::schema::{self, DEFAULT_PAGE_SIZE};
 
@@ -74,6 +78,43 @@ impl Root {
         self.0.created_at
     }
 }
+
+/// What a "recently added" entry says beyond the item.
+#[derive(Debug, Clone, SimpleObject)]
+pub struct RecentlyAddedEdgeFields {
+    /// When the entry was added, in seconds since the Unix epoch: the item's own time for a
+    /// film, its newest episode's for a series or season gathered from a batch.
+    pub added_at: i64,
+}
+
+/// Names the connection apart from `ItemConnection`, which shares its node type.
+#[derive(Debug)]
+pub struct RecentlyAddedConnectionName;
+
+impl ConnectionNameType for RecentlyAddedConnectionName {
+    fn type_name<T: OutputType>() -> String {
+        "RecentlyAddedConnection".to_owned()
+    }
+}
+
+#[derive(Debug)]
+pub struct RecentlyAddedEdgeName;
+
+impl EdgeNameType for RecentlyAddedEdgeName {
+    fn type_name<T: OutputType>() -> String {
+        "RecentlyAddedEdge".to_owned()
+    }
+}
+
+/// A page of recently added entries.
+pub type RecentlyAddedConnection = Connection<
+    OpaqueCursor,
+    Item,
+    EmptyFields,
+    RecentlyAddedEdgeFields,
+    RecentlyAddedConnectionName,
+    RecentlyAddedEdgeName,
+>;
 
 /// A collection of media of a single kind — what the interface calls a library.
 #[derive(Debug, Clone)]
@@ -162,6 +203,56 @@ impl Library {
     /// inequality to detect a change, do not read it as a time.
     async fn content_changed_at(&self) -> String {
         self.section.content_changed_at.to_string()
+    }
+
+    /// What was added to this library most recently, newest first.
+    ///
+    /// For a film library, its films by date added. For a series library, new episodes
+    /// grouped as the reference groups them: a batch of episodes added within twenty hours
+    /// of one another stands for its season, or its series when it spans several seasons,
+    /// and a lone episode for itself; each item appears once, at its newest batch. So the
+    /// list mixes series, seasons and episodes.
+    ///
+    /// Pages forward only: the grouping is computed from the newest addition down, so there
+    /// is no end to page back from.
+    async fn recently_added(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return at most this many entries.")] first: Option<i32>,
+    ) -> Result<RecentlyAddedConnection> {
+        query(
+            after,
+            None,
+            first,
+            None,
+            |after: Option<OpaqueCursor>, _: Option<OpaqueCursor>, first, _| async move {
+                let start = after.map_or(0, |cursor| {
+                    usize::try_from(cursor.0.id).map_or(0, |position| position + 1)
+                });
+                let count = first.unwrap_or(DEFAULT_PAGE_SIZE as usize);
+                if count > MAX_ITEMS as usize {
+                    return Err(async_graphql::Error::new(format!(
+                        "a page of more than {MAX_ITEMS} is not served"
+                    )));
+                }
+                let (items, has_next) = self.recent(context, start, count).await?;
+
+                let mut connection = Connection::new(start > 0, has_next);
+                connection.edges.extend(items.into_iter().enumerate().map(
+                    |(index, (item, added_at))| {
+                        let position = i64::try_from(start + index).unwrap_or(i64::MAX);
+                        Edge::with_additional_fields(
+                            OpaqueCursor(Cursor::by_id(position)),
+                            Item::from_domain(item),
+                            RecentlyAddedEdgeFields { added_at },
+                        )
+                    },
+                ));
+                Ok::<_, async_graphql::Error>(connection)
+            },
+        )
+        .await
     }
 
     /// Filesystem locations this library scans.
@@ -254,6 +345,58 @@ impl Library {
 }
 
 impl Library {
+    /// The `count` recent items from position `start`, and whether more follow.
+    async fn recent(
+        &self,
+        context: &Context<'_>,
+        start: usize,
+        count: usize,
+    ) -> Result<(Vec<(open_plex_core::MetadataItem, i64)>, bool)> {
+        let metadata = schema::metadata(context)?;
+        if self.section.kind != SectionKind::Show {
+            let query =
+                ItemQuery::new(self.section.id).sorted_by(ItemSort::AddedAt, Direction::Descending);
+            let window = Window::new(
+                None,
+                None,
+                Some(u32::try_from(count).unwrap_or(MAX_ITEMS)),
+                None,
+            )?
+            .skipping(u64::try_from(start).unwrap_or(u64::MAX));
+            let page = metadata.items(&query, window).await?;
+            let items = page
+                .items
+                .into_iter()
+                .map(|item| {
+                    let added_at = item.added_at;
+                    (item, added_at)
+                })
+                .collect();
+            return Ok((items, page.has_next));
+        }
+
+        // One more than asked, to learn whether a further page exists.
+        let entries =
+            recently_added_episodes(metadata.as_ref(), self.section.id, start + count + 1).await?;
+        let has_next = entries.len() > start + count;
+        let wanted: Vec<(RatingKey, i64)> = entries
+            .iter()
+            .skip(start)
+            .take(count)
+            .map(|addition| (addition.entry.item(), addition.added_at))
+            .collect();
+        // Batched, then put back in the grouping's order.
+        let loaded = context
+            .data::<DataLoader<ItemLoader>>()?
+            .load_many(wanted.iter().map(|(id, _)| *id))
+            .await?;
+        let items = wanted
+            .iter()
+            .filter_map(|(id, added_at)| Some((loaded.get(id).cloned()?, *added_at)))
+            .collect();
+        Ok((items, has_next))
+    }
+
     /// Builds the storage query from the arguments a client supplied.
     ///
     /// Fails on a tag condition that cannot be honored — a malformed identifier, or one

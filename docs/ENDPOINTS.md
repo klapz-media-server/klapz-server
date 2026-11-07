@@ -172,7 +172,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `GET` | `/hubs/metadata/{metadataId}/related` | user | Get related hubs |  |
 | `stub` | `GET` | `/hubs/popularInLibraries` | user | Get the popular in your libraries hub |  |
 | `stub` | `GET` | `/hubs/promoted` | user | Get the hubs which are promoted |  |
-| `partial` | `GET` | `/hubs/sections/{sectionId}` | user | Get section hubs | Continue watching (empty: nothing can be in progress), recently added for a film library (same 12 films, attributes and fields as the reference), recent playlists (empty) on `includeLibraryPlaylists=1`; titles in French or English from `X-Plex-Language`. Not served: shelves needing watch state or release-date and rating sorts, and a series library's grouped recently added. |
+| `partial` | `GET` | `/hubs/sections/{sectionId}` | user | Get section hubs | Continue watching (empty: nothing can be in progress), recently added — a film library's films, a series library's new episodes grouped into their season or series (same entries in the same order as the reference on four series libraries) — and recent playlists (empty) on `includeLibraryPlaylists=1`; titles in the client's `X-Plex-Language`, from the reference's 32 catalogs. Not served: shelves needing watch state or release-date and rating sorts. |
 | `stub` | `DELETE` | `/hubs/sections/{sectionId}/manage` | admin | Reset hubs to defaults |  |
 | `stub` | `GET` | `/hubs/sections/{sectionId}/manage` | admin | Get hubs |  |
 | `stub` | `POST` | `/hubs/sections/{sectionId}/manage` | admin | Create a custom hub |  |

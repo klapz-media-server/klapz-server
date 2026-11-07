@@ -1792,12 +1792,25 @@ async fn hub_titles_default_to_english() {
 }
 
 #[tokio::test]
-async fn a_series_library_offers_only_what_it_can_answer() {
+async fn a_series_library_groups_its_new_episodes_on_the_recently_added_shelf() {
     let body = listing("/hubs/sections/5").await;
     let hubs = body["MediaContainer"]["Hub"].as_array().expect("hubs");
-    assert_eq!(hubs.len(), 1);
-    assert_eq!(hubs[0]["hubIdentifier"], "tv.inprogress.5");
+    let identifiers: Vec<&str> = hubs
+        .iter()
+        .map(|hub| hub["hubIdentifier"].as_str().expect("an identifier"))
+        .collect();
+    assert_eq!(identifiers, ["tv.inprogress.5", "tv.recentlyadded.5"]);
     assert_eq!(hubs[0]["type"], "episode");
+
+    let recent = &hubs[1];
+    assert_eq!(recent["type"], "mixed");
+    assert_eq!(recent["context"], "hub.tv.recentlyadded");
+    assert_eq!(recent["key"], "/hubs/home/recentlyAdded?type=2&sectionID=5");
+    // Severance's three episodes arrived together across two seasons: one entry, the series.
+    assert_eq!(recent["size"], 1);
+    assert_eq!(recent["Metadata"][0]["type"], "show");
+    assert_eq!(recent["Metadata"][0]["ratingKey"], "200");
+    assert_eq!(recent["hubKey"], "/library/metadata/200");
 }
 
 #[tokio::test]
@@ -1818,5 +1831,43 @@ async fn activities_answer_the_empty_container_the_reference_sends_when_idle() {
     assert_eq!(
         xml,
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer size=\"0\">\n</MediaContainer>\n"
+    );
+}
+
+#[tokio::test]
+async fn seasons_are_named_in_the_clients_language() {
+    // Measured on the reference: `Saison 1` for `fr`, `Staffel 1` for `de`, `Season 1` with
+    // no language. A stored title is never translated.
+    let french = listing("/library/metadata/200/children?X-Plex-Language=fr").await;
+    let titles: Vec<&str> = french["MediaContainer"]["Metadata"]
+        .as_array()
+        .expect("seasons")
+        .iter()
+        .map(|season| season["title"].as_str().expect("a title"))
+        .collect();
+    assert_eq!(titles, ["Season 1", "Saison 2"]);
+
+    let german = listing("/library/metadata/204?X-Plex-Language=de").await;
+    assert_eq!(
+        german["MediaContainer"]["Metadata"][0]["parentTitle"],
+        "Staffel 2"
+    );
+}
+
+#[tokio::test]
+async fn a_grouped_entry_is_dated_by_its_batch() {
+    let body = listing("/hubs/sections/5").await;
+    let hub = &body["MediaContainer"]["Hub"][1];
+    // Severance itself, added with its episodes in the fixture: the batch's time.
+    assert_eq!(hub["Metadata"][0]["addedAt"], 1_500_000_000);
+}
+
+#[tokio::test]
+async fn an_episode_without_a_rating_of_its_own_carries_its_series() {
+    // Good News About Hell stores none; Severance is TV-MA.
+    let body = listing("/library/metadata/202").await;
+    assert_eq!(
+        body["MediaContainer"]["Metadata"][0]["contentRating"],
+        "TV-MA"
     );
 }

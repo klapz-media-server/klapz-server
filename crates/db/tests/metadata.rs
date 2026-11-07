@@ -762,3 +762,29 @@ async fn the_deep_filter_reaches_every_generation() {
         11
     );
 }
+
+#[tokio::test]
+async fn reads_episode_additions_newest_first_and_resumes_after_the_last() {
+    // The three episodes share their added time, so the id breaks the tie, downward.
+    let repository = repository().await;
+    let section = SectionId::new(SECTION);
+    let first = repository
+        .episode_additions(section, None, 2)
+        .await
+        .expect("additions");
+    let episodes: Vec<i64> = first
+        .iter()
+        .map(|addition| addition.episode.get())
+        .collect();
+    assert_eq!(episodes, [32, 31]);
+    assert_eq!(first[0].season, RatingKey::new(22));
+    assert_eq!(first[0].show, RatingKey::new(20));
+
+    let last = first.last().expect("a last addition");
+    let rest = repository
+        .episode_additions(section, Some((last.added_at, last.episode)), 2)
+        .await
+        .expect("additions");
+    let episodes: Vec<i64> = rest.iter().map(|addition| addition.episode.get()).collect();
+    assert_eq!(episodes, [30]);
+}

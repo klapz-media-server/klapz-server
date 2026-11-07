@@ -17,14 +17,14 @@ use open_plex_core::page::MAX_ITEMS;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Caller;
+use crate::client::ClientIdentity;
 use crate::error::ApiError;
 use crate::gql;
-use crate::gql_items::{
-    season_title, with_shared_fragments, GqlItemConnection, GqlLibraryRef, GqlParentRef,
-};
+use crate::gql_items::{with_shared_fragments, GqlItemConnection, GqlLibraryRef, GqlParentRef};
 use crate::items::{
     MetadataEntry, ViewStyle, LIBRARY_IDENTIFIER, MEDIA_TAG_PREFIX, MEDIA_TAG_VERSION,
 };
+use crate::language::Language;
 use crate::listing;
 use crate::response::{PlexResponse, ResponseFormat};
 use crate::PlexState;
@@ -191,7 +191,7 @@ impl GqlParent {
             .unwrap_or(0)
     }
 
-    fn entries(&self) -> Vec<MetadataEntry> {
+    fn entries(&self, language: Language) -> Vec<MetadataEntry> {
         self.children
             .as_ref()
             .map(|connection| {
@@ -199,7 +199,7 @@ impl GqlParent {
                     .edges
                     .iter()
                     // A listing: the library is stated once on the container.
-                    .filter_map(|edge| MetadataEntry::from_graphql(&edge.node, false))
+                    .filter_map(|edge| MetadataEntry::from_graphql(&edge.node, false, language))
                     .collect()
             })
             .unwrap_or_default()
@@ -309,6 +309,7 @@ async fn open(
 /// `GET /library/metadata/{id}/children` — the seasons of a series, the episodes of a season.
 pub(crate) async fn children(
     _caller: Caller,
+    client: ClientIdentity,
     State(state): State<PlexState>,
     Path(id): Path<i64>,
     Query(pairs): Query<Vec<(String, String)>>,
@@ -321,7 +322,8 @@ pub(crate) async fn children(
         return Err(ApiError::BadRequest);
     }
     let library = parent.library.as_ref().ok_or(ApiError::NotFound)?;
-    let items = parent.entries();
+    let language = Language::of(&client);
+    let items = parent.entries(language);
     let total = parent.total();
 
     let body = match parent.typename.as_str() {
@@ -351,7 +353,7 @@ pub(crate) async fn children(
                 parent_year: parent.year.or(show.and_then(|show| show.year)),
                 summary: None,
                 title1: show.and_then(|show| show.title.clone()).unwrap_or_default(),
-                title2: season_title(parent.title.as_deref(), parent.number),
+                title2: language.season_title(parent.title.as_deref(), parent.number),
                 view_group: "episode",
                 view_mode: crate::items::GRID_VIEW_MODE,
                 metadata: items,
@@ -397,6 +399,7 @@ pub(crate) async fn children(
 /// has no leaves and answers an empty container, not an error — also the reference's call.
 pub(crate) async fn grandchildren(
     _caller: Caller,
+    client: ClientIdentity,
     State(state): State<PlexState>,
     Path(id): Path<i64>,
     Query(pairs): Query<Vec<(String, String)>>,
@@ -405,7 +408,8 @@ pub(crate) async fn grandchildren(
     let (parent, offset) = open(&state, &GRANDCHILDREN_QUERY, id, &pairs).await?;
     let library = parent.library.as_ref().ok_or(ApiError::NotFound)?;
     let style = ViewStyle::for_kind(&library.kind);
-    let items = parent.entries();
+    let language = Language::of(&client);
+    let items = parent.entries(language);
     let total = parent.total();
 
     let body = LeavesContainer {

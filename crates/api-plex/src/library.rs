@@ -12,6 +12,7 @@ use serde::Deserialize;
 
 use crate::auth::Caller;
 use crate::children;
+use crate::client::ClientIdentity;
 use crate::container::{kind_rank, LibraryKind, SectionDirectory, SectionsContainer};
 use crate::error::ApiError;
 use crate::gql;
@@ -24,6 +25,7 @@ use crate::items::{
     CharacterDirectory, CharactersContainer, ItemContainer, ItemsContainer, MetadataEntry,
     SearchContainer, SearchEntry,
 };
+use crate::language::Language;
 use crate::listing;
 use crate::response::{PlexResponse, ResponseFormat};
 use crate::PlexState;
@@ -264,12 +266,14 @@ fn ordering(sort: Option<&str>) -> (&'static str, &'static str) {
 /// express. See [`listing`].
 async fn section_items(
     _caller: Caller,
+    client: ClientIdentity,
     State(state): State<PlexState>,
     Path(section): Path<i64>,
     Query(pairs): Query<Vec<(String, String)>>,
     format: ResponseFormat,
 ) -> Result<PlexResponse<ItemsContainer>, ApiError> {
     let request = listing::parse(&pairs)?;
+    let language = Language::of(&client);
     let offset = request.start;
     // Capped rather than honored as given: `MAX_ITEMS` is the ceiling every window in this
     // project respects, and a listing is where an uncapped count would hurt most.
@@ -300,7 +304,7 @@ async fn section_items(
         .items
         .edges
         .iter()
-        .filter_map(|edge| MetadataEntry::from_graphql(&edge.node, false))
+        .filter_map(|edge| MetadataEntry::from_graphql(&edge.node, false, language))
         .collect();
     let total = library.stats.item_count;
     let body = ItemsContainer::new(&library.as_ref(), items, offset, total);
@@ -313,6 +317,7 @@ async fn section_items(
 /// items it already holds keys for.
 async fn items_by_id(
     _caller: Caller,
+    client: ClientIdentity,
     State(state): State<PlexState>,
     Path(ids): Path<String>,
     format: ResponseFormat,
@@ -348,7 +353,7 @@ async fn items_by_id(
     let library = found.first().and_then(|item| item.library.clone());
     let items = found
         .iter()
-        .filter_map(|item| MetadataEntry::from_graphql(item, true))
+        .filter_map(|item| MetadataEntry::from_graphql(item, true, Language::of(&client)))
         .collect();
     let body = ItemContainer::new(items, library.as_ref());
     Ok(PlexResponse::new(body, format))
@@ -549,10 +554,12 @@ pub struct SearchParams {
 /// is what a client's search field calls. See `docs/spec-gaps.md`.
 async fn search(
     _caller: Caller,
+    client: ClientIdentity,
     State(state): State<PlexState>,
     Query(params): Query<SearchParams>,
     format: ResponseFormat,
 ) -> Result<PlexResponse<SearchContainer>, ApiError> {
+    let language = Language::of(&client);
     // A missing term is an empty result, not an error: that is what a client gets while the
     // user is still typing, and the schema treats a blank term the same way.
     let term = params.query.unwrap_or_default();
@@ -570,7 +577,9 @@ async fn search(
         .search
         .edges
         .iter()
-        .filter_map(|edge| SearchEntry::from_graphql(&edge.node, &state.identity.friendly_name))
+        .filter_map(|edge| {
+            SearchEntry::from_graphql(&edge.node, &state.identity.friendly_name, language)
+        })
         .collect();
 
     Ok(PlexResponse::new(SearchContainer::new(items), format))

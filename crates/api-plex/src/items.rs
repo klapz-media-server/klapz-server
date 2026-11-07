@@ -13,6 +13,8 @@
 
 use serde::Serialize;
 
+use crate::language::Language;
+
 use crate::gql_items::{
     GqlConnection, GqlEdge, GqlItem, GqlLibraryRef, GqlPart, GqlRating, GqlStream, GqlTag,
     GqlVersion,
@@ -495,7 +497,7 @@ impl MetadataEntry {
     /// `with_library` distinguishes the two endpoints: a listing states the library once on
     /// the container, a lookup repeats it on each item. Matching that is not cosmetic — a
     /// client reading `librarySectionID` off the item would find nothing in a listing.
-    pub fn from_graphql(item: &GqlItem, with_library: bool) -> Option<Self> {
+    pub fn from_graphql(item: &GqlItem, with_library: bool, language: Language) -> Option<Self> {
         let rating_key = item.database_id()?;
         let kind = item.plex_type();
         let library = item.library.as_ref();
@@ -515,7 +517,7 @@ impl MetadataEntry {
             parent_studio: item.parent().and_then(|parent| parent.studio.clone()),
             studio: item.studio.clone(),
             kind,
-            title: item.display_title(),
+            title: item.display_title(language),
             // Omitted when it says nothing the *stored* title does not: the importer stores
             // a sort title for every row, while a reference server sends one only where it
             // differs. Compared with the stored title, not the displayed one, because a
@@ -556,7 +558,7 @@ impl MetadataEntry {
                 .map(|key| format!("/library/metadata/{key}")),
             parent_index: item.parent_index(),
             grandparent_title: item.grandparent_title(),
-            parent_title: item.parent_title(),
+            parent_title: item.parent_title(language),
             year: item.year,
             // Only a season falls back to its series' year, and only when it has none: the
             // reference sends one or the other, never both.
@@ -1053,7 +1055,7 @@ impl SearchEntry {
     ///
     /// `None` when the item carries no library, which the schema only allows for an item whose
     /// section has gone missing — a result nobody could navigate into.
-    pub fn from_graphql(item: &GqlItem, server_name: &str) -> Option<Self> {
+    pub fn from_graphql(item: &GqlItem, server_name: &str, language: Language) -> Option<Self> {
         let library = item.library.clone()?;
         Some(Self {
             allow_sync: true,
@@ -1062,7 +1064,7 @@ impl SearchEntry {
             library_section_uuid: library.uuid.clone(),
             personal: true,
             source_title: server_name.to_owned(),
-            item: MetadataEntry::from_graphql(item, false)?,
+            item: MetadataEntry::from_graphql(item, false, language)?,
         })
     }
 }
