@@ -15,8 +15,10 @@ pub mod gql;
 pub mod gql_items;
 pub mod items;
 pub mod listing;
+pub mod prefs;
 pub mod providers;
 pub mod response;
+pub mod sessions;
 pub mod stubs;
 pub mod xml;
 
@@ -73,6 +75,7 @@ pub fn router(state: PlexState) -> Router {
         .merge(general::router())
         .merge(library::router())
         .merge(providers::router())
+        .merge(sessions::router())
         // Plex has paths whose segments literally start with a colon — `/:/prefs`,
         // `/:/timeline`, `/photo/:/transcode`. Axum 0.8 rejects those by default as a guard
         // against its own older `:param` syntax.
@@ -81,6 +84,8 @@ pub fn router(state: PlexState) -> Router {
         // not carry the setting over, and routes added through it are re-validated with the
         // default rules. Our own parameters use the `{name}` form, which is unaffected.
         .without_v07_checks();
+
+    let routes = prefs::add_routes(routes);
 
     // Added last so a real handler registered above always wins over its stub.
     stubs::add_routes(routes).with_state(state)

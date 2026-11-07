@@ -1588,3 +1588,85 @@ async fn media_providers_refuses_a_request_with_no_authenticated_caller() {
         .expect("router responds");
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn sessions_answer_the_empty_container_the_reference_sends_when_idle() {
+    // Captured on the reference with nothing playing, in both formats.
+    let (status, content_type, body) = get("/status/sessions", Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(content_type, "application/json");
+    assert_eq!(body, r#"{"MediaContainer":{"size":0}}"#);
+
+    let (_, _, xml) = get("/status/sessions", None).await;
+    assert_eq!(
+        xml,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer size=\"0\">\n</MediaContainer>\n"
+    );
+}
+
+#[tokio::test]
+async fn prefs_publish_the_settings_plex_web_reads() {
+    let (status, _, body) = get("/:/prefs", Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let json: Value = serde_json::from_str(&body).expect("json body");
+    let settings = json["MediaContainer"]["Setting"]
+        .as_array()
+        .expect("settings");
+    assert_eq!(json["MediaContainer"]["size"], 10);
+
+    let setting = |id: &str| {
+        settings
+            .iter()
+            .find(|setting| setting["id"] == id)
+            .unwrap_or_else(|| panic!("{id}"))
+    };
+    // Without it a client stops on Plex's licence agreement before anything else.
+    assert_eq!(setting("AcceptedEULA")["value"], true);
+    assert_eq!(setting("PublishServerOnPlexOnlineKey")["value"], false);
+    // Typed per setting, as the reference types them.
+    assert_eq!(setting("ManualPortMappingPort")["value"], 32_400);
+    assert_eq!(setting("ButlerUpdateChannel")["enumValues"], "0:Public");
+    assert_eq!(
+        setting("allowMediaDeletion"),
+        &serde_json::json!({
+            "id": "allowMediaDeletion",
+            "label": "Allow media deletion",
+            "summary": "The owner of the server will be allowed to delete media files from disk.",
+            "type": "bool",
+            "default": true,
+            "value": true,
+            "hidden": false,
+            "advanced": true,
+            "group": "library"
+        })
+    );
+}
+
+#[tokio::test]
+async fn prefs_write_settings_as_the_reference_does_in_xml() {
+    let (_, _, xml) = get("/:/prefs", None).await;
+    // Byte for byte against the capture, apostrophe escaping included.
+    assert!(
+        xml.contains(
+            r#"<Setting id="ButlerUpdateChannel" label="Server update Channel" summary="" type="text" default="16" value="16" hidden="0" advanced="0" group="general" enumValues="0:Public" />"#
+        ),
+        "{xml}"
+    );
+    assert!(xml.contains("your computer&#39;s name"), "{xml}");
+}
+
+#[tokio::test]
+async fn changing_prefs_is_declared_but_not_implemented() {
+    let response = app()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/:/prefs?FriendlyName=x")
+                .header("X-Plex-Token", TOKEN)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+}

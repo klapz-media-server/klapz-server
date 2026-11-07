@@ -294,6 +294,16 @@ whose live tags no longer match the snapshot's, and the other 21 differ by a cre
 alone. `Guid` identical on 419 and `Rating` on 414, every difference being an item the live
 server refreshed after the snapshot.
 
+### Server settings
+
+`GET /:/prefs` on the reference lists 162 settings: transcoder, DLNA, maintenance tasks,
+remote access, most of them hidden. Plex Web reads ten — found by searching its bundle for
+each of the 162 identifiers — and those ten are what we publish, with the reference's labels,
+types, defaults and order. The values are this server's: its name, whether media deletion is
+allowed, and `AcceptedEULA` true, since there is no Plex licence to accept and a client reading
+`false` stops on an agreement screen. `PublishServerOnPlexOnlineKey` is `false`, the server not
+being linked to plex.tv.
+
 ### Global search is ranked, ours is not
 
 `GET /search?query=` applies the same match rule as the `title=` filter — a word prefix over
@@ -352,6 +362,8 @@ it describes almost nothing about responses. The authoritative per-field type ma
 - Booleans are inconsistent in JSON: `allowSync` is `true`, `hasPremiumPrimaryExtra` is `"1"`.
 - `Meta` and `UltraBlurColors` are JSON objects; every other child is an array.
 - XML escapes non-ASCII as numeric character references despite declaring UTF-8.
+- An apostrophe in an attribute is written `&#39;` (`Homer&#39;s Odyssey`), though the
+  attributes are double-quoted and need no escaping of it. We do the same.
 - `/media/providers` writes an empty `Feature` or `Directory` in long form,
   `<Feature type="manage">
 </Feature>`, where the same server self-closes an empty

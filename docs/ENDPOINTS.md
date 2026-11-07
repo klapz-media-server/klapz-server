@@ -18,10 +18,10 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 13 | 5.0 % |
-| `stub` | 203 | 78.1 % |
-| `partial` | 3 | 1.2 % |
-| `done` | 4 | 1.5 % |
+| `todo` | 14 | 5.4 % |
+| `stub` | 200 | 76.9 % |
+| `partial` | 4 | 1.5 % |
+| `done` | 5 | 1.9 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -40,7 +40,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Subscriptions](#subscriptions) | 10 | 0 | 0 | 10 | 0 | 0 |
 | [Download Queue](#download-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
 | [Play Queue](#play-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
-| [Status](#status) | 6 | 0 | 0 | 6 | 0 | 0 |
+| [Status](#status) | 6 | 1 | 0 | 5 | 0 | 0 |
 | [Butler](#butler) | 5 | 0 | 0 | 5 | 0 | 0 |
 | [Transcoder](#transcoder) | 5 | 0 | 0 | 4 | 1 | 0 |
 | [General](#general) | 4 | 2 | 0 | 2 | 0 | 0 |
@@ -49,7 +49,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Library Collections](#library-collections) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Log](#log) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Playlist](#playlist) | 3 | 0 | 0 | 3 | 0 | 0 |
-| [Preferences](#preferences) | 3 | 0 | 0 | 3 | 0 | 0 |
+| [Preferences](#preferences) | 3 | 0 | 1 | 1 | 1 | 0 |
 | [Timeline](#timeline) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Updater](#updater) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Activities](#activities) | 2 | 0 | 0 | 2 | 0 | 0 |
@@ -333,7 +333,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/status/sessions` | admin | List Sessions |  |
+| `done` | `GET` | `/status/sessions` | admin | List Sessions | Always the empty container, as the reference sends it with nothing playing — there is no playback yet. Identical in both formats. |
 | `stub` | `GET` | `/status/sessions/background` | admin | Get background tasks |  |
 | `stub` | `GET` | `/status/sessions/history/all` | user | List Playback History |  |
 | `stub` | `DELETE` | `/status/sessions/history/{historyId}` | admin | Delete Single History Item |  |
@@ -415,8 +415,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/:/prefs` | user | Get all preferences |  |
-| `stub` | `PUT` | `/:/prefs` | user | Set preferences |  |
+| `partial` | `GET` | `/:/prefs` | user | Get all preferences | The 10 settings Plex Web reads, of the reference's 162, with its definitions and order; `AcceptedEULA` true, `FriendlyName` and `allowMediaDeletion` from the official API. The other 152 name machinery this server does not have. |
+| `todo` | `PUT` | `/:/prefs` | user | Set preferences | Declared beside `GET`, answers 501. |
 | `stub` | `GET` | `/:/prefs/get` | user | Get a preferences |  |
 
 ## Timeline

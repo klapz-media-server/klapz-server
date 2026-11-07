@@ -125,7 +125,8 @@ fn scalar(value: &Value) -> Option<String> {
 ///
 /// The numeric references are not a safety measure but a fidelity one: a real server emits
 /// `Ann&#233;e` despite declaring `encoding="UTF-8"`, so byte-exact fixture comparison
-/// requires reproducing it.
+/// requires reproducing it. The apostrophe is escaped for the same reason — attributes are
+/// double-quoted, so it needs none, yet the reference writes `Homer&#39;s Odyssey`.
 fn escape_into(out: &mut String, text: &str) {
     for character in text.chars() {
         match character {
@@ -133,6 +134,7 @@ fn escape_into(out: &mut String, text: &str) {
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
             c if c.is_ascii() => out.push(c),
             c => {
                 out.push_str("&#");
@@ -161,7 +163,7 @@ mod tests {
 
     use serde::Serialize;
 
-    use super::{to_plex_xml, XmlError};
+    use super::{escape_into, to_plex_xml, XmlError};
 
     #[derive(Serialize)]
     struct Leaf {
@@ -315,6 +317,13 @@ mod tests {
             "{rendered}"
         );
         assert!(!rendered.contains("<Metadata"), "{rendered}");
+    }
+
+    #[test]
+    fn escapes_an_apostrophe_as_the_reference_does() {
+        let mut out = String::new();
+        escape_into(&mut out, "Homer's Odyssey");
+        assert_eq!(out, "Homer&#39;s Odyssey");
     }
 
     #[test]
