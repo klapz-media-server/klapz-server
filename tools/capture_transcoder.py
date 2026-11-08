@@ -216,6 +216,10 @@ def main() -> None:
             "-segment_list_unfinished", "1", "-max_delay", "5000000",
             "-avoid_negative_ts", "disabled", "-map_metadata", "-1", "-map_chapters", "-1",
             "media-%05d.ts",
+            # Burning needs the subtitle decoded alongside: without this output the reference's
+            # filter runs and draws nothing.
+            *(["-map", f"0:{subtitle}", "-f", "null", "-codec", "ass", "nullfile"]
+              if args.case == "burn" else []),
         ]
         process = subprocess.Popen(
             command, cwd=output, env=environment, stderr=subprocess.PIPE, text=True,
