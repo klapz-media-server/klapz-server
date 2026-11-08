@@ -1,6 +1,6 @@
 //! Which items resemble another one.
 //!
-//! An approximation of the reference, whose ranking is not derivable from its database: each
+//! An approximation of the reference, whose ranking we could not find in its database: each
 //! shared genre counts one, any shared actor one, any shared director two, ties going to the
 //! most recent. Measured against its "related" shelves on 30 films, this finds 101 of the
 //! 180 items it shows; no weighting of genre, actor and director tried did better.

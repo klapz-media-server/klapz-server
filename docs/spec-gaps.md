@@ -415,20 +415,22 @@ item is `404`, and `count` (default 6) sizes every shelf.
 Measured on 150 films of one library:
 
 - an actor gets a shelf only among the **first two billed**, a director only as the **first
-  credited**, and only with **five or more other films** in the library. Below four there is
-  none, without exception;
+  credited**, and only with **five or more other films** in the library. All of those have
+  one; below that, two actors with three or four other films do, out of 38 first- and
+  second-billed actors with that many, which the snapshot being older may explain;
 - the shelf holds those films by title, and leads to `/all?actor=…&id!=…`, so `id!=` is honored
   on a listing;
 - a `movie.same.actor` shelf is numbered from 0 in the order the shelves appear.
 
 Against the reference on 60 other films: the same person shelves on 59, attributes identical on
-all 41 compared, the same films in the same order on 35 (the other 6 being title collation). The
-field differences on the 233 items compared are items edited since the snapshot, checked column
+all 41 compared, the same films in the same order on 35. The other 6 all come down to title
+collation, which moved a film across the cut in two of them. The field differences on the 233 items compared are items edited since the snapshot, checked column
 by column against it; two `contentRatingAge` were not.
 
-**Similar items are an approximation.** No column or table states them. `metadata_item_clusters`
-is unrelated, the `similar` tags (type 305) feed only the `external.*` shelf, and a film without
-any still gets the shelf. Ranking by shared tags gives a recognizably close list, not the same
+**Similar items are an approximation.** We found no column or table stating them.
+`metadata_item_clusters` is empty, `metadata_relations` has no row for a film that has the shelf,
+and the `similar` tags (type 305) are what the `external.*` shelf holds (120 of 120 items on 25
+films) and only 2 of 18 of this one, which a film without any still gets. Ranking by shared tags gives a recognizably close list, not the same
 one: a shared genre counts one, any shared actor one, any shared director two, ties to the most
 recent. That finds 101 of the 180 items shown on 30 films, the best of fifteen weightings tried.
 The shelf exists on 40 of the 60 films here against 36 on the reference; why the reference omits

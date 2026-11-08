@@ -43,8 +43,9 @@ const DEFAULT_SHELF: u32 = 6;
 /// The spec's default for `/similar`.
 const DEFAULT_SIMILAR: u32 = 200;
 
-/// Other films a person needs for a shelf of their own. Measured on 150 films: first-billed
-/// actors and directors with five or more get one, without exception below four.
+/// Other films a person needs for a shelf of their own. Measured on 150 films: every
+/// first-billed actor and director with five or more has one, and of the 60 with three or
+/// four only two do.
 const MIN_OTHERS: usize = 5;
 
 /// How many first-billed actors can get a shelf: the third never does, on those same films.
