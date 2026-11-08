@@ -7,7 +7,7 @@
 //!
 //! Sizes and encodings are measured on the reference; `docs/spec-gaps.md` has the rules.
 
-mod ffmpeg;
+mod codec;
 mod source;
 
 use std::collections::HashMap;
@@ -19,7 +19,7 @@ use axum::routing::get;
 use axum::Router;
 use tokio::sync::{OnceCell, Semaphore};
 
-use self::ffmpeg::{Encoding, SourceImage};
+use self::codec::Encoding;
 use crate::auth::Caller;
 use crate::error::ApiError;
 use crate::PlexState;
@@ -30,7 +30,7 @@ pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
     router.route("/photo/:/transcode", get(transcode))
 }
 
-/// Images being fetched and encoded at once. Each one holds child processes and up to
+/// Images being fetched and encoded at once. Each one holds a blocking thread and up to
 /// [`source::MAX_SOURCE_BYTES`] of memory, and a client controls how many it asks for.
 const MAX_CONCURRENT: usize = 8;
 
@@ -76,14 +76,12 @@ pub(crate) enum PhotoError {
     Client(reqwest::Error),
     #[error("the source image is larger than the server accepts")]
     SourceTooLarge,
-    #[error("could not run {0}: {1}")]
-    Spawn(&'static str, std::io::Error),
-    #[error("{0} did not finish in time")]
-    TimedOut(&'static str),
-    #[error("{0} failed; the source is probably not an image")]
-    Failed(&'static str),
-    #[error("ffprobe answered something unreadable")]
-    UnreadableProbe,
+    #[error("the source is not an image this server reads")]
+    Undecodable,
+    #[error("could not encode the image: {0}")]
+    Encode(image::ImageError),
+    #[error("the worker encoding the image died: {0}")]
+    Worker(tokio::task::JoinError),
     #[error("the requested size yields no usable image")]
     UnusableSize,
 }
@@ -181,14 +179,14 @@ impl Request {
 
     /// The encoding, and the content type to announce. They disagree on purpose: asked for
     /// nothing or for JPEG, the reference may answer a PNG and still label it `image/jpeg`.
-    fn encoding(&self, source: &SourceImage) -> (Encoding, &'static str) {
+    fn encoding(&self, is_png: bool, has_alpha: bool) -> (Encoding, &'static str) {
         const JPEG: &str = "image/jpeg";
         match self.format {
             Some(Format::Png) => (Encoding::Png, "image/png"),
             Some(Format::Ppm) => (Encoding::Ppm, "image/x-portable-pixmap"),
             // JPEG cannot hold transparency, which wins over the request.
-            _ if source.has_alpha => (Encoding::Png, JPEG),
-            None if source.is_png => (Encoding::Png, JPEG),
+            _ if has_alpha => (Encoding::Png, JPEG),
+            None if is_png => (Encoding::Png, JPEG),
             _ => (Encoding::Jpeg(self.quality), JPEG),
         }
     }
@@ -202,6 +200,15 @@ impl Request {
 fn scaled_side(side: f64, scale: f64) -> Option<u32> {
     let scaled = (side * scale).round();
     (scaled >= 1.0 && scaled <= f64::from(MAX_OUTPUT_SIDE)).then_some(scaled as u32)
+}
+
+fn convert(bytes: &[u8], request: &Request) -> Result<(Vec<u8>, &'static str), PhotoError> {
+    let source = codec::decode(bytes)?;
+    let size = request
+        .target_size(source.dimensions())
+        .ok_or(PhotoError::UnusableSize)?;
+    let (encoding, content_type) = request.encoding(source.is_png, source.has_alpha());
+    Ok((codec::encode(&source, size, encoding)?, content_type))
 }
 
 async fn transcode(
@@ -224,12 +231,9 @@ async fn transcode(
         .await?;
 
     let bytes = source::fetch(client, url).await?;
-    let image = ffmpeg::probe(&bytes).await?;
-    let size = request
-        .target_size((image.width, image.height))
-        .ok_or(PhotoError::UnusableSize)?;
-    let (encoding, content_type) = request.encoding(&image);
-    let output = ffmpeg::encode(&bytes, size, encoding, image.has_alpha).await?;
+    let (output, content_type) = tokio::task::spawn_blocking(move || convert(&bytes, &request))
+        .await
+        .map_err(PhotoError::Worker)??;
 
     Ok((
         [
@@ -268,15 +272,9 @@ mod tests {
     }
 
     fn encoding_of(query: &str, is_png: bool, has_alpha: bool) -> (Encoding, &'static str) {
-        let image = SourceImage {
-            width: 10,
-            height: 10,
-            is_png,
-            has_alpha,
-        };
         Request::parse(&format!("url=x&width=1&height=1&{query}"))
             .unwrap()
-            .encoding(&image)
+            .encoding(is_png, has_alpha)
     }
 
     #[test]

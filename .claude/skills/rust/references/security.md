@@ -127,8 +127,8 @@ allowlist, TLS only, default port, re-checked on **every redirect hop** — `pho
 the pattern. Compare on the parsed `Url`, never on the string (`https://plex.tv@evil.example/`).
 A `reqwest` error quotes its URL, which may hold a token: `without_url()` before logging it.
 
-Bytes fetched that way reach ffmpeg over a pipe, with the input pinned (`-f image2pipe
--protocol_whitelist pipe`), so that a file claiming to be a playlist cannot make it read others.
+Bytes fetched that way are decoded in process by the `image` crate: only JPEG, PNG and WebP are
+accepted, and the declared canvas is checked before anything is allocated for it.
 
 ## Tokens and authentication
 

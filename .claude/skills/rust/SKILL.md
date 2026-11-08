@@ -198,7 +198,8 @@ writing any endpoint that touches disk, `ffmpeg`, authentication or SQL.
 
 Plex does not decode video itself — it **executes `ffmpeg`** (its `Plex Transcoder` is a patched
 ffmpeg binary) and supervises the process. open-plex does the same, and this is an architectural
-decision rather than a detail: no libav bindings, no decoding inside the server's address space.
+decision rather than a detail: no libav bindings, no video decoding inside the server's address
+space. Images are the exception: `/photo/:/transcode` uses the `image` crate in process.
 
 What that implies in code: a transcode session is a child process with a lifecycle to honor. You
 must handle termination when the client stops playing (otherwise orphaned processes pile up and

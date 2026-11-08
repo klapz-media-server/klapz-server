@@ -366,7 +366,8 @@ not built and answer `501`.
 
 Against the reference on the avatar Plex Web requests: identical status, content type, cache
 header, dimensions and pixel format across seven size and format combinations; the bytes
-differ, the encoders being different.
+differ, the encoders being different. Converted with the `image` crate, a JPEG comes out 20 to 60%
+larger than the reference's at the same quality, and a PNG about 10%.
 
 ### A library's settings
 

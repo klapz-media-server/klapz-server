@@ -120,9 +120,11 @@ without them saying so.
 - **Database through an ORM** so the engine can be swapped: **SeaORM** (one API across
   PostgreSQL / MySQL / SQLite, built-in migrations, natively async). SQLite is one backend among
   several, not the design.
-- **Transcoding is process supervision.** Plex does not decode video itself, it executes
-  `ffmpeg`. open-plex does the same: no libav bindings, no decoding inside the server's address
-  space.
+- **Transcoding video is process supervision.** Plex does not decode video itself, it executes
+  `ffmpeg`. open-plex does the same: no libav bindings, no video decoding inside the server's
+  address space. Images are the exception, by the repo owner's decision: `/photo/:/transcode`
+  converts in process with the `image` crate, memory-safe decoders on a format allowlist, because
+  two processes per thumbnail cost more than the work.
 
 ### Access rights
 
@@ -245,8 +247,6 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
 | `OPENPLEX_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
-
-`ffmpeg` and `ffprobe` must be on `PATH` for `/photo/:/transcode`; without them it answers `500`.
 
 ## Current milestone
 
