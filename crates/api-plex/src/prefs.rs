@@ -9,22 +9,34 @@
 //!
 //! Changing a setting is not implemented yet: `PUT` answers `501`.
 
-use axum::extract::State;
+use async_graphql::{Name, Value, Variables};
+use axum::extract::{Path, State};
 use axum::routing::get;
 use axum::Router;
-use serde::Serialize;
+use open_plex_api::library::LIBRARY_TYPE;
+use open_plex_api::GlobalId;
+use serde::{Deserialize, Serialize};
 
-use crate::auth::Caller;
+use crate::auth::{AdminCaller, Caller};
+use crate::client::ClientIdentity;
 use crate::error::ApiError;
 use crate::general::{self, GqlServer};
+use crate::gql;
+use crate::language::Language;
 use crate::response::{PlexResponse, ResponseFormat};
+use crate::translations::Catalog;
 use crate::PlexState;
 
 /// Adds the route onto the caller's router rather than returning one to merge: the path
 /// opens with a literal colon, which only the router with Axum's legacy checks turned off
 /// accepts, and `merge` would re-validate it under the default rules.
 pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
-    router.route("/:/prefs", get(prefs).put(change_prefs))
+    router
+        .route("/:/prefs", get(prefs).put(change_prefs))
+        .route(
+            "/library/sections/{sectionId}/prefs",
+            get(section_prefs).put(change_section_prefs),
+        )
 }
 
 /// Response to `GET /:/prefs`.
@@ -50,7 +62,7 @@ pub struct Setting {
     pub group: &'static str,
     /// The choices of an enumerated setting, as `value:Label` pairs.
     #[serde(rename = "enumValues", skip_serializing_if = "Option::is_none")]
-    pub enum_values: Option<&'static str>,
+    pub enum_values: Option<String>,
 }
 
 /// A setting's value, typed as the reference types it: a JSON boolean, number or string.
@@ -190,7 +202,7 @@ async fn prefs(
             hidden: definition.hidden,
             advanced: definition.advanced,
             group: definition.group,
-            enum_values: definition.enum_values,
+            enum_values: definition.enum_values.map(str::to_owned),
         })
         .collect();
     Ok(PlexResponse::new(
@@ -206,6 +218,90 @@ async fn prefs(
 /// path: without it the method would answer `405`, as if Plex had no such operation.
 async fn change_prefs(_caller: Caller) -> ApiError {
     ApiError::NotImplemented
+}
+
+const LIBRARY_EXISTS_QUERY: &str = r"
+query PlexLibraryExists($id: ID!) {
+  node(id: $id) { ... on Library { id } }
+}
+";
+
+#[derive(Debug, Deserialize)]
+struct LibraryExistsData {
+    node: Option<serde_json::Value>,
+}
+
+/// `GET /library/sections/{id}/prefs`: a library's settings.
+///
+/// The reference lists 17 for a film library and 18 for a series, nearly all about scanning
+/// and matching, which are out of scope here. As with the server's own, only the two Plex
+/// Web looks up by name are published, at their defaults: no library is hidden, and nothing
+/// is matched. The rest of the dialog is drawn from whatever the list holds.
+async fn section_prefs(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Path(section): Path<i64>,
+    format: ResponseFormat,
+) -> Result<PlexResponse<PrefsContainer>, ApiError> {
+    let mut variables = Variables::default();
+    variables.insert(
+        Name::new("id"),
+        Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
+    );
+    let data: LibraryExistsData =
+        gql::execute(&state.schema, LIBRARY_EXISTS_QUERY, variables).await?;
+    data.node.ok_or(ApiError::NotFound)?;
+
+    let setting = section_settings(Language::of(&client).catalog());
+    Ok(PlexResponse::new(
+        PrefsContainer {
+            size: u32::try_from(setting.len()).unwrap_or(u32::MAX),
+            setting,
+        },
+        format,
+    ))
+}
+
+async fn change_section_prefs(_caller: AdminCaller) -> ApiError {
+    ApiError::NotImplemented
+}
+
+/// Unlike the server's settings, every default and value here is a string on the wire, even
+/// for a boolean.
+fn section_settings(catalog: &'static Catalog) -> Vec<Setting> {
+    let text = |value: &str| SettingValue::Text(value.to_owned());
+    vec![
+        Setting {
+            id: "hidden",
+            label: catalog.visibility,
+            summary: catalog.visibility_summary,
+            kind: "int",
+            default: text("0"),
+            value: text("0"),
+            hidden: false,
+            advanced: false,
+            group: "",
+            enum_values: Some(format!(
+                "0:{}|1:{}|2:{}",
+                catalog.visibility_everywhere,
+                catalog.visibility_no_home,
+                catalog.visibility_nowhere
+            )),
+        },
+        Setting {
+            id: "includeAdultContent",
+            label: catalog.adult_matching,
+            summary: catalog.adult_matching_summary,
+            kind: "bool",
+            default: text("false"),
+            value: text("false"),
+            hidden: false,
+            advanced: false,
+            group: "",
+            enum_values: None,
+        },
+    ]
 }
 
 /// What this server actually has for a setting; its default where nothing here differs.

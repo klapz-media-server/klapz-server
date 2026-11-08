@@ -46,6 +46,13 @@ STRINGS = {
     "resolution": "Resolution",
     "sort_title": "Title",
     "date_added": "Date Added",
+    "visibility": "Visibility",
+    "visibility_summary": "Restrict where content from this library should appear.",
+    "visibility_everywhere": "Include in home screen and global search",
+    "visibility_no_home": "Exclude from home screen",
+    "visibility_nowhere": "Exclude from home screen and global search",
+    "adult_matching": "Allow matching to explicit content",
+    "adult_matching_summary": "Allow matching to adult/pornographic titles and returning adult titles in fix match results. This may hide the title from some features like your Watchlist.",
 }
 
 
@@ -89,7 +96,7 @@ def main() -> None:
               "pub const ENGLISH: Catalog = Catalog {", '    code: "en",']
     for field, mid in STRINGS.items():
         lines.append(f"    {field}: {rust_string(english(mid))},")
-    lines += ["};", "", f"pub const CATALOGS: [Catalog; {len(catalogs)}] = ["]
+    lines += ["};", "", f"pub static CATALOGS: [Catalog; {len(catalogs)}] = ["]
     for code, values in catalogs:
         lines.append("    Catalog {")
         lines.append(f"        code: {rust_string(code)},")

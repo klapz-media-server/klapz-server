@@ -368,6 +368,15 @@ Against the reference on the avatar Plex Web requests: identical status, content
 header, dimensions and pixel format across seven size and format combinations; the bytes
 differ, the encoders being different.
 
+### A library's settings
+
+`GET /library/sections/{id}/prefs` lists 17 settings for a film library and 18 for a series, nearly
+all about scanning and matching. Plex Web draws its dialog from whatever the list holds and looks
+up only two by name, `hidden` and `includeAdultContent`, so those are what we publish, at their
+defaults: identical to the reference in English, French and German. The labels come from its
+catalogs. Unlike `/:/prefs`, every `default` and `value` here is a JSON string, a boolean included.
+`PUT` answers `501`.
+
 ### Server settings
 
 `GET /:/prefs` on the reference lists 162 settings: transcoder, DLNA, maintenance tasks,

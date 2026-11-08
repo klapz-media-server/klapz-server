@@ -1979,3 +1979,22 @@ async fn the_meta_block_is_nested_elements_in_xml() {
     );
     assert!(body.contains("<Filter filter=\"genre\""), "{body}");
 }
+
+#[tokio::test]
+async fn a_library_publishes_the_settings_a_client_reads() {
+    let (status, _, body) = get("/library/sections/4/prefs", Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK);
+    let body: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let settings = &body["MediaContainer"]["Setting"];
+    assert_eq!(body["MediaContainer"]["size"], 2);
+    assert_eq!(settings[0]["id"], "hidden");
+    assert_eq!(settings[0]["value"], "0");
+    assert_eq!(settings[1]["id"], "includeAdultContent");
+    assert_eq!(settings[1]["value"], "false");
+}
+
+#[tokio::test]
+async fn an_unknown_library_has_no_settings() {
+    let (status, _, _) = get("/library/sections/999/prefs", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
