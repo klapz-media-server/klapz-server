@@ -59,6 +59,8 @@ IMPLEMENTED = frozenset(
         "/hubs/sections/{sectionId}",
         "/activities",
         "/photo/:/transcode",
+        "/playQueues",
+        "/playQueues/{playQueueId}",
         "/library/parts/{partId}/{changestamp}/{filename}",
         "/library/sections/{sectionId}/prefs",
         "/library/metadata/{ids}/related",

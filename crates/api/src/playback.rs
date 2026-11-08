@@ -240,6 +240,15 @@ impl Mutation {
         Ok(playback(context)?.touch(&key, now_epoch()).await?)
     }
 
+    /// Creates a play queue from a list of items.
+    async fn create_play_queue(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The queue to create.")] input: crate::play_queue::CreatePlayQueueInput,
+    ) -> Result<crate::play_queue::PlayQueueObject> {
+        crate::play_queue::create(context, input).await
+    }
+
     /// Closes a session. Whether there was one.
     async fn end_playback_session(
         &self,

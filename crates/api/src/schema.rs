@@ -37,6 +37,7 @@ pub struct ApiContext {
     pub library: Arc<dyn LibraryRepository>,
     pub metadata: Arc<dyn MetadataRepository>,
     pub playback: Arc<dyn open_plex_core::playback::PlaybackRepository>,
+    pub play_queues: Arc<dyn open_plex_core::play_queue::PlayQueueRepository>,
 }
 
 /// Anything that can be refetched by its global identifier.
@@ -48,6 +49,8 @@ pub struct ApiContext {
 #[graphql(field(name = "id", ty = "ID", desc = "Globally unique, opaque identifier."))]
 pub enum Node {
     PlaybackSession(crate::playback::PlaybackSessionObject),
+    PlayQueue(crate::play_queue::PlayQueueObject),
+    PlayQueueEntry(crate::play_queue::PlayQueueEntryObject),
     /// This server.
     Server(Server),
     /// A media library.
@@ -142,6 +145,14 @@ impl Query {
                 .person(PersonId::new(global.key))
                 .await?
                 .map(|person| Node::Person(PersonObject(person)))),
+            crate::play_queue::PLAY_QUEUE_TYPE => Ok(crate::play_queue::queues(context)?
+                .queue(global.key)
+                .await?
+                .map(|queue| Node::PlayQueue(crate::play_queue::PlayQueueObject(queue)))),
+            crate::play_queue::PLAY_QUEUE_ENTRY_TYPE => Ok(crate::play_queue::queues(context)?
+                .entry(global.key)
+                .await?
+                .map(|entry| Node::PlayQueueEntry(crate::play_queue::PlayQueueEntryObject(entry)))),
             crate::playback::PLAYBACK_TYPE => Ok(crate::playback::playback(context)?
                 .session(global.key, open_plex_core::now_epoch())
                 .await?

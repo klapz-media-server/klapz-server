@@ -124,6 +124,7 @@ fn app() -> axum::Router {
         library: std::sync::Arc::new(library),
         metadata: std::sync::Arc::new(metadata),
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
     });
     let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
 
@@ -158,10 +159,10 @@ fn concretize(path: &str) -> String {
 fn substitute(parameter: &str) -> &'static str {
     match parameter.to_lowercase().as_str() {
         "transcodetype" => "video",
-        // Not a number on purpose: the part's route is real, and would answer `404` for a part
+        // Not a number on purpose: these routes are real, and would answer `404` for something
         // that does not exist, which this test could not tell from a missing route. An id it
         // cannot parse is a `400`.
-        "partid" => "not-a-number",
+        "partid" | "playqueueid" => "not-a-number",
         "element" => "thumb",
         "ext" => "jpg",
         "action" => "play",

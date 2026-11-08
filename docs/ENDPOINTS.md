@@ -18,9 +18,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 14 | 5.4 % |
-| `stub` | 189 | 72.7 % |
-| `partial` | 13 | 5.0 % |
+| `todo` | 15 | 5.8 % |
+| `stub` | 186 | 71.5 % |
+| `partial` | 15 | 5.8 % |
 | `done` | 7 | 2.7 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -39,7 +39,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Metadata Agents](#metadata-agents) | 12 | 0 | 0 | 0 | 0 | 12 |
 | [Subscriptions](#subscriptions) | 10 | 0 | 0 | 10 | 0 | 0 |
 | [Download Queue](#download-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
-| [Play Queue](#play-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
+| [Play Queue](#play-queue) | 9 | 0 | 2 | 6 | 1 | 0 |
 | [Status](#status) | 6 | 0 | 1 | 5 | 0 | 0 |
 | [Butler](#butler) | 5 | 0 | 0 | 5 | 0 | 0 |
 | [Transcoder](#transcoder) | 5 | 0 | 3 | 2 | 0 | 0 |
@@ -320,9 +320,9 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `POST` | `/playQueues` | user | Create a play queue |  |
-| `stub` | `GET` | `/playQueues/{playQueueId}` | user | Retrieve a play queue |  |
-| `stub` | `PUT` | `/playQueues/{playQueueId}` | user | Add a generator or playlist to a play queue |  |
+| `partial` | `POST` | `/playQueues` | user | Create a play queue | From an item, a list of items, a series, a season or a library listing, with `key` and `shuffle`. Same container and items as the reference. A queue holds at most 500 entries. |
+| `partial` | `GET` | `/playQueues/{playQueueId}` | user | Retrieve a play queue | `window`, `center`, `includeBefore` and `includeAfter`, with the reference's rules. |
+| `todo` | `PUT` | `/playQueues/{playQueueId}` | user | Add a generator or playlist to a play queue |  |
 | `stub` | `DELETE` | `/playQueues/{playQueueId}/items` | user | Clear a play queue |  |
 | `stub` | `DELETE` | `/playQueues/{playQueueId}/items/{playQueueItemId}` | user | Delete an item from a play queue |  |
 | `stub` | `PUT` | `/playQueues/{playQueueId}/items/{playQueueItemId}/move` | user | Move an item in a play queue |  |

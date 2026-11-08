@@ -167,6 +167,8 @@ Places where we knowingly answer differently, each decided rather than overlooke
   the folded `sort_key` column byte-wise. Same items, alphabetical and stable, different
   sequence: 299/500 positions match on films, 438/500 on series, median displacement 0. Close
   enough; a UCA dependency plus a re-import of 1.1M rows is not worth the remainder.
+- **A play queue holds at most 500 entries.** The reference copies a whole library into one;
+  every window here is capped by `page::MAX_ITEMS`. Queues are deleted after 7 days.
 - **Playback sessions are stored, with automatic expiry.** The reference keeps them in memory.
   Ours are rows in `playback_session`, exposed on the official API; every sign of life pushes
   `expires_at` forward 300 seconds, reads skip what has expired, a sweep deletes it, and startup

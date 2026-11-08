@@ -396,6 +396,30 @@ frames (9, 9, 6, 9 s on one file), so our playlist is `EVENT` and grows, startin
 segments exist. `offset` seeks with `-ss` before the input, placed as ffmpeg expects: no captured
 command has one. The `audio` bitrate of a conversion is 256k, the value in the one captured remux.
 
+### Play queues
+
+`POST /playQueues` needs `type` and `uri` (`400`), and `type` otherwise changes nothing: `audio` or
+`bogus` on a film gives the same queue. The URI is
+`server://{machine}/com.plexapp.plugins.library{path}`. The path names a film or an episode (one
+entry, `continuous` changes nothing), a series (every episode), a season, a list of keys, or a
+library listing with its filters and sort. A URI that names nothing, another server or an unknown
+item is still a `200`: an empty queue, without the selected attributes or `playQueueTotalCount`.
+`key` selects the entry to play first, `shuffle=1` randomizes and selects the first.
+`playQueueSourceURI` restates the source as `library://x/item/…` for one item and
+`library://x/directory/…` otherwise.
+
+The window, measured on a queue of 22 centred on position 4: `window=N` (20 by default) shows N
+entries on each side plus the centre. `includeBefore=0` or `includeAfter=0` drops that side **and
+the centre**; both together are `400`. `window=0` shows nothing, and so does a `center` that is
+not in this queue. Entries come in the form of a lookup, `playQueueItemID` first.
+
+A queue holds at most 500 entries, where the reference took all 9,667 films of a library: every
+window here is capped. Queues are deleted after 7 days, a figure of ours. `PUT` answers `501`, and
+editing a queue is not served.
+
+Which protocol a player then asks for is up to it. In Plex Web's code a browser without native
+HLS, such as Chrome, is offered streaming MKV then DASH, neither of which is served yet.
+
 ### Playback sessions are stored
 
 None of the reference's 71 tables holds a session in progress: only what outlives one, the play

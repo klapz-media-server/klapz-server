@@ -17,6 +17,8 @@ pub mod media_part;
 pub mod media_stream;
 pub mod metadata_item;
 pub mod person;
+pub mod play_queue;
+pub mod play_queue_entry;
 pub mod playback_session;
 pub mod section_root;
 pub mod tag;

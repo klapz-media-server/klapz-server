@@ -1,3 +1,25 @@
+"""
+A play queue to create.
+"""
+input CreatePlayQueueInput {
+	"""
+	Where the items come from, as the client named it.
+	"""
+	sourceUri: String!
+	"""
+	What to play, in order, as returned in `Item.id`. May be empty.
+	"""
+	itemIds: [ID!]!
+	"""
+	The position of the entry to play first.
+	"""
+	selectedPosition: Int!
+	"""
+	Put the entries in random order, playing whichever lands first.
+	"""
+	shuffle: Boolean!
+}
+
 type Episode implements Item & Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this item.
@@ -1174,6 +1196,15 @@ type Mutation {
 		key: String!
 	): Boolean!
 	"""
+	Creates a play queue from a list of items.
+	"""
+	createPlayQueue(
+		"""
+		The queue to create.
+		"""
+		input: CreatePlayQueueInput!
+	): PlayQueue!
+	"""
 	Closes a session. Whether there was one.
 	"""
 	endPlaybackSession(
@@ -1239,6 +1270,106 @@ type Person implements Node {
 	A portrait, hosted by the metadata provider.
 	"""
 	thumbUrl: String
+}
+
+type PlayQueue implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this queue.
+	"""
+	id: ID!
+	"""
+	Where the items came from, as the client named it.
+	"""
+	sourceUri: String!
+	"""
+	Whether the entries are in random order.
+	"""
+	shuffled: Boolean!
+	"""
+	Raised each time the queue changes.
+	"""
+	version: Int!
+	"""
+	How many entries the queue holds.
+	"""
+	totalCount: Int!
+	"""
+	The entry to play first. Null for an empty queue.
+	"""
+	selectedEntry: PlayQueueEntry
+	"""
+	The entries, in play order.
+	"""
+	entries(
+		"""
+		Return entries after this cursor.
+		"""
+		after: String,
+		"""
+		Return entries before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many entries from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many entries from the end of the range.
+		"""
+		last: Int,
+		"""
+		Skip this many entries first, to land in the middle of the queue.
+		"""
+		offset: Int
+	): PlayQueueEntryConnection!
+}
+
+type PlayQueueEntry implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this entry.
+	"""
+	id: ID!
+	"""
+	The queue this entry belongs to, as returned in `PlayQueue.id`.
+	"""
+	queueId: ID!
+	"""
+	Its place in the queue, from zero.
+	"""
+	position: Int!
+	"""
+	What it plays. Null if the item has left the library since.
+	"""
+	item: Item
+}
+
+type PlayQueueEntryConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [PlayQueueEntryEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [PlayQueueEntry!]!
+}
+
+"""
+An edge in a connection.
+"""
+type PlayQueueEntryEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: PlayQueueEntry!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type PlaybackSession implements Node {

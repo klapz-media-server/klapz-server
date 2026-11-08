@@ -83,6 +83,7 @@ fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
         library: std::sync::Arc::new(library),
         metadata: std::sync::Arc::new(InMemoryMetadata::default()),
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
     });
     router(PlexState::new(identity, schema, accounts))
 }
@@ -783,6 +784,7 @@ fn items_app() -> axum::Router {
         library: std::sync::Arc::new(library),
         metadata: std::sync::Arc::new(metadata),
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
     });
     authenticated(router(PlexState::new(identity, schema, accounts)))
 }

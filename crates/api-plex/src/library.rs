@@ -226,7 +226,7 @@ pub(crate) async fn libraries(state: &PlexState) -> Result<Vec<GqlLibrary>, ApiE
 /// filter rather than failing: Plex numbers kinds this server does not hold — artists,
 /// albums, photos — and a listing of everything is a better answer than a 400 to a client
 /// probing what a library contains.
-fn item_type(kind: Option<i32>) -> Option<&'static str> {
+pub(crate) fn item_type(kind: Option<i32>) -> Option<&'static str> {
     match kind {
         Some(1) => Some("MOVIE"),
         Some(2) => Some("SHOW"),
@@ -242,7 +242,7 @@ fn item_type(kind: Option<i32>) -> Option<&'static str> {
 /// title. That bound is not arbitrary: both supported columns are non-null, which is what
 /// lets a cursor locate a page boundary unambiguously. Ordering by a nullable column needs
 /// the cursor to encode absence first.
-fn ordering(sort: Option<&str>) -> (&'static str, &'static str) {
+pub(crate) fn ordering(sort: Option<&str>) -> (&'static str, &'static str) {
     let Some(sort) = sort else {
         return ("TITLE", "ASCENDING");
     };

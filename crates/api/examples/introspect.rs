@@ -106,6 +106,7 @@ async fn main() {
         library: Arc::new(InMemoryLibrary::default()),
         metadata: Arc::new(InMemoryMetadata::default()),
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
     });
 
     let response = schema.execute(INTROSPECTION_QUERY).await;

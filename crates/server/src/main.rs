@@ -16,11 +16,15 @@ use axum::http::{header, HeaderValue, StatusCode};
 use open_plex_api::{build_schema, ApiContext};
 use open_plex_api_plex::PlexState;
 use open_plex_core::metadata::MetadataRepository;
+use open_plex_core::play_queue::PlayQueueRepository;
 use open_plex_core::playback::PlaybackRepository;
 use open_plex_core::{
     Accounts, Credential, LibraryRepository, Scope, ServerCapabilities, ServerIdentity,
 };
-use open_plex_db::{import, SqlLibraryRepository, SqlMetadataRepository, SqlPlaybackRepository};
+use open_plex_db::{
+    import, SqlLibraryRepository, SqlMetadataRepository, SqlPlayQueueRepository,
+    SqlPlaybackRepository,
+};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
@@ -73,6 +77,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let library: Arc<dyn LibraryRepository> =
         Arc::new(SqlLibraryRepository::new(connection.clone()));
+    let play_queues: Arc<dyn PlayQueueRepository> =
+        Arc::new(SqlPlayQueueRepository::new(connection.clone()));
     let playback: Arc<dyn PlaybackRepository> =
         Arc::new(SqlPlaybackRepository::new(connection.clone()));
     let metadata: Arc<dyn MetadataRepository> = Arc::new(SqlMetadataRepository::new(connection));
@@ -89,6 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         library,
         metadata,
         playback: Arc::clone(&playback),
+        play_queues: Arc::clone(&play_queues),
     });
     let accounts = accounts();
     let access = Arc::new(auth::Access::new(accounts.clone(), trusted_networks()?));
@@ -102,7 +109,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut plex_state = PlexState::new(identity(), schema.clone(), accounts);
     let transcoder = Arc::new(transcoder());
     plex_state.transcoder = Arc::clone(&transcoder);
-    tokio::spawn(expire_playback(Arc::clone(&playback), transcoder));
+    tokio::spawn(expire_playback(
+        Arc::clone(&playback),
+        Arc::clone(&play_queues),
+        transcoder,
+    ));
     let mut app = open_plex_api_plex::router(plex_state).merge(graphql::router(schema));
     let web_dir = web::directory();
     if let Some(client) = web::router(&web_dir) {
@@ -196,9 +207,10 @@ fn transcoder() -> open_plex_transcoder::Transcoder {
     })
 }
 
-/// Removes what a vanished player left behind: its row, and its process.
+/// Removes what a vanished player left behind: its session, its process and old queues.
 async fn expire_playback(
     playback: Arc<dyn PlaybackRepository>,
+    play_queues: Arc<dyn PlayQueueRepository>,
     transcoder: Arc<open_plex_transcoder::Transcoder>,
 ) {
     let mut ticks = tokio::time::interval(EXPIRY_SWEEP);
@@ -209,6 +221,11 @@ async fn expire_playback(
             Ok(0) => {}
             Ok(expired) => tracing::info!(expired, "expired playback sessions"),
             Err(error) => tracing::warn!(%error, "could not expire playback sessions"),
+        }
+        let cutoff =
+            open_plex_core::now_epoch() - open_plex_core::play_queue::QUEUE_RETENTION_SECONDS;
+        if let Err(error) = play_queues.delete_created_before(cutoff).await {
+            tracing::warn!(%error, "could not remove old play queues");
         }
     }
 }
