@@ -108,6 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // merged in. GraphQL has no such paths and merges cleanly either way.
     let mut plex_state = PlexState::new(identity(), schema.clone(), accounts);
     let transcoder = Arc::new(transcoder());
+    transcoder.remove_leftover_sessions();
     plex_state.transcoder = Arc::clone(&transcoder);
     tokio::spawn(expire_playback(
         Arc::clone(&playback),

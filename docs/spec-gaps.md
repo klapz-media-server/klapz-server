@@ -412,6 +412,16 @@ predicted manifest is sound. Its files count from 1 and the manifest from 0. The
 the process knows is the codec string, so we read it from the manifest it writes, and answer
 `start.mpd` once that exists, about 0.7 seconds later.
 
+A seek needs no new request from the player: it simply asks for a chunk far from where the
+process is. The running process is then replaced by one started with `-ss {chunk × 5}
+-skip_to_segment {chunk + 1}`, the option the reference's own command carries as `1`. Run directly
+on a file, `-ss 600 -skip_to_segment 121` wrote `chunk-stream0-00121.m4s` from 597 seconds on, so
+timestamps and numbering hold. We could not observe the reference doing this, its job dying at
+once for lack of a file, so when it decides to restart is ours: a chunk that is neither written,
+nor being written, nor within 30 seconds of what the process has reached. Chunks already written
+stay on disk and are served without restarting anything. A chunk is written as `….m4s.tmp` and
+renamed when whole.
+
 `subtitles=burn` with a selected subtitle forces a video transcode on the reference. Nothing here
 records a viewer's choice of subtitle, so none is ever selected and the video is copied.
 

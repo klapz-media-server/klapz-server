@@ -177,12 +177,12 @@ def segment_output(base: str, case: str, subtitle: int | None) -> list[str]:
     ]
 
 
-def dash_output(base: str) -> list[str]:
+def dash_output(base: str, chunk: int = 0) -> list[str]:
     return [
         "-f", "dash", "-seg_duration", "5", "-dash_segment_type", "mp4",
         "-init_seg_name", "init-stream$RepresentationID$.m4s",
         "-media_seg_name", "chunk-stream$RepresentationID$-$Number%05d$.m4s",
-        "-window_size", "5", "-delete_removed", "false", "-skip_to_segment", "1",
+        "-window_size", "5", "-delete_removed", "false", "-skip_to_segment", str(chunk + 1),
         "-manifest_name", f"{base}/manifest?X-Plex-Http-Pipeline=infinite",
         "-avoid_negative_ts", "disabled", "-map_metadata", "-1", "-map_chapters", "-1", "dash",
     ]
@@ -239,6 +239,7 @@ def main() -> None:
     parser.add_argument("--segments", type=int, default=5)
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--keep", type=Path)
+    parser.add_argument("--chunk", type=int, default=0, help="DASH: start at this chunk, as a seek")
     args = parser.parse_args()
 
     streams = probe(args.file)
@@ -255,11 +256,13 @@ def main() -> None:
         output.mkdir(parents=True, exist_ok=True)
         environment = dict(os.environ, FFMPEG_EXTERNAL_LIBS=external_libs())
         command = [
-            str(BINARY), "-codec:0", "h264", "-analyzeduration", "20000000",
+            str(BINARY), "-codec:0", "h264",
+            *(["-ss", str(args.chunk * 5), "-noaccurate_seek"] if args.chunk else []),
+            "-analyzeduration", "20000000",
             "-probesize", "20000000", "-i", f"{base}/file.mkv", "-start_at_zero", "-copyts",
             "-y", "-nostats", "-loglevel", "error", "-progressurl", f"{base}/progress",
             *case_arguments(args.case, audio, subtitle),
-            *(dash_output(base) if args.case == "dash" else segment_output(base, args.case, subtitle)),
+            *(dash_output(base, args.chunk) if args.case == "dash" else segment_output(base, args.case, subtitle)),
         ]
         process = subprocess.Popen(
             command, cwd=output, env=environment, stderr=subprocess.PIPE, text=True,

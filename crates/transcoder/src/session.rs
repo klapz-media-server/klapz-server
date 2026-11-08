@@ -7,11 +7,13 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use tokio::process::Command;
 use tokio::sync::Notify;
+use tokio::task::JoinHandle;
 
 use crate::plan::{audio_decoder, language_tag, AudioAction, Track, AUDIO_BITRATE_KBPS};
 use crate::{TranscodeError, Transcoder};
@@ -27,6 +29,10 @@ const WAIT_FOR_OUTPUT: Duration = Duration::from_secs(20);
 
 /// Enough for a player to start without running dry.
 const SEGMENTS_BEFORE_PLAYLIST: usize = 3;
+
+/// How far ahead of what it has written a process is left to catch up by itself. A request
+/// beyond this is a seek: 30 seconds of film, a moment for a remux.
+const SEEK_MARGIN_CHUNKS: u32 = 6;
 
 /// The length of a DASH segment, as the reference asks for and announces it.
 pub const DASH_SEGMENT_SECONDS: u32 = 5;
@@ -81,14 +87,30 @@ struct Progress {
     ended: bool,
 }
 
+/// The process currently working for a session.
+#[derive(Debug)]
+struct Run {
+    /// Tells runs apart: one that was replaced must not report the session as finished.
+    generation: u64,
+    /// The first DASH chunk it writes, numbered as its files are.
+    first_chunk: u32,
+    stop: Arc<Notify>,
+    task: Option<JoinHandle<()>>,
+}
+
 #[derive(Debug)]
 pub(crate) struct Session {
     callback: String,
-    source: PathBuf,
+    url: String,
+    request: RemuxRequest,
     directory: PathBuf,
     progress: Mutex<Progress>,
     changed: Notify,
-    stop: Notify,
+    closed: AtomicBool,
+    run: Mutex<Option<Run>>,
+    /// Held while one process replaces another: the video and the audio of one seek both
+    /// arrive here, and only the first may restart anything.
+    restarting: tokio::sync::Mutex<()>,
     last_used: Mutex<Instant>,
 }
 
@@ -133,6 +155,37 @@ impl Session {
                 return;
             }
         }
+    }
+
+    fn with_run<T>(&self, read: impl FnOnce(&mut Option<Run>) -> T) -> T {
+        read(&mut self.run.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    fn chunk_path(&self, stream: u32, number: u32) -> PathBuf {
+        self.directory
+            .join(format!("chunk-stream{stream}-{number:05}.m4s"))
+    }
+
+    /// Whether the running process will reach this chunk soon without being told to.
+    fn will_reach(&self, stream: u32, number: u32) -> bool {
+        if self.with_progress(|progress| progress.ended) {
+            return false;
+        }
+        let Some(first) = self.with_run(|run| run.as_ref().map(|run| run.first_chunk)) else {
+            return false;
+        };
+        if number < first {
+            return false;
+        }
+        // A chunk being written carries a `.tmp` suffix until it is whole.
+        let in_progress = self
+            .directory
+            .join(format!("chunk-stream{stream}-{number:05}.m4s.tmp"))
+            .exists();
+        number == first
+            || in_progress
+            || (number.saturating_sub(SEEK_MARGIN_CHUNKS).max(first)..number)
+                .any(|earlier| self.chunk_path(stream, earlier).exists())
     }
 
     fn output(&self) -> Output {
@@ -223,7 +276,7 @@ fn hls_output(callback: &str) -> Vec<String> {
 
 /// This build keeps the chunks on a grid of `DASH_SEGMENT_SECONDS` even when copying video, so
 /// their number says where they are in time: 494 chunks for 2467 seconds.
-fn dash_output(callback: &str) -> Vec<String> {
+fn dash_output(callback: &str, first_chunk: u32) -> Vec<String> {
     [
         "-f",
         "dash",
@@ -240,7 +293,7 @@ fn dash_output(callback: &str) -> Vec<String> {
         "-delete_removed",
         "false",
         "-skip_to_segment",
-        "1",
+        &first_chunk.to_string(),
         "-manifest_name",
         &format!("{callback}/manifest?X-Plex-Http-Pipeline=infinite"),
         "-avoid_negative_ts",
@@ -256,7 +309,7 @@ fn dash_output(callback: &str) -> Vec<String> {
     .collect()
 }
 
-fn remux_arguments(request: &RemuxRequest, callback: &str) -> Vec<String> {
+fn remux_arguments(request: &RemuxRequest, callback: &str, first_chunk: u32) -> Vec<String> {
     let RemuxRequest {
         video,
         audio,
@@ -340,9 +393,32 @@ fn remux_arguments(request: &RemuxRequest, callback: &str) -> Vec<String> {
     }
     args.extend(match protocol {
         Protocol::Hls => hls_output(callback),
-        Protocol::Dash => dash_output(callback),
+        Protocol::Dash => dash_output(callback, first_chunk),
     });
     args
+}
+
+fn sessions_root() -> PathBuf {
+    std::env::temp_dir().join("open-plex-transcode")
+}
+
+/// Moves a DASH start onto the chunk grid and says which chunk that is. A chunk's number has to
+/// say where it is in time, so the process must start on one.
+fn align_to_chunk(request: &mut RemuxRequest) -> u32 {
+    if request.protocol == Protocol::Hls {
+        return 1;
+    }
+    let seconds = f64::from(DASH_SEGMENT_SECONDS);
+    let whole = (request.offset.unwrap_or(0.0).max(0.0) / seconds).floor();
+    request.offset = Some(whole * seconds);
+    // Far beyond any film's length, so the cast loses nothing.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "not negative, and a chunk count far below u32::MAX"
+    )]
+    let chunks = whole as u32;
+    chunks + 1
 }
 
 /// The form Plex's build expects its codec directory in: backslashes, colons and spaces escaped
@@ -386,13 +462,23 @@ impl Transcoder {
             .cloned()
     }
 
+    /// Removes what a previous run left on disk. A session cleans up after itself, unless the
+    /// server is killed before it can.
+    pub fn remove_leftover_sessions(&self) {
+        match std::fs::remove_dir_all(sessions_root()) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => tracing::warn!(%error, "could not remove old transcode sessions"),
+        }
+    }
+
     /// Starts a session, or does nothing if the client's is already running: a player asks
     /// for the same start more than once.
     ///
     /// # Errors
     ///
     /// [`TranscodeError::TooManySessions`] at the limit, or if the process cannot be started.
-    pub async fn start_remux(&self, request: RemuxRequest) -> Result<(), TranscodeError> {
+    pub async fn start_remux(&self, mut request: RemuxRequest) -> Result<(), TranscodeError> {
         self.stop_idle_sessions();
         if self.session(&request.session).is_some() {
             return Ok(());
@@ -407,22 +493,57 @@ impl Transcoder {
             return Err(TranscodeError::TooManySessions);
         }
 
-        let callback_id = uuid::Uuid::new_v4().simple().to_string();
-        let directory = std::env::temp_dir()
-            .join("open-plex-transcode")
-            .join(&callback_id);
+        let callback = uuid::Uuid::new_v4().simple().to_string();
+        let directory = sessions_root().join(&callback);
         tokio::fs::create_dir_all(&directory)
             .await
             .map_err(TranscodeError::Io)?;
 
+        let first_chunk = align_to_chunk(&mut request);
         let url = format!(
-            "{}/video/:/transcode/session/{}/{callback_id}",
-            self.config.callback_base, callback_id
+            "{}/video/:/transcode/session/{callback}/{callback}",
+            self.config.callback_base
         );
+        let key = request.session.clone();
+        let session = Arc::new(Session {
+            callback,
+            url,
+            request: request.clone(),
+            directory,
+            progress: Mutex::default(),
+            changed: Notify::new(),
+            closed: AtomicBool::new(false),
+            run: Mutex::new(None),
+            restarting: tokio::sync::Mutex::new(()),
+            last_used: Mutex::new(Instant::now()),
+        });
+        // Registered before the process exists: its first act is to read its source back.
+        self.sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.clone(), Arc::clone(&session));
+
+        if let Err(error) = self.launch(&session, &request, first_chunk) {
+            self.sessions
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&key);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Starts a process for this session, which must have none running.
+    fn launch(
+        &self,
+        session: &Arc<Session>,
+        request: &RemuxRequest,
+        first_chunk: u32,
+    ) -> Result<(), TranscodeError> {
         let mut command = Command::new(&self.config.binary);
         command
-            .args(remux_arguments(&request, &url))
-            .current_dir(&directory)
+            .args(remux_arguments(request, &session.url, first_chunk))
+            .current_dir(&session.directory)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -430,50 +551,78 @@ impl Transcoder {
         if let Some(codecs) = &self.config.external_libs {
             command.env("FFMPEG_EXTERNAL_LIBS", external_libs_value(codecs));
         }
+        let mut child = command.spawn().map_err(TranscodeError::Spawn)?;
 
-        let session = Arc::new(Session {
-            callback: callback_id,
-            source: request.source,
-            directory,
-            progress: Mutex::default(),
-            changed: Notify::new(),
-            stop: Notify::new(),
-            last_used: Mutex::new(Instant::now()),
+        let stop = Arc::new(Notify::new());
+        let generation = session.with_run(|run| {
+            let generation = run.as_ref().map_or(0, |previous| previous.generation + 1);
+            *run = Some(Run {
+                generation,
+                first_chunk,
+                stop: Arc::clone(&stop),
+                task: None,
+            });
+            generation
         });
-        // Registered before the process exists: its first act is to read its source back.
-        self.sessions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(request.session.clone(), Arc::clone(&session));
+        session.with_progress(|progress| progress.ended = false);
 
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                self.sessions
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .remove(&request.session);
-                return Err(TranscodeError::Spawn(error));
-            }
-        };
-
-        tokio::spawn(async move {
+        let supervised = Arc::clone(session);
+        let task = tokio::spawn(async move {
             tokio::select! {
                 result = child.wait() => {
                     if let Err(error) = result {
                         tracing::warn!(%error, "lost track of a transcoder process");
                     }
                 }
-                () = session.stop.notified() => {
+                () = stop.notified() => {
                     if let Err(error) = child.kill().await {
                         tracing::warn!(%error, "could not kill a transcoder process");
                     }
                 }
             }
-            session.with_progress(|progress| progress.ended = true);
-            session.changed.notify_waiters();
+            let current = supervised
+                .with_run(|run| run.as_ref().is_some_and(|run| run.generation == generation));
+            if current {
+                supervised.with_progress(|progress| progress.ended = true);
+                supervised.changed.notify_waiters();
+            }
+        });
+        session.with_run(|run| {
+            if let Some(run) = run.as_mut().filter(|run| run.generation == generation) {
+                run.task = Some(task);
+            }
         });
         Ok(())
+    }
+
+    /// Replaces the session's process with one starting at this chunk. What is already
+    /// written stays, so going back over it costs nothing.
+    async fn seek(
+        &self,
+        session: &Arc<Session>,
+        stream: u32,
+        number: u32,
+    ) -> Result<(), TranscodeError> {
+        let _exclusive = session.restarting.lock().await;
+        // The other track of the same seek may have done this while we waited.
+        if session.closed.load(Ordering::Acquire) || session.will_reach(stream, number) {
+            return Ok(());
+        }
+        let previous = session.with_run(|run| {
+            run.as_mut()
+                .map(|run| (Arc::clone(&run.stop), run.task.take()))
+        });
+        if let Some((stop, task)) = previous {
+            stop.notify_one();
+            if let Some(task) = task {
+                if let Err(error) = task.await {
+                    tracing::warn!(%error, "a transcoder's supervisor failed");
+                }
+            }
+        }
+        let mut request = session.request.clone();
+        request.offset = Some(f64::from((number - 1) * DASH_SEGMENT_SECONDS));
+        self.launch(session, &request, number)
     }
 
     /// Stops the sessions nobody has asked about for a while.
@@ -499,7 +648,11 @@ impl Transcoder {
             .unwrap_or_else(PoisonError::into_inner)
             .remove(id);
         if let Some(session) = &session {
-            session.stop.notify_one();
+            session.closed.store(true, Ordering::Release);
+            let stop = session.with_run(|run| run.as_ref().map(|run| Arc::clone(&run.stop)));
+            if let Some(stop) = stop {
+                stop.notify_one();
+            }
         }
         session.is_some()
     }
@@ -580,7 +733,7 @@ impl Transcoder {
     }
 
     /// A finished DASH chunk. `number` counts from zero, as the manifest given to the player
-    /// does; the process numbers its files from one.
+    /// does. One the running process will not get to soon is a seek, and restarts it there.
     ///
     /// # Errors
     ///
@@ -592,22 +745,22 @@ impl Transcoder {
         number: u32,
     ) -> Result<PathBuf, TranscodeError> {
         let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
-        let chunk = |number: u32| {
-            session
-                .directory
-                .join(format!("chunk-stream{stream}-{number:05}.m4s"))
-        };
-        let path = chunk(number + 1);
-        let next = chunk(number + 2);
-        // A chunk is finished once the next one has begun, or the process has ended.
+        // The process numbers its files from one, and renames each only once it is whole.
+        let number = number + 1;
+        let path = session.chunk_path(stream, number);
+        if path.exists() {
+            return Ok(path);
+        }
+        if !session.will_reach(stream, number) {
+            self.seek(&session, stream, number).await?;
+        }
         let deadline = tokio::time::Instant::now() + WAIT_FOR_OUTPUT;
         loop {
             let change = session.changed.notified();
-            let ended = session.with_progress(|progress| progress.ended);
-            if next.exists() || (ended && path.exists()) {
+            if path.exists() {
                 return Ok(path);
             }
-            if ended {
+            if session.with_progress(|progress| progress.ended) {
                 return Err(TranscodeError::UnknownSegment);
             }
             if tokio::time::timeout_at(deadline, change).await.is_err() {
@@ -619,7 +772,7 @@ impl Transcoder {
     /// The source of the session behind a callback URL, for the process to read.
     #[must_use]
     pub fn callback_source(&self, callback: &str) -> Option<PathBuf> {
-        Some(self.by_callback(callback)?.source.clone())
+        Some(self.by_callback(callback)?.request.source.clone())
     }
 
     /// Records the process's announcement of its segments. Whether the callback is known.
@@ -679,7 +832,7 @@ mod tests {
 
     #[test]
     fn writes_the_references_command_line() {
-        let args = remux_arguments(&request(AudioAction::ConvertToAac), "CB");
+        let args = remux_arguments(&request(AudioAction::ConvertToAac), "CB", 1);
         // The space inside the filter is what makes it one argument here and several there.
         let joined = args.join(" ").replace("[0:1] aresample", "[0:1]_aresample");
         assert_eq!(joined, CAPTURED);
@@ -702,15 +855,47 @@ mod tests {
         let mut asked = request(AudioAction::ConvertToAac);
         asked.protocol = Protocol::Dash;
         asked.audio = track(2, "eac3", "fr");
-        let joined = remux_arguments(&asked, "CB")
+        let joined = remux_arguments(&asked, "CB", 1)
             .join(" ")
             .replace("[0:2] aresample", "[0:2]_aresample");
         assert_eq!(joined, CAPTURED_DASH);
     }
 
+    /// Measured on the transcoder itself: chunk 121 of a 5-second grid starts at 600 seconds.
+    #[test]
+    fn a_seek_names_its_time_and_its_chunk_together() {
+        let mut asked = request(AudioAction::Copy);
+        asked.protocol = Protocol::Dash;
+        asked.offset = Some(600.0);
+        let joined = remux_arguments(&asked, "CB", 121).join(" ");
+        assert!(joined.contains("-ss 600 -noaccurate_seek"));
+        assert!(joined.contains("-skip_to_segment 121 "));
+    }
+
+    #[test]
+    fn a_dash_start_lands_on_the_chunk_grid() {
+        let mut asked = request(AudioAction::Copy);
+        asked.protocol = Protocol::Dash;
+        asked.offset = Some(603.0);
+        assert_eq!(align_to_chunk(&mut asked), 121);
+        assert_eq!(asked.offset, Some(600.0));
+
+        asked.offset = None;
+        assert_eq!(align_to_chunk(&mut asked), 1);
+        assert_eq!(asked.offset, Some(0.0));
+    }
+
+    #[test]
+    fn an_hls_start_keeps_its_exact_offset() {
+        let mut asked = request(AudioAction::Copy);
+        asked.offset = Some(603.0);
+        assert_eq!(align_to_chunk(&mut asked), 1);
+        assert_eq!(asked.offset, Some(603.0));
+    }
+
     #[test]
     fn copied_audio_is_neither_decoded_nor_filtered() {
-        let joined = remux_arguments(&request(AudioAction::Copy), "CB").join(" ");
+        let joined = remux_arguments(&request(AudioAction::Copy), "CB", 1).join(" ");
         assert!(!joined.contains("-codec:1 dca"));
         assert!(!joined.contains("aresample"));
         assert!(joined.contains("-map 0:1 -metadata:s:1 language=fra -codec:1 copy"));
@@ -721,7 +906,7 @@ mod tests {
         let mut asked = request(AudioAction::Copy);
         asked.video.index = 5;
         asked.audio.index = 0;
-        let joined = remux_arguments(&asked, "CB").join(" ");
+        let joined = remux_arguments(&asked, "CB", 1).join(" ");
         assert!(joined.starts_with("-codec:5 h264"));
         assert!(joined.contains("-map 0:5 "));
         assert!(joined.contains("-map 0:0 "));
@@ -731,7 +916,7 @@ mod tests {
     fn seeks_before_opening_the_input() {
         let mut asked = request(AudioAction::Copy);
         asked.offset = Some(90.0);
-        let joined = remux_arguments(&asked, "CB").join(" ");
+        let joined = remux_arguments(&asked, "CB", 1).join(" ");
         assert!(joined.contains("-ss 90 -noaccurate_seek -analyzeduration"));
     }
 
