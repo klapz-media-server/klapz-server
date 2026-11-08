@@ -393,8 +393,26 @@ neither visible to a client:
 
 The reference lists every segment up front, 8 seconds each. A remux is cut on the file's own key
 frames (9, 9, 6, 9 s on one file), so our playlist is `EVENT` and grows, starting once three
-segments exist. `offset` seeks with `-ss` before the input, placed as ffmpeg expects: no captured
+segments exist. `offset` seeks with `-ss` before the input; the captured DASH command has it, with 0.
 command has one. The `audio` bitrate of a conversion is 256k, the value in the one captured remux.
+
+### DASH
+
+Plex Web in Chrome asks for `protocol=dash`, with `directStreamAudio=0`, which converts the audio
+even when it is AAC, and `subtitles=burn`. The reference starts the process and answers its own
+manifest before the process has read anything, which is how both were captured although the
+file is absent: `type="static"`, a `SegmentTemplate` of `duration="5"`,
+`session/{id}/$RepresentationID$/header` and `$Number$.m4s` from 0. Video and audio are separate
+streams in MP4 (`segments-video`, `segments-audio`).
+
+The process keeps its chunks on the 5-second grid even when copying video: 494 chunks for 2467
+seconds, cut 6, 6, 3 around the file's key frames. So a chunk's number says where it is, and a
+predicted manifest is sound. Its files count from 1 and the manifest from 0. The one thing only
+the process knows is the codec string, so we read it from the manifest it writes, and answer
+`start.mpd` once that exists, about 0.7 seconds later.
+
+`subtitles=burn` with a selected subtitle forces a video transcode on the reference. Nothing here
+records a viewer's choice of subtitle, so none is ever selected and the video is copied.
 
 ### Play queues
 
@@ -416,9 +434,6 @@ not in this queue. Entries come in the form of a lookup, `playQueueItemID` first
 A queue holds at most 500 entries, where the reference took all 9,667 films of a library: every
 window here is capped. Queues are deleted after 7 days, a figure of ours. `PUT` answers `501`, and
 editing a queue is not served.
-
-Which protocol a player then asks for is up to it. In Plex Web's code a browser without native
-HLS, such as Chrome, is offered streaming MKV then DASH, neither of which is served yet.
 
 ### Playback sessions are stored
 

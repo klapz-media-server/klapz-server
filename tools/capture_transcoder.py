@@ -131,6 +131,12 @@ def audio_encode(index: int) -> list[str]:
 
 
 def case_arguments(case: str, audio: int, subtitle: int | None) -> list[str]:
+    if case == "dash":
+        return [
+            "-map", "0:0", "-codec:0", "copy", "-filter_complex",
+            f"[0:{audio}] aresample=async=1:ochl='stereo':osr=48000[a]", "-map", "[a]",
+            "-codec:1", "aac_mf", "-b:1", "256k",
+        ]
     if case == "copy":
         return ["-map", "0:0", "-codec:0", "copy", "-map", f"0:{audio}", "-codec:1", "copy"]
     scale = "[0:0]scale=w=720:h=404:force_divisible_by=4[0];[0]format=pix_fmts=yuv420p|nv12"
@@ -157,6 +163,31 @@ def external_libs() -> str:
     return f"{slash * 4}?{slash * 2}{escaped}{slash * 2}"
 
 
+def segment_output(base: str, case: str, subtitle: int | None) -> list[str]:
+    return [
+        "-segment_format", "mpegts", "-f", "ssegment", "-individual_header_trailer", "0",
+        "-segment_time", "8", "-segment_start_number", "0", "-segment_time_delta", "0.0625",
+        "-segment_list", f"{base}/manifest", "-segment_list_type", "csv",
+        "-segment_list_size", "5", "-segment_list_separate_stream_times", "1",
+        "-segment_list_unfinished", "1", "-max_delay", "5000000",
+        "-avoid_negative_ts", "disabled", "-map_metadata", "-1", "-map_chapters", "-1",
+        "media-%05d.ts",
+        *(["-map", f"0:{subtitle}", "-f", "null", "-codec", "ass", "nullfile"]
+          if case == "burn" else []),
+    ]
+
+
+def dash_output(base: str) -> list[str]:
+    return [
+        "-f", "dash", "-seg_duration", "5", "-dash_segment_type", "mp4",
+        "-init_seg_name", "init-stream$RepresentationID$.m4s",
+        "-media_seg_name", "chunk-stream$RepresentationID$-$Number%05d$.m4s",
+        "-window_size", "5", "-delete_removed", "false", "-skip_to_segment", "1",
+        "-manifest_name", f"{base}/manifest?X-Plex-Http-Pipeline=infinite",
+        "-avoid_negative_ts", "disabled", "-map_metadata", "-1", "-map_chapters", "-1", "dash",
+    ]
+
+
 def probe(media: Path) -> list[dict]:
     output = subprocess.run(
         ["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(media)],
@@ -181,11 +212,30 @@ class QuietServer(ThreadingHTTPServer):
         pass
 
 
+def announced_bodies(capture: Capture) -> list[str]:
+    return [body for _, _, path, body in capture.calls if path.startswith("/manifest") and body]
+
+
+def report_dash(output: Path) -> None:
+    """The chunks of each stream, timed by joining them to their init segment."""
+    for stream in (0, 1):
+        chunks = sorted(output.glob(f"chunk-stream{stream}-*.m4s"))
+        if not chunks:
+            continue
+        init = output / f"init-stream{stream}.m4s"
+        print(f"  stream {stream}: init {init.stat().st_size if init.exists() else None} B, {len(chunks)} chunks")
+        for chunk in chunks[:6]:
+            joined = output / "joined.mp4"
+            joined.write_bytes(init.read_bytes() + chunk.read_bytes())
+            print(f"    {chunk.name} {chunk.stat().st_size:>9} B  {describe(joined)}")
+            joined.unlink()
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument("file", type=Path)
-    parser.add_argument("--case", choices=("burn", "transcode", "copy"), default="transcode")
+    parser.add_argument("--case", choices=("burn", "transcode", "copy", "dash"), default="transcode")
     parser.add_argument("--segments", type=int, default=5)
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--keep", type=Path)
@@ -209,17 +259,7 @@ def main() -> None:
             "-probesize", "20000000", "-i", f"{base}/file.mkv", "-start_at_zero", "-copyts",
             "-y", "-nostats", "-loglevel", "error", "-progressurl", f"{base}/progress",
             *case_arguments(args.case, audio, subtitle),
-            "-segment_format", "mpegts", "-f", "ssegment", "-individual_header_trailer", "0",
-            "-segment_time", "8", "-segment_start_number", "0", "-segment_time_delta", "0.0625",
-            "-segment_list", f"{base}/manifest", "-segment_list_type", "csv",
-            "-segment_list_size", "5", "-segment_list_separate_stream_times", "1",
-            "-segment_list_unfinished", "1", "-max_delay", "5000000",
-            "-avoid_negative_ts", "disabled", "-map_metadata", "-1", "-map_chapters", "-1",
-            "media-%05d.ts",
-            # Burning needs the subtitle decoded alongside: without this output the reference's
-            # filter runs and draws nothing.
-            *(["-map", f"0:{subtitle}", "-f", "null", "-codec", "ass", "nullfile"]
-              if args.case == "burn" else []),
+            *(dash_output(base) if args.case == "dash" else segment_output(base, args.case, subtitle)),
         ]
         process = subprocess.Popen(
             command, cwd=output, env=environment, stderr=subprocess.PIPE, text=True,
@@ -227,7 +267,7 @@ def main() -> None:
         )
         deadline = time.monotonic() + args.timeout
         while process.poll() is None and time.monotonic() < deadline:
-            if len(list(output.glob("media-*.ts"))) > args.segments:
+            if len(list(output.glob("media-*.ts"))) + len(list(output.glob("chunk-stream0-*"))) > args.segments:
                 break
             time.sleep(0.2)
         elapsed = time.monotonic() - capture.started
@@ -239,9 +279,13 @@ def main() -> None:
               f"{'stopped by us' if still_running else f'exit code {process.returncode}'}")
         if errors.strip():
             print("stderr:", errors.strip()[:1200])
+        report_dash(output)
         for segment in sorted(output.glob("media-*.ts"))[: args.segments]:
             print(f"  {segment.name} {segment.stat().st_size:>9} B  {describe(segment)}")
 
+    if args.case == "dash" and announced_bodies(capture):
+        print("first manifest:", announced_bodies(capture)[0][:1500])
+        print("last manifest:", announced_bodies(capture)[-1][:1500])
     print("calls:", dict(Counter((method, path.split("?")[0]) for _, method, path, _ in capture.calls)))
     announced = [c for c in capture.calls if c[2].startswith("/manifest")]
     for moment, method, _, body in announced[:8]:

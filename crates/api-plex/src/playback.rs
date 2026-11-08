@@ -22,7 +22,7 @@ use open_plex_api::media::FILE_TYPE;
 use open_plex_api::GlobalId;
 use open_plex_transcoder::media::resolve_within;
 use open_plex_transcoder::plan::{plan_direct_stream, AudioAction, Track, AUDIO_BITRATE_KBPS};
-use open_plex_transcoder::session::RemuxRequest;
+use open_plex_transcoder::session::{Protocol, RemuxRequest, DASH_SEGMENT_SECONDS};
 use serde::Deserialize;
 use serde_json::{json, Value as Json};
 use tower::ServiceExt as _;
@@ -43,7 +43,7 @@ pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
     router
         .route("/video/:/transcode/universal/decision", get(decision))
         .route("/video/:/transcode/universal/start.m3u8", get(start_hls))
-        .route("/video/:/transcode/universal/start.mpd", get(refuse_dash))
+        .route("/video/:/transcode/universal/start.mpd", get(start_dash))
         .route("/video/:/transcode/universal/ping", get(ping))
         .route("/video/:/transcode/universal/stop", get(stop))
         .route(
@@ -167,10 +167,11 @@ struct PlaybackParams {
     #[serde(rename = "hasMDE")]
     has_mde: Option<String>,
     session: Option<String>,
-    subtitles: Option<String>,
     offset: Option<f64>,
     #[serde(rename = "audioStreamID")]
     audio_stream_id: Option<i64>,
+    #[serde(rename = "directStreamAudio")]
+    direct_stream_audio: Option<String>,
 }
 
 impl PlaybackParams {
@@ -188,19 +189,12 @@ impl PlaybackParams {
             .ok_or(ApiError::BadRequest)
     }
 
-    fn check_supported(&self) -> Result<(), ApiError> {
-        if self
-            .protocol
-            .as_deref()
-            .is_some_and(|protocol| protocol != "hls")
-        {
-            return Err(ApiError::NotImplemented);
+    fn protocol(&self) -> Result<Protocol, ApiError> {
+        match self.protocol.as_deref() {
+            None | Some("hls") => Ok(Protocol::Hls),
+            Some("dash") => Ok(Protocol::Dash),
+            Some(_) => Err(ApiError::NotImplemented),
         }
-        // Burning a subtitle in means drawing on the picture, so the video cannot be copied.
-        if self.subtitles.as_deref() == Some("burn") {
-            return Err(ApiError::NotImplemented);
-        }
-        Ok(())
     }
 
     /// `-1` is how a client says "the default".
@@ -260,9 +254,15 @@ impl<'a> Selection<'a> {
         })
     }
 
-    fn audio_action(&self) -> Result<AudioAction, ApiError> {
+    /// `directStreamAudio=0` converts even audio that could be copied: AAC, on the reference.
+    fn audio_action(&self, params: &PlaybackParams) -> Result<AudioAction, ApiError> {
         let codec = |stream: &GqlStream| stream.codec.clone().unwrap_or_default();
-        Ok(plan_direct_stream(&codec(self.video), &codec(self.audio))?.audio)
+        let planned = plan_direct_stream(&codec(self.video), &codec(self.audio))?.audio;
+        Ok(if params.direct_stream_audio.as_deref() == Some("0") {
+            AudioAction::ConvertToAac
+        } else {
+            planned
+        })
     }
 }
 
@@ -271,6 +271,23 @@ fn track(stream: &GqlStream) -> Track {
         index: stream.position,
         codec: stream.codec.clone().unwrap_or_default(),
         language: stream.language.clone(),
+    }
+}
+
+/// What happens to a file that is not played directly.
+type Conversion = (AudioAction, Protocol);
+
+const fn container_of(protocol: Protocol) -> &'static str {
+    match protocol {
+        Protocol::Hls => "mpegts",
+        Protocol::Dash => "mp4",
+    }
+}
+
+const fn protocol_name(protocol: Protocol) -> &'static str {
+    match protocol {
+        Protocol::Hls => "hls",
+        Protocol::Dash => "dash",
     }
 }
 
@@ -289,7 +306,7 @@ async fn decision(
     Query(params): Query<PlaybackParams>,
     format: ResponseFormat,
 ) -> Result<PlexResponse<Json>, ApiError> {
-    params.check_supported()?;
+    let protocol = params.protocol()?;
     let item = item(&state, params.rating_key()?).await?;
     let selection = Selection::of(&item, &params)?;
     let library = item.library.as_ref().ok_or(ApiError::BadRequest)?;
@@ -297,7 +314,7 @@ async fn decision(
     let action = if direct_play {
         None
     } else {
-        Some(selection.audio_action()?)
+        Some((selection.audio_action(&params)?, protocol))
     };
 
     let entry = MetadataEntry::from_graphql(&item, true, Language::of(&client))
@@ -344,7 +361,7 @@ async fn decision(
 }
 
 /// `None` is Direct Play.
-fn mark_decision(metadata: &mut Json, selection: &Selection<'_>, action: Option<AudioAction>) {
+fn mark_decision(metadata: &mut Json, selection: &Selection<'_>, action: Option<Conversion>) {
     let Some(item) = metadata.as_object_mut() else {
         return;
     };
@@ -360,10 +377,10 @@ fn mark_decision(metadata: &mut Json, selection: &Selection<'_>, action: Option<
     let selected_part = selection.part.database_id();
     if let Some(version) = media.as_object_mut() {
         version.insert("selected".into(), json!(true));
-        if let Some(action) = action {
-            version.insert("container".into(), json!("mpegts"));
-            version.insert("protocol".into(), json!("hls"));
-            if action == AudioAction::ConvertToAac {
+        if let Some((audio, protocol)) = action {
+            version.insert("container".into(), json!(container_of(protocol)));
+            version.insert("protocol".into(), json!(protocol_name(protocol)));
+            if audio == AudioAction::ConvertToAac {
                 version.insert("audioCodec".into(), json!("aac"));
             }
         }
@@ -377,7 +394,7 @@ fn mark_decision(metadata: &mut Json, selection: &Selection<'_>, action: Option<
     item.insert("Media".into(), json!([media]));
 }
 
-fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<AudioAction>) {
+fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<Conversion>) {
     let Some(fields) = part.as_object_mut() else {
         return;
     };
@@ -390,9 +407,9 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<AudioAct
             "directplay"
         }),
     );
-    if action.is_some() {
-        fields.insert("container".into(), json!("mpegts"));
-        fields.insert("protocol".into(), json!("hls"));
+    if let Some((_, protocol)) = action {
+        fields.insert("container".into(), json!(container_of(protocol)));
+        fields.insert("protocol".into(), json!(protocol_name(protocol)));
         // Nothing to fetch directly: a client that took this key would bypass the session.
         fields.remove("key");
     }
@@ -417,10 +434,12 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<AudioAct
             continue;
         };
         let is_subtitle = Some(&id) == subtitle.as_ref();
-        if id != video {
+        // No subtitle is ever selected: nothing here records a viewer's choice of one yet, so
+        // `subtitles=burn` has nothing to burn and the video can be copied.
+        if id == audio {
             fields.insert("selected".into(), json!(true));
         }
-        let Some(action) = action else {
+        let Some((action, protocol)) = action else {
             fields.insert("location".into(), json!("direct"));
             continue;
         };
@@ -436,7 +455,12 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<AudioAct
                 "decision".into(),
                 json!(if converted { "transcode" } else { "copy" }),
             );
-            fields.insert("location".into(), json!("segments-av"));
+            let location = match protocol {
+                Protocol::Hls => "segments-av",
+                Protocol::Dash if id == video => "segments-video",
+                Protocol::Dash => "segments-audio",
+            };
+            fields.insert("location".into(), json!(location));
         }
     }
 }
@@ -512,20 +536,18 @@ async fn touch_session(state: &PlexState, session: &str) {
     }
 }
 
-/// `GET /video/:/transcode/universal/start.m3u8`: starts the remux and answers the master
-/// playlist, one variant as on the reference.
-async fn start_hls(
-    _caller: Caller,
-    client: ClientIdentity,
-    State(state): State<PlexState>,
-    Query(params): Query<PlaybackParams>,
-) -> Result<Response, ApiError> {
-    params.check_supported()?;
+/// Starts the remux a request describes, and records the session.
+async fn open_session(
+    state: &PlexState,
+    client: &ClientIdentity,
+    params: &PlaybackParams,
+    protocol: Protocol,
+) -> Result<(String, GqlItem, AudioAction), ApiError> {
     let session = params.session.clone().ok_or(ApiError::BadRequest)?;
-    let item = item(&state, params.rating_key()?).await?;
-    let selection = Selection::of(&item, &params)?;
-    let audio_action = selection.audio_action()?;
-    let source = file_of_part(&state, selection.part.database_id()).await?;
+    let item = item(state, params.rating_key()?).await?;
+    let selection = Selection::of(&item, params)?;
+    let audio_action = selection.audio_action(params)?;
+    let source = file_of_part(state, selection.part.database_id()).await?;
 
     state
         .transcoder
@@ -536,23 +558,38 @@ async fn start_hls(
             audio: track(selection.audio),
             audio_action,
             offset: params.offset,
+            protocol,
         })
         .await?;
-    if let Err(error) = record_start(
-        &state,
+    let recorded = record_start(
+        state,
         &session,
         &item,
         &selection,
         audio_action,
-        &client,
+        client,
         params.offset,
     )
-    .await
-    {
+    .await;
+    if let Err(error) = recorded {
         // A session nobody can see or stop must not keep running.
         state.transcoder.stop_session(&session);
         return Err(error);
     }
+    Ok((session, item, audio_action))
+}
+
+/// `GET /video/:/transcode/universal/start.m3u8`: the master playlist, one variant as on the
+/// reference.
+async fn start_hls(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Query(params): Query<PlaybackParams>,
+) -> Result<Response, ApiError> {
+    let (session, item, audio_action) =
+        open_session(&state, &client, &params, Protocol::Hls).await?;
+    let selection = Selection::of(&item, &params)?;
 
     let audio_bits = match audio_action {
         AudioAction::Copy => 0,
@@ -573,8 +610,120 @@ async fn start_hls(
     )))
 }
 
-async fn refuse_dash(_caller: Caller) -> ApiError {
-    ApiError::NotImplemented
+/// `GET /video/:/transcode/universal/start.mpd`: the reference's manifest, whole and static.
+///
+/// It needs the codec strings only the process knows, read from the manifest it writes.
+async fn start_dash(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Query(params): Query<PlaybackParams>,
+) -> Result<Response, ApiError> {
+    let (session, item, audio_action) =
+        open_session(&state, &client, &params, Protocol::Dash).await?;
+    let selection = Selection::of(&item, &params)?;
+    let written = state.transcoder.session_manifest(&session).await?;
+
+    let duration = selection.version.duration_ms.unwrap_or(0).max(0);
+    let audio_bandwidth = match audio_action {
+        AudioAction::ConvertToAac => i64::from(AUDIO_BITRATE_KBPS) * 1000,
+        AudioAction::Copy => i64::from(selection.audio.bitrate.unwrap_or(0)),
+    };
+    let body = dash_manifest(&DashManifest {
+        session: &session,
+        duration_ms: duration,
+        video_bandwidth: i64::from(selection.version.bitrate.unwrap_or(0)),
+        width: selection.version.width.unwrap_or(0),
+        height: selection.version.height.unwrap_or(0),
+        audio_bandwidth,
+        written: &written,
+    });
+    Ok(([(header::CONTENT_TYPE, "application/dash+xml")], body).into_response())
+}
+
+struct DashManifest<'a> {
+    session: &'a str,
+    duration_ms: i64,
+    video_bandwidth: i64,
+    width: i32,
+    height: i32,
+    audio_bandwidth: i64,
+    /// The manifest the process wrote, which alone states the codecs.
+    written: &'a str,
+}
+
+/// The value of `name` on the `Representation` element with this id.
+fn representation_attribute<'a>(written: &'a str, id: u32, name: &str) -> Option<&'a str> {
+    let opening = format!("<Representation id=\"{id}\"");
+    let element = &written[written.find(&opening)?..];
+    let element = &element[..element.find('>')?];
+    let key = format!("{name}=\"");
+    let value = &element[element.find(&key)? + key.len()..];
+    Some(&value[..value.find('"')?])
+}
+
+fn dash_manifest(manifest: &DashManifest<'_>) -> String {
+    let session = manifest.session;
+    let seconds = manifest.duration_ms / 1000;
+    let duration = format!(
+        "PT{}H{}M{}S",
+        seconds / 3600,
+        seconds / 60 % 60,
+        seconds % 60
+    );
+    let template = format!(
+        "<SegmentTemplate timescale=\"1\" duration=\"{DASH_SEGMENT_SECONDS}\" \
+         initialization=\"session/{session}/$RepresentationID$/header\" \
+         media=\"session/{session}/$RepresentationID$/$Number$.m4s\" startNumber=\"0\">\n\
+         \t\t\t</SegmentTemplate>"
+    );
+    let video_codecs =
+        representation_attribute(manifest.written, 0, "codecs").unwrap_or("avc1.640028");
+    let audio_codecs =
+        representation_attribute(manifest.written, 1, "codecs").unwrap_or("mp4a.40.2");
+    let sampling =
+        representation_attribute(manifest.written, 1, "audioSamplingRate").unwrap_or("48000");
+    let channels = manifest
+        .written
+        .find("audio_channel_configuration")
+        .map(|at| &manifest.written[at..])
+        .and_then(|rest| rest.split("value=\"").nth(1))
+        .and_then(|rest| rest.split('"').next())
+        .unwrap_or("2");
+    format!(
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+         <MPD xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n\
+         \txmlns=\"urn:mpeg:dash:schema:mpd:2011\"\n\
+         \txmlns:xlink=\"http://www.w3.org/1999/xlink\"\n\
+         \txsi:schemaLocation=\"urn:mpeg:dash:schema:mpd:2011 http://standards.iso.org/ittf/PubliclyAvailableStandards/MPEG-DASH_schema_files/DASH-MPD.xsd\"\n\
+         \tprofiles=\"urn:mpeg:dash:profile:isoff-live:2011\"\n\
+         \ttype=\"static\"\n\
+         \tmediaPresentationDuration=\"{duration}\"\n\
+         \tmaxSegmentDuration=\"PT10S\"\n\
+         \tminBufferTime=\"PT10S\">\n\
+         \t<Period start=\"PT0S\" id=\"0\" duration=\"{duration}\">\n\
+         \t\t<AdaptationSet segmentAlignment=\"true\">\n\
+         \t\t\t{template}\n\
+         \t\t\t<Representation id=\"0\" mimeType=\"video/mp4\" codecs=\"{video_codecs}\" \
+         bandwidth=\"{video}\" width=\"{width}\" height=\"{height}\">\n\
+         \t\t\t</Representation>\n\
+         \t\t</AdaptationSet>\n\
+         \t\t<AdaptationSet segmentAlignment=\"true\">\n\
+         \t\t\t{template}\n\
+         \t\t\t<Representation id=\"1\" mimeType=\"audio/mp4\" codecs=\"{audio_codecs}\" \
+         bandwidth=\"{audio}\" audioSamplingRate=\"{sampling}\">\n\
+         \t\t\t\t<AudioChannelConfiguration \
+         schemeIdUri=\"urn:mpeg:dash:23003:3:audio_channel_configuration:2011\" \
+         value=\"{channels}\"/>\n\
+         \t\t\t</Representation>\n\
+         \t\t</AdaptationSet>\n\
+         \t</Period>\n\
+         </MPD>\n",
+        video = manifest.video_bandwidth,
+        width = manifest.width,
+        height = manifest.height,
+        audio = manifest.audio_bandwidth,
+    )
 }
 
 fn playlist(body: String) -> Response {
@@ -589,13 +738,29 @@ fn playlist(body: String) -> Response {
 async fn session_file(
     _caller: Caller,
     State(state): State<PlexState>,
-    Path((session, _base, file)): Path<(String, String, String)>,
+    Path((session, base, file)): Path<(String, String, String)>,
     request: Request,
 ) -> Result<Response, ApiError> {
     touch_session(&state, &session).await;
     if file == "index.m3u8" {
         let output = state.transcoder.session_output(&session).await?;
         return Ok(playlist(media_playlist(&output)));
+    }
+    // A DASH stream is addressed by its number: `…/0/header`, `…/0/12.m4s`.
+    if let Ok(stream) = base.parse::<u32>() {
+        let path = if file == "header" {
+            state.transcoder.dash_header(&session, stream).await?
+        } else {
+            let number = file
+                .strip_suffix(".m4s")
+                .and_then(|stem| stem.parse().ok())
+                .ok_or(ApiError::NotFound)?;
+            state
+                .transcoder
+                .dash_chunk(&session, stream, number)
+                .await?
+        };
+        return Ok(serve(path, request).await);
     }
     let number = file
         .strip_suffix(".ts")
@@ -723,9 +888,9 @@ mod tests {
             direct_play: parsed.get("directPlay").cloned(),
             has_mde: parsed.get("hasMDE").cloned(),
             session: None,
-            subtitles: parsed.get("subtitles").cloned(),
             offset: None,
             audio_stream_id: None,
+            direct_stream_audio: None,
         }
     }
 
@@ -737,17 +902,60 @@ mod tests {
     }
 
     #[test]
-    fn refuses_what_needs_a_video_transcode_or_dash() {
-        assert!(params("protocol=hls").check_supported().is_ok());
-        assert!(params("subtitles=none").check_supported().is_ok());
+    fn serves_hls_and_dash_and_refuses_the_rest() {
+        assert_eq!(params("protocol=hls").protocol().ok(), Some(Protocol::Hls));
+        assert_eq!(params("").protocol().ok(), Some(Protocol::Hls));
+        assert_eq!(
+            params("protocol=dash").protocol().ok(),
+            Some(Protocol::Dash)
+        );
         assert!(matches!(
-            params("protocol=dash").check_supported(),
+            params("protocol=http").protocol(),
             Err(ApiError::NotImplemented)
         ));
-        assert!(matches!(
-            params("subtitles=burn").check_supported(),
-            Err(ApiError::NotImplemented)
-        ));
+    }
+
+    /// As the process wrote it for a real file.
+    const WRITTEN: &str = r#"<Representation id="0" mimeType="video/mp4" codecs="avc1.64001f" bandwidth="3174670" width="1280">
+<Representation id="1" mimeType="audio/mp4" codecs="mp4a.40.2" bandwidth="256000" audioSamplingRate="48000">
+<AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2" />"#;
+
+    #[test]
+    fn reads_the_codecs_the_process_found() {
+        assert_eq!(
+            representation_attribute(WRITTEN, 0, "codecs"),
+            Some("avc1.64001f")
+        );
+        assert_eq!(
+            representation_attribute(WRITTEN, 1, "audioSamplingRate"),
+            Some("48000")
+        );
+        assert_eq!(representation_attribute(WRITTEN, 2, "codecs"), None);
+    }
+
+    #[test]
+    fn writes_the_references_manifest() {
+        let text = dash_manifest(&DashManifest {
+            session: "s1",
+            duration_ms: 7_200_000,
+            video_bandwidth: 4_273_000,
+            width: 1920,
+            height: 1080,
+            audio_bandwidth: 256_000,
+            written: WRITTEN,
+        });
+        assert!(text.contains("type=\"static\""));
+        assert!(text.contains("mediaPresentationDuration=\"PT2H0M0S\""));
+        assert!(
+            text.contains(r#"duration="5" initialization="session/s1/$RepresentationID$/header""#)
+        );
+        assert!(
+            text.contains(r#"media="session/s1/$RepresentationID$/$Number$.m4s" startNumber="0""#)
+        );
+        assert!(
+            text.contains(r#"codecs="avc1.64001f" bandwidth="4273000" width="1920" height="1080""#)
+        );
+        assert!(text.contains(r#"value="2"/>"#));
     }
 
     #[test]

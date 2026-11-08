@@ -28,6 +28,16 @@ const WAIT_FOR_OUTPUT: Duration = Duration::from_secs(20);
 /// Enough for a player to start without running dry.
 const SEGMENTS_BEFORE_PLAYLIST: usize = 3;
 
+/// The length of a DASH segment, as the reference asks for and announces it.
+pub const DASH_SEGMENT_SECONDS: u32 = 5;
+
+/// How the result reaches the player.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Protocol {
+    Hls,
+    Dash,
+}
+
 #[derive(Debug, Clone)]
 pub struct RemuxRequest {
     /// The client's session identifier, which later requests name it by.
@@ -39,6 +49,7 @@ pub struct RemuxRequest {
     pub audio_action: AudioAction,
     /// Where to start, in seconds.
     pub offset: Option<f64>,
+    pub protocol: Protocol,
 }
 
 /// One segment, once the process has announced it.
@@ -65,6 +76,8 @@ struct Announced {
 #[derive(Debug, Default)]
 struct Progress {
     segments: BTreeMap<u32, Announced>,
+    /// The manifest the process wrote for DASH, once it holds the tracks.
+    manifest: Option<String>,
     ended: bool,
 }
 
@@ -166,7 +179,7 @@ fn parse_announcement(body: &str) -> Vec<(u32, Announced)> {
         .collect()
 }
 
-fn segmenter_arguments(callback: &str) -> Vec<String> {
+fn hls_output(callback: &str) -> Vec<String> {
     [
         "-segment_format",
         "mpegts",
@@ -208,12 +221,48 @@ fn segmenter_arguments(callback: &str) -> Vec<String> {
     .collect()
 }
 
+/// This build keeps the chunks on a grid of `DASH_SEGMENT_SECONDS` even when copying video, so
+/// their number says where they are in time: 494 chunks for 2467 seconds.
+fn dash_output(callback: &str) -> Vec<String> {
+    [
+        "-f",
+        "dash",
+        "-seg_duration",
+        &DASH_SEGMENT_SECONDS.to_string(),
+        "-dash_segment_type",
+        "mp4",
+        "-init_seg_name",
+        "init-stream$RepresentationID$.m4s",
+        "-media_seg_name",
+        "chunk-stream$RepresentationID$-$Number%05d$.m4s",
+        "-window_size",
+        "5",
+        "-delete_removed",
+        "false",
+        "-skip_to_segment",
+        "1",
+        "-manifest_name",
+        &format!("{callback}/manifest?X-Plex-Http-Pipeline=infinite"),
+        "-avoid_negative_ts",
+        "disabled",
+        "-map_metadata",
+        "-1",
+        "-map_chapters",
+        "-1",
+        "dash",
+    ]
+    .iter()
+    .map(ToString::to_string)
+    .collect()
+}
+
 fn remux_arguments(request: &RemuxRequest, callback: &str) -> Vec<String> {
     let RemuxRequest {
         video,
         audio,
         audio_action,
         offset,
+        protocol,
         ..
     } = request;
     let mut args: Vec<String> = Vec::new();
@@ -227,11 +276,16 @@ fn remux_arguments(request: &RemuxRequest, callback: &str) -> Vec<String> {
             audio_decoder(&audio.codec),
         ]);
     }
-    push(&["-noaccurate_seek"]);
-    if let Some(offset) = offset {
-        push(&["-ss", &format!("{offset:.3}")]);
+    // The reference always states it for DASH, and for HLS only when there is one.
+    let start = match protocol {
+        Protocol::Dash => Some(offset.unwrap_or(0.0)),
+        Protocol::Hls => *offset,
+    };
+    if let Some(start) = start {
+        push(&["-ss", &start.to_string()]);
     }
     push(&[
+        "-noaccurate_seek",
         "-analyzeduration",
         "20000000",
         "-probesize",
@@ -284,8 +338,10 @@ fn remux_arguments(request: &RemuxRequest, callback: &str) -> Vec<String> {
     } else {
         push(&["-codec:1", "copy"]);
     }
-
-    args.extend(segmenter_arguments(callback));
+    args.extend(match protocol {
+        Protocol::Hls => hls_output(callback),
+        Protocol::Dash => dash_output(callback),
+    });
     args
 }
 
@@ -491,6 +547,75 @@ impl Transcoder {
         }
     }
 
+    /// The manifest the process wrote for a DASH session, waiting for it.
+    ///
+    /// # Errors
+    ///
+    /// [`TranscodeError::UnknownSession`], or [`TranscodeError::UnknownSegment`] if the process
+    /// ended without writing one.
+    pub async fn session_manifest(&self, id: &str) -> Result<String, TranscodeError> {
+        let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
+        session
+            .wait_until(|progress| progress.manifest.is_some())
+            .await;
+        session
+            .with_progress(|progress| progress.manifest.clone())
+            .ok_or(TranscodeError::UnknownSegment)
+    }
+
+    /// A DASH stream's initialization segment.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::session_manifest`].
+    pub async fn dash_header(&self, id: &str, stream: u32) -> Result<PathBuf, TranscodeError> {
+        self.session_manifest(id).await?;
+        let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
+        let path = session.directory.join(format!("init-stream{stream}.m4s"));
+        if path.exists() {
+            Ok(path)
+        } else {
+            Err(TranscodeError::UnknownSegment)
+        }
+    }
+
+    /// A finished DASH chunk. `number` counts from zero, as the manifest given to the player
+    /// does; the process numbers its files from one.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::session_manifest`].
+    pub async fn dash_chunk(
+        &self,
+        id: &str,
+        stream: u32,
+        number: u32,
+    ) -> Result<PathBuf, TranscodeError> {
+        let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
+        let chunk = |number: u32| {
+            session
+                .directory
+                .join(format!("chunk-stream{stream}-{number:05}.m4s"))
+        };
+        let path = chunk(number + 1);
+        let next = chunk(number + 2);
+        // A chunk is finished once the next one has begun, or the process has ended.
+        let deadline = tokio::time::Instant::now() + WAIT_FOR_OUTPUT;
+        loop {
+            let change = session.changed.notified();
+            let ended = session.with_progress(|progress| progress.ended);
+            if next.exists() || (ended && path.exists()) {
+                return Ok(path);
+            }
+            if ended {
+                return Err(TranscodeError::UnknownSegment);
+            }
+            if tokio::time::timeout_at(deadline, change).await.is_err() {
+                return Err(TranscodeError::UnknownSegment);
+            }
+        }
+    }
+
     /// The source of the session behind a callback URL, for the process to read.
     #[must_use]
     pub fn callback_source(&self, callback: &str) -> Option<PathBuf> {
@@ -503,7 +628,12 @@ impl Transcoder {
         let Some(session) = self.by_callback(callback) else {
             return false;
         };
-        session.with_progress(|progress| progress.segments.extend(parse_announcement(body)));
+        session.with_progress(|progress| {
+            progress.segments.extend(parse_announcement(body));
+            if body.contains("<Representation") {
+                progress.manifest = Some(body.to_owned());
+            }
+        });
         session.changed.notify_waiters();
         true
     }
@@ -543,6 +673,7 @@ mod tests {
             audio: track(1, "dca", "fr"),
             audio_action,
             offset: None,
+            protocol: Protocol::Hls,
         }
     }
 
@@ -552,6 +683,29 @@ mod tests {
         // The space inside the filter is what makes it one argument here and several there.
         let joined = args.join(" ").replace("[0:1] aresample", "[0:1]_aresample");
         assert_eq!(joined, CAPTURED);
+    }
+
+    /// From the reference's log, for Plex Web in Chrome: H.264 at 0, E-AC-3 at 2.
+    const CAPTURED_DASH: &str = "-codec:0 h264 -codec:2 eac3_mf -ss 0 -noaccurate_seek \
+-analyzeduration 20000000 -probesize 20000000 -i CB/source -start_at_zero -copyts -fps_mode cfr -y \
+-nostats -loglevel quiet -loglevel_plex error -progressurl CB/progress -map 0:0 \
+-metadata:s:0 language=eng -codec:0 copy \
+-filter_complex [0:2]_aresample=async=1:ochl='stereo':rematrix_maxval=0.000000dB:osr=48000[0] \
+-map [0] -metadata:s:1 language=fra -codec:1 aac_mf -b:1 256k -f dash -seg_duration 5 \
+-dash_segment_type mp4 -init_seg_name init-stream$RepresentationID$.m4s \
+-media_seg_name chunk-stream$RepresentationID$-$Number%05d$.m4s -window_size 5 -delete_removed false \
+-skip_to_segment 1 -manifest_name CB/manifest?X-Plex-Http-Pipeline=infinite -avoid_negative_ts disabled \
+-map_metadata -1 -map_chapters -1 dash";
+
+    #[test]
+    fn writes_the_references_dash_command_line() {
+        let mut asked = request(AudioAction::ConvertToAac);
+        asked.protocol = Protocol::Dash;
+        asked.audio = track(2, "eac3", "fr");
+        let joined = remux_arguments(&asked, "CB")
+            .join(" ")
+            .replace("[0:2] aresample", "[0:2]_aresample");
+        assert_eq!(joined, CAPTURED_DASH);
     }
 
     #[test]
@@ -578,7 +732,7 @@ mod tests {
         let mut asked = request(AudioAction::Copy);
         asked.offset = Some(90.0);
         let joined = remux_arguments(&asked, "CB").join(" ");
-        assert!(joined.contains("-noaccurate_seek -ss 90.000 -analyzeduration"));
+        assert!(joined.contains("-ss 90 -noaccurate_seek -analyzeduration"));
     }
 
     #[test]
