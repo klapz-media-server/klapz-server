@@ -74,6 +74,8 @@ pub struct ItemsContainer {
     /// Which layout to use: `movie`, `show`, `season` or `episode`.
     pub view_group: &'static str,
     pub view_mode: u32,
+    #[serde(rename = "Meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<crate::meta::Meta>,
     #[serde(rename = "Metadata", skip_serializing_if = "Vec::is_empty")]
     pub metadata: Vec<MetadataEntry>,
 }
@@ -468,6 +470,7 @@ impl ItemsContainer {
             title2: style.title2(&library.title),
             view_group: style.view_group,
             view_mode: GRID_VIEW_MODE,
+            meta: None,
             metadata: items,
         }
     }

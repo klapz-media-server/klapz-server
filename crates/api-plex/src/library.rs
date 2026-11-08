@@ -307,7 +307,19 @@ async fn section_items(
         .filter_map(|edge| MetadataEntry::from_graphql(&edge.node, false, language))
         .collect();
     let total = library.stats.item_count;
-    let body = ItemsContainer::new(&library.as_ref(), items, offset, total);
+    let mut body = ItemsContainer::new(&library.as_ref(), items, offset, total);
+    if pairs
+        .iter()
+        .any(|(key, value)| key == "includeMeta" && value == "1")
+    {
+        body.meta = crate::meta::build(
+            section,
+            &library.kind,
+            request.kind,
+            request.sort.as_deref(),
+            language,
+        );
+    }
     Ok(PlexResponse::new(body, format).paged(offset, total))
 }
 

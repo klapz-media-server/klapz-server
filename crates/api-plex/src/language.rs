@@ -39,6 +39,10 @@ impl Language {
             .map_or_else(Self::default, Self)
     }
 
+    pub(crate) const fn catalog(self) -> &'static Catalog {
+        self.0
+    }
+
     /// A season's display name, when the source stores none: `Saison 3`, or the language's
     /// word for specials for season zero. A stored title wins, as it does for *The Haunting
     /// of Bly Manor*, a season titled as its own series.

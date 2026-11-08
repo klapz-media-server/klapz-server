@@ -18,6 +18,7 @@ pub mod hubs;
 pub mod items;
 pub mod language;
 pub mod listing;
+pub mod meta;
 pub mod photo;
 pub mod prefs;
 pub mod providers;

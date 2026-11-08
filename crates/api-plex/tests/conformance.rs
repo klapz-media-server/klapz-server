@@ -1948,3 +1948,34 @@ async fn the_shelves_of_an_unknown_item_are_a_404() {
     let (status, _, _) = get("/library/metadata/999999/related", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn a_listing_describes_its_filters_only_when_asked() {
+    let (_, _, plain) = get("/library/sections/4/all", Some("application/json")).await;
+    assert!(!plain.contains("\"Meta\""));
+
+    let (status, _, body) = get(
+        "/library/sections/4/all?includeMeta=1&sort=addedAt:desc",
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let body: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let film = &body["MediaContainer"]["Meta"]["Type"][0];
+    assert_eq!(film["type"], "movie");
+    assert_eq!(film["active"], true);
+    assert_eq!(film["Filter"][0]["key"], "/library/sections/4/genre");
+    assert_eq!(film["Sort"][1]["key"], "addedAt");
+    assert_eq!(film["Sort"][1]["activeDirection"], "desc");
+}
+
+#[tokio::test]
+async fn the_meta_block_is_nested_elements_in_xml() {
+    let (_, _, body) = get("/library/sections/4/all?includeMeta=1", None).await;
+    assert!(body.contains("<Meta>"), "{body}");
+    assert!(
+        body.contains("<Type key=\"/library/sections/4/all?type=1\""),
+        "{body}"
+    );
+    assert!(body.contains("<Filter filter=\"genre\""), "{body}");
+}

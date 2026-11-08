@@ -29,6 +29,23 @@ STRINGS = {
     "related_shows": "Related Shows",
     "more_with": "Actor\x04More with {1}",
     "more_by": "Director\x04More by {1}",
+    "movies": "Movies",
+    "tv_shows": "TV Shows",
+    "seasons": "Seasons",
+    "episodes": "Episodes",
+    "genre": "Genre",
+    "year": "Year",
+    "decade": "Decade",
+    "content_rating": "Content Rating",
+    "director": "Director",
+    "actor": "Actor",
+    "writer": "Writer",
+    "producer": "Producer",
+    "country": "Country",
+    "studio": "Studio",
+    "resolution": "Resolution",
+    "sort_title": "Title",
+    "date_added": "Date Added",
 }
 
 

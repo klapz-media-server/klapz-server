@@ -406,6 +406,29 @@ with weaker matches included.
 `/search` also carries a static `Provider` array of four entries, and its `size` counts the
 items **plus** the providers: 37 items and 4 providers are reported as 41.
 
+### What a listing says it can do
+
+`includeMeta=1` on `/library/sections/{id}/all` adds a `Meta` block before the items, which Plex
+Web builds its filter and sort menus from: one `Type` per item type the library lists, each with
+its `Filter`s and `Sort`s, then `FieldType`. Without the parameter, or with `0`, it is absent. The
+requested `type` is the active one, the first by default. The active `Sort` carries `active` and
+`activeDirection`: `sort=addedAt:desc` marks it `desc`, `sort=addedAt` marks it `asc`.
+
+We publish the filters and sorts a listing honors, not the reference's whole list: 11 of 27 and 2
+of 9 for a film library, 9 of 14 and 1 of 8 for a series, none of a season's, 2 of 17 and 1 of 7
+for an episode. A test holds every filter offered to being one `listing::parse` accepts. What we
+do publish has the reference's attributes, wording and relative order on every type compared. A
+sort we do not honor falls back to the title, and `Meta` says so rather than marking what was
+asked. Left out: the `folder` type, which no route serves, and the advanced filters' `Field` and
+`FieldType`.
+
+A filter's `key` (`/library/sections/4/genre`) is the list of its values, and those routes do not
+exist yet: they answer `404`.
+
+On the listing itself, `sort=addedAt:desc` returned the same 36 films as the reference, with two
+swapped: they share an `addedAt` second, and the reference breaks such ties in no order we could
+find (ascending id for one pair, descending for two others in the same page).
+
 ### The shelves under an item
 
 `GET /library/metadata/{id}/related` is a `Hub` list, in the reference's order: collections, films
