@@ -123,6 +123,7 @@ fn app() -> axum::Router {
         capabilities: ServerCapabilities::new(identity.clone(), 0),
         library: std::sync::Arc::new(library),
         metadata: std::sync::Arc::new(metadata),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
     });
     let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
 

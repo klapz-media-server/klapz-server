@@ -4,9 +4,7 @@ use std::sync::Arc;
 
 use async_graphql::connection;
 use async_graphql::dataloader::DataLoader;
-use async_graphql::{
-    Context, EmptyMutation, EmptySubscription, Interface, Object, Result, Schema, ID,
-};
+use async_graphql::{Context, EmptySubscription, Interface, Object, Result, Schema, ID};
 use open_plex_core::library::LibraryRepository;
 use open_plex_core::metadata::{MetadataRepository, SearchQuery};
 use open_plex_core::page::{Cursor, Window, WindowError};
@@ -25,7 +23,7 @@ use crate::node::GlobalId;
 use crate::server::{Server, SERVER_TYPE};
 use crate::tag::{PersonObject, TagObject, PERSON_TYPE, TAG_TYPE};
 
-pub type ApiSchema = Schema<Query, EmptyMutation, EmptySubscription>;
+pub type ApiSchema = Schema<Query, crate::playback::Mutation, EmptySubscription>;
 
 /// Everything a resolver may reach.
 ///
@@ -38,6 +36,7 @@ pub struct ApiContext {
     pub capabilities: open_plex_core::ServerCapabilities,
     pub library: Arc<dyn LibraryRepository>,
     pub metadata: Arc<dyn MetadataRepository>,
+    pub playback: Arc<dyn open_plex_core::playback::PlaybackRepository>,
 }
 
 /// Anything that can be refetched by its global identifier.
@@ -48,6 +47,7 @@ pub struct ApiContext {
 #[derive(Debug, Interface)]
 #[graphql(field(name = "id", ty = "ID", desc = "Globally unique, opaque identifier."))]
 pub enum Node {
+    PlaybackSession(crate::playback::PlaybackSessionObject),
     /// This server.
     Server(Server),
     /// A media library.
@@ -142,6 +142,12 @@ impl Query {
                 .person(PersonId::new(global.key))
                 .await?
                 .map(|person| Node::Person(PersonObject(person)))),
+            crate::playback::PLAYBACK_TYPE => Ok(crate::playback::playback(context)?
+                .session(global.key, open_plex_core::now_epoch())
+                .await?
+                .map(|session| {
+                    Node::PlaybackSession(crate::playback::PlaybackSessionObject(session))
+                })),
             other => Err(async_graphql::Error::new(format!(
                 "`{other}` is not an identifiable type"
             ))),
@@ -240,6 +246,21 @@ impl Query {
             },
         )
         .await
+    }
+
+    /// What is being played right now, oldest first. A session a player has stopped keeping
+    /// alive disappears by itself.
+    async fn playback_sessions(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return sessions after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return sessions before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many sessions from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many sessions from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<crate::playback::PlaybackConnection> {
+        crate::playback::sessions(context, after, before, first, last).await
     }
 
     /// Every library on this server, ordered by identifier.
@@ -379,7 +400,7 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
     let library = Arc::clone(&context.library);
     let metadata = Arc::clone(&context.metadata);
 
-    Schema::build(Query, EmptyMutation, EmptySubscription)
+    Schema::build(Query, crate::playback::Mutation, EmptySubscription)
         .data(context)
         .data(DataLoader::new(
             RootsLoader::new(Arc::clone(&library)),

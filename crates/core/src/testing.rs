@@ -706,3 +706,113 @@ fn sort_key(item: &MetadataItem) -> String {
 fn page_limit(window: &Window) -> usize {
     usize::try_from(window.fetch_limit()).unwrap_or(usize::MAX)
 }
+
+/// Sessions held in memory, with the storage rules: expiry, and one row per key.
+#[derive(Debug, Default)]
+pub struct InMemoryPlayback {
+    sessions: std::sync::Mutex<Vec<crate::playback::PlaybackSession>>,
+}
+
+impl InMemoryPlayback {
+    fn rows(&self) -> std::sync::MutexGuard<'_, Vec<crate::playback::PlaybackSession>> {
+        self.sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::playback::PlaybackRepository for InMemoryPlayback {
+    async fn start(
+        &self,
+        session: crate::playback::NewPlaybackSession,
+        now: i64,
+    ) -> Result<crate::playback::PlaybackSession, crate::playback::PlaybackError> {
+        let mut rows = self.rows();
+        let id = rows.iter().find(|row| row.key == session.key).map_or_else(
+            || i64::try_from(rows.len()).unwrap_or(i64::MAX - 1) + 1,
+            |row| row.id,
+        );
+        rows.retain(|row| row.key != session.key);
+        let stored = crate::playback::PlaybackSession {
+            id,
+            key: session.key,
+            item: session.item,
+            part: session.part,
+            client: session.client,
+            product: session.product,
+            state: crate::playback::PlaybackState::Playing,
+            video: session.video,
+            audio: session.audio,
+            position_ms: session.position_ms,
+            started_at: now,
+            updated_at: now,
+            expires_at: now + crate::playback::SESSION_LIFETIME_SECONDS,
+        };
+        rows.push(stored.clone());
+        Ok(stored)
+    }
+
+    async fn touch(&self, key: &str, now: i64) -> Result<bool, crate::playback::PlaybackError> {
+        let mut rows = self.rows();
+        let found = rows
+            .iter_mut()
+            .find(|row| row.key == key && row.expires_at > now);
+        Ok(found
+            .map(|row| {
+                row.updated_at = now;
+                row.expires_at = now + crate::playback::SESSION_LIFETIME_SECONDS;
+            })
+            .is_some())
+    }
+
+    async fn end(&self, key: &str) -> Result<bool, crate::playback::PlaybackError> {
+        let mut rows = self.rows();
+        let before = rows.len();
+        rows.retain(|row| row.key != key);
+        Ok(rows.len() < before)
+    }
+
+    async fn active(
+        &self,
+        now: i64,
+        _window: Window,
+    ) -> Result<Page<crate::playback::PlaybackSession>, crate::playback::PlaybackError> {
+        Ok(Page {
+            items: self
+                .rows()
+                .iter()
+                .filter(|row| row.expires_at > now)
+                .cloned()
+                .collect(),
+            has_previous: false,
+            has_next: false,
+        })
+    }
+
+    async fn session(
+        &self,
+        id: i64,
+        now: i64,
+    ) -> Result<Option<crate::playback::PlaybackSession>, crate::playback::PlaybackError> {
+        Ok(self
+            .rows()
+            .iter()
+            .find(|row| row.id == id && row.expires_at > now)
+            .cloned())
+    }
+
+    async fn delete_expired(&self, now: i64) -> Result<u64, crate::playback::PlaybackError> {
+        let mut rows = self.rows();
+        let before = rows.len();
+        rows.retain(|row| row.expires_at > now);
+        Ok(u64::try_from(before - rows.len()).unwrap_or(u64::MAX))
+    }
+
+    async fn delete_all(&self) -> Result<u64, crate::playback::PlaybackError> {
+        let mut rows = self.rows();
+        let before = rows.len();
+        rows.clear();
+        Ok(u64::try_from(before).unwrap_or(u64::MAX))
+    }
+}

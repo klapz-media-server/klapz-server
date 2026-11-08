@@ -167,6 +167,10 @@ Places where we knowingly answer differently, each decided rather than overlooke
   the folded `sort_key` column byte-wise. Same items, alphabetical and stable, different
   sequence: 299/500 positions match on films, 438/500 on series, median displacement 0. Close
   enough; a UCA dependency plus a re-import of 1.1M rows is not worth the remainder.
+- **Playback sessions are stored, with automatic expiry.** The reference keeps them in memory.
+  Ours are rows in `playback_session`, exposed on the official API; every sign of life pushes
+  `expires_at` forward 300 seconds, reads skip what has expired, a sweep deletes it, and startup
+  clears everything.
 - **The transcoder's callbacks carry no token.** `/video/:/transcode/session/{id}/{callback}/…`
   is how the process reads its source and reports its segments. Those routes bypass token
   authentication and answer only to the unguessable id of a running session.

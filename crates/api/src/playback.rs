@@ -1,0 +1,251 @@
+//! What is being played, on the official API.
+
+// Resolvers are `async` even when they only read a field: async-graphql requires that shape,
+// and `unused_async` does not know it.
+#![allow(clippy::unused_async)]
+
+use async_graphql::connection::{query, Connection, Edge, EmptyFields};
+use async_graphql::dataloader::DataLoader;
+use async_graphql::{Context, Enum, InputObject, Object, Result, ID};
+use open_plex_core::page::Cursor;
+use open_plex_core::playback::{
+    NewPlaybackSession, PlaybackRepository, PlaybackSession, PlaybackState, StreamDecision,
+};
+use open_plex_core::{now_epoch, PartId, RatingKey};
+
+use crate::cursor::OpaqueCursor;
+use crate::item::Item;
+use crate::loader::ItemLoader;
+use crate::node::GlobalId;
+use crate::schema::ApiContext;
+
+pub const PLAYBACK_TYPE: &str = "PlaybackSession";
+const DEFAULT_PAGE_SIZE: u32 = 20;
+
+pub type PlaybackConnection =
+    Connection<OpaqueCursor, PlaybackSessionObject, EmptyFields, EmptyFields>;
+
+pub(crate) fn playback<'c>(context: &Context<'c>) -> Result<&'c dyn PlaybackRepository> {
+    Ok(context.data::<ApiContext>()?.playback.as_ref())
+}
+
+/// How far along a playback is, as the player last reported it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum PlaybackStateType {
+    /// The picture is moving.
+    Playing,
+    /// The player is holding still.
+    Paused,
+    /// The player is waiting for data.
+    Buffering,
+}
+
+impl From<PlaybackState> for PlaybackStateType {
+    fn from(state: PlaybackState) -> Self {
+        match state {
+            PlaybackState::Playing => Self::Playing,
+            PlaybackState::Paused => Self::Paused,
+            PlaybackState::Buffering => Self::Buffering,
+        }
+    }
+}
+
+/// What the server does to a track on its way to the player.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum StreamDecisionType {
+    /// Passed along untouched.
+    Copy,
+    /// Converted to something the player can read.
+    Transcode,
+}
+
+impl From<StreamDecision> for StreamDecisionType {
+    fn from(decision: StreamDecision) -> Self {
+        match decision {
+            StreamDecision::Copy => Self::Copy,
+            StreamDecision::Transcode => Self::Transcode,
+        }
+    }
+}
+
+impl From<StreamDecisionType> for StreamDecision {
+    fn from(decision: StreamDecisionType) -> Self {
+        match decision {
+            StreamDecisionType::Copy => Self::Copy,
+            StreamDecisionType::Transcode => Self::Transcode,
+        }
+    }
+}
+
+/// One playback in progress. Expires by itself when the player stops giving signs of life.
+#[derive(Debug, Clone)]
+pub struct PlaybackSessionObject(pub PlaybackSession);
+
+#[Object(name = "PlaybackSession")]
+impl PlaybackSessionObject {
+    /// Globally unique, opaque identifier. Pass it to `node` to refetch this session.
+    pub async fn id(&self) -> ID {
+        ID(GlobalId::encode(PLAYBACK_TYPE, self.0.id))
+    }
+
+    /// The identifier the client chose for this playback.
+    async fn key(&self) -> &str {
+        &self.0.key
+    }
+
+    /// What is being played. Null if it has left the library since.
+    async fn item(&self, context: &Context<'_>) -> Result<Option<Item>> {
+        Ok(context
+            .data::<DataLoader<ItemLoader>>()?
+            .load_one(self.0.item)
+            .await?
+            .map(Item::from_domain))
+    }
+
+    /// Where playback stands.
+    async fn state(&self) -> PlaybackStateType {
+        self.0.state.into()
+    }
+
+    /// What happens to the video track.
+    async fn video_decision(&self) -> StreamDecisionType {
+        self.0.video.into()
+    }
+
+    /// What happens to the audio track.
+    async fn audio_decision(&self) -> StreamDecisionType {
+        self.0.audio.into()
+    }
+
+    /// The client's stable identifier for itself, when it gave one.
+    async fn client_identifier(&self) -> Option<&str> {
+        self.0.client.as_deref()
+    }
+
+    /// The application playing, when it said: `Plex Web`.
+    async fn client_product(&self) -> Option<&str> {
+        self.0.product.as_deref()
+    }
+
+    /// Position in the item, in milliseconds.
+    async fn position_ms(&self) -> i64 {
+        self.0.position_ms
+    }
+
+    /// When playback began, in seconds since the epoch.
+    async fn started_at(&self) -> i64 {
+        self.0.started_at
+    }
+
+    /// The last sign of life, in seconds since the epoch.
+    async fn updated_at(&self) -> i64 {
+        self.0.updated_at
+    }
+
+    /// When the session goes away without a further sign of life, in seconds since the epoch.
+    async fn expires_at(&self) -> i64 {
+        self.0.expires_at
+    }
+}
+
+pub(crate) async fn sessions(
+    context: &Context<'_>,
+    after: Option<String>,
+    before: Option<String>,
+    first: Option<i32>,
+    last: Option<i32>,
+) -> Result<PlaybackConnection> {
+    query(
+        after,
+        before,
+        first,
+        last,
+        |after, before, first, last| async move {
+            let window = crate::schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?;
+            let page = playback(context)?.active(now_epoch(), window).await?;
+            let mut connection = Connection::new(page.has_previous, page.has_next);
+            connection
+                .edges
+                .extend(page.items.into_iter().map(|session| {
+                    Edge::new(
+                        OpaqueCursor(Cursor::by_id(session.id)),
+                        PlaybackSessionObject(session),
+                    )
+                }));
+            Ok::<_, async_graphql::Error>(connection)
+        },
+    )
+    .await
+}
+
+/// A playback beginning.
+#[derive(Debug, InputObject)]
+pub struct StartPlaybackInput {
+    /// The identifier the client chose for this playback.
+    pub key: String,
+    /// What is being played, as returned in `Item.id`.
+    pub item_id: ID,
+    /// The file being played, as returned in `MediaFile.id`.
+    pub file_id: ID,
+    /// The client's stable identifier for itself.
+    pub client_identifier: Option<String>,
+    /// The application playing.
+    pub client_product: Option<String>,
+    /// What happens to the video track.
+    pub video_decision: StreamDecisionType,
+    /// What happens to the audio track.
+    pub audio_decision: StreamDecisionType,
+    /// Where playback starts, in milliseconds.
+    pub position_ms: i64,
+}
+
+/// Changes to what is being played.
+#[derive(Debug, Default)]
+pub struct Mutation;
+
+fn key_of(id: &ID) -> Result<i64> {
+    Ok(GlobalId::decode(id)?.key)
+}
+
+#[Object]
+impl Mutation {
+    /// Opens a playback session, or restarts the one already under this key.
+    async fn start_playback_session(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The playback beginning.")] input: StartPlaybackInput,
+    ) -> Result<PlaybackSessionObject> {
+        let session = NewPlaybackSession {
+            item: RatingKey::new(key_of(&input.item_id)?),
+            part: PartId::new(key_of(&input.file_id)?),
+            key: input.key,
+            client: input.client_identifier,
+            product: input.client_product,
+            video: input.video_decision.into(),
+            audio: input.audio_decision.into(),
+            position_ms: input.position_ms,
+        };
+        Ok(PlaybackSessionObject(
+            playback(context)?.start(session, now_epoch()).await?,
+        ))
+    }
+
+    /// Records a sign of life, pushing the session's expiry forward. Whether it is still
+    /// running.
+    async fn touch_playback_session(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The identifier the client chose for this playback.")] key: String,
+    ) -> Result<bool> {
+        Ok(playback(context)?.touch(&key, now_epoch()).await?)
+    }
+
+    /// Closes a session. Whether there was one.
+    async fn end_playback_session(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The identifier the client chose for this playback.")] key: String,
+    ) -> Result<bool> {
+        Ok(playback(context)?.end(&key).await?)
+    }
+}

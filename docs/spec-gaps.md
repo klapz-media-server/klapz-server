@@ -396,6 +396,21 @@ frames (9, 9, 6, 9 s on one file), so our playlist is `EVENT` and grows, startin
 segments exist. `offset` seeks with `-ss` before the input, placed as ffmpeg expects: no captured
 command has one. The `audio` bitrate of a conversion is 256k, the value in the one captured remux.
 
+### Playback sessions are stored
+
+None of the reference's 71 tables holds a session in progress: only what outlives one, the play
+queues and the viewing history. Ours are stored in `playback_session`, by the repo owner's
+decision, and exposed by `playbackSessions` on the official API, which `/status/sessions` reads.
+
+A session expires by itself, 300 seconds after its last sign of life (a `ping`, a playlist or a
+segment fetched), the same limit as the transcoder's idle processes. An expired session is no
+longer read at once, and a sweep every 30 seconds deletes the row and stops the process. At
+startup every row is deleted: no process from an earlier run is still alive.
+
+`/status/sessions` cannot be held against the reference, whose files are not on this machine: its
+attributes are what Plex Web reads. `Player.state` stays `playing` until `/:/timeline` reports
+otherwise, and Direct Play creates no session, since only the timeline can reveal one.
+
 ### A library's settings
 
 `GET /library/sections/{id}/prefs` lists 17 settings for a film library and 18 for a series, nearly

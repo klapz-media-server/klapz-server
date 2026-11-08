@@ -7,6 +7,7 @@ pub mod entity;
 pub mod import;
 pub mod metadata_repository;
 pub mod migration;
+pub mod playback_repository;
 pub mod repository;
 pub mod write;
 
@@ -14,6 +15,7 @@ use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
 use sea_orm_migration::MigratorTrait;
 
 pub use metadata_repository::SqlMetadataRepository;
+pub use playback_repository::SqlPlaybackRepository;
 pub use repository::SqlLibraryRepository;
 
 /// Opens a connection pool and brings the schema up to date.

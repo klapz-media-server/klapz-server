@@ -16,16 +16,20 @@ use axum::http::{header, HeaderValue, StatusCode};
 use open_plex_api::{build_schema, ApiContext};
 use open_plex_api_plex::PlexState;
 use open_plex_core::metadata::MetadataRepository;
+use open_plex_core::playback::PlaybackRepository;
 use open_plex_core::{
     Accounts, Credential, LibraryRepository, Scope, ServerCapabilities, ServerIdentity,
 };
-use open_plex_db::{import, SqlLibraryRepository, SqlMetadataRepository};
+use open_plex_db::{import, SqlLibraryRepository, SqlMetadataRepository, SqlPlaybackRepository};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
 /// Where our own database lives. `rwc` creates it on first run.
 const DEFAULT_DATABASE_URL: &str = "sqlite://open-plex.db?mode=rwc";
+/// How often expired playback sessions are removed. Reads already skip them.
+const EXPIRY_SWEEP: std::time::Duration = std::time::Duration::from_secs(30);
+
 const DEFAULT_BIND: &str = "127.0.0.1:32500";
 
 #[tokio::main]
@@ -69,11 +73,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let library: Arc<dyn LibraryRepository> =
         Arc::new(SqlLibraryRepository::new(connection.clone()));
+    let playback: Arc<dyn PlaybackRepository> =
+        Arc::new(SqlPlaybackRepository::new(connection.clone()));
     let metadata: Arc<dyn MetadataRepository> = Arc::new(SqlMetadataRepository::new(connection));
+    // No process from before this one is still running, so no session from before is either.
+    let cleared = playback.delete_all().await?;
+    if cleared > 0 {
+        tracing::info!(
+            cleared,
+            "dropped the playback sessions a previous run left behind"
+        );
+    }
     let schema = build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity(), open_plex_core::now_epoch()),
         library,
         metadata,
+        playback: Arc::clone(&playback),
     });
     let accounts = accounts();
     let access = Arc::new(auth::Access::new(accounts.clone(), trusted_networks()?));
@@ -85,7 +100,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // merged *in* with the default rules. So the router holding those paths cannot be the one
     // merged in. GraphQL has no such paths and merges cleanly either way.
     let mut plex_state = PlexState::new(identity(), schema.clone(), accounts);
-    plex_state.transcoder = std::sync::Arc::new(transcoder());
+    let transcoder = Arc::new(transcoder());
+    plex_state.transcoder = Arc::clone(&transcoder);
+    tokio::spawn(expire_playback(Arc::clone(&playback), transcoder));
     let mut app = open_plex_api_plex::router(plex_state).merge(graphql::router(schema));
     let web_dir = web::directory();
     if let Some(client) = web::router(&web_dir) {
@@ -177,6 +194,23 @@ fn transcoder() -> open_plex_transcoder::Transcoder {
         external_libs: std::env::var_os("OPENPLEX_TRANSCODER_CODECS").map(std::path::PathBuf::from),
         callback_base: format!("http://127.0.0.1:{port}"),
     })
+}
+
+/// Removes what a vanished player left behind: its row, and its process.
+async fn expire_playback(
+    playback: Arc<dyn PlaybackRepository>,
+    transcoder: Arc<open_plex_transcoder::Transcoder>,
+) {
+    let mut ticks = tokio::time::interval(EXPIRY_SWEEP);
+    loop {
+        ticks.tick().await;
+        transcoder.stop_idle_sessions();
+        match playback.delete_expired(open_plex_core::now_epoch()).await {
+            Ok(0) => {}
+            Ok(expired) => tracing::info!(expired, "expired playback sessions"),
+            Err(error) => tracing::warn!(%error, "could not expire playback sessions"),
+        }
+    }
 }
 
 /// The identity the server announces.

@@ -441,10 +441,82 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<AudioAct
     }
 }
 
+const START_SESSION: &str = r"
+mutation PlexStartPlayback($input: StartPlaybackInput!) {
+  startPlaybackSession(input: $input) { key }
+}
+";
+const TOUCH_SESSION: &str = r"
+mutation PlexTouchPlayback($key: String!) { touchPlaybackSession(key: $key) }
+";
+const END_SESSION: &str = r"
+mutation PlexEndPlayback($key: String!) { endPlaybackSession(key: $key) }
+";
+
+async fn record_start(
+    state: &PlexState,
+    session: &str,
+    item: &GqlItem,
+    selection: &Selection<'_>,
+    audio_action: AudioAction,
+    client: &ClientIdentity,
+    offset: Option<f64>,
+) -> Result<(), ApiError> {
+    let optional = |value: Option<String>| value.map_or(Value::Null, Value::String);
+    let fields = [
+        ("key", Value::String(session.to_owned())),
+        ("itemId", Value::String(item.id.clone())),
+        ("fileId", Value::String(selection.part.id.clone())),
+        (
+            "clientIdentifier",
+            optional(client.identifier.as_ref().map(|id| id.as_str().to_owned())),
+        ),
+        ("clientProduct", optional(client.product.clone())),
+        ("videoDecision", Value::Enum(Name::new("COPY"))),
+        (
+            "audioDecision",
+            Value::Enum(Name::new(match audio_action {
+                AudioAction::Copy => "COPY",
+                AudioAction::ConvertToAac => "TRANSCODE",
+            })),
+        ),
+        ("positionMs", Value::Number(position_ms(offset).into())),
+    ];
+    let input = fields
+        .into_iter()
+        .map(|(name, value)| (Name::new(name), value))
+        .collect();
+    let mut variables = Variables::default();
+    variables.insert(Name::new("input"), Value::Object(input));
+    let _: serde::de::IgnoredAny = gql::execute(&state.schema, START_SESSION, variables).await?;
+    Ok(())
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "a position in seconds, far from the limits of an i64 in milliseconds"
+)]
+fn position_ms(offset: Option<f64>) -> i64 {
+    (offset.unwrap_or(0.0) * 1000.0) as i64
+}
+
+/// Records a sign of life. Failing to is no reason to interrupt a film: the session expires
+/// a little sooner.
+async fn touch_session(state: &PlexState, session: &str) {
+    let mut variables = Variables::default();
+    variables.insert(Name::new("key"), Value::String(session.to_owned()));
+    let touched: Result<serde::de::IgnoredAny, ApiError> =
+        gql::execute(&state.schema, TOUCH_SESSION, variables).await;
+    if let Err(error) = touched {
+        tracing::warn!(%error, "could not record a playback session's sign of life");
+    }
+}
+
 /// `GET /video/:/transcode/universal/start.m3u8`: starts the remux and answers the master
 /// playlist, one variant as on the reference.
 async fn start_hls(
     _caller: Caller,
+    client: ClientIdentity,
     State(state): State<PlexState>,
     Query(params): Query<PlaybackParams>,
 ) -> Result<Response, ApiError> {
@@ -466,6 +538,21 @@ async fn start_hls(
             offset: params.offset,
         })
         .await?;
+    if let Err(error) = record_start(
+        &state,
+        &session,
+        &item,
+        &selection,
+        audio_action,
+        &client,
+        params.offset,
+    )
+    .await
+    {
+        // A session nobody can see or stop must not keep running.
+        state.transcoder.stop_session(&session);
+        return Err(error);
+    }
 
     let audio_bits = match audio_action {
         AudioAction::Copy => 0,
@@ -505,6 +592,7 @@ async fn session_file(
     Path((session, _base, file)): Path<(String, String, String)>,
     request: Request,
 ) -> Result<Response, ApiError> {
+    touch_session(&state, &session).await;
     if file == "index.m3u8" {
         let output = state.transcoder.session_output(&session).await?;
         return Ok(playlist(media_playlist(&output)));
@@ -555,14 +643,14 @@ async fn ping(
     State(state): State<PlexState>,
     Query(params): Query<SessionParams>,
 ) -> StatusCode {
-    let known = params
-        .session
-        .is_some_and(|session| state.transcoder.ping_session(&session));
-    if known {
-        StatusCode::OK
-    } else {
-        StatusCode::NOT_FOUND
+    let Some(session) = params.session else {
+        return StatusCode::NOT_FOUND;
+    };
+    if !state.transcoder.ping_session(&session) {
+        return StatusCode::NOT_FOUND;
     }
+    touch_session(&state, &session).await;
+    StatusCode::OK
 }
 
 async fn stop(
@@ -570,14 +658,21 @@ async fn stop(
     State(state): State<PlexState>,
     Query(params): Query<SessionParams>,
 ) -> StatusCode {
-    let known = params
-        .session
-        .is_some_and(|session| state.transcoder.stop_session(&session));
-    if known {
-        StatusCode::OK
-    } else {
-        StatusCode::NOT_FOUND
+    let Some(session) = params.session else {
+        return StatusCode::NOT_FOUND;
+    };
+    if !state.transcoder.stop_session(&session) {
+        return StatusCode::NOT_FOUND;
     }
+    let mut variables = Variables::default();
+    variables.insert(Name::new("key"), Value::String(session));
+    let ended: Result<serde::de::IgnoredAny, ApiError> =
+        gql::execute(&state.schema, END_SESSION, variables).await;
+    if let Err(error) = ended {
+        // It expires by itself.
+        tracing::warn!(%error, "could not close a playback session");
+    }
+    StatusCode::OK
 }
 
 async fn callback_source(

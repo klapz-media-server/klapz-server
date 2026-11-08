@@ -20,8 +20,8 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | --- | --: | --: |
 | `todo` | 14 | 5.4 % |
 | `stub` | 189 | 72.7 % |
-| `partial` | 12 | 4.6 % |
-| `done` | 8 | 3.1 % |
+| `partial` | 13 | 5.0 % |
+| `done` | 7 | 2.7 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -40,7 +40,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Subscriptions](#subscriptions) | 10 | 0 | 0 | 10 | 0 | 0 |
 | [Download Queue](#download-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
 | [Play Queue](#play-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
-| [Status](#status) | 6 | 1 | 0 | 5 | 0 | 0 |
+| [Status](#status) | 6 | 0 | 1 | 5 | 0 | 0 |
 | [Butler](#butler) | 5 | 0 | 0 | 5 | 0 | 0 |
 | [Transcoder](#transcoder) | 5 | 0 | 3 | 2 | 0 | 0 |
 | [General](#general) | 4 | 2 | 0 | 2 | 0 | 0 |
@@ -334,7 +334,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `done` | `GET` | `/status/sessions` | admin | List Sessions | Always the empty container, as the reference sends it with nothing playing — there is no playback yet. Identical in both formats. |
+| `partial` | `GET` | `/status/sessions` | admin | List Sessions | Direct Stream sessions, from the official API. The state is always `playing` until `/:/timeline` exists, Direct Play is not tracked yet, and the attributes follow what Plex Web reads, with no capture to compare against. |
 | `stub` | `GET` | `/status/sessions/background` | admin | Get background tasks |  |
 | `stub` | `GET` | `/status/sessions/history/all` | user | List Playback History |  |
 | `stub` | `DELETE` | `/status/sessions/history/{historyId}` | admin | Delete Single History Item |  |

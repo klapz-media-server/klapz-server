@@ -82,6 +82,7 @@ fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
         capabilities: ServerCapabilities::new(identity.clone(), 0),
         library: std::sync::Arc::new(library),
         metadata: std::sync::Arc::new(InMemoryMetadata::default()),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
     });
     router(PlexState::new(identity, schema, accounts))
 }
@@ -781,6 +782,7 @@ fn items_app() -> axum::Router {
         capabilities: ServerCapabilities::new(identity.clone(), 0),
         library: std::sync::Arc::new(library),
         metadata: std::sync::Arc::new(metadata),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
     });
     authenticated(router(PlexState::new(identity, schema, accounts)))
 }

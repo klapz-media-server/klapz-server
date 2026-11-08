@@ -15,6 +15,7 @@ pub mod library;
 pub mod loader;
 pub mod media;
 pub mod node;
+pub mod playback;
 pub mod schema;
 pub mod server;
 pub mod tag;

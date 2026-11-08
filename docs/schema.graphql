@@ -1153,6 +1153,37 @@ type Movie implements Item & Node {
 	): RatingConnection!
 }
 
+type Mutation {
+	"""
+	Opens a playback session, or restarts the one already under this key.
+	"""
+	startPlaybackSession(
+		"""
+		The playback beginning.
+		"""
+		input: StartPlaybackInput!
+	): PlaybackSession!
+	"""
+	Records a sign of life, pushing the session's expiry forward. Whether it is still
+	running.
+	"""
+	touchPlaybackSession(
+		"""
+		The identifier the client chose for this playback.
+		"""
+		key: String!
+	): Boolean!
+	"""
+	Closes a session. Whether there was one.
+	"""
+	endPlaybackSession(
+		"""
+		The identifier the client chose for this playback.
+		"""
+		key: String!
+	): Boolean!
+}
+
 """
 Anything that can be refetched by its global identifier.
 
@@ -1208,6 +1239,104 @@ type Person implements Node {
 	A portrait, hosted by the metadata provider.
 	"""
 	thumbUrl: String
+}
+
+type PlaybackSession implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this session.
+	"""
+	id: ID!
+	"""
+	The identifier the client chose for this playback.
+	"""
+	key: String!
+	"""
+	What is being played. Null if it has left the library since.
+	"""
+	item: Item
+	"""
+	Where playback stands.
+	"""
+	state: PlaybackStateType!
+	"""
+	What happens to the video track.
+	"""
+	videoDecision: StreamDecisionType!
+	"""
+	What happens to the audio track.
+	"""
+	audioDecision: StreamDecisionType!
+	"""
+	The client's stable identifier for itself, when it gave one.
+	"""
+	clientIdentifier: String
+	"""
+	The application playing, when it said: `Plex Web`.
+	"""
+	clientProduct: String
+	"""
+	Position in the item, in milliseconds.
+	"""
+	positionMs: Int!
+	"""
+	When playback began, in seconds since the epoch.
+	"""
+	startedAt: Int!
+	"""
+	The last sign of life, in seconds since the epoch.
+	"""
+	updatedAt: Int!
+	"""
+	When the session goes away without a further sign of life, in seconds since the epoch.
+	"""
+	expiresAt: Int!
+}
+
+type PlaybackSessionConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [PlaybackSessionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [PlaybackSession!]!
+}
+
+"""
+An edge in a connection.
+"""
+type PlaybackSessionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: PlaybackSession!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+How far along a playback is, as the player last reported it.
+"""
+enum PlaybackStateType {
+	"""
+	The picture is moving.
+	"""
+	PLAYING
+	"""
+	The player is holding still.
+	"""
+	PAUSED
+	"""
+	The player is waiting for data.
+	"""
+	BUFFERING
 }
 
 type Query {
@@ -1288,6 +1417,28 @@ type Query {
 		"""
 		last: Int
 	): ItemConnection!
+	"""
+	What is being played right now, oldest first. A session a player has stopped keeping
+	alive disappears by itself.
+	"""
+	playbackSessions(
+		"""
+		Return sessions after this cursor.
+		"""
+		after: String,
+		"""
+		Return sessions before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many sessions from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many sessions from the end of the range.
+		"""
+		last: Int
+	): PlaybackSessionConnection!
 	"""
 	Every library on this server, ordered by identifier.
 	
@@ -1899,6 +2050,58 @@ enum SortDirection {
 	DESCENDING
 }
 
+"""
+A playback beginning.
+"""
+input StartPlaybackInput {
+	"""
+	The identifier the client chose for this playback.
+	"""
+	key: String!
+	"""
+	What is being played, as returned in `Item.id`.
+	"""
+	itemId: ID!
+	"""
+	The file being played, as returned in `MediaFile.id`.
+	"""
+	fileId: ID!
+	"""
+	The client's stable identifier for itself.
+	"""
+	clientIdentifier: String
+	"""
+	The application playing.
+	"""
+	clientProduct: String
+	"""
+	What happens to the video track.
+	"""
+	videoDecision: StreamDecisionType!
+	"""
+	What happens to the audio track.
+	"""
+	audioDecision: StreamDecisionType!
+	"""
+	Where playback starts, in milliseconds.
+	"""
+	positionMs: Int!
+}
+
+"""
+What the server does to a track on its way to the player.
+"""
+enum StreamDecisionType {
+	"""
+	Passed along untouched.
+	"""
+	COPY
+	"""
+	Converted to something the player can read.
+	"""
+	TRANSCODE
+}
+
 type Tag implements Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this tag, or to an
@@ -2074,4 +2277,5 @@ Directs the executor to skip this field or fragment when the `if` argument is tr
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 schema {
 	query: Query
+	mutation: Mutation
 }

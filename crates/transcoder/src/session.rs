@@ -420,7 +420,8 @@ impl Transcoder {
         Ok(())
     }
 
-    fn stop_idle_sessions(&self) {
+    /// Stops the sessions nobody has asked about for a while.
+    pub fn stop_idle_sessions(&self) {
         let idle: Vec<String> = self
             .sessions
             .lock()

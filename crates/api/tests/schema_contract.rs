@@ -46,6 +46,7 @@ fn schema() -> ApiSchema {
         ),
         library: Arc::new(library),
         metadata: Arc::new(InMemoryMetadata::default()),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
     })
 }
 
@@ -76,6 +77,7 @@ fn searchable() -> ApiSchema {
         ),
         library: Arc::new(InMemoryLibrary::new(vec![films, series])),
         metadata: Arc::new(InMemoryMetadata::new(items)),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
     })
 }
 
@@ -463,6 +465,7 @@ fn series_with_episodes() -> ApiSchema {
         ),
         library: Arc::new(InMemoryLibrary::new(vec![series])),
         metadata: Arc::new(InMemoryMetadata::new(items).with_tags(tags)),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
     })
 }
 
