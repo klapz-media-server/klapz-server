@@ -5,6 +5,7 @@
 - [Threat model](#threat-model)
 - [Path traversal](#path-traversal)
 - [Executing ffmpeg](#executing-ffmpeg)
+- [Fetching a URL a client names](#fetching-a-url-a-client-names)
 - [Tokens and authentication](#tokens-and-authentication)
 - [Unauthenticated access (allowedNetworks)](#unauthenticated-access-allowednetworks)
 - [SQL](#sql)
@@ -118,6 +119,16 @@ service:
 - Cap concurrent sessions, and bound the lifetime of an idle one.
 - Create segment directories with restrictive permissions and clean them up, including after an
   abrupt shutdown (sweep at startup).
+
+## Fetching a URL a client names
+
+`/photo/:/transcode` takes a URL and the server goes and gets it: an SSRF surface. Host
+allowlist, TLS only, default port, re-checked on **every redirect hop** — `photo/source.rs` is
+the pattern. Compare on the parsed `Url`, never on the string (`https://plex.tv@evil.example/`).
+A `reqwest` error quotes its URL, which may hold a token: `without_url()` before logging it.
+
+Bytes fetched that way reach ffmpeg over a pipe, with the input pinned (`-f image2pipe
+-protocol_whitelist pipe`), so that a file claiming to be a playlist cannot make it read others.
 
 ## Tokens and authentication
 

@@ -104,12 +104,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             TraceLayer::new_for_http(),
             TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, Duration::from_secs(30)),
             // A real server sends both of these on every response, errors included, so they
-            // belong in a layer rather than in the response wrapper.
+            // belong in a layer rather than in the response wrapper. Only an image says
+            // otherwise about caching, so that one yields to the handler.
             SetResponseHeaderLayer::overriding(
                 header::HeaderName::from_static("x-plex-protocol"),
                 HeaderValue::from_static("1.0"),
             ),
-            SetResponseHeaderLayer::overriding(
+            SetResponseHeaderLayer::if_not_present(
                 header::CACHE_CONTROL,
                 HeaderValue::from_static("no-cache"),
             ),

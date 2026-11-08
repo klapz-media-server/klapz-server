@@ -14,6 +14,9 @@ pub enum ApiError {
     /// a film, say. A reference server answers `400` here rather than an empty container.
     #[error("bad request")]
     BadRequest,
+    /// Refused by policy rather than for want of the feature.
+    #[error("forbidden")]
+    Forbidden,
     #[error("not found")]
     NotFound,
     #[error("unauthorized")]
@@ -28,6 +31,7 @@ impl ApiError {
     fn status(&self) -> StatusCode {
         match self {
             Self::BadRequest => StatusCode::BAD_REQUEST,
+            Self::Forbidden => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::NotImplemented => StatusCode::NOT_IMPLEMENTED,

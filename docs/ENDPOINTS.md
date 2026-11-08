@@ -19,8 +19,8 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 14 | 5.4 % |
-| `stub` | 196 | 75.4 % |
-| `partial` | 5 | 1.9 % |
+| `stub` | 195 | 75.0 % |
+| `partial` | 6 | 2.3 % |
 | `done` | 8 | 3.1 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -42,7 +42,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Play Queue](#play-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
 | [Status](#status) | 6 | 1 | 0 | 5 | 0 | 0 |
 | [Butler](#butler) | 5 | 0 | 0 | 5 | 0 | 0 |
-| [Transcoder](#transcoder) | 5 | 0 | 0 | 4 | 1 | 0 |
+| [Transcoder](#transcoder) | 5 | 0 | 1 | 3 | 1 | 0 |
 | [General](#general) | 4 | 2 | 0 | 2 | 0 | 0 |
 | [Live TV](#live-tv) | 4 | 0 | 0 | 4 | 0 | 0 |
 | [Provider](#provider) | 4 | 1 | 0 | 1 | 1 | 1 |
@@ -354,7 +354,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/photo/:/transcode` | user | Transcode an image |  |
+| `partial` | `GET` | `/photo/:/transcode` | user | Transcode an image | Images hosted on `plex.tv` (account avatars): same size, encoding and headers as the reference. Library artwork and image effects answer `501`; any other host `403`. |
 | `stub` | `GET` | `/{transcodeType}/:/transcode/universal/decision` | user | Make a decision on media playback | The reference serves it without `X-Plex-Client-Identifier` despite the spec, but refuses a request with no resolvable client profile (`X-Plex-Platform`) — see spec-gaps.md. |
 | `stub` | `POST` | `/{transcodeType}/:/transcode/universal/fallback` | user | Manually trigger a transcoder fallback |  |
 | `todo` | `GET` | `/{transcodeType}/:/transcode/universal/start.*` | user | Start A Transcoding Session | needs a hand-written handler: wildcard in path. Spec marks `X-Plex-Client-Identifier` required; the reference does not enforce it — see spec-gaps.md. |

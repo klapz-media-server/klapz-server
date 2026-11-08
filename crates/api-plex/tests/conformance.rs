@@ -1871,3 +1871,46 @@ async fn an_episode_without_a_rating_of_its_own_carries_its_series() {
         "TV-MA"
     );
 }
+
+#[tokio::test]
+async fn a_photo_needs_a_source_and_a_size() {
+    let (status, _, _) = get("/photo/:/transcode?width=60&height=60", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, _) = get("/photo/:/transcode?url=https%3A%2F%2Fplex.tv%2Fa", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_photo_is_only_fetched_from_plex_hosts() {
+    for source in [
+        "http%3A%2F%2F127.0.0.1%3A32400%2Fidentity",
+        "https%3A%2F%2Fexample.com%2Fa.png",
+        "https%3A%2F%2Fplex.tv%40example.com%2Fa.png",
+    ] {
+        let uri = format!("/photo/:/transcode?width=60&height=60&url={source}");
+        let (status, _, _) = get(&uri, None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{source}");
+    }
+}
+
+#[tokio::test]
+async fn library_artwork_is_refused_rather_than_reported_missing() {
+    let uri = "/photo/:/transcode?width=60&height=60&url=%2Flibrary%2Fmetadata%2F1%2Fthumb%2F2";
+    let (status, _, _) = get(uri, None).await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+}
+
+#[tokio::test]
+async fn a_photo_requires_a_caller() {
+    let uri = "/photo/:/transcode?width=60&height=60&url=https%3A%2F%2Fplex.tv%2Fa";
+    let response = unauthenticated(InMemoryLibrary::new(vec![]))
+        .oneshot(
+            Request::builder()
+                .uri(uri)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}

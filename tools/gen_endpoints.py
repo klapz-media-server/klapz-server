@@ -58,6 +58,7 @@ IMPLEMENTED = frozenset(
         "/updater/check",
         "/hubs/sections/{sectionId}",
         "/activities",
+        "/photo/:/transcode",
     }
 )
 

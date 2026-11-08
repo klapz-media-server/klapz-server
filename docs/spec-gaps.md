@@ -338,6 +338,36 @@ order; the field differences left are titles and credits edited on the live serv
 snapshot. Every other shelf is absent rather than approximated, since each needs watch state
 or a sort by release date or rating.
 
+### Transcoding an image
+
+`GET /photo/:/transcode` needs `url`, `width` and `height`; a missing or non-numeric one answers
+`400`, and so does `chromaSubsampling`, with any value. Rules measured on a 1708×640 JPEG:
+
+- by default the image fits inside the box, with `minSize=1` it covers it, and the scale never
+  exceeds 1 without `upscale=1`; sides are rounded (`300x100` gives 267×100);
+- a zero in either dimension makes the box 256×256;
+- a side that rounds to nothing, a negative dimension that decides the scale, or a result as
+  large as 13344×5000 answers `500`.
+
+The encoding is less obvious than the spec says. With no `format`, the source's is kept. With
+`jpg`, the output is JPEG unless the source has transparency, in which case it stays PNG. And
+both of those are labelled `image/jpeg`, even when the bytes are PNG; only an explicit `png` or
+`ppm` changes the content type. `quality` of 1 to 127 is honored, anything else is the default.
+Images are cached with `Cache-Control: max-age=259200`, the one exception to `no-cache`.
+
+An unknown `format` is echoed by the reference into the content type (`image/gif` over PNG
+bytes); we treat it as absent rather than build a header from a client's string.
+
+The reference fetches `url` from anywhere it can reach, its own loopback included. We fetch
+over TLS from `plex.tv` and its subdomains only, on every redirect hop, and answer `403`
+otherwise. A source that cannot be fetched is `404` on both. Library artwork (a relative `url`)
+and the effects (`blur`, `opacity`, `saturation`, `background`, `blendColor`, `rotate=0`) are
+not built and answer `501`.
+
+Against the reference on the avatar Plex Web requests: identical status, content type, cache
+header, dimensions and pixel format across seven size and format combinations; the bytes
+differ, the encoders being different.
+
 ### Server settings
 
 `GET /:/prefs` on the reference lists 162 settings: transcoder, DLNA, maintenance tasks,

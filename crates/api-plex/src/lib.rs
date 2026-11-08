@@ -18,6 +18,7 @@ pub mod hubs;
 pub mod items;
 pub mod language;
 pub mod listing;
+pub mod photo;
 pub mod prefs;
 pub mod providers;
 pub mod response;
@@ -46,6 +47,7 @@ pub struct PlexState {
     pub identity: Arc<ServerIdentity>,
     pub schema: ApiSchema,
     pub accounts: Arc<Accounts>,
+    pub photos: Arc<photo::Photos>,
 }
 
 /// Written by hand because `async_graphql::Schema` has no `Debug`, and the workspace lints
@@ -56,6 +58,7 @@ impl std::fmt::Debug for PlexState {
             .field("identity", &self.identity)
             .field("schema", &"<graphql schema>")
             .field("accounts", &self.accounts)
+            .field("photos", &self.photos)
             .finish()
     }
 }
@@ -66,6 +69,7 @@ impl PlexState {
             identity: Arc::new(identity),
             schema,
             accounts: Arc::new(accounts),
+            photos: Arc::default(),
         }
     }
 }
@@ -93,7 +97,7 @@ pub fn router(state: PlexState) -> Router {
         // default rules. Our own parameters use the `{name}` form, which is unaffected.
         .without_v07_checks();
 
-    let routes = prefs::add_routes(routes);
+    let routes = photo::add_routes(prefs::add_routes(routes));
 
     // Added last so a real handler registered above always wins over its stub.
     stubs::add_routes(routes).with_state(state)

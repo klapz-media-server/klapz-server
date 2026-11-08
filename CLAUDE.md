@@ -160,6 +160,10 @@ Places where we knowingly answer differently, each decided rather than overlooke
   `offset` and sends the paging headers, so `size` never claims more than the body holds.
 - **`myPlexSubscription` reports true** while `myPlex` reports false: no paywall, and no
   plex.tv link to pretend about.
+- **An image is fetched from Plex's hosts only.** The reference's `/photo/:/transcode` fetches
+  any URL it is handed, its own loopback included; that is an SSRF hole for any holder of a
+  token. We fetch over TLS from `plex.tv` and its subdomains, on every redirect hop, which is
+  all an account avatar needs, and answer `403` for the rest.
 - **The Plex surface announces a Plex version, not ours.** `/identity`, `GET /` and
   `/media/providers` report `1.43.5.11029-6bf8af3f0`, the reference server every capture comes
   from: Plex Web refuses a server older than 1.18.3, and `0.1.0` reads as one. Clients that
@@ -230,6 +234,8 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
 | `OPENPLEX_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
+
+`ffmpeg` and `ffprobe` must be on `PATH` for `/photo/:/transcode`; without them it answers `500`.
 
 ## Current milestone
 
