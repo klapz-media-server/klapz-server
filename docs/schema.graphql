@@ -445,6 +445,10 @@ input ItemFilterInput {
 	Keep only items carrying the named tags. Every condition must hold.
 	"""
 	tags: [TagFilterInput!]
+	"""
+	Leave out this item, as returned in `id`: "the rest of this director's films".
+	"""
+	excludedId: ID
 }
 
 """
@@ -1084,6 +1088,27 @@ type Movie implements Item & Node {
 	Genres, countries and credits.
 	"""
 	tags: ItemTags!
+	"""
+	Films like this one in its library, best first: shared genres, actors and directors.
+	"""
+	similar(
+		"""
+		Return items after this cursor.
+		"""
+		after: String,
+		"""
+		Return items before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many items from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many items from the end of the range.
+		"""
+		last: Int
+	): ItemConnection!
 	"""
 	Identifiers this item has at external metadata providers.
 	"""
@@ -1770,6 +1795,27 @@ type Show implements Item & Node {
 		"""
 		offset: Int
 	): EpisodeConnection!
+	"""
+	Series like this one in its library, best first: shared genres and actors.
+	"""
+	similar(
+		"""
+		Return items after this cursor.
+		"""
+		after: String,
+		"""
+		Return items before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many items from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many items from the end of the range.
+		"""
+		last: Int
+	): ItemConnection!
 	"""
 	Genres, countries and credits — the series' own, and by default those of its
 	episodes after them.

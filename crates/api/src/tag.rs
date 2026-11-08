@@ -455,7 +455,7 @@ pub(crate) async fn ratings_of(
 ///
 /// The same rules as a storage window: at most [`MAX_ITEMS`] per page, [`DEFAULT_PAGE_SIZE`]
 /// when neither end is asked for.
-async fn page_in_memory<T, E>(
+pub(crate) async fn page_in_memory<T, E>(
     rows: Vec<(T, E)>,
     after: Option<String>,
     before: Option<String>,

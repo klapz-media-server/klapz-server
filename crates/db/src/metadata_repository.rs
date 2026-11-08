@@ -16,6 +16,7 @@ use open_plex_core::metadata::{
 use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
 use open_plex_core::search;
+use open_plex_core::similar::TagOverlap;
 use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
 use sea_orm::{
@@ -80,6 +81,9 @@ impl SqlMetadataRepository {
             // Driven from the word index rather than the title column: the reference matches
             // a prefix of *any* word, so `hell` has to find "Good News About Hell".
             select = select.filter(term_matches(prefix));
+        }
+        if let Some(excluded) = filter.excluded {
+            select = select.filter(metadata_item::Column::Id.ne(excluded.get()));
         }
         if let Some(width) = filter.min_width {
             select = select.filter(Expr::exists(
@@ -645,6 +649,39 @@ impl MetadataRepository for SqlMetadataRepository {
         )
     }
 
+    async fn items_sharing_tags(
+        &self,
+        section: SectionId,
+        kind: ItemKind,
+        tags: &[TagId],
+    ) -> Result<Vec<TagOverlap>, MetadataError> {
+        if tags.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = item_tag::Entity::find()
+            .select_only()
+            .column(item_tag::Column::ItemId)
+            .column(metadata_item::Column::Year)
+            .column_as(item_tag::Column::TagId.count(), "shared")
+            .join(JoinType::InnerJoin, item_tag::Relation::MetadataItem.def())
+            .filter(item_tag::Column::TagId.is_in(tags.iter().map(|tag| tag.get())))
+            .filter(metadata_item::Column::LibrarySectionId.eq(section.get()))
+            .filter(metadata_item::Column::Kind.eq(kind_name(kind)))
+            .group_by(item_tag::Column::ItemId)
+            .into_model::<OverlapRow>()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| TagOverlap {
+                item: RatingKey::new(row.item_id),
+                shared: u32::try_from(row.shared).unwrap_or(0),
+                year: row.year,
+            })
+            .collect())
+    }
+
     async fn episode_additions(
         &self,
         section: SectionId,
@@ -1016,6 +1053,13 @@ fn prefix_condition<T: Into<SimpleExpr>>(column: T, prefix: &str) -> Condition {
         // the constraint there is.
         None => condition,
     }
+}
+
+#[derive(Debug, FromQueryResult)]
+struct OverlapRow {
+    item_id: i64,
+    year: Option<i32>,
+    shared: i64,
 }
 
 const fn kind_name(kind: ItemKind) -> &'static str {

@@ -196,6 +196,7 @@ impl InMemoryMetadata {
                     .as_ref()
                     .is_none_or(|term| title_matches(item, term))
             })
+            .filter(|item| filter.excluded != Some(item.id))
             .filter(|item| {
                 filter.min_width.is_none_or(|width| {
                     self.versions.iter().any(|version| {
@@ -502,6 +503,33 @@ impl MetadataRepository for InMemoryMetadata {
 
     async fn stream(&self, id: StreamId) -> Result<Option<MediaStream>, MetadataError> {
         Ok(self.streams.iter().find(|item| item.id == id).cloned())
+    }
+
+    async fn items_sharing_tags(
+        &self,
+        section: SectionId,
+        kind: ItemKind,
+        tags: &[TagId],
+    ) -> Result<Vec<crate::similar::TagOverlap>, MetadataError> {
+        Ok(self
+            .items
+            .iter()
+            .filter(|item| item.section_id == section && item.kind == kind)
+            .filter_map(|item| {
+                let shared = self
+                    .tags
+                    .iter()
+                    .filter(|attached| {
+                        attached.item_id == item.id && tags.contains(&attached.tag.id)
+                    })
+                    .count();
+                (shared > 0).then(|| crate::similar::TagOverlap {
+                    item: item.id,
+                    shared: u32::try_from(shared).unwrap_or(u32::MAX),
+                    year: item.year,
+                })
+            })
+            .collect())
     }
 
     async fn tags_for(&self, items: &[RatingKey]) -> Result<Vec<ItemTag>, MetadataError> {

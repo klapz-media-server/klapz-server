@@ -1942,3 +1942,9 @@ async fn a_search_of_nothing_we_hold_asks_nothing_of_the_library() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, r#"{"MediaContainer":{"size":0}}"#);
 }
+
+#[tokio::test]
+async fn the_shelves_of_an_unknown_item_are_a_404() {
+    let (status, _, _) = get("/library/metadata/999999/related", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

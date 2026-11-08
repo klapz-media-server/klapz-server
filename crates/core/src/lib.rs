@@ -11,6 +11,7 @@ pub mod metadata;
 pub mod page;
 pub mod recent;
 pub mod search;
+pub mod similar;
 
 #[cfg(feature = "testing")]
 pub mod testing;

@@ -406,6 +406,37 @@ with weaker matches included.
 `/search` also carries a static `Provider` array of four entries, and its `size` counts the
 items **plus** the providers: 37 items and 4 providers are reported as 41.
 
+### The shelves under an item
+
+`GET /library/metadata/{id}/related` is a `Hub` list, in the reference's order: collections, films
+like this one, the director, the actors, `external.*`. Seasons and episodes have none, an unknown
+item is `404`, and `count` (default 6) sizes every shelf.
+
+Measured on 150 films of one library:
+
+- an actor gets a shelf only among the **first two billed**, a director only as the **first
+  credited**, and only with **five or more other films** in the library. Below four there is
+  none, without exception;
+- the shelf holds those films by title, and leads to `/all?actor=…&id!=…`, so `id!=` is honored
+  on a listing;
+- a `movie.same.actor` shelf is numbered from 0 in the order the shelves appear.
+
+Against the reference on 60 other films: the same person shelves on 59, attributes identical on
+all 41 compared, the same films in the same order on 35 (the other 6 being title collation). The
+field differences on the 233 items compared are items edited since the snapshot, checked column
+by column against it; two `contentRatingAge` were not.
+
+**Similar items are an approximation.** No column or table states them. `metadata_item_clusters`
+is unrelated, the `similar` tags (type 305) feed only the `external.*` shelf, and a film without
+any still gets the shelf. Ranking by shared tags gives a recognizably close list, not the same
+one: a shared genre counts one, any shared actor one, any shared director two, ties to the most
+recent. That finds 101 of the 180 items shown on 30 films, the best of fifteen weightings tried.
+The shelf exists on 40 of the 60 films here against 36 on the reference; why the reference omits
+it from a film with genres and actors is not known.
+
+`/library/metadata/{id}/similar` answers a bare container: `size`, `identifier` and the media tag
+attributes, with none of a listing's.
+
 ### The search field calls `/library/search`
 
 Plex Web's search field does not use `/hubs/search` or `/search`. It calls the

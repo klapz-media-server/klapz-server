@@ -15,6 +15,7 @@
 use std::fmt::Write as _;
 
 use async_graphql::{Name, Value};
+use open_plex_api::item::ITEM_TYPE;
 use open_plex_api::tag::TAG_TYPE;
 use open_plex_api::GlobalId;
 use open_plex_core::metadata::TagCondition;
@@ -165,6 +166,8 @@ pub struct Filters {
     pub min_width: Option<i32>,
     /// One entry per tag parameter; several combine with `AND`.
     pub tags: Vec<TagFilter>,
+    /// `id!=` — the shelf "more by this director", without the film it was opened from.
+    pub excluded_id: Option<i64>,
 }
 
 /// One tag parameter: `genre=38,Crime` is one filter with an id and a name.
@@ -258,6 +261,9 @@ impl Filters {
                 Value::List(self.tags.iter().map(TagFilter::to_graphql).collect()),
             );
         }
+        if let Some(id) = self.excluded_id {
+            set("excludedId", Value::String(GlobalId::encode(ITEM_TYPE, id)));
+        }
 
         if fields.is_empty() {
             Value::Null
@@ -302,6 +308,12 @@ pub fn parse(pairs: &[(String, String)]) -> Result<ListingRequest, ListingError>
             _ => {}
         }
         if CONTROL_PARAMS.contains(&key.as_str()) {
+            continue;
+        }
+
+        // The query string `id!=7` splits at its `=`, leaving the `!` on the name.
+        if key == "id!" {
+            request.filters.excluded_id = value.parse().ok();
             continue;
         }
 

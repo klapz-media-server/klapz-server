@@ -3,6 +3,7 @@
 use async_graphql::{Enum, InputObject};
 use open_plex_core::metadata::{ItemDepth, ItemFilter, ItemKind, ItemSort, TagCondition};
 use open_plex_core::page::Direction;
+use open_plex_core::RatingKey;
 
 use crate::tag::{TagFilterError, TagFilterInput};
 
@@ -150,6 +151,8 @@ pub struct ItemFilterInput {
     pub min_width: Option<i32>,
     /// Keep only items carrying the named tags. Every condition must hold.
     pub tags: Option<Vec<TagFilterInput>>,
+    /// Leave out this item, as returned in `id`: "the rest of this director's films".
+    pub excluded_id: Option<async_graphql::ID>,
 }
 
 impl TryFrom<ItemFilterInput> for ItemFilter {
@@ -176,6 +179,10 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
                 .filter(|text| !text.trim().is_empty()),
             min_width: input.min_width,
             tags,
+            excluded: input
+                .excluded_id
+                .and_then(|id| crate::GlobalId::decode(&id).ok())
+                .map(|decoded| RatingKey::new(decoded.key)),
         })
     }
 }
@@ -230,6 +237,7 @@ mod tests {
             title_word_prefix: Some("the".to_owned()),
             min_width: Some(3840),
             depth: Some(ItemDepthInput::All),
+            excluded_id: None,
             tags: Some(vec![TagFilterInput {
                 kind: crate::tag::TagType::Genre,
                 ids: None,

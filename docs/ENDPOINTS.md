@@ -19,8 +19,8 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 14 | 5.4 % |
-| `stub` | 195 | 75.0 % |
-| `partial` | 6 | 2.3 % |
+| `stub` | 193 | 74.2 % |
+| `partial` | 8 | 3.1 % |
 | `done` | 8 | 3.1 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 1 | 1 | 52 | 7 | 24 |
+| [Library](#library) | 85 | 1 | 3 | 50 | 7 | 24 |
 | [Hubs](#hubs) | 15 | 0 | 1 | 14 | 0 | 0 |
 | [Content](#content) | 13 | 0 | 2 | 11 | 0 | 0 |
 | [Devices](#devices) | 13 | 0 | 0 | 13 | 0 | 0 |
@@ -105,8 +105,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `GET` | `/library/metadata/{ids}/nearest` | user | Get nearest tracks to metadata item |  |
 | `stub` | `PUT` | `/library/metadata/{ids}/prefs` | admin | Set metadata preferences |  |
 | `deferred` | `PUT` | `/library/metadata/{ids}/refresh` | admin | Refresh a metadata item | scanner/analysis, separate binary |
-| `stub` | `GET` | `/library/metadata/{ids}/related` | user | Get related items |  |
-| `stub` | `GET` | `/library/metadata/{ids}/similar` | user | Get similar items |  |
+| `partial` | `GET` | `/library/metadata/{ids}/related` | user | Get related items | A film: similar films (approximate ranking), its director and two first-billed actors, the last two matching the reference on 59 of 60 films. A series: similar series only. Not served: collection and `external.*` shelves, a series' network and cast shelves. |
+| `partial` | `GET` | `/library/metadata/{ids}/similar` | user | Get similar items | Same container as the reference; the ranking is an approximation. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/split` | admin | Split a metadata item | scanner/analysis, separate binary |
 | `stub` | `GET` | `/library/metadata/{ids}/subtitles` | admin | Add subtitles |  |
 | `stub` | `GET` | `/library/metadata/{ids}/tree` | user | Get metadata items as a tree |  |

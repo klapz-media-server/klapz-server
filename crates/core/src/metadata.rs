@@ -367,6 +367,8 @@ pub struct ItemFilter {
     pub min_width: Option<i32>,
     /// Keeps only items carrying the named tags. Each condition must hold.
     pub tags: Vec<TagCondition>,
+    /// Leaves this one item out: "the rest of this director's films".
+    pub excluded: Option<RatingKey>,
 }
 
 impl ItemFilter {
@@ -674,6 +676,17 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
         after: Option<(i64, RatingKey)>,
         limit: u32,
     ) -> Result<Vec<crate::recent::EpisodeAddition>, MetadataError>;
+
+    /// The items of a library, of one kind, holding any of these tags, with how many.
+    ///
+    /// Unwindowed on purpose, and bounded by the library: a score has to see every candidate
+    /// before it can say which come first.
+    async fn items_sharing_tags(
+        &self,
+        section: SectionId,
+        kind: ItemKind,
+        tags: &[TagId],
+    ) -> Result<Vec<crate::similar::TagOverlap>, MetadataError>;
 }
 
 /// Lets an `Arc<dyn MetadataRepository>` be used wherever a repository is expected, so the
@@ -806,6 +819,15 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         limit: u32,
     ) -> Result<Vec<crate::recent::EpisodeAddition>, MetadataError> {
         (**self).episode_additions(section, after, limit).await
+    }
+
+    async fn items_sharing_tags(
+        &self,
+        section: SectionId,
+        kind: ItemKind,
+        tags: &[TagId],
+    ) -> Result<Vec<crate::similar::TagOverlap>, MetadataError> {
+        (**self).items_sharing_tags(section, kind, tags).await
     }
 }
 

@@ -62,6 +62,22 @@ impl Language {
     pub const fn recent_playlists(self) -> &'static str {
         self.0.recent_playlists
     }
+
+    pub const fn related_movies(self) -> &'static str {
+        self.0.related_movies
+    }
+
+    pub const fn related_shows(self) -> &'static str {
+        self.0.related_shows
+    }
+
+    pub fn more_with(self, person: &str) -> String {
+        self.0.more_with.replace("{1}", person)
+    }
+
+    pub fn more_by(self, person: &str) -> String {
+        self.0.more_by.replace("{1}", person)
+    }
 }
 
 #[cfg(test)]

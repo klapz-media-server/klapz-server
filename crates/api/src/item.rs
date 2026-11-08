@@ -13,7 +13,7 @@ use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Interface, Object, Result, ID};
 use open_plex_core::metadata::{ItemKind, MetadataItem};
-use open_plex_core::page::Cursor;
+use open_plex_core::page::{Cursor, MAX_ITEMS};
 use open_plex_core::RatingKey;
 
 use crate::cursor::OpaqueCursor;
@@ -243,6 +243,21 @@ impl Movie {
         }
     }
 
+    /// Films like this one in its library, best first: shared genres, actors and directors.
+    async fn similar(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return items after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return items before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many items from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many items from the end of the range.")] last: Option<
+            i32,
+        >,
+    ) -> Result<ItemConnection> {
+        similar_connection(context, &self.0, after, before, first, last).await
+    }
+
     /// Identifiers this item has at external metadata providers.
     async fn external_ids(
         &self,
@@ -430,6 +445,21 @@ impl Show {
     ) -> Result<EpisodeConnection> {
         let page = Descent::Grandchildren.of(self.0.id, offset);
         children_connection(context, page, after, before, first, last, Episode).await
+    }
+
+    /// Series like this one in its library, best first: shared genres and actors.
+    async fn similar(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return items after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return items before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many items from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many items from the end of the range.")] last: Option<
+            i32,
+        >,
+    ) -> Result<ItemConnection> {
+        similar_connection(context, &self.0, after, before, first, last).await
     }
 
     /// Genres, countries and credits — the series' own, and by default those of its
@@ -921,4 +951,26 @@ where
         },
     )
     .await
+}
+
+/// Scores then pages in memory, the score needing every candidate anyway.
+async fn similar_connection(
+    context: &Context<'_>,
+    item: &MetadataItem,
+    after: Option<String>,
+    before: Option<String>,
+    first: Option<i32>,
+    last: Option<i32>,
+) -> Result<ItemConnection> {
+    let metadata = crate::schema::metadata(context)?;
+    let ids = open_plex_core::similar::similar_items(metadata, item, MAX_ITEMS as usize).await?;
+    let loaded = context
+        .data::<DataLoader<ItemLoader>>()?
+        .load_many(ids.iter().copied())
+        .await?;
+    let rows = ids
+        .iter()
+        .filter_map(|id| Some((Item::from_domain(loaded.get(id).cloned()?), EmptyFields)))
+        .collect();
+    crate::tag::page_in_memory(rows, after, before, first, last).await
 }

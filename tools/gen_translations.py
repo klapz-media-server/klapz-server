@@ -25,6 +25,10 @@ STRINGS = {
     "continue_watching": "Continue Watching",
     "recently_added_in": "Library\x04Recently Added in {1}",
     "recent_playlists": "Recent Playlists",
+    "related_movies": "Related Movies",
+    "related_shows": "Related Shows",
+    "more_with": "Actor\x04More with {1}",
+    "more_by": "Director\x04More by {1}",
 }
 
 

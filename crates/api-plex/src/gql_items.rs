@@ -819,7 +819,7 @@ impl GqlStream {
 ///
 /// Zero when the id does not decode. That is a schema defect rather than client input, and a
 /// visibly wrong key in the response is easier to diagnose than a dropped field.
-fn database_id(global_id: &str) -> i64 {
+pub(crate) fn database_id(global_id: &str) -> i64 {
     open_plex_api::GlobalId::decode(global_id).map_or(0, |decoded| decoded.key)
 }
 

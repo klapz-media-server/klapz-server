@@ -141,6 +141,10 @@ Places where we knowingly answer differently, each decided rather than overlooke
   sets for a distinctive term (`dune`: 21 both sides), materially more for a common one
   (`hell`: 43 against 439). Ranking needs a score, and ordering by a score conflicts with
   keyset cursors, which resume from a stored column.
+- **"Related" films are an approximation.** Nothing in the reference's database states which
+  films are alike, so `core::similar` ranks by shared genres, actors and directors: a close list,
+  not the same one (101 of 180 shown items on 30 films). The director and actor shelves around
+  it follow the measured rule and match on 59 of 60 films.
 - **The search field finds no people yet.** `GET /library/search`, what Plex Web's search field
   calls, answers films, series and episodes; the people and collections the reference mixes in
   are absent, and `searchTypes=people` is tolerated rather than refused, since Plex Web sends it
