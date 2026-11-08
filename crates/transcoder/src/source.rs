@@ -1,4 +1,4 @@
-//! Where a transcoded image comes from.
+//! Where a converted image comes from.
 //!
 //! The URL is the client's choice and the server is the one fetching it, which makes this an
 //! SSRF surface: the reference will fetch from its own loopback when asked. So only Plex's
@@ -9,29 +9,22 @@ use std::time::Duration;
 
 use reqwest::{redirect, Client, Url};
 
-use super::PhotoError;
-use crate::error::ApiError;
+use crate::TranscodeError;
 
-pub(super) const MAX_SOURCE_BYTES: usize = 16 * 1024 * 1024;
-
+const MAX_SOURCE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_REDIRECTS: usize = 5;
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 const PLEX_DOMAIN: &str = "plex.tv";
 
 /// The URL to fetch, once the client's value has passed the policy.
-///
-/// A relative source is library artwork, which is not served yet.
-pub(super) fn remote_url(requested: &str) -> Result<Url, ApiError> {
-    if requested.starts_with('/') {
-        return Err(ApiError::NotImplemented);
-    }
-    let url = Url::parse(requested).map_err(|_| ApiError::BadRequest)?;
+pub(crate) fn remote_url(requested: &str) -> Result<Url, TranscodeError> {
+    let url = Url::parse(requested).map_err(|_| TranscodeError::InvalidSource)?;
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(ApiError::BadRequest);
+        return Err(TranscodeError::InvalidSource);
     }
     if !may_fetch(&url) {
         tracing::warn!("refused an image source outside Plex's hosts");
-        return Err(ApiError::Forbidden);
+        return Err(TranscodeError::ForbiddenSource);
     }
     Ok(url)
 }
@@ -49,7 +42,7 @@ fn may_fetch(url: &Url) -> bool {
         })
 }
 
-pub(super) fn client() -> Result<Client, PhotoError> {
+pub(crate) fn client() -> Result<Client, TranscodeError> {
     Client::builder()
         .user_agent("open-plex")
         .timeout(FETCH_TIMEOUT)
@@ -62,29 +55,33 @@ pub(super) fn client() -> Result<Client, PhotoError> {
             }
         }))
         .build()
-        .map_err(|error| PhotoError::Client(error.without_url()))
+        .map_err(|error| TranscodeError::Client(error.without_url()))
 }
 
-/// A source that cannot be fetched is a `404`, as it is on the reference. The cause stays
-/// out of the logs: a `reqwest` error quotes its URL, and this one may hold a token.
-pub(super) async fn fetch(client: &Client, url: Url) -> Result<Vec<u8>, ApiError> {
+/// The cause of a failed fetch stays out of the logs: a `reqwest` error quotes its URL, and
+/// this one may hold a token.
+pub(crate) async fn fetch(client: &Client, url: Url) -> Result<Vec<u8>, TranscodeError> {
     let mut response = client
         .get(url)
         .send()
         .await
         .ok()
         .filter(|response| response.status().is_success())
-        .ok_or(ApiError::NotFound)?;
+        .ok_or(TranscodeError::UnavailableSource)?;
 
     let announced = response.content_length().unwrap_or(0);
     if usize::try_from(announced).map_or(true, |length| length > MAX_SOURCE_BYTES) {
-        return Err(PhotoError::SourceTooLarge.into());
+        return Err(TranscodeError::SourceTooLarge);
     }
     let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| ApiError::NotFound)? {
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| TranscodeError::UnavailableSource)?
+    {
         // Checked as it arrives: the announced length is only the sender's word.
         if body.len() + chunk.len() > MAX_SOURCE_BYTES {
-            return Err(PhotoError::SourceTooLarge.into());
+            return Err(TranscodeError::SourceTooLarge);
         }
         body.extend_from_slice(&chunk);
     }
@@ -127,16 +124,16 @@ mod tests {
     #[test]
     fn sorts_a_source_into_the_right_refusal() {
         assert!(matches!(
-            remote_url("/library/metadata/1/thumb/2"),
-            Err(ApiError::NotImplemented)
+            remote_url("file:///C:/Windows/win.ini"),
+            Err(TranscodeError::InvalidSource)
         ));
         assert!(matches!(
-            remote_url("file:///C:/Windows/win.ini"),
-            Err(ApiError::BadRequest)
+            remote_url("not a url"),
+            Err(TranscodeError::InvalidSource)
         ));
         assert!(matches!(
             remote_url("http://127.0.0.1:32400/identity"),
-            Err(ApiError::Forbidden)
+            Err(TranscodeError::ForbiddenSource)
         ));
         assert!(remote_url("https://plex.tv/users/abc/avatar").is_ok());
     }

@@ -1670,10 +1670,9 @@ dependencies = [
  "axum",
  "form_urlencoded",
  "http-body-util",
- "image",
  "open-plex-api",
  "open-plex-core",
- "reqwest",
+ "open-plex-transcoder",
  "serde",
  "serde_json",
  "thiserror",
@@ -1727,6 +1726,17 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "open-plex-transcoder"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "reqwest",
+ "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

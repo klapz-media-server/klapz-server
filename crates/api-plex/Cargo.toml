@@ -8,15 +8,14 @@ license.workspace = true
 [dependencies]
 open-plex-api.workspace = true
 open-plex-core.workspace = true
+open-plex-transcoder.workspace = true
 async-graphql.workspace = true
 axum.workspace = true
 form_urlencoded = "1"
-image.workspace = true
-reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["sync"] }
+tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

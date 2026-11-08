@@ -63,6 +63,10 @@ without them saying so.
   it compiler-enforced: `core` declares the storage ports and knows nothing of HTTP or GraphQL,
   `db` implements them, `api` depends only on `core`, and `api-plex` depends on `api` — never on
   `db` or the ports.
+- **`transcoder` is to media what `api` is to data.** It speaks in images, sizes and formats and
+  knows nothing of HTTP or Plex, and `api-plex` binds Plex's routes onto it: parameter names,
+  statuses and Plex's quirks stay in the binding, which URLs may be fetched stays in the engine.
+  Built this way so it can one day run on its own.
 - **No service layer above the ports.** There was one; it forwarded calls and nothing else, so
   it was deleted. Reintroduce it when real domain logic exists — permission filtering is the
   obvious first candidate — not before.

@@ -3,7 +3,8 @@
 //! Translation only: parse the request, run a query against the official GraphQL API, shape
 //! the response. Domain rules belong in `core`, and this crate depends on neither
 //! `open-plex-db` nor the repository ports — if a handler
-//! needs data, the official GraphQL API must expose it.
+//! needs data, the official GraphQL API must expose it. Converting media is the other thing
+//! it binds, onto `open-plex-transcoder`: bytes in and out, which is not a data source.
 
 pub mod activities;
 pub mod auth;
@@ -39,6 +40,7 @@ use std::sync::Arc;
 use axum::Router;
 use open_plex_api::ApiSchema;
 use open_plex_core::{Accounts, ServerIdentity};
+use open_plex_transcoder::Transcoder;
 
 /// What the adapter needs from the rest of the application.
 ///
@@ -50,7 +52,7 @@ pub struct PlexState {
     pub identity: Arc<ServerIdentity>,
     pub schema: ApiSchema,
     pub accounts: Arc<Accounts>,
-    pub photos: Arc<photo::Photos>,
+    pub transcoder: Arc<Transcoder>,
 }
 
 /// Written by hand because `async_graphql::Schema` has no `Debug`, and the workspace lints
@@ -61,7 +63,7 @@ impl std::fmt::Debug for PlexState {
             .field("identity", &self.identity)
             .field("schema", &"<graphql schema>")
             .field("accounts", &self.accounts)
-            .field("photos", &self.photos)
+            .field("transcoder", &self.transcoder)
             .finish()
     }
 }
@@ -72,7 +74,7 @@ impl PlexState {
             identity: Arc::new(identity),
             schema,
             accounts: Arc::new(accounts),
-            photos: Arc::default(),
+            transcoder: Arc::default(),
         }
     }
 }

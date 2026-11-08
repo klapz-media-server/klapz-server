@@ -123,7 +123,7 @@ service:
 ## Fetching a URL a client names
 
 `/photo/:/transcode` takes a URL and the server goes and gets it: an SSRF surface. Host
-allowlist, TLS only, default port, re-checked on **every redirect hop** — `photo/source.rs` is
+allowlist, TLS only, default port, re-checked on **every redirect hop** — `transcoder/src/source.rs` is
 the pattern. Compare on the parsed `Url`, never on the string (`https://plex.tv@evil.example/`).
 A `reqwest` error quotes its URL, which may hold a token: `without_url()` before logging it.
 

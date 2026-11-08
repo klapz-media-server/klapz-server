@@ -232,6 +232,7 @@ without a rewrite.
 crates/
   db/          SeaORM entities, migrations, data access. Knows nothing of Plex or HTTP.
   core/        domain logic: libraries, items, playback, sessions. Knows nothing of HTTP.
+  transcoder/  converting media: images today, video next. Knows nothing of HTTP or Plex.
   api-plex/    binding: routes, MediaContainer, X-Plex-* headers. Knows nothing of db.
   server/      binary: configuration, composition, mounting the bindings.
 ```
