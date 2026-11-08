@@ -393,8 +393,9 @@ neither visible to a client:
 
 The reference lists every segment up front, 8 seconds each. A remux is cut on the file's own key
 frames (9, 9, 6, 9 s on one file), so our playlist is `EVENT` and grows, starting once three
-segments exist. `offset` seeks with `-ss` before the input; the captured DASH command has it, with 0.
-command has one. The `audio` bitrate of a conversion is 256k, the value in the one captured remux.
+segments exist. `offset` seeks with `-ss` before the input; the captured DASH command has it, with
+0, and no capture has another value. The `audio` bitrate of a conversion is 256k, the value in the
+captured remuxes.
 
 ### DASH
 
