@@ -361,6 +361,8 @@ pub struct MediaEntry {
 #[serde(rename_all = "camelCase")]
 pub struct PartEntry {
     pub id: i64,
+    /// Where a client fetches the file to play it directly.
+    pub key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<i64>,
     /// Absolute path on the server's filesystem, as Plex publishes it.
@@ -643,8 +645,12 @@ impl PartEntry {
     /// `container` is the version's: a part has none of its own, and a reference server
     /// repeats the enclosing version's value on every part.
     fn from_graphql(file: &GqlPart, container: Option<String>) -> Self {
+        // The middle segment is a change stamp on the reference, and the name is cosmetic:
+        // neither is read back.
+        let extension = container.as_deref().unwrap_or("bin");
         Self {
             id: file.database_id(),
+            key: format!("/library/parts/{}/0/file.{extension}", file.database_id()),
             duration: file.duration_ms,
             file: file.path.clone(),
             size: file.size_bytes,

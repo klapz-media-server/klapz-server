@@ -13,6 +13,8 @@ async-graphql.workspace = true
 axum.workspace = true
 form_urlencoded = "1"
 serde.workspace = true
+tower = { workspace = true, features = ["util"] }
+tower-http.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

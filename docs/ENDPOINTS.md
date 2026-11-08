@@ -18,9 +18,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 15 | 5.8 % |
-| `stub` | 191 | 73.5 % |
-| `partial` | 9 | 3.5 % |
+| `todo` | 14 | 5.4 % |
+| `stub` | 189 | 72.7 % |
+| `partial` | 12 | 4.6 % |
 | `done` | 8 | 3.1 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 1 | 4 | 48 | 8 | 24 |
+| [Library](#library) | 85 | 1 | 5 | 47 | 8 | 24 |
 | [Hubs](#hubs) | 15 | 0 | 1 | 14 | 0 | 0 |
 | [Content](#content) | 13 | 0 | 2 | 11 | 0 | 0 |
 | [Devices](#devices) | 13 | 0 | 0 | 13 | 0 | 0 |
@@ -42,7 +42,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Play Queue](#play-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
 | [Status](#status) | 6 | 1 | 0 | 5 | 0 | 0 |
 | [Butler](#butler) | 5 | 0 | 0 | 5 | 0 | 0 |
-| [Transcoder](#transcoder) | 5 | 0 | 1 | 3 | 1 | 0 |
+| [Transcoder](#transcoder) | 5 | 0 | 3 | 2 | 0 | 0 |
 | [General](#general) | 4 | 2 | 0 | 2 | 0 | 0 |
 | [Live TV](#live-tv) | 4 | 0 | 0 | 4 | 0 | 0 |
 | [Provider](#provider) | 4 | 1 | 0 | 1 | 1 | 1 |
@@ -121,7 +121,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `PUT` | `/library/parts/{partId}` | user | Set stream selection |  |
 | `deferred` | `GET` | `/library/parts/{partId}/indexes/{index}` | user | Get BIF index for a part | scanner/analysis, separate binary |
 | `deferred` | `GET` | `/library/parts/{partId}/indexes/{index}/{offset}` | user | Get an image from part BIF | scanner/analysis, separate binary |
-| `stub` | `GET` | `/library/parts/{partId}/{changestamp}/{filename}` | user | Get a media part |  |
+| `partial` | `GET` | `/library/parts/{partId}/{changestamp}/{filename}` | user | Get a media part | Direct Play: the file, by part id, with `Range`. The change stamp and the name are ignored. |
 | `stub` | `GET` | `/library/people/{personId}` | user | Get person details |  |
 | `stub` | `GET` | `/library/people/{personId}/media` | user | Get media for a person |  |
 | `stub` | `GET` | `/library/randomArtwork` | user | Get random artwork |  |
@@ -356,9 +356,9 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `partial` | `GET` | `/photo/:/transcode` | user | Transcode an image | Images hosted on `plex.tv` (account avatars): same size, encoding and headers as the reference. Library artwork and image effects answer `501`; any other host `403`. |
-| `stub` | `GET` | `/{transcodeType}/:/transcode/universal/decision` | user | Make a decision on media playback | The reference serves it without `X-Plex-Client-Identifier` despite the spec, but refuses a request with no resolvable client profile (`X-Plex-Platform`) — see spec-gaps.md. |
+| `partial` | `GET` | `/{transcodeType}/:/transcode/universal/decision` | user | Make a decision on media playback | Video only. Direct Play and Direct Stream, with the decisions the reference gives for each codec; `501` when the video would have to be converted, for DASH and for burned subtitles. |
 | `stub` | `POST` | `/{transcodeType}/:/transcode/universal/fallback` | user | Manually trigger a transcoder fallback |  |
-| `todo` | `GET` | `/{transcodeType}/:/transcode/universal/start.*` | user | Start A Transcoding Session | needs a hand-written handler: wildcard in path. Spec marks `X-Plex-Client-Identifier` required; the reference does not enforce it — see spec-gaps.md. |
+| `partial` | `GET` | `/{transcodeType}/:/transcode/universal/start.*` | user | Start A Transcoding Session | Video over HLS only. Direct Stream: the reference's command line, video copied, audio copied or converted to AAC. Growing playlist. Same `501`s as the decision. |
 | `stub` | `GET` | `/{transcodeType}/:/transcode/universal/subtitles` | user | Transcode subtitles | The reference serves it without `X-Plex-Client-Identifier` despite the spec, but refuses a request with no resolvable client profile (`X-Plex-Platform`) — see spec-gaps.md. |
 
 ## General

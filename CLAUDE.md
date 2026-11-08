@@ -167,6 +167,9 @@ Places where we knowingly answer differently, each decided rather than overlooke
   the folded `sort_key` column byte-wise. Same items, alphabetical and stable, different
   sequence: 299/500 positions match on films, 438/500 on series, median displacement 0. Close
   enough; a UCA dependency plus a re-import of 1.1M rows is not worth the remainder.
+- **The transcoder's callbacks carry no token.** `/video/:/transcode/session/{id}/{callback}/…`
+  is how the process reads its source and reports its segments. Those routes bypass token
+  authentication and answer only to the unguessable id of a running session.
 - **File paths are published**, on both surfaces, as Plex does: `MediaFile.path` with a derived
   `MediaFile.filename` in GraphQL, `Part.file` in the Plex layer. This is reference data — it
   makes the library auditable from outside. It changes nothing about input: playback addresses
@@ -251,6 +254,12 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
 | `OPENPLEX_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
+| `OPENPLEX_TRANSCODER` | `ffmpeg` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. For now `files/Plex Transcoder.exe`, until the patched source is rebuilt. |
+| `OPENPLEX_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which its binary needs. |
+
+The imported library's files live on another machine, so nothing imported can be played here.
+`python tools/seed_test_library.py DIRECTORY` adds a folder of real files as a `Test` library
+(`--remove` takes it out); `python tools/capture_transcoder.py` studies the transcoder alone.
 
 ## Current milestone
 

@@ -948,14 +948,17 @@ async fn media_attributes_are_the_published_forms_not_the_measurements() {
     assert_eq!(media["width"], 1920);
     assert_eq!(media["height"], 808);
 
-    // A part repeats the version's container and publishes the path, as Plex does. No
-    // streaming `key` yet: playback has no handler, and a key into a route that answers 501
-    // would make the item look playable.
+    // A part repeats the version's container, publishes the path as Plex does, and says where
+    // to fetch the file.
     let part = &media["Part"][0];
     assert_eq!(part["container"], "mkv");
     assert_eq!(part["size"], 8_534_980_661_i64);
     assert_eq!(part["file"], "/mnt/movies/Avatar.mkv");
-    assert!(part.get("key").is_none(), "{part}");
+    let key = part["key"].as_str().expect("a key");
+    assert!(
+        key.starts_with("/library/parts/") && key.ends_with("/file.mkv"),
+        "{key}"
+    );
 
     // Streams belong to a lookup, not a listing.
     assert!(part.get("Stream").is_none(), "{part}");

@@ -5,7 +5,14 @@
 //! keeps what is only Plex's: parameter names, status codes, and a PNG labelled `image/jpeg`.
 
 mod convert;
+pub mod media;
+pub mod plan;
+pub mod session;
 mod source;
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use tokio::sync::{AcquireError, OnceCell, Semaphore};
 
@@ -76,24 +83,70 @@ pub enum TranscodeError {
     Worker(tokio::task::JoinError),
     #[error("the transcoder is shutting down: {0}")]
     ShuttingDown(AcquireError),
+    #[error("the file does not exist on this machine")]
+    MissingFile,
+    #[error("the file is outside every library")]
+    OutsideLibrary,
+    #[error("the video would have to be converted")]
+    VideoNeedsTranscoding,
+    #[error("too many transcode sessions are running")]
+    TooManySessions,
+    #[error("no such transcode session")]
+    UnknownSession,
+    #[error("no such segment in this session")]
+    UnknownSegment,
+    #[error("could not start the transcoder: {0}")]
+    Spawn(std::io::Error),
+    #[error("could not prepare the session's directory: {0}")]
+    Io(std::io::Error),
+}
+
+/// How to run the transcoder process and reach this server from it.
+#[derive(Debug, Clone)]
+pub struct Config {
+    /// The patched ffmpeg, whose options the command lines use.
+    pub binary: PathBuf,
+    /// Where its separately distributed codecs are, for Plex's own build.
+    pub external_libs: Option<PathBuf>,
+    /// This server, as the process can reach it: `http://127.0.0.1:32500`.
+    pub callback_base: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            binary: PathBuf::from("ffmpeg"),
+            external_libs: None,
+            callback_base: "http://127.0.0.1:32500".to_owned(),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Transcoder {
     slots: Semaphore,
     client: OnceCell<reqwest::Client>,
+    config: Config,
+    sessions: Mutex<HashMap<String, Arc<session::Session>>>,
 }
 
 impl Default for Transcoder {
     fn default() -> Self {
-        Self {
-            slots: Semaphore::new(MAX_CONCURRENT),
-            client: OnceCell::new(),
-        }
+        Self::new(Config::default())
     }
 }
 
 impl Transcoder {
+    #[must_use]
+    pub fn new(config: Config) -> Self {
+        Self {
+            slots: Semaphore::new(MAX_CONCURRENT),
+            client: OnceCell::new(),
+            config,
+            sessions: Mutex::default(),
+        }
+    }
+
     /// Fetches an image and converts it.
     ///
     /// # Errors

@@ -21,6 +21,7 @@ pub mod language;
 pub mod listing;
 pub mod meta;
 pub mod photo;
+mod playback;
 pub mod prefs;
 pub mod providers;
 mod related;
@@ -104,7 +105,7 @@ pub fn router(state: PlexState) -> Router {
         // default rules. Our own parameters use the `{name}` form, which is unaffected.
         .without_v07_checks();
 
-    let routes = photo::add_routes(prefs::add_routes(routes));
+    let routes = playback::add_routes(photo::add_routes(prefs::add_routes(routes)));
 
     // Added last so a real handler registered above always wins over its stub.
     stubs::add_routes(routes).with_state(state)

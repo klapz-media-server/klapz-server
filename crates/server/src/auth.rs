@@ -80,6 +80,12 @@ pub fn parse_networks(list: &str) -> Result<Vec<IpNet>, String> {
         .collect()
 }
 
+/// The transcoder process calling back. It holds no token: these routes answer only to the
+/// unguessable id of a session it was started for.
+fn is_transcoder_callback(path: &str) -> bool {
+    path.starts_with("/video/:/transcode/session/")
+}
+
 pub async fn require_token(
     State(access): State<Arc<Access>>,
     mut request: Request,
@@ -87,7 +93,10 @@ pub async fn require_token(
 ) -> Response {
     let path = request.uri().path();
     // The web client is public on the reference too: it has to load before it can sign in.
-    if PUBLIC_PATHS.contains(&path) || crate::web::is_client_path(path) {
+    if PUBLIC_PATHS.contains(&path)
+        || crate::web::is_client_path(path)
+        || is_transcoder_callback(path)
+    {
         return next.run(request).await;
     }
 

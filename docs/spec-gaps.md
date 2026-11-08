@@ -369,6 +369,33 @@ header, dimensions and pixel format across seven size and format combinations; t
 differ, the encoders being different. Converted with the `image` crate, a JPEG comes out 20 to 60%
 larger than the reference's at the same quality, and a PNG about 10%.
 
+### Playing a file
+
+**Direct Play.** With `hasMDE=1&directPlay=1` the reference answers `decision="directplay"` for
+everything we tried, MPEG-4 in AVI and HEVC in MKV included: `hasMDE` means the client has judged
+for itself. The file is then fetched from the part's `key`. The middle segment of that URL is a
+change stamp and the last a cosmetic name; we read neither.
+
+**Direct Stream.** With `directPlay=0`, measured with `/decision` on one file of each of 16
+container and codec combinations, for Plex Web over HLS: H.264 is copied, AAC and MP3 are copied,
+other audio is converted to AAC. Any other video is converted to H.264, which we refuse with
+`501`, as we do DASH and `subtitles=burn`. `generalDecisionCode` is 1001 in all these cases, and
+`Part.decision` is `transcode` even when both tracks are copied.
+
+The command line is the reference's, from its log, and a test holds it to that. Two differences,
+neither visible to a client:
+
+- it reads the source from a per-session URL rather than `/library/parts/…?X-Plex-Token=…`, which
+  keeps a token out of the process list;
+- `-segment_list_size` is 100000 where the reference uses 5. A remux runs so far ahead of its
+  announcements that the first to arrive already listed segment 5 onward, and the earlier ones
+  were never announced. The usual `0` for "unlimited" makes this build exit without writing.
+
+The reference lists every segment up front, 8 seconds each. A remux is cut on the file's own key
+frames (9, 9, 6, 9 s on one file), so our playlist is `EVENT` and grows, starting once three
+segments exist. `offset` seeks with `-ss` before the input, placed as ffmpeg expects: no captured
+command has one. The `audio` bitrate of a conversion is 256k, the value in the one captured remux.
+
 ### A library's settings
 
 `GET /library/sections/{id}/prefs` lists 17 settings for a film library and 18 for a series, nearly

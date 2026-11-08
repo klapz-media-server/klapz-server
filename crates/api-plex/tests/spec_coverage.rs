@@ -157,6 +157,10 @@ fn concretize(path: &str) -> String {
 fn substitute(parameter: &str) -> &'static str {
     match parameter.to_lowercase().as_str() {
         "transcodetype" => "video",
+        // Not a number on purpose: the part's route is real, and would answer `404` for a part
+        // that does not exist, which this test could not tell from a missing route. An id it
+        // cannot parse is a `400`.
+        "partid" => "not-a-number",
         "element" => "thumb",
         "ext" => "jpg",
         "action" => "play",

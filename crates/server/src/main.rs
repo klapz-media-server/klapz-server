@@ -84,8 +84,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // those unless the router has `without_v07_checks`, and `merge` re-validates whatever is
     // merged *in* with the default rules. So the router holding those paths cannot be the one
     // merged in. GraphQL has no such paths and merges cleanly either way.
-    let mut app = open_plex_api_plex::router(PlexState::new(identity(), schema.clone(), accounts))
-        .merge(graphql::router(schema));
+    let mut plex_state = PlexState::new(identity(), schema.clone(), accounts);
+    plex_state.transcoder = std::sync::Arc::new(transcoder());
+    let mut app = open_plex_api_plex::router(plex_state).merge(graphql::router(schema));
     let web_dir = web::directory();
     if let Some(client) = web::router(&web_dir) {
         tracing::info!(directory = %web_dir.display(), "serving the web client at /web");
@@ -163,6 +164,19 @@ fn trusted_networks() -> Result<Vec<ipnet::IpNet>, String> {
         );
     }
     Ok(networks)
+}
+
+/// `OPENPLEX_TRANSCODER` is the patched ffmpeg to run; `OPENPLEX_TRANSCODER_CODECS` where its
+/// separately distributed codecs are, for Plex's own build.
+fn transcoder() -> open_plex_transcoder::Transcoder {
+    let bind = std::env::var("OPENPLEX_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
+    let port = bind.rsplit(':').next().unwrap_or("32500");
+    open_plex_transcoder::Transcoder::new(open_plex_transcoder::Config {
+        binary: std::env::var_os("OPENPLEX_TRANSCODER")
+            .map_or_else(|| "ffmpeg".into(), std::path::PathBuf::from),
+        external_libs: std::env::var_os("OPENPLEX_TRANSCODER_CODECS").map(std::path::PathBuf::from),
+        callback_base: format!("http://127.0.0.1:{port}"),
+    })
 }
 
 /// The identity the server announces.

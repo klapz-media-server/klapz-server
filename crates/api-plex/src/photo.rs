@@ -49,14 +49,22 @@ impl From<TranscodeError> for ApiError {
         match error {
             TranscodeError::InvalidSource => Self::BadRequest,
             TranscodeError::ForbiddenSource => Self::Forbidden,
-            TranscodeError::UnavailableSource => Self::NotFound,
+            TranscodeError::UnavailableSource
+            | TranscodeError::MissingFile
+            | TranscodeError::UnknownSession
+            | TranscodeError::UnknownSegment => Self::NotFound,
+            TranscodeError::VideoNeedsTranscoding => Self::NotImplemented,
             TranscodeError::SourceTooLarge
             | TranscodeError::Undecodable
             | TranscodeError::UnusableSize
             | TranscodeError::Encode(_)
             | TranscodeError::Client(_)
             | TranscodeError::Worker(_)
-            | TranscodeError::ShuttingDown(_) => Self::Internal(Box::new(error)),
+            | TranscodeError::ShuttingDown(_)
+            | TranscodeError::OutsideLibrary
+            | TranscodeError::TooManySessions
+            | TranscodeError::Spawn(_)
+            | TranscodeError::Io(_) => Self::Internal(Box::new(error)),
         }
     }
 }
