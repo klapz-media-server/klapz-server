@@ -141,6 +141,10 @@ Places where we knowingly answer differently, each decided rather than overlooke
   sets for a distinctive term (`dune`: 21 both sides), materially more for a common one
   (`hell`: 43 against 439). Ranking needs a score, and ordering by a score conflicts with
   keyset cursors, which resume from a stored column.
+- **The search field finds no people yet.** `GET /library/search`, what Plex Web's search field
+  calls, answers films, series and episodes; the people and collections the reference mixes in
+  are absent, and `searchTypes=people` is tolerated rather than refused, since Plex Web sends it
+  with every search.
 - **Range filter operators are unreachable.** `year>=2020` travels with a raw `>`, which is not
   a legal URI character: `hyper` rejects the request line with `400` before any handler runs,
   and the reference rejects the percent-encoded form in turn. The equality filters work; the

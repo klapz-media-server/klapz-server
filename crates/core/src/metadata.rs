@@ -506,23 +506,16 @@ impl ItemQuery {
 pub struct SearchQuery {
     /// Matches items having a word beginning with this text. See [`crate::search`].
     pub word_prefix: String,
-    /// Restricts to one kind. `None` searches every kind, which is what the reference does —
-    /// its results mix films, series and episodes.
-    pub kind: Option<ItemKind>,
+    /// Restricts to these kinds. Empty searches every kind.
+    pub kinds: Vec<ItemKind>,
 }
 
 impl SearchQuery {
     pub fn new(word_prefix: impl Into<String>) -> Self {
         Self {
             word_prefix: word_prefix.into(),
-            kind: None,
+            kinds: Vec::new(),
         }
-    }
-
-    #[must_use]
-    pub const fn of_kind(mut self, kind: ItemKind) -> Self {
-        self.kind = Some(kind);
-        self
     }
 
     /// Whether the search has anything to match.

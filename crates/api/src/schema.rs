@@ -193,7 +193,7 @@ impl Query {
     /// range scan, not a substring scan.
     ///
     /// Polymorphic and cross-library by design: results mix films, series and episodes from
-    /// different libraries, which is what a single search box needs. Narrow with `kind`.
+    /// different libraries, which is what a single search box needs. Narrow with `kinds`.
     ///
     /// Ordered by sort title. Not by relevance: ranking needs a score this server does not
     /// compute, and a title ordering at least gives the cursor a stable position to resume
@@ -204,8 +204,8 @@ impl Query {
         &self,
         context: &Context<'_>,
         #[graphql(desc = "Term to match a prefix of any title word against.")] query: String,
-        #[graphql(desc = "Restrict to one kind. Omit to search every kind.")] kind: Option<
-            crate::filter::ItemType,
+        #[graphql(desc = "Restrict to these kinds. Omit to search every kind.")] kinds: Option<
+            Vec<crate::filter::ItemType>,
         >,
         #[graphql(desc = "Return items after this cursor.")] after: Option<String>,
         #[graphql(desc = "Return items before this cursor.")] before: Option<String>,
@@ -216,7 +216,11 @@ impl Query {
         >,
     ) -> Result<crate::item::ItemConnection> {
         let mut search = SearchQuery::new(query);
-        search.kind = kind.map(Into::into);
+        search.kinds = kinds
+            .unwrap_or_default()
+            .into_iter()
+            .map(Into::into)
+            .collect();
 
         connection::query(
             after,

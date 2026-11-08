@@ -1231,7 +1231,7 @@ type Query {
 	range scan, not a substring scan.
 	
 	Polymorphic and cross-library by design: results mix films, series and episodes from
-	different libraries, which is what a single search box needs. Narrow with `kind`.
+	different libraries, which is what a single search box needs. Narrow with `kinds`.
 	
 	Ordered by sort title. Not by relevance: ranking needs a score this server does not
 	compute, and a title ordering at least gives the cursor a stable position to resume
@@ -1243,9 +1243,9 @@ type Query {
 		"""
 		query: String!,
 		"""
-		Restrict to one kind. Omit to search every kind.
+		Restrict to these kinds. Omit to search every kind.
 		"""
-		kind: ItemType,
+		kinds: [ItemType!],
 		"""
 		Return items after this cursor.
 		"""

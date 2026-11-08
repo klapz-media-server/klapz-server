@@ -466,6 +466,23 @@ async fn search_matches_a_word_prefix_not_a_substring() {
 }
 
 #[tokio::test]
+async fn a_term_of_several_words_needs_them_all() {
+    let repository = repository().await;
+
+    let found = repository
+        .items(&movies().matching("dune part"), page(10))
+        .await
+        .expect("page");
+    assert_eq!(titles(&found.items), ["Dune: Part Two"]);
+
+    let none = repository
+        .items(&movies().matching("dune world"), page(10))
+        .await
+        .expect("page");
+    assert!(none.items.is_empty());
+}
+
+#[tokio::test]
 async fn search_terms_are_never_patterns() {
     // The search is a range on an index, not a `LIKE`, so a wildcard is just a character
     // that happens to be in no word. Asserted anyway: the day someone reaches for `LIKE`

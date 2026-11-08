@@ -191,18 +191,10 @@ impl InMemoryMetadata {
                 // The same word-prefix match storage applies, through the same tokenizer:
                 // two implementations of "what counts as a word" would make a search that
                 // passes here and misses items in production.
-                filter.title_word_prefix.as_ref().is_none_or(|prefix| {
-                    let Some((lower, upper)) = crate::search::prefix_range(prefix) else {
-                        return true;
-                    };
-                    crate::search::title_words(
-                        item.title.as_deref(),
-                        item.title_sort.as_deref(),
-                        item.original_title.as_deref(),
-                    )
-                    .iter()
-                    .any(|word| word >= &lower && upper.as_ref().is_none_or(|bound| word < bound))
-                })
+                filter
+                    .title_word_prefix
+                    .as_ref()
+                    .is_none_or(|term| title_matches(item, term))
             })
             .filter(|item| {
                 filter.min_width.is_none_or(|width| {
@@ -238,6 +230,22 @@ impl InMemoryMetadata {
         }
         matched
     }
+}
+
+/// Every word of the term begins a word of the item's titles, as storage applies it.
+fn title_matches(item: &MetadataItem, term: &str) -> bool {
+    let words = crate::search::title_words(
+        item.title.as_deref(),
+        item.title_sort.as_deref(),
+        item.original_title.as_deref(),
+    );
+    crate::search::words(term).all(|prefix| {
+        crate::search::prefix_range(&prefix).is_some_and(|(lower, upper)| {
+            words
+                .iter()
+                .any(|word| word >= &lower && upper.as_ref().is_none_or(|bound| word < bound))
+        })
+    })
 }
 
 #[async_trait::async_trait]
@@ -294,27 +302,11 @@ impl MetadataRepository for InMemoryMetadata {
             });
         }
 
-        let Some((lower, upper)) = crate::search::prefix_range(&query.word_prefix) else {
-            return Ok(Page {
-                items: Vec::new(),
-                has_previous: false,
-                has_next: false,
-            });
-        };
-
         let mut matched: Vec<MetadataItem> = self
             .items
             .iter()
-            .filter(|item| query.kind.is_none_or(|kind| item.kind == kind))
-            .filter(|item| {
-                crate::search::title_words(
-                    item.title.as_deref(),
-                    item.title_sort.as_deref(),
-                    item.original_title.as_deref(),
-                )
-                .iter()
-                .any(|word| word >= &lower && upper.as_ref().is_none_or(|bound| word < bound))
-            })
+            .filter(|item| query.kinds.is_empty() || query.kinds.contains(&item.kind))
+            .filter(|item| title_matches(item, &query.word_prefix))
             .cloned()
             .collect();
         // Sort title then id, as storage orders a search.

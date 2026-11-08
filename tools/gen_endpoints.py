@@ -67,6 +67,14 @@ IMPLEMENTED = frozenset(
 # spec row for the carry-over to key on. Each is described in docs/spec-gaps.md.
 OFF_SPEC = (
     (
+        "partial",
+        "GET",
+        "/library/search",
+        "user",
+        "Search field (universal search)",
+        "Films, series and episodes with their listing fields, in three score tiers. Not served: the people and collections the reference mixes in, and its fuzzy matching. See `docs/spec-gaps.md`.",
+    ),
+    (
         "done",
         "GET",
         "/library/sections",

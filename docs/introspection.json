@@ -3639,7 +3639,7 @@
             },
             {
               "name": "search",
-              "description": "Items whose title matches a search term, across every library.\n\nMatches a *word prefix*: `hell` finds \"Good News About Hell\", and accents are folded so\n`soiree` finds \"# Pire Soirée\". A term inside a word does not match — the index is a\nrange scan, not a substring scan.\n\nPolymorphic and cross-library by design: results mix films, series and episodes from\ndifferent libraries, which is what a single search box needs. Narrow with `kind`.\n\nOrdered by sort title. Not by relevance: ranking needs a score this server does not\ncompute, and a title ordering at least gives the cursor a stable position to resume\nfrom. A blank term matches nothing rather than everything.",
+              "description": "Items whose title matches a search term, across every library.\n\nMatches a *word prefix*: `hell` finds \"Good News About Hell\", and accents are folded so\n`soiree` finds \"# Pire Soirée\". A term inside a word does not match — the index is a\nrange scan, not a substring scan.\n\nPolymorphic and cross-library by design: results mix films, series and episodes from\ndifferent libraries, which is what a single search box needs. Narrow with `kinds`.\n\nOrdered by sort title. Not by relevance: ranking needs a score this server does not\ncompute, and a title ordering at least gives the cursor a stable position to resume\nfrom. A blank term matches nothing rather than everything.",
               "args": [
                 {
                   "name": "query",
@@ -3656,12 +3656,20 @@
                   "defaultValue": null
                 },
                 {
-                  "name": "kind",
-                  "description": "Restrict to one kind. Omit to search every kind.",
+                  "name": "kinds",
+                  "description": "Restrict to these kinds. Omit to search every kind.",
                   "type": {
-                    "kind": "ENUM",
-                    "name": "ItemType",
-                    "ofType": null
+                    "kind": "LIST",
+                    "name": null,
+                    "ofType": {
+                      "kind": "NON_NULL",
+                      "name": null,
+                      "ofType": {
+                        "kind": "ENUM",
+                        "name": "ItemType",
+                        "ofType": null
+                      }
+                    }
                   },
                   "defaultValue": null
                 },

@@ -1914,3 +1914,31 @@ async fn a_photo_requires_a_caller() {
         .expect("router responds");
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn the_search_field_needs_a_term() {
+    let (status, _, _) = get("/library/search?limit=30", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_search_for_something_absent_is_an_empty_container() {
+    let (status, _, body) = get(
+        "/library/search?query=zzzz&limit=30&searchTypes=movies,tv,people",
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, r#"{"MediaContainer":{"size":0}}"#);
+}
+
+#[tokio::test]
+async fn a_search_of_nothing_we_hold_asks_nothing_of_the_library() {
+    let (status, _, body) = get(
+        "/library/search?query=dune&searchTypes=music",
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, r#"{"MediaContainer":{"size":0}}"#);
+}

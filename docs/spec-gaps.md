@@ -406,6 +406,40 @@ with weaker matches included.
 `/search` also carries a static `Provider` array of four entries, and its `size` counts the
 items **plus** the providers: 37 items and 4 providers are reported as 41.
 
+### The search field calls `/library/search`
+
+Plex Web's search field does not use `/hubs/search` or `/search`. It calls the
+`universalsearch` feature from `/media/providers`, `GET /library/search?query=&limit=&searchTypes=
+&includeMetadata=1&filterPeople=1`, which the spec does not declare. The answer is a list of
+`SearchResult`, each a `score` around one `Metadata` (or one `Directory`, for a person or a
+collection, per library holding it).
+
+Measured: `query` is required (`400`; empty is an empty container); `limit` defaults to 10, a
+non-number is `400` and zero `500` (a `400` here); `searchTypes` defaults to `movies,tv`, where
+`movies` is films and `tv` is series and episodes, and an unknown value yields nothing;
+`sectionId` changes nothing. Items come in the listing's form, naming `librarySectionTitle`;
+only a series adds `librarySectionID` and `librarySectionKey`. A film with no synopsis carries
+`summary=""`, where a listing omits it.
+
+Differences that remain, each knowingly:
+
+- **Scores.** The reference's are finer and fuzzy: `zzzqqq` matches *Dragon Ball Z*. We keep the
+  word-prefix match and use three of its values: 0.93 for a title equal to the term, 0.73 for
+  one starting with it, 0.33 otherwise, ranking the first 100 matches of each of films and
+  series, then of episodes. Same top results for a title someone types in full.
+- **People and collections are absent.** `searchTypes=people` is accepted and finds nothing,
+  against the rule that what we cannot honor is refused: Plex Web sends it with every search,
+  and a `501` would take the whole field down. Tag names have no word index to search yet, and
+  collections are not imported.
+
+Against the reference on eight terms and 89 shared items, what still differs is items edited
+since the snapshot, the stream profiles (*Open questions*), and the `Field` lock list on two
+series, which we do not serve.
+
+A term of several words needs them all, here as on `title=` and `/search`. The reference also
+wants them in order (`bad breaking` finds nothing); our word index holds no positions, so a
+reversed term finds a little more.
+
 ### Sort collation
 
 **Accepted divergence** — not a bug to fix. The reference server sorts titles with a Unicode

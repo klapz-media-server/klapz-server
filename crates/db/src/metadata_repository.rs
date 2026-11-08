@@ -79,7 +79,7 @@ impl SqlMetadataRepository {
         if let Some(prefix) = &filter.title_word_prefix {
             // Driven from the word index rather than the title column: the reference matches
             // a prefix of *any* word, so `hell` has to find "Good News About Hell".
-            select = select.filter(word_exists(prefix));
+            select = select.filter(term_matches(prefix));
         }
         if let Some(width) = filter.min_width {
             select = select.filter(Expr::exists(
@@ -155,6 +155,15 @@ fn carries_tag(condition: &TagCondition) -> Condition {
 ///
 /// An `EXISTS` rather than a join: an item has 4.3 words on average, and a join would return
 /// it once per matching word.
+/// Every word of the term must begin some word of the title.
+///
+/// The reference also wants them in order (`bad breaking` finds nothing), which the index
+/// cannot tell: it holds each title's distinct words, without positions. So a reversed term
+/// finds a little more here, the harmless direction for a search.
+fn term_matches(term: &str) -> Condition {
+    search::words(term).fold(Condition::all(), |all, word| all.add(word_exists(&word)))
+}
+
 fn word_exists(prefix: &str) -> Condition {
     Condition::all().add(Expr::exists(
         Query::select()
@@ -247,9 +256,10 @@ impl MetadataRepository for SqlMetadataRepository {
             });
         }
 
-        let mut select = metadata_item::Entity::find().filter(word_exists(&query.word_prefix));
-        if let Some(kind) = query.kind {
-            select = select.filter(metadata_item::Column::Kind.eq(kind_name(kind)));
+        let mut select = metadata_item::Entity::find().filter(term_matches(&query.word_prefix));
+        if !query.kinds.is_empty() {
+            let kinds = query.kinds.iter().map(|kind| kind_name(*kind));
+            select = select.filter(metadata_item::Column::Kind.is_in(kinds));
         }
 
         // Title ordering, so the cursor is the one the listing already builds.
