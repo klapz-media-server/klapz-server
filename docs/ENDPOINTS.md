@@ -18,9 +18,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 16 | 6.2 % |
+| `todo` | 15 | 5.8 % |
 | `stub` | 191 | 73.5 % |
-| `partial` | 8 | 3.1 % |
+| `partial` | 9 | 3.5 % |
 | `done` | 8 | 3.1 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 1 | 3 | 48 | 9 | 24 |
+| [Library](#library) | 85 | 1 | 4 | 48 | 8 | 24 |
 | [Hubs](#hubs) | 15 | 0 | 1 | 14 | 0 | 0 |
 | [Content](#content) | 13 | 0 | 2 | 11 | 0 | 0 |
 | [Devices](#devices) | 13 | 0 | 0 | 13 | 0 | 0 |
@@ -147,7 +147,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `partial` | `GET` | `/library/sections/{sectionId}/firstCharacters` | user | Get list of first characters | Bucket sets and counts identical to the reference on four libraries. Folded first character, `#` for everything unlettered, percent-encoded keys. Singular form, absent from the spec — see spec-gaps.md. |
 | `deferred` | `DELETE` | `/library/sections/{sectionId}/indexes` | admin | Delete section indexes | scanner/analysis, separate binary |
 | `deferred` | `DELETE` | `/library/sections/{sectionId}/intros` | admin | Delete section intro markers | scanner/analysis, separate binary |
-| `todo` | `GET` | `/library/sections/{sectionId}/prefs` | user | Get section prefs | The two settings Plex Web looks up by name, at their defaults; identical to the reference on those. The other 15 or 16 are about scanning and matching. |
+| `partial` | `GET` | `/library/sections/{sectionId}/prefs` | user | Get section prefs | The two settings Plex Web looks up by name, at their defaults; identical to the reference on those. The other 15 or 16 are about scanning and matching. |
 | `todo` | `PUT` | `/library/sections/{sectionId}/prefs` | admin | Set section prefs |  |
 | `deferred` | `DELETE` | `/library/sections/{sectionId}/refresh` | admin | Cancel section refresh | scanner/analysis, separate binary |
 | `deferred` | `POST` | `/library/sections/{sectionId}/refresh` | admin | Refresh section | scanner/analysis, separate binary |
