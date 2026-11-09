@@ -216,6 +216,9 @@ Places where we knowingly answer differently, each decided rather than overlooke
 - **The transcoder's callbacks carry no token.** `/video/:/transcode/session/{id}/{callback}/…`
   is how the process reads its source and reports its segments. Those routes bypass token
   authentication and answer only to the unguessable id of a running session.
+- **A stream's segments carry no token**, as on the reference: `/video/:/transcode/universal/session/…`
+  answers to the session's name alone, and an unknown one is a `404`. The manifest gives a user's
+  stored name (`u6~…`), since nothing else in the request says whose session it is.
 - **File paths are published**, on both surfaces, as Plex does: `MediaFile.path` with a derived
   `MediaFile.filename` in GraphQL, `Part.file` in the Plex layer. This is reference data — it
   makes the library auditable from outside. It changes nothing about input: playback addresses

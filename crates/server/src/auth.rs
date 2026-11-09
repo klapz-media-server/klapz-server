@@ -155,6 +155,12 @@ fn is_transcoder_callback(path: &str) -> bool {
     path.starts_with("/video/:/transcode/session/")
 }
 
+/// A stream's playlists and segments, which players fetch without a token, as on the reference.
+/// The session's name opens them, and an unknown one answers `404`.
+fn is_stream_segment(path: &str) -> bool {
+    path.starts_with("/video/:/transcode/universal/session/")
+}
+
 pub async fn require_token(
     State(access): State<Arc<Access>>,
     mut request: Request,
@@ -162,7 +168,7 @@ pub async fn require_token(
 ) -> Response {
     let path = request.uri().path();
     // The web client is public on the reference too: it has to load before it can sign in.
-    if crate::web::is_client_path(path) || is_transcoder_callback(path) {
+    if crate::web::is_client_path(path) || is_transcoder_callback(path) || is_stream_segment(path) {
         return next.run(request).await;
     }
     let presented = token_from(&request);
@@ -286,9 +292,16 @@ mod tests {
             parse_networks(networks).unwrap(),
         ));
         Router::new()
+            // Plex's paths have segments starting with a colon.
+            .without_v07_checks()
             .route("/library/sections", get(whoami))
             .route("/identity", get(whoami))
             .route("/", get(whoami))
+            .route(
+                "/video/:/transcode/universal/session/s1/0/header",
+                get(whoami),
+            )
+            .route("/video/:/transcode/universal/start.mpd", get(whoami))
             .layer(axum::middleware::from_fn_with_state(access, require_token))
     }
 
@@ -554,6 +567,16 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn a_streams_segments_need_no_token_but_starting_one_does() {
+        let segment = "/video/:/transcode/universal/session/s1/0/header";
+        assert_eq!(call(segment, None).await.0, StatusCode::OK);
+        assert_eq!(
+            call("/video/:/transcode/universal/start.mpd", None).await.0,
+            StatusCode::UNAUTHORIZED
+        );
     }
 
     #[tokio::test]

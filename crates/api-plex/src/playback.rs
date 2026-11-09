@@ -5,6 +5,10 @@
 //!
 //! `/video/:/transcode/session/…` is the process's own way back in. Those routes are served
 //! without a token and answer only to the unguessable id its session was given.
+//!
+//! A stream's segments carry no token either: the manifest names them without one, and players
+//! fetch them as written, as on the reference. Knowing a session's name is what opens them, so
+//! a manifest gives its stored name, the one that says whose session it is.
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -713,9 +717,10 @@ async fn start_hls(
         .version
         .frame_rate
         .map_or_else(String::new, |rate| format!(",FRAME-RATE={rate:.6}"));
+    let stored = gql::session_key(&session);
     Ok(playlist(format!(
         "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH={bandwidth}{resolution}{frame_rate}\n\
-         session/{session}/base/index.m3u8\n"
+         session/{stored}/base/index.m3u8\n"
     )))
 }
 
@@ -745,7 +750,7 @@ async fn start_dash(
     let picture = Picture::of(&selection, &plan);
     let audio_bandwidth = audio_bits(&selection, &plan);
     let body = dash_manifest(&DashManifest {
-        session: &session,
+        session: &gql::session_key(&session),
         duration_ms: duration,
         segment_seconds: segment_seconds(&plan, Protocol::Dash),
         video_bandwidth: picture.video_bandwidth,
@@ -887,13 +892,10 @@ fn playlist(body: String) -> Response {
 
 /// `…/session/{id}/base/index.m3u8` and its segments `…/base/00000.ts`.
 async fn session_file(
-    _caller: Caller,
     State(state): State<PlexState>,
     Path((session, base, file)): Path<(String, String, String)>,
     request: Request,
 ) -> Result<Response, ApiError> {
-    touch_session(&state, &session).await;
-    let session = gql::session_key(&session);
     if file == "index.m3u8" {
         let output = state.transcoder.session_output(&session).await?;
         return Ok(playlist(media_playlist(&output)));

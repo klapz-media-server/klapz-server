@@ -774,6 +774,9 @@ None of this is in the spec. Measured against the reference and plex.tv.
   origin (http or https, any subdomain) is echoed in `Access-Control-Allow-Origin`, and any other
   origin gets `https://app.plex.tv`, which a browser refuses just the same. `OPTIONS` answers `200`
   with the requested headers mirrored and a `Access-Control-Max-Age` of `1209600`.
+- A stream's `header` and chunks are served without a token by the reference, from the LAN too:
+  the manifest carries no `X-Plex-Token` and players fetch its relative URLs as they are. An
+  unknown session answers `404` with or without a token.
 - A client with no token matches the server it reached with its plex.tv entry through
   `/identity`, so that answer must be the paired server's identifier.
 - Without a token, `GET /` answers `401` on the reference, from loopback and from the LAN alike,
