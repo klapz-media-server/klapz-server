@@ -125,9 +125,26 @@ async fn timeline(
     if let Some(item) = item {
         require_item(&state, item).await?;
         if let Some(playback_id) = client.session_identifier {
+            // Found before the report, which closes the session once the player has stopped.
+            let session = latest_session(&state, &playback_id).await;
             report(&state, playback_id.clone(), reported, position).await;
-            if let Some(session) = latest_session(&state, &playback_id).await {
-                describe_session(&mut body, &session);
+            match (&session, reported) {
+                // The reference tears the conversion down when the player stops; so do we, or its
+                // process runs on for five minutes holding a session slot.
+                (Some(session), "STOPPED") => {
+                    // The key GraphQL hands back is the client's; the transcoder stores it under
+                    // the caller's name.
+                    state
+                        .transcoder
+                        .stop_session(&gql::session_key(&session.key));
+                }
+                (Some(session), _) => {
+                    let status = state
+                        .transcoder
+                        .session_status(&gql::session_key(&session.key));
+                    describe_session(&mut body, session, status.as_ref());
+                }
+                _ => {}
             }
         }
     }
@@ -191,10 +208,13 @@ fn bandwidth_kbps(session: &GqlSession) -> i64 {
     (total + 99) / 100
 }
 
-/// What Plex Web reads to show the current quality. It compares `TranscodeSession.key` with the
-/// session it started, so the key has to be that session's. Quality never changes during a
-/// session here, so one entry covers it from the start.
-fn describe_session(body: &mut Json, session: &GqlSession) {
+/// What Plex Web reads to show the current quality and buffered range. `TranscodeSession.key`
+/// has to be the session the player started; the fields follow a capture of the reference.
+fn describe_session(
+    body: &mut Json,
+    session: &GqlSession,
+    status: Option<&open_plex_transcoder::session::SessionStatus>,
+) {
     let resolution = resolution_label(session.width.map_or(0, i32::unsigned_abs));
     body["size"] = json!(2);
     body["Bandwidths"] = json!([{
@@ -204,12 +224,54 @@ fn describe_session(body: &mut Json, session: &GqlSession) {
             "resolution": resolution,
         }],
     }]);
-    body["TranscodeSession"] = json!([{
-        "key": format!("/transcode/sessions/{}", session.key),
+    let key = format!("/transcode/sessions/{}", session.key);
+    body["TranscodeSession"] = json!([transcode_session(&key, session, status)]);
+}
+
+/// The reference's `TranscodeSession` object, filled from the live conversion where it is known.
+/// A gone conversion still answers with the shape a client expects, from what the session stored.
+fn transcode_session(
+    key: &str,
+    session: &GqlSession,
+    status: Option<&open_plex_transcoder::session::SessionStatus>,
+) -> Json {
+    let Some(status) = status else {
+        return json!({
+            "key": key,
+            "throttled": false,
+            "complete": false,
+            "context": "streaming",
+            "videoDecision": session.video_decision.to_ascii_lowercase(),
+            "audioDecision": session.audio_decision.to_ascii_lowercase(),
+        });
+    };
+    let mut transcode = json!({
+        "key": key,
         "throttled": false,
-        "complete": false,
+        "complete": status.complete,
+        "progress": status.progress,
+        "size": -1,
+        "speed": status.speed,
+        "error": false,
+        "duration": status.duration_ms,
+        "remaining": status.remaining_seconds,
         "context": "streaming",
-        "videoDecision": session.video_decision.to_ascii_lowercase(),
-        "audioDecision": session.audio_decision.to_ascii_lowercase(),
-    }]);
+        "sourceVideoCodec": status.source_video_codec,
+        "sourceAudioCodec": status.source_audio_codec,
+        "videoDecision": status.video_decision,
+        "audioDecision": status.audio_decision,
+        "subtitleDecision": "ignore",
+        "protocol": status.protocol,
+        "container": status.container,
+        "videoCodec": status.video_codec,
+        "audioCodec": status.audio_codec,
+        "transcodeHwRequested": false,
+        "timeStamp": open_plex_core::now_epoch(),
+        "maxOffsetAvailable": status.max_offset_seconds,
+        "minOffsetAvailable": status.min_offset_seconds,
+    });
+    if let Some(channels) = status.audio_channels {
+        transcode["audioChannels"] = json!(channels);
+    }
+    transcode
 }

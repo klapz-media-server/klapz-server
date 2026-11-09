@@ -121,6 +121,32 @@ pub struct Output {
     pub segment_seconds: u32,
 }
 
+/// What a client's status display reads about a running conversion: the reference's
+/// `TranscodeSession`, decisions and live progress together.
+#[derive(Debug, Clone)]
+pub struct SessionStatus {
+    pub protocol: &'static str,
+    pub container: &'static str,
+    pub source_video_codec: String,
+    pub source_audio_codec: String,
+    pub video_decision: &'static str,
+    pub audio_decision: &'static str,
+    pub video_codec: String,
+    pub audio_codec: String,
+    /// The converted audio's channel count; `None` when the audio is copied and unknown.
+    pub audio_channels: Option<u32>,
+    pub duration_ms: u64,
+    /// How far content is available, and from where, in seconds.
+    pub max_offset_seconds: f64,
+    pub min_offset_seconds: f64,
+    /// Per cent of the whole produced so far.
+    pub progress: f64,
+    /// Media seconds produced per wall-clock second.
+    pub speed: f64,
+    pub remaining_seconds: i64,
+    pub complete: bool,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Announced {
     seconds: f64,
@@ -142,6 +168,8 @@ struct Run {
     generation: u64,
     /// The first DASH chunk it writes, numbered as its files are.
     first_chunk: u32,
+    /// When this process started, for the transcode speed a status reports.
+    started: Instant,
     stop: Arc<Notify>,
     task: Option<JoinHandle<()>>,
 }
@@ -313,6 +341,25 @@ impl Session {
             ended: progress.ended,
             total_ms,
             segment_seconds,
+        })
+    }
+
+    /// How many segment files the process has finished writing. HLS segments and DASH chunks are
+    /// named differently; a chunk still being written carries a `.tmp` suffix and is not counted.
+    fn produced_segments(&self) -> usize {
+        let (prefix, suffix) = match self.request.protocol {
+            Protocol::Hls => ("media-", ".ts"),
+            Protocol::Dash => ("chunk-stream0-", ".m4s"),
+        };
+        std::fs::read_dir(&self.directory).map_or(0, |entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    name.starts_with(prefix) && name.ends_with(suffix)
+                })
+                .count()
         })
     }
 }
@@ -766,6 +813,7 @@ impl Transcoder {
             *run = Some(Run {
                 generation,
                 first_chunk,
+                started: Instant::now(),
                 stop: Arc::clone(&stop),
                 task: None,
             });
@@ -911,6 +959,76 @@ impl Transcoder {
             })
             .await;
         Ok(session.output())
+    }
+
+    /// A running session's decisions and live progress, or `None` if it is not known.
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a status display: the magnitudes are small and exactness is not needed"
+    )]
+    pub fn session_status(&self, id: &str) -> Option<SessionStatus> {
+        let session = self.session(id)?;
+        let request = &session.request;
+        let seconds = request.segment_seconds();
+        let (protocol, container) = match request.protocol {
+            Protocol::Dash => ("dash", "mp4"),
+            Protocol::Hls => ("hls", "mpegts"),
+        };
+        let video_decision = match request.plan.video {
+            VideoAction::Copy => "copy",
+            VideoAction::Encode(_) => "transcode",
+        };
+        let video_codec = match request.plan.video {
+            VideoAction::Copy => request.video.codec.clone(),
+            VideoAction::Encode(_) => "h264".to_owned(),
+        };
+        let (audio_decision, audio_codec, audio_channels) = match request.plan.audio {
+            AudioAction::Copy => ("copy", request.audio.codec.clone(), None),
+            AudioAction::ConvertToAac => ("transcode", "aac".to_owned(), Some(2)),
+        };
+        let ended = session.with_progress(|progress| progress.ended);
+        let count = u32::try_from(session.produced_segments()).unwrap_or(u32::MAX);
+        let produced = f64::from(count) * f64::from(seconds);
+        let total_seconds = request.total_ms as f64 / 1000.0;
+        let elapsed = session
+            .with_run(|run| run.as_ref().map(|run| run.started.elapsed().as_secs_f64()))
+            .unwrap_or(0.0);
+        let speed = if elapsed > 0.0 {
+            produced / elapsed
+        } else {
+            0.0
+        };
+        let progress = if total_seconds > 0.0 {
+            (produced / total_seconds * 100.0).clamp(0.0, 100.0)
+        } else {
+            0.0
+        };
+        let remaining = if speed > 0.0 {
+            ((total_seconds - produced) / speed).max(0.0) as i64
+        } else {
+            0
+        };
+        let round = |value: f64| (value * 10.0).round() / 10.0;
+        Some(SessionStatus {
+            protocol,
+            container,
+            source_video_codec: request.video.codec.clone(),
+            source_audio_codec: request.audio.codec.clone(),
+            video_decision,
+            audio_decision,
+            video_codec,
+            audio_codec,
+            audio_channels,
+            duration_ms: request.total_ms,
+            max_offset_seconds: produced,
+            min_offset_seconds: 0.0,
+            progress: round(progress),
+            speed: round(speed),
+            remaining_seconds: remaining,
+            complete: ended,
+        })
     }
 
     /// A finished segment's file, waiting for it if it is still being written.

@@ -204,6 +204,10 @@ Places where we knowingly answer differently, each decided rather than overlooke
 - **Automatic quality does not adapt during playback.** `autoAdjustQuality=1` gets the
   reference's decision, encode and timeline, but one quality for the whole session. The
   reference did not change quality either in any test here, so its rule is unknown.
+- **`/:/timeline` with `state=stopped` tears the conversion down**, as the reference does: its
+  process would otherwise run on for five minutes holding a session slot. The `TranscodeSession`
+  it reports carries the reference's full field set, filled from the live conversion
+  (`transcoder::session_status`): decisions, codecs, `progress`, `speed`, `maxOffsetAvailable`.
 - **A chunk whose process has ended is refused after 5 seconds, not at once.** The repo owner's
   decision, so that a player does not retry a missing chunk in a tight loop. The reference
   answered `404` within 0.1 s when its process had died; a running process could not be measured
