@@ -12,6 +12,8 @@ open-plex-transcoder.workspace = true
 async-graphql.workspace = true
 axum.workspace = true
 form_urlencoded = "1"
+async-trait.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 tower = { workspace = true, features = ["util"] }
 tower-http.workspace = true

@@ -1,3 +1,19 @@
+type AccountLink {
+	"""
+	The account's name on that service.
+	"""
+	accountName: String!
+	"""
+	The address announced to that service for clients to reach this server.
+	"""
+	connectionUri: String!
+	"""
+	When that service last accepted the address, in seconds since the epoch. Null until it
+	has; the server keeps trying.
+	"""
+	publishedAt: Int
+}
+
 """
 A play queue to create.
 """
@@ -1372,6 +1388,30 @@ type Mutation {
 		"""
 		extension: ExtensionType!
 	): ExtensionCredentials!
+	"""
+	Ties a user's connection to its account on the extension's own service, and tells that
+	service where the server can be reached. For the server's operator only.
+	"""
+	pairExtension(
+		"""
+		The account's pairing code, and where to reach the server.
+		"""
+		input: PairExtensionInput!
+	): AccountLink!
+	"""
+	Forgets the account tied to a user's connection. Whether there was one. For the server's
+	operator only.
+	"""
+	unpairExtension(
+		"""
+		The user, as returned in `User.id`.
+		"""
+		userId: ID!,
+		"""
+		The protocol to unpair.
+		"""
+		extension: ExtensionType!
+	): Boolean!
 }
 
 """
@@ -1408,6 +1448,29 @@ type PageInfo {
 	When paginating forwards, the cursor to continue.
 	"""
 	endCursor: String
+}
+
+"""
+What pairing a connection with an account takes.
+"""
+input PairExtensionInput {
+	"""
+	The user, as returned in `User.id`. It must already be connected through the extension.
+	"""
+	userId: ID!
+	"""
+	The protocol to pair.
+	"""
+	extension: ExtensionType!
+	"""
+	The single-use code the account's owner got from the service: for Plex, from
+	plex.tv/claim.
+	"""
+	code: String!
+	"""
+	Where clients can reach this server, as `https://host:port`.
+	"""
+	connectionUri: String!
 }
 
 type Person implements Node {
@@ -2750,6 +2813,10 @@ type UserExtension {
 	Whether the connection is on. Off, its token opens nothing.
 	"""
 	enabled: Boolean!
+	"""
+	The account this connection is paired with, if any.
+	"""
+	account: AccountLink
 }
 
 type UserExtensionConnection {

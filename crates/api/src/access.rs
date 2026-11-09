@@ -10,8 +10,8 @@
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::{Context, Enum, InputObject, Object, Result, ID};
 use open_plex_core::access::{
-    new_external_id, new_token, token_digest, AccessRepository, Extension, LibraryPermission,
-    LibraryRole, User, UserExtension,
+    is_connection_uri, new_external_id, new_token, publish_link, token_digest, AccessError,
+    AccessRepository, AccountLink, Extension, LibraryPermission, LibraryRole, User, UserExtension,
 };
 use open_plex_core::page::Cursor;
 use open_plex_core::{now_epoch, Principal, Scope, SectionId, UserId};
@@ -227,6 +227,38 @@ impl UserExtensionObject {
     async fn enabled(&self) -> bool {
         self.0.enabled
     }
+
+    /// The account this connection is paired with, if any.
+    async fn account(&self, context: &Context<'_>) -> Result<Option<AccountLinkObject>> {
+        Ok(repository(context)?
+            .account_link(self.0.user, self.0.extension)
+            .await?
+            .map(AccountLinkObject))
+    }
+}
+
+/// A connection tied to an account on the extension's own service. The account's token stays
+/// on the server: no field gives it out.
+#[derive(Debug, Clone)]
+pub struct AccountLinkObject(AccountLink);
+
+#[Object(name = "AccountLink")]
+impl AccountLinkObject {
+    /// The account's name on that service.
+    async fn account_name(&self) -> &str {
+        &self.0.account.name
+    }
+
+    /// The address announced to that service for clients to reach this server.
+    async fn connection_uri(&self) -> &str {
+        &self.0.connection_uri
+    }
+
+    /// When that service last accepted the address, in seconds since the epoch. Null until it
+    /// has; the server keeps trying.
+    async fn published_at(&self) -> Option<i64> {
+        self.0.published_at
+    }
 }
 
 /// What connecting through an extension yields. The token cannot be read back later.
@@ -258,6 +290,20 @@ pub struct SetLibraryPermissionInput {
     pub library_id: ID,
     /// What the user may do there.
     pub role: LibraryRoleType,
+}
+
+/// What pairing a connection with an account takes.
+#[derive(Debug, InputObject)]
+pub struct PairExtensionInput {
+    /// The user, as returned in `User.id`. It must already be connected through the extension.
+    pub user_id: ID,
+    /// The protocol to pair.
+    pub extension: ExtensionType,
+    /// The single-use code the account's owner got from the service: for Plex, from
+    /// plex.tv/claim.
+    pub code: String,
+    /// Where clients can reach this server, as `https://host:port`.
+    pub connection_uri: String,
 }
 
 pub(crate) async fn users(
@@ -374,4 +420,65 @@ pub(crate) async fn connect_extension(
         )
         .await?;
     Ok(ExtensionCredentials { extension, token })
+}
+
+pub(crate) async fn pair_extension(
+    context: &Context<'_>,
+    input: PairExtensionInput,
+) -> Result<AccountLinkObject> {
+    require_operator(context)?;
+    if !is_connection_uri(&input.connection_uri) {
+        return Err(async_graphql::Error::new(
+            "the address must look like https://host:port, with nothing after it",
+        ));
+    }
+    let api = context.data::<ApiContext>()?;
+    let user = user_id(&input.user_id)?;
+    let extension: Extension = input.extension.into();
+    let connection = api
+        .access
+        .extensions(user)
+        .await?
+        .into_iter()
+        .find(|connection| connection.extension == extension && connection.enabled)
+        .ok_or(AccessError::NotConnected)?;
+    let account = api
+        .directory
+        .redeem(&connection.external_id, input.code.trim())
+        .await?;
+    let mut link = api
+        .access
+        .link_account(
+            user,
+            extension,
+            &account,
+            &input.connection_uri,
+            now_epoch(),
+        )
+        .await?;
+    // The code is spent and the link stored: failing here would only hide that. The server
+    // publishes again on its own, and `publishedAt` stays null until one attempt succeeds.
+    match publish_link(
+        api.access.as_ref(),
+        api.directory.as_ref(),
+        &link,
+        now_epoch(),
+    )
+    .await
+    {
+        Ok(published_at) => link.published_at = Some(published_at),
+        Err(error) => tracing::warn!(%error, "could not publish a newly paired server"),
+    }
+    Ok(AccountLinkObject(link))
+}
+
+pub(crate) async fn unpair_extension(
+    context: &Context<'_>,
+    user: &ID,
+    extension: ExtensionType,
+) -> Result<bool> {
+    require_operator(context)?;
+    Ok(repository(context)?
+        .unlink_account(user_id(user)?, extension.into())
+        .await?)
 }

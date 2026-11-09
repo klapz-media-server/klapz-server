@@ -23,6 +23,7 @@ pub mod meta;
 pub mod photo;
 mod play_queues;
 mod playback;
+pub mod plex_tv;
 pub mod prefs;
 pub mod providers;
 mod related;

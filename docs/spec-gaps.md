@@ -746,3 +746,22 @@ it describes almost nothing about responses. The authoritative per-field type ma
   `Directory` in every other response we have captured (`GET /`, the A–Z bar). We self-close it
   there too: the two forms are the same document to an XML parser, and Plex Web reads JSON.
 - Errors are `text/html` and ignore content negotiation entirely.
+
+## Pairing with plex.tv
+
+None of this is in the spec. Measured against the reference and plex.tv.
+
+| Step | Request | Source |
+| --- | --- | --- |
+| Spend a code | `POST https://plex.tv/api/claim/exchange?token=claim-…` with `X-Plex-Client-Identifier: <machine identifier>` | documentation; not yet run here |
+| Announce the address | `PUT https://servers.plex.tv/api/v2/devices/<machine identifier>?connections[0][uri]=…&httpsEnabled=1&httpsRequired=0&dnsRebindingProtection=0` | reference logs (it also sends `connections[0][prefixLength]`, for a LAN address) |
+| Whose token is this | `GET https://plex.tv/api/v2/user` with `X-Plex-Token`, `Accept: application/json` | captured: `id` is a number, `username` and `title` strings |
+
+- The value `/identity` calls `machineIdentifier` is the registry's `ProcessedMachineIdentifier`,
+  so the identifier plex.tv knows a server by is the one clients read from it.
+- `/users/account.xml` carries the token as an `<authentication-token>` element, which is where
+  the documentation says the exchange's answer has it.
+- For an owned server, `clients.plex.tv/api/v2/resources` gives `accessToken` equal to the token
+  that asked. A client therefore presents a token of its own, which is why tokens are attributed
+  by account rather than compared with the one pairing obtained.
+- The reference's logs show the address announced around its startups, not on a timer.

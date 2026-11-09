@@ -39,6 +39,7 @@ pub struct ApiContext {
     pub playback: Arc<dyn open_plex_core::playback::PlaybackRepository>,
     pub play_queues: Arc<dyn open_plex_core::play_queue::PlayQueueRepository>,
     pub access: Arc<dyn open_plex_core::access::AccessRepository>,
+    pub directory: Arc<dyn open_plex_core::access::AccountDirectory>,
 }
 
 /// Anything that can be refetched by its global identifier.

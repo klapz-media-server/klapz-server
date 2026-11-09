@@ -54,6 +54,37 @@ pub struct UserExtension {
     pub enabled: bool,
 }
 
+/// An account on the service behind an extension: for Plex, a plex.tv account.
+#[derive(Clone, PartialEq, Eq)]
+pub struct RemoteAccount {
+    /// How that service identifies the account. Its name can change, this cannot.
+    pub id: String,
+    pub name: String,
+    pub token: String,
+}
+
+impl std::fmt::Debug for RemoteAccount {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RemoteAccount")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
+}
+
+/// A user's connection tied to an account on the extension's own service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountLink {
+    pub user: UserId,
+    pub extension: Extension,
+    pub server_id: String,
+    pub enabled: bool,
+    pub account: RemoteAccount,
+    pub connection_uri: String,
+    pub published_at: Option<i64>,
+}
+
 /// Everything a presented token gives access to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grant {
@@ -143,12 +174,61 @@ pub fn token_digest(token: &str) -> String {
         })
 }
 
+/// Whether this is an address clients can be sent to: a scheme, a host, perhaps a port, and
+/// nothing a client appending `/library/sections` to it would trip over.
+#[must_use]
+pub fn is_connection_uri(uri: &str) -> bool {
+    let Some(authority) = uri
+        .strip_prefix("https://")
+        .or_else(|| uri.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    let (host, port) = authority
+        .split_once(':')
+        .map_or((authority, None), |(host, port)| (host, Some(port)));
+    let host_is_valid = !host.is_empty()
+        && host
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'.' || byte == b'-');
+    let port_is_valid = match port {
+        None => true,
+        Some(port) => port.parse::<u16>().is_ok_and(|port| port > 0),
+    };
+    host_is_valid && port_is_valid
+}
+
+/// Announces a link's address to the service and records that it was accepted. When it was,
+/// in epoch seconds.
+///
+/// # Errors
+///
+/// What the service or the storage answered.
+pub async fn publish_link(
+    users: &dyn AccessRepository,
+    directory: &dyn AccountDirectory,
+    link: &AccountLink,
+    now: i64,
+) -> Result<i64, AccessError> {
+    directory.publish(link).await?;
+    users.mark_published(link.user, link.extension, now).await?;
+    Ok(now)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AccessError {
     #[error("this e-mail address already has a user")]
     EmailTaken,
     #[error("no such user")]
     UnknownUser,
+    #[error("this user is not connected through this extension")]
+    NotConnected,
+    #[error("this account is already paired with another user")]
+    AccountTaken,
+    #[error("the account service refused this request")]
+    Refused,
+    #[error("the account service could not be reached")]
+    Unreachable(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("access storage failed")]
     Storage(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
@@ -218,6 +298,72 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
         extension: Extension,
         token_digest: &str,
     ) -> Result<Option<Grant>, AccessError>;
+
+    /// Ties a connection to an account, replacing the one it had.
+    ///
+    /// # Errors
+    ///
+    /// [`AccessError::NotConnected`], [`AccessError::AccountTaken`] when another user holds the
+    /// account, or a storage failure.
+    async fn link_account(
+        &self,
+        user: UserId,
+        extension: Extension,
+        account: &RemoteAccount,
+        connection_uri: &str,
+        now: i64,
+    ) -> Result<AccountLink, AccessError>;
+
+    async fn account_link(
+        &self,
+        user: UserId,
+        extension: Extension,
+    ) -> Result<Option<AccountLink>, AccessError>;
+
+    /// Whether there was a link to forget.
+    async fn unlink_account(&self, user: UserId, extension: Extension)
+        -> Result<bool, AccessError>;
+
+    async fn mark_published(
+        &self,
+        user: UserId,
+        extension: Extension,
+        at: i64,
+    ) -> Result<(), AccessError>;
+
+    /// What an account opens: the rights of the user it is paired with, if that connection is
+    /// on.
+    async fn grant_for_account(
+        &self,
+        extension: Extension,
+        account_id: &str,
+    ) -> Result<Option<Grant>, AccessError>;
+}
+
+/// The service behind an extension, which knows accounts and tells clients where servers are.
+#[async_trait::async_trait]
+pub trait AccountDirectory: Send + Sync + std::fmt::Debug {
+    /// Spends a pairing code on this server, and returns the account it belongs to.
+    ///
+    /// # Errors
+    ///
+    /// [`AccessError::Refused`] for a code the service does not accept, or
+    /// [`AccessError::Unreachable`].
+    async fn redeem(&self, server_id: &str, code: &str) -> Result<RemoteAccount, AccessError>;
+
+    /// Tells the service where a link's server can be reached.
+    ///
+    /// # Errors
+    ///
+    /// [`AccessError::Refused`] or [`AccessError::Unreachable`].
+    async fn publish(&self, link: &AccountLink) -> Result<(), AccessError>;
+
+    /// The account a token belongs to, or `None` when the service does not know it.
+    ///
+    /// # Errors
+    ///
+    /// [`AccessError::Unreachable`]: unknown is not the same as unanswered.
+    async fn account_of(&self, token: &str) -> Result<Option<RemoteAccount>, AccessError>;
 }
 
 #[cfg(test)]
@@ -272,6 +418,39 @@ mod tests {
             Some(LibraryRole::Admin)
         );
         assert_eq!(LibraryAccess::All.sections(), None);
+    }
+
+    #[test]
+    fn a_connection_address_is_a_scheme_a_host_and_perhaps_a_port() {
+        for good in [
+            "https://alice.plex.example.org:443",
+            "https://alice.plex.example.org",
+            "http://192.168.1.30:32400",
+        ] {
+            assert!(is_connection_uri(good), "{good}");
+        }
+        for bad in [
+            "alice.plex.example.org",
+            "ftp://example.org",
+            "https://",
+            "https://example.org/",
+            "https://example.org:0",
+            "https://example.org:port",
+            "https://user@example.org",
+            "https://example.org/?x=1",
+        ] {
+            assert!(!is_connection_uri(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn an_account_token_stays_out_of_debug_output() {
+        let account = RemoteAccount {
+            id: "7".to_owned(),
+            name: "alice".to_owned(),
+            token: "secret-token".to_owned(),
+        };
+        assert!(!format!("{account:?}").contains("secret-token"));
     }
 
     #[test]

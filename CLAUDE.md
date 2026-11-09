@@ -42,7 +42,8 @@ without them saying so.
 
 ### Scope
 
-- **Server only** for now. No client, no `plex.tv` shim.
+- **Server only** for now. No client, and no stand-in for `plex.tv`: pairing talks to the real
+  one.
 - **The file scanner is out of scope.** On Plex it is a separate binary (`Plex Media Scanner`).
   Endpoints that only drive it — scanning, matching, media analysis — are marked `deferred` in
   `docs/ENDPOINTS.md` (37 of 260 operations).
@@ -153,6 +154,14 @@ without them saying so.
   answers with that user's machine identifier, on `/identity` too when a token comes with the
   request. One process and one address: the separation is in what each token sees. Session
   identifiers are chosen by clients, so they are stored under a per-user name.
+- **Pairing ties one user's server to one plex.tv account.** The operator pastes a code from
+  `plex.tv/claim` and an address in `/admin`; `extension_account` keeps the account, its token
+  and the address, which is republished at startup and hourly. plex.tv is reached through the
+  `AccountDirectory` port, implemented in `api-plex::plex_tv`. A client that found the server
+  through plex.tv presents a plex.tv token, which only plex.tv can attribute: the answer is
+  remembered five minutes, a refusal included, and new tokens are looked up at most 60 times a
+  minute, so a stranger cannot use the server to flood plex.tv. The account's token is stored
+  in clear, as Plex's own `Preferences.xml` does, because the server must present it.
 
 ### Deliberate divergences from Plex
 
@@ -417,5 +426,9 @@ absent.
   Ordering by one needs the cursor to encode absence and the null position to be pinned. Note
   the inconsistency to resolve: an unsupported `sort=` falls back to title, while an
   unsupported filter answers `501`.
+- **Pairing has not been exercised end to end.** The exchange's answer is read as plex.tv's
+  account document, which only the documentation says it is, and no Plex app has connected
+  through a published address yet. Whether plex.tv keeps a server marked present without its
+  push connection is also unknown.
 - The ports are one trait because there is one aggregate. Splitting them is additive, and
   should happen when metadata and playback arrive — not pre-emptively.

@@ -4,6 +4,7 @@
 
 use open_plex_core::access::{
     token_digest, AccessError, AccessRepository, Extension, LibraryPermission, LibraryRole,
+    RemoteAccount,
 };
 use open_plex_core::page::Window;
 use open_plex_core::{SectionId, UserId};
@@ -35,6 +36,185 @@ async fn a_user_is_stored_with_its_dates() {
         .await
         .unwrap();
     assert_eq!(page.items, [user]);
+}
+
+fn account(id: &str) -> RemoteAccount {
+    RemoteAccount {
+        id: id.to_owned(),
+        name: format!("name of {id}"),
+        token: format!("token of {id}"),
+    }
+}
+
+async fn connected(repository: &SqlAccessRepository, email: &str) -> UserId {
+    let user = repository.create_user(email, NOW).await.unwrap().id;
+    repository
+        .connect_extension(user, Extension::Plex, email, &token_digest(email), NOW)
+        .await
+        .unwrap();
+    user
+}
+
+#[tokio::test]
+async fn a_paired_account_is_stored_and_opens_what_its_user_may_reach() {
+    let repository = repository().await;
+    let user = connected(&repository, "a@example.org").await;
+    repository
+        .set_permission(permission(user, 4, LibraryRole::Viewer), NOW)
+        .await
+        .unwrap();
+    let link = repository
+        .link_account(
+            user,
+            Extension::Plex,
+            &account("7"),
+            "https://a.example.org:443",
+            NOW,
+        )
+        .await
+        .unwrap();
+    assert_eq!(link.server_id, "a@example.org");
+    assert_eq!(link.published_at, None);
+
+    repository
+        .mark_published(user, Extension::Plex, NOW + 5)
+        .await
+        .unwrap();
+    let stored = repository
+        .account_link(user, Extension::Plex)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.published_at, Some(NOW + 5));
+    assert_eq!(stored.account, account("7"));
+
+    let grant = repository
+        .grant_for_account(Extension::Plex, "7")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(grant.user.id, user);
+    assert_eq!(grant.permissions.len(), 1);
+    assert!(repository
+        .grant_for_account(Extension::Plex, "8")
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn pairing_needs_a_connection_and_a_free_account() {
+    let repository = repository().await;
+    let bare = repository
+        .create_user("bare@example.org", NOW)
+        .await
+        .unwrap()
+        .id;
+    assert!(matches!(
+        repository
+            .link_account(bare, Extension::Plex, &account("7"), "https://a", NOW)
+            .await,
+        Err(AccessError::NotConnected)
+    ));
+
+    let first = connected(&repository, "a@example.org").await;
+    let second = connected(&repository, "b@example.org").await;
+    repository
+        .link_account(first, Extension::Plex, &account("7"), "https://a", NOW)
+        .await
+        .unwrap();
+    assert!(matches!(
+        repository
+            .link_account(second, Extension::Plex, &account("7"), "https://b", NOW)
+            .await,
+        Err(AccessError::AccountTaken)
+    ));
+}
+
+#[tokio::test]
+async fn pairing_again_replaces_the_account_and_forgets_the_publication() {
+    let repository = repository().await;
+    let user = connected(&repository, "a@example.org").await;
+    repository
+        .link_account(user, Extension::Plex, &account("7"), "https://a", NOW)
+        .await
+        .unwrap();
+    repository
+        .mark_published(user, Extension::Plex, NOW)
+        .await
+        .unwrap();
+    repository
+        .link_account(user, Extension::Plex, &account("8"), "https://b", NOW)
+        .await
+        .unwrap();
+    let stored = repository
+        .account_link(user, Extension::Plex)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.account.id, "8");
+    assert_eq!(stored.published_at, None);
+    assert!(repository
+        .grant_for_account(Extension::Plex, "7")
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn a_switched_off_connection_opens_nothing_through_its_account() {
+    let repository = repository().await;
+    let user = connected(&repository, "a@example.org").await;
+    repository
+        .link_account(user, Extension::Plex, &account("7"), "https://a", NOW)
+        .await
+        .unwrap();
+    repository
+        .disable_extension(user, Extension::Plex, NOW)
+        .await
+        .unwrap();
+    assert!(repository
+        .grant_for_account(Extension::Plex, "7")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(
+        !repository
+            .account_link(user, Extension::Plex)
+            .await
+            .unwrap()
+            .unwrap()
+            .enabled
+    );
+}
+
+#[tokio::test]
+async fn unpairing_or_deleting_the_user_forgets_the_account() {
+    let repository = repository().await;
+    let user = connected(&repository, "a@example.org").await;
+    repository
+        .link_account(user, Extension::Plex, &account("7"), "https://a", NOW)
+        .await
+        .unwrap();
+    assert!(repository
+        .unlink_account(user, Extension::Plex)
+        .await
+        .unwrap());
+    assert!(!repository
+        .unlink_account(user, Extension::Plex)
+        .await
+        .unwrap());
+
+    repository
+        .link_account(user, Extension::Plex, &account("7"), "https://a", NOW)
+        .await
+        .unwrap();
+    repository.delete_user(user).await.unwrap();
+    assert!(repository
+        .grant_for_account(Extension::Plex, "7")
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]

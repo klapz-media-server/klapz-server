@@ -53,6 +53,7 @@ fn schema() -> ApiSchema {
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
     })
 }
 
@@ -86,6 +87,7 @@ fn searchable() -> ApiSchema {
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
     })
 }
 
@@ -476,6 +478,7 @@ fn series_with_episodes() -> ApiSchema {
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
     })
 }
 
@@ -657,4 +660,106 @@ async fn managing_users_is_for_the_operator() {
         ))
         .await;
     assert!(response.errors.is_empty(), "{:?}", response.errors);
+}
+
+const PAIR: &str = r"mutation($input: PairExtensionInput!) {
+    pairExtension(input: $input) { accountName connectionUri publishedAt }
+}";
+
+async fn connected_user(schema: &ApiSchema) -> String {
+    let created = schema
+        .execute(as_operator(
+            r#"mutation { createUser(email: "a@example.org") { id } }"#,
+        ))
+        .await;
+    let id = created.data.into_json().unwrap()["createUser"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let connected = schema
+        .execute(
+            as_operator(
+                "mutation($id: ID!) { connectExtension(userId: $id, extension: PLEX) { token } }",
+            )
+            .variables(async_graphql::Variables::from_json(
+                serde_json::json!({ "id": id }),
+            )),
+        )
+        .await;
+    assert!(connected.errors.is_empty(), "{:?}", connected.errors);
+    id
+}
+
+fn pair_input(user: &str, code: &str, uri: &str) -> async_graphql::Variables {
+    async_graphql::Variables::from_json(serde_json::json!({ "input": {
+        "userId": user, "extension": "PLEX", "code": code, "connectionUri": uri,
+    }}))
+}
+
+#[tokio::test]
+async fn pairing_stores_the_account_and_publishes_the_address() {
+    let schema = schema();
+    let user = connected_user(&schema).await;
+    let response = schema
+        .execute(as_operator(PAIR).variables(pair_input(
+            &user,
+            " claim-7 ",
+            "https://a.example.org:443",
+        )))
+        .await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    let paired = &response.data.into_json().unwrap()["pairExtension"];
+    assert_eq!(paired["accountName"], "account 7");
+    assert_eq!(paired["connectionUri"], "https://a.example.org:443");
+    assert!(paired["publishedAt"].is_i64());
+}
+
+#[tokio::test]
+async fn pairing_is_for_the_operator() {
+    let schema = schema();
+    let user = connected_user(&schema).await;
+    let response = schema
+        .execute(as_user(PAIR).variables(pair_input(&user, "claim-7", "https://a.example.org")))
+        .await;
+    assert_eq!(response.errors[0].message, "not found");
+}
+
+#[tokio::test]
+async fn pairing_refuses_a_bad_address_a_bad_code_and_a_user_not_connected() {
+    let schema = schema();
+    let user = connected_user(&schema).await;
+    for (code, uri) in [
+        ("claim-7", "https://a.example.org/path"),
+        ("wrong", "https://a.example.org"),
+    ] {
+        let response = schema
+            .execute(as_operator(PAIR).variables(pair_input(&user, code, uri)))
+            .await;
+        assert!(!response.errors.is_empty(), "{code} {uri}");
+    }
+
+    let created = schema
+        .execute(as_operator(
+            r#"mutation { createUser(email: "b@example.org") { id } }"#,
+        ))
+        .await;
+    let bare = created.data.into_json().unwrap()["createUser"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let response = schema
+        .execute(as_operator(PAIR).variables(pair_input(&bare, "claim-7", "https://a.example.org")))
+        .await;
+    assert_eq!(
+        response.errors[0].message,
+        "this user is not connected through this extension"
+    );
+}
+
+#[test]
+fn no_field_gives_out_an_account_token() {
+    let sdl = schema().sdl();
+    let start = sdl.find("type AccountLink").unwrap();
+    let body = &sdl[start..sdl[start..].find("\n}").unwrap() + start];
+    assert!(!body.to_lowercase().contains("token"), "{body}");
 }

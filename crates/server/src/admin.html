@@ -95,7 +95,10 @@
   dialog label { display: block; margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
   dialog .copy { display: flex; gap: 8px; }
   dialog .copy input { flex: 1; min-width: 0; font: 12.5px ui-monospace, Consolas, monospace; }
-  dialog .actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+  dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  dialog input { width: 100%; }
+  dialog .error { min-height: 20px; margin: 10px 0 0; font-size: 14px; color: var(--danger); }
+  a { color: var(--accent); }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -131,6 +134,22 @@
   <div class="actions"><button id="credentials-close" type="button" class="primary">Done</button></div>
 </dialog>
 
+<dialog id="pair">
+  <form id="pair-form">
+    <h2>Pair <span id="pair-email"></span> with Plex</h2>
+    <p class="note">While signed in to this user's Plex account, open <a href="https://plex.tv/claim" target="_blank" rel="noreferrer">plex.tv/claim</a> and paste the code here. It works once and lasts four minutes.</p>
+    <label for="pair-code">Claim code</label>
+    <input id="pair-code" type="text" placeholder="claim-" autocomplete="off" required>
+    <label for="pair-address">Address Plex clients will use to reach this server</label>
+    <input id="pair-address" type="text" placeholder="https://alice.plex.example.org:443" autocomplete="off" required>
+    <p id="pair-error" class="error" role="status"></p>
+    <div class="actions">
+      <button id="pair-cancel" type="button">Cancel</button>
+      <button id="pair-submit" class="primary">Pair</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
 "use strict";
 
@@ -139,7 +158,7 @@ const LIST_QUERY = `{
     edges { node {
       id email createdAt
       libraryPermissions { edges { node { role library { id } } } }
-      extensions { edges { node { extension externalId enabled } } }
+      extensions { edges { node { extension externalId enabled account { accountName connectionUri publishedAt } } } }
     } }
   }
   libraries(first: 500) { edges { node { id title } } }
@@ -151,9 +170,13 @@ const REMOVE_PERMISSION = `mutation($userId: ID!, $libraryId: ID!) { removeLibra
 const CONNECT_PLEX = `mutation($userId: ID!) { connectExtension(userId: $userId, extension: PLEX) { token userExtension { externalId } } }`;
 const DISABLE_PLEX = `mutation($userId: ID!) { disableExtension(userId: $userId, extension: PLEX) }`;
 
+const PAIR_PLEX = `mutation($input: PairExtensionInput!) { pairExtension(input: $input) { publishedAt } }`;
+const UNPAIR_PLEX = `mutation($userId: ID!) { unpairExtension(userId: $userId, extension: PLEX) }`;
+
 const TOKEN_KEY = "open-plex-operator-token";
 const byId = (id) => document.getElementById(id);
 const expanded = new Set();
+let pairing = null;
 let libraries = [];
 
 function storedToken() {
@@ -225,6 +248,38 @@ function showCredentials(email, connected) {
 async function connectPlex(user) {
   const data = await graphql(CONNECT_PLEX, { userId: user.id });
   showCredentials(user.email, data.connectExtension);
+}
+
+function showPairing(user) {
+  pairing = user;
+  byId("pair-email").textContent = user.email;
+  byId("pair-code").value = "";
+  byId("pair-error").textContent = "";
+  byId("pair").showModal();
+  byId("pair-code").focus();
+}
+
+function pairingRow(user, plex) {
+  const account = plex.account;
+  if (!account) {
+    return el("button", { type: "button", textContent: "Pair with Plex", on: { click: () => showPairing(user) } });
+  }
+  const state = account.publishedAt
+    ? `published ${new Date(account.publishedAt * 1000).toLocaleString()}`
+    : "not published yet, will retry";
+  return el("span", { className: "note" },
+    "Paired with ", el("strong", { textContent: account.accountName }), " at ",
+    el("code", { textContent: account.connectionUri }), ` (${state}) `,
+    el("button", {
+      type: "button",
+      textContent: "Unpair",
+      on: { click: () => {
+        if (confirm(`Unpair ${user.email} from its Plex account? Clients that found this server through plex.tv stop getting in.`)) {
+          act(() => graphql(UNPAIR_PLEX, { userId: user.id }));
+        }
+      } },
+    }),
+  );
 }
 
 function plexOf(user) {
@@ -310,6 +365,7 @@ function userCard(user) {
           }
         } },
       }),
+      pairingRow(user, plex),
     ) : null,
     details,
   );
@@ -353,6 +409,29 @@ byId("add").addEventListener("submit", (event) => {
     await graphql(CREATE_USER, { email });
     byId("email").value = "";
   });
+});
+
+byId("pair-cancel").addEventListener("click", () => byId("pair").close());
+
+byId("pair-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const submit = byId("pair-submit");
+  submit.disabled = true;
+  byId("pair-error").textContent = "";
+  try {
+    await graphql(PAIR_PLEX, { input: {
+      userId: pairing.id,
+      extension: "PLEX",
+      code: byId("pair-code").value.trim(),
+      connectionUri: byId("pair-address").value.trim(),
+    } });
+    byId("pair").close();
+    await load();
+  } catch (error) {
+    byId("pair-error").textContent = error.message;
+  } finally {
+    submit.disabled = false;
+  }
 });
 
 byId("credentials-copy").addEventListener("click", async () => {

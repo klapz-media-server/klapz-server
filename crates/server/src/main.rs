@@ -7,6 +7,7 @@
 mod admin;
 mod auth;
 mod graphql;
+mod remote_tokens;
 mod web;
 
 use std::path::PathBuf;
@@ -16,7 +17,7 @@ use std::time::Duration;
 use axum::http::{header, HeaderValue, StatusCode};
 use open_plex_api::{build_schema, ApiContext};
 use open_plex_api_plex::PlexState;
-use open_plex_core::access::AccessRepository;
+use open_plex_core::access::{publish_link, AccessRepository, AccountDirectory, Extension};
 use open_plex_core::metadata::MetadataRepository;
 use open_plex_core::play_queue::PlayQueueRepository;
 use open_plex_core::playback::PlaybackRepository;
@@ -37,6 +38,9 @@ const DEFAULT_DATABASE_URL: &str = "sqlite://open-plex.db?mode=rwc";
 const EXPIRY_SWEEP: std::time::Duration = std::time::Duration::from_secs(30);
 
 const DEFAULT_BIND: &str = "127.0.0.1:32500";
+/// How often paired servers announce their address. The reference does it when it starts; the
+/// repeat is ours, and is what retries an announcement that failed.
+const PUBLISH_INTERVAL: Duration = Duration::from_secs(3600);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -69,6 +73,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(SqlPlaybackRepository::new(connection.clone()));
     let users: Arc<dyn AccessRepository> = Arc::new(SqlAccessRepository::new(connection.clone()));
     let metadata: Arc<dyn MetadataRepository> = Arc::new(SqlMetadataRepository::new(connection));
+    let directory: Arc<dyn AccountDirectory> =
+        Arc::new(open_plex_api_plex::plex_tv::PlexTv::new()?);
     // No process from before this one is still running, so no session from before is either.
     let cleared = playback.delete_all().await?;
     if cleared > 0 {
@@ -84,10 +90,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         playback: Arc::clone(&playback),
         play_queues: Arc::clone(&play_queues),
         access: Arc::clone(&users),
+        directory: Arc::clone(&directory),
     });
+    tokio::spawn(publish_paired_servers(
+        Arc::clone(&users),
+        Arc::clone(&directory),
+    ));
     let accounts = accounts();
-    let access =
-        Arc::new(auth::Access::new(accounts.clone(), trusted_networks()?).with_users(users));
+    let access = Arc::new(
+        auth::Access::new(accounts.clone(), trusted_networks()?)
+            .with_users(users)
+            .with_remote_tokens(remote_tokens::RemoteTokens::new(directory)),
+    );
 
     // The Plex surface is the base and GraphQL is merged into it, which inverts the
     // relationship the architecture describes. The reason is mechanical: Plex has paths whose
@@ -241,6 +255,50 @@ async fn expire_playback(
             open_plex_core::now_epoch() - open_plex_core::play_queue::QUEUE_RETENTION_SECONDS;
         if let Err(error) = play_queues.delete_created_before(cutoff).await {
             tracing::warn!(%error, "could not remove old play queues");
+        }
+    }
+}
+
+/// Keeps every paired server's address current on the account service, from startup on.
+async fn publish_paired_servers(
+    users: Arc<dyn AccessRepository>,
+    directory: Arc<dyn AccountDirectory>,
+) {
+    let mut ticks = tokio::time::interval(PUBLISH_INTERVAL);
+    loop {
+        ticks.tick().await;
+        if let Err(error) = publish_all(users.as_ref(), directory.as_ref()).await {
+            tracing::warn!(%error, "could not walk the paired servers");
+        }
+    }
+}
+
+async fn publish_all(
+    users: &dyn AccessRepository,
+    directory: &dyn AccountDirectory,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut after = None;
+    loop {
+        let window = open_plex_core::page::Window::by_id(
+            after,
+            None,
+            Some(open_plex_core::page::MAX_ITEMS),
+            None,
+        )?;
+        let page = users.users(window).await?;
+        for user in &page.items {
+            let link = users.account_link(user.id, Extension::Plex).await?;
+            let Some(link) = link.filter(|link| link.enabled) else {
+                continue;
+            };
+            let now = open_plex_core::now_epoch();
+            if let Err(error) = publish_link(users, directory, &link, now).await {
+                tracing::warn!(%error, user = user.id.get(), "could not publish a server");
+            }
+        }
+        match page.items.last() {
+            Some(last) if page.has_next => after = Some(last.id.get()),
+            _ => return Ok(()),
         }
     }
 }

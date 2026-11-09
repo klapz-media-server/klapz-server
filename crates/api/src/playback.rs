@@ -428,4 +428,26 @@ impl Mutation {
     ) -> Result<crate::access::ExtensionCredentials> {
         crate::access::connect_extension(context, &user_id, extension).await
     }
+
+    /// Ties a user's connection to its account on the extension's own service, and tells that
+    /// service where the server can be reached. For the server's operator only.
+    async fn pair_extension(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The account's pairing code, and where to reach the server.")]
+        input: crate::access::PairExtensionInput,
+    ) -> Result<crate::access::AccountLinkObject> {
+        crate::access::pair_extension(context, input).await
+    }
+
+    /// Forgets the account tied to a user's connection. Whether there was one. For the server's
+    /// operator only.
+    async fn unpair_extension(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The user, as returned in `User.id`.")] user_id: ID,
+        #[graphql(desc = "The protocol to unpair.")] extension: crate::access::ExtensionType,
+    ) -> Result<bool> {
+        crate::access::unpair_extension(context, &user_id, extension).await
+    }
 }

@@ -1,8 +1,8 @@
 //! Stored users, permissions and extensions.
 
 use open_plex_core::access::{
-    AccessError, AccessRepository, Extension, Grant, LibraryPermission, LibraryRole, User,
-    UserExtension,
+    AccessError, AccessRepository, AccountLink, Extension, Grant, LibraryPermission, LibraryRole,
+    RemoteAccount, User, UserExtension,
 };
 use open_plex_core::page::{Page, Window};
 use open_plex_core::{SectionId, UserId};
@@ -12,7 +12,7 @@ use sea_orm::{
     QuerySelect, SqlErr, TransactionTrait,
 };
 
-use crate::entity::{library_permission, user_extension, users};
+use crate::entity::{extension_account, library_permission, user_extension, users};
 
 #[derive(Debug, Clone)]
 pub struct SqlAccessRepository {
@@ -23,6 +23,33 @@ impl SqlAccessRepository {
     #[must_use]
     pub const fn new(connection: DatabaseConnection) -> Self {
         Self { connection }
+    }
+
+    async fn connection(
+        &self,
+        user: UserId,
+        extension: Extension,
+    ) -> Result<Option<UserExtension>, AccessError> {
+        Ok(user_extension::Entity::find()
+            .filter(user_extension::Column::UserId.eq(user.get()))
+            .filter(user_extension::Column::Extension.eq(extension_name(extension)))
+            .one(&self.connection)
+            .await
+            .map_err(storage)?
+            .and_then(user_extension_of))
+    }
+
+    /// What a connection opens, once it is known to be switched on.
+    async fn grant_of(&self, extension: UserExtension) -> Result<Option<Grant>, AccessError> {
+        let Some(user) = self.user(extension.user).await? else {
+            return Ok(None);
+        };
+        let permissions = self.permissions(user.id).await?;
+        Ok(Some(Grant {
+            user,
+            extension,
+            permissions,
+        }))
     }
 
     async fn require_user(&self, id: UserId) -> Result<(), AccessError> {
@@ -90,6 +117,22 @@ fn user_extension_of(row: user_extension::Model) -> Option<UserExtension> {
     })
 }
 
+fn account_link_of(row: extension_account::Model, connection: UserExtension) -> AccountLink {
+    AccountLink {
+        user: connection.user,
+        extension: connection.extension,
+        server_id: connection.external_id,
+        enabled: connection.enabled,
+        account: RemoteAccount {
+            id: row.account_id,
+            name: row.account_name,
+            token: row.account_token,
+        },
+        connection_uri: row.connection_uri,
+        published_at: row.published_at,
+    }
+}
+
 #[async_trait::async_trait]
 impl AccessRepository for SqlAccessRepository {
     async fn create_user(&self, email: &str, now: i64) -> Result<User, AccessError> {
@@ -146,6 +189,11 @@ impl AccessRepository for SqlAccessRepository {
 
     async fn delete_user(&self, id: UserId) -> Result<bool, AccessError> {
         let transaction = self.connection.begin().await.map_err(storage)?;
+        extension_account::Entity::delete_many()
+            .filter(extension_account::Column::UserId.eq(id.get()))
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
         user_extension::Entity::delete_many()
             .filter(user_extension::Column::UserId.eq(id.get()))
             .exec(&transaction)
@@ -315,14 +363,134 @@ impl AccessRepository for SqlAccessRepository {
         let Some(extension) = user_extension_of(row) else {
             return Ok(None);
         };
-        let Some(user) = self.user(extension.user).await? else {
-            return Ok(None);
+        self.grant_of(extension).await
+    }
+
+    async fn link_account(
+        &self,
+        user: UserId,
+        extension: Extension,
+        account: &RemoteAccount,
+        connection_uri: &str,
+        now: i64,
+    ) -> Result<AccountLink, AccessError> {
+        let connection = self
+            .connection(user, extension)
+            .await?
+            .ok_or(AccessError::NotConnected)?;
+        let row = extension_account::ActiveModel {
+            id: ActiveValue::NotSet,
+            user_id: ActiveValue::Set(user.get()),
+            extension: ActiveValue::Set(extension_name(extension).to_owned()),
+            account_id: ActiveValue::Set(account.id.clone()),
+            account_name: ActiveValue::Set(account.name.clone()),
+            account_token: ActiveValue::Set(account.token.clone()),
+            connection_uri: ActiveValue::Set(connection_uri.to_owned()),
+            published_at: ActiveValue::Set(None),
+            created_at: ActiveValue::Set(now),
+            updated_at: ActiveValue::Set(now),
         };
-        let permissions = self.permissions(user.id).await?;
-        Ok(Some(Grant {
+        extension_account::Entity::insert(row)
+            .on_conflict(
+                OnConflict::columns([
+                    extension_account::Column::UserId,
+                    extension_account::Column::Extension,
+                ])
+                .update_columns([
+                    extension_account::Column::AccountId,
+                    extension_account::Column::AccountName,
+                    extension_account::Column::AccountToken,
+                    extension_account::Column::ConnectionUri,
+                    extension_account::Column::PublishedAt,
+                    extension_account::Column::UpdatedAt,
+                ])
+                .to_owned(),
+            )
+            .exec(&self.connection)
+            .await
+            .map_err(|error| match error.sql_err() {
+                Some(SqlErr::UniqueConstraintViolation(_)) => AccessError::AccountTaken,
+                _ => storage(error),
+            })?;
+        Ok(AccountLink {
             user,
             extension,
-            permissions,
-        }))
+            server_id: connection.external_id,
+            enabled: connection.enabled,
+            account: account.clone(),
+            connection_uri: connection_uri.to_owned(),
+            published_at: None,
+        })
+    }
+
+    async fn account_link(
+        &self,
+        user: UserId,
+        extension: Extension,
+    ) -> Result<Option<AccountLink>, AccessError> {
+        let row = extension_account::Entity::find()
+            .filter(extension_account::Column::UserId.eq(user.get()))
+            .filter(extension_account::Column::Extension.eq(extension_name(extension)))
+            .one(&self.connection)
+            .await
+            .map_err(storage)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        Ok(self
+            .connection(user, extension)
+            .await?
+            .map(|connection| account_link_of(row, connection)))
+    }
+
+    async fn unlink_account(
+        &self,
+        user: UserId,
+        extension: Extension,
+    ) -> Result<bool, AccessError> {
+        let result = extension_account::Entity::delete_many()
+            .filter(extension_account::Column::UserId.eq(user.get()))
+            .filter(extension_account::Column::Extension.eq(extension_name(extension)))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(result.rows_affected > 0)
+    }
+
+    async fn mark_published(
+        &self,
+        user: UserId,
+        extension: Extension,
+        at: i64,
+    ) -> Result<(), AccessError> {
+        extension_account::Entity::update_many()
+            .col_expr(extension_account::Column::PublishedAt, at.into())
+            .col_expr(extension_account::Column::UpdatedAt, at.into())
+            .filter(extension_account::Column::UserId.eq(user.get()))
+            .filter(extension_account::Column::Extension.eq(extension_name(extension)))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(())
+    }
+
+    async fn grant_for_account(
+        &self,
+        extension: Extension,
+        account_id: &str,
+    ) -> Result<Option<Grant>, AccessError> {
+        let row = extension_account::Entity::find()
+            .filter(extension_account::Column::Extension.eq(extension_name(extension)))
+            .filter(extension_account::Column::AccountId.eq(account_id))
+            .one(&self.connection)
+            .await
+            .map_err(storage)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        match self.connection(UserId::new(row.user_id), extension).await? {
+            Some(connection) if connection.enabled => self.grant_of(connection).await,
+            _ => Ok(None),
+        }
     }
 }

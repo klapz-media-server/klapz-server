@@ -871,6 +871,78 @@ pub struct InMemoryAccess {
     users: std::sync::Mutex<Vec<crate::access::User>>,
     permissions: std::sync::Mutex<Vec<crate::access::LibraryPermission>>,
     extensions: std::sync::Mutex<Vec<(crate::access::UserExtension, String)>>,
+    accounts: std::sync::Mutex<Vec<crate::access::AccountLink>>,
+}
+
+/// An account service that answers from the code or token it is given.
+#[derive(Debug, Default)]
+pub struct StubDirectory {
+    /// The addresses announced so far.
+    pub published: std::sync::Mutex<Vec<String>>,
+    /// How many tokens it was asked about.
+    pub lookups: std::sync::atomic::AtomicUsize,
+    /// Answer every publication and lookup as an outage.
+    pub offline: std::sync::atomic::AtomicBool,
+}
+
+impl StubDirectory {
+    /// The token of every account this directory knows.
+    pub const ACCOUNT_TOKEN: &'static str = "remote-account-token";
+
+    fn is_offline(&self) -> bool {
+        self.offline.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn outage() -> crate::access::AccessError {
+        crate::access::AccessError::Unreachable("offline".into())
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::access::AccountDirectory for StubDirectory {
+    async fn redeem(
+        &self,
+        _server_id: &str,
+        code: &str,
+    ) -> Result<crate::access::RemoteAccount, crate::access::AccessError> {
+        let id = code
+            .strip_prefix("claim-")
+            .ok_or(crate::access::AccessError::Refused)?;
+        Ok(crate::access::RemoteAccount {
+            id: id.to_owned(),
+            name: format!("account {id}"),
+            token: Self::ACCOUNT_TOKEN.to_owned(),
+        })
+    }
+
+    async fn publish(
+        &self,
+        link: &crate::access::AccountLink,
+    ) -> Result<(), crate::access::AccessError> {
+        if self.is_offline() {
+            return Err(Self::outage());
+        }
+        locked(&self.published).push(link.connection_uri.clone());
+        Ok(())
+    }
+
+    async fn account_of(
+        &self,
+        token: &str,
+    ) -> Result<Option<crate::access::RemoteAccount>, crate::access::AccessError> {
+        self.lookups
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if self.is_offline() {
+            return Err(Self::outage());
+        }
+        Ok(
+            (token == Self::ACCOUNT_TOKEN).then(|| crate::access::RemoteAccount {
+                id: "linked".to_owned(),
+                name: "account linked".to_owned(),
+                token: token.to_owned(),
+            }),
+        )
+    }
 }
 
 fn locked<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -927,6 +999,7 @@ impl crate::access::AccessRepository for InMemoryAccess {
     ) -> Result<bool, crate::access::AccessError> {
         locked(&self.permissions).retain(|permission| permission.user != id);
         locked(&self.extensions).retain(|(extension, _)| extension.user != id);
+        locked(&self.accounts).retain(|link| link.user != id);
         let mut users = locked(&self.users);
         let before = users.len();
         users.retain(|user| user.id != id);
@@ -1039,6 +1112,108 @@ impl crate::access::AccessRepository for InMemoryAccess {
             return Ok(None);
         };
         let Some(user) = self.user(extension.user).await? else {
+            return Ok(None);
+        };
+        let permissions = self.permissions(user.id).await?;
+        Ok(Some(crate::access::Grant {
+            user,
+            extension,
+            permissions,
+        }))
+    }
+
+    async fn link_account(
+        &self,
+        user: crate::ids::UserId,
+        extension: crate::access::Extension,
+        account: &crate::access::RemoteAccount,
+        connection_uri: &str,
+        _now: i64,
+    ) -> Result<crate::access::AccountLink, crate::access::AccessError> {
+        let connection = locked(&self.extensions)
+            .iter()
+            .find(|(held, _)| held.user == user && held.extension == extension)
+            .map(|(held, _)| held.clone())
+            .ok_or(crate::access::AccessError::NotConnected)?;
+        let mut accounts = locked(&self.accounts);
+        if accounts
+            .iter()
+            .any(|link| link.account.id == account.id && link.user != user)
+        {
+            return Err(crate::access::AccessError::AccountTaken);
+        }
+        accounts.retain(|link| (link.user, link.extension) != (user, extension));
+        let link = crate::access::AccountLink {
+            user,
+            extension,
+            server_id: connection.external_id,
+            enabled: connection.enabled,
+            account: account.clone(),
+            connection_uri: connection_uri.to_owned(),
+            published_at: None,
+        };
+        accounts.push(link.clone());
+        Ok(link)
+    }
+
+    async fn account_link(
+        &self,
+        user: crate::ids::UserId,
+        extension: crate::access::Extension,
+    ) -> Result<Option<crate::access::AccountLink>, crate::access::AccessError> {
+        let enabled = locked(&self.extensions)
+            .iter()
+            .any(|(held, _)| held.user == user && held.extension == extension && held.enabled);
+        Ok(locked(&self.accounts)
+            .iter()
+            .find(|link| (link.user, link.extension) == (user, extension))
+            .cloned()
+            .map(|link| crate::access::AccountLink { enabled, ..link }))
+    }
+
+    async fn unlink_account(
+        &self,
+        user: crate::ids::UserId,
+        extension: crate::access::Extension,
+    ) -> Result<bool, crate::access::AccessError> {
+        let mut accounts = locked(&self.accounts);
+        let before = accounts.len();
+        accounts.retain(|link| (link.user, link.extension) != (user, extension));
+        Ok(accounts.len() < before)
+    }
+
+    async fn mark_published(
+        &self,
+        user: crate::ids::UserId,
+        extension: crate::access::Extension,
+        at: i64,
+    ) -> Result<(), crate::access::AccessError> {
+        if let Some(link) = locked(&self.accounts)
+            .iter_mut()
+            .find(|link| (link.user, link.extension) == (user, extension))
+        {
+            link.published_at = Some(at);
+        }
+        Ok(())
+    }
+
+    async fn grant_for_account(
+        &self,
+        extension: crate::access::Extension,
+        account_id: &str,
+    ) -> Result<Option<crate::access::Grant>, crate::access::AccessError> {
+        let found = locked(&self.accounts)
+            .iter()
+            .find(|link| link.extension == extension && link.account.id == account_id)
+            .map(|link| link.user);
+        let Some(owner) = found else {
+            return Ok(None);
+        };
+        let connection = locked(&self.extensions)
+            .iter()
+            .find(|(held, _)| held.user == owner && held.extension == extension && held.enabled)
+            .map(|(held, _)| held.clone());
+        let (Some(extension), Some(user)) = (connection, self.user(owner).await?) else {
             return Ok(None);
         };
         let permissions = self.permissions(user.id).await?;

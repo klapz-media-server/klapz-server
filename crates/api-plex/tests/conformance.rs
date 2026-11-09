@@ -87,6 +87,7 @@ fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
     });
     router(PlexState::new(identity, schema, accounts))
 }
@@ -786,6 +787,7 @@ fn items_app() -> axum::Router {
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
     });
     authenticated(router(PlexState::new(identity, schema, accounts)))
 }
@@ -1610,6 +1612,7 @@ fn app_as_user(user: i64, role: LibraryRole) -> axum::Router {
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
     });
     router(PlexState::new(identity, schema, accounts))
         .layer(axum::Extension(user_principal(user, role)))
@@ -1859,6 +1862,7 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
         playback: playback.clone(),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
     });
     let app = authenticated(router(PlexState::new(identity, schema, accounts)));
 

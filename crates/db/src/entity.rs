@@ -7,6 +7,7 @@
 //! These types never leave this crate. The repository maps them to domain types, which is
 //! what keeps `core` independent of storage.
 
+pub mod extension_account;
 pub mod item_external_id;
 pub mod item_rating;
 pub mod item_tag;

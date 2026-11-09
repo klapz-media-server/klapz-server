@@ -21,6 +21,8 @@ use ipnet::IpNet;
 use open_plex_core::access::{token_digest, AccessRepository, Extension};
 use open_plex_core::{Accounts, Principal};
 
+use crate::remote_tokens::RemoteTokens;
+
 /// The header and query parameter carrying the token.
 ///
 /// Both forms are required for compatibility: the artwork and stream URLs a server hands out
@@ -41,6 +43,7 @@ pub struct Access {
     accounts: Accounts,
     trusted_networks: Vec<IpNet>,
     users: Option<Arc<dyn AccessRepository>>,
+    remote: Option<Arc<RemoteTokens>>,
 }
 
 impl Access {
@@ -49,6 +52,7 @@ impl Access {
             accounts,
             trusted_networks,
             users: None,
+            remote: None,
         }
     }
 
@@ -59,13 +63,28 @@ impl Access {
         self
     }
 
+    /// Adds the tokens an account service issued, which is what a client that found this
+    /// server through that service presents.
+    #[must_use]
+    pub fn with_remote_tokens(mut self, remote: RemoteTokens) -> Self {
+        self.remote = Some(Arc::new(remote));
+        self
+    }
+
     /// Who a token belongs to. A storage failure refuses the token rather than the server.
     async fn authenticate(&self, token: &str) -> Option<Principal> {
         if let Some(operator) = self.accounts.authenticate(token) {
             return Some(operator.clone());
         }
         let users = self.users.as_ref()?;
-        match users.grant(Extension::Plex, &token_digest(token)).await {
+        let grant = match users.grant(Extension::Plex, &token_digest(token)).await {
+            Ok(None) => {
+                let account = self.remote.as_ref()?.account_of(token).await?;
+                users.grant_for_account(Extension::Plex, &account).await
+            }
+            found => found,
+        };
+        match grant {
             Ok(grant) => grant.map(open_plex_core::access::Grant::into_principal),
             Err(error) => {
                 tracing::warn!(%error, "could not look a token up");
@@ -375,6 +394,90 @@ mod tests {
             "<html><head><title>Unauthorized</title></head><body><h1>401 Unauthorized</h1></body></html>"
         );
         assert_eq!(body.len(), 91);
+    }
+
+    /// A router knowing one user, paired with the account behind the stub directory's token.
+    async fn app_with_paired_user(enabled: bool) -> Router {
+        use open_plex_core::access::{AccessRepository, Extension as Protocol, RemoteAccount};
+        use open_plex_core::testing::{InMemoryAccess, StubDirectory};
+
+        let users = Arc::new(InMemoryAccess::default());
+        let user = users.create_user("a@example.org", 0).await.unwrap().id;
+        users
+            .connect_extension(user, Protocol::Plex, "server", "digest", 0)
+            .await
+            .unwrap();
+        let account = RemoteAccount {
+            id: "linked".to_owned(),
+            name: "alice".to_owned(),
+            token: StubDirectory::ACCOUNT_TOKEN.to_owned(),
+        };
+        users
+            .link_account(user, Protocol::Plex, &account, "https://a.example.org", 0)
+            .await
+            .unwrap();
+        if !enabled {
+            users
+                .disable_extension(user, Protocol::Plex, 0)
+                .await
+                .unwrap();
+        }
+        let access = Arc::new(
+            Access::new(Accounts::default(), Vec::new())
+                .with_users(users)
+                .with_remote_tokens(crate::remote_tokens::RemoteTokens::new(Arc::new(
+                    StubDirectory::default(),
+                ))),
+        );
+        Router::new()
+            .route("/library/sections", get(whoami))
+            .layer(axum::middleware::from_fn_with_state(access, require_token))
+    }
+
+    async fn status_with(app: Router, token: &str) -> (StatusCode, String) {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/library/sections")
+                    .header("X-Plex-Token", token)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = http_body_util::BodyExt::collect(response.into_body())
+            .await
+            .unwrap()
+            .to_bytes();
+        (status, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    #[tokio::test]
+    async fn a_token_of_a_paired_account_acts_as_its_user() {
+        let (status, name) = status_with(
+            app_with_paired_user(true).await,
+            open_plex_core::testing::StubDirectory::ACCOUNT_TOKEN,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(name, "a@example.org");
+    }
+
+    #[tokio::test]
+    async fn a_token_the_service_does_not_know_is_refused() {
+        let (status, _) = status_with(app_with_paired_user(true).await, "someone-else").await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn a_switched_off_connection_refuses_its_accounts_token() {
+        let (status, _) = status_with(
+            app_with_paired_user(false).await,
+            open_plex_core::testing::StubDirectory::ACCOUNT_TOKEN,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

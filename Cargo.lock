@@ -1660,6 +1660,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1667,12 +1668,14 @@ name = "open-plex-api-plex"
 version = "0.1.0"
 dependencies = [
  "async-graphql",
+ "async-trait",
  "axum",
  "form_urlencoded",
  "http-body-util",
  "open-plex-api",
  "open-plex-core",
  "open-plex-transcoder",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror",
