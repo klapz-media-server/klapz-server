@@ -774,6 +774,10 @@ None of this is in the spec. Measured against the reference and plex.tv.
   origin (http or https, any subdomain) is echoed in `Access-Control-Allow-Origin`, and any other
   origin gets `https://app.plex.tv`, which a browser refuses just the same. `OPTIONS` answers `200`
   with the requested headers mirrored and a `Access-Control-Max-Age` of `1209600`.
+- `GET /library/metadata/{id}/userState` is a `404` on the reference, token or no token. Plex's
+  Discover provider answers it: `{"MediaContainer":{"identifier":"tv.plex.provider.discover",
+  "size":1,"UserState":[{"ratingKey":…,"type":"movie","viewCount":0,"viewOffset":0}]}}`, and
+  `404` for an identifier it does not know.
 - A stream's `header` and chunks are served without a token by the reference, from the LAN too:
   the manifest carries no `X-Plex-Token` and players fetch its relative URLs as they are. An
   unknown session answers `404` with or without a token.

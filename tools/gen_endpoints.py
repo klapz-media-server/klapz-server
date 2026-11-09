@@ -74,6 +74,14 @@ IMPLEMENTED = frozenset(
 # spec row for the carry-over to key on. Each is described in docs/spec-gaps.md.
 OFF_SPEC = (
     (
+        "done",
+        "GET",
+        "/library/metadata/{id}/userState",
+        "user",
+        "An item's state for the watchlist button",
+        "Not a route of the reference, which answers `404`: the shape of plex.tv's Discover provider, for Plex Web. Always unwatched: watch state is not recorded yet.",
+    ),
+    (
         "partial",
         "GET",
         "/library/search",

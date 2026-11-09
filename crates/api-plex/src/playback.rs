@@ -217,7 +217,7 @@ impl PlaybackParams {
     }
 }
 
-async fn item(state: &PlexState, key: i64) -> Result<GqlItem, ApiError> {
+pub(crate) async fn item(state: &PlexState, key: i64) -> Result<GqlItem, ApiError> {
     let mut variables = Variables::default();
     variables.insert(
         Name::new("ids"),

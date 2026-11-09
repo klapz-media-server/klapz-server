@@ -1665,6 +1665,41 @@ async fn app_as_paired_user() -> axum::Router {
 }
 
 #[tokio::test]
+async fn user_state_has_the_shape_of_plex_discover() {
+    let (status, body) = user_get("/library/metadata/100/userState").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        r#"{"MediaContainer":{"identifier":"com.plexapp.plugins.library","size":1,"UserState":[{"ratingKey":"100","type":"movie","viewCount":0,"viewOffset":0}]}}"#
+    );
+
+    let (_, xml) = get_from(
+        app_as_user(1, LibraryRole::Viewer),
+        "/library/metadata/100/userState",
+        None,
+    )
+    .await;
+    assert!(
+        xml.contains(r#"<UserState ratingKey="100" type="movie" viewCount="0" viewOffset="0" />"#)
+            || xml.contains(
+                r#"<UserState ratingKey="100" type="movie" viewCount="0" viewOffset="0"/>"#
+            ),
+        "{xml}"
+    );
+}
+
+#[tokio::test]
+async fn user_state_is_a_404_for_what_a_caller_cannot_see() {
+    for uri in [
+        "/library/metadata/200/userState",
+        "/library/metadata/999999/userState",
+        "/library/metadata/5d776826e6d55c002040af58/userState",
+    ] {
+        assert_eq!(user_get(uri).await.0, StatusCode::NOT_FOUND, "{uri}");
+    }
+}
+
+#[tokio::test]
 async fn a_paired_server_reports_its_account_as_the_reference_does() {
     for uri in ["/", "/media/providers"] {
         let (status, body) =

@@ -219,6 +219,9 @@ Places where we knowingly answer differently, each decided rather than overlooke
 - **A stream's segments carry no token**, as on the reference: `/video/:/transcode/universal/session/…`
   answers to the session's name alone, and an unknown one is a `404`. The manifest gives a user's
   stored name (`u6~…`), since nothing else in the request says whose session it is.
+- **`/library/metadata/{id}/userState` exists here and not on the reference.** It belongs to
+  plex.tv's Discover provider; Plex Web also sends it to the server for an item without a Plex
+  GUID, and it answers in that provider's shape, always unwatched.
 - **File paths are published**, on both surfaces, as Plex does: `MediaFile.path` with a derived
   `MediaFile.filename` in GraphQL, `Part.file` in the Plex layer. This is reference data — it
   makes the library auditable from outside. It changes nothing about input: playback addresses

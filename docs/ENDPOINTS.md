@@ -65,6 +65,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
+| `done` | `GET` | `/library/metadata/{id}/userState` | user | An item's state for the watchlist button | Not a route of the reference, which answers `404`: the shape of plex.tv's Discover provider, for Plex Web. Always unwatched: watch state is not recorded yet. |
 | `partial` | `GET` | `/library/search` | user | Search field (universal search) | Films, series and episodes with their listing fields, in three score tiers. Not served: the people and collections the reference mixes in, and its fuzzy matching. See `docs/spec-gaps.md`. |
 | `done` | `GET` | `/library/sections` | user | Library sections | Byte-identical to the reference. The spec declares only its `/all` alias. |
 | `partial` | `GET` | `/library/metadata/{id}/children` | user | Seasons of a series, episodes of a season | Zero differing fields against the reference on seven parents across two libraries; `400` on a film or an episode, as the reference. Gaps: the leading `All episodes` `Directory` is omitted while `/allLeaves` answers 501, so `size` is one short. |
