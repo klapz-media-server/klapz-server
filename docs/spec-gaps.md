@@ -491,6 +491,15 @@ startup every row is deleted: no process from an earlier run is still alive.
 attributes are what Plex Web reads. `Player.state` is what `/:/timeline` last reported. Direct Play
 creates no session: only the timeline could reveal one, and we do not open one from it.
 
+### Refusing a chunk
+
+A request for a DASH header, a DASH chunk or an HLS segment waits for the file, up to 20 seconds
+while a process is running. When nothing is working towards it (no such session, or a process
+that has ended) it is held for 5 seconds before the `404`, and is served if the file appears
+meanwhile. Measured on the reference, the same two cases answer `404` within 0.1 s; it cannot read
+its files here, so a chunk that is merely late could not be timed. The hold is a deliberate choice
+against retry loops. Playlists and manifests are not held.
+
 ### Timelines
 
 The spec declares `POST /:/timeline`. The reference also answers `GET`, which is what Plex Web
