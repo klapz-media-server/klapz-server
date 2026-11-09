@@ -494,11 +494,12 @@ creates no session: only the timeline could reveal one, and we do not open one f
 ### Refusing a chunk
 
 A request for a DASH header, a DASH chunk or an HLS segment waits for the file, up to 20 seconds
-while a process is running. When nothing is working towards it (no such session, or a process
-that has ended) it is held for 5 seconds before the `404`, and is served if the file appears
-meanwhile. Measured on the reference, the same two cases answer `404` within 0.1 s; it cannot read
-its files here, so a chunk that is merely late could not be timed. The hold is a deliberate choice
-against retry loops. Playlists and manifests are not held.
+while a process is running. Once the session's process has ended it is held for 5 seconds before
+the `404`, and is served if the file appears meanwhile. A session that is unknown or stopped
+answers `404` at once, a wait already under way included. Measured on the reference, an unknown
+session and a dead process both answer `404` within 0.1 s; it cannot read its files here, so a
+chunk that is merely late could not be timed. The hold is a deliberate choice against retry loops.
+Playlists and manifests are not held.
 
 ### Timelines
 

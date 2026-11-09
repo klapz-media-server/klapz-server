@@ -33,9 +33,9 @@ const WAIT_FOR_OUTPUT: Duration = Duration::from_secs(20);
 /// can write several chunks between two of them, and none after the last.
 const FILE_POLL: Duration = Duration::from_millis(100);
 
-/// How long a request for a chunk is held when nothing is working towards it: no such session,
-/// or a process that has ended. Refused at once, a player retries the chunk in a tight loop.
-/// Still watched meanwhile, since the other track's seek can restart the process.
+/// How long a request for a chunk is held once the session's process has ended. Refused at once,
+/// a player retries the chunk in a tight loop. Still watched meanwhile, since the other track's
+/// seek can restart the process.
 const HOLD_BEFORE_REFUSAL: Duration = Duration::from_secs(5);
 
 /// Enough for a player to start without running dry.
@@ -201,6 +201,9 @@ impl Session {
         loop {
             if exists() {
                 return true;
+            }
+            if self.closed.load(Ordering::Acquire) {
+                return false;
             }
             let limit = if self.with_progress(|progress| progress.ended) {
                 HOLD_BEFORE_REFUSAL
@@ -587,20 +590,6 @@ impl Transcoder {
         found
     }
 
-    /// The session a request for a chunk names, held like any chunk that will not come.
-    async fn session_of_chunk(&self, id: &str) -> Result<Arc<Session>, TranscodeError> {
-        let began = tokio::time::Instant::now();
-        loop {
-            if let Some(session) = self.session(id) {
-                return Ok(session);
-            }
-            if began.elapsed() >= HOLD_BEFORE_REFUSAL {
-                return Err(TranscodeError::UnknownSession);
-            }
-            tokio::time::sleep(FILE_POLL).await;
-        }
-    }
-
     fn by_callback(&self, callback: &str) -> Option<Arc<Session>> {
         self.sessions
             .lock()
@@ -840,7 +829,7 @@ impl Transcoder {
     /// [`TranscodeError::UnknownSession`], or [`TranscodeError::UnknownSegment`] if it never
     /// appears.
     pub async fn session_segment(&self, id: &str, number: u32) -> Result<PathBuf, TranscodeError> {
-        let session = self.session_of_chunk(id).await?;
+        let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
         let finished = session
             .wait_for(|| {
                 session.with_progress(|progress| {
@@ -878,7 +867,7 @@ impl Transcoder {
     /// [`TranscodeError::UnknownSession`], or [`TranscodeError::UnknownSegment`] if it never
     /// appears.
     pub async fn dash_header(&self, id: &str, stream: u32) -> Result<PathBuf, TranscodeError> {
-        let session = self.session_of_chunk(id).await?;
+        let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
         // Unlike a chunk it has no temporary name: it is whole once the first chunk is begun.
         let first = session.with_run(|run| run.as_ref().map_or(1, |run| run.first_chunk));
         let finished = session.chunk_path(stream, first);
@@ -899,7 +888,7 @@ impl Transcoder {
         stream: u32,
         number: u32,
     ) -> Result<PathBuf, TranscodeError> {
-        let session = self.session_of_chunk(id).await?;
+        let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
         // The process numbers its files from one, and renames each only once it is whole.
         let number = number + 1;
         let path = session.chunk_path(stream, number);
@@ -1201,25 +1190,31 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_chunk_of_no_session_is_held_before_being_refused() {
+    async fn a_request_for_no_session_is_refused_at_once() {
         let transcoder = Transcoder::default();
         let began = tokio::time::Instant::now();
-        let refused = transcoder.dash_chunk("missing", 0, 0).await;
-        assert!(matches!(refused, Err(TranscodeError::UnknownSession)));
-        assert!(began.elapsed() >= HOLD_BEFORE_REFUSAL);
-        assert!(began.elapsed() < WAIT_FOR_OUTPUT);
+        for refused in [
+            transcoder.dash_chunk("missing", 0, 0).await,
+            transcoder.dash_header("missing", 0).await,
+            transcoder.session_segment("missing", 0).await,
+        ] {
+            assert!(matches!(refused, Err(TranscodeError::UnknownSession)));
+        }
+        assert_eq!(began.elapsed(), Duration::ZERO);
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_header_and_a_segment_of_no_session_are_held_too() {
-        let transcoder = Transcoder::default();
+    async fn a_wait_ends_as_soon_as_the_session_is_stopped() {
+        let session = session_writing_to(scratch_directory(), false);
+        let missing = session.chunk_path(0, 1);
+        let stopped = Arc::clone(&session);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            stopped.closed.store(true, Ordering::Release);
+        });
         let began = tokio::time::Instant::now();
-        assert!(transcoder.dash_header("missing", 0).await.is_err());
-        assert!(began.elapsed() >= HOLD_BEFORE_REFUSAL);
-
-        let began = tokio::time::Instant::now();
-        assert!(transcoder.session_segment("missing", 0).await.is_err());
-        assert!(began.elapsed() >= HOLD_BEFORE_REFUSAL);
+        assert!(session.wait_for_file(&[missing]).await.is_err());
+        assert!(began.elapsed() < HOLD_BEFORE_REFUSAL);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1253,20 +1248,6 @@ mod tests {
         });
         let began = tokio::time::Instant::now();
         session.wait_for_file(&[path]).await.unwrap();
-        assert!(began.elapsed() < HOLD_BEFORE_REFUSAL);
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn a_session_appearing_during_the_hold_is_found() {
-        let transcoder = Arc::new(Transcoder::default());
-        let late = Arc::clone(&transcoder);
-        let session = session_writing_to(scratch_directory(), true);
-        tokio::spawn(async move {
-            tokio::time::sleep(HOLD_BEFORE_REFUSAL / 2).await;
-            register(&late, session);
-        });
-        let began = tokio::time::Instant::now();
-        assert!(transcoder.session_of_chunk("known").await.is_ok());
         assert!(began.elapsed() < HOLD_BEFORE_REFUSAL);
     }
 }

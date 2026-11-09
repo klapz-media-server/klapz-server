@@ -173,10 +173,11 @@ Places where we knowingly answer differently, each decided rather than overlooke
   bitrates measured on the reference, whose own values vary per film. It copies the video only
   when the limit covers a peak its analysis stored; we have no analysis and compare with the
   file's average, so we copy more often.
-- **A chunk that will not come is refused after 5 seconds, not at once.** The repo owner's
+- **A chunk whose process has ended is refused after 5 seconds, not at once.** The repo owner's
   decision, so that a player does not retry a missing chunk in a tight loop. The reference
-  answered `404` within 0.1 s for an unknown session and for a process that had died; a running
-  process could not be measured there. A running process keeps its full 20 seconds here.
+  answered `404` within 0.1 s when its process had died; a running process could not be measured
+  there. A running process keeps its full 20 seconds, and a session that is unknown or stopped
+  answers `404` at once, as on the reference.
 - **Playback sessions are stored, with automatic expiry.** The reference keeps them in memory.
   Ours are rows in `playback_session`, exposed on the official API; every sign of life pushes
   `expires_at` forward 300 seconds, reads skip what has expired, a sweep deletes it, and startup
