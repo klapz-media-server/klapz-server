@@ -1814,6 +1814,16 @@ type Query {
 		last: Int
 	): PlaybackSessionConnection!
 	"""
+	The account the caller's connection is paired with on the extension's own service.
+	Null for the operator, who connects through no extension.
+	"""
+	viewerAccount(
+		"""
+		The protocol concerned.
+		"""
+		extension: ExtensionType!
+	): AccountLink
+	"""
 	The people who can be given access to this server. For its operator only.
 	"""
 	users(

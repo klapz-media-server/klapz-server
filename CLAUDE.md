@@ -222,8 +222,8 @@ Places where we knowingly answer differently, each decided rather than overlooke
 - **A listing always windows.** Plex returns a whole library unpaged when the client sends no
   container parameters; `page::MAX_ITEMS` forbids that. The response states `totalSize` and
   `offset` and sends the paging headers, so `size` never claims more than the body holds.
-- **`myPlexSubscription` reports true** while `myPlex` reports false: no paywall, and no
-  plex.tv link to pretend about.
+- **`myPlexSubscription` reports true** whatever the account: no paywall. `myPlex` and the
+  attributes around it describe the caller's own server: paired or not.
 - **An image is fetched from Plex's hosts only.** The reference's `/photo/:/transcode` fetches
   any URL it is handed, its own loopback included; that is an SSRF hole for any holder of a
   token. We fetch over TLS from `plex.tv` and its subdomains, on every redirect hop, which is

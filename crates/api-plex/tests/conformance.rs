@@ -1628,6 +1628,85 @@ fn user_principal(user: i64, role: LibraryRole) -> Principal {
     }
 }
 
+/// A router as the user seen by [`user_principal`] sees it, with its server paired.
+async fn app_as_paired_user() -> axum::Router {
+    use open_plex_core::access::{AccessRepository, Extension, RemoteAccount};
+
+    let access = open_plex_core::testing::InMemoryAccess::default();
+    let user = access.create_user("a@example.org", 0).await.unwrap().id;
+    access
+        .connect_extension(user, Extension::Plex, "server-of-user-1", "digest", 0)
+        .await
+        .unwrap();
+    let account = RemoteAccount {
+        id: "7".to_owned(),
+        name: "alice".to_owned(),
+        token: "token".to_owned(),
+    };
+    access
+        .link_account(user, Extension::Plex, &account, "https://a.example.org", 0)
+        .await
+        .unwrap();
+
+    let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
+    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
+    let (library, metadata) = catalog();
+    let schema = build_schema(ApiContext {
+        capabilities: ServerCapabilities::new(identity.clone(), 0),
+        library: std::sync::Arc::new(library),
+        metadata: std::sync::Arc::new(metadata),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(access),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+    });
+    router(PlexState::new(identity, schema, accounts))
+        .layer(axum::Extension(user_principal(1, LibraryRole::Viewer)))
+}
+
+#[tokio::test]
+async fn a_paired_server_reports_its_account_as_the_reference_does() {
+    for uri in ["/", "/media/providers"] {
+        let (status, body) =
+            get_from(app_as_paired_user().await, uri, Some("application/json")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let json: Value = serde_json::from_str(&body).unwrap();
+        let container = json["MediaContainer"].as_object().unwrap();
+        let attributes: Vec<&str> = container
+            .keys()
+            .filter(|key| key.starts_with("myPlex"))
+            .map(String::as_str)
+            .collect();
+        // The order captured on the reference.
+        assert_eq!(
+            attributes,
+            [
+                "myPlex",
+                "myPlexMappingState",
+                "myPlexSigninState",
+                "myPlexSubscription",
+                "myPlexUsername"
+            ],
+            "{uri}"
+        );
+        assert_eq!(container["myPlex"], true, "{uri}");
+        assert_eq!(container["myPlexMappingState"], "mapped", "{uri}");
+        assert_eq!(container["myPlexSigninState"], "ok", "{uri}");
+        assert_eq!(container["myPlexUsername"], "alice", "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn an_unpaired_server_names_no_account() {
+    let (_, body) = user_get("/media/providers").await;
+    let json: Value = serde_json::from_str(&body).unwrap();
+    let container = &json["MediaContainer"];
+    assert_eq!(container["myPlex"], false);
+    assert_eq!(container["myPlexSigninState"], "none");
+    assert!(container.get("myPlexUsername").is_none());
+    assert!(container.get("myPlexMappingState").is_none());
+}
+
 async fn user_get(uri: &str) -> (StatusCode, String) {
     get_from(
         app_as_user(1, LibraryRole::Viewer),

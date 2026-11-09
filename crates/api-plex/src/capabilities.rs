@@ -6,9 +6,9 @@
 //! features Plex reserves for a subscription, and open-plex gates nothing — so the answer
 //! that unlocks them is the correct one here.
 //!
-//! `myPlex` reports **false**, because the server genuinely is not linked to a plex.tv
-//! account. Claiming otherwise would be a lie that breaks differently, later and less
-//! legibly, than an absent link does.
+//! `myPlex` reports whether this caller's server is paired with a plex.tv account. Claiming a
+//! link that does not exist would be a lie that breaks differently, later and less legibly,
+//! than an absent link does.
 
 use serde::Serialize;
 
@@ -92,11 +92,15 @@ pub struct CapabilitiesContainer {
     pub music_analysis: u8,
     #[serde(rename = "myPlex")]
     pub my_plex: bool,
-    /// Whether a plex.tv account is signed in. Always `none`: there is none to sign in.
+    #[serde(rename = "myPlexMappingState", skip_serializing_if = "Option::is_none")]
+    pub my_plex_mapping_state: Option<&'static str>,
+    /// `ok` is what Plex Web reads as claimed.
     #[serde(rename = "myPlexSigninState")]
     pub my_plex_signin_state: &'static str,
     #[serde(rename = "myPlexSubscription")]
     pub my_plex_subscription: bool,
+    #[serde(rename = "myPlexUsername", skip_serializing_if = "Option::is_none")]
+    pub my_plex_username: Option<String>,
     pub offline_transcode: u8,
     /// The named capabilities Plex lists alongside its subscription GUIDs.
     ///
@@ -160,9 +164,18 @@ impl CapabilitiesContainer {
             media_providers: true,
             multiuser: features.multiuser,
             music_analysis: if features.loudness { 2 } else { 0 },
-            my_plex: false,
-            my_plex_signin_state: "none",
+            my_plex: server.account.is_some(),
+            my_plex_mapping_state: server.account.as_ref().map(|_| "mapped"),
+            my_plex_signin_state: if server.account.is_some() {
+                "ok"
+            } else {
+                "none"
+            },
             my_plex_subscription: true,
+            my_plex_username: server
+                .account
+                .as_ref()
+                .map(|account| account.account_name.clone()),
             offline_transcode: u8::from(features.sync),
             owner_features: named_features(features),
             platform: server.platform.clone(),

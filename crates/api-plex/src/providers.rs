@@ -29,8 +29,7 @@ pub fn router() -> Router<PlexState> {
 /// Response to `GET /media/providers`.
 ///
 /// The capability attributes of `GET /`, minus the endpoint groups and a few flags the
-/// reference sends only there, followed by the providers. `myPlexUsername` and
-/// `myPlexMappingState` are absent: they describe a plex.tv link this server does not have.
+/// reference sends only there, followed by the providers.
 // The flag count mirrors the reference server's attributes; grouping them would change the
 // serialized shape, which is the one thing that must not move.
 #[allow(clippy::struct_excessive_bools)]
@@ -57,10 +56,14 @@ pub struct ProvidersContainer {
     pub music_analysis: u8,
     #[serde(rename = "myPlex")]
     pub my_plex: bool,
+    #[serde(rename = "myPlexMappingState", skip_serializing_if = "Option::is_none")]
+    pub my_plex_mapping_state: Option<&'static str>,
     #[serde(rename = "myPlexSigninState")]
     pub my_plex_signin_state: &'static str,
     #[serde(rename = "myPlexSubscription")]
     pub my_plex_subscription: bool,
+    #[serde(rename = "myPlexUsername", skip_serializing_if = "Option::is_none")]
+    pub my_plex_username: Option<String>,
     pub offline_transcode: u8,
     pub owner_features: String,
     pub platform: String,
@@ -112,8 +115,10 @@ impl ProvidersContainer {
             machine_identifier: capabilities.machine_identifier,
             music_analysis: capabilities.music_analysis,
             my_plex: capabilities.my_plex,
+            my_plex_mapping_state: capabilities.my_plex_mapping_state,
             my_plex_signin_state: capabilities.my_plex_signin_state,
             my_plex_subscription: capabilities.my_plex_subscription,
+            my_plex_username: capabilities.my_plex_username,
             offline_transcode: capabilities.offline_transcode,
             owner_features: capabilities.owner_features,
             platform: capabilities.platform,

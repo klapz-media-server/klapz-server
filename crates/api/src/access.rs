@@ -472,6 +472,19 @@ pub(crate) async fn pair_extension(
     Ok(AccountLinkObject(link))
 }
 
+pub(crate) async fn viewer_account(
+    context: &Context<'_>,
+    extension: ExtensionType,
+) -> Result<Option<AccountLinkObject>> {
+    let Some(user) = caller(context).and_then(|caller| caller.user) else {
+        return Ok(None);
+    };
+    Ok(repository(context)?
+        .account_link(user, extension.into())
+        .await?
+        .map(AccountLinkObject))
+}
+
 pub(crate) async fn unpair_extension(
     context: &Context<'_>,
     user: &ID,

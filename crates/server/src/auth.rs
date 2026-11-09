@@ -32,10 +32,11 @@ const TOKEN_KEY: &str = "X-Plex-Token";
 
 /// Paths served without authentication.
 ///
-/// Kept deliberately short. `/` and `/identity` must be reachable with no credential at all:
-/// clients call them to decide whether a host is a Plex server, and what it can do, before
-/// they hold any token. Requiring one would make the server undiscoverable.
-const PUBLIC_PATHS: &[&str] = &["/", "/identity", crate::admin::PATH];
+/// Kept deliberately short. `/identity` must be reachable with no credential at all: clients
+/// call it to decide whether a host is a Plex server before they hold any token. `/` is not
+/// public, as on the reference: its `401` is what sends Plex Web to sign in, and a `200` has it
+/// carry on anonymously into refusals it can only present as "not authorized".
+const PUBLIC_PATHS: &[&str] = &["/identity", crate::admin::PATH];
 
 /// Who may use the server: the accepted tokens, and the networks trusted without one.
 #[derive(Debug, Clone, Default)]
@@ -79,8 +80,15 @@ impl Access {
         let users = self.users.as_ref()?;
         let grant = match users.grant(Extension::Plex, &token_digest(token)).await {
             Ok(None) => {
-                let account = self.remote.as_ref()?.account_of(token).await?;
-                users.grant_for_account(Extension::Plex, &account).await
+                let Some(account) = self.remote.as_ref()?.account_of(token).await else {
+                    tracing::debug!("refused a token no account service attributes");
+                    return None;
+                };
+                let grant = users.grant_for_account(Extension::Plex, &account).await;
+                if matches!(grant, Ok(None)) {
+                    tracing::debug!(%account, "refused the token of an account not paired here");
+                }
+                grant
             }
             found => found,
         };
@@ -248,6 +256,7 @@ mod tests {
         Router::new()
             .route("/library/sections", get(whoami))
             .route("/identity", get(whoami))
+            .route("/", get(whoami))
             .layer(axum::middleware::from_fn_with_state(access, require_token))
     }
 
@@ -478,6 +487,13 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn the_capabilities_need_a_token() {
+        // Measured on the reference, whose answer is what makes Plex Web ask for a sign-in.
+        assert_eq!(call("/", None).await.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(call("/", Some(TOKEN)).await.0, StatusCode::OK);
     }
 
     #[tokio::test]

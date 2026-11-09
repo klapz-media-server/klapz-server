@@ -304,6 +304,16 @@ impl Query {
         crate::playback::sessions(context, after, before, first, last).await
     }
 
+    /// The account the caller's connection is paired with on the extension's own service.
+    /// Null for the operator, who connects through no extension.
+    async fn viewer_account(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The protocol concerned.")] extension: crate::access::ExtensionType,
+    ) -> Result<Option<crate::access::AccountLinkObject>> {
+        crate::access::viewer_account(context, extension).await
+    }
+
     /// The people who can be given access to this server. For its operator only.
     async fn users(
         &self,

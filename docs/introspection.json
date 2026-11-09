@@ -5567,6 +5567,33 @@
               "deprecationReason": null
             },
             {
+              "name": "viewerAccount",
+              "description": "The account the caller's connection is paired with on the extension's own service.\nNull for the operator, who connects through no extension.",
+              "args": [
+                {
+                  "name": "extension",
+                  "description": "The protocol concerned.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ExtensionType",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "OBJECT",
+                "name": "AccountLink",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "users",
               "description": "The people who can be given access to this server. For its operator only.",
               "args": [

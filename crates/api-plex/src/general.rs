@@ -65,12 +65,24 @@ query PlexCapabilities {
       hardwareTranscoding
     }
   }
+  viewerAccount(extension: PLEX) {
+    accountName
+  }
 }
 ";
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ServerData {
     server: GqlServer,
+    viewer_account: Option<GqlAccount>,
+}
+
+/// The plex.tv account the caller's server is paired with.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlAccount {
+    pub account_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,6 +96,8 @@ pub struct GqlServer {
     pub updated_at: i64,
     pub transcoder: GqlTranscoder,
     pub features: GqlFeatures,
+    #[serde(skip)]
+    pub account: Option<GqlAccount>,
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -123,8 +137,7 @@ pub struct GqlFeatures {
 /// `GET /` — the capabilities handshake.
 ///
 /// The first request any client makes: it reads the answer to decide what the server can do,
-/// and therefore what to offer. Public, like `/identity`, because a client asks before it
-/// holds a token.
+/// and therefore what to offer.
 async fn capabilities(
     State(state): State<PlexState>,
     format: ResponseFormat,
@@ -146,7 +159,10 @@ async fn capabilities(
 /// Fails when the query fails, which is a defect in the schema rather than client input.
 pub(crate) async fn server(state: &PlexState) -> Result<GqlServer, ApiError> {
     let data: ServerData = gql::execute(&state.schema, SERVER_QUERY, Variables::default()).await?;
-    Ok(data.server)
+    Ok(GqlServer {
+        account: data.viewer_account,
+        ..data.server
+    })
 }
 
 /// `GET /identity` — unauthenticated by design.

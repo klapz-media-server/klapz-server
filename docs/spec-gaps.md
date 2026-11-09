@@ -765,3 +765,9 @@ None of this is in the spec. Measured against the reference and plex.tv.
   that asked. A client therefore presents a token of its own, which is why tokens are attributed
   by account rather than compared with the one pairing obtained.
 - The reference's logs show the address announced around its startups, not on a timer.
+- Without a token, `GET /` answers `401` on the reference, from loopback and from the LAN alike,
+  where `/identity` answers `200`. Plex Web needs that `401`: a `200` tells it the server admits
+  anonymous visitors, so it never offers a sign-in and then stops at "Not authorized".
+- With a claimed account, `/` and `/media/providers` both carry, in this order, `myPlex`,
+  `myPlexMappingState` (`mapped`), `myPlexSigninState` (`ok`), `myPlexSubscription` and
+  `myPlexUsername`. Plex Web treats a server as claimed when `myPlexSigninState` is `ok`.
