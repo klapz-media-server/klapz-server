@@ -781,6 +781,10 @@ None of this is in the spec. Measured against the reference and plex.tv.
 - A new conversion with the `X-Plex-Session-Identifier` of a running one replaces it on the
   reference: the old session's segments answer `404` as soon as the new one has started. Plex Web
   relies on this when changing quality, opening a new `session=` without stopping the last.
+- `GET /library/metadata/{id}` marks exactly one audio stream `selected` (219 of 220 files
+  measured): the first default on 193, the first track on 13, and on the other 13 the one in the
+  account's language. No video stream is marked; subtitles depend on the account. Plex Web reads
+  `Stream.find(selected).id` in its player settings and crashes without it.
 - A stream's `header` and chunks are served without a token by the reference, from the LAN too:
   the manifest carries no `X-Plex-Token` and players fetch its relative URLs as they are. An
   unknown session answers `404` with or without a token.

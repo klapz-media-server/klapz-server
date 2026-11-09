@@ -524,8 +524,11 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<Conversi
         let is_subtitle = Some(&id) == subtitle.as_ref();
         // No subtitle is ever selected: nothing here records a viewer's choice of one yet, so
         // `subtitles=burn` has nothing to burn and the video can be copied.
+        // The listing marks the default track, which a request for another one overrides.
         if id == audio {
             fields.insert("selected".into(), json!(true));
+        } else {
+            fields.shift_remove("selected");
         }
         let Some((plan, protocol)) = action else {
             fields.insert("location".into(), json!("direct"));

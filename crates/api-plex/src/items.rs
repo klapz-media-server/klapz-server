@@ -383,6 +383,8 @@ pub struct StreamEntry {
     /// 1 video, 2 audio, 3 subtitle — Plex's numbering, which clients switch on.
     pub stream_type: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub default: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forced: Option<bool>,
@@ -655,9 +657,27 @@ impl PartEntry {
             file: file.path.clone(),
             size: file.size_bytes,
             container,
-            stream: file.streams.iter().map(StreamEntry::from_graphql).collect(),
+            stream: with_audio_selected(
+                file.streams.iter().map(StreamEntry::from_graphql).collect(),
+            ),
         }
     }
+}
+
+/// Marks the audio track that plays when none is asked for: the first default, or else the
+/// first. Plex Web's player settings read the selected track and crash without one. The
+/// reference also honors an account's language, which agrees on 206 of 219 files measured; we
+/// have no such preference. Subtitles stay unselected: nothing records a viewer's choice.
+fn with_audio_selected(mut streams: Vec<StreamEntry>) -> Vec<StreamEntry> {
+    let audio = |stream: &StreamEntry| stream.stream_type == 2;
+    let chosen = streams
+        .iter()
+        .position(|stream| audio(stream) && stream.default == Some(true))
+        .or_else(|| streams.iter().position(audio));
+    if let Some(chosen) = chosen {
+        streams[chosen].selected = Some(true);
+    }
+    streams
 }
 
 impl StreamEntry {
@@ -669,6 +689,7 @@ impl StreamEntry {
                 "AUDIO" => 2,
                 _ => 3,
             },
+            selected: None,
             default: stream.is_default.then_some(true),
             forced: stream.is_forced.then_some(true),
             codec: stream.codec.clone(),
@@ -776,6 +797,59 @@ fn frame_rate_label(fps: f64) -> Option<&'static str> {
 mod tests {
     // A panicking test is a failing test, which is the intended reporting mechanism.
     #![allow(clippy::expect_used, clippy::unwrap_used)]
+
+    use super::{with_audio_selected, StreamEntry};
+
+    fn stream(stream_type: u8, default: bool) -> StreamEntry {
+        StreamEntry {
+            id: 1,
+            stream_type,
+            selected: None,
+            default: default.then_some(true),
+            forced: None,
+            codec: None,
+            index: 0,
+            channels: None,
+            bitrate: None,
+            language: None,
+        }
+    }
+
+    fn selected(streams: Vec<StreamEntry>) -> Vec<bool> {
+        with_audio_selected(streams)
+            .iter()
+            .map(|stream| stream.selected == Some(true))
+            .collect()
+    }
+
+    #[test]
+    fn the_first_default_audio_track_is_selected() {
+        assert_eq!(
+            selected(vec![
+                stream(1, true),
+                stream(2, false),
+                stream(2, true),
+                stream(2, true),
+            ]),
+            [false, false, true, false]
+        );
+    }
+
+    #[test]
+    fn without_a_default_the_first_audio_track_is_selected() {
+        assert_eq!(
+            selected(vec![stream(1, false), stream(2, false), stream(2, false)]),
+            [false, true, false]
+        );
+    }
+
+    #[test]
+    fn neither_video_nor_subtitles_are_selected() {
+        assert_eq!(
+            selected(vec![stream(1, true), stream(3, true)]),
+            [false, false]
+        );
+    }
 
     use super::*;
 
