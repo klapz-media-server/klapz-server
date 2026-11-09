@@ -1183,12 +1183,14 @@ impl crate::access::AccessRepository for InMemoryAccess {
             })
             .map(|link| link.user)
             .collect();
-        Ok(locked(&self.extensions)
-            .iter()
-            .find(|(held, _)| {
-                held.extension == extension && held.enabled && owners.contains(&held.user)
-            })
-            .map(|(held, _)| held.clone()))
+        let extensions = locked(&self.extensions);
+        let mut enabled = extensions.iter().filter(|(held, _)| {
+            held.extension == extension && held.enabled && owners.contains(&held.user)
+        });
+        Ok(match (enabled.next(), enabled.next()) {
+            (Some((held, _)), None) => Some(held.clone()),
+            _ => None,
+        })
     }
 
     async fn unlink_account(

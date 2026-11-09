@@ -338,8 +338,8 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
         extension: Extension,
     ) -> Result<Option<AccountLink>, AccessError>;
 
-    /// The switched-on connection published at one of these addresses. The oldest, should
-    /// several users share one: an address can only name one server to someone unidentified.
+    /// The switched-on connection published at one of these addresses, if there is exactly
+    /// one. Shared by several users, an address cannot say whose server a stranger reached.
     async fn connection_at(
         &self,
         extension: Extension,

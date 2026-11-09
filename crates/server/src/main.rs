@@ -6,6 +6,7 @@
 
 mod admin;
 mod auth;
+mod cors;
 mod graphql;
 mod remote_tokens;
 mod web;
@@ -135,6 +136,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             access,
             auth::require_token,
         ))
+        .layer(cors::layer())
         .layer((
             TraceLayer::new_for_http(),
             TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, Duration::from_secs(30)),

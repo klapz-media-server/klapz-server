@@ -224,6 +224,40 @@ async fn a_published_address_names_its_switched_on_connection() {
 }
 
 #[tokio::test]
+async fn an_address_several_users_share_names_nobody() {
+    let repository = repository().await;
+    let first = connected(&repository, "a@example.org").await;
+    let second = connected(&repository, "b@example.org").await;
+    for (user, id) in [(first, "7"), (second, "8")] {
+        repository
+            .link_account(user, Extension::Plex, &account(id), "https://shared", NOW)
+            .await
+            .unwrap();
+    }
+    let shared = ["https://shared".to_owned()];
+    assert!(repository
+        .connection_at(Extension::Plex, &shared)
+        .await
+        .unwrap()
+        .is_none());
+
+    // With one of them switched off, the address is the other's alone again.
+    repository
+        .disable_extension(second, Extension::Plex, NOW)
+        .await
+        .unwrap();
+    assert_eq!(
+        repository
+            .connection_at(Extension::Plex, &shared)
+            .await
+            .unwrap()
+            .unwrap()
+            .user,
+        first
+    );
+}
+
+#[tokio::test]
 async fn unpairing_or_deleting_the_user_forgets_the_account() {
     let repository = repository().await;
     let user = connected(&repository, "a@example.org").await;
