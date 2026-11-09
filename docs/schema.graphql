@@ -1345,6 +1345,20 @@ type Mutation {
 		libraryId: ID!
 	): Boolean!
 	"""
+	Switches a user's connection off: its token stops working and its identifier is kept.
+	Whether it was on. For the server's operator only.
+	"""
+	disableExtension(
+		"""
+		The user, as returned in `User.id`.
+		"""
+		userId: ID!,
+		"""
+		The protocol to disconnect.
+		"""
+		extension: ExtensionType!
+	): Boolean!
+	"""
 	Connects a user through an extension, returning a new token. Called again, it replaces
 	the token and keeps the identifier clients recognize. For the server's operator only.
 	"""
@@ -2732,6 +2746,10 @@ type UserExtension {
 	What the protocol calls this user's side of the server: for Plex, a machine identifier.
 	"""
 	externalId: String!
+	"""
+	Whether the connection is on. Off, its token opens nothing.
+	"""
+	enabled: Boolean!
 }
 
 type UserExtensionConnection {

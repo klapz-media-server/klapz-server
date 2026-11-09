@@ -222,6 +222,11 @@ impl UserExtensionObject {
     async fn external_id(&self) -> &str {
         &self.0.external_id
     }
+
+    /// Whether the connection is on. Off, its token opens nothing.
+    async fn enabled(&self) -> bool {
+        self.0.enabled
+    }
 }
 
 /// What connecting through an extension yields. The token cannot be read back later.
@@ -338,6 +343,17 @@ pub(crate) async fn remove_library_permission(
     let section = SectionId::new(GlobalId::decode(library)?.key);
     Ok(repository(context)?
         .remove_permission(user_id(user)?, section)
+        .await?)
+}
+
+pub(crate) async fn disable_extension(
+    context: &Context<'_>,
+    user: &ID,
+    extension: ExtensionType,
+) -> Result<bool> {
+    require_operator(context)?;
+    Ok(repository(context)?
+        .disable_extension(user_id(user)?, extension.into(), now_epoch())
         .await?)
 }
 

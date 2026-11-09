@@ -50,6 +50,8 @@ pub struct UserExtension {
     pub extension: Extension,
     /// What the extension calls this user's side of the server: a Plex machine identifier.
     pub external_id: String,
+    /// Switched off, its token opens nothing; the identifier is kept for when it comes back.
+    pub enabled: bool,
 }
 
 /// Everything a presented token gives access to.
@@ -185,8 +187,8 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
 
     async fn permissions(&self, user: UserId) -> Result<Vec<LibraryPermission>, AccessError>;
 
-    /// Connects a user through an extension, or replaces its token if already connected: the
-    /// external identifier stays, so clients keep recognizing the server.
+    /// Connects a user through an extension, or replaces its token if already connected, and
+    /// switches it on: the external identifier stays, so clients keep recognizing the server.
     ///
     /// # Errors
     ///
@@ -199,6 +201,14 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
         token_digest: &str,
         now: i64,
     ) -> Result<UserExtension, AccessError>;
+
+    /// Switches a connection off. Whether there was one still on.
+    async fn disable_extension(
+        &self,
+        user: UserId,
+        extension: Extension,
+        now: i64,
+    ) -> Result<bool, AccessError>;
 
     async fn extensions(&self, user: UserId) -> Result<Vec<UserExtension>, AccessError>;
 
@@ -226,6 +236,7 @@ mod tests {
                 user: UserId::new(3),
                 extension: Extension::Plex,
                 external_id: "server".to_owned(),
+                enabled: true,
             },
             permissions,
         }

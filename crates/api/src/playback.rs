@@ -406,6 +406,17 @@ impl Mutation {
         crate::access::remove_library_permission(context, &user_id, &library_id).await
     }
 
+    /// Switches a user's connection off: its token stops working and its identifier is kept.
+    /// Whether it was on. For the server's operator only.
+    async fn disable_extension(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The user, as returned in `User.id`.")] user_id: ID,
+        #[graphql(desc = "The protocol to disconnect.")] extension: crate::access::ExtensionType,
+    ) -> Result<bool> {
+        crate::access::disable_extension(context, &user_id, extension).await
+    }
+
     /// Connects a user through an extension, returning a new token. Called again, it replaces
     /// the token and keeps the identifier clients recognize. For the server's operator only.
     async fn connect_extension(

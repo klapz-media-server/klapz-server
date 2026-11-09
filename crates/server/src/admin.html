@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>open-plex users</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --page: #f6f6f4;
+    --card: #ffffff;
+    --ink: #1c1c1a;
+    --muted: #6c6b66;
+    --line: #dfddd7;
+    --accent: #b5700a;
+    --accent-ink: #ffffff;
+    --danger: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #161615;
+      --card: #20201e;
+      --ink: #ecebe6;
+      --muted: #9b9a94;
+      --line: #35342f;
+      --accent: #e5a00d;
+      --accent-ink: #1c1c1a;
+      --danger: #f2877f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 20px; font-weight: 600; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  form.line { display: flex; gap: 8px; margin-bottom: 20px; }
+  input, select, button { font: inherit; color: inherit; }
+  input[type=email], input[type=password], input[type=text], select {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 7px 10px;
+  }
+  form.line input { flex: 1; min-width: 0; }
+  button {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 7px 12px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: .55; cursor: default; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .user {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .who { flex: 1; min-width: 180px; overflow-wrap: anywhere; }
+  .who strong { font-weight: 600; }
+  .note { color: var(--muted); font-size: 13px; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  .switch input { width: 34px; height: 18px; accent-color: var(--accent); margin: 0; cursor: pointer; }
+  .plex { margin-top: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  code { font: 12.5px ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .libraries { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 18px; margin-top: 10px; }
+  .library { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .library span { overflow-wrap: anywhere; }
+  .library select { padding: 3px 6px; }
+  .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+  #message { min-height: 22px; margin: 0 0 10px; font-size: 14px; color: var(--danger); }
+  dialog {
+    background: var(--card);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px;
+    width: min(520px, calc(100vw - 32px));
+  }
+  dialog::backdrop { background: rgb(0 0 0 / .45); }
+  dialog h2 { font-size: 17px; margin: 0 0 6px; }
+  dialog label { display: block; margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
+  dialog .copy { display: flex; gap: 8px; }
+  dialog .copy input { flex: 1; min-width: 0; font: 12.5px ui-monospace, Consolas, monospace; }
+  dialog .actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>open-plex <span>users</span></h1>
+  <p id="message" role="status"></p>
+
+  <form id="signin" class="line" hidden>
+    <input id="operator-token" type="password" placeholder="Operator token" autocomplete="off" aria-label="Operator token" required>
+    <button class="primary">Sign in</button>
+  </form>
+
+  <section id="content" hidden>
+    <form id="add" class="line">
+      <input id="email" type="email" placeholder="name@example.org" aria-label="E-mail address of the new user" required>
+      <button class="primary">Add user</button>
+    </form>
+    <div id="users"></div>
+  </section>
+</main>
+
+<dialog id="credentials">
+  <h2>Plex token for <span id="credentials-email"></span></h2>
+  <p class="note">Copy it now: it is shown only once, and only a digest is kept.</p>
+  <label for="credentials-token">Token</label>
+  <div class="copy">
+    <input id="credentials-token" type="text" readonly>
+    <button id="credentials-copy" type="button">Copy</button>
+  </div>
+  <label>Server identifier</label>
+  <code id="credentials-server"></code>
+  <div class="actions"><button id="credentials-close" type="button" class="primary">Done</button></div>
+</dialog>
+
+<script>
+"use strict";
+
+const LIST_QUERY = `{
+  users(first: 500) {
+    edges { node {
+      id email createdAt
+      libraryPermissions { edges { node { role library { id } } } }
+      extensions { edges { node { extension externalId enabled } } }
+    } }
+  }
+  libraries(first: 500) { edges { node { id title } } }
+}`;
+const CREATE_USER = `mutation($email: String!) { createUser(email: $email) { id } }`;
+const DELETE_USER = `mutation($id: ID!) { deleteUser(id: $id) }`;
+const SET_PERMISSION = `mutation($input: SetLibraryPermissionInput!) { setLibraryPermission(input: $input) }`;
+const REMOVE_PERMISSION = `mutation($userId: ID!, $libraryId: ID!) { removeLibraryPermission(userId: $userId, libraryId: $libraryId) }`;
+const CONNECT_PLEX = `mutation($userId: ID!) { connectExtension(userId: $userId, extension: PLEX) { token userExtension { externalId } } }`;
+const DISABLE_PLEX = `mutation($userId: ID!) { disableExtension(userId: $userId, extension: PLEX) }`;
+
+const TOKEN_KEY = "open-plex-operator-token";
+const byId = (id) => document.getElementById(id);
+const expanded = new Set();
+let libraries = [];
+
+function storedToken() {
+  try { return sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+function storeToken(token) {
+  try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* it lasts for this page only */ }
+}
+let token = storedToken();
+
+class SignInNeeded extends Error {}
+
+async function graphql(query, variables) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["X-Plex-Token"] = token;
+  const response = await fetch("/graphql", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ query, variables }),
+  });
+  if (response.status === 401) throw new SignInNeeded("This token is not accepted.");
+  const body = await response.json();
+  if (body.errors && body.errors.length) throw new Error(body.errors[0].message);
+  return body.data;
+}
+
+function say(text) { byId("message").textContent = text || ""; }
+
+/** Text only ever goes through `textContent`: an e-mail address is someone else's input. */
+function el(tag, properties, ...children) {
+  const node = document.createElement(tag);
+  for (const [name, value] of Object.entries(properties || {})) {
+    if (name === "on") {
+      for (const [event, handler] of Object.entries(value)) node.addEventListener(event, handler);
+    } else {
+      node[name] = value;
+    }
+  }
+  node.append(...children.filter((child) => child !== null));
+  return node;
+}
+
+async function act(work) {
+  say("");
+  try {
+    await work();
+    await load();
+  } catch (error) {
+    if (error instanceof SignInNeeded) showSignIn(error.message);
+    else { say(error.message === "not found" ? "Not found, or not allowed." : error.message); await load().catch(() => {}); }
+  }
+}
+
+function showSignIn(text) {
+  byId("content").hidden = true;
+  byId("signin").hidden = false;
+  say(text);
+}
+
+function showCredentials(email, connected) {
+  byId("credentials-email").textContent = email;
+  byId("credentials-token").value = connected.token;
+  byId("credentials-server").textContent = connected.userExtension.externalId;
+  byId("credentials-copy").textContent = "Copy";
+  byId("credentials").showModal();
+  byId("credentials-token").select();
+}
+
+async function connectPlex(user) {
+  const data = await graphql(CONNECT_PLEX, { userId: user.id });
+  showCredentials(user.email, data.connectExtension);
+}
+
+function plexOf(user) {
+  const edge = user.extensions.edges.find((candidate) => candidate.node.extension === "PLEX");
+  return edge ? edge.node : null;
+}
+
+function libraryRow(user, library, role) {
+  const select = el("select", {
+    ariaLabel: `Access to ${library.title}`,
+    on: { change: () => act(async () => {
+      if (select.value === "") {
+        await graphql(REMOVE_PERMISSION, { userId: user.id, libraryId: library.id });
+      } else {
+        await graphql(SET_PERMISSION, { input: { userId: user.id, libraryId: library.id, role: select.value } });
+      }
+    }) },
+  },
+    el("option", { value: "", textContent: "No access" }),
+    el("option", { value: "VIEWER", textContent: "Viewer" }),
+    el("option", { value: "ADMIN", textContent: "Admin" }),
+  );
+  select.value = role || "";
+  return el("label", { className: "library" }, el("span", { textContent: library.title }), select);
+}
+
+function userCard(user) {
+  const plex = plexOf(user);
+  const enabled = Boolean(plex && plex.enabled);
+  const roles = new Map(user.libraryPermissions.edges
+    .filter((edge) => edge.node.library)
+    .map((edge) => [edge.node.library.id, edge.node.role]));
+
+  const toggle = el("input", {
+    type: "checkbox",
+    checked: enabled,
+    on: { change: () => act(async () => {
+      if (toggle.checked) {
+        await connectPlex(user);
+      } else if (confirm(`Disable Plex for ${user.email}? Its token stops working, and enabling it again issues a new one.`)) {
+        await graphql(DISABLE_PLEX, { userId: user.id });
+      }
+    }) },
+  });
+
+  const added = new Date(user.createdAt * 1000).toLocaleDateString();
+  const details = el("details", {
+    open: expanded.has(user.id),
+    on: { toggle: () => {
+      if (details.open) expanded.add(user.id); else expanded.delete(user.id);
+    } },
+  },
+    el("summary", { textContent: `Libraries: ${roles.size} of ${libraries.length}` }),
+    el("div", { className: "libraries" }, ...libraries.map((library) => libraryRow(user, library, roles.get(library.id)))),
+  );
+
+  return el("article", { className: "user" },
+    el("div", { className: "head" },
+      el("div", { className: "who" },
+        el("strong", { textContent: user.email }),
+        el("div", { className: "note", textContent: `Added ${added}` }),
+      ),
+      el("label", { className: "switch" }, toggle, el("span", { textContent: "Plex" })),
+      el("button", {
+        type: "button",
+        className: "danger",
+        textContent: "Delete",
+        on: { click: () => {
+          if (confirm(`Delete ${user.email}, its permissions and its Plex connection?`)) {
+            act(() => graphql(DELETE_USER, { id: user.id }));
+          }
+        } },
+      }),
+    ),
+    enabled ? el("div", { className: "plex" },
+      el("span", { className: "note" }, "Server ", el("code", { textContent: plex.externalId })),
+      el("button", {
+        type: "button",
+        textContent: "New token",
+        on: { click: () => {
+          if (confirm(`Replace the Plex token of ${user.email}? The current one stops working.`)) {
+            act(() => connectPlex(user));
+          }
+        } },
+      }),
+    ) : null,
+    details,
+  );
+}
+
+async function load() {
+  const data = await graphql(LIST_QUERY);
+  libraries = data.libraries.edges.map((edge) => edge.node);
+  const users = data.users.edges.map((edge) => edge.node);
+  byId("users").replaceChildren(...(users.length
+    ? users.map(userCard)
+    : [el("p", { className: "empty", textContent: "No users yet." })]));
+  byId("signin").hidden = true;
+  byId("content").hidden = false;
+}
+
+async function start() {
+  try {
+    await load();
+  } catch (error) {
+    // A valid token that is not the operator's reads as "not found" on `users`.
+    showSignIn(error instanceof SignInNeeded || error.message === "not found"
+      ? (token ? "This token is not the operator's." : "Sign in with the operator token.")
+      : error.message);
+  }
+}
+
+byId("signin").addEventListener("submit", (event) => {
+  event.preventDefault();
+  token = byId("operator-token").value;
+  storeToken(token);
+  byId("operator-token").value = "";
+  say("");
+  start();
+});
+
+byId("add").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const email = byId("email").value.trim();
+  act(async () => {
+    await graphql(CREATE_USER, { email });
+    byId("email").value = "";
+  });
+});
+
+byId("credentials-copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(byId("credentials-token").value);
+    byId("credentials-copy").textContent = "Copied";
+  } catch {
+    byId("credentials-token").select();
+  }
+});
+
+byId("credentials-close").addEventListener("click", () => {
+  byId("credentials-token").value = "";
+  byId("credentials").close();
+});
+
+start();
+</script>
+</body>
+</html>

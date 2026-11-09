@@ -987,15 +987,30 @@ impl crate::access::AccessRepository for InMemoryAccess {
             .find(|(held, _)| held.user == user && held.extension == extension)
         {
             token_digest.clone_into(digest);
+            held.enabled = true;
             return Ok(held.clone());
         }
         let connected = crate::access::UserExtension {
             user,
             extension,
             external_id: external_id.to_owned(),
+            enabled: true,
         };
         extensions.push((connected.clone(), token_digest.to_owned()));
         Ok(connected)
+    }
+
+    async fn disable_extension(
+        &self,
+        user: crate::ids::UserId,
+        extension: crate::access::Extension,
+        _now: i64,
+    ) -> Result<bool, crate::access::AccessError> {
+        let mut extensions = locked(&self.extensions);
+        let found = extensions
+            .iter_mut()
+            .find(|(held, _)| held.user == user && held.extension == extension && held.enabled);
+        Ok(found.map(|(held, _)| held.enabled = false).is_some())
     }
 
     async fn extensions(
@@ -1016,7 +1031,9 @@ impl crate::access::AccessRepository for InMemoryAccess {
     ) -> Result<Option<crate::access::Grant>, crate::access::AccessError> {
         let found = locked(&self.extensions)
             .iter()
-            .find(|(held, digest)| held.extension == extension && digest == token_digest)
+            .find(|(held, digest)| {
+                held.extension == extension && held.enabled && digest == token_digest
+            })
             .map(|(held, _)| held.clone());
         let Some(extension) = found else {
             return Ok(None);

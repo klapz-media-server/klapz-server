@@ -4013,6 +4013,51 @@
               "deprecationReason": null
             },
             {
+              "name": "disableExtension",
+              "description": "Switches a user's connection off: its token stops working and its identifier is kept.\nWhether it was on. For the server's operator only.",
+              "args": [
+                {
+                  "name": "userId",
+                  "description": "The user, as returned in `User.id`.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "ID",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "extension",
+                  "description": "The protocol to disconnect.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ExtensionType",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "connectExtension",
               "description": "Connects a user through an extension, returning a new token. Called again, it replaces\nthe token and keeps the identifier clients recognize. For the server's operator only.",
               "args": [
@@ -8326,6 +8371,22 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "enabled",
+              "description": "Whether the connection is on. Off, its token opens nothing.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
                   "ofType": null
                 }
               },

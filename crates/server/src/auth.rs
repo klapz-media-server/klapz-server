@@ -33,7 +33,7 @@ const TOKEN_KEY: &str = "X-Plex-Token";
 /// Kept deliberately short. `/` and `/identity` must be reachable with no credential at all:
 /// clients call them to decide whether a host is a Plex server, and what it can do, before
 /// they hold any token. Requiring one would make the server undiscoverable.
-const PUBLIC_PATHS: &[&str] = &["/", "/identity"];
+const PUBLIC_PATHS: &[&str] = &["/", "/identity", crate::admin::PATH];
 
 /// Who may use the server: the accepted tokens, and the networks trusted without one.
 #[derive(Debug, Clone, Default)]

@@ -86,6 +86,7 @@ fn user_extension_of(row: user_extension::Model) -> Option<UserExtension> {
         user: UserId::new(row.user_id),
         extension: extension_of(&row.extension)?,
         external_id: row.external_id,
+        enabled: row.enabled,
     })
 }
 
@@ -237,6 +238,7 @@ impl AccessRepository for SqlAccessRepository {
             extension: ActiveValue::Set(extension_name(extension).to_owned()),
             external_id: ActiveValue::Set(external_id.to_owned()),
             token_digest: ActiveValue::Set(token_digest.to_owned()),
+            enabled: ActiveValue::Set(true),
             created_at: ActiveValue::Set(now),
             updated_at: ActiveValue::Set(now),
         };
@@ -248,6 +250,7 @@ impl AccessRepository for SqlAccessRepository {
                 ])
                 .update_columns([
                     user_extension::Column::TokenDigest,
+                    user_extension::Column::Enabled,
                     user_extension::Column::UpdatedAt,
                 ])
                 .to_owned(),
@@ -263,6 +266,24 @@ impl AccessRepository for SqlAccessRepository {
             .map_err(storage)?
             .ok_or(AccessError::UnknownUser)?;
         user_extension_of(stored).ok_or(AccessError::UnknownUser)
+    }
+
+    async fn disable_extension(
+        &self,
+        user: UserId,
+        extension: Extension,
+        now: i64,
+    ) -> Result<bool, AccessError> {
+        let result = user_extension::Entity::update_many()
+            .col_expr(user_extension::Column::Enabled, false.into())
+            .col_expr(user_extension::Column::UpdatedAt, now.into())
+            .filter(user_extension::Column::UserId.eq(user.get()))
+            .filter(user_extension::Column::Extension.eq(extension_name(extension)))
+            .filter(user_extension::Column::Enabled.eq(true))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(result.rows_affected > 0)
     }
 
     async fn extensions(&self, user: UserId) -> Result<Vec<UserExtension>, AccessError> {
@@ -284,6 +305,7 @@ impl AccessRepository for SqlAccessRepository {
         let Some(row) = user_extension::Entity::find()
             .filter(user_extension::Column::Extension.eq(extension_name(extension)))
             .filter(user_extension::Column::TokenDigest.eq(token_digest))
+            .filter(user_extension::Column::Enabled.eq(true))
             .one(&self.connection)
             .await
             .map_err(storage)?

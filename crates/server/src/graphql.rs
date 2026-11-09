@@ -8,7 +8,8 @@ use async_graphql::http::GraphiQLSource;
 use async_graphql::Request;
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::extract::{OriginalUri, State};
-use axum::response::{Html, IntoResponse};
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Router};
 use open_plex_api::ApiSchema;
@@ -28,13 +29,47 @@ pub fn router(schema: ApiSchema) -> Router {
 async fn execute(
     State(schema): State<ApiSchema>,
     principal: Option<Extension<Principal>>,
+    headers: HeaderMap,
     request: GraphQLRequest,
-) -> GraphQLResponse {
+) -> Response {
+    if !is_json(&headers) {
+        return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
+    }
     let mut request: Request = request.into_inner();
     if let Some(Extension(principal)) = principal {
         request = request.data(principal);
     }
-    schema.execute(request).await.into()
+    GraphQLResponse::from(schema.execute(request).await).into_response()
+}
+
+/// A web page can send any site a form or `text/plain` without asking, but not JSON. A trusted
+/// network is admitted without a token, so without this any page its browsers open could
+/// change users; refusing the rest makes the browser ask first, and nothing here says yes.
+fn is_json(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|media| media.trim().eq_ignore_ascii_case("application/json"))
+}
+
+#[cfg(test)]
+#[test]
+fn only_json_reaches_the_schema() {
+    let with = |value: &'static str| {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            value.parse().unwrap_or_else(|_| unreachable!()),
+        );
+        is_json(&headers)
+    };
+    assert!(with("application/json"));
+    assert!(with("Application/JSON; charset=utf-8"));
+    assert!(!with("text/plain"));
+    assert!(!with("application/x-www-form-urlencoded"));
+    assert!(!with("multipart/form-data; boundary=x"));
+    assert!(!is_json(&HeaderMap::new()));
 }
 
 /// Serves the `GraphiQL` playground.

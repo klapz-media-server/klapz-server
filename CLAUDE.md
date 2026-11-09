@@ -145,6 +145,10 @@ without them saying so.
   that lead to a library's content check it; every Plex query runs as the request's caller
   (`gql::run_as_caller`). A request with no caller sees nothing: forgetting to attach one fails
   closed. What a user was not given answers as if it did not exist.
+- **`/admin` is the operator's page.** Users, their libraries, their Plex connection; served
+  without a token, holding no data, and driven entirely by `/graphql`. That endpoint accepts
+  JSON only, because a trusted network is admitted without a token and any page its browsers
+  open could otherwise post to it.
 - **Each Plex user has its own server.** A token resolves to a user, and the Plex surface
   answers with that user's machine identifier, on `/identity` too when a token comes with the
   request. One process and one address: the separation is in what each token sees. Session

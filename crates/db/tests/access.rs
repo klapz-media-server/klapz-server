@@ -169,6 +169,53 @@ async fn reconnecting_replaces_the_token_and_keeps_the_identifier() {
 }
 
 #[tokio::test]
+async fn a_disabled_connection_opens_nothing_and_comes_back_with_its_identifier() {
+    let repository = repository().await;
+    let user = repository
+        .create_user("a@example.org", NOW)
+        .await
+        .unwrap()
+        .id;
+    let digest = token_digest("old");
+    repository
+        .connect_extension(user, Extension::Plex, "first", &digest, NOW)
+        .await
+        .unwrap();
+
+    assert!(repository
+        .disable_extension(user, Extension::Plex, NOW)
+        .await
+        .unwrap());
+    assert!(!repository
+        .disable_extension(user, Extension::Plex, NOW)
+        .await
+        .unwrap());
+    assert!(repository
+        .grant(Extension::Plex, &digest)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(!repository.extensions(user).await.unwrap()[0].enabled);
+
+    let back = repository
+        .connect_extension(user, Extension::Plex, "second", &token_digest("new"), NOW)
+        .await
+        .unwrap();
+    assert_eq!(back.external_id, "first");
+    assert!(back.enabled);
+    assert!(repository
+        .grant(Extension::Plex, &digest)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(repository
+        .grant(Extension::Plex, &token_digest("new"))
+        .await
+        .unwrap()
+        .is_some());
+}
+
+#[tokio::test]
 async fn deleting_a_user_closes_its_access() {
     let repository = repository().await;
     let user = repository

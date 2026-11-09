@@ -4,6 +4,7 @@
 //! database. Keeping it here rather than in a separate crate avoids a crate whose only job
 //! is to call one function.
 
+mod admin;
 mod auth;
 mod graphql;
 mod web;
@@ -103,7 +104,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&play_queues),
         transcoder,
     ));
-    let mut app = open_plex_api_plex::router(plex_state).merge(graphql::router(schema));
+    let mut app = open_plex_api_plex::router(plex_state)
+        .merge(graphql::router(schema))
+        .merge(admin::router());
     let web_dir = web::directory();
     if let Some(client) = web::router(&web_dir) {
         tracing::info!(directory = %web_dir.display(), "serving the web client at /web");
