@@ -12,7 +12,7 @@
 
 use serde::Serialize;
 
-use crate::general::{GqlFeatures, GqlServer};
+use crate::general::GqlServer;
 
 /// The groups the reference server lists, with the counts it reports.
 ///
@@ -102,10 +102,7 @@ pub struct CapabilitiesContainer {
     #[serde(rename = "myPlexUsername", skip_serializing_if = "Option::is_none")]
     pub my_plex_username: Option<String>,
     pub offline_transcode: u8,
-    /// The named capabilities Plex lists alongside its subscription GUIDs.
-    ///
-    /// A client checking by name finds every one. We publish no GUIDs: they identify an
-    /// account's entitlements upstream and mean nothing here.
+    /// What the owner has unlocked, by name and by GUID: Plex Web tests both.
     pub owner_features: String,
     pub platform: String,
     pub platform_version: String,
@@ -177,7 +174,7 @@ impl CapabilitiesContainer {
                 .as_ref()
                 .map(|account| account.account_name.clone()),
             offline_transcode: u8::from(features.sync),
-            owner_features: named_features(features),
+            owner_features: owner_features(),
             platform: server.platform.clone(),
             platform_version: server.platform_version.clone(),
             plugin_host: false,
@@ -211,26 +208,31 @@ impl CapabilitiesContainer {
     }
 }
 
-/// The comma-separated capability names Plex publishes in `ownerFeatures`.
-fn named_features(features: &GqlFeatures) -> String {
-    [
-        ("adaptive_bitrate", features.adaptive_bitrate),
-        ("camera_upload", features.camera_upload),
-        ("collections", features.collections),
-        ("download_certificates", features.sync),
-        ("federated-auth", features.multiuser),
-        ("home", features.multiuser),
-        ("livetv", features.live_tv),
-        ("loudness", features.loudness),
-        ("radio", features.live_tv),
-        ("server-manager", true),
-        ("shared-radio", features.sharing),
-        ("sync", features.sync),
-        ("tuner-sharing", features.tuners),
-        ("type-first", true),
-    ]
-    .into_iter()
-    .filter_map(|(name, enabled)| enabled.then_some(name))
-    .collect::<Vec<_>>()
-    .join(",")
+/// Every feature a Plex Pass server announces, as captured from one. Nothing here is behind a
+/// paywall, so the list is whole, screens whose endpoints still answer `501` included.
+fn owner_features() -> String {
+    include_str!("owner_features.txt")
+        .lines()
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::owner_features;
+
+    #[test]
+    fn every_feature_of_a_plex_pass_server_is_announced() {
+        let list = owner_features();
+        let features: Vec<&str> = list.split(',').collect();
+        assert_eq!(features.len(), 209);
+        assert!(features.iter().all(|feature| !feature.trim().is_empty()));
+        for wanted in [
+            "dvr",
+            "session_kick",
+            "76ddd91e-8321-4916-94b6-ded8e3727a64",
+        ] {
+            assert!(features.contains(&wanted), "{wanted}");
+        }
+    }
 }

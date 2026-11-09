@@ -224,6 +224,9 @@ Places where we knowingly answer differently, each decided rather than overlooke
 - **A listing always windows.** Plex returns a whole library unpaged when the client sends no
   container parameters; `page::MAX_ITEMS` forbids that. The response states `totalSize` and
   `offset` and sends the paging headers, so `size` never claims more than the body holds.
+- **`ownerFeatures` announces all 209 features of a Plex Pass server**, by name and GUID, captured
+  from one (`api-plex/src/owner_features.txt`). Plex Web opens a screen on the strength of them,
+  so some screens open onto endpoints that still answer `501`.
 - **`myPlexSubscription` reports true** whatever the account: no paywall. `myPlex` and the
   attributes around it describe the caller's own server: paired or not.
 - **An image is fetched from Plex's hosts only.** The reference's `/photo/:/transcode` fetches
