@@ -173,6 +173,9 @@ Places where we knowingly answer differently, each decided rather than overlooke
   bitrates measured on the reference, whose own values vary per film. It copies the video only
   when the limit covers a peak its analysis stored; we have no analysis and compare with the
   file's average, so we copy more often.
+- **Automatic quality does not adapt during playback.** `autoAdjustQuality=1` gets the
+  reference's decision, encode and timeline, but one quality for the whole session. The
+  reference did not change quality either in any test here, so its rule is unknown.
 - **A chunk whose process has ended is refused after 5 seconds, not at once.** The repo owner's
   decision, so that a player does not retry a missing chunk in a tight loop. The reference
   answered `404` within 0.1 s when its process had died; a running process could not be measured

@@ -11,6 +11,8 @@ use crate::TranscodeError;
 /// The bitrate the reference converts audio to when no quality limit applies.
 pub const AUDIO_BITRATE_KBPS: u32 = 256;
 
+const ADAPTIVE_SEGMENT_SECONDS: u32 = 3;
+
 /// One track, as a conversion has to know it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Track {
@@ -37,12 +39,17 @@ pub struct VideoEncode {
     pub crf: u32,
     /// The source's: the reference never changes it. Absent when the file was not measured.
     pub frame_rate: Option<f64>,
+    /// Automatic quality, which cuts every picture size alike.
+    pub adaptive: bool,
 }
 
 impl VideoEncode {
     /// Larger pictures cost more to encode, and the reference cuts them finer to compensate.
     #[must_use]
     pub const fn segment_seconds(&self) -> u32 {
+        if self.adaptive {
+            return ADAPTIVE_SEGMENT_SECONDS;
+        }
         match self.width {
             0..=720 => 8,
             721..=1280 => 5,
@@ -102,6 +109,8 @@ pub struct Limits {
     pub max_video_kbps: Option<u32>,
     /// Convert audio even when it could be copied.
     pub convert_audio: bool,
+    /// Automatic quality: always an encode, even when the file would fit the limit.
+    pub adaptive: bool,
 }
 
 struct Rung {
@@ -122,36 +131,57 @@ const fn rung(limit_kbps: u32, width: u32, video_kbps: u32, audio_kbps: u32, crf
     }
 }
 
-/// What the reference produced for 1920-wide H.264 films at each bitrate Plex Web offers. Its
-/// own values vary a little from film to film, by a content analysis we have no equivalent of.
-const LADDER: [Rung; 11] = [
+/// What the reference produced at each bitrate Plex Web offers, the same for a 1080p and a 720p
+/// source. Its own values vary from film to film, by a content analysis we have no equivalent
+/// of; these are the ones measured on files it could really read.
+const LADDER: [Rung; 7] = [
     rung(200, 160, 98, 91, 20),
     rung(320, 320, 196, 106, 24),
     rung(720, 480, 300, 125, 23),
     rung(1500, 720, 1042, 128, 22),
     rung(2000, 720, 1297, 162, 21),
-    rung(3000, 1280, 2566, 98, 24),
-    rung(4000, 1280, 3551, 122, 23),
-    rung(8000, 1920, 7417, 112, 23),
-    rung(10_000, 1920, 9379, 135, 22),
+    rung(3000, 720, 1818, 232, 17),
+    rung(4000, 1280, 3419, 119, 23),
+];
+
+/// Above the shared rungs, a source wider than 1280. The last has no limit to reach: it is what
+/// the reference aims for when none is given, and more than any limit Plex Web offers.
+const WIDE_SOURCE_RUNGS: [Rung; 5] = [
+    rung(8000, 1920, 7393, 109, 23),
+    rung(10_000, 1920, 9299, 130, 22),
     rung(12_000, 1920, 11_205, 151, 21),
     rung(20_000, 1920, 18_303, 233, 17),
+    rung(u32::MAX, 1920, 20_000, 256, 16),
+];
+
+/// Above the shared rungs, a source at most 1280 wide: it tops out at 9 Mbps whatever the limit.
+const NARROW_SOURCE_RUNGS: [Rung; 3] = [
+    rung(8000, 1280, 7162, 211, 18),
+    rung(9000, 1280, 8081, 233, 17),
+    rung(10_000, 1280, 9000, 256, 16),
 ];
 
 /// The highest rung within the limit, or the lowest there is.
-fn rung_for(limit_kbps: u32) -> &'static Rung {
-    LADDER
+fn rung_for(limit_kbps: u32, source_width: u32) -> &'static Rung {
+    let upper: &[Rung] = if source_width > 1280 {
+        &WIDE_SOURCE_RUNGS
+    } else {
+        &NARROW_SOURCE_RUNGS
+    };
+    upper
         .iter()
         .rev()
+        .chain(LADDER.iter().rev())
         .find(|rung| rung.limit_kbps <= limit_kbps)
         .unwrap_or(&LADDER[0])
 }
 
-/// Never enlarges. The scaler keeps both sides divisible by 4, so what is announced is what the
-/// process writes.
+/// Never enlarges, but the bitrate is the rung's even above the source's, as on the reference.
+/// The scaler keeps both sides divisible by 4, so what is announced is what the process writes.
 fn encode_within(
     limit_kbps: u32,
     source: &StreamSource<'_>,
+    adaptive: bool,
 ) -> Result<VideoEncode, TranscodeError> {
     let side = |value: Option<i32>| value.and_then(|value| u32::try_from(value).ok());
     let (Some(source_width), Some(source_height)) = (side(source.width), side(source.height))
@@ -161,18 +191,18 @@ fn encode_within(
     if source_width == 0 || source_height == 0 {
         return Err(TranscodeError::VideoNeedsTranscoding);
     }
-    let rung = rung_for(limit_kbps);
+    let rung = rung_for(limit_kbps, source_width);
     let divisible = |value: u32| (value - value % 4).max(4);
     let width = divisible(rung.width.min(source_width));
     let height = u64::from(source_height) * u64::from(width) / u64::from(source_width);
-    let source_kbps = side(source.bits_per_second).map_or(u32::MAX, |bits| bits / 1000);
     Ok(VideoEncode {
         width,
         height: divisible(u32::try_from(height).unwrap_or(u32::MAX)),
-        video_kbps: rung.video_kbps.min(source_kbps),
+        video_kbps: rung.video_kbps,
         audio_kbps: rung.audio_kbps,
         crf: rung.crf,
         frame_rate: source.frame_rate,
+        adaptive,
     })
 }
 
@@ -197,7 +227,14 @@ pub fn plan_stream(
         return Err(TranscodeError::VideoNeedsTranscoding);
     }
     let video = match limits.max_video_kbps {
-        Some(limit) if !fits(limit, source) => VideoAction::Encode(encode_within(limit, source)?),
+        _ if limits.adaptive => VideoAction::Encode(encode_within(
+            limits.max_video_kbps.unwrap_or(u32::MAX),
+            source,
+            true,
+        )?),
+        Some(limit) if !fits(limit, source) => {
+            VideoAction::Encode(encode_within(limit, source, false)?)
+        }
         _ => VideoAction::Copy,
     };
     let audio = if matches!(source.audio_codec, "aac" | "mp3")
@@ -258,6 +295,7 @@ mod tests {
         Limits {
             max_video_kbps: Some(kbps),
             convert_audio: false,
+            adaptive: false,
         }
     }
 
@@ -295,6 +333,7 @@ mod tests {
         let limits = Limits {
             max_video_kbps: None,
             convert_audio: true,
+            adaptive: false,
         };
         assert_eq!(
             plan_stream(&source("h264", "aac"), limits).unwrap().audio,
@@ -336,7 +375,7 @@ mod tests {
     fn a_limit_between_rungs_takes_the_lower() {
         let encode = encode_of(plan_stream(&source("h264", "aac"), limited(5000)).unwrap());
         assert_eq!(encode.width, 1280);
-        assert_eq!(encode.video_kbps, 3551);
+        assert_eq!(encode.video_kbps, 3419);
     }
 
     #[test]
@@ -353,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn never_enlarges_nor_raises_the_bitrate() {
+    fn never_enlarges_the_picture() {
         let small = StreamSource {
             width: Some(560),
             height: Some(304),
@@ -384,6 +423,96 @@ mod tests {
         ));
     }
 
+    fn adaptive(limit: Option<u32>) -> Limits {
+        Limits {
+            max_video_kbps: limit,
+            convert_audio: false,
+            adaptive: true,
+        }
+    }
+
+    fn soul() -> StreamSource<'static> {
+        StreamSource {
+            width: Some(1920),
+            height: Some(1080),
+            bits_per_second: Some(7_726_000),
+            ..source("h264", "eac3")
+        }
+    }
+
+    fn bull() -> StreamSource<'static> {
+        StreamSource {
+            width: Some(1280),
+            height: Some(720),
+            bits_per_second: Some(3_209_000),
+            ..source("h264", "aac")
+        }
+    }
+
+    /// The sizes, bitrates and CRFs of the reference encoding these two files, except the heights
+    /// of 270 and 90 it announces: our sides are floored to multiples of 4.
+    #[test]
+    fn automatic_quality_follows_the_rungs_measured_for_each_source() {
+        let wide = [
+            (None, 1920, 1080, 20_000, 256, 16),
+            (Some(20_000), 1920, 1080, 18_303, 233, 17),
+            (Some(12_000), 1920, 1080, 11_205, 151, 21),
+            (Some(10_000), 1920, 1080, 9299, 130, 22),
+            (Some(8000), 1920, 1080, 7393, 109, 23),
+            (Some(4000), 1280, 720, 3419, 119, 23),
+            (Some(3000), 720, 404, 1818, 232, 17),
+            (Some(2000), 720, 404, 1297, 162, 21),
+            (Some(1500), 720, 404, 1042, 128, 22),
+            (Some(720), 480, 268, 300, 125, 23),
+            (Some(320), 320, 180, 196, 106, 24),
+            (Some(200), 160, 88, 98, 91, 20),
+        ];
+        let narrow = [
+            (None, 1280, 720, 9000, 256, 16),
+            (Some(20_000), 1280, 720, 9000, 256, 16),
+            (Some(10_000), 1280, 720, 9000, 256, 16),
+            (Some(9000), 1280, 720, 8081, 233, 17),
+            (Some(8000), 1280, 720, 7162, 211, 18),
+            (Some(4000), 1280, 720, 3419, 119, 23),
+            (Some(3000), 720, 404, 1818, 232, 17),
+            (Some(1500), 720, 404, 1042, 128, 22),
+        ];
+        for (file, expected) in [(soul(), &wide[..]), (bull(), &narrow[..])] {
+            for &(limit, width, height, video, audio, crf) in expected {
+                let plan = plan_stream(&file, adaptive(limit)).unwrap();
+                let encode = encode_of(plan);
+                assert_eq!(
+                    (
+                        encode.width,
+                        encode.height,
+                        encode.video_kbps,
+                        plan.audio_kbps(),
+                        encode.crf
+                    ),
+                    (width, height, video, audio, crf),
+                    "{limit:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn automatic_quality_encodes_what_it_could_have_copied() {
+        let plan = plan_stream(&bull(), adaptive(Some(20_000))).unwrap();
+        assert!(matches!(plan.video, VideoAction::Encode(_)));
+        assert_eq!(plan.audio, AudioAction::ConvertToAac);
+    }
+
+    #[test]
+    fn automatic_quality_cuts_every_size_in_three_seconds() {
+        for limit in [None, Some(4000), Some(720)] {
+            assert_eq!(
+                encode_of(plan_stream(&soul(), adaptive(limit)).unwrap()).segment_seconds(),
+                3
+            );
+        }
+    }
+
     #[test]
     fn cannot_encode_a_picture_of_unknown_size() {
         let unknown = StreamSource {
@@ -401,7 +530,7 @@ mod tests {
         let encode =
             |limit| encode_of(plan_stream(&source("h264", "aac"), limited(limit)).unwrap());
         assert_eq!(encode(2000).segment_seconds(), 8);
-        assert_eq!(encode(3000).segment_seconds(), 5);
+        assert_eq!(encode(4000).segment_seconds(), 5);
         assert_eq!(encode(8000).segment_seconds(), 1);
     }
 }

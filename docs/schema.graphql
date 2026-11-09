@@ -1425,6 +1425,22 @@ type PlaybackSession implements Node {
 	"""
 	positionMs: Int!
 	"""
+	The bitrate of the video sent to the player, in bits per second, when known.
+	"""
+	videoBitrate: Int
+	"""
+	The bitrate of the audio sent to the player, in bits per second, when known.
+	"""
+	audioBitrate: Int
+	"""
+	The width of the picture sent to the player, when known.
+	"""
+	width: Int
+	"""
+	The height of the picture sent to the player, when known.
+	"""
+	height: Int
+	"""
 	When playback began, in seconds since the epoch.
 	"""
 	startedAt: Int!
@@ -2276,6 +2292,22 @@ input StartPlaybackInput {
 	Where playback starts, in milliseconds.
 	"""
 	positionMs: Int!
+	"""
+	The bitrate of the video sent to the player, in bits per second.
+	"""
+	videoBitrate: Int
+	"""
+	The bitrate of the audio sent to the player, in bits per second.
+	"""
+	audioBitrate: Int
+	"""
+	The width of the picture sent to the player.
+	"""
+	width: Int
+	"""
+	The height of the picture sent to the player.
+	"""
+	height: Int
 }
 
 """

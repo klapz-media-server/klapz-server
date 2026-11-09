@@ -2,8 +2,8 @@
 
 use open_plex_core::page::{Page, Window};
 use open_plex_core::playback::{
-    NewPlaybackSession, PlaybackError, PlaybackRepository, PlaybackSession, PlaybackState,
-    StreamDecision, SESSION_LIFETIME_SECONDS,
+    NewPlaybackSession, PlaybackError, PlaybackOutput, PlaybackRepository, PlaybackSession,
+    PlaybackState, StreamDecision, SESSION_LIFETIME_SECONDS,
 };
 use open_plex_core::{PartId, RatingKey};
 use sea_orm::sea_query::OnConflict;
@@ -74,6 +74,12 @@ fn to_domain(row: playback_session::Model) -> PlaybackSession {
         video: decision_of(&row.video_decision),
         audio: decision_of(&row.audio_decision),
         position_ms: row.position_ms,
+        output: PlaybackOutput {
+            video_bitrate: row.video_bitrate,
+            audio_bitrate: row.audio_bitrate,
+            width: row.width,
+            height: row.height,
+        },
         started_at: row.started_at,
         updated_at: row.updated_at,
         expires_at: row.expires_at,
@@ -99,6 +105,10 @@ impl PlaybackRepository for SqlPlaybackRepository {
             video_decision: ActiveValue::Set(decision_name(session.video).to_owned()),
             audio_decision: ActiveValue::Set(decision_name(session.audio).to_owned()),
             position_ms: ActiveValue::Set(session.position_ms),
+            video_bitrate: ActiveValue::Set(session.output.video_bitrate),
+            audio_bitrate: ActiveValue::Set(session.output.audio_bitrate),
+            width: ActiveValue::Set(session.output.width),
+            height: ActiveValue::Set(session.output.height),
             started_at: ActiveValue::Set(now),
             updated_at: ActiveValue::Set(now),
             expires_at: ActiveValue::Set(now + SESSION_LIFETIME_SECONDS),
@@ -116,6 +126,10 @@ impl PlaybackRepository for SqlPlaybackRepository {
                         Column::VideoDecision,
                         Column::AudioDecision,
                         Column::PositionMs,
+                        Column::VideoBitrate,
+                        Column::AudioBitrate,
+                        Column::Width,
+                        Column::Height,
                         Column::StartedAt,
                         Column::UpdatedAt,
                         Column::ExpiresAt,

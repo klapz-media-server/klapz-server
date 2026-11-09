@@ -176,6 +176,8 @@ struct PlaybackParams {
     /// In kilobits per second.
     #[serde(rename = "maxVideoBitrate")]
     max_video_bitrate: Option<u32>,
+    #[serde(rename = "autoAdjustQuality")]
+    auto_adjust_quality: Option<String>,
 }
 
 impl PlaybackParams {
@@ -199,6 +201,10 @@ impl PlaybackParams {
             Some("dash") => Ok(Protocol::Dash),
             Some(_) => Err(ApiError::NotImplemented),
         }
+    }
+
+    fn adaptive(&self) -> bool {
+        self.auto_adjust_quality.as_deref() == Some("1")
     }
 
     /// `-1` is how a client says "the default".
@@ -270,6 +276,7 @@ impl<'a> Selection<'a> {
         let limits = Limits {
             max_video_kbps: params.max_video_bitrate,
             convert_audio: params.direct_stream_audio.as_deref() == Some("0"),
+            adaptive: params.adaptive(),
         };
         Ok(plan_stream(&source, limits)?)
     }
@@ -332,11 +339,12 @@ async fn decision(
         serde_json::to_value(entry).map_err(|error| ApiError::Internal(Box::new(error)))?;
     mark_decision(&mut metadata, &selection, action);
 
-    let mut body = json!({
-        "size": 1,
-        "allowSync": "1",
-    });
+    let mut body = json!({ "size": 1 });
     let fields = body.as_object_mut().ok_or(ApiError::BadRequest)?;
+    if !direct_play && params.adaptive() {
+        fields.insert("abr".into(), json!(true));
+    }
+    fields.insert("allowSync".into(), json!("1"));
     if direct_play {
         fields.insert("mdeDecisionCode".into(), json!(1000));
         fields.insert("mdeDecisionText".into(), json!(DIRECT_PLAY_OK));
@@ -416,7 +424,7 @@ fn mark_decision(metadata: &mut Json, selection: &Selection<'_>, action: Option<
 const CONVERTED_CHANNELS: i32 = 2;
 
 /// As the reference labels what it produces, unlike the labels of a library's files.
-const fn resolution_label(width: u32) -> &'static str {
+pub(crate) const fn resolution_label(width: u32) -> &'static str {
     match width {
         0..=720 => "SD",
         721..=1280 => "720p",
@@ -568,6 +576,7 @@ async fn record_start(
     offset: Option<f64>,
 ) -> Result<(), ApiError> {
     let optional = |value: Option<String>| value.map_or(Value::Null, Value::String);
+    let picture = Picture::of(selection, plan);
     let fields = [
         ("key", Value::String(session.to_owned())),
         ("playbackId", optional(client.session_identifier.clone())),
@@ -593,6 +602,16 @@ async fn record_start(
             })),
         ),
         ("positionMs", Value::Number(position_ms(offset).into())),
+        (
+            "videoBitrate",
+            Value::Number(picture.video_bandwidth.into()),
+        ),
+        (
+            "audioBitrate",
+            Value::Number(audio_bits(selection, plan).into()),
+        ),
+        ("width", Value::Number(picture.width.into())),
+        ("height", Value::Number(picture.height.into())),
     ];
     let input = fields
         .into_iter()
@@ -718,10 +737,7 @@ async fn start_dash(
 
     let duration = selection.version.duration_ms.unwrap_or(0).max(0);
     let picture = Picture::of(&selection, &plan);
-    let audio_bandwidth = match plan.audio {
-        AudioAction::ConvertToAac => i64::from(plan.audio_kbps()) * 1000,
-        AudioAction::Copy => i64::from(selection.audio.bitrate.unwrap_or(0)),
-    };
+    let audio_bandwidth = audio_bits(&selection, &plan);
     let body = dash_manifest(&DashManifest {
         session: &session,
         duration_ms: duration,
@@ -733,6 +749,14 @@ async fn start_dash(
         written: &written,
     });
     Ok(([(header::CONTENT_TYPE, "application/dash+xml")], body).into_response())
+}
+
+/// What the audio track weighs on its way to the player.
+fn audio_bits(selection: &Selection<'_>, plan: &StreamPlan) -> i64 {
+    match plan.audio {
+        AudioAction::ConvertToAac => i64::from(plan.audio_kbps()) * 1000,
+        AudioAction::Copy => i64::from(selection.audio.bitrate.unwrap_or(0)),
+    }
 }
 
 /// What a manifest announces of the video: the file's, unless it is being re-encoded.
@@ -1013,7 +1037,15 @@ mod tests {
             audio_stream_id: None,
             direct_stream_audio: None,
             max_video_bitrate: None,
+            auto_adjust_quality: parsed.get("autoAdjustQuality").cloned(),
         }
+    }
+
+    #[test]
+    fn automatic_quality_is_asked_for_by_one_value() {
+        assert!(params("autoAdjustQuality=1").adaptive());
+        assert!(!params("autoAdjustQuality=0").adaptive());
+        assert!(!params("").adaptive());
     }
 
     #[test]

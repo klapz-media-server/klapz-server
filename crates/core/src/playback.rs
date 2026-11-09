@@ -25,6 +25,16 @@ pub enum StreamDecision {
     Transcode,
 }
 
+/// What a session sends to its player. Each is unknown when the file was never measured.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PlaybackOutput {
+    /// In bits per second, as is the one below.
+    pub video_bitrate: Option<i32>,
+    pub audio_bitrate: Option<i32>,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+}
+
 /// A session being opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewPlaybackSession {
@@ -39,6 +49,7 @@ pub struct NewPlaybackSession {
     pub video: StreamDecision,
     pub audio: StreamDecision,
     pub position_ms: i64,
+    pub output: PlaybackOutput,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +65,7 @@ pub struct PlaybackSession {
     pub video: StreamDecision,
     pub audio: StreamDecision,
     pub position_ms: i64,
+    pub output: PlaybackOutput,
     /// Epoch seconds, as are the two below.
     pub started_at: i64,
     pub updated_at: i64,

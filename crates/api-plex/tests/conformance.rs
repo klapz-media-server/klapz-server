@@ -1686,7 +1686,7 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
     use open_plex_core::now_epoch;
     use open_plex_core::page::Window;
     use open_plex_core::playback::{
-        NewPlaybackSession, PlaybackRepository, PlaybackState, StreamDecision,
+        NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackState, StreamDecision,
     };
     use open_plex_core::testing::InMemoryPlayback;
 
@@ -1716,6 +1716,12 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
                 video: StreamDecision::Copy,
                 audio: StreamDecision::Copy,
                 position_ms: 0,
+                output: PlaybackOutput {
+                    video_bitrate: Some(3_419_000),
+                    audio_bitrate: Some(119_000),
+                    width: Some(1280),
+                    height: Some(720),
+                },
             },
             now_epoch(),
         )
@@ -1737,6 +1743,26 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
     assert_eq!(sessions().await[0].state, PlaybackState::Playing);
 
     report("ratingKey=100&state=paused&time=2000&X-Plex-Session-Identifier=tab").await;
+    let (_, answer) = timeline(
+        app.clone(),
+        "GET",
+        "ratingKey=100&state=paused&time=2000&X-Plex-Session-Identifier=tab",
+        "application/json",
+    )
+    .await;
+    let answer: Value = serde_json::from_str(&answer).expect("json body");
+    let container = &answer["MediaContainer"];
+    assert_eq!(container["size"], 2);
+    // Both tracks are copied here, and a copied track weighs 2.1 times its bitrate.
+    assert_eq!(
+        container["Bandwidths"][0]["Bandwidth"][0],
+        serde_json::json!({ "time": 0, "bandwidth": 7430, "resolution": "720p" })
+    );
+    assert_eq!(
+        container["TranscodeSession"][0]["key"],
+        "/transcode/sessions/transcode-session"
+    );
+
     let current = sessions().await;
     assert_eq!(current[0].state, PlaybackState::Paused);
     assert_eq!(current[0].position_ms, 2000);

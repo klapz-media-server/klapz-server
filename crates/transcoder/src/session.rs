@@ -1030,6 +1030,7 @@ mod tests {
             audio_kbps,
             crf,
             frame_rate: Some(25.0),
+            adaptive: false,
         });
         asked
     }

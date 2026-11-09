@@ -9,7 +9,8 @@ use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, InputObject, Object, Result, ID};
 use open_plex_core::page::Cursor;
 use open_plex_core::playback::{
-    NewPlaybackSession, PlaybackRepository, PlaybackSession, PlaybackState, StreamDecision,
+    NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackSession, PlaybackState,
+    StreamDecision,
 };
 use open_plex_core::{now_epoch, PartId, RatingKey};
 
@@ -151,6 +152,26 @@ impl PlaybackSessionObject {
         self.0.position_ms
     }
 
+    /// The bitrate of the video sent to the player, in bits per second, when known.
+    async fn video_bitrate(&self) -> Option<i32> {
+        self.0.output.video_bitrate
+    }
+
+    /// The bitrate of the audio sent to the player, in bits per second, when known.
+    async fn audio_bitrate(&self) -> Option<i32> {
+        self.0.output.audio_bitrate
+    }
+
+    /// The width of the picture sent to the player, when known.
+    async fn width(&self) -> Option<i32> {
+        self.0.output.width
+    }
+
+    /// The height of the picture sent to the player, when known.
+    async fn height(&self) -> Option<i32> {
+        self.0.output.height
+    }
+
     /// When playback began, in seconds since the epoch.
     async fn started_at(&self) -> i64 {
         self.0.started_at
@@ -218,6 +239,14 @@ pub struct StartPlaybackInput {
     pub audio_decision: StreamDecisionType,
     /// Where playback starts, in milliseconds.
     pub position_ms: i64,
+    /// The bitrate of the video sent to the player, in bits per second.
+    pub video_bitrate: Option<i32>,
+    /// The bitrate of the audio sent to the player, in bits per second.
+    pub audio_bitrate: Option<i32>,
+    /// The width of the picture sent to the player.
+    pub width: Option<i32>,
+    /// The height of the picture sent to the player.
+    pub height: Option<i32>,
 }
 
 /// A player saying where it stands.
@@ -257,6 +286,12 @@ impl Mutation {
             video: input.video_decision.into(),
             audio: input.audio_decision.into(),
             position_ms: input.position_ms,
+            output: PlaybackOutput {
+                video_bitrate: input.video_bitrate,
+                audio_bitrate: input.audio_bitrate,
+                width: input.width,
+                height: input.height,
+            },
         };
         Ok(PlaybackSessionObject(
             playback(context)?.start(session, now_epoch()).await?,

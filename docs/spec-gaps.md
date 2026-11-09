@@ -491,6 +491,38 @@ startup every row is deleted: no process from an earlier run is still alive.
 attributes are what Plex Web reads. `Player.state` is what `/:/timeline` last reported. Direct Play
 creates no session: only the timeline could reveal one, and we do not open one from it.
 
+### Automatic quality
+
+Plex Web offers "Convert automatically" when the server's `streamingBrainABRVersion` is at least 3.
+It then sends `directPlay=0`, `directStream=0` and `autoAdjustQuality=1`. Measured on two files the
+reference can really read, added to it as libraries of their own (a 1920x1080 film and a 1280x720
+episode):
+
+- the decision gains `abr: true`, right after `size`;
+- the video is always encoded, even when it could be copied and fits the limit;
+- the audio is always AAC;
+- segments last 3 seconds at every picture size, where a fixed quality cuts by width (8 s up to
+  720, 1 s above 1280; at 1280 we keep the 5 s logged for other films, this file got 3 s);
+- the bitrate is not capped by the source's: 9 Mbps for a 3.2 Mbps file;
+- without a limit, a 1920-wide source gets 20000k at CRF 16, and a 1280-wide one 9000k at CRF 16,
+  its ceiling for any limit of 10 Mbps or more. Below that the rungs are in `plan.rs`.
+
+**The quality never changes during a session here, and it did not on the reference either.** Four
+attempts to provoke a change left the bitrate alone, with one job and one `Bandwidth` entry:
+downloads throttled to 2.5 and 3 Mbps for up to 215 seconds, over loopback and the machine's own
+address, then with a real playback clock and `state=buffering`, with `location=lan` and `wan`. Its
+binary does hold a mechanism (`Client buffer has dropped; switching to measurement`, `Reducing
+bandwidth of %s by %d to %d`), so the condition exists and is unknown; every connection here was
+local. Plex Web's timelines carry no bandwidth, so nothing the client sends explains it.
+
+A timeline for a running conversion also answers `Bandwidths` and `TranscodeSession` (`size` 2),
+fixed quality and copies included. `Bandwidth.bandwidth` is the rounded-up sum of 2.1 times the
+bitrate of each copied track and 1.05 times that of each encoded one, and `resolution` follows the
+width of what is sent. Plex Web shows it as the current quality, once `TranscodeSession.key` ends
+with the session it started. We send the attributes we can state and leave out `progress`, `speed`
+and the codec fields. After `stopped` our session is closed, so neither is sent; the reference
+still sends them until `/stop`.
+
 ### Refusing a chunk
 
 A request for a DASH header, a DASH chunk or an HLS segment waits for the file, up to 20 seconds

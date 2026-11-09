@@ -4,7 +4,8 @@
 
 use open_plex_core::page::Window;
 use open_plex_core::playback::{
-    NewPlaybackSession, PlaybackRepository, PlaybackState, StreamDecision, SESSION_LIFETIME_SECONDS,
+    NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackState, StreamDecision,
+    SESSION_LIFETIME_SECONDS,
 };
 use open_plex_core::{PartId, RatingKey};
 use open_plex_db::{connect, SqlPlaybackRepository};
@@ -26,6 +27,12 @@ fn session(key: &str) -> NewPlaybackSession {
         video: StreamDecision::Copy,
         audio: StreamDecision::Transcode,
         position_ms: 5000,
+        output: PlaybackOutput {
+            video_bitrate: Some(3_419_000),
+            audio_bitrate: Some(119_000),
+            width: Some(1280),
+            height: Some(720),
+        },
     }
 }
 
@@ -51,6 +58,8 @@ async fn a_started_session_is_playing_and_expires_later() {
     assert_eq!(stored.video, StreamDecision::Copy);
     assert_eq!(stored.audio, StreamDecision::Transcode);
     assert_eq!(stored.position_ms, 5000);
+    assert_eq!(stored.output.video_bitrate, Some(3_419_000));
+    assert_eq!(stored.output.height, Some(720));
     assert_eq!(stored.expires_at, NOW + SESSION_LIFETIME_SECONDS);
     assert_eq!(active_keys(&repository, NOW).await, ["a"]);
 }

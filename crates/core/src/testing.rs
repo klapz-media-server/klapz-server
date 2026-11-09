@@ -746,6 +746,7 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
             video: session.video,
             audio: session.audio,
             position_ms: session.position_ms,
+            output: session.output,
             started_at: now,
             updated_at: now,
             expires_at: now + crate::playback::SESSION_LIFETIME_SECONDS,
