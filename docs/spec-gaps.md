@@ -753,8 +753,9 @@ None of this is in the spec. Measured against the reference and plex.tv.
 
 | Step | Request | Source |
 | --- | --- | --- |
-| Spend a code | `POST https://plex.tv/api/claim/exchange?token=claim-…` with `X-Plex-Client-Identifier: <machine identifier>` | documentation; not yet run here |
+| Spend a code | `POST https://plex.tv/api/claim/exchange?token=claim-…` with `X-Plex-Client-Identifier: <machine identifier>` | documentation; works here, the answer has the `<authentication-token>` element |
 | Announce the address | `PUT https://servers.plex.tv/api/v2/devices/<machine identifier>?connections[0][uri]=…&httpsEnabled=1&httpsRequired=0&dnsRebindingProtection=0` | reference logs (it also sends `connections[0][prefixLength]`, for a LAN address) |
+| Register the server | `POST https://servers.plex.tv/servers.xml?auth_token=…`, `Content-Type: application/xml`, a `<MediaContainer size="N">` holding `<Server name host localAddresses machineIdentifier version date …/>` and one `<Directory>` per library | captured through a relay. `address` and `port` are added once a public mapping exists; `date` is in microseconds |
 | Whose token is this | `GET https://plex.tv/api/v2/user` with `X-Plex-Token`, `Accept: application/json` | captured: `id` is a number, `username` and `title` strings |
 
 - The value `/identity` calls `machineIdentifier` is the registry's `ProcessedMachineIdentifier`,
@@ -765,6 +766,12 @@ None of this is in the spec. Measured against the reference and plex.tv.
   that asked. A client therefore presents a token of its own, which is why tokens are attributed
   by account rather than compared with the one pairing obtained.
 - The reference's logs show the address announced around its startups, not on a timer.
+- `/api/v2/resources` lists a server with an empty `accessToken` until it has posted to
+  `servers.xml`, and a client signed in to that account then has no token to present. The post
+  answers `422` when it carries no public `address`, to the reference too, and has its effect
+  all the same.
+- A client with no token matches the server it reached with its plex.tv entry through
+  `/identity`, so that answer must be the paired server's identifier.
 - Without a token, `GET /` answers `401` on the reference, from loopback and from the LAN alike,
   where `/identity` answers `200`. Plex Web needs that `401`: a `200` tells it the server admits
   anonymous visitors, so it never offers a sign-in and then stops at "Not authorized".

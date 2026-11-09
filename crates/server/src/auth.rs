@@ -18,7 +18,7 @@ use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use ipnet::IpNet;
-use open_plex_core::access::{token_digest, AccessRepository, Extension};
+use open_plex_core::access::{connection_uris_for_host, token_digest, AccessRepository, Extension};
 use open_plex_core::{Accounts, Principal};
 
 use crate::remote_tokens::RemoteTokens;
@@ -101,6 +101,23 @@ impl Access {
         }
     }
 
+    /// Who a request naming no account is, from the address it was sent to.
+    async fn visitor_at(&self, host: &str) -> Option<Principal> {
+        let uris = connection_uris_for_host(host);
+        match self
+            .users
+            .as_ref()?
+            .connection_at(Extension::Plex, &uris)
+            .await
+        {
+            Ok(connection) => connection.map(|found| Principal::visitor_of(found.external_id)),
+            Err(error) => {
+                tracing::warn!(%error, "could not look an address up");
+                None
+            }
+        }
+    }
+
     /// Whether a peer address falls in a trusted network.
     ///
     /// Reduced to its canonical form first: a dual-stack socket reports an IPv4 client as
@@ -153,9 +170,24 @@ pub async fn require_token(
         Some(presented) => access.authenticate(&presented).await,
         None => None,
     };
-    // Public, but a caller who says who it is sees its own server's identifier.
+    // Public, but a caller who says who it is sees its own server's identifier, and one that
+    // does not, the identifier of the server published at the address it used.
     if PUBLIC_PATHS.contains(&request.uri().path()) {
-        if let Some(principal) = by_token {
+        let principal = if by_token.is_some() {
+            by_token
+        } else {
+            // Read first: a request's body cannot be held across an await.
+            let host = request
+                .headers()
+                .get(header::HOST)
+                .and_then(|host| host.to_str().ok())
+                .map(str::to_owned);
+            match host {
+                Some(host) => access.visitor_at(&host).await,
+                None => None,
+            }
+        };
+        if let Some(principal) = principal {
             request.extensions_mut().insert(principal);
         }
         return next.run(request).await;
@@ -440,7 +472,42 @@ mod tests {
         );
         Router::new()
             .route("/library/sections", get(whoami))
+            .route("/identity", get(whoami))
             .layer(axum::middleware::from_fn_with_state(access, require_token))
+    }
+
+    async fn identity_asked_at(app: Router, host: &str) -> String {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/identity")
+                    .header("Host", host)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = http_body_util::BodyExt::collect(response.into_body())
+            .await
+            .unwrap()
+            .to_bytes();
+        String::from_utf8_lossy(&body).into_owned()
+    }
+
+    #[tokio::test]
+    async fn the_address_used_says_whose_identifier_a_stranger_sees() {
+        assert_eq!(
+            identity_asked_at(app_with_paired_user(true).await, "A.example.org").await,
+            "visitor"
+        );
+        assert_eq!(
+            identity_asked_at(app_with_paired_user(true).await, "b.example.org").await,
+            "anonymous"
+        );
+        assert_eq!(
+            identity_asked_at(app_with_paired_user(false).await, "a.example.org").await,
+            "anonymous"
+        );
     }
 
     async fn status_with(app: Router, token: &str) -> (StatusCode, String) {

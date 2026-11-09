@@ -1,10 +1,11 @@
 //! plex.tv, as the account service behind the Plex extension.
 //!
-//! Three calls: spending a claim code, announcing where a server is, and asking whose a token
+//! Three jobs: spending a claim code, announcing where a server is, and asking whose a token
 //! is. The URLs carry codes and the requests carry tokens, so an error never keeps its URL and
 //! a redirect is never followed.
 
-use std::time::Duration;
+use std::net::IpAddr;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use open_plex_core::access::{AccessError, AccountDirectory, AccountLink, RemoteAccount};
 use reqwest::{redirect, Client, RequestBuilder, Response, StatusCode};
@@ -13,8 +14,9 @@ use serde::Deserialize;
 const CLAIM_EXCHANGE: &str = "https://plex.tv/api/claim/exchange";
 const ACCOUNT: &str = "https://plex.tv/api/v2/user";
 const DEVICES: &str = "https://servers.plex.tv/api/v2/devices";
-/// Short enough that a pairing, two calls in a row, stays inside the server's request timeout.
-const CALL_TIMEOUT: Duration = Duration::from_secs(10);
+const REGISTRATION: &str = "https://servers.plex.tv/servers.xml";
+/// Short enough that a pairing, four calls in a row, stays inside the server's request timeout.
+const CALL_TIMEOUT: Duration = Duration::from_secs(7);
 /// Presented when no server is concerned, as plex.tv requires some client identifier.
 const OWN_CLIENT_IDENTIFIER: &str = "open-plex";
 
@@ -45,6 +47,7 @@ fn as_server(request: RequestBuilder, client_identifier: &str) -> RequestBuilder
         .header("X-Plex-Version", crate::general::PLEX_VERSION)
         .header("X-Plex-Device-Name", "open-plex")
         .header("X-Plex-Provides", "server")
+        .header("X-Plex-Platform", std::env::consts::OS)
 }
 
 fn unreachable_because(error: reqwest::Error) -> AccessError {
@@ -70,6 +73,31 @@ fn authentication_token(document: &str) -> Option<&str> {
     let (token, _) = rest.split_once("</authentication-token>")?;
     let token = token.trim();
     (!token.is_empty()).then_some(token)
+}
+
+/// What `localAddresses` can carry: the address's host, when that is an IP address.
+fn local_address(connection_uri: &str) -> &str {
+    let authority = connection_uri
+        .split_once("://")
+        .map_or(connection_uri, |(_, authority)| authority);
+    let host = authority.split(':').next().unwrap_or(authority);
+    if host.parse::<IpAddr>().is_ok() {
+        host
+    } else {
+        ""
+    }
+}
+
+/// The document the reference posts, minus the libraries it lists after `<Server>`. Every
+/// interpolated value is a hexadecimal identifier, a number, or a host `is_connection_uri`
+/// reduced to letters, digits, dots and dashes: none can need XML escaping.
+fn registration(server_id: &str, local_address: &str, microseconds: u128) -> String {
+    format!(
+        "<MediaContainer size=\"0\">\n<Server name=\"open-plex\" host=\"\" \
+         localAddresses=\"{local_address}\" machineIdentifier=\"{server_id}\" \
+         version=\"{version}\" date=\"{microseconds}\" />\n</MediaContainer>\n",
+        version = crate::general::PLEX_VERSION,
+    )
 }
 
 #[derive(Deserialize)]
@@ -128,10 +156,30 @@ impl AccountDirectory for PlexTv {
             ])
             .header("X-Plex-Token", &link.account.token);
         let response = send(as_server(request, &link.server_id)).await?;
-        if response.status().is_success() {
+        if !response.status().is_success() {
+            return Err(refused_or_unreachable(response.status()));
+        }
+
+        let microseconds = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_micros());
+        let request = self
+            .client
+            .post(REGISTRATION)
+            .query(&[("auth_token", link.account.token.as_str())])
+            .header("Content-Type", "application/xml")
+            .body(registration(
+                &link.server_id,
+                local_address(&link.connection_uri),
+                microseconds,
+            ));
+        let status = send(as_server(request, &link.server_id)).await?.status();
+        // Without a public address this answers 422, to the reference as well, and it is
+        // nevertheless what makes plex.tv hand clients a token for the server.
+        if status.is_success() || status == StatusCode::UNPROCESSABLE_ENTITY {
             Ok(())
         } else {
-            Err(refused_or_unreachable(response.status()))
+            Err(refused_or_unreachable(status))
         }
     }
 
@@ -205,6 +253,25 @@ mod tests {
         let account =
             account_of_document(br#"{"id":7,"username":"","title":"Kids"}"#, "token").unwrap();
         assert_eq!(account.name, "Kids");
+    }
+
+    #[test]
+    fn a_registration_has_the_shape_the_reference_posts() {
+        assert_eq!(
+            registration("abc123", "192.168.1.30", 1_794_257_565_727_563),
+            format!(
+                "<MediaContainer size=\"0\">\n<Server name=\"open-plex\" host=\"\" \
+                 localAddresses=\"192.168.1.30\" machineIdentifier=\"abc123\" \
+                 version=\"{}\" date=\"1794257565727563\" />\n</MediaContainer>\n",
+                crate::general::PLEX_VERSION
+            )
+        );
+    }
+
+    #[test]
+    fn only_an_ip_address_is_a_local_address() {
+        assert_eq!(local_address("http://192.168.1.30:32500"), "192.168.1.30");
+        assert_eq!(local_address("https://a.example.org:443"), "");
     }
 
     #[test]

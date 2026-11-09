@@ -157,7 +157,8 @@ without them saying so.
 - **Pairing ties one user's server to one plex.tv account.** The operator pastes a code from
   `plex.tv/claim` and an address in `/admin`; `extension_account` keeps the account, its token
   and the address, which is republished at startup and hourly. plex.tv is reached through the
-  `AccountDirectory` port, implemented in `api-plex::plex_tv`. A client that found the server
+  `AccountDirectory` port, implemented in `api-plex::plex_tv`. `/identity` with no token shows
+  the server published at the address the request was sent to. A client that found the server
   through plex.tv presents a plex.tv token, which only plex.tv can attribute: the answer is
   remembered five minutes, a refusal included, and new tokens are looked up at most 60 times a
   minute, so a stranger cannot use the server to flood plex.tv. The account's token is stored
@@ -426,9 +427,10 @@ absent.
   Ordering by one needs the cursor to encode absence and the null position to be pinned. Note
   the inconsistency to resolve: an unsupported `sort=` falls back to title, while an
   unsupported filter answers `501`.
-- **Pairing has not been exercised end to end.** The exchange's answer is read as plex.tv's
-  account document, which only the documentation says it is, and no Plex app has connected
-  through a published address yet. Whether plex.tv keeps a server marked present without its
-  push connection is also unknown.
+- **A paired server shows `presence=false` on plex.tv.** The reference becomes present through a
+  push connection (`/services/pubsub/servers`) we do not open, and what clients do about the
+  absence is not settled.
+- **Several users cannot share one published address.** A client with no token asks `/identity`
+  which server it reached, and an address can only name one, so each user needs its own host.
 - The ports are one trait because there is one aggregate. Splitting them is additive, and
   should happen when metadata and playback arrive — not pre-emptively.

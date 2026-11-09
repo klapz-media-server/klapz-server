@@ -1171,6 +1171,26 @@ impl crate::access::AccessRepository for InMemoryAccess {
             .map(|link| crate::access::AccountLink { enabled, ..link }))
     }
 
+    async fn connection_at(
+        &self,
+        extension: crate::access::Extension,
+        connection_uris: &[String],
+    ) -> Result<Option<crate::access::UserExtension>, crate::access::AccessError> {
+        let owners: Vec<crate::ids::UserId> = locked(&self.accounts)
+            .iter()
+            .filter(|link| {
+                link.extension == extension && connection_uris.contains(&link.connection_uri)
+            })
+            .map(|link| link.user)
+            .collect();
+        Ok(locked(&self.extensions)
+            .iter()
+            .find(|(held, _)| {
+                held.extension == extension && held.enabled && owners.contains(&held.user)
+            })
+            .map(|(held, _)| held.clone()))
+    }
+
     async fn unlink_account(
         &self,
         user: crate::ids::UserId,

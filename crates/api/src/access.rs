@@ -432,6 +432,8 @@ pub(crate) async fn pair_extension(
             "the address must look like https://host:port, with nothing after it",
         ));
     }
+    // Compared with `Host` headers later, which are matched in lower case.
+    let connection_uri = input.connection_uri.to_ascii_lowercase();
     let api = context.data::<ApiContext>()?;
     let user = user_id(&input.user_id)?;
     let extension: Extension = input.extension.into();
@@ -448,13 +450,7 @@ pub(crate) async fn pair_extension(
         .await?;
     let mut link = api
         .access
-        .link_account(
-            user,
-            extension,
-            &account,
-            &input.connection_uri,
-            now_epoch(),
-        )
+        .link_account(user, extension, &account, &connection_uri, now_epoch())
         .await?;
     // The code is spent and the link stored: failing here would only hide that. The server
     // publishes again on its own, and `publishedAt` stays null until one attempt succeeds.

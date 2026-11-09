@@ -443,6 +443,27 @@ impl AccessRepository for SqlAccessRepository {
             .map(|connection| account_link_of(row, connection)))
     }
 
+    async fn connection_at(
+        &self,
+        extension: Extension,
+        connection_uris: &[String],
+    ) -> Result<Option<UserExtension>, AccessError> {
+        let rows = extension_account::Entity::find()
+            .filter(extension_account::Column::Extension.eq(extension_name(extension)))
+            .filter(extension_account::Column::ConnectionUri.is_in(connection_uris.iter().cloned()))
+            .order_by_asc(extension_account::Column::Id)
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        for row in rows {
+            let connection = self.connection(UserId::new(row.user_id), extension).await?;
+            if let Some(connection) = connection.filter(|connection| connection.enabled) {
+                return Ok(Some(connection));
+            }
+        }
+        Ok(None)
+    }
+
     async fn unlink_account(
         &self,
         user: UserId,

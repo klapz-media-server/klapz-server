@@ -198,6 +198,24 @@ pub fn is_connection_uri(uri: &str) -> bool {
     host_is_valid && port_is_valid
 }
 
+/// The connection addresses a request's `Host` could have been published as. A default port
+/// may be written or left out on either side.
+#[must_use]
+pub fn connection_uris_for_host(host: &str) -> Vec<String> {
+    let host = host.to_ascii_lowercase();
+    let mut uris = vec![format!("http://{host}"), format!("https://{host}")];
+    match host.rsplit_once(':') {
+        None => {
+            uris.push(format!("http://{host}:80"));
+            uris.push(format!("https://{host}:443"));
+        }
+        Some((name, "80")) => uris.push(format!("http://{name}")),
+        Some((name, "443")) => uris.push(format!("https://{name}")),
+        Some(_) => {}
+    }
+    uris
+}
+
 /// Announces a link's address to the service and records that it was accepted. When it was,
 /// in epoch seconds.
 ///
@@ -320,6 +338,14 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
         extension: Extension,
     ) -> Result<Option<AccountLink>, AccessError>;
 
+    /// The switched-on connection published at one of these addresses. The oldest, should
+    /// several users share one: an address can only name one server to someone unidentified.
+    async fn connection_at(
+        &self,
+        extension: Extension,
+        connection_uris: &[String],
+    ) -> Result<Option<UserExtension>, AccessError>;
+
     /// Whether there was a link to forget.
     async fn unlink_account(&self, user: UserId, extension: Extension)
         -> Result<bool, AccessError>;
@@ -441,6 +467,19 @@ mod tests {
         ] {
             assert!(!is_connection_uri(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_host_matches_the_addresses_it_could_have_been_published_as() {
+        assert_eq!(
+            connection_uris_for_host("192.168.1.30:32500"),
+            ["http://192.168.1.30:32500", "https://192.168.1.30:32500"]
+        );
+        let bare = connection_uris_for_host("A.example.org");
+        assert!(bare.contains(&"https://a.example.org:443".to_owned()));
+        assert!(bare.contains(&"https://a.example.org".to_owned()));
+        assert!(connection_uris_for_host("a.example.org:443")
+            .contains(&"https://a.example.org".to_owned()));
     }
 
     #[test]

@@ -51,6 +51,20 @@ impl Principal {
         }
     }
 
+    /// Someone who named no account, at an address published for one server. It reaches
+    /// nothing: the address only says whose identifier to show, which is how a client matches
+    /// the server it is talking to with its entry on the account service.
+    #[must_use]
+    pub fn visitor_of(server_identifier: String) -> Self {
+        Self {
+            name: "visitor".to_owned(),
+            scope: Scope::User,
+            libraries: LibraryAccess::Only(std::collections::HashMap::new()),
+            user: None,
+            server_identifier: Some(server_identifier),
+        }
+    }
+
     /// The name a session is stored under. Clients choose their own session identifiers, so
     /// without this one user could reach or replace another's by naming it.
     #[must_use]

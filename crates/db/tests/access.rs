@@ -189,6 +189,41 @@ async fn a_switched_off_connection_opens_nothing_through_its_account() {
 }
 
 #[tokio::test]
+async fn a_published_address_names_its_switched_on_connection() {
+    let repository = repository().await;
+    let user = connected(&repository, "a@example.org").await;
+    repository
+        .link_account(user, Extension::Plex, &account("7"), "https://a", NOW)
+        .await
+        .unwrap();
+    let at = |uri: &str| vec![uri.to_owned(), "http://elsewhere".to_owned()];
+    assert_eq!(
+        repository
+            .connection_at(Extension::Plex, &at("https://a"))
+            .await
+            .unwrap()
+            .unwrap()
+            .user,
+        user
+    );
+    assert!(repository
+        .connection_at(Extension::Plex, &at("https://b"))
+        .await
+        .unwrap()
+        .is_none());
+
+    repository
+        .disable_extension(user, Extension::Plex, NOW)
+        .await
+        .unwrap();
+    assert!(repository
+        .connection_at(Extension::Plex, &at("https://a"))
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
 async fn unpairing_or_deleting_the_user_forgets_the_account() {
     let repository = repository().await;
     let user = connected(&repository, "a@example.org").await;
