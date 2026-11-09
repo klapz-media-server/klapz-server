@@ -675,6 +675,7 @@ async fn open_session(
             plan,
             offset: params.offset,
             protocol,
+            total_ms: u64::try_from(selection.version.duration_ms.unwrap_or(0).max(0)).unwrap_or(0),
         })
         .await?;
     for stored in replaced {
@@ -931,9 +932,37 @@ async fn session_file(
     Ok(serve(path, request).await)
 }
 
-/// A growing playlist, where the reference predicts every segment up front. It can only do
-/// that when it controls where they are cut: a remux cuts on the file's own key frames.
+/// The reference builds the whole playlist up front from the media's duration: a fake VOD list
+/// that already ends in `#EXT-X-ENDLIST` while the process is still writing, so a player learns
+/// the real length at once instead of watching it grow. A remux cuts its segments on the file's
+/// own key frames, close to these nominal boundaries. With no duration we fall back to listing
+/// the segments that exist.
 fn media_playlist(output: &open_plex_transcoder::session::Output) -> String {
+    let seconds = output.segment_seconds.max(1);
+    let segment_ms = u64::from(seconds) * 1000;
+    if output.total_ms == 0 {
+        return growing_playlist(output);
+    }
+    let full = output.total_ms / segment_ms;
+    let remainder = output.total_ms % segment_ms;
+    let mut text = format!(
+        "#EXTM3U\n#EXT-X-TARGETDURATION:{seconds}\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-MEDIA-SEQUENCE:0\n"
+    );
+    for number in 0..full {
+        // Writing to a `String` cannot fail.
+        let _ = write!(text, "#EXTINF:{seconds}, nodesc\n{number:05}.ts\n");
+    }
+    if remainder > 0 {
+        // The reference prints the remainder rounded to a whole second, never below one.
+        let last = ((remainder + 500) / 1000).max(1);
+        let _ = write!(text, "#EXTINF:{last}, nodesc\n{full:05}.ts\n");
+    }
+    text.push_str("#EXT-X-ENDLIST\n");
+    text
+}
+
+/// The playlist as segments arrive, used only when the media's duration is unknown.
+fn growing_playlist(output: &open_plex_transcoder::session::Output) -> String {
     let longest = output
         .segments
         .iter()
@@ -1147,27 +1176,63 @@ mod tests {
     }
 
     #[test]
-    fn a_playlist_grows_until_the_process_ends() {
-        let segments = vec![
-            Segment {
-                number: 0,
-                seconds: 9.0,
-            },
-            Segment {
-                number: 1,
-                seconds: 12.5,
-            },
-        ];
-        let running = media_playlist(&Output {
-            segments: segments.clone(),
+    fn the_playlist_predicts_every_segment_from_the_duration() {
+        // Soul: 6_031_568 ms at 10s segments, as captured from the reference.
+        let playlist = media_playlist(&Output {
+            segments: Vec::new(),
             ended: false,
+            total_ms: 6_031_568,
+            segment_seconds: 10,
         });
+        assert!(playlist.starts_with(
+            "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-MEDIA-SEQUENCE:0\n"
+        ));
+        assert!(!playlist.contains("EXT-X-VERSION"));
+        assert!(!playlist.contains("PLAYLIST-TYPE"));
+        assert!(playlist.contains("#EXTINF:10, nodesc\n00000.ts\n"));
+        assert!(playlist.contains("#EXTINF:10, nodesc\n00602.ts\n"));
+        assert!(playlist.contains("#EXTINF:2, nodesc\n00603.ts\n"));
+        assert!(!playlist.contains("00604.ts"));
+        assert!(playlist.ends_with("#EXT-X-ENDLIST\n"));
+    }
+
+    #[test]
+    fn a_whole_number_of_segments_leaves_no_remainder() {
+        let playlist = media_playlist(&Output {
+            segments: Vec::new(),
+            ended: false,
+            total_ms: 30_000,
+            segment_seconds: 10,
+        });
+        assert!(playlist.contains("#EXTINF:10, nodesc\n00002.ts\n"));
+        assert!(!playlist.contains("00003.ts"));
+        assert!(playlist.ends_with("#EXT-X-ENDLIST\n"));
+    }
+
+    #[test]
+    fn without_a_duration_the_playlist_lists_what_exists() {
+        let output = Output {
+            segments: vec![
+                Segment {
+                    number: 0,
+                    seconds: 9.0,
+                },
+                Segment {
+                    number: 1,
+                    seconds: 12.5,
+                },
+            ],
+            ended: false,
+            total_ms: 0,
+            segment_seconds: 10,
+        };
+        let running = media_playlist(&output);
         assert!(running.contains("#EXT-X-TARGETDURATION:13\n"));
         assert!(running.contains("#EXTINF:9.000000, nodesc\n00000.ts\n"));
         assert!(!running.contains("ENDLIST"));
         assert!(media_playlist(&Output {
-            segments,
-            ended: true
+            ended: true,
+            ..output
         })
         .ends_with("#EXT-X-ENDLIST\n"));
     }

@@ -81,6 +81,9 @@ pub struct StreamRequest {
     /// Where to start, in seconds.
     pub offset: Option<f64>,
     pub protocol: Protocol,
+    /// The media's full duration in milliseconds, for the predicted HLS playlist; 0 if
+    /// unknown.
+    pub total_ms: u64,
 }
 
 impl StreamRequest {
@@ -112,6 +115,10 @@ pub struct Output {
     pub segments: Vec<Segment>,
     /// The process is done: nothing will be added.
     pub ended: bool,
+    /// The media's full duration in milliseconds; 0 when unknown.
+    pub total_ms: u64,
+    /// The nominal length of a segment, in seconds.
+    pub segment_seconds: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -265,6 +272,8 @@ impl Session {
     }
 
     fn output(&self) -> Output {
+        let total_ms = self.request.total_ms;
+        let segment_seconds = self.request.segment_seconds();
         self.with_progress(|progress| Output {
             segments: progress
                 .segments
@@ -276,6 +285,8 @@ impl Session {
                 })
                 .collect(),
             ended: progress.ended,
+            total_ms,
+            segment_seconds,
         })
     }
 }
@@ -993,6 +1004,7 @@ mod tests {
             },
             offset: None,
             protocol: Protocol::Hls,
+            total_ms: 0,
         }
     }
 

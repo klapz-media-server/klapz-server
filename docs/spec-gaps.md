@@ -785,6 +785,13 @@ None of this is in the spec. Measured against the reference and plex.tv.
   measured): the first default on 193, the first track on 13, and on the other 13 the one in the
   account's language. No video stream is marked; subtitles depend on the account. Plex Web reads
   `Stream.find(selected).id` in its player settings and crashes without it.
+- An HLS remux's `index.m3u8` is a fake VOD playlist the reference builds up front from the
+  media's duration: `#EXTM3U`, `#EXT-X-TARGETDURATION:10`, `#EXT-X-ALLOW-CACHE:NO`,
+  `#EXT-X-MEDIA-SEQUENCE:0`, then one `#EXTINF:10, nodesc` per 10s segment and a rounded
+  remainder, ending in `#EXT-X-ENDLIST` at once — no `#EXT-X-VERSION`, no `#EXT-X-PLAYLIST-TYPE`.
+  Measured on Soul (6_031_568 ms): 603 full segments and a final `#EXTINF:2`. The actual remux
+  cuts on the file's key frames near those boundaries. This is why a player shows the true
+  length at once rather than a duration that grows.
 - A stream's `header` and chunks are served without a token by the reference, from the LAN too:
   the manifest carries no `X-Plex-Token` and players fetch its relative URLs as they are. An
   unknown session answers `404` with or without a token.
