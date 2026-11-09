@@ -271,6 +271,32 @@ impl Session {
                 .any(|earlier| self.chunk_path(stream, earlier).exists())
     }
 
+    /// Whether the running process will reach this HLS segment soon without being told to.
+    /// HLS muxes one `.ts` stream, numbered sequentially from the run's first segment.
+    fn hls_will_reach(&self, number: u32) -> bool {
+        if self.with_progress(|progress| progress.ended) {
+            return false;
+        }
+        let Some(first) = self.with_run(|run| run.as_ref().map(|run| run.first_chunk)) else {
+            return false;
+        };
+        if number < first {
+            return false;
+        }
+        let margin = SEEK_MARGIN_SECONDS.div_ceil(self.request.segment_seconds());
+        let frontier = self
+            .with_progress(|progress| {
+                progress
+                    .segments
+                    .iter()
+                    .filter(|(_, segment)| segment.finished)
+                    .map(|(number, _)| *number)
+                    .max()
+            })
+            .map_or(first, |latest| latest.max(first));
+        number <= frontier.saturating_add(margin)
+    }
+
     fn output(&self) -> Output {
         let total_ms = self.request.total_ms;
         let segment_seconds = self.request.segment_seconds();
@@ -319,7 +345,7 @@ fn parse_announcement(body: &str) -> Vec<(u32, Announced)> {
         .collect()
 }
 
-fn hls_output(callback: &str, seconds: u32) -> Vec<String> {
+fn hls_output(callback: &str, seconds: u32, first_chunk: u32) -> Vec<String> {
     [
         "-segment_format",
         "mpegts",
@@ -330,7 +356,7 @@ fn hls_output(callback: &str, seconds: u32) -> Vec<String> {
         "-segment_time",
         &seconds.to_string(),
         "-segment_start_number",
-        "0",
+        &first_chunk.to_string(),
         "-segment_time_delta",
         "0.0625",
         "-segment_list",
@@ -543,7 +569,7 @@ fn stream_arguments(request: &StreamRequest, callback: &str, first_chunk: u32) -
     args.extend(video_arguments(&request.video, request.plan.video));
     args.extend(audio_arguments(&request.audio, &request.plan));
     args.extend(match request.protocol {
-        Protocol::Hls => hls_output(callback, seconds),
+        Protocol::Hls => hls_output(callback, seconds, first_chunk),
         Protocol::Dash => dash_output(callback, seconds, first_chunk),
     });
     args
@@ -556,9 +582,6 @@ fn sessions_root() -> PathBuf {
 /// Moves a DASH start onto the chunk grid and says which chunk that is. A chunk's number has to
 /// say where it is in time, so the process must start on one.
 fn align_to_chunk(request: &mut StreamRequest) -> u32 {
-    if request.protocol == Protocol::Hls {
-        return 1;
-    }
     let seconds = f64::from(request.segment_seconds());
     let whole = (request.offset.unwrap_or(0.0).max(0.0) / seconds).floor();
     request.offset = Some(whole * seconds);
@@ -568,8 +591,12 @@ fn align_to_chunk(request: &mut StreamRequest) -> u32 {
         clippy::cast_sign_loss,
         reason = "not negative, and a chunk count far below u32::MAX"
     )]
-    let chunks = whole as u32;
-    chunks + 1
+    let chunk = whole as u32;
+    // DASH numbers its chunks from one, HLS its segments from zero.
+    match request.protocol {
+        Protocol::Dash => chunk + 1,
+        Protocol::Hls => chunk,
+    }
 }
 
 /// The form Plex's build expects its codec directory in: backslashes, colons and spaces escaped
@@ -775,7 +802,7 @@ impl Transcoder {
         Ok(())
     }
 
-    /// Replaces the session's process with one starting at this chunk. What is already
+    /// Replaces the session's process with one starting at this DASH chunk. What is already
     /// written stays, so going back over it costs nothing.
     async fn seek(
         &self,
@@ -788,6 +815,30 @@ impl Transcoder {
         if session.closed.load(Ordering::Acquire) || session.will_reach(stream, number) {
             return Ok(());
         }
+        let offset = (number - 1) * session.request.segment_seconds();
+        self.relaunch(session, number, offset).await
+    }
+
+    /// Replaces the session's process with one starting at this HLS segment, which the running
+    /// process is too far behind to reach on its own.
+    async fn seek_hls(&self, session: &Arc<Session>, number: u32) -> Result<(), TranscodeError> {
+        let _exclusive = session.restarting.lock().await;
+        if session.closed.load(Ordering::Acquire) || session.hls_will_reach(number) {
+            return Ok(());
+        }
+        let offset = number * session.request.segment_seconds();
+        self.relaunch(session, number, offset).await
+    }
+
+    /// Stops the running process and starts a new one numbering its output from `first_chunk`
+    /// and seeking the source to `offset_seconds`. The caller holds `restarting` and has
+    /// checked the segment is not coming on its own.
+    async fn relaunch(
+        &self,
+        session: &Arc<Session>,
+        first_chunk: u32,
+        offset_seconds: u32,
+    ) -> Result<(), TranscodeError> {
         let previous = session.with_run(|run| {
             run.as_mut()
                 .map(|run| (Arc::clone(&run.stop), run.task.take()))
@@ -801,8 +852,8 @@ impl Transcoder {
             }
         }
         let mut request = session.request.clone();
-        request.offset = Some(f64::from((number - 1) * request.segment_seconds()));
-        self.launch(session, &request, number)
+        request.offset = Some(f64::from(offset_seconds));
+        self.launch(session, &request, first_chunk)
     }
 
     /// Stops the sessions nobody has asked about for a while.
@@ -870,14 +921,20 @@ impl Transcoder {
     /// appears.
     pub async fn session_segment(&self, id: &str, number: u32) -> Result<PathBuf, TranscodeError> {
         let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
-        let finished = session
-            .wait_for(|| {
-                session.with_progress(|progress| {
-                    progress.segments.get(&number).is_some_and(|s| s.finished)
-                })
+        let present = || {
+            session.with_progress(|progress| {
+                progress.segments.get(&number).is_some_and(|s| s.finished)
             })
-            .await;
-        if finished {
+        };
+        // Not written yet, and the running process is too far behind to reach it soon: restart
+        // there, as a far forward seek needs. Without this the request only waits, then refuses a
+        // segment the process was never going to produce. A process that has already ended is held
+        // then refused rather than restarted, so a player does not drive an endless relaunch.
+        let running = || !session.with_progress(|progress| progress.ended);
+        if !present() && running() && !session.hls_will_reach(number) {
+            self.seek_hls(&session, number).await?;
+        }
+        if session.wait_for(present).await {
             Ok(session.directory.join(format!("media-{number:05}.ts")))
         } else {
             Err(TranscodeError::UnknownSegment)
@@ -1010,7 +1067,7 @@ mod tests {
 
     #[test]
     fn writes_the_references_command_line() {
-        let args = stream_arguments(&request(AudioAction::ConvertToAac), "CB", 1);
+        let args = stream_arguments(&request(AudioAction::ConvertToAac), "CB", 0);
         // The space inside the filter is what makes it one argument here and several there.
         let joined = args.join(" ").replace("[0:1] aresample", "[0:1]_aresample");
         assert_eq!(joined, CAPTURED);
@@ -1145,11 +1202,24 @@ mod tests {
     }
 
     #[test]
-    fn an_hls_start_keeps_its_exact_offset() {
+    fn an_hls_start_lands_on_the_chunk_grid() {
         let mut asked = request(AudioAction::Copy);
         asked.offset = Some(603.0);
-        assert_eq!(align_to_chunk(&mut asked), 1);
-        assert_eq!(asked.offset, Some(603.0));
+        assert_eq!(align_to_chunk(&mut asked), 60);
+        assert_eq!(asked.offset, Some(600.0));
+
+        asked.offset = None;
+        assert_eq!(align_to_chunk(&mut asked), 0);
+        assert_eq!(asked.offset, Some(0.0));
+    }
+
+    #[test]
+    fn an_hls_seek_numbers_its_segments_from_the_target() {
+        let mut asked = request(AudioAction::Copy);
+        asked.offset = Some(3000.0);
+        let joined = stream_arguments(&asked, "CB", 300).join(" ");
+        assert!(joined.contains("-ss 3000 -noaccurate_seek"));
+        assert!(joined.contains("-segment_start_number 300 "));
     }
 
     #[test]

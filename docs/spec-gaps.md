@@ -785,6 +785,10 @@ None of this is in the spec. Measured against the reference and plex.tv.
   measured): the first default on 193, the first track on 13, and on the other 13 the one in the
   account's language. No video stream is marked; subtitles depend on the account. Plex Web reads
   `Stream.find(selected).id` in its player settings and crashes without it.
+- A far forward seek over HLS has to restart the remux at the target segment, numbering its
+  output from there (`-ss`, `-segment_start_number N`); only waiting leaves a segment the
+  process was never going to reach, and the player stalls. This mirrors the DASH seek; the
+  reference's exact HLS restart command was not captured.
 - An HLS remux's `index.m3u8` is a fake VOD playlist the reference builds up front from the
   media's duration: `#EXTM3U`, `#EXT-X-TARGETDURATION:10`, `#EXT-X-ALLOW-CACHE:NO`,
   `#EXT-X-MEDIA-SEQUENCE:0`, then one `#EXTINF:10, nodesc` per 10s segment and a rounded
