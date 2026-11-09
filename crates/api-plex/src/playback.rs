@@ -1,8 +1,7 @@
 //! Playback: a file served as it is, or remuxed over HLS.
 //!
-//! The binding over `open-plex-transcoder`, as `photo` is. It covers Direct Play and Direct
-//! Stream, where the video is copied. A file whose video would have to be converted answers
-//! `501`, like a DASH request.
+//! The binding over `open-plex-transcoder`, as `photo` is. It covers Direct Play, Direct Stream
+//! and H.264 re-encoded to a lower quality. Video of any other codec answers `501`.
 //!
 //! `/video/:/transcode/session/…` is the process's own way back in. Those routes are served
 //! without a token and answer only to the unguessable id its session was given.
@@ -21,8 +20,10 @@ use open_plex_api::item::ITEM_TYPE;
 use open_plex_api::media::FILE_TYPE;
 use open_plex_api::GlobalId;
 use open_plex_transcoder::media::resolve_within;
-use open_plex_transcoder::plan::{plan_direct_stream, AudioAction, Track, AUDIO_BITRATE_KBPS};
-use open_plex_transcoder::session::{Protocol, RemuxRequest, DASH_SEGMENT_SECONDS};
+use open_plex_transcoder::plan::{
+    plan_stream, AudioAction, Limits, StreamPlan, StreamSource, Track, VideoAction, VideoEncode,
+};
+use open_plex_transcoder::session::{segment_seconds, Protocol, StreamRequest};
 use serde::Deserialize;
 use serde_json::{json, Value as Json};
 use tower::ServiceExt as _;
@@ -172,6 +173,9 @@ struct PlaybackParams {
     audio_stream_id: Option<i64>,
     #[serde(rename = "directStreamAudio")]
     direct_stream_audio: Option<String>,
+    /// In kilobits per second.
+    #[serde(rename = "maxVideoBitrate")]
+    max_video_bitrate: Option<u32>,
 }
 
 impl PlaybackParams {
@@ -254,15 +258,20 @@ impl<'a> Selection<'a> {
         })
     }
 
-    /// `directStreamAudio=0` converts even audio that could be copied: AAC, on the reference.
-    fn audio_action(&self, params: &PlaybackParams) -> Result<AudioAction, ApiError> {
-        let codec = |stream: &GqlStream| stream.codec.clone().unwrap_or_default();
-        let planned = plan_direct_stream(&codec(self.video), &codec(self.audio))?.audio;
-        Ok(if params.direct_stream_audio.as_deref() == Some("0") {
-            AudioAction::ConvertToAac
-        } else {
-            planned
-        })
+    fn plan(&self, params: &PlaybackParams) -> Result<StreamPlan, ApiError> {
+        let source = StreamSource {
+            video_codec: self.video.codec.as_deref().unwrap_or_default(),
+            audio_codec: self.audio.codec.as_deref().unwrap_or_default(),
+            width: self.version.width,
+            height: self.version.height,
+            bits_per_second: self.version.bitrate,
+            frame_rate: self.version.frame_rate,
+        };
+        let limits = Limits {
+            max_video_kbps: params.max_video_bitrate,
+            convert_audio: params.direct_stream_audio.as_deref() == Some("0"),
+        };
+        Ok(plan_stream(&source, limits)?)
     }
 }
 
@@ -275,7 +284,7 @@ fn track(stream: &GqlStream) -> Track {
 }
 
 /// What happens to a file that is not played directly.
-type Conversion = (AudioAction, Protocol);
+type Conversion = (StreamPlan, Protocol);
 
 const fn container_of(protocol: Protocol) -> &'static str {
     match protocol {
@@ -314,7 +323,7 @@ async fn decision(
     let action = if direct_play {
         None
     } else {
-        Some((selection.audio_action(&params)?, protocol))
+        Some((selection.plan(&params)?, protocol))
     };
 
     let entry = MetadataEntry::from_graphql(&item, true, Language::of(&client))
@@ -377,11 +386,20 @@ fn mark_decision(metadata: &mut Json, selection: &Selection<'_>, action: Option<
     let selected_part = selection.part.database_id();
     if let Some(version) = media.as_object_mut() {
         version.insert("selected".into(), json!(true));
-        if let Some((audio, protocol)) = action {
+        if let Some((plan, protocol)) = action {
             version.insert("container".into(), json!(container_of(protocol)));
             version.insert("protocol".into(), json!(protocol_name(protocol)));
-            if audio == AudioAction::ConvertToAac {
+            if plan.audio == AudioAction::ConvertToAac {
                 version.insert("audioCodec".into(), json!("aac"));
+                version.insert("audioChannels".into(), json!(CONVERTED_CHANNELS));
+            }
+            if let VideoAction::Encode(encode) = plan.video {
+                version.insert("videoCodec".into(), json!("h264"));
+                version.insert(
+                    "videoResolution".into(),
+                    json!(resolution_label(encode.width)),
+                );
+                mark_encoded_size(version, &encode);
             }
         }
         if let Some(parts) = version.get_mut("Part").and_then(Json::as_array_mut) {
@@ -392,6 +410,61 @@ fn mark_decision(metadata: &mut Json, selection: &Selection<'_>, action: Option<
         }
     }
     item.insert("Media".into(), json!([media]));
+}
+
+/// The conversion always ends in stereo: `ochl='stereo'` in its filter.
+const CONVERTED_CHANNELS: i32 = 2;
+
+/// As the reference labels what it produces, unlike the labels of a library's files.
+const fn resolution_label(width: u32) -> &'static str {
+    match width {
+        0..=720 => "SD",
+        721..=1280 => "720p",
+        _ => "1080p",
+    }
+}
+
+fn mark_encoded_size(fields: &mut serde_json::Map<String, Json>, encode: &VideoEncode) {
+    fields.insert(
+        "bitrate".into(),
+        json!(encode.video_kbps + encode.audio_kbps),
+    );
+    fields.insert("width".into(), json!(encode.width));
+    fields.insert("height".into(), json!(encode.height));
+    fields.insert("optimizedForStreaming".into(), json!(true));
+}
+
+/// What the analysis of the source says, and the output no longer matches.
+const SOURCE_ONLY_VIDEO_FIELDS: [&str; 12] = [
+    "chromaLocation",
+    "chromaSubsampling",
+    "codedHeight",
+    "codedWidth",
+    "colorPrimaries",
+    "colorRange",
+    "colorSpace",
+    "hasScalingMatrix",
+    "level",
+    "profile",
+    "refFrames",
+    "scanType",
+];
+
+fn mark_encoded_video(fields: &mut serde_json::Map<String, Json>, encode: &VideoEncode) {
+    for name in SOURCE_ONLY_VIDEO_FIELDS {
+        fields.remove(name);
+    }
+    fields.insert("codec".into(), json!("h264"));
+    fields.insert("bitrate".into(), json!(encode.video_kbps));
+    fields.insert("width".into(), json!(encode.width));
+    fields.insert("height".into(), json!(encode.height));
+}
+
+fn mark_converted_audio(fields: &mut serde_json::Map<String, Json>, plan: &StreamPlan) {
+    fields.insert("codec".into(), json!("aac"));
+    fields.insert("bitrate".into(), json!(plan.audio_kbps()));
+    fields.insert("bitrateMode".into(), json!("cbr"));
+    fields.insert("channels".into(), json!(CONVERTED_CHANNELS));
 }
 
 fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<Conversion>) {
@@ -407,9 +480,12 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<Conversi
             "directplay"
         }),
     );
-    if let Some((_, protocol)) = action {
+    if let Some((plan, protocol)) = action {
         fields.insert("container".into(), json!(container_of(protocol)));
         fields.insert("protocol".into(), json!(protocol_name(protocol)));
+        if let VideoAction::Encode(encode) = plan.video {
+            mark_encoded_size(fields, &encode);
+        }
         // Nothing to fetch directly: a client that took this key would bypass the session.
         fields.remove("key");
     }
@@ -439,7 +515,7 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<Conversi
         if id == audio {
             fields.insert("selected".into(), json!(true));
         }
-        let Some((action, protocol)) = action else {
+        let Some((plan, protocol)) = action else {
             fields.insert("location".into(), json!("direct"));
             continue;
         };
@@ -447,9 +523,14 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<Conversi
             fields.insert("decision".into(), json!("ignore"));
             fields.insert("location".into(), json!("sidecar-subs"));
         } else {
-            let converted = id == audio && action == AudioAction::ConvertToAac;
-            if converted {
-                fields.insert("codec".into(), json!("aac"));
+            let mut converted = false;
+            if id == audio && plan.audio == AudioAction::ConvertToAac {
+                mark_converted_audio(fields, &plan);
+                converted = true;
+            }
+            if let (true, VideoAction::Encode(encode)) = (id == video, plan.video) {
+                mark_encoded_video(fields, &encode);
+                converted = true;
             }
             fields.insert(
                 "decision".into(),
@@ -482,7 +563,7 @@ async fn record_start(
     session: &str,
     item: &GqlItem,
     selection: &Selection<'_>,
-    audio_action: AudioAction,
+    plan: &StreamPlan,
     client: &ClientIdentity,
     offset: Option<f64>,
 ) -> Result<(), ApiError> {
@@ -496,10 +577,16 @@ async fn record_start(
             optional(client.identifier.as_ref().map(|id| id.as_str().to_owned())),
         ),
         ("clientProduct", optional(client.product.clone())),
-        ("videoDecision", Value::Enum(Name::new("COPY"))),
+        (
+            "videoDecision",
+            Value::Enum(Name::new(match plan.video {
+                VideoAction::Copy => "COPY",
+                VideoAction::Encode(_) => "TRANSCODE",
+            })),
+        ),
         (
             "audioDecision",
-            Value::Enum(Name::new(match audio_action {
+            Value::Enum(Name::new(match plan.audio {
                 AudioAction::Copy => "COPY",
                 AudioAction::ConvertToAac => "TRANSCODE",
             })),
@@ -536,27 +623,27 @@ async fn touch_session(state: &PlexState, session: &str) {
     }
 }
 
-/// Starts the remux a request describes, and records the session.
+/// Starts the conversion a request describes, and records the session.
 async fn open_session(
     state: &PlexState,
     client: &ClientIdentity,
     params: &PlaybackParams,
     protocol: Protocol,
-) -> Result<(String, GqlItem, AudioAction), ApiError> {
+) -> Result<(String, GqlItem, StreamPlan), ApiError> {
     let session = params.session.clone().ok_or(ApiError::BadRequest)?;
     let item = item(state, params.rating_key()?).await?;
     let selection = Selection::of(&item, params)?;
-    let audio_action = selection.audio_action(params)?;
+    let plan = selection.plan(params)?;
     let source = file_of_part(state, selection.part.database_id()).await?;
 
     state
         .transcoder
-        .start_remux(RemuxRequest {
+        .start_stream(StreamRequest {
             session: session.clone(),
             source,
             video: track(selection.video),
             audio: track(selection.audio),
-            audio_action,
+            plan,
             offset: params.offset,
             protocol,
         })
@@ -566,7 +653,7 @@ async fn open_session(
         &session,
         &item,
         &selection,
-        audio_action,
+        &plan,
         client,
         params.offset,
     )
@@ -576,7 +663,7 @@ async fn open_session(
         state.transcoder.stop_session(&session);
         return Err(error);
     }
-    Ok((session, item, audio_action))
+    Ok((session, item, plan))
 }
 
 /// `GET /video/:/transcode/universal/start.m3u8`: the master playlist, one variant as on the
@@ -587,18 +674,19 @@ async fn start_hls(
     State(state): State<PlexState>,
     Query(params): Query<PlaybackParams>,
 ) -> Result<Response, ApiError> {
-    let (session, item, audio_action) =
-        open_session(&state, &client, &params, Protocol::Hls).await?;
+    let (session, item, plan) = open_session(&state, &client, &params, Protocol::Hls).await?;
     let selection = Selection::of(&item, &params)?;
 
-    let audio_bits = match audio_action {
+    let picture = Picture::of(&selection, &plan);
+    let audio_bits = match plan.audio {
         AudioAction::Copy => 0,
-        AudioAction::ConvertToAac => i64::from(AUDIO_BITRATE_KBPS) * 1000,
+        AudioAction::ConvertToAac => i64::from(plan.audio_kbps()) * 1000,
     };
-    let bandwidth = i64::from(selection.version.bitrate.unwrap_or(0)) + audio_bits;
-    let resolution = match (selection.version.width, selection.version.height) {
-        (Some(width), Some(height)) => format!(",RESOLUTION={width}x{height}"),
-        _ => String::new(),
+    let bandwidth = picture.video_bandwidth + audio_bits;
+    let resolution = if picture.width > 0 && picture.height > 0 {
+        format!(",RESOLUTION={}x{}", picture.width, picture.height)
+    } else {
+        String::new()
     };
     let frame_rate = selection
         .version
@@ -612,41 +700,71 @@ async fn start_hls(
 
 /// `GET /video/:/transcode/universal/start.mpd`: the reference's manifest, whole and static.
 ///
-/// It needs the codec strings only the process knows, read from the manifest it writes.
+/// A copy's codec strings are known only to the process, and read from the manifest it writes.
+/// An encode's are fixed: the reference announces them at once, and so does this.
 async fn start_dash(
     _caller: Caller,
     client: ClientIdentity,
     State(state): State<PlexState>,
     Query(params): Query<PlaybackParams>,
 ) -> Result<Response, ApiError> {
-    let (session, item, audio_action) =
-        open_session(&state, &client, &params, Protocol::Dash).await?;
+    let (session, item, plan) = open_session(&state, &client, &params, Protocol::Dash).await?;
     let selection = Selection::of(&item, &params)?;
-    let written = state.transcoder.session_manifest(&session).await?;
+    let written = match plan.video {
+        VideoAction::Copy => state.transcoder.session_manifest(&session).await?,
+        VideoAction::Encode(_) => String::new(),
+    };
 
     let duration = selection.version.duration_ms.unwrap_or(0).max(0);
-    let audio_bandwidth = match audio_action {
-        AudioAction::ConvertToAac => i64::from(AUDIO_BITRATE_KBPS) * 1000,
+    let picture = Picture::of(&selection, &plan);
+    let audio_bandwidth = match plan.audio {
+        AudioAction::ConvertToAac => i64::from(plan.audio_kbps()) * 1000,
         AudioAction::Copy => i64::from(selection.audio.bitrate.unwrap_or(0)),
     };
     let body = dash_manifest(&DashManifest {
         session: &session,
         duration_ms: duration,
-        video_bandwidth: i64::from(selection.version.bitrate.unwrap_or(0)),
-        width: selection.version.width.unwrap_or(0),
-        height: selection.version.height.unwrap_or(0),
+        segment_seconds: segment_seconds(&plan, Protocol::Dash),
+        video_bandwidth: picture.video_bandwidth,
+        width: picture.width,
+        height: picture.height,
         audio_bandwidth,
         written: &written,
     });
     Ok(([(header::CONTENT_TYPE, "application/dash+xml")], body).into_response())
 }
 
+/// What a manifest announces of the video: the file's, unless it is being re-encoded.
+struct Picture {
+    video_bandwidth: i64,
+    width: i64,
+    height: i64,
+}
+
+impl Picture {
+    fn of(selection: &Selection<'_>, plan: &StreamPlan) -> Self {
+        match plan.video {
+            VideoAction::Copy => Self {
+                video_bandwidth: i64::from(selection.version.bitrate.unwrap_or(0)),
+                width: i64::from(selection.version.width.unwrap_or(0)),
+                height: i64::from(selection.version.height.unwrap_or(0)),
+            },
+            VideoAction::Encode(encode) => Self {
+                video_bandwidth: i64::from(encode.video_kbps) * 1000,
+                width: i64::from(encode.width),
+                height: i64::from(encode.height),
+            },
+        }
+    }
+}
+
 struct DashManifest<'a> {
     session: &'a str,
     duration_ms: i64,
+    segment_seconds: u32,
     video_bandwidth: i64,
-    width: i32,
-    height: i32,
+    width: i64,
+    height: i64,
     audio_bandwidth: i64,
     /// The manifest the process wrote, which alone states the codecs.
     written: &'a str,
@@ -672,10 +790,11 @@ fn dash_manifest(manifest: &DashManifest<'_>) -> String {
         seconds % 60
     );
     let template = format!(
-        "<SegmentTemplate timescale=\"1\" duration=\"{DASH_SEGMENT_SECONDS}\" \
+        "<SegmentTemplate timescale=\"1\" duration=\"{segment}\" \
          initialization=\"session/{session}/$RepresentationID$/header\" \
          media=\"session/{session}/$RepresentationID$/$Number$.m4s\" startNumber=\"0\">\n\
-         \t\t\t</SegmentTemplate>"
+         \t\t\t</SegmentTemplate>",
+        segment = manifest.segment_seconds
     );
     let video_codecs =
         representation_attribute(manifest.written, 0, "codecs").unwrap_or("avc1.640028");
@@ -699,7 +818,7 @@ fn dash_manifest(manifest: &DashManifest<'_>) -> String {
          \tprofiles=\"urn:mpeg:dash:profile:isoff-live:2011\"\n\
          \ttype=\"static\"\n\
          \tmediaPresentationDuration=\"{duration}\"\n\
-         \tmaxSegmentDuration=\"PT10S\"\n\
+         \tmaxSegmentDuration=\"PT{longest}S\"\n\
          \tminBufferTime=\"PT10S\">\n\
          \t<Period start=\"PT0S\" id=\"0\" duration=\"{duration}\">\n\
          \t\t<AdaptationSet segmentAlignment=\"true\">\n\
@@ -719,6 +838,7 @@ fn dash_manifest(manifest: &DashManifest<'_>) -> String {
          \t\t</AdaptationSet>\n\
          \t</Period>\n\
          </MPD>\n",
+        longest = manifest.segment_seconds * 2,
         video = manifest.video_bandwidth,
         width = manifest.width,
         height = manifest.height,
@@ -891,6 +1011,7 @@ mod tests {
             offset: None,
             audio_stream_id: None,
             direct_stream_audio: None,
+            max_video_bitrate: None,
         }
     }
 
@@ -938,6 +1059,7 @@ mod tests {
         let text = dash_manifest(&DashManifest {
             session: "s1",
             duration_ms: 7_200_000,
+            segment_seconds: 5,
             video_bandwidth: 4_273_000,
             width: 1920,
             height: 1080,
@@ -946,6 +1068,7 @@ mod tests {
         });
         assert!(text.contains("type=\"static\""));
         assert!(text.contains("mediaPresentationDuration=\"PT2H0M0S\""));
+        assert!(text.contains("maxSegmentDuration=\"PT10S\""));
         assert!(
             text.contains(r#"duration="5" initialization="session/s1/$RepresentationID$/header""#)
         );

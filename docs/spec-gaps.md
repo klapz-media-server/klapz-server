@@ -379,7 +379,7 @@ change stamp and the last a cosmetic name; we read neither.
 **Direct Stream.** With `directPlay=0`, measured with `/decision` on one file of each of 16
 container and codec combinations, for Plex Web over HLS: H.264 is copied, AAC and MP3 are copied,
 other audio is converted to AAC. Any other video is converted to H.264, which we refuse with
-`501`, as we do DASH and `subtitles=burn`. `generalDecisionCode` is 1001 in all these cases, and
+`501`. `generalDecisionCode` is 1001 in all these cases, and
 `Part.decision` is `transcode` even when both tracks are copied.
 
 The command line is the reference's, from its log, and a test holds it to that. Two differences,
@@ -421,6 +421,36 @@ once for lack of a file, so when it decides to restart is ours: a chunk that is 
 nor being written, nor within 30 seconds of what the process has reached. Chunks already written
 stay on disk and are served without restarting anything. A chunk is written as `….m4s.tmp` and
 renamed when whole.
+
+### Lowering the quality
+
+`maxVideoBitrate`, in kilobits per second, is what Plex Web's quality menu sends; the same limit
+repeats inside `X-Plex-Client-Profile-Extra`, which we do not read. Measured over the bitrates
+that menu offers, on six H.264 films (not every bitrate on each), the reference then re-encodes to H.264 and converts the
+audio to AAC, always in stereo here, and the decision reports the output's size and bitrates.
+
+The command differs from a copy's: no `-noaccurate_seek`, `-ss` only for a real offset, `-fps_mode
+cfr` only without one, the AAC encoder `aac` instead of `aac_mf`, and a scale and pixel format
+filter. Segment length follows the output width, and with it the x264 options and the key frame
+interval: 8 seconds up to 720 wide, 5 up to 1280, 1 above. The manifest announces that duration,
+`maxSegmentDuration` twice it, and the fixed codecs `avc1.640028` and `mp4a.40.2` at once, without
+waiting for the process. A started offset of 600 gives `-skip_to_segment 121` at 5 seconds and
+`601` at 1, the numbering our seek already used.
+
+This is approximate in two places, and both are deliberate:
+
+- The reference copies the video only when the limit covers the peak bandwidth its analysis
+  stored per file (`requiredBandwidths`): a film averaging 1100 kbps with a peak of 3964 is
+  re-encoded at 3000 and copied at 4000. We hold no such analysis and compare with the file's
+  average, so we copy more often.
+- Resolution, bitrates and CRF vary from film to film on the reference. `plan::LADDER` holds the
+  values it produced for 1920-wide films: 3 Mbps, which it sends to 720 or 1280 wide depending on
+  the film, is 1280 here. We never enlarge, and never exceed the file's bitrate.
+
+A start that differs from the session running under the same id replaces it, should a player
+change quality without changing session; we have not observed which Plex Web does.
+Audio is converted whenever the video is re-encoded, `directStreamAudio=1` included,
+which no capture covers. Other codecs than H.264 still answer `501`.
 
 `subtitles=burn` with a selected subtitle forces a video transcode on the reference. Nothing here
 records a viewer's choice of subtitle, so none is ever selected and the video is copied.

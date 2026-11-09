@@ -1,4 +1,4 @@
-//! A remux in progress: one supervised transcoder process and the segments it has written.
+//! A stream in progress: one supervised transcoder process and the segments it has written.
 //!
 //! The command line is the reference's, taken from its log. The process reads the source and
 //! reports its segments over HTTP on loopback, as it does on Plex, at URLs holding an
@@ -15,7 +15,9 @@ use tokio::process::Command;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
-use crate::plan::{audio_decoder, language_tag, AudioAction, Track, AUDIO_BITRATE_KBPS};
+use crate::plan::{
+    audio_decoder, language_tag, AudioAction, StreamPlan, Track, VideoAction, VideoEncode,
+};
 use crate::{TranscodeError, Transcoder};
 
 /// Each session is a process and a directory of segments, and a client controls how many.
@@ -27,15 +29,20 @@ const IDLE_LIFETIME: Duration = Duration::from_secs(300);
 /// How long a request for a playlist or a segment waits for the process to reach it.
 const WAIT_FOR_OUTPUT: Duration = Duration::from_secs(20);
 
+/// How often a wait looks for a file. The process's announcements do not follow its files: it
+/// can write several chunks between two of them, and none after the last.
+const FILE_POLL: Duration = Duration::from_millis(100);
+
 /// Enough for a player to start without running dry.
 const SEGMENTS_BEFORE_PLAYLIST: usize = 3;
 
 /// How far ahead of what it has written a process is left to catch up by itself. A request
-/// beyond this is a seek: 30 seconds of film, a moment for a remux.
-const SEEK_MARGIN_CHUNKS: u32 = 6;
+/// beyond this is a seek: a moment for a remux, a few seconds for an encode.
+const SEEK_MARGIN_SECONDS: u32 = 30;
 
-/// The length of a DASH segment, as the reference asks for and announces it.
-pub const DASH_SEGMENT_SECONDS: u32 = 5;
+/// The length of a segment of copied video, as the reference asks for it.
+const COPIED_DASH_SEGMENT_SECONDS: u32 = 5;
+const COPIED_HLS_SEGMENT_SECONDS: u32 = 10;
 
 /// How the result reaches the player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,18 +51,44 @@ pub enum Protocol {
     Dash,
 }
 
+/// How long a session's segments are. An encode decides by its picture size.
+#[must_use]
+pub const fn segment_seconds(plan: &StreamPlan, protocol: Protocol) -> u32 {
+    match (plan.video, protocol) {
+        (VideoAction::Encode(encode), _) => encode.segment_seconds(),
+        (VideoAction::Copy, Protocol::Dash) => COPIED_DASH_SEGMENT_SECONDS,
+        (VideoAction::Copy, Protocol::Hls) => COPIED_HLS_SEGMENT_SECONDS,
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct RemuxRequest {
+pub struct StreamRequest {
     /// The client's session identifier, which later requests name it by.
     pub session: String,
     /// The file, already checked to lie within a library.
     pub source: PathBuf,
     pub video: Track,
     pub audio: Track,
-    pub audio_action: AudioAction,
+    pub plan: StreamPlan,
     /// Where to start, in seconds.
     pub offset: Option<f64>,
     pub protocol: Protocol,
+}
+
+impl StreamRequest {
+    /// Whether this asks for what a running session already produces. A player may change quality
+    /// under the same session id.
+    fn produces_the_same_as(&self, other: &Self) -> bool {
+        self.source == other.source
+            && self.video == other.video
+            && self.audio == other.audio
+            && self.plan == other.plan
+            && self.protocol == other.protocol
+    }
+
+    const fn segment_seconds(&self) -> u32 {
+        segment_seconds(&self.plan, self.protocol)
+    }
 }
 
 /// One segment, once the process has announced it.
@@ -102,7 +135,7 @@ struct Run {
 pub(crate) struct Session {
     callback: String,
     url: String,
-    request: RemuxRequest,
+    request: StreamRequest,
     directory: PathBuf,
     progress: Mutex<Progress>,
     changed: Notify,
@@ -157,6 +190,22 @@ impl Session {
         }
     }
 
+    /// Waits for one of the files the process is expected to write.
+    async fn wait_for_file(&self, paths: &[PathBuf]) -> Result<(), TranscodeError> {
+        let deadline = tokio::time::Instant::now() + WAIT_FOR_OUTPUT;
+        loop {
+            if paths.iter().any(|path| path.exists()) {
+                return Ok(());
+            }
+            if self.with_progress(|progress| progress.ended)
+                || tokio::time::Instant::now() >= deadline
+            {
+                return Err(TranscodeError::UnknownSegment);
+            }
+            tokio::time::sleep(FILE_POLL).await;
+        }
+    }
+
     fn with_run<T>(&self, read: impl FnOnce(&mut Option<Run>) -> T) -> T {
         read(&mut self.run.lock().unwrap_or_else(PoisonError::into_inner))
     }
@@ -182,9 +231,10 @@ impl Session {
             .directory
             .join(format!("chunk-stream{stream}-{number:05}.m4s.tmp"))
             .exists();
+        let margin = SEEK_MARGIN_SECONDS.div_ceil(self.request.segment_seconds());
         number == first
             || in_progress
-            || (number.saturating_sub(SEEK_MARGIN_CHUNKS).max(first)..number)
+            || (number.saturating_sub(margin).max(first)..number)
                 .any(|earlier| self.chunk_path(stream, earlier).exists())
     }
 
@@ -232,7 +282,7 @@ fn parse_announcement(body: &str) -> Vec<(u32, Announced)> {
         .collect()
 }
 
-fn hls_output(callback: &str) -> Vec<String> {
+fn hls_output(callback: &str, seconds: u32) -> Vec<String> {
     [
         "-segment_format",
         "mpegts",
@@ -241,7 +291,7 @@ fn hls_output(callback: &str) -> Vec<String> {
         "-individual_header_trailer",
         "0",
         "-segment_time",
-        "10",
+        &seconds.to_string(),
         "-segment_start_number",
         "0",
         "-segment_time_delta",
@@ -274,14 +324,14 @@ fn hls_output(callback: &str) -> Vec<String> {
     .collect()
 }
 
-/// This build keeps the chunks on a grid of `DASH_SEGMENT_SECONDS` even when copying video, so
-/// their number says where they are in time: 494 chunks for 2467 seconds.
-fn dash_output(callback: &str, first_chunk: u32) -> Vec<String> {
+/// This build keeps the chunks on a grid of `seconds` even when copying video, so their number
+/// says where they are in time: 494 chunks of 5 seconds for 2467 seconds.
+fn dash_output(callback: &str, seconds: u32, first_chunk: u32) -> Vec<String> {
     [
         "-f",
         "dash",
         "-seg_duration",
-        &DASH_SEGMENT_SECONDS.to_string(),
+        &seconds.to_string(),
         "-dash_segment_type",
         "mp4",
         "-init_seg_name",
@@ -309,36 +359,40 @@ fn dash_output(callback: &str, first_chunk: u32) -> Vec<String> {
     .collect()
 }
 
-fn remux_arguments(request: &RemuxRequest, callback: &str, first_chunk: u32) -> Vec<String> {
-    let RemuxRequest {
+fn strings(values: &[&str]) -> Vec<String> {
+    values.iter().map(ToString::to_string).collect()
+}
+
+fn input_arguments(request: &StreamRequest, callback: &str) -> Vec<String> {
+    let StreamRequest {
         video,
         audio,
-        audio_action,
+        plan,
         offset,
         protocol,
         ..
     } = request;
-    let mut args: Vec<String> = Vec::new();
-    let mut push = |values: &[&str]| args.extend(values.iter().map(ToString::to_string));
-    let converts = *audio_action == AudioAction::ConvertToAac;
-
-    push(&[&format!("-codec:{}", video.index), "h264"]);
-    if converts {
-        push(&[
+    let encodes = plan.video != VideoAction::Copy;
+    let mut args = strings(&[&format!("-codec:{}", video.index), "h264"]);
+    if plan.audio == AudioAction::ConvertToAac {
+        args.extend(strings(&[
             &format!("-codec:{}", audio.index),
             audio_decoder(&audio.codec),
-        ]);
+        ]));
     }
-    // The reference always states it for DASH, and for HLS only when there is one.
+    // The reference always states it for copied DASH, otherwise only when there is one.
     let start = match protocol {
+        _ if encodes => offset.filter(|seconds| *seconds > 0.0),
         Protocol::Dash => Some(offset.unwrap_or(0.0)),
         Protocol::Hls => *offset,
     };
     if let Some(start) = start {
-        push(&["-ss", &start.to_string()]);
+        args.extend(strings(&["-ss", &start.to_string()]));
     }
-    push(&[
-        "-noaccurate_seek",
+    if !encodes {
+        args.push("-noaccurate_seek".to_owned());
+    }
+    args.extend(strings(&[
         "-analyzeduration",
         "20000000",
         "-probesize",
@@ -347,8 +401,11 @@ fn remux_arguments(request: &RemuxRequest, callback: &str, first_chunk: u32) -> 
         &format!("{callback}/source"),
         "-start_at_zero",
         "-copyts",
-        "-fps_mode",
-        "cfr",
+    ]));
+    if !encodes || start.is_none() {
+        args.extend(strings(&["-fps_mode", "cfr"]));
+    }
+    args.extend(strings(&[
         "-y",
         "-nostats",
         "-loglevel",
@@ -357,43 +414,100 @@ fn remux_arguments(request: &RemuxRequest, callback: &str, first_chunk: u32) -> 
         "error",
         "-progressurl",
         &format!("{callback}/progress"),
-        "-map",
-        &format!("0:{}", video.index),
-    ]);
-    if let Some(tag) = video.language.as_deref().and_then(language_tag) {
-        push(&["-metadata:s:0", &format!("language={tag}")]);
-    }
-    push(&["-codec:0", "copy"]);
+    ]));
+    args
+}
 
-    if converts {
-        push(&[
+fn video_encoder_options(encode: &VideoEncode) -> Vec<String> {
+    let mut args = strings(&[
+        "-codec:0",
+        "libx264",
+        "-crf:0",
+        &encode.crf.to_string(),
+        "-maxrate:0",
+        &format!("{}k", encode.video_kbps),
+        "-bufsize:0",
+        &format!("{}k", encode.video_kbps * 2),
+    ]);
+    if let Some(rate) = encode.frame_rate {
+        args.extend(strings(&["-r:0", &rate.to_string()]));
+    }
+    args.extend(strings(&[
+        "-preset:0",
+        "veryfast",
+        "-x264opts:0",
+        encode.x264_options(),
+        "-force_key_frames:0",
+        &format!("expr:gte(t,n_forced*{})", encode.segment_seconds()),
+    ]));
+    args
+}
+
+fn video_arguments(video: &Track, action: VideoAction) -> Vec<String> {
+    let mut args = match action {
+        VideoAction::Copy => strings(&["-map", &format!("0:{}", video.index)]),
+        VideoAction::Encode(encode) => strings(&[
             "-filter_complex",
             &format!(
-                "[0:{}] aresample=async=1:ochl='stereo':rematrix_maxval=0.000000dB:osr=48000[0]",
+                "[0:{}]scale=w={}:h={}:force_divisible_by=4[0];[0]format=pix_fmts=yuv420p|nv12[1]",
+                video.index, encode.width, encode.height
+            ),
+            "-map",
+            "[1]",
+        ]),
+    };
+    if let Some(tag) = video.language.as_deref().and_then(language_tag) {
+        args.extend(strings(&["-metadata:s:0", &format!("language={tag}")]));
+    }
+    match action {
+        VideoAction::Copy => args.extend(strings(&["-codec:0", "copy"])),
+        VideoAction::Encode(encode) => args.extend(video_encoder_options(&encode)),
+    }
+    args
+}
+
+fn audio_arguments(audio: &Track, plan: &StreamPlan) -> Vec<String> {
+    let converts = plan.audio == AudioAction::ConvertToAac;
+    let encodes = plan.video != VideoAction::Copy;
+    let mut args = if converts {
+        // Filter outputs are numbered across the command, after the video's two.
+        let label = if encodes { 2 } else { 0 };
+        strings(&[
+            "-filter_complex",
+            &format!(
+                "[0:{}] aresample=async=1:ochl='stereo':rematrix_maxval=0.000000dB:osr=48000[{label}]",
                 audio.index
             ),
             "-map",
-            "[0]",
-        ]);
+            &format!("[{label}]"),
+        ])
     } else {
-        push(&["-map", &format!("0:{}", audio.index)]);
-    }
+        strings(&["-map", &format!("0:{}", audio.index)])
+    };
     if let Some(tag) = audio.language.as_deref().and_then(language_tag) {
-        push(&["-metadata:s:1", &format!("language={tag}")]);
+        args.extend(strings(&["-metadata:s:1", &format!("language={tag}")]));
     }
     if converts {
-        push(&[
+        args.extend(strings(&[
             "-codec:1",
-            "aac_mf",
+            if encodes { "aac" } else { "aac_mf" },
             "-b:1",
-            &format!("{AUDIO_BITRATE_KBPS}k"),
-        ]);
+            &format!("{}k", plan.audio_kbps()),
+        ]));
     } else {
-        push(&["-codec:1", "copy"]);
+        args.extend(strings(&["-codec:1", "copy"]));
     }
-    args.extend(match protocol {
-        Protocol::Hls => hls_output(callback),
-        Protocol::Dash => dash_output(callback, first_chunk),
+    args
+}
+
+fn stream_arguments(request: &StreamRequest, callback: &str, first_chunk: u32) -> Vec<String> {
+    let seconds = request.segment_seconds();
+    let mut args = input_arguments(request, callback);
+    args.extend(video_arguments(&request.video, request.plan.video));
+    args.extend(audio_arguments(&request.audio, &request.plan));
+    args.extend(match request.protocol {
+        Protocol::Hls => hls_output(callback, seconds),
+        Protocol::Dash => dash_output(callback, seconds, first_chunk),
     });
     args
 }
@@ -404,11 +518,11 @@ fn sessions_root() -> PathBuf {
 
 /// Moves a DASH start onto the chunk grid and says which chunk that is. A chunk's number has to
 /// say where it is in time, so the process must start on one.
-fn align_to_chunk(request: &mut RemuxRequest) -> u32 {
+fn align_to_chunk(request: &mut StreamRequest) -> u32 {
     if request.protocol == Protocol::Hls {
         return 1;
     }
-    let seconds = f64::from(DASH_SEGMENT_SECONDS);
+    let seconds = f64::from(request.segment_seconds());
     let whole = (request.offset.unwrap_or(0.0).max(0.0) / seconds).floor();
     request.offset = Some(whole * seconds);
     // Far beyond any film's length, so the cast loses nothing.
@@ -473,15 +587,18 @@ impl Transcoder {
     }
 
     /// Starts a session, or does nothing if the client's is already running: a player asks
-    /// for the same start more than once.
+    /// for the same start more than once. Asking for something else replaces it.
     ///
     /// # Errors
     ///
     /// [`TranscodeError::TooManySessions`] at the limit, or if the process cannot be started.
-    pub async fn start_remux(&self, mut request: RemuxRequest) -> Result<(), TranscodeError> {
+    pub async fn start_stream(&self, mut request: StreamRequest) -> Result<(), TranscodeError> {
         self.stop_idle_sessions();
-        if self.session(&request.session).is_some() {
-            return Ok(());
+        if let Some(running) = self.session(&request.session) {
+            if running.request.produces_the_same_as(&request) {
+                return Ok(());
+            }
+            self.stop_session(&request.session);
         }
         if self
             .sessions
@@ -537,12 +654,12 @@ impl Transcoder {
     fn launch(
         &self,
         session: &Arc<Session>,
-        request: &RemuxRequest,
+        request: &StreamRequest,
         first_chunk: u32,
     ) -> Result<(), TranscodeError> {
         let mut command = Command::new(&self.config.binary);
         command
-            .args(remux_arguments(request, &session.url, first_chunk))
+            .args(stream_arguments(request, &session.url, first_chunk))
             .current_dir(&session.directory)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -621,7 +738,7 @@ impl Transcoder {
             }
         }
         let mut request = session.request.clone();
-        request.offset = Some(f64::from((number - 1) * DASH_SEGMENT_SECONDS));
+        request.offset = Some(f64::from((number - 1) * request.segment_seconds()));
         self.launch(session, &request, number)
     }
 
@@ -716,20 +833,20 @@ impl Transcoder {
             .ok_or(TranscodeError::UnknownSegment)
     }
 
-    /// A DASH stream's initialization segment.
+    /// A DASH stream's initialization segment, waiting for it.
     ///
     /// # Errors
     ///
-    /// As [`Self::session_manifest`].
+    /// [`TranscodeError::UnknownSession`], or [`TranscodeError::UnknownSegment`] if it never
+    /// appears.
     pub async fn dash_header(&self, id: &str, stream: u32) -> Result<PathBuf, TranscodeError> {
-        self.session_manifest(id).await?;
         let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
-        let path = session.directory.join(format!("init-stream{stream}.m4s"));
-        if path.exists() {
-            Ok(path)
-        } else {
-            Err(TranscodeError::UnknownSegment)
-        }
+        // Unlike a chunk it has no temporary name: it is whole once the first chunk is begun.
+        let first = session.with_run(|run| run.as_ref().map_or(1, |run| run.first_chunk));
+        let finished = session.chunk_path(stream, first);
+        let begun = finished.with_extension("m4s.tmp");
+        session.wait_for_file(&[begun, finished]).await?;
+        Ok(session.directory.join(format!("init-stream{stream}.m4s")))
     }
 
     /// A finished DASH chunk. `number` counts from zero, as the manifest given to the player
@@ -737,7 +854,7 @@ impl Transcoder {
     ///
     /// # Errors
     ///
-    /// As [`Self::session_manifest`].
+    /// As [`Self::dash_header`].
     pub async fn dash_chunk(
         &self,
         id: &str,
@@ -754,19 +871,8 @@ impl Transcoder {
         if !session.will_reach(stream, number) {
             self.seek(&session, stream, number).await?;
         }
-        let deadline = tokio::time::Instant::now() + WAIT_FOR_OUTPUT;
-        loop {
-            let change = session.changed.notified();
-            if path.exists() {
-                return Ok(path);
-            }
-            if session.with_progress(|progress| progress.ended) {
-                return Err(TranscodeError::UnknownSegment);
-            }
-            if tokio::time::timeout_at(deadline, change).await.is_err() {
-                return Err(TranscodeError::UnknownSegment);
-            }
-        }
+        session.wait_for_file(std::slice::from_ref(&path)).await?;
+        Ok(path)
     }
 
     /// The source of the session behind a callback URL, for the process to read.
@@ -818,13 +924,16 @@ mod tests {
         }
     }
 
-    fn request(audio_action: AudioAction) -> RemuxRequest {
-        RemuxRequest {
+    fn request(audio: AudioAction) -> StreamRequest {
+        StreamRequest {
             session: "s".to_owned(),
             source: PathBuf::from("x"),
             video: track(0, "h264", "en"),
             audio: track(1, "dca", "fr"),
-            audio_action,
+            plan: StreamPlan {
+                video: VideoAction::Copy,
+                audio,
+            },
             offset: None,
             protocol: Protocol::Hls,
         }
@@ -832,7 +941,7 @@ mod tests {
 
     #[test]
     fn writes_the_references_command_line() {
-        let args = remux_arguments(&request(AudioAction::ConvertToAac), "CB", 1);
+        let args = stream_arguments(&request(AudioAction::ConvertToAac), "CB", 1);
         // The space inside the filter is what makes it one argument here and several there.
         let joined = args.join(" ").replace("[0:1] aresample", "[0:1]_aresample");
         assert_eq!(joined, CAPTURED);
@@ -855,10 +964,90 @@ mod tests {
         let mut asked = request(AudioAction::ConvertToAac);
         asked.protocol = Protocol::Dash;
         asked.audio = track(2, "eac3", "fr");
-        let joined = remux_arguments(&asked, "CB", 1)
+        let joined = stream_arguments(&asked, "CB", 1)
             .join(" ")
             .replace("[0:2] aresample", "[0:2]_aresample");
         assert_eq!(joined, CAPTURED_DASH);
+    }
+
+    /// From the reference's log: film 513702 limited to 2 Mbps, H.264 at 0 and E-AC-3 at 1.
+    const CAPTURED_ENCODE: &str = "-codec:0 h264 -codec:1 eac3_mf -analyzeduration 20000000 \
+-probesize 20000000 -i CB/source -start_at_zero -copyts -fps_mode cfr -y -nostats -loglevel quiet \
+-loglevel_plex error -progressurl CB/progress \
+-filter_complex [0:0]scale=w=720:h=388:force_divisible_by=4[0];[0]format=pix_fmts=yuv420p|nv12[1] \
+-map [1] -metadata:s:0 language=eng -codec:0 libx264 -crf:0 20 -maxrate:0 1333k -bufsize:0 2666k \
+-r:0 25 -preset:0 veryfast -x264opts:0 subme=2:me_range=4:rc_lookahead=20:me=hex \
+-force_key_frames:0 expr:gte(t,n_forced*8) \
+-filter_complex [0:1]_aresample=async=1:ochl='stereo':rematrix_maxval=0.000000dB:osr=48000[2] \
+-map [2] -metadata:s:1 language=fra -codec:1 aac -b:1 167k -f dash -seg_duration 8 \
+-dash_segment_type mp4 -init_seg_name init-stream$RepresentationID$.m4s \
+-media_seg_name chunk-stream$RepresentationID$-$Number%05d$.m4s -window_size 5 -delete_removed false \
+-skip_to_segment 1 -manifest_name CB/manifest?X-Plex-Http-Pipeline=infinite -avoid_negative_ts disabled \
+-map_metadata -1 -map_chapters -1 dash";
+
+    fn encoded(
+        width: u32,
+        height: u32,
+        video_kbps: u32,
+        audio_kbps: u32,
+        crf: u32,
+    ) -> StreamRequest {
+        let mut asked = request(AudioAction::ConvertToAac);
+        asked.protocol = Protocol::Dash;
+        asked.audio = track(1, "eac3", "fr");
+        asked.offset = Some(0.0);
+        asked.plan.video = VideoAction::Encode(VideoEncode {
+            width,
+            height,
+            video_kbps,
+            audio_kbps,
+            crf,
+            frame_rate: Some(25.0),
+        });
+        asked
+    }
+
+    #[test]
+    fn writes_the_references_encoding_command_line() {
+        let joined = stream_arguments(&encoded(720, 388, 1333, 167, 20), "CB", 1)
+            .join(" ")
+            .replace("[0:1] aresample", "[0:1]_aresample");
+        assert_eq!(joined, CAPTURED_ENCODE);
+    }
+
+    /// From the reference's log, started at 600 seconds: an exact seek, and no `-fps_mode`.
+    #[test]
+    fn an_encode_seeks_as_the_reference_does() {
+        let mut asked = encoded(1280, 692, 2566, 98, 24);
+        asked.offset = Some(600.0);
+        let joined = stream_arguments(&asked, "CB", 121).join(" ");
+        assert!(joined.starts_with("-codec:0 h264 -codec:1 eac3_mf -ss 600 -analyzeduration"));
+        assert!(joined.contains("-copyts -y -nostats"));
+        assert!(joined.contains("-force_key_frames:0 expr:gte(t,n_forced*5) "));
+        assert!(joined.contains("-seg_duration 5 "));
+        assert!(joined.contains("-skip_to_segment 121 "));
+        assert!(joined.contains(
+            "-x264opts:0 subme=1:me_range=4:rc_lookahead=10:me=hex:8x8dct=0:partitions=none "
+        ));
+    }
+
+    #[test]
+    fn a_change_of_quality_is_not_the_same_stream() {
+        let copied = request(AudioAction::ConvertToAac);
+        let mut resumed = copied.clone();
+        resumed.offset = Some(90.0);
+        assert!(copied.produces_the_same_as(&resumed));
+
+        let lowered = encoded(720, 388, 1333, 167, 20);
+        assert!(!copied.produces_the_same_as(&lowered));
+    }
+
+    #[test]
+    fn an_encode_lands_on_its_own_chunk_grid() {
+        let mut asked = encoded(720, 388, 1333, 167, 20);
+        asked.offset = Some(603.0);
+        assert_eq!(align_to_chunk(&mut asked), 76);
+        assert_eq!(asked.offset, Some(600.0));
     }
 
     /// Measured on the transcoder itself: chunk 121 of a 5-second grid starts at 600 seconds.
@@ -867,7 +1056,7 @@ mod tests {
         let mut asked = request(AudioAction::Copy);
         asked.protocol = Protocol::Dash;
         asked.offset = Some(600.0);
-        let joined = remux_arguments(&asked, "CB", 121).join(" ");
+        let joined = stream_arguments(&asked, "CB", 121).join(" ");
         assert!(joined.contains("-ss 600 -noaccurate_seek"));
         assert!(joined.contains("-skip_to_segment 121 "));
     }
@@ -895,7 +1084,7 @@ mod tests {
 
     #[test]
     fn copied_audio_is_neither_decoded_nor_filtered() {
-        let joined = remux_arguments(&request(AudioAction::Copy), "CB", 1).join(" ");
+        let joined = stream_arguments(&request(AudioAction::Copy), "CB", 1).join(" ");
         assert!(!joined.contains("-codec:1 dca"));
         assert!(!joined.contains("aresample"));
         assert!(joined.contains("-map 0:1 -metadata:s:1 language=fra -codec:1 copy"));
@@ -906,7 +1095,7 @@ mod tests {
         let mut asked = request(AudioAction::Copy);
         asked.video.index = 5;
         asked.audio.index = 0;
-        let joined = remux_arguments(&asked, "CB", 1).join(" ");
+        let joined = stream_arguments(&asked, "CB", 1).join(" ");
         assert!(joined.starts_with("-codec:5 h264"));
         assert!(joined.contains("-map 0:5 "));
         assert!(joined.contains("-map 0:0 "));
@@ -916,7 +1105,7 @@ mod tests {
     fn seeks_before_opening_the_input() {
         let mut asked = request(AudioAction::Copy);
         asked.offset = Some(90.0);
-        let joined = remux_arguments(&asked, "CB", 1).join(" ");
+        let joined = stream_arguments(&asked, "CB", 1).join(" ");
         assert!(joined.contains("-ss 90 -noaccurate_seek -analyzeduration"));
     }
 
