@@ -1213,6 +1213,9 @@ mod tests {
         assert_eq!(asked.offset, Some(0.0));
     }
 
+    /// The reference's log shows an HLS seek at 600s on an 8-second grid as
+    /// `-ss 600 … -segment_start_number 75` (75 = 600 / 8): `-ss N*seconds`, output numbered
+    /// from the target segment N.
     #[test]
     fn an_hls_seek_numbers_its_segments_from_the_target() {
         let mut asked = request(AudioAction::Copy);
