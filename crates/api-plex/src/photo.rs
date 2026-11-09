@@ -47,7 +47,8 @@ impl From<TranscodeError> for ApiError {
     fn from(error: TranscodeError) -> Self {
         // Matched exhaustively on purpose, so a new failure has to choose its status.
         match error {
-            TranscodeError::InvalidSource => Self::BadRequest,
+            // The reference answers `400` too when it will not start another stream.
+            TranscodeError::InvalidSource | TranscodeError::TooManySessions => Self::BadRequest,
             TranscodeError::ForbiddenSource => Self::Forbidden,
             TranscodeError::UnavailableSource
             | TranscodeError::MissingFile
@@ -62,7 +63,6 @@ impl From<TranscodeError> for ApiError {
             | TranscodeError::Worker(_)
             | TranscodeError::ShuttingDown(_)
             | TranscodeError::OutsideLibrary
-            | TranscodeError::TooManySessions
             | TranscodeError::Spawn(_)
             | TranscodeError::Io(_) => Self::Internal(Box::new(error)),
         }

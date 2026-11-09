@@ -778,6 +778,9 @@ None of this is in the spec. Measured against the reference and plex.tv.
   Discover provider answers it: `{"MediaContainer":{"identifier":"tv.plex.provider.discover",
   "size":1,"UserState":[{"ratingKey":…,"type":"movie","viewCount":0,"viewOffset":0}]}}`, and
   `404` for an identifier it does not know.
+- A new conversion with the `X-Plex-Session-Identifier` of a running one replaces it on the
+  reference: the old session's segments answer `404` as soon as the new one has started. Plex Web
+  relies on this when changing quality, opening a new `session=` without stopping the last.
 - A stream's `header` and chunks are served without a token by the reference, from the LAN too:
   the manifest carries no `X-Plex-Token` and players fetch its relative URLs as they are. An
   unknown session answers `404` with or without a token.

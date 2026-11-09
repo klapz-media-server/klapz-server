@@ -661,10 +661,11 @@ async fn open_session(
     let source = file_of_part(state, selection.part.database_id()).await?;
     let conversion = gql::session_key(&session);
 
-    state
+    let replaced = state
         .transcoder
         .start_stream(StreamRequest {
             session: conversion.clone(),
+            playback: client.session_identifier.as_deref().map(gql::session_key),
             source,
             video: track(selection.video),
             audio: track(selection.audio),
@@ -673,6 +674,9 @@ async fn open_session(
             protocol,
         })
         .await?;
+    for stored in replaced {
+        end_record(state, gql::client_key(&stored)).await;
+    }
     let recorded = record_start(
         state,
         &session,
@@ -983,6 +987,11 @@ async fn stop(
     if !state.transcoder.stop_session(&gql::session_key(&session)) {
         return StatusCode::NOT_FOUND;
     }
+    end_record(&state, session).await;
+    StatusCode::OK
+}
+
+async fn end_record(state: &PlexState, session: String) {
     let mut variables = Variables::default();
     variables.insert(Name::new("key"), Value::String(session));
     let ended: Result<serde::de::IgnoredAny, ApiError> =
@@ -991,7 +1000,6 @@ async fn stop(
         // It expires by itself.
         tracing::warn!(%error, "could not close a playback session");
     }
-    StatusCode::OK
 }
 
 async fn callback_source(

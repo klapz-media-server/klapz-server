@@ -48,6 +48,14 @@ pub fn session_key(client_key: &str) -> String {
     )
 }
 
+/// The name a client knows a stored session by.
+pub fn client_key(stored: &str) -> String {
+    caller().map_or_else(
+        || stored.to_owned(),
+        |caller| caller.client_key(stored).to_owned(),
+    )
+}
+
 /// Runs a query and deserializes `data` into `T`.
 ///
 /// `query` is always one of this crate's own constants. It is borrowed rather than

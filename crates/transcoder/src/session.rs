@@ -70,6 +70,9 @@ pub const fn segment_seconds(plan: &StreamPlan, protocol: Protocol) -> u32 {
 pub struct StreamRequest {
     /// The client's session identifier, which later requests name it by.
     pub session: String,
+    /// What is being watched, across changes of quality: a new stream under the same name
+    /// replaces the one before it.
+    pub playback: Option<String>,
     /// The file, already checked to lie within a library.
     pub source: PathBuf,
     pub video: Track,
@@ -610,16 +613,21 @@ impl Transcoder {
     }
 
     /// Starts a session, or does nothing if the client's is already running: a player asks
-    /// for the same start more than once. Asking for something else replaces it.
+    /// for the same start more than once. Asking for something else replaces it. Returns the
+    /// sessions of the same playback it replaced, which the caller may hold records of.
     ///
     /// # Errors
     ///
     /// [`TranscodeError::TooManySessions`] at the limit, or if the process cannot be started.
-    pub async fn start_stream(&self, mut request: StreamRequest) -> Result<(), TranscodeError> {
+    pub async fn start_stream(
+        &self,
+        mut request: StreamRequest,
+    ) -> Result<Vec<String>, TranscodeError> {
         self.stop_idle_sessions();
+        let replaced = self.stop_streams_of(request.playback.as_deref(), &request.session);
         if let Some(running) = self.session(&request.session) {
             if running.request.produces_the_same_as(&request) {
-                return Ok(());
+                return Ok(replaced);
             }
             self.stop_session(&request.session);
         }
@@ -670,7 +678,28 @@ impl Transcoder {
                 .remove(&key);
             return Err(error);
         }
-        Ok(())
+        Ok(replaced)
+    }
+
+    /// A player changing quality opens a new session and leaves the old one for us to close.
+    fn stop_streams_of(&self, playback: Option<&str>, keep: &str) -> Vec<String> {
+        let Some(playback) = playback else {
+            return Vec::new();
+        };
+        let replaced: Vec<String> = self
+            .sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .filter(|(id, session)| {
+                id.as_str() != keep && session.request.playback.as_deref() == Some(playback)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &replaced {
+            self.stop_session(id);
+        }
+        replaced
     }
 
     /// Starts a process for this session, which must have none running.
@@ -954,6 +983,7 @@ mod tests {
     fn request(audio: AudioAction) -> StreamRequest {
         StreamRequest {
             session: "s".to_owned(),
+            playback: None,
             source: PathBuf::from("x"),
             video: track(0, "h264", "en"),
             audio: track(1, "dca", "fr"),
@@ -1188,6 +1218,35 @@ mod tests {
             .lock()
             .unwrap()
             .insert("known".to_owned(), session);
+    }
+
+    #[test]
+    fn a_new_stream_replaces_the_one_before_it_under_the_same_playback() {
+        let transcoder = Transcoder::default();
+        let running = |playback: Option<&str>| {
+            let mut session = session_writing_to(scratch_directory(), false);
+            Arc::get_mut(&mut session).unwrap().request.playback = playback.map(str::to_owned);
+            session
+        };
+        for (id, playback) in [
+            ("old", Some("tab")),
+            ("new", Some("tab")),
+            ("elsewhere", Some("other")),
+            ("unnamed", None),
+        ] {
+            transcoder
+                .sessions
+                .lock()
+                .unwrap()
+                .insert(id.to_owned(), running(playback));
+        }
+
+        assert_eq!(transcoder.stop_streams_of(Some("tab"), "new"), ["old"]);
+        assert!(transcoder.session("old").is_none());
+        for id in ["new", "elsewhere", "unnamed"] {
+            assert!(transcoder.session(id).is_some(), "{id}");
+        }
+        assert!(transcoder.stop_streams_of(None, "new").is_empty());
     }
 
     #[tokio::test(start_paused = true)]
