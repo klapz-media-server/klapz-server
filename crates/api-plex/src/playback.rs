@@ -570,6 +570,7 @@ async fn record_start(
     let optional = |value: Option<String>| value.map_or(Value::Null, Value::String);
     let fields = [
         ("key", Value::String(session.to_owned())),
+        ("playbackId", optional(client.session_identifier.clone())),
         ("itemId", Value::String(item.id.clone())),
         ("fileId", Value::String(selection.part.id.clone())),
         (

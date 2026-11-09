@@ -65,6 +65,7 @@ IMPLEMENTED = frozenset(
         "/library/sections/{sectionId}/prefs",
         "/library/metadata/{ids}/related",
         "/library/metadata/{ids}/similar",
+        "/:/timeline",
     }
 )
 

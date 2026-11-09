@@ -54,6 +54,9 @@ pub struct ClientIdentity {
     /// The language the client's interface is in, `fr` or `en-US`: the server translates
     /// the strings it writes itself, hub titles among them.
     pub language: Option<String>,
+    /// One playback in this client. Not the transcode `session`, which changes with the
+    /// quality while this stays; it is all a timeline has to name what it reports on.
+    pub session_identifier: Option<String>,
 }
 
 impl ClientIdentity {
@@ -85,6 +88,7 @@ impl ClientIdentity {
             device_name: field("X-Plex-Device-Name"),
             marketplace: field("X-Plex-Marketplace"),
             language: field("X-Plex-Language"),
+            session_identifier: field("X-Plex-Session-Identifier"),
         }
     }
 }
@@ -142,7 +146,7 @@ mod tests {
                  &X-Plex-Version=4.1&X-Plex-Platform=Chrome&X-Plex-Platform-Version=120.0\
                  &X-Plex-Device=Windows&X-Plex-Model=hosted&X-Plex-Device-Vendor=Microsoft\
                  &X-Plex-Device-Name=Living%20Room&X-Plex-Marketplace=googlePlay\
-                 &X-Plex-Language=fr",
+                 &X-Plex-Language=fr&X-Plex-Session-Identifier=tab1",
             ),
         );
         assert_eq!(
@@ -159,6 +163,7 @@ mod tests {
                 device_name: Some("Living Room".to_owned()),
                 marketplace: Some("googlePlay".to_owned()),
                 language: Some("fr".to_owned()),
+                session_identifier: Some("tab1".to_owned()),
             }
         );
     }

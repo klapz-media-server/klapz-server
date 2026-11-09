@@ -8,6 +8,7 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(unique)]
     pub session_key: String,
+    pub playback_id: Option<String>,
     pub item_id: i64,
     pub part_id: i64,
     pub client: Option<String>,

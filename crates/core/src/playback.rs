@@ -28,8 +28,10 @@ pub enum StreamDecision {
 /// A session being opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewPlaybackSession {
-    /// The client's own identifier for this playback.
+    /// The client's own identifier for this conversion. Changes with the quality.
     pub key: String,
+    /// The player's identifier for the whole playback, which is what its reports name.
+    pub playback_id: Option<String>,
     pub item: RatingKey,
     pub part: PartId,
     pub client: Option<String>,
@@ -43,6 +45,7 @@ pub struct NewPlaybackSession {
 pub struct PlaybackSession {
     pub id: i64,
     pub key: String,
+    pub playback_id: Option<String>,
     pub item: RatingKey,
     pub part: PartId,
     pub client: Option<String>,
@@ -75,6 +78,19 @@ pub trait PlaybackRepository: Send + Sync + std::fmt::Debug {
 
     /// Pushes a session's expiry forward. Whether it exists and has not expired.
     async fn touch(&self, key: &str, now: i64) -> Result<bool, PlaybackError>;
+
+    /// Records where a player stands, on every unexpired session of its playback. Without a
+    /// position, the last one stays. Whether there was any.
+    async fn report(
+        &self,
+        playback_id: &str,
+        state: PlaybackState,
+        position_ms: Option<i64>,
+        now: i64,
+    ) -> Result<bool, PlaybackError>;
+
+    /// Closes every session of a playback. Whether there was any.
+    async fn end_playback(&self, playback_id: &str) -> Result<bool, PlaybackError>;
 
     /// Closes a session. Whether it existed.
     async fn end(&self, key: &str) -> Result<bool, PlaybackError>;

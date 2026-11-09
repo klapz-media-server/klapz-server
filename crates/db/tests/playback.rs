@@ -18,6 +18,7 @@ async fn repository() -> SqlPlaybackRepository {
 fn session(key: &str) -> NewPlaybackSession {
     NewPlaybackSession {
         key: key.to_owned(),
+        playback_id: Some("player".to_owned()),
         item: RatingKey::new(10),
         part: PartId::new(20),
         client: Some("client".to_owned()),
@@ -123,6 +124,88 @@ async fn ending_a_session_removes_it() {
     assert!(repository.end("a").await.expect("end"));
     assert!(!repository.end("a").await.expect("end"));
     assert!(active_keys(&repository, NOW).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_report_moves_every_session_of_its_playback_and_no_other() {
+    let repository = repository().await;
+    let first = repository.start(session("a"), NOW).await.expect("start");
+    let second = repository.start(session("b"), NOW).await.expect("start");
+    let other = NewPlaybackSession {
+        playback_id: Some("other player".to_owned()),
+        ..session("c")
+    };
+    let other = repository.start(other, NOW).await.expect("start");
+
+    let later = NOW + 10;
+    assert!(repository
+        .report("player", PlaybackState::Paused, Some(9000), later)
+        .await
+        .expect("report"));
+
+    let read = |id| {
+        let repository = &repository;
+        async move {
+            repository
+                .session(id, later)
+                .await
+                .expect("read")
+                .expect("session")
+        }
+    };
+    let first = read(first.id).await;
+    assert_eq!(first.state, PlaybackState::Paused);
+    assert_eq!(first.position_ms, 9000);
+    assert_eq!(first.expires_at, later + SESSION_LIFETIME_SECONDS);
+    assert_eq!(read(second.id).await.state, PlaybackState::Paused);
+    let untouched = read(other.id).await;
+    assert_eq!(untouched.state, PlaybackState::Playing);
+    assert_eq!(untouched.position_ms, 5000);
+}
+
+#[tokio::test]
+async fn a_report_without_a_position_keeps_the_last_one() {
+    let repository = repository().await;
+    let id = repository.start(session("a"), NOW).await.expect("start").id;
+    repository
+        .report("player", PlaybackState::Buffering, None, NOW)
+        .await
+        .expect("report");
+    let stored = repository
+        .session(id, NOW)
+        .await
+        .expect("read")
+        .expect("session");
+    assert_eq!(stored.state, PlaybackState::Buffering);
+    assert_eq!(stored.position_ms, 5000);
+}
+
+#[tokio::test]
+async fn a_report_does_not_revive_an_expired_session() {
+    let repository = repository().await;
+    repository.start(session("a"), NOW).await.expect("start");
+    let after = NOW + SESSION_LIFETIME_SECONDS;
+    assert!(!repository
+        .report("player", PlaybackState::Playing, Some(1), after)
+        .await
+        .expect("report"));
+    assert!(active_keys(&repository, after).await.is_empty());
+}
+
+#[tokio::test]
+async fn ending_a_playback_closes_all_its_sessions_and_only_those() {
+    let repository = repository().await;
+    repository.start(session("a"), NOW).await.expect("start");
+    repository.start(session("b"), NOW).await.expect("start");
+    let other = NewPlaybackSession {
+        playback_id: None,
+        ..session("c")
+    };
+    repository.start(other, NOW).await.expect("start");
+
+    assert!(repository.end_playback("player").await.expect("end"));
+    assert!(!repository.end_playback("player").await.expect("end"));
+    assert_eq!(active_keys(&repository, NOW).await, ["c"]);
 }
 
 #[tokio::test]

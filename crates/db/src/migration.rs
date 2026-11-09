@@ -12,6 +12,7 @@ mod m0006_references;
 mod m0007_added_index;
 mod m0008_playback_session;
 mod m0009_play_queue;
+mod m0010_playback_id;
 
 use sea_orm_migration::prelude::*;
 
@@ -31,6 +32,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0007_added_index::Migration),
             Box::new(m0008_playback_session::Migration),
             Box::new(m0009_play_queue::Migration),
+            Box::new(m0010_playback_id::Migration),
         ]
     }
 }

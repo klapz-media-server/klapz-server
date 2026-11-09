@@ -1196,6 +1196,16 @@ type Mutation {
 		key: String!
 	): Boolean!
 	"""
+	Records where a player stands, pushing its sessions' expiry forward, or closes them
+	when it has stopped. Whether the playback had any session.
+	"""
+	reportPlayback(
+		"""
+		The player's report.
+		"""
+		input: ReportPlaybackInput!
+	): Boolean!
+	"""
 	Creates a play queue from a list of items.
 	"""
 	createPlayQueue(
@@ -1381,6 +1391,11 @@ type PlaybackSession implements Node {
 	The identifier the client chose for this playback.
 	"""
 	key: String!
+	"""
+	The player's identifier for the whole playback, when it gave one. Unlike `key`, it
+	stays the same when the quality changes.
+	"""
+	playbackId: String
 	"""
 	What is being played. Null if it has left the library since.
 	"""
@@ -1693,6 +1708,46 @@ type RecentlyAddedEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+"""
+A player saying where it stands.
+"""
+input ReportPlaybackInput {
+	"""
+	The player's identifier for the whole playback.
+	"""
+	playbackId: String!
+	"""
+	Where playback stands.
+	"""
+	state: ReportedPlaybackState!
+	"""
+	Position in the item, in milliseconds. Left out, the last one stays.
+	"""
+	positionMs: Int
+}
+
+"""
+Where a player says it stands.
+"""
+enum ReportedPlaybackState {
+	"""
+	The picture is moving.
+	"""
+	PLAYING
+	"""
+	The player is holding still.
+	"""
+	PAUSED
+	"""
+	The player is waiting for data.
+	"""
+	BUFFERING
+	"""
+	The player is done: the playback's sessions close.
+	"""
+	STOPPED
 }
 
 type Root implements Node {
@@ -2189,6 +2244,10 @@ input StartPlaybackInput {
 	The identifier the client chose for this playback.
 	"""
 	key: String!
+	"""
+	The player's identifier for the whole playback, which `reportPlayback` names.
+	"""
+	playbackId: String
 	"""
 	What is being played, as returned in `Item.id`.
 	"""

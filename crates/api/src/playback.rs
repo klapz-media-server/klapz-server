@@ -50,6 +50,19 @@ impl From<PlaybackState> for PlaybackStateType {
     }
 }
 
+/// Where a player says it stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum ReportedPlaybackState {
+    /// The picture is moving.
+    Playing,
+    /// The player is holding still.
+    Paused,
+    /// The player is waiting for data.
+    Buffering,
+    /// The player is done: the playback's sessions close.
+    Stopped,
+}
+
 /// What the server does to a track on its way to the player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
 pub enum StreamDecisionType {
@@ -91,6 +104,12 @@ impl PlaybackSessionObject {
     /// The identifier the client chose for this playback.
     async fn key(&self) -> &str {
         &self.0.key
+    }
+
+    /// The player's identifier for the whole playback, when it gave one. Unlike `key`, it
+    /// stays the same when the quality changes.
+    async fn playback_id(&self) -> Option<&str> {
+        self.0.playback_id.as_deref()
     }
 
     /// What is being played. Null if it has left the library since.
@@ -183,6 +202,8 @@ pub(crate) async fn sessions(
 pub struct StartPlaybackInput {
     /// The identifier the client chose for this playback.
     pub key: String,
+    /// The player's identifier for the whole playback, which `reportPlayback` names.
+    pub playback_id: Option<String>,
     /// What is being played, as returned in `Item.id`.
     pub item_id: ID,
     /// The file being played, as returned in `MediaFile.id`.
@@ -197,6 +218,17 @@ pub struct StartPlaybackInput {
     pub audio_decision: StreamDecisionType,
     /// Where playback starts, in milliseconds.
     pub position_ms: i64,
+}
+
+/// A player saying where it stands.
+#[derive(Debug, InputObject)]
+pub struct ReportPlaybackInput {
+    /// The player's identifier for the whole playback.
+    pub playback_id: String,
+    /// Where playback stands.
+    pub state: ReportedPlaybackState,
+    /// Position in the item, in milliseconds. Left out, the last one stays.
+    pub position_ms: Option<i64>,
 }
 
 /// Changes to what is being played.
@@ -219,6 +251,7 @@ impl Mutation {
             item: RatingKey::new(key_of(&input.item_id)?),
             part: PartId::new(key_of(&input.file_id)?),
             key: input.key,
+            playback_id: input.playback_id,
             client: input.client_identifier,
             product: input.client_product,
             video: input.video_decision.into(),
@@ -238,6 +271,27 @@ impl Mutation {
         #[graphql(desc = "The identifier the client chose for this playback.")] key: String,
     ) -> Result<bool> {
         Ok(playback(context)?.touch(&key, now_epoch()).await?)
+    }
+
+    /// Records where a player stands, pushing its sessions' expiry forward, or closes them
+    /// when it has stopped. Whether the playback had any session.
+    async fn report_playback(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The player's report.")] input: ReportPlaybackInput,
+    ) -> Result<bool> {
+        let repository = playback(context)?;
+        let state = match input.state {
+            ReportedPlaybackState::Playing => PlaybackState::Playing,
+            ReportedPlaybackState::Paused => PlaybackState::Paused,
+            ReportedPlaybackState::Buffering => PlaybackState::Buffering,
+            ReportedPlaybackState::Stopped => {
+                return Ok(repository.end_playback(&input.playback_id).await?);
+            }
+        };
+        Ok(repository
+            .report(&input.playback_id, state, input.position_ms, now_epoch())
+            .await?)
     }
 
     /// Creates a play queue from a list of items.

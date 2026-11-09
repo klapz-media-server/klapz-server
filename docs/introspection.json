@@ -3530,6 +3530,37 @@
               "deprecationReason": null
             },
             {
+              "name": "reportPlayback",
+              "description": "Records where a player stands, pushing its sessions' expiry forward, or closes them\nwhen it has stopped. Whether the playback had any session.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The player's report.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "ReportPlaybackInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "createPlayQueue",
               "description": "Creates a play queue from a list of items.",
               "args": [
@@ -4244,6 +4275,18 @@
                   "name": "String",
                   "ofType": null
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "playbackId",
+              "description": "The player's identifier for the whole playback, when it gave one. Unlike `key`, it\nstays the same when the quality changes.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -5203,6 +5246,90 @@
           "inputFields": null,
           "interfaces": [],
           "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "ReportPlaybackInput",
+          "description": "A player saying where it stands.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "playbackId",
+              "description": "The player's identifier for the whole playback.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "state",
+              "description": "Where playback stands.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "ReportedPlaybackState",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "positionMs",
+              "description": "Position in the item, in milliseconds. Left out, the last one stays.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "ReportedPlaybackState",
+          "description": "Where a player says it stands.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "PLAYING",
+              "description": "The picture is moving.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PAUSED",
+              "description": "The player is holding still.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BUFFERING",
+              "description": "The player is waiting for data.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "STOPPED",
+              "description": "The player is done: the playback's sessions close.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
           "possibleTypes": null
         },
         {
@@ -6679,6 +6806,16 @@
                   "name": "String",
                   "ofType": null
                 }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "playbackId",
+              "description": "The player's identifier for the whole playback, which `reportPlayback` names.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
               },
               "defaultValue": null
             },

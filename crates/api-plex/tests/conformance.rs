@@ -1596,6 +1596,155 @@ async fn media_providers_refuses_a_request_with_no_authenticated_caller() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+async fn timeline(
+    app: axum::Router,
+    method: &str,
+    query: &str,
+    accept: &str,
+) -> (StatusCode, String) {
+    let request = Request::builder()
+        .method(method)
+        .uri(format!("/:/timeline?{query}"))
+        .header("X-Plex-Token", TOKEN)
+        .header(header::ACCEPT, accept)
+        .body(Body::empty())
+        .expect("request builds");
+    let response = app.oneshot(request).await.expect("router responds");
+    let status = response.status();
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    (status, String::from_utf8_lossy(&body).into_owned())
+}
+
+const IGNORED_TIMELINE: &str = r#"{"MediaContainer":{"size":0,"playbackState":"ignore"}}"#;
+
+#[tokio::test]
+async fn a_timeline_answers_as_the_reference_on_every_verb_it_accepts() {
+    // Captured on the reference for a film, at position 0.
+    for method in ["GET", "POST", "PUT"] {
+        let (status, body) = timeline(
+            items_app(),
+            method,
+            "ratingKey=100&state=playing&time=0",
+            "application/json",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{method}");
+        assert_eq!(body, IGNORED_TIMELINE, "{method}");
+    }
+
+    let (_, xml) = timeline(
+        items_app(),
+        "GET",
+        "ratingKey=100&state=paused&time=0",
+        "*/*",
+    )
+    .await;
+    assert_eq!(
+        xml,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer size=\"0\" playbackState=\"ignore\">\n</MediaContainer>\n"
+    );
+}
+
+#[tokio::test]
+async fn a_timeline_refuses_and_ignores_what_the_reference_does() {
+    // Each line was captured on the reference.
+    for (query, expected) in [
+        ("", StatusCode::BAD_REQUEST),
+        ("time=1000", StatusCode::BAD_REQUEST),
+        ("ratingKey=999&time=0", StatusCode::BAD_REQUEST),
+        (
+            "ratingKey=999&state=nonsense&time=0",
+            StatusCode::BAD_REQUEST,
+        ),
+        ("state=playing&time=abc", StatusCode::BAD_REQUEST),
+        (
+            "ratingKey=999&state=playing&time=abc",
+            StatusCode::BAD_REQUEST,
+        ),
+        ("ratingKey=999&state=playing&time=0", StatusCode::NOT_FOUND),
+        ("ratingKey=999&state=playing", StatusCode::NOT_FOUND),
+        ("state=playing", StatusCode::OK),
+        ("state=playing&time=1000", StatusCode::OK),
+        ("ratingKey=abc&state=playing&time=0", StatusCode::OK),
+        ("ratingKey=100&state=stopped", StatusCode::OK),
+    ] {
+        let (status, body) = timeline(items_app(), "GET", query, "application/json").await;
+        assert_eq!(status, expected, "{query}");
+        if expected == StatusCode::OK {
+            assert_eq!(body, IGNORED_TIMELINE, "{query}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
+    use open_plex_core::now_epoch;
+    use open_plex_core::page::Window;
+    use open_plex_core::playback::{
+        NewPlaybackSession, PlaybackRepository, PlaybackState, StreamDecision,
+    };
+    use open_plex_core::testing::InMemoryPlayback;
+
+    let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
+    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
+    let (library, metadata) = catalog();
+    let playback = std::sync::Arc::new(InMemoryPlayback::default());
+    let schema = build_schema(ApiContext {
+        capabilities: ServerCapabilities::new(identity.clone(), 0),
+        library: std::sync::Arc::new(library),
+        metadata: std::sync::Arc::new(metadata),
+        playback: playback.clone(),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+    });
+    let app = authenticated(router(PlexState::new(identity, schema, accounts)));
+
+    // Plex Web's two identifiers differ: `session` names the conversion, this one the playback.
+    playback
+        .start(
+            NewPlaybackSession {
+                key: "transcode-session".to_owned(),
+                playback_id: Some("tab".to_owned()),
+                item: RatingKey::new(100),
+                part: PartId::new(1),
+                client: None,
+                product: None,
+                video: StreamDecision::Copy,
+                audio: StreamDecision::Copy,
+                position_ms: 0,
+            },
+            now_epoch(),
+        )
+        .await
+        .expect("start");
+    let sessions = || async {
+        playback
+            .active(
+                now_epoch(),
+                Window::new(None, None, Some(10), None).expect("window"),
+            )
+            .await
+            .expect("page")
+            .items
+    };
+    let report = |query: &'static str| timeline(app.clone(), "GET", query, "application/json");
+
+    report("ratingKey=100&state=paused&time=2000&X-Plex-Session-Identifier=someone-else").await;
+    assert_eq!(sessions().await[0].state, PlaybackState::Playing);
+
+    report("ratingKey=100&state=paused&time=2000&X-Plex-Session-Identifier=tab").await;
+    let current = sessions().await;
+    assert_eq!(current[0].state, PlaybackState::Paused);
+    assert_eq!(current[0].position_ms, 2000);
+
+    report("ratingKey=100&state=stopped&time=2000&X-Plex-Session-Identifier=tab").await;
+    assert!(sessions().await.is_empty());
+}
+
 #[tokio::test]
 async fn sessions_answer_the_empty_container_the_reference_sends_when_idle() {
     // Captured on the reference with nothing playing, in both formats.

@@ -737,6 +737,7 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
         let stored = crate::playback::PlaybackSession {
             id,
             key: session.key,
+            playback_id: session.playback_id,
             item: session.item,
             part: session.part,
             client: session.client,
@@ -764,6 +765,38 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
                 row.expires_at = now + crate::playback::SESSION_LIFETIME_SECONDS;
             })
             .is_some())
+    }
+
+    async fn report(
+        &self,
+        playback_id: &str,
+        state: crate::playback::PlaybackState,
+        position_ms: Option<i64>,
+        now: i64,
+    ) -> Result<bool, crate::playback::PlaybackError> {
+        let mut found = false;
+        for row in self
+            .rows()
+            .iter_mut()
+            .filter(|row| row.playback_id.as_deref() == Some(playback_id) && row.expires_at > now)
+        {
+            found = true;
+            row.state = state;
+            row.position_ms = position_ms.unwrap_or(row.position_ms);
+            row.updated_at = now;
+            row.expires_at = now + crate::playback::SESSION_LIFETIME_SECONDS;
+        }
+        Ok(found)
+    }
+
+    async fn end_playback(
+        &self,
+        playback_id: &str,
+    ) -> Result<bool, crate::playback::PlaybackError> {
+        let mut rows = self.rows();
+        let before = rows.len();
+        rows.retain(|row| row.playback_id.as_deref() != Some(playback_id));
+        Ok(rows.len() < before)
     }
 
     async fn end(&self, key: &str) -> Result<bool, crate::playback::PlaybackError> {

@@ -65,6 +65,7 @@ fn to_domain(row: playback_session::Model) -> PlaybackSession {
     PlaybackSession {
         id: row.id,
         key: row.session_key,
+        playback_id: row.playback_id,
         item: RatingKey::new(row.item_id),
         part: PartId::new(row.part_id),
         client: row.client,
@@ -89,6 +90,7 @@ impl PlaybackRepository for SqlPlaybackRepository {
         let row = playback_session::ActiveModel {
             id: ActiveValue::NotSet,
             session_key: ActiveValue::Set(session.key.clone()),
+            playback_id: ActiveValue::Set(session.playback_id),
             item_id: ActiveValue::Set(session.item.get()),
             part_id: ActiveValue::Set(session.part.get()),
             client: ActiveValue::Set(session.client),
@@ -105,6 +107,7 @@ impl PlaybackRepository for SqlPlaybackRepository {
             .on_conflict(
                 OnConflict::column(Column::SessionKey)
                     .update_columns([
+                        Column::PlaybackId,
                         Column::ItemId,
                         Column::PartId,
                         Column::Client,
@@ -138,6 +141,35 @@ impl PlaybackRepository for SqlPlaybackRepository {
             .col_expr(Column::ExpiresAt, (now + SESSION_LIFETIME_SECONDS).into())
             .filter(Column::SessionKey.eq(key))
             .filter(Column::ExpiresAt.gt(now))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(result.rows_affected > 0)
+    }
+
+    async fn report(
+        &self,
+        playback_id: &str,
+        state: PlaybackState,
+        position_ms: Option<i64>,
+        now: i64,
+    ) -> Result<bool, PlaybackError> {
+        let mut update = Entity::update_many()
+            .col_expr(Column::State, state_name(state).into())
+            .col_expr(Column::UpdatedAt, now.into())
+            .col_expr(Column::ExpiresAt, (now + SESSION_LIFETIME_SECONDS).into())
+            .filter(Column::PlaybackId.eq(playback_id))
+            .filter(Column::ExpiresAt.gt(now));
+        if let Some(position_ms) = position_ms {
+            update = update.col_expr(Column::PositionMs, position_ms.into());
+        }
+        let result = update.exec(&self.connection).await.map_err(storage)?;
+        Ok(result.rows_affected > 0)
+    }
+
+    async fn end_playback(&self, playback_id: &str) -> Result<bool, PlaybackError> {
+        let result = Entity::delete_many()
+            .filter(Column::PlaybackId.eq(playback_id))
             .exec(&self.connection)
             .await
             .map_err(storage)?;

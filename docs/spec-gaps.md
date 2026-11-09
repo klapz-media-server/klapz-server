@@ -488,8 +488,34 @@ longer read at once, and a sweep every 30 seconds deletes the row and stops the 
 startup every row is deleted: no process from an earlier run is still alive.
 
 `/status/sessions` cannot be held against the reference, whose files are not on this machine: its
-attributes are what Plex Web reads. `Player.state` stays `playing` until `/:/timeline` reports
-otherwise, and Direct Play creates no session, since only the timeline can reveal one.
+attributes are what Plex Web reads. `Player.state` is what `/:/timeline` last reported. Direct Play
+creates no session: only the timeline could reveal one, and we do not open one from it.
+
+### Timelines
+
+The spec declares `POST /:/timeline`. The reference also answers `GET`, which is what Plex Web
+sends, and `PUT`. Measured in the order the checks apply, on a film at `time=0` (which left its
+watch state unchanged) and on a key of no item:
+
+| Request | Answer |
+| --- | --- |
+| `state` absent, or not `playing`, `paused`, `buffering` or `stopped` | `400`, even for an item that does not exist |
+| `time` present and not an integer | `400`, likewise |
+| no `ratingKey`, or one that is not a number | `200`, `playbackState="ignore"` |
+| numeric `ratingKey` of no item | `404` |
+| a real film, with or without `time` | `200`, `{"size":0,"playbackState":"ignore"}` |
+
+Plex Web's bundle also reads `progress` (it moves its copy of `viewOffset`) and `complete` (it
+marks the item watched). Neither was captured: provoking them would write a position to the
+owner's account on the reference. We store no watch state, so we always answer `ignore`, and the
+position lives only on the session.
+
+A timeline names its playback through `X-Plex-Session-Identifier`, the bundle's
+`playbackSessionID`. The `session` of the transcode URLs is another value, its
+`transcodeSessionID`, seen to differ between requests carrying the same identifier. A session
+therefore stores both: a report applies to every unexpired session of the playback, and `stopped`
+closes them. Stopping the transcoder stays with `/video/:/transcode/universal/stop` and the idle
+limit.
 
 ### A library's settings
 

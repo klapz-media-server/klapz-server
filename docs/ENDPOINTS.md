@@ -19,8 +19,8 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 15 | 5.8 % |
-| `stub` | 186 | 71.5 % |
-| `partial` | 15 | 5.8 % |
+| `stub` | 185 | 71.2 % |
+| `partial` | 16 | 6.2 % |
 | `done` | 7 | 2.7 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -50,7 +50,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Log](#log) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Playlist](#playlist) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Preferences](#preferences) | 3 | 0 | 1 | 1 | 1 | 0 |
-| [Timeline](#timeline) | 3 | 0 | 0 | 3 | 0 | 0 |
+| [Timeline](#timeline) | 3 | 0 | 1 | 2 | 0 | 0 |
 | [Updater](#updater) | 3 | 2 | 0 | 1 | 0 | 0 |
 | [Activities](#activities) | 2 | 1 | 0 | 1 | 0 | 0 |
 | [Events](#events) | 2 | 0 | 0 | 2 | 0 | 0 |
@@ -334,7 +334,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `partial` | `GET` | `/status/sessions` | admin | List Sessions | Direct Stream sessions, from the official API. The state is always `playing` until `/:/timeline` exists, Direct Play is not tracked yet, and the attributes follow what Plex Web reads, with no capture to compare against. |
+| `partial` | `GET` | `/status/sessions` | admin | List Sessions | Direct Stream sessions, from the official API. The state comes from `/:/timeline`, Direct Play is not tracked yet, and the attributes follow what Plex Web reads, with no capture to compare against. |
 | `stub` | `GET` | `/status/sessions/background` | admin | Get background tasks |  |
 | `stub` | `GET` | `/status/sessions/history/all` | user | List Playback History |  |
 | `stub` | `DELETE` | `/status/sessions/history/{historyId}` | admin | Delete Single History Item |  |
@@ -425,7 +425,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `stub` | `PUT` | `/:/scrobble` | user | Mark an item as played |  |
-| `stub` | `POST` | `/:/timeline` | user | Report media timeline | Spec marks `X-Plex-Client-Identifier` required; the reference does not enforce it — see spec-gaps.md. |
+| `partial` | `POST` | `/:/timeline` | user | Report media timeline | Also `GET`, what Plex Web sends, and `PUT`. Updates the state and position of a Direct Stream session and closes it on `stopped`. Always answers `playbackState="ignore"`: no watch state is stored yet, and Direct Play has no session to update. See spec-gaps.md. |
 | `stub` | `PUT` | `/:/unscrobble` | user | Mark an item as unplayed |  |
 
 ## Updater
