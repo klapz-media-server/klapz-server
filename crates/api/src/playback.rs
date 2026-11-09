@@ -103,14 +103,19 @@ impl PlaybackSessionObject {
     }
 
     /// The identifier the client chose for this playback.
-    async fn key(&self) -> &str {
-        &self.0.key
+    async fn key(&self, context: &Context<'_>) -> Result<&str> {
+        Ok(crate::access::require_caller(context)?.client_key(&self.0.key))
     }
 
     /// The player's identifier for the whole playback, when it gave one. Unlike `key`, it
     /// stays the same when the quality changes.
-    async fn playback_id(&self) -> Option<&str> {
-        self.0.playback_id.as_deref()
+    async fn playback_id(&self, context: &Context<'_>) -> Result<Option<&str>> {
+        let caller = crate::access::require_caller(context)?;
+        Ok(self
+            .0
+            .playback_id
+            .as_deref()
+            .map(|playback_id| caller.client_key(playback_id)))
     }
 
     /// What is being played. Null if it has left the library since.
@@ -119,6 +124,7 @@ impl PlaybackSessionObject {
             .data::<DataLoader<ItemLoader>>()?
             .load_one(self.0.item)
             .await?
+            .filter(|item| crate::access::can_read(context, item.section_id))
             .map(Item::from_domain))
     }
 
@@ -195,6 +201,7 @@ pub(crate) async fn sessions(
     first: Option<i32>,
     last: Option<i32>,
 ) -> Result<PlaybackConnection> {
+    let owner = crate::access::require_caller(context)?.user;
     query(
         after,
         before,
@@ -202,7 +209,9 @@ pub(crate) async fn sessions(
         last,
         |after, before, first, last| async move {
             let window = crate::schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?;
-            let page = playback(context)?.active(now_epoch(), window).await?;
+            let page = playback(context)?
+                .active(owner, now_epoch(), window)
+                .await?;
             let mut connection = Connection::new(page.has_previous, page.has_next);
             connection
                 .edges
@@ -276,11 +285,19 @@ impl Mutation {
         context: &Context<'_>,
         #[graphql(desc = "The playback beginning.")] input: StartPlaybackInput,
     ) -> Result<PlaybackSessionObject> {
+        let caller = crate::access::require_caller(context)?;
+        let item = RatingKey::new(key_of(&input.item_id)?);
+        if crate::schema::readable_item(context, item).await?.is_none() {
+            return Err(crate::access::denied());
+        }
         let session = NewPlaybackSession {
-            item: RatingKey::new(key_of(&input.item_id)?),
+            item,
             part: PartId::new(key_of(&input.file_id)?),
-            key: input.key,
-            playback_id: input.playback_id,
+            key: caller.session_key(&input.key),
+            user: caller.user,
+            playback_id: input
+                .playback_id
+                .map(|playback_id| caller.session_key(&playback_id)),
             client: input.client_identifier,
             product: input.client_product,
             video: input.video_decision.into(),
@@ -305,6 +322,7 @@ impl Mutation {
         context: &Context<'_>,
         #[graphql(desc = "The identifier the client chose for this playback.")] key: String,
     ) -> Result<bool> {
+        let key = crate::access::require_caller(context)?.session_key(&key);
         Ok(playback(context)?.touch(&key, now_epoch()).await?)
     }
 
@@ -316,16 +334,17 @@ impl Mutation {
         #[graphql(desc = "The player's report.")] input: ReportPlaybackInput,
     ) -> Result<bool> {
         let repository = playback(context)?;
+        let playback_id = crate::access::require_caller(context)?.session_key(&input.playback_id);
         let state = match input.state {
             ReportedPlaybackState::Playing => PlaybackState::Playing,
             ReportedPlaybackState::Paused => PlaybackState::Paused,
             ReportedPlaybackState::Buffering => PlaybackState::Buffering,
             ReportedPlaybackState::Stopped => {
-                return Ok(repository.end_playback(&input.playback_id).await?);
+                return Ok(repository.end_playback(&playback_id).await?);
             }
         };
         Ok(repository
-            .report(&input.playback_id, state, input.position_ms, now_epoch())
+            .report(&playback_id, state, input.position_ms, now_epoch())
             .await?)
     }
 
@@ -344,6 +363,58 @@ impl Mutation {
         context: &Context<'_>,
         #[graphql(desc = "The identifier the client chose for this playback.")] key: String,
     ) -> Result<bool> {
+        let key = crate::access::require_caller(context)?.session_key(&key);
         Ok(playback(context)?.end(&key).await?)
+    }
+
+    /// Creates a user. For the server's operator only.
+    async fn create_user(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The user's e-mail address.")] email: String,
+    ) -> Result<crate::access::UserObject> {
+        crate::access::create_user(context, email).await
+    }
+
+    /// Deletes a user, its permissions and its connections. Whether there was one. For the
+    /// server's operator only.
+    async fn delete_user(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The user, as returned in `User.id`.")] id: ID,
+    ) -> Result<bool> {
+        crate::access::delete_user(context, &id).await
+    }
+
+    /// Gives a user a role on a library, replacing the one it had. For the server's operator
+    /// only.
+    async fn set_library_permission(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The role to give.")] input: crate::access::SetLibraryPermissionInput,
+    ) -> Result<bool> {
+        crate::access::set_library_permission(context, input).await
+    }
+
+    /// Takes a library away from a user. Whether it had access. For the server's operator only.
+    async fn remove_library_permission(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The user, as returned in `User.id`.")] user_id: ID,
+        #[graphql(desc = "The library, as returned in `Library.id`.")] library_id: ID,
+    ) -> Result<bool> {
+        crate::access::remove_library_permission(context, &user_id, &library_id).await
+    }
+
+    /// Connects a user through an extension, returning a new token. Called again, it replaces
+    /// the token and keeps the identifier clients recognize. For the server's operator only.
+    async fn connect_extension(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The user, as returned in `User.id`.")] user_id: ID,
+        #[graphql(desc = "The protocol to connect through.")]
+        extension: crate::access::ExtensionType,
+    ) -> Result<crate::access::ExtensionCredentials> {
+        crate::access::connect_extension(context, &user_id, extension).await
     }
 }

@@ -45,13 +45,18 @@ impl LibraryRepository for InMemoryLibrary {
     ///
     /// Sections are ordered by id, so the cursor's sort key is unused here and only its
     /// tiebreaker applies.
-    async fn sections(&self, window: Window) -> Result<Page<LibrarySection>, LibraryError> {
+    async fn sections(
+        &self,
+        only: Option<&[SectionId]>,
+        window: Window,
+    ) -> Result<Page<LibrarySection>, LibraryError> {
         let after = window.after.as_ref().map(|cursor| cursor.id);
         let before = window.before.as_ref().map(|cursor| cursor.id);
 
         let mut rows: Vec<LibrarySection> = self
             .sections
             .iter()
+            .filter(|section| only.is_none_or(|only| only.contains(&section.id)))
             .filter(|section| after.is_none_or(|id| section.id.get() > id))
             .filter(|section| before.is_none_or(|id| section.id.get() < id))
             .cloned()
@@ -307,6 +312,12 @@ impl MetadataRepository for InMemoryMetadata {
             .items
             .iter()
             .filter(|item| query.kinds.is_empty() || query.kinds.contains(&item.kind))
+            .filter(|item| {
+                query
+                    .sections
+                    .as_ref()
+                    .is_none_or(|sections| sections.contains(&item.section_id))
+            })
             .filter(|item| title_matches(item, &query.word_prefix))
             .cloned()
             .collect();
@@ -737,6 +748,7 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
         let stored = crate::playback::PlaybackSession {
             id,
             key: session.key,
+            user: session.user,
             playback_id: session.playback_id,
             item: session.item,
             part: session.part,
@@ -809,6 +821,7 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
 
     async fn active(
         &self,
+        only: Option<crate::ids::UserId>,
         now: i64,
         _window: Window,
     ) -> Result<Page<crate::playback::PlaybackSession>, crate::playback::PlaybackError> {
@@ -817,6 +830,7 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
                 .rows()
                 .iter()
                 .filter(|row| row.expires_at > now)
+                .filter(|row| only.is_none() || row.user == only)
                 .cloned()
                 .collect(),
             has_previous: false,
@@ -848,6 +862,174 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
         let before = rows.len();
         rows.clear();
         Ok(u64::try_from(before).unwrap_or(u64::MAX))
+    }
+}
+
+/// Users held in memory, for tests that exercise the schema's access rules.
+#[derive(Debug, Default)]
+pub struct InMemoryAccess {
+    users: std::sync::Mutex<Vec<crate::access::User>>,
+    permissions: std::sync::Mutex<Vec<crate::access::LibraryPermission>>,
+    extensions: std::sync::Mutex<Vec<(crate::access::UserExtension, String)>>,
+}
+
+fn locked<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+#[async_trait::async_trait]
+impl crate::access::AccessRepository for InMemoryAccess {
+    async fn create_user(
+        &self,
+        email: &str,
+        now: i64,
+    ) -> Result<crate::access::User, crate::access::AccessError> {
+        let mut users = locked(&self.users);
+        if users.iter().any(|user| user.email == email) {
+            return Err(crate::access::AccessError::EmailTaken);
+        }
+        let user = crate::access::User {
+            id: crate::ids::UserId::new(i64::try_from(users.len()).unwrap_or(0) + 1),
+            email: email.to_owned(),
+            created_at: now,
+            updated_at: now,
+        };
+        users.push(user.clone());
+        Ok(user)
+    }
+
+    async fn users(
+        &self,
+        _window: Window,
+    ) -> Result<Page<crate::access::User>, crate::access::AccessError> {
+        Ok(Page {
+            items: locked(&self.users).clone(),
+            has_previous: false,
+            has_next: false,
+        })
+    }
+
+    async fn user(
+        &self,
+        id: crate::ids::UserId,
+    ) -> Result<Option<crate::access::User>, crate::access::AccessError> {
+        Ok(locked(&self.users)
+            .iter()
+            .find(|user| user.id == id)
+            .cloned())
+    }
+
+    async fn delete_user(
+        &self,
+        id: crate::ids::UserId,
+    ) -> Result<bool, crate::access::AccessError> {
+        locked(&self.permissions).retain(|permission| permission.user != id);
+        locked(&self.extensions).retain(|(extension, _)| extension.user != id);
+        let mut users = locked(&self.users);
+        let before = users.len();
+        users.retain(|user| user.id != id);
+        Ok(users.len() < before)
+    }
+
+    async fn set_permission(
+        &self,
+        permission: crate::access::LibraryPermission,
+        _now: i64,
+    ) -> Result<(), crate::access::AccessError> {
+        if !locked(&self.users)
+            .iter()
+            .any(|user| user.id == permission.user)
+        {
+            return Err(crate::access::AccessError::UnknownUser);
+        }
+        let mut permissions = locked(&self.permissions);
+        permissions
+            .retain(|held| (held.user, held.section) != (permission.user, permission.section));
+        permissions.push(permission);
+        Ok(())
+    }
+
+    async fn remove_permission(
+        &self,
+        user: crate::ids::UserId,
+        section: SectionId,
+    ) -> Result<bool, crate::access::AccessError> {
+        let mut permissions = locked(&self.permissions);
+        let before = permissions.len();
+        permissions.retain(|held| (held.user, held.section) != (user, section));
+        Ok(permissions.len() < before)
+    }
+
+    async fn permissions(
+        &self,
+        user: crate::ids::UserId,
+    ) -> Result<Vec<crate::access::LibraryPermission>, crate::access::AccessError> {
+        Ok(locked(&self.permissions)
+            .iter()
+            .filter(|held| held.user == user)
+            .copied()
+            .collect())
+    }
+
+    async fn connect_extension(
+        &self,
+        user: crate::ids::UserId,
+        extension: crate::access::Extension,
+        external_id: &str,
+        token_digest: &str,
+        _now: i64,
+    ) -> Result<crate::access::UserExtension, crate::access::AccessError> {
+        let mut extensions = locked(&self.extensions);
+        if let Some((held, digest)) = extensions
+            .iter_mut()
+            .find(|(held, _)| held.user == user && held.extension == extension)
+        {
+            token_digest.clone_into(digest);
+            return Ok(held.clone());
+        }
+        let connected = crate::access::UserExtension {
+            user,
+            extension,
+            external_id: external_id.to_owned(),
+        };
+        extensions.push((connected.clone(), token_digest.to_owned()));
+        Ok(connected)
+    }
+
+    async fn extensions(
+        &self,
+        user: crate::ids::UserId,
+    ) -> Result<Vec<crate::access::UserExtension>, crate::access::AccessError> {
+        Ok(locked(&self.extensions)
+            .iter()
+            .filter(|(held, _)| held.user == user)
+            .map(|(held, _)| held.clone())
+            .collect())
+    }
+
+    async fn grant(
+        &self,
+        extension: crate::access::Extension,
+        token_digest: &str,
+    ) -> Result<Option<crate::access::Grant>, crate::access::AccessError> {
+        let found = locked(&self.extensions)
+            .iter()
+            .find(|(held, digest)| held.extension == extension && digest == token_digest)
+            .map(|(held, _)| held.clone());
+        let Some(extension) = found else {
+            return Ok(None);
+        };
+        let Some(user) = self.user(extension.user).await? else {
+            return Ok(None);
+        };
+        let permissions = self.permissions(user.id).await?;
+        Ok(Some(crate::access::Grant {
+            user,
+            extension,
+            permissions,
+        }))
     }
 }
 
@@ -888,6 +1070,7 @@ impl crate::play_queue::PlayQueueRepository for InMemoryPlayQueues {
             .collect();
         let stored = crate::play_queue::PlayQueue {
             id,
+            user: queue.user,
             source_uri: queue.source_uri,
             shuffled: queue.shuffled,
             version: 1,

@@ -74,7 +74,11 @@ impl Loader<SectionId> for LibraryLoader {
         // is cheaper than a lookup per key.
         let window = open_plex_core::page::Window::by_id(None, None, Some(500), None)
             .map_err(|error| Arc::new(LibraryError::Storage(Box::new(error))))?;
-        let sections = self.repository.sections(window).await.map_err(Arc::new)?;
+        let sections = self
+            .repository
+            .sections(None, window)
+            .await
+            .map_err(Arc::new)?;
 
         Ok(sections
             .items

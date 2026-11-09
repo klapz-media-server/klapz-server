@@ -5,7 +5,7 @@ use open_plex_core::playback::{
     NewPlaybackSession, PlaybackError, PlaybackOutput, PlaybackRepository, PlaybackSession,
     PlaybackState, StreamDecision, SESSION_LIFETIME_SECONDS,
 };
-use open_plex_core::{PartId, RatingKey};
+use open_plex_core::{PartId, RatingKey, UserId};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter, QueryOrder,
@@ -65,6 +65,7 @@ fn to_domain(row: playback_session::Model) -> PlaybackSession {
     PlaybackSession {
         id: row.id,
         key: row.session_key,
+        user: row.user_id.map(UserId::new),
         playback_id: row.playback_id,
         item: RatingKey::new(row.item_id),
         part: PartId::new(row.part_id),
@@ -96,6 +97,7 @@ impl PlaybackRepository for SqlPlaybackRepository {
         let row = playback_session::ActiveModel {
             id: ActiveValue::NotSet,
             session_key: ActiveValue::Set(session.key.clone()),
+            user_id: ActiveValue::Set(session.user.map(UserId::get)),
             playback_id: ActiveValue::Set(session.playback_id),
             item_id: ActiveValue::Set(session.item.get()),
             part_id: ActiveValue::Set(session.part.get()),
@@ -117,6 +119,7 @@ impl PlaybackRepository for SqlPlaybackRepository {
             .on_conflict(
                 OnConflict::column(Column::SessionKey)
                     .update_columns([
+                        Column::UserId,
                         Column::PlaybackId,
                         Column::ItemId,
                         Column::PartId,
@@ -201,10 +204,14 @@ impl PlaybackRepository for SqlPlaybackRepository {
 
     async fn active(
         &self,
+        only: Option<UserId>,
         now: i64,
         window: Window,
     ) -> Result<Page<PlaybackSession>, PlaybackError> {
         let mut select = Entity::find().filter(Column::ExpiresAt.gt(now));
+        if let Some(user) = only {
+            select = select.filter(Column::UserId.eq(user.get()));
+        }
         if let Some(after) = window.after.as_ref() {
             select = select.filter(Column::Id.gt(after.id));
         }

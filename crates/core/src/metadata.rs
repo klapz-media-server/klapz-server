@@ -510,6 +510,8 @@ pub struct SearchQuery {
     pub word_prefix: String,
     /// Restricts to these kinds. Empty searches every kind.
     pub kinds: Vec<ItemKind>,
+    /// Restricts to these sections, the ones a caller may see. `None` searches them all.
+    pub sections: Option<Vec<crate::ids::SectionId>>,
 }
 
 impl SearchQuery {
@@ -517,6 +519,7 @@ impl SearchQuery {
         Self {
             word_prefix: word_prefix.into(),
             kinds: Vec::new(),
+            sections: None,
         }
     }
 

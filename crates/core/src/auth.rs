@@ -5,6 +5,9 @@
 
 use subtle::ConstantTimeEq;
 
+use crate::access::LibraryAccess;
+use crate::ids::UserId;
+
 /// What a caller is allowed to do.
 ///
 /// Mirrors the two scopes the Plex spec declares. Deliberately not tied to a subscription:
@@ -29,6 +32,52 @@ impl Scope {
 pub struct Principal {
     pub name: String,
     pub scope: Scope,
+    pub libraries: LibraryAccess,
+    /// `None` for the server's own operator, who owns everything and is nobody's user.
+    pub user: Option<UserId>,
+    /// The identifier a caller's own view of the server goes by, when it has one.
+    pub server_identifier: Option<String>,
+}
+
+impl Principal {
+    /// The server's operator: every library, and every session.
+    pub fn operator(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            scope: Scope::Admin,
+            libraries: LibraryAccess::All,
+            user: None,
+            server_identifier: None,
+        }
+    }
+
+    /// The name a session is stored under. Clients choose their own session identifiers, so
+    /// without this one user could reach or replace another's by naming it.
+    #[must_use]
+    pub fn session_key(&self, client_key: &str) -> String {
+        match self.user {
+            Some(user) => format!("{}{client_key}", Self::session_prefix(user)),
+            None => client_key.to_owned(),
+        }
+    }
+
+    /// The session identifier as this caller chose it.
+    #[must_use]
+    pub fn client_key<'a>(&self, stored: &'a str) -> &'a str {
+        self.user
+            .and_then(|user| stored.strip_prefix(&Self::session_prefix(user)))
+            .unwrap_or(stored)
+    }
+
+    fn session_prefix(user: UserId) -> String {
+        format!("u{user}~")
+    }
+
+    /// Whether this caller may see something that belongs to `owner`.
+    #[must_use]
+    pub fn owns(&self, owner: Option<UserId>) -> bool {
+        self.user.is_none() || self.user == owner
+    }
 }
 
 /// A credential the server accepts.
@@ -45,6 +94,9 @@ impl Credential {
             principal: Principal {
                 name: name.into(),
                 scope,
+                libraries: LibraryAccess::All,
+                user: None,
+                server_identifier: None,
             },
         }
     }
@@ -84,6 +136,45 @@ impl Accounts {
             }
         }
         found
+    }
+}
+
+#[cfg(test)]
+mod session_key_tests {
+    use super::*;
+
+    fn user(id: i64) -> Principal {
+        Principal {
+            user: Some(UserId::new(id)),
+            ..Principal::operator("someone")
+        }
+    }
+
+    #[test]
+    fn two_users_choosing_the_same_session_do_not_share_it() {
+        assert_ne!(user(1).session_key("abc"), user(2).session_key("abc"));
+    }
+
+    #[test]
+    fn a_user_gets_back_the_identifier_it_chose() {
+        let caller = user(1);
+        assert_eq!(caller.client_key(&caller.session_key("abc")), "abc");
+    }
+
+    #[test]
+    fn the_operator_keeps_identifiers_as_they_are() {
+        let operator = Principal::operator("owner");
+        assert_eq!(operator.session_key("abc"), "abc");
+        assert_eq!(operator.client_key("u1~abc"), "u1~abc");
+    }
+
+    #[test]
+    fn only_the_owner_and_the_operator_own_something() {
+        let owner = Some(UserId::new(1));
+        assert!(user(1).owns(owner));
+        assert!(!user(2).owns(owner));
+        assert!(!user(1).owns(None));
+        assert!(Principal::operator("owner").owns(owner));
     }
 }
 

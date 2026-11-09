@@ -234,7 +234,10 @@ async fn create(
     params.get("type").ok_or(ApiError::BadRequest)?;
     let uri = params.get("uri").ok_or(ApiError::BadRequest)?;
 
-    let path = library_path(uri, &state.identity.machine_identifier);
+    let path = library_path(
+        uri,
+        &crate::gql::machine_identifier(&state.identity.machine_identifier),
+    );
     let items = match path {
         Some(path) => expand(&state, path).await?,
         None => Vec::new(),

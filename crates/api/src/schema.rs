@@ -38,6 +38,7 @@ pub struct ApiContext {
     pub metadata: Arc<dyn MetadataRepository>,
     pub playback: Arc<dyn open_plex_core::playback::PlaybackRepository>,
     pub play_queues: Arc<dyn open_plex_core::play_queue::PlayQueueRepository>,
+    pub access: Arc<dyn open_plex_core::access::AccessRepository>,
 }
 
 /// Anything that can be refetched by its global identifier.
@@ -48,6 +49,8 @@ pub struct ApiContext {
 #[derive(Debug, Interface)]
 #[graphql(field(name = "id", ty = "ID", desc = "Globally unique, opaque identifier."))]
 pub enum Node {
+    /// Someone who can be given access to libraries.
+    User(crate::access::UserObject),
     PlaybackSession(crate::playback::PlaybackSessionObject),
     PlayQueue(crate::play_queue::PlayQueueObject),
     PlayQueueEntry(crate::play_queue::PlayQueueEntryObject),
@@ -115,12 +118,19 @@ impl Query {
             SERVER_TYPE => Ok(Some(Node::Server(Server(
                 context.data::<ApiContext>()?.capabilities.clone(),
             )))),
-            LIBRARY_TYPE => Ok(load_library(context, SectionId::new(global.key))
+            crate::access::USER_TYPE => Ok(crate::access::user_node(context, global.key)
                 .await?
-                .map(Node::Library)),
+                .map(Node::User)),
+            LIBRARY_TYPE => {
+                let section = SectionId::new(global.key);
+                if !crate::access::can_read(context, section) {
+                    return Ok(None);
+                }
+                Ok(load_library(context, section).await?.map(Node::Library))
+            }
             ROOT_TYPE => Ok(load_root(context, global.key).await?.map(Node::Root)),
             // One tag for all four item kinds: the kind comes from storage, not the id.
-            ITEM_TYPE => Ok(load_item(context, RatingKey::new(global.key))
+            ITEM_TYPE => Ok(readable_item(context, RatingKey::new(global.key))
                 .await?
                 .map(|item| match Item::from_domain(item) {
                     Item::Movie(movie) => Node::Movie(movie),
@@ -145,20 +155,38 @@ impl Query {
                 .person(PersonId::new(global.key))
                 .await?
                 .map(|person| Node::Person(PersonObject(person)))),
-            crate::play_queue::PLAY_QUEUE_TYPE => Ok(crate::play_queue::queues(context)?
-                .queue(global.key)
-                .await?
-                .map(|queue| Node::PlayQueue(crate::play_queue::PlayQueueObject(queue)))),
-            crate::play_queue::PLAY_QUEUE_ENTRY_TYPE => Ok(crate::play_queue::queues(context)?
-                .entry(global.key)
-                .await?
-                .map(|entry| Node::PlayQueueEntry(crate::play_queue::PlayQueueEntryObject(entry)))),
-            crate::playback::PLAYBACK_TYPE => Ok(crate::playback::playback(context)?
-                .session(global.key, open_plex_core::now_epoch())
-                .await?
-                .map(|session| {
-                    Node::PlaybackSession(crate::playback::PlaybackSessionObject(session))
-                })),
+            crate::play_queue::PLAY_QUEUE_TYPE => {
+                let caller = crate::access::require_caller(context)?;
+                Ok(crate::play_queue::queues(context)?
+                    .queue(global.key)
+                    .await?
+                    .filter(|queue| caller.owns(queue.user))
+                    .map(|queue| Node::PlayQueue(crate::play_queue::PlayQueueObject(queue))))
+            }
+            crate::play_queue::PLAY_QUEUE_ENTRY_TYPE => {
+                let caller = crate::access::require_caller(context)?;
+                let queues = crate::play_queue::queues(context)?;
+                let Some(entry) = queues.entry(global.key).await? else {
+                    return Ok(None);
+                };
+                let owned = queues
+                    .queue(entry.queue)
+                    .await?
+                    .is_some_and(|queue| caller.owns(queue.user));
+                Ok(owned.then_some(Node::PlayQueueEntry(
+                    crate::play_queue::PlayQueueEntryObject(entry),
+                )))
+            }
+            crate::playback::PLAYBACK_TYPE => {
+                let caller = crate::access::require_caller(context)?;
+                Ok(crate::playback::playback(context)?
+                    .session(global.key, open_plex_core::now_epoch())
+                    .await?
+                    .filter(|session| caller.owns(session.user))
+                    .map(|session| {
+                        Node::PlaybackSession(crate::playback::PlaybackSessionObject(session))
+                    }))
+            }
             other => Err(async_graphql::Error::new(format!(
                 "`{other}` is not an identifiable type"
             ))),
@@ -233,6 +261,7 @@ impl Query {
         >,
     ) -> Result<crate::item::ItemConnection> {
         let mut search = SearchQuery::new(query);
+        search.sections = crate::access::visible_sections(context);
         search.kinds = kinds
             .unwrap_or_default()
             .into_iter()
@@ -274,7 +303,29 @@ impl Query {
         crate::playback::sessions(context, after, before, first, last).await
     }
 
-    /// Every library on this server, ordered by identifier.
+    /// The people who can be given access to this server. For its operator only.
+    async fn users(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return users after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return users before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many users from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many users from the end of the range.")] last: Option<
+            i32,
+        >,
+    ) -> Result<
+        connection::Connection<
+            OpaqueCursor,
+            crate::access::UserObject,
+            connection::EmptyFields,
+            connection::EmptyFields,
+        >,
+    > {
+        crate::access::users(context, after, before, first, last).await
+    }
+
+    /// Every library the caller can see, ordered by identifier.
     ///
     /// Paginated as a Relay connection, with the window pushed down to storage rather than
     /// applied after loading. Ordering by the identifier is what makes cursors stable: adding
@@ -344,7 +395,7 @@ pub fn id_window(
     Window::new(after, before, first, last)
 }
 
-async fn load_library(context: &Context<'_>, id: SectionId) -> Result<Option<Library>> {
+pub(crate) async fn load_library(context: &Context<'_>, id: SectionId) -> Result<Option<Library>> {
     let loader = context.data::<DataLoader<LibraryLoader>>()?;
     Ok(loader.load_one(id).await?.map(Library::new))
 }
@@ -357,7 +408,8 @@ async fn load_library(context: &Context<'_>, id: SectionId) -> Result<Option<Lib
 async fn load_root(context: &Context<'_>, id: i64) -> Result<Option<Root>> {
     let library = library_repository(context)?;
     let window = id_window(None, None, Some(500), None)?;
-    let sections = library.sections(window).await?;
+    let visible = crate::access::visible_sections(context);
+    let sections = library.sections(visible.as_deref(), window).await?;
     let ids: Vec<SectionId> = sections.items.iter().map(|section| section.id).collect();
 
     Ok(library
@@ -376,16 +428,55 @@ async fn load_item(
     Ok(loader.load_one(id).await?)
 }
 
+/// An item, if it lies in a library the caller can see.
+pub(crate) async fn readable_item(
+    context: &Context<'_>,
+    id: RatingKey,
+) -> Result<Option<open_plex_core::MetadataItem>> {
+    Ok(load_item(context, id)
+        .await?
+        .filter(|item| crate::access::can_read(context, item.section_id)))
+}
+
+async fn readable_version(
+    context: &Context<'_>,
+    id: MediaId,
+) -> Result<Option<open_plex_core::MediaVersion>> {
+    let Some(version) = metadata(context)?.version(id).await? else {
+        return Ok(None);
+    };
+    Ok(readable_item(context, version.item_id)
+        .await?
+        .map(|_| version))
+}
+
+async fn readable_file(
+    context: &Context<'_>,
+    id: PartId,
+) -> Result<Option<open_plex_core::MediaFile>> {
+    let Some(file) = metadata(context)?.file(id).await? else {
+        return Ok(None);
+    };
+    Ok(readable_version(context, file.version_id)
+        .await?
+        .map(|_| file))
+}
+
 async fn load_version(context: &Context<'_>, id: MediaId) -> Result<Option<Version>> {
-    Ok(metadata(context)?.version(id).await?.map(Version))
+    Ok(readable_version(context, id).await?.map(Version))
 }
 
 async fn load_file(context: &Context<'_>, id: PartId) -> Result<Option<File>> {
-    Ok(metadata(context)?.file(id).await?.map(File))
+    Ok(readable_file(context, id).await?.map(File))
 }
 
 async fn load_track(context: &Context<'_>, id: StreamId) -> Result<Option<Track>> {
-    Ok(metadata(context)?.stream(id).await?.map(Track))
+    let Some(stream) = metadata(context)?.stream(id).await? else {
+        return Ok(None);
+    };
+    Ok(readable_file(context, stream.file_id)
+        .await?
+        .map(|_| Track(stream)))
 }
 
 /// The library port, for resolvers that need it directly rather than through a loader.

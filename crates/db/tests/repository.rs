@@ -88,7 +88,7 @@ async fn migrations_create_a_usable_schema() {
     // Connecting runs them; a failure here means the migration itself is broken.
     let page = repository()
         .await
-        .sections(window(None, None, Some(100), None))
+        .sections(None, window(None, None, Some(100), None))
         .await
         .expect("query succeeds");
     assert_eq!(page.items.len(), 6);
@@ -99,7 +99,7 @@ async fn pages_forward_in_ascending_id_order() {
     let repository = repository().await;
 
     let first = repository
-        .sections(window(None, None, Some(2), None))
+        .sections(None, window(None, None, Some(2), None))
         .await
         .expect("first page");
     assert_eq!(ids(&first.items), vec![4, 5]);
@@ -107,7 +107,7 @@ async fn pages_forward_in_ascending_id_order() {
     assert!(!first.has_previous);
 
     let second = repository
-        .sections(window(Some(5), None, Some(2), None))
+        .sections(None, window(Some(5), None, Some(2), None))
         .await
         .expect("second page");
     assert_eq!(ids(&second.items), vec![6, 8]);
@@ -119,7 +119,7 @@ async fn pages_forward_in_ascending_id_order() {
 async fn the_last_forward_page_reports_no_next() {
     let page = repository()
         .await
-        .sections(window(Some(9), None, Some(2), None))
+        .sections(None, window(Some(9), None, Some(2), None))
         .await
         .expect("page");
     assert_eq!(ids(&page.items), vec![17]);
@@ -132,7 +132,7 @@ async fn pages_backward_but_returns_ascending_items() {
     // `last` reads from the far end, yet a caller always wants the page in reading order.
     let page = repository()
         .await
-        .sections(window(None, None, None, Some(2)))
+        .sections(None, window(None, None, None, Some(2)))
         .await
         .expect("page");
     assert_eq!(ids(&page.items), vec![9, 17]);
@@ -146,7 +146,7 @@ async fn a_cursor_is_exclusive_and_not_an_offset() {
     // rows".
     let page = repository()
         .await
-        .sections(window(Some(6), None, Some(10), None))
+        .sections(None, window(Some(6), None, Some(10), None))
         .await
         .expect("page");
     assert_eq!(ids(&page.items), vec![8, 9, 17]);
@@ -156,7 +156,7 @@ async fn a_cursor_is_exclusive_and_not_an_offset() {
 async fn before_and_after_narrow_the_range_together() {
     let page = repository()
         .await
-        .sections(window(Some(4), Some(17), Some(10), None))
+        .sections(None, window(Some(4), Some(17), Some(10), None))
         .await
         .expect("page");
     assert_eq!(ids(&page.items), vec![5, 6, 8, 9]);
@@ -166,7 +166,7 @@ async fn before_and_after_narrow_the_range_together() {
 async fn maps_stored_values_onto_the_domain() {
     let page = repository()
         .await
-        .sections(window(None, None, Some(100), None))
+        .sections(None, window(None, None, Some(100), None))
         .await
         .expect("page");
 

@@ -28,8 +28,15 @@ impl LibraryRepository for SqlLibraryRepository {
     /// The window becomes `WHERE`, `ORDER BY` and `LIMIT`, so the database returns one page
     /// rather than the whole table. The same shape will serve metadata collections, where
     /// reading everything is not an option.
-    async fn sections(&self, window: Window) -> Result<Page<LibrarySection>, LibraryError> {
+    async fn sections(
+        &self,
+        only: Option<&[SectionId]>,
+        window: Window,
+    ) -> Result<Page<LibrarySection>, LibraryError> {
         let mut query = library_section::Entity::find();
+        if let Some(only) = only {
+            query = query.filter(library_section::Column::Id.is_in(only.iter().map(|id| id.get())));
+        }
 
         // Sections are ordered by id, so the cursor's sort key is unused and only its
         // tiebreaker applies.

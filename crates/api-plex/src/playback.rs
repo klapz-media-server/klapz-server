@@ -655,11 +655,12 @@ async fn open_session(
     let selection = Selection::of(&item, params)?;
     let plan = selection.plan(params)?;
     let source = file_of_part(state, selection.part.database_id()).await?;
+    let conversion = gql::session_key(&session);
 
     state
         .transcoder
         .start_stream(StreamRequest {
-            session: session.clone(),
+            session: conversion.clone(),
             source,
             video: track(selection.video),
             audio: track(selection.audio),
@@ -680,7 +681,7 @@ async fn open_session(
     .await;
     if let Err(error) = recorded {
         // A session nobody can see or stop must not keep running.
-        state.transcoder.stop_session(&session);
+        state.transcoder.stop_session(&conversion);
         return Err(error);
     }
     Ok((session, item, plan))
@@ -731,7 +732,12 @@ async fn start_dash(
     let (session, item, plan) = open_session(&state, &client, &params, Protocol::Dash).await?;
     let selection = Selection::of(&item, &params)?;
     let written = match plan.video {
-        VideoAction::Copy => state.transcoder.session_manifest(&session).await?,
+        VideoAction::Copy => {
+            state
+                .transcoder
+                .session_manifest(&gql::session_key(&session))
+                .await?
+        }
         VideoAction::Encode(_) => String::new(),
     };
 
@@ -887,6 +893,7 @@ async fn session_file(
     request: Request,
 ) -> Result<Response, ApiError> {
     touch_session(&state, &session).await;
+    let session = gql::session_key(&session);
     if file == "index.m3u8" {
         let output = state.transcoder.session_output(&session).await?;
         return Ok(playlist(media_playlist(&output)));
@@ -956,7 +963,7 @@ async fn ping(
     let Some(session) = params.session else {
         return StatusCode::NOT_FOUND;
     };
-    if !state.transcoder.ping_session(&session) {
+    if !state.transcoder.ping_session(&gql::session_key(&session)) {
         return StatusCode::NOT_FOUND;
     }
     touch_session(&state, &session).await;
@@ -971,7 +978,7 @@ async fn stop(
     let Some(session) = params.session else {
         return StatusCode::NOT_FOUND;
     };
-    if !state.transcoder.stop_session(&session) {
+    if !state.transcoder.stop_session(&gql::session_key(&session)) {
         return StatusCode::NOT_FOUND;
     }
     let mut variables = Variables::default();

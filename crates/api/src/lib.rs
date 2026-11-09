@@ -8,6 +8,7 @@
 //! Like any binding, this crate owns its wire types and maps them from `core`. It depends on
 //! `core` and never on `open-plex-db`.
 
+pub mod access;
 pub mod cursor;
 pub mod filter;
 pub mod item;

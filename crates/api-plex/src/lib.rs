@@ -113,5 +113,7 @@ pub fn router(state: PlexState) -> Router {
     ))));
 
     // Added last so a real handler registered above always wins over its stub.
-    stubs::add_routes(routes).with_state(state)
+    stubs::add_routes(routes)
+        .with_state(state)
+        .layer(axum::middleware::from_fn(gql::run_as_caller))
 }

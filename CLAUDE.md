@@ -68,8 +68,8 @@ without them saying so.
   statuses and Plex's quirks stay in the binding, which URLs may be fetched stays in the engine.
   Built this way so it can one day run on its own.
 - **No service layer above the ports.** There was one; it forwarded calls and nothing else, so
-  it was deleted. Reintroduce it when real domain logic exists — permission filtering is the
-  obvious first candidate — not before.
+  it was deleted. Permission filtering did not bring it back: the rules are in `core::access`
+  and the GraphQL schema applies them.
 - **A listing covers a library's top level by default.** `parent_id IS NULL` — the films of a
   film library, the series of a series library — because a series library keeps its seasons and
   episodes in the same section and listing all three flat is never what a client wants.
@@ -136,6 +136,19 @@ without them saying so.
   not `library_section_permissions`, not its account table, not its home/restricted flags. The
   importer copies no accounts, which also keeps the 283 real accounts (with names and e-mail
   addresses) in the reference database untouched.
+- **Three tables, one per concern.** `users` (id, email, dates), `library_permission` (a
+  `viewer` or `admin` role for one user on one library) and `user_extension` (one user
+  connected through one protocol, `plex` for now, with its external identifier and a digest of
+  its token). The operator, `OPENPLEX_TOKEN` or a trusted network, is in none of them: it sees
+  everything and manages the rest through the GraphQL mutations.
+- **Rights are enforced in the schema.** The transport attaches a `Principal`, and the resolvers
+  that lead to a library's content check it; every Plex query runs as the request's caller
+  (`gql::run_as_caller`). A request with no caller sees nothing: forgetting to attach one fails
+  closed. What a user was not given answers as if it did not exist.
+- **Each Plex user has its own server.** A token resolves to a user, and the Plex surface
+  answers with that user's machine identifier, on `/identity` too when a token comes with the
+  request. One process and one address: the separation is in what each token sees. Session
+  identifiers are chosen by clients, so they are stored under a per-user name.
 
 ### Deliberate divergences from Plex
 
@@ -391,11 +404,9 @@ absent.
   exactly the pattern we want; it is simply not done yet.
 - Default database engine for development (SQLite for now).
 - Whether any client depends on attribute ordering within an element.
-- **Permission filtering is not implemented**: any valid token sees every library.
-  `library_section_permissions` exists in the Plex schema and we ignore it. This is the domain
-  logic that justifies a service layer above the ports.
-- The access model (accounts, rights) is unspecified, and `view_state` cannot be written until
-  it exists.
+- A library's `admin` role has little to open yet: changing a library's settings is the only
+  route it gates, and that route still answers `501`.
+- `view_state` can now be tied to a user, and is not written yet.
 - **Sorting is still two columns.** `sort=` honors `titleSort` and `addedAt`; the reference
   advertises nine, and the other seven (`originallyAvailableAt`, `rating`, `audienceRating`,
   `duration`, `lastViewedAt`, `mediaHeight`, `random`) are all backed by nullable columns.

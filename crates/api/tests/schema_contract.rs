@@ -15,6 +15,10 @@ use open_plex_core::{
 };
 use serde_json::Value;
 
+fn as_operator(query: impl Into<String>) -> async_graphql::Request {
+    async_graphql::Request::new(query.into()).data(open_plex_core::Principal::operator("owner"))
+}
+
 fn schema() -> ApiSchema {
     let library = InMemoryLibrary::new(vec![LibrarySection {
         id: SectionId::new(4),
@@ -48,6 +52,7 @@ fn schema() -> ApiSchema {
         metadata: Arc::new(InMemoryMetadata::default()),
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
     })
 }
 
@@ -80,6 +85,7 @@ fn searchable() -> ApiSchema {
         metadata: Arc::new(InMemoryMetadata::new(items)),
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
     })
 }
 
@@ -132,7 +138,7 @@ fn item(
 }
 
 async fn run_on(schema: &ApiSchema, query: &str) -> Value {
-    let response = schema.execute(query).await;
+    let response = schema.execute(as_operator(query)).await;
     assert!(
         response.errors.is_empty(),
         "query failed: {:?}",
@@ -142,7 +148,7 @@ async fn run_on(schema: &ApiSchema, query: &str) -> Value {
 }
 
 async fn run(query: &str) -> Value {
-    let response = schema().execute(query).await;
+    let response = schema().execute(as_operator(query)).await;
     assert!(
         response.errors.is_empty(),
         "query failed: {:?}",
@@ -257,7 +263,7 @@ async fn connections_report_cursors_and_page_boundaries() {
 async fn node_rejects_a_malformed_identifier_rather_than_returning_null() {
     // Null would read as "deleted"; this is a client bug and must say so.
     let response = schema()
-        .execute(r#"{ node(id: "not-base64!") { id } }"#)
+        .execute(as_operator(r#"{ node(id: "not-base64!") { id } }"#))
         .await;
     assert!(!response.errors.is_empty());
 }
@@ -300,7 +306,7 @@ async fn nodes_refuses_a_batch_past_the_cap() {
         .collect::<Vec<_>>()
         .join(", ");
     let response = schema()
-        .execute(&format!("{{ nodes(ids: [{ids}]) {{ id }} }}"))
+        .execute(as_operator(format!("{{ nodes(ids: [{ids}]) {{ id }} }}")))
         .await;
 
     let message = response
@@ -469,6 +475,7 @@ fn series_with_episodes() -> ApiSchema {
         metadata: Arc::new(InMemoryMetadata::new(items).with_tags(tags)),
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
     })
 }
 
@@ -611,4 +618,43 @@ async fn a_tag_list_pages_by_cursor() {
     let cast = &next["node"]["tags"]["cast"];
     assert_eq!(cast["edges"][0]["node"]["name"], "Mick Jagger");
     assert_eq!(cast["pageInfo"]["hasNextPage"], false);
+}
+
+fn as_user(query: &str) -> async_graphql::Request {
+    use open_plex_core::access::{LibraryAccess, LibraryRole};
+    use open_plex_core::{Principal, Scope, SectionId, UserId};
+    let libraries = std::iter::once((SectionId::new(4), LibraryRole::Viewer)).collect();
+    async_graphql::Request::new(query).data(Principal {
+        name: "someone".to_owned(),
+        scope: Scope::User,
+        libraries: LibraryAccess::Only(libraries),
+        user: Some(UserId::new(1)),
+        server_identifier: None,
+    })
+}
+
+#[tokio::test]
+async fn a_request_with_no_caller_sees_no_library() {
+    let response = schema()
+        .execute("{ libraries(first: 10) { edges { node { id } } } }")
+        .await;
+    let data = response.data.into_json().unwrap();
+    assert_eq!(data["libraries"]["edges"], serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn managing_users_is_for_the_operator() {
+    for operation in [
+        r#"mutation { createUser(email: "a@example.org") { id } }"#,
+        "{ users(first: 1) { edges { node { id } } } }",
+    ] {
+        let response = schema().execute(as_user(operation)).await;
+        assert!(!response.errors.is_empty(), "{operation}");
+    }
+    let response = schema()
+        .execute(as_operator(
+            r#"mutation { createUser(email: "a@example.org") { email } }"#,
+        ))
+        .await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
 }

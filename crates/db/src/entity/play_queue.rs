@@ -7,6 +7,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     #[sea_orm(column_type = "Text")]
+    pub user_id: Option<i64>,
     pub source_uri: String,
     pub shuffled: bool,
     pub version: i32,

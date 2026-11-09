@@ -491,6 +491,15 @@ startup every row is deleted: no process from an earlier run is still alive.
 attributes are what Plex Web reads. `Player.state` is what `/:/timeline` last reported. Direct Play
 creates no session: only the timeline could reveal one, and we do not open one from it.
 
+### One server per user
+
+Nothing here comes from the reference, whose sharing goes through plex.tv. A user token is a
+Plex token: `X-Plex-Token`, in a header or the query string. The Plex surface then answers with
+that user's `machineIdentifier` on `/`, `/identity` and `/media/providers`, lists only the
+libraries it was given, and answers `404` for anything else. A library's `viewer` browses and
+plays; its `admin` also gets past the check on `PUT /library/sections/{id}/prefs`. `/status/sessions`
+and `/updater/*` stay with the operator, who keeps the server's own identifier.
+
 ### Automatic quality
 
 Plex Web offers "Convert automatically" when the server's `streamingBrainABRVersion` is at least 3.

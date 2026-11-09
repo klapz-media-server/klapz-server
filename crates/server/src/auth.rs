@@ -18,7 +18,8 @@ use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use ipnet::IpNet;
-use open_plex_core::{Accounts, Principal, Scope};
+use open_plex_core::access::{token_digest, AccessRepository, Extension};
+use open_plex_core::{Accounts, Principal};
 
 /// The header and query parameter carrying the token.
 ///
@@ -39,6 +40,7 @@ const PUBLIC_PATHS: &[&str] = &["/", "/identity"];
 pub struct Access {
     accounts: Accounts,
     trusted_networks: Vec<IpNet>,
+    users: Option<Arc<dyn AccessRepository>>,
 }
 
 impl Access {
@@ -46,6 +48,29 @@ impl Access {
         Self {
             accounts,
             trusted_networks,
+            users: None,
+        }
+    }
+
+    /// Adds the users whose tokens are stored, on top of the operator's.
+    #[must_use]
+    pub fn with_users(mut self, users: Arc<dyn AccessRepository>) -> Self {
+        self.users = Some(users);
+        self
+    }
+
+    /// Who a token belongs to. A storage failure refuses the token rather than the server.
+    async fn authenticate(&self, token: &str) -> Option<Principal> {
+        if let Some(operator) = self.accounts.authenticate(token) {
+            return Some(operator.clone());
+        }
+        let users = self.users.as_ref()?;
+        match users.grant(Extension::Plex, &token_digest(token)).await {
+            Ok(grant) => grant.map(open_plex_core::access::Grant::into_principal),
+            Err(error) => {
+                tracing::warn!(%error, "could not look a token up");
+                None
+            }
         }
     }
 
@@ -93,15 +118,22 @@ pub async fn require_token(
 ) -> Response {
     let path = request.uri().path();
     // The web client is public on the reference too: it has to load before it can sign in.
-    if PUBLIC_PATHS.contains(&path)
-        || crate::web::is_client_path(path)
-        || is_transcoder_callback(path)
-    {
+    if crate::web::is_client_path(path) || is_transcoder_callback(path) {
+        return next.run(request).await;
+    }
+    let presented = token_from(&request);
+    let by_token = match presented {
+        Some(presented) => access.authenticate(&presented).await,
+        None => None,
+    };
+    // Public, but a caller who says who it is sees its own server's identifier.
+    if PUBLIC_PATHS.contains(&request.uri().path()) {
+        if let Some(principal) = by_token {
+            request.extensions_mut().insert(principal);
+        }
         return next.run(request).await;
     }
 
-    let by_token = token_from(&request)
-        .and_then(|presented| access.accounts.authenticate(&presented).cloned());
     // A token that does not match still lets a trusted peer in: a client that once signed in
     // elsewhere keeps sending its stale one, and refusing it would refuse the peer we trust.
     let Some(principal) = by_token.or_else(|| trusted_peer(&access, &request)) else {
@@ -122,10 +154,9 @@ pub async fn require_token(
 /// the client, and `X-Forwarded-For: 127.0.0.1` would otherwise grant anyone access.
 fn trusted_peer(access: &Access, request: &Request) -> Option<Principal> {
     let ConnectInfo(peer) = request.extensions().get::<ConnectInfo<SocketAddr>>()?;
-    access.trusts(peer.ip()).then(|| Principal {
-        name: "trusted network".to_owned(),
-        scope: Scope::Admin,
-    })
+    access
+        .trusts(peer.ip())
+        .then(|| Principal::operator("trusted network"))
 }
 
 /// Reads the token from the header, falling back to the query string.

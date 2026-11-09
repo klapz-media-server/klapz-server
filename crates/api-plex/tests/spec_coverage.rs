@@ -125,15 +125,14 @@ fn app() -> axum::Router {
         metadata: std::sync::Arc::new(metadata),
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
     });
     let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
 
     // A principal is attached directly: authentication lives in the `server` crate, and this
     // test is about routing, not about credentials.
-    router(PlexState::new(identity, schema, accounts)).layer(axum::Extension(Principal {
-        name: "owner".to_owned(),
-        scope: Scope::Admin,
-    }))
+    router(PlexState::new(identity, schema, accounts))
+        .layer(axum::Extension(Principal::operator("owner")))
 }
 
 /// Fills path parameters with values of a plausible shape.

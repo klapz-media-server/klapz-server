@@ -6,7 +6,7 @@
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;
 
-use crate::ids::RatingKey;
+use crate::ids::{RatingKey, UserId};
 use crate::page::{Page, Window};
 
 /// How long a queue is kept. Nothing says when a player is done with one.
@@ -14,6 +14,8 @@ pub const QUEUE_RETENTION_SECONDS: i64 = 7 * 24 * 3600;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewPlayQueue {
+    /// `None` for the server's operator.
+    pub user: Option<UserId>,
     /// Where the items came from, as the client named it.
     pub source_uri: String,
     pub items: Vec<RatingKey>,
@@ -47,6 +49,7 @@ pub struct PlayQueueEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlayQueue {
     pub id: i64,
+    pub user: Option<UserId>,
     pub source_uri: String,
     pub shuffled: bool,
     pub version: i32,
@@ -88,6 +91,7 @@ mod tests {
     fn shuffling_keeps_every_item_and_plays_the_first() {
         let items: Vec<RatingKey> = (1..=50).map(RatingKey::new).collect();
         let queue = NewPlayQueue {
+            user: None,
             source_uri: String::new(),
             items: items.clone(),
             selected: 7,

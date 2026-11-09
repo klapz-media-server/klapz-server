@@ -161,7 +161,7 @@ async fn identity(
         size: 0,
         api_version: state.identity.api_version.clone(),
         claimed: true,
-        machine_identifier: state.identity.machine_identifier.clone(),
+        machine_identifier: crate::gql::machine_identifier(&state.identity.machine_identifier),
         version: PLEX_VERSION.to_owned(),
     };
     PlexResponse::new(body, format)

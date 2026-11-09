@@ -7,9 +7,11 @@ license.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+sha2.workspace = true
 subtle.workspace = true
 thiserror.workspace = true
 unicode-normalization.workspace = true
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }

@@ -1687,10 +1687,12 @@ name = "open-plex-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "sha2",
  "subtle",
  "thiserror",
  "tokio",
  "unicode-normalization",
+ "uuid",
 ]
 
 [[package]]

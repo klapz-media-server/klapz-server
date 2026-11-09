@@ -19,6 +19,7 @@ async fn repository() -> SqlPlaybackRepository {
 fn session(key: &str) -> NewPlaybackSession {
     NewPlaybackSession {
         key: key.to_owned(),
+        user: None,
         playback_id: Some("player".to_owned()),
         item: RatingKey::new(10),
         part: PartId::new(20),
@@ -39,6 +40,7 @@ fn session(key: &str) -> NewPlaybackSession {
 async fn active_keys(repository: &SqlPlaybackRepository, now: i64) -> Vec<String> {
     repository
         .active(
+            None,
             now,
             Window::new(None, None, Some(10), None).expect("window"),
         )

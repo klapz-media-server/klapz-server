@@ -29,6 +29,11 @@ macro_rules! numeric_id {
 }
 
 numeric_id! {
+    /// Identifies someone who can be given access to libraries.
+    UserId
+}
+
+numeric_id! {
     /// Identifies a library section (what the UI calls a library).
     SectionId
 }

@@ -129,6 +129,7 @@ impl PlayQueueEntryObject {
             .data::<DataLoader<ItemLoader>>()?
             .load_one(self.0.item)
             .await?
+            .filter(|item| crate::access::can_read(context, item.section_id))
             .map(Item::from_domain))
     }
 }
@@ -150,12 +151,22 @@ pub(crate) async fn create(
     context: &Context<'_>,
     input: CreatePlayQueueInput,
 ) -> Result<PlayQueueObject> {
+    let caller = crate::access::require_caller(context)?;
     let items = input
         .item_ids
         .iter()
         .map(|id| Ok(RatingKey::new(GlobalId::decode(id)?.key)))
         .collect::<Result<Vec<_>>>()?;
+    for item in &items {
+        if crate::schema::readable_item(context, *item)
+            .await?
+            .is_none()
+        {
+            return Err(crate::access::denied());
+        }
+    }
     let queue = NewPlayQueue {
+        user: caller.user,
         source_uri: input.source_uri,
         selected: usize::try_from(input.selected_position).unwrap_or(0),
         items,

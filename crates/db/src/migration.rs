@@ -14,6 +14,7 @@ mod m0008_playback_session;
 mod m0009_play_queue;
 mod m0010_playback_id;
 mod m0011_playback_output;
+mod m0012_access;
 
 use sea_orm_migration::prelude::*;
 
@@ -35,6 +36,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0009_play_queue::Migration),
             Box::new(m0010_playback_id::Migration),
             Box::new(m0011_playback_output::Migration),
+            Box::new(m0012_access::Migration),
         ]
     }
 }

@@ -17,7 +17,7 @@ use open_plex_api::library::LIBRARY_TYPE;
 use open_plex_api::GlobalId;
 use serde::{Deserialize, Serialize};
 
-use crate::auth::{AdminCaller, Caller};
+use crate::auth::Caller;
 use crate::client::ClientIdentity;
 use crate::error::ApiError;
 use crate::general::{self, GqlServer};
@@ -263,8 +263,39 @@ async fn section_prefs(
     ))
 }
 
-async fn change_section_prefs(_caller: AdminCaller) -> ApiError {
-    ApiError::NotImplemented
+/// Answered for a library's admins only; the others are told it does not exist.
+async fn change_section_prefs(
+    _caller: Caller,
+    State(state): State<PlexState>,
+    Path(section): Path<i64>,
+) -> ApiError {
+    let mut variables = Variables::default();
+    variables.insert(
+        Name::new("id"),
+        Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
+    );
+    let role: Result<LibraryRoleData, ApiError> =
+        gql::execute(&state.schema, LIBRARY_ROLE_QUERY, variables).await;
+    match role.map(|data| data.node.and_then(|node| node.viewer_role)) {
+        Ok(Some(role)) if role == "ADMIN" => ApiError::NotImplemented,
+        Ok(_) => ApiError::NotFound,
+        Err(error) => error,
+    }
+}
+
+const LIBRARY_ROLE_QUERY: &str = r"
+query PlexLibraryRole($id: ID!) { node(id: $id) { ... on Library { viewerRole } } }
+";
+
+#[derive(Debug, Deserialize)]
+struct LibraryRoleData {
+    node: Option<LibraryRoleNode>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryRoleNode {
+    viewer_role: Option<String>,
 }
 
 /// Unlike the server's settings, every default and value here is a string on the wire, even

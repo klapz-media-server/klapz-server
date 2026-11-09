@@ -49,6 +49,7 @@ impl SqlPlayQueueRepository {
         };
         Ok(PlayQueue {
             id: row.id,
+            user: row.user_id.map(open_plex_core::UserId::new),
             source_uri: row.source_uri,
             shuffled: row.shuffled,
             version: row.version,
@@ -82,6 +83,7 @@ impl PlayQueueRepository for SqlPlayQueueRepository {
             (!queue.items.is_empty()).then(|| i64::try_from(queue.selected).unwrap_or(0));
         let row = play_queue::ActiveModel {
             id: ActiveValue::NotSet,
+            user_id: ActiveValue::Set(queue.user.map(open_plex_core::UserId::get)),
             source_uri: ActiveValue::Set(queue.source_uri),
             shuffled: ActiveValue::Set(queue.shuffled),
             version: ActiveValue::Set(1),

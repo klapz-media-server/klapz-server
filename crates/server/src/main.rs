@@ -15,6 +15,7 @@ use std::time::Duration;
 use axum::http::{header, HeaderValue, StatusCode};
 use open_plex_api::{build_schema, ApiContext};
 use open_plex_api_plex::PlexState;
+use open_plex_core::access::AccessRepository;
 use open_plex_core::metadata::MetadataRepository;
 use open_plex_core::play_queue::PlayQueueRepository;
 use open_plex_core::playback::PlaybackRepository;
@@ -22,8 +23,8 @@ use open_plex_core::{
     Accounts, Credential, LibraryRepository, Scope, ServerCapabilities, ServerIdentity,
 };
 use open_plex_db::{
-    import, SqlLibraryRepository, SqlMetadataRepository, SqlPlayQueueRepository,
-    SqlPlaybackRepository,
+    import, SqlAccessRepository, SqlLibraryRepository, SqlMetadataRepository,
+    SqlPlayQueueRepository, SqlPlaybackRepository,
 };
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
@@ -56,23 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let source = arguments
             .next()
             .ok_or("usage: open-plex-server import <plex.db>")?;
-        let summary = import::import_library(&connection, &PathBuf::from(source)).await?;
-        tracing::info!(
-            sections = summary.sections,
-            roots = summary.roots,
-            items = summary.items,
-            media = summary.media,
-            files = summary.files,
-            streams = summary.streams,
-            people = summary.tags.people,
-            tags = summary.tags.tags,
-            item_tags = summary.tags.item_tags,
-            external_ids = summary.tags.external_ids,
-            ratings = summary.tags.ratings,
-            orphans = summary.orphans,
-            "import complete"
-        );
-        return Ok(());
+        return run_import(&connection, &PathBuf::from(source)).await;
     }
 
     let library: Arc<dyn LibraryRepository> =
@@ -81,6 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(SqlPlayQueueRepository::new(connection.clone()));
     let playback: Arc<dyn PlaybackRepository> =
         Arc::new(SqlPlaybackRepository::new(connection.clone()));
+    let users: Arc<dyn AccessRepository> = Arc::new(SqlAccessRepository::new(connection.clone()));
     let metadata: Arc<dyn MetadataRepository> = Arc::new(SqlMetadataRepository::new(connection));
     // No process from before this one is still running, so no session from before is either.
     let cleared = playback.delete_all().await?;
@@ -96,9 +82,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metadata,
         playback: Arc::clone(&playback),
         play_queues: Arc::clone(&play_queues),
+        access: Arc::clone(&users),
     });
     let accounts = accounts();
-    let access = Arc::new(auth::Access::new(accounts.clone(), trusted_networks()?));
+    let access =
+        Arc::new(auth::Access::new(accounts.clone(), trusted_networks()?).with_users(users));
 
     // The Plex surface is the base and GraphQL is merged into it, which inverts the
     // relationship the architecture describes. The reason is mechanical: Plex has paths whose
@@ -155,6 +143,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .await?;
+    Ok(())
+}
+
+async fn run_import(
+    connection: &open_plex_db::DatabaseConnection,
+    source: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let summary = import::import_library(connection, source).await?;
+    tracing::info!(
+        sections = summary.sections,
+        roots = summary.roots,
+        items = summary.items,
+        media = summary.media,
+        files = summary.files,
+        streams = summary.streams,
+        people = summary.tags.people,
+        tags = summary.tags.tags,
+        item_tags = summary.tags.item_tags,
+        external_ids = summary.tags.external_ids,
+        ratings = summary.tags.ratings,
+        orphans = summary.orphans,
+        "import complete"
+    );
     Ok(())
 }
 

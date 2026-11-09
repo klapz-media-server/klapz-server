@@ -265,6 +265,10 @@ impl MetadataRepository for SqlMetadataRepository {
             let kinds = query.kinds.iter().map(|kind| kind_name(*kind));
             select = select.filter(metadata_item::Column::Kind.is_in(kinds));
         }
+        if let Some(sections) = &query.sections {
+            let sections = sections.iter().map(|section| section.get());
+            select = select.filter(metadata_item::Column::LibrarySectionId.is_in(sections));
+        }
 
         // Title ordering, so the cursor is the one the listing already builds.
         let sort_column = metadata_item::Column::SortKey;

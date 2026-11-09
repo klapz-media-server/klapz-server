@@ -9,10 +9,44 @@
 //! loose JSON, so the adapter keeps compile-time guarantees about the shape it consumes.
 
 use async_graphql::{Request, Variables};
+use axum::middleware::Next;
+use axum::response::Response;
 use open_plex_api::ApiSchema;
+use open_plex_core::Principal;
 use serde::de::DeserializeOwned;
 
 use crate::error::ApiError;
+
+tokio::task_local! {
+    /// Who the request being handled is from. Task-local rather than passed along so that no
+    /// query can be written that forgets it: the schema shows nothing to a request without one.
+    static CALLER: Option<Principal>;
+}
+
+/// Makes the authenticated caller, if any, the one every query of this request runs as.
+pub async fn run_as_caller(request: axum::extract::Request, next: Next) -> Response {
+    let caller = request.extensions().get::<Principal>().cloned();
+    CALLER.scope(caller, next.run(request)).await
+}
+
+fn caller() -> Option<Principal> {
+    CALLER.try_with(Clone::clone).ok().flatten()
+}
+
+/// The machine identifier this request's caller knows the server by: each user has its own.
+pub fn machine_identifier(server: &str) -> String {
+    caller()
+        .and_then(|caller| caller.server_identifier)
+        .unwrap_or_else(|| server.to_owned())
+}
+
+/// The name a session is kept under by the transcoder, which is shared by every user.
+pub fn session_key(client_key: &str) -> String {
+    caller().map_or_else(
+        || client_key.to_owned(),
+        |caller| caller.session_key(client_key),
+    )
+}
 
 /// Runs a query and deserializes `data` into `T`.
 ///
@@ -30,9 +64,11 @@ pub async fn execute<T: DeserializeOwned>(
     query: &str,
     variables: Variables,
 ) -> Result<T, ApiError> {
-    let response = schema
-        .execute(Request::new(query).variables(variables))
-        .await;
+    let mut request = Request::new(query).variables(variables);
+    if let Some(caller) = caller() {
+        request = request.data(caller);
+    }
+    let response = schema.execute(request).await;
 
     if !response.errors.is_empty() {
         let joined = response

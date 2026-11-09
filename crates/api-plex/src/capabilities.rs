@@ -156,7 +156,7 @@ impl CapabilitiesContainer {
             // Plex reports a capability level rather than a flag here; 7 is what a server
             // with tuners and recording advertises.
             livetv: if features.live_tv { 7 } else { 0 },
-            machine_identifier: server.machine_identifier.clone(),
+            machine_identifier: crate::gql::machine_identifier(&server.machine_identifier),
             media_providers: true,
             multiuser: features.multiuser,
             music_analysis: if features.loudness { 2 } else { 0 },

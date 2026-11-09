@@ -76,8 +76,12 @@ pub trait LibraryRepository: Send + Sync + std::fmt::Debug {
     ///
     /// Takes a window rather than returning everything so the limit reaches SQL: this is the
     /// same port shape the metadata collections will need, where "everything" is hundreds of
-    /// thousands of rows.
-    async fn sections(&self, window: Window) -> Result<Page<LibrarySection>, LibraryError>;
+    /// thousands of rows. `only` narrows it to these sections, the ones a caller may see.
+    async fn sections(
+        &self,
+        only: Option<&[SectionId]>,
+        window: Window,
+    ) -> Result<Page<LibrarySection>, LibraryError>;
 
     async fn section(&self, id: SectionId) -> Result<LibrarySection, LibraryError>;
 
@@ -93,8 +97,12 @@ pub trait LibraryRepository: Send + Sync + std::fmt::Debug {
 /// bindings can hold a trait object instead of being generic over the storage type.
 #[async_trait::async_trait]
 impl<T: LibraryRepository + ?Sized> LibraryRepository for std::sync::Arc<T> {
-    async fn sections(&self, window: Window) -> Result<Page<LibrarySection>, LibraryError> {
-        (**self).sections(window).await
+    async fn sections(
+        &self,
+        only: Option<&[SectionId]>,
+        window: Window,
+    ) -> Result<Page<LibrarySection>, LibraryError> {
+        (**self).sections(only, window).await
     }
 
     async fn section(&self, id: SectionId) -> Result<LibrarySection, LibraryError> {
@@ -149,7 +157,7 @@ mod tests {
     #[tokio::test]
     async fn pages_sections_through_the_window() {
         let window = Window::new(None, None, Some(1), None).expect("valid window");
-        let page = catalog().sections(window).await.expect("page");
+        let page = catalog().sections(None, window).await.expect("page");
         assert_eq!(page.items.len(), 1);
         assert!(!page.has_next);
         assert!(!page.has_previous);

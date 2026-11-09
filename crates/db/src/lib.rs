@@ -3,6 +3,7 @@
 //! Depends on `core` and is depended on by no binding: a `use open_plex_db::…` inside an API
 //! binding would mean the layering has broken down.
 
+pub mod access_repository;
 pub mod entity;
 pub mod import;
 pub mod metadata_repository;
@@ -12,9 +13,11 @@ pub mod playback_repository;
 pub mod repository;
 pub mod write;
 
-use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
+pub use sea_orm::DatabaseConnection;
+use sea_orm::{ConnectOptions, Database, DbErr};
 use sea_orm_migration::MigratorTrait;
 
+pub use access_repository::SqlAccessRepository;
 pub use metadata_repository::SqlMetadataRepository;
 pub use play_queue_repository::SqlPlayQueueRepository;
 pub use playback_repository::SqlPlaybackRepository;

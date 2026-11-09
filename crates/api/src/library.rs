@@ -255,6 +255,11 @@ impl Library {
         .await
     }
 
+    /// What the caller may do in this library.
+    async fn viewer_role(&self, context: &Context<'_>) -> Option<crate::access::LibraryRoleType> {
+        crate::access::viewer_role(context, self.section.id)
+    }
+
     /// Filesystem locations this library scans.
     ///
     /// Loaded in one batch across every library in the result, so asking for roots on a
@@ -487,8 +492,9 @@ pub async fn libraries(
         last,
         |after, before, first, last| async move {
             let window = schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?;
+            let visible = crate::access::visible_sections(context);
             let page = schema::library_repository(context)?
-                .sections(window)
+                .sections(visible.as_deref(), window)
                 .await?;
 
             let mut connection = Connection::new(page.has_previous, page.has_next);

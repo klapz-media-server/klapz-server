@@ -4,7 +4,7 @@
 //! leaves its rows behind. Every sign of life pushes `expires_at` forward; a session past it is
 //! no longer read, and is deleted by the next sweep.
 
-use crate::ids::{PartId, RatingKey};
+use crate::ids::{PartId, RatingKey, UserId};
 use crate::page::{Page, Window};
 
 /// How long a session lives without a sign of life. The same as the transcoder's idle limit,
@@ -40,6 +40,8 @@ pub struct PlaybackOutput {
 pub struct NewPlaybackSession {
     /// The client's own identifier for this conversion. Changes with the quality.
     pub key: String,
+    /// `None` for the server's operator.
+    pub user: Option<UserId>,
     /// The player's identifier for the whole playback, which is what its reports name.
     pub playback_id: Option<String>,
     pub item: RatingKey,
@@ -56,6 +58,7 @@ pub struct NewPlaybackSession {
 pub struct PlaybackSession {
     pub id: i64,
     pub key: String,
+    pub user: Option<UserId>,
     pub playback_id: Option<String>,
     pub item: RatingKey,
     pub part: PartId,
@@ -107,9 +110,10 @@ pub trait PlaybackRepository: Send + Sync + std::fmt::Debug {
     /// Closes a session. Whether it existed.
     async fn end(&self, key: &str) -> Result<bool, PlaybackError>;
 
-    /// The sessions that have not expired, oldest first.
+    /// The sessions that have not expired, oldest first. `only` narrows it to one user's.
     async fn active(
         &self,
+        only: Option<UserId>,
         now: i64,
         window: Window,
     ) -> Result<Page<PlaybackSession>, PlaybackError>;

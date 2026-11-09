@@ -12,6 +12,7 @@ use axum::http::{header, Request, StatusCode};
 use http_body_util::BodyExt;
 use open_plex_api::{build_schema, ApiContext};
 use open_plex_api_plex::{router, PlexState};
+use open_plex_core::access::{LibraryAccess, LibraryRole};
 use open_plex_core::metadata::{
     ExternalId, ItemKind, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataItem, Person,
     Rating, RatingKind, StreamKind, Tag, TagKind,
@@ -20,6 +21,7 @@ use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
 use open_plex_core::{
     Accounts, Credential, LibrarySection, MediaId, PartId, PersonId, Principal, RatingKey, Scope,
     SectionId, SectionKind, SectionRoot, ServerCapabilities, ServerIdentity, StreamId, TagId,
+    UserId,
 };
 use serde_json::Value;
 use tower::ServiceExt;
@@ -84,15 +86,13 @@ fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
         metadata: std::sync::Arc::new(InMemoryMetadata::default()),
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
     });
     router(PlexState::new(identity, schema, accounts))
 }
 
 fn authenticated(router: axum::Router) -> axum::Router {
-    router.layer(axum::Extension(Principal {
-        name: "owner".to_owned(),
-        scope: Scope::Admin,
-    }))
+    router.layer(axum::Extension(Principal::operator("owner")))
 }
 
 /// Builds an app over an arbitrary catalog, for tests about ordering and flags.
@@ -785,6 +785,7 @@ fn items_app() -> axum::Router {
         metadata: std::sync::Arc::new(metadata),
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
     });
     authenticated(router(PlexState::new(identity, schema, accounts)))
 }
@@ -1596,6 +1597,163 @@ async fn media_providers_refuses_a_request_with_no_authenticated_caller() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+/// A router over the two-library catalog, as one user sees it: films (section 4) as `role`,
+/// and no permission on the series (section 5).
+fn app_as_user(user: i64, role: LibraryRole) -> axum::Router {
+    let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
+    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
+    let (library, metadata) = catalog();
+    let schema = build_schema(ApiContext {
+        capabilities: ServerCapabilities::new(identity.clone(), 0),
+        library: std::sync::Arc::new(library),
+        metadata: std::sync::Arc::new(metadata),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+    });
+    router(PlexState::new(identity, schema, accounts))
+        .layer(axum::Extension(user_principal(user, role)))
+}
+
+fn user_principal(user: i64, role: LibraryRole) -> Principal {
+    Principal {
+        name: format!("user{user}"),
+        scope: Scope::User,
+        libraries: LibraryAccess::Only(std::iter::once((SectionId::new(4), role)).collect()),
+        user: Some(UserId::new(user)),
+        server_identifier: Some(format!("server-of-user-{user}")),
+    }
+}
+
+async fn user_get(uri: &str) -> (StatusCode, String) {
+    get_from(
+        app_as_user(1, LibraryRole::Viewer),
+        uri,
+        Some("application/json"),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn a_user_lists_only_the_libraries_it_was_given() {
+    let (status, body) = user_get("/library/sections").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let json: Value = serde_json::from_str(&body).unwrap();
+    let keys: Vec<&str> = json["MediaContainer"]["Directory"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|library| library["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys, ["4"]);
+}
+
+#[tokio::test]
+async fn a_user_reads_what_it_was_given() {
+    assert_eq!(user_get("/library/metadata/100").await.0, StatusCode::OK);
+    assert_eq!(
+        user_get("/library/sections/4/all?X-Plex-Container-Start=0&X-Plex-Container-Size=10")
+            .await
+            .0,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn what_a_user_was_not_given_does_not_exist() {
+    for uri in [
+        "/library/metadata/200",
+        "/library/metadata/200/children",
+        "/library/metadata/200/grandchildren",
+        "/library/sections/5/all?X-Plex-Container-Start=0&X-Plex-Container-Size=10",
+        "/library/sections/5/prefs",
+        "/hubs/sections/5",
+    ] {
+        let (status, body) = user_get(uri).await;
+        assert!(
+            status == StatusCode::NOT_FOUND || status == StatusCode::BAD_REQUEST,
+            "{uri} answered {status}: {body}"
+        );
+        assert!(!body.contains("Grimm"), "{uri} leaked: {body}");
+    }
+}
+
+#[tokio::test]
+async fn a_batch_lookup_leaves_out_what_a_user_was_not_given() {
+    let (status, body) = user_get("/library/metadata/100,200").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let json: Value = serde_json::from_str(&body).unwrap();
+    let keys: Vec<&str> = json["MediaContainer"]["Metadata"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["ratingKey"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys, ["100"]);
+}
+
+#[tokio::test]
+async fn each_user_has_its_own_server_identifier() {
+    let identifier = |body: String| -> String {
+        let json: Value = serde_json::from_str(&body).unwrap();
+        json["MediaContainer"]["machineIdentifier"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    for uri in ["/identity", "/"] {
+        let first = get_from(
+            app_as_user(1, LibraryRole::Viewer),
+            uri,
+            Some("application/json"),
+        )
+        .await;
+        let second = get_from(
+            app_as_user(2, LibraryRole::Viewer),
+            uri,
+            Some("application/json"),
+        )
+        .await;
+        assert_eq!(identifier(first.1), "server-of-user-1", "{uri}");
+        assert_eq!(identifier(second.1), "server-of-user-2", "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn the_operator_keeps_the_servers_identifier() {
+    let (_, _, body) = get("/identity", Some("application/json")).await;
+    assert!(body.contains("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"));
+}
+
+#[tokio::test]
+async fn only_a_librarys_admin_gets_past_changing_it() {
+    let change = |user_role: LibraryRole, section: i64| async move {
+        app_as_user(1, user_role)
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/library/sections/{section}/prefs"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+    };
+    assert_eq!(
+        change(LibraryRole::Admin, 4).await,
+        StatusCode::NOT_IMPLEMENTED
+    );
+    assert_eq!(change(LibraryRole::Viewer, 4).await, StatusCode::NOT_FOUND);
+    assert_eq!(change(LibraryRole::Admin, 5).await, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn server_settings_stay_with_the_operator() {
+    assert_eq!(user_get("/status/sessions").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(user_get("/updater/status").await.0, StatusCode::NOT_FOUND);
+}
+
 async fn timeline(
     app: axum::Router,
     method: &str,
@@ -1700,6 +1858,7 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
         metadata: std::sync::Arc::new(metadata),
         playback: playback.clone(),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
     });
     let app = authenticated(router(PlexState::new(identity, schema, accounts)));
 
@@ -1708,6 +1867,7 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
         .start(
             NewPlaybackSession {
                 key: "transcode-session".to_owned(),
+                user: None,
                 playback_id: Some("tab".to_owned()),
                 item: RatingKey::new(100),
                 part: PartId::new(1),
@@ -1730,6 +1890,7 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
     let sessions = || async {
         playback
             .active(
+                None,
                 now_epoch(),
                 Window::new(None, None, Some(10), None).expect("window"),
             )

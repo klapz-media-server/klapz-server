@@ -30,6 +30,7 @@ sea-orm-migration = { version = "1", default-features = false, features = ["sqlx
 serde = { version = "1", features = ["derive"] }
 subtle = "2"
 serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
 thiserror = "2"
 # Already in the tree transitively; declared so `core` can fold accents for the title
 # word index without a second normalization implementation.
