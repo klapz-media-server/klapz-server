@@ -26,8 +26,9 @@ pub use identity::{
 pub use ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId};
 pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot};
 pub use metadata::{
-    Credit, EpisodeCredit, ExternalId, ItemFilter, ItemKind, ItemQuery, ItemSort, ItemTag,
-    MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem, MetadataRepository, Person,
-    Rating, RatingKind, SearchQuery, StreamKind, Tag, TagCondition, TagKind, TagRef,
+    Credit, EpisodeCredit, ExternalId, FieldValue, ItemFilter, ItemKind, ItemQuery, ItemSort,
+    ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem, MetadataRepository,
+    Person, Rating, RatingKind, SearchQuery, StreamKind, Tag, TagCondition, TagKind, TagRef,
+    TagScope, ValueField,
 };
 pub use page::{Bound, Cursor, CursorKey, Direction, Page, Window, WindowError};

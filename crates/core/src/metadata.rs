@@ -1,7 +1,7 @@
 //! Library contents: items, their media, and the queries bindings run against them.
 
 use crate::ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
-use crate::page::{CursorKey, Direction, Page, Window};
+use crate::page::{Cursor, CursorKey, Direction, Page, Window};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MetadataError {
@@ -185,6 +185,52 @@ pub struct Tag {
     pub name: String,
     /// Who a credit names. `None` for a genre or a country.
     pub person: Option<Person>,
+}
+
+/// Which tags a list of a library's tags covers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TagScope {
+    pub kind: TagKind,
+    /// Only credits billed within an item's first `n` positions of their kind: the leads,
+    /// for a cast. `None` takes every credit.
+    pub billed_within: Option<u32>,
+}
+
+/// A column whose distinct values a library can be browsed by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueField {
+    Year,
+    ContentRating,
+    Studio,
+}
+
+/// One distinct value of a [`ValueField`].
+///
+/// Years are listed newest first, because that is what someone browsing by year wants to
+/// see; text values in ascending byte order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldValue {
+    Year(i32),
+    Text(String),
+}
+
+impl FieldValue {
+    /// The position of this value in its list. Values are distinct, so the value alone
+    /// locates it and the id is unused.
+    pub fn cursor(&self) -> Cursor {
+        match self {
+            Self::Year(year) => Cursor::new(CursorKey::Int(i64::from(*year)), 0),
+            Self::Text(text) => Cursor::new(CursorKey::Text(text.clone()), 0),
+        }
+    }
+}
+
+impl Tag {
+    /// The position of this tag in a list ordered by name. Names repeat — two directors can
+    /// share one — so the id breaks the tie.
+    pub fn name_cursor(&self) -> Cursor {
+        Cursor::new(CursorKey::Text(self.name.clone()), self.id.get())
+    }
 }
 
 /// A tag as attached to one item.
@@ -577,6 +623,35 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
         query: &ItemQuery,
     ) -> Result<Vec<FirstCharacter>, MetadataError>;
 
+    /// One page of the tags of one kind carried by a query's items, ordered by name.
+    ///
+    /// What a client offers as the choices of a tag filter: only the genres a library's
+    /// films actually have, not every genre the server knows.
+    async fn tags_in(
+        &self,
+        query: &ItemQuery,
+        scope: TagScope,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError>;
+
+    /// How many distinct tags [`MetadataRepository::tags_in`] would list.
+    async fn tag_count_in(&self, query: &ItemQuery, scope: TagScope) -> Result<u64, MetadataError>;
+
+    /// One page of the distinct values a query's items hold in a field, absent ones left out.
+    async fn values_in(
+        &self,
+        query: &ItemQuery,
+        field: ValueField,
+        window: Window,
+    ) -> Result<Page<FieldValue>, MetadataError>;
+
+    /// How many distinct values [`MetadataRepository::values_in`] would list.
+    async fn value_count_in(
+        &self,
+        query: &ItemQuery,
+        field: ValueField,
+    ) -> Result<u64, MetadataError>;
+
     async fn item(&self, id: RatingKey) -> Result<MetadataItem, MetadataError>;
 
     /// Several items at once, for the loaders that resolve a parent from a child.
@@ -721,6 +796,36 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         query: &ItemQuery,
     ) -> Result<Vec<FirstCharacter>, MetadataError> {
         (**self).first_characters(query).await
+    }
+
+    async fn tags_in(
+        &self,
+        query: &ItemQuery,
+        scope: TagScope,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError> {
+        (**self).tags_in(query, scope, window).await
+    }
+
+    async fn tag_count_in(&self, query: &ItemQuery, scope: TagScope) -> Result<u64, MetadataError> {
+        (**self).tag_count_in(query, scope).await
+    }
+
+    async fn values_in(
+        &self,
+        query: &ItemQuery,
+        field: ValueField,
+        window: Window,
+    ) -> Result<Page<FieldValue>, MetadataError> {
+        (**self).values_in(query, field, window).await
+    }
+
+    async fn value_count_in(
+        &self,
+        query: &ItemQuery,
+        field: ValueField,
+    ) -> Result<u64, MetadataError> {
+        (**self).value_count_in(query, field).await
     }
 
     async fn item(&self, id: RatingKey) -> Result<MetadataItem, MetadataError> {

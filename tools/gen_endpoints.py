@@ -103,6 +103,16 @@ OFF_SPEC = (
         "refused.",
     ),
     (
+        "partial",
+        "GET",
+        "/library/sections/{sectionId}/{filter}",
+        "user",
+        "The choices of one filter",
+        "Genres, countries, directors, writers, starring actors, producers, years, decades, "
+        "content ratings and studios, encoded as the reference encodes each. `resolution` "
+        "answers `501`; no `None` rating. Windowed at 500. See `docs/spec-gaps.md`.",
+    ),
+    (
         "done",
         "GET",
         "/library/metadata/{id}/userState",

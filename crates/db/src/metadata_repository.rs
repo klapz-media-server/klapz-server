@@ -8,10 +8,10 @@
 use std::collections::BTreeMap;
 
 use open_plex_core::metadata::{
-    first_character_bucket, EpisodeCredit, ExternalId, FirstCharacter, ItemKind, ItemQuery,
-    ItemSort, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
-    MetadataRepository, Person, Rating, SearchQuery, StreamKind, Tag, TagCondition, TagKind,
-    TagRef,
+    first_character_bucket, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind,
+    ItemQuery, ItemSort, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError,
+    MetadataItem, MetadataRepository, Person, Rating, SearchQuery, StreamKind, Tag, TagCondition,
+    TagKind, TagRef, TagScope, ValueField,
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
@@ -19,6 +19,7 @@ use open_plex_core::search;
 use open_plex_core::similar::TagOverlap;
 use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
+use sea_orm::QueryTrait;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromQueryResult, JoinType, Order,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
@@ -103,6 +104,58 @@ impl SqlMetadataRepository {
         }
 
         select
+    }
+}
+
+impl SqlMetadataRepository {
+    /// The tags in scope that a query's items carry, each once, with no column selected.
+    ///
+    /// `IN` over the attachments rather than a join, which would return a tag once per item
+    /// carrying it: Drama is on 2,416 films.
+    fn tags_carried(query: &ItemQuery, scope: TagScope) -> Select<tag::Entity> {
+        let items = Self::selection(query)
+            .select_only()
+            .column(metadata_item::Column::Id)
+            .into_query();
+        let mut attachments = Query::select()
+            .column(item_tag::Column::TagId)
+            .from(item_tag::Entity)
+            .and_where(Expr::col(item_tag::Column::ItemId).in_subquery(items))
+            .to_owned();
+        if let Some(limit) = scope.billed_within {
+            // Positions number an item's attachments of one kind from 0.
+            attachments.and_where(Expr::col(item_tag::Column::Position).lt(limit));
+        }
+        tag::Entity::find()
+            .select_only()
+            .filter(tag::Column::Kind.eq(tag::kind_name(scope.kind)))
+            .filter(tag::Column::Id.in_subquery(attachments))
+    }
+
+    /// The distinct values a query's items hold in a field, absent ones left out.
+    fn values_held(query: &ItemQuery, field: ValueField) -> Select<metadata_item::Entity> {
+        let column = value_column(field);
+        Self::selection(query)
+            .select_only()
+            .column(column)
+            .filter(column.is_not_null())
+            .distinct()
+    }
+}
+
+const fn value_column(field: ValueField) -> metadata_item::Column {
+    match field {
+        ValueField::Year => metadata_item::Column::Year,
+        ValueField::ContentRating => metadata_item::Column::ContentRating,
+        ValueField::Studio => metadata_item::Column::Studio,
+    }
+}
+
+/// Years newest first, text in ascending order, as [`FieldValue`] promises.
+const fn value_direction(field: ValueField) -> Direction {
+    match field {
+        ValueField::Year => Direction::Descending,
+        ValueField::ContentRating | ValueField::Studio => Direction::Ascending,
     }
 }
 
@@ -541,6 +594,133 @@ impl MetadataRepository for SqlMetadataRepository {
             .await
             .map_err(storage)?
             .map(to_track))
+    }
+
+    async fn tags_in(
+        &self,
+        query: &ItemQuery,
+        scope: TagScope,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError> {
+        let mut select = Self::tags_carried(query, scope);
+        let name = Expr::col((tag::Entity, tag::Column::Name));
+        let id = Expr::col((tag::Entity, tag::Column::Id));
+        for (cursor, after) in [(&window.after, true), (&window.before, false)] {
+            if let Some(cursor) = cursor {
+                select = select.filter(keyset(
+                    name.clone(),
+                    Some(id.clone()),
+                    cursor,
+                    Direction::Ascending,
+                    after,
+                )?);
+            }
+        }
+        let order = if window.is_reversed() {
+            Order::Desc
+        } else {
+            Order::Asc
+        };
+        let rows = with_tag_columns(select)
+            .join(JoinType::LeftJoin, tag::Relation::Person.def())
+            .order_by(tag::Column::Name, order.clone())
+            .order_by(tag::Column::Id, order)
+            .offset(window.skip)
+            .limit(window.fetch_limit())
+            .into_model::<TagRow>()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+
+        let mut page = Page::from_overfetch(rows, &window);
+        if window.is_reversed() {
+            page.items.reverse();
+        }
+        Ok(Page {
+            items: page
+                .items
+                .into_iter()
+                .filter_map(TagRow::into_tag)
+                .collect(),
+            has_previous: page.has_previous,
+            has_next: page.has_next,
+        })
+    }
+
+    async fn tag_count_in(&self, query: &ItemQuery, scope: TagScope) -> Result<u64, MetadataError> {
+        Self::tags_carried(query, scope)
+            .column(tag::Column::Id)
+            .count(&self.connection)
+            .await
+            .map_err(storage)
+    }
+
+    async fn values_in(
+        &self,
+        query: &ItemQuery,
+        field: ValueField,
+        window: Window,
+    ) -> Result<Page<FieldValue>, MetadataError> {
+        let column = value_column(field);
+        let direction = value_direction(field);
+        let mut select = Self::values_held(query, field);
+        for (cursor, after) in [(&window.after, true), (&window.before, false)] {
+            if let Some(cursor) = cursor {
+                select = select.filter(keyset(
+                    Expr::col((metadata_item::Entity, column)),
+                    None,
+                    cursor,
+                    direction,
+                    after,
+                )?);
+            }
+        }
+        let order = if direction.is_descending() == window.is_reversed() {
+            Order::Asc
+        } else {
+            Order::Desc
+        };
+        let select = select
+            .order_by(column, order)
+            .offset(window.skip)
+            .limit(window.fetch_limit());
+
+        let values: Vec<FieldValue> = if field == ValueField::Year {
+            select
+                .into_tuple::<i32>()
+                .all(&self.connection)
+                .await
+                .map_err(storage)?
+                .into_iter()
+                .map(FieldValue::Year)
+                .collect()
+        } else {
+            select
+                .into_tuple::<String>()
+                .all(&self.connection)
+                .await
+                .map_err(storage)?
+                .into_iter()
+                .map(FieldValue::Text)
+                .collect()
+        };
+
+        let mut page = Page::from_overfetch(values, &window);
+        if window.is_reversed() {
+            page.items.reverse();
+        }
+        Ok(page)
+    }
+
+    async fn value_count_in(
+        &self,
+        query: &ItemQuery,
+        field: ValueField,
+    ) -> Result<u64, MetadataError> {
+        Self::values_held(query, field)
+            .count(&self.connection)
+            .await
+            .map_err(storage)
     }
 
     async fn tags_for(&self, items: &[RatingKey]) -> Result<Vec<ItemTag>, MetadataError> {
@@ -1001,6 +1181,27 @@ fn beyond(
     direction: Direction,
     after: bool,
 ) -> Result<Condition, MetadataError> {
+    keyset(
+        Expr::col((metadata_item::Entity, sort_column)),
+        Some(Expr::col((
+            metadata_item::Entity,
+            metadata_item::Column::Id,
+        ))),
+        cursor,
+        direction,
+        after,
+    )
+}
+
+/// [`beyond`] over any ordering expression. With no tiebreaker the ordering key must be
+/// unique, which it is in a list of distinct values.
+fn keyset(
+    column: Expr,
+    id: Option<Expr>,
+    cursor: &Cursor,
+    direction: Direction,
+    after: bool,
+) -> Result<Condition, MetadataError> {
     let Some(key) = cursor.key.as_ref() else {
         // A cursor with no sort key cannot locate a position in a sorted listing.
         return Err(MetadataError::CursorMismatch);
@@ -1012,13 +1213,18 @@ fn beyond(
     };
 
     let greater = direction.is_descending() != after;
-    let column = Expr::col(sort_column);
-    let id = Expr::col(metadata_item::Column::Id);
-
-    let (beyond_key, beyond_id) = if greater {
-        (column.clone().gt(value.clone()), id.gt(cursor.id))
+    let beyond_key = if greater {
+        column.clone().gt(value.clone())
     } else {
-        (column.clone().lt(value.clone()), id.lt(cursor.id))
+        column.clone().lt(value.clone())
+    };
+    let Some(id) = id else {
+        return Ok(Condition::all().add(beyond_key));
+    };
+    let beyond_id = if greater {
+        id.gt(cursor.id)
+    } else {
+        id.lt(cursor.id)
     };
 
     Ok(Condition::any()

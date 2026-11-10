@@ -6,7 +6,9 @@ use async_graphql::connection::{
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, Object, OutputType, Result, SimpleObject, ID};
 use open_plex_core::library::{LibrarySection, SectionKind, SectionRoot};
-use open_plex_core::metadata::{FirstCharacter as DomainFirstCharacter, ItemQuery, ItemSort};
+use open_plex_core::metadata::{
+    FieldValue, FirstCharacter as DomainFirstCharacter, ItemQuery, ItemSort, TagScope, ValueField,
+};
 use open_plex_core::page::{Cursor, Direction, Window, MAX_ITEMS};
 use open_plex_core::recent::recently_added_episodes;
 use open_plex_core::RatingKey;
@@ -17,6 +19,7 @@ use crate::item::{Item, ItemConnection};
 use crate::loader::{ItemLoader, RootsLoader};
 use crate::node::GlobalId;
 use crate::schema::{self, DEFAULT_PAGE_SIZE};
+use crate::tag::{TagObject, TagType};
 
 pub const LIBRARY_TYPE: &str = "Library";
 pub const ROOT_TYPE: &str = "Root";
@@ -114,6 +117,73 @@ pub type RecentlyAddedConnection = Connection<
     RecentlyAddedEdgeFields,
     RecentlyAddedConnectionName,
     RecentlyAddedEdgeName,
+>;
+
+/// A text field whose distinct values a library can be browsed by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum TextField {
+    /// The certification, as the metadata provider states it: `PG-13`, `fr/12`.
+    ContentRating,
+    /// The studio or network that made the item.
+    Studio,
+}
+
+impl From<TextField> for ValueField {
+    fn from(field: TextField) -> Self {
+        match field {
+            TextField::ContentRating => Self::ContentRating,
+            TextField::Studio => Self::Studio,
+        }
+    }
+}
+
+/// Names a connection after what it lists, since its node type is a bare scalar or a type
+/// another connection already lists.
+macro_rules! connection_names {
+    ($connection:ident, $edge:ident) => {
+        #[derive(Debug)]
+        pub struct $connection;
+
+        impl ConnectionNameType for $connection {
+            fn type_name<T: OutputType>() -> String {
+                stringify!($connection).to_owned()
+            }
+        }
+
+        #[derive(Debug)]
+        pub struct $edge;
+
+        impl EdgeNameType for $edge {
+            fn type_name<T: OutputType>() -> String {
+                stringify!($edge).to_owned()
+            }
+        }
+    };
+}
+
+connection_names!(LibraryTagConnection, LibraryTagEdge);
+connection_names!(YearConnection, YearEdge);
+connection_names!(FieldValueConnection, FieldValueEdge);
+
+/// A page of the tags a library's items carry.
+pub type LibraryTags = Connection<
+    OpaqueCursor,
+    TagObject,
+    EmptyFields,
+    EmptyFields,
+    LibraryTagConnection,
+    LibraryTagEdge,
+>;
+/// A page of the years a library's items were released in.
+pub type Years = Connection<OpaqueCursor, i32, EmptyFields, EmptyFields, YearConnection, YearEdge>;
+/// A page of the values a library's items hold in a text field.
+pub type FieldValues = Connection<
+    OpaqueCursor,
+    String,
+    EmptyFields,
+    EmptyFields,
+    FieldValueConnection,
+    FieldValueEdge,
 >;
 
 /// A collection of media of a single kind — what the interface calls a library.
@@ -334,6 +404,153 @@ impl Library {
         .await
     }
 
+    /// The tags of one kind that this library's items carry, each once, ordered by name.
+    ///
+    /// The choices to offer for a tag filter: only the genres the library's films actually
+    /// have, not every genre the server knows.
+    #[allow(clippy::too_many_arguments)]
+    async fn tags(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Which kind of tag to list.")] kind: TagType,
+        #[graphql(
+            desc = "Only credits billed within an item's first this many positions of their kind: 3 lists a library's leading actors. Omitted, every credit counts."
+        )]
+        billed_within: Option<u32>,
+        #[graphql(desc = "List only the tags of the items this filter keeps.")] filter: Option<
+            ItemFilterInput,
+        >,
+        #[graphql(desc = "Return tags after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return tags before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many tags from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many tags from the end of the range.")] last: Option<
+            i32,
+        >,
+        #[graphql(desc = "Discard this many tags before the page begins.")] offset: Option<u32>,
+    ) -> Result<LibraryTags> {
+        let item_query = self.item_query(filter, None, None)?;
+        let scope = TagScope {
+            kind: kind.into(),
+            billed_within,
+        };
+        let skip = u64::from(offset.unwrap_or(0));
+        query(
+            after,
+            before,
+            first,
+            last,
+            |after, before, first, last| async move {
+                let window = schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?
+                    .skipping(skip);
+                let page = schema::metadata(context)?
+                    .tags_in(&item_query, scope, window)
+                    .await?;
+                let mut connection = Connection::new(page.has_previous, page.has_next);
+                connection.edges.extend(
+                    page.items
+                        .into_iter()
+                        .map(|tag| Edge::new(OpaqueCursor(tag.name_cursor()), TagObject(tag))),
+                );
+                Ok::<_, async_graphql::Error>(connection)
+            },
+        )
+        .await
+    }
+
+    /// The years this library's items were released in, each once, newest first.
+    #[allow(clippy::too_many_arguments)]
+    async fn years(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "List only the years of the items this filter keeps.")] filter: Option<
+            ItemFilterInput,
+        >,
+        #[graphql(desc = "Return years after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return years before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many years from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many years from the end of the range.")] last: Option<
+            i32,
+        >,
+        #[graphql(desc = "Discard this many years before the page begins.")] offset: Option<u32>,
+    ) -> Result<Years> {
+        let item_query = self.item_query(filter, None, None)?;
+        let skip = u64::from(offset.unwrap_or(0));
+        query(
+            after,
+            before,
+            first,
+            last,
+            |after, before, first, last| async move {
+                let window = schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?
+                    .skipping(skip);
+                let page = schema::metadata(context)?
+                    .values_in(&item_query, ValueField::Year, window)
+                    .await?;
+                let mut connection = Connection::new(page.has_previous, page.has_next);
+                connection
+                    .edges
+                    .extend(page.items.into_iter().filter_map(|value| {
+                        let cursor = OpaqueCursor(value.cursor());
+                        match value {
+                            FieldValue::Year(year) => Some(Edge::new(cursor, year)),
+                            FieldValue::Text(_) => None,
+                        }
+                    }));
+                Ok::<_, async_graphql::Error>(connection)
+            },
+        )
+        .await
+    }
+
+    /// The values this library's items hold in a text field, each once, in ascending byte
+    /// order. Items holding none are left out.
+    #[allow(clippy::too_many_arguments)]
+    async fn field_values(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Which field to list the values of.")] field: TextField,
+        #[graphql(desc = "List only the values of the items this filter keeps.")] filter: Option<
+            ItemFilterInput,
+        >,
+        #[graphql(desc = "Return values after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return values before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many values from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many values from the end of the range.")]
+        last: Option<i32>,
+        #[graphql(desc = "Discard this many values before the page begins.")] offset: Option<u32>,
+    ) -> Result<FieldValues> {
+        let item_query = self.item_query(filter, None, None)?;
+        let skip = u64::from(offset.unwrap_or(0));
+        query(
+            after,
+            before,
+            first,
+            last,
+            |after, before, first, last| async move {
+                let window = schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?
+                    .skipping(skip);
+                let page = schema::metadata(context)?
+                    .values_in(&item_query, field.into(), window)
+                    .await?;
+                let mut connection = Connection::new(page.has_previous, page.has_next);
+                connection
+                    .edges
+                    .extend(page.items.into_iter().filter_map(|value| {
+                        let cursor = OpaqueCursor(value.cursor());
+                        match value {
+                            FieldValue::Text(text) => Some(Edge::new(cursor, text)),
+                            FieldValue::Year(_) => None,
+                        }
+                    }));
+                Ok::<_, async_graphql::Error>(connection)
+            },
+        )
+        .await
+    }
+
     /// Aggregates over the contents of this library.
     // async-graphql rejects a synchronous resolver, and this one awaits nothing.
     #[allow(clippy::unused_async)]
@@ -454,6 +671,44 @@ impl LibraryStats {
     /// How many items match, without paging through them.
     async fn item_count(&self, context: &Context<'_>) -> Result<u64> {
         Ok(schema::metadata(context)?.item_count(&self.query).await?)
+    }
+
+    /// How many distinct tags of one kind the items carry: the size of `Library.tags`.
+    async fn tag_count(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Which kind of tag to count.")] kind: TagType,
+        #[graphql(
+            desc = "Count only credits billed within this many positions, as `Library.tags` does."
+        )]
+        billed_within: Option<u32>,
+    ) -> Result<u64> {
+        let scope = TagScope {
+            kind: kind.into(),
+            billed_within,
+        };
+        Ok(schema::metadata(context)?
+            .tag_count_in(&self.query, scope)
+            .await?)
+    }
+
+    /// How many distinct release years the items have: the size of `Library.years`.
+    async fn year_count(&self, context: &Context<'_>) -> Result<u64> {
+        Ok(schema::metadata(context)?
+            .value_count_in(&self.query, ValueField::Year)
+            .await?)
+    }
+
+    /// How many distinct values the items hold in a field: the size of
+    /// `Library.fieldValues`.
+    async fn field_value_count(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Which field to count the values of.")] field: TextField,
+    ) -> Result<u64> {
+        Ok(schema::metadata(context)?
+            .value_count_in(&self.query, field.into())
+            .await?)
     }
 
     /// The first-letter buckets, with a count each, ordered `#` then A–Z.

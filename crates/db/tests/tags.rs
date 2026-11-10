@@ -7,7 +7,8 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use open_plex_core::metadata::{
-    ItemFilter, ItemKind, ItemQuery, MetadataRepository, RatingKind, TagCondition, TagKind, TagRef,
+    FieldValue, ItemFilter, ItemKind, ItemQuery, MetadataRepository, RatingKind, TagCondition,
+    TagKind, TagRef, TagScope, ValueField,
 };
 use open_plex_core::page::Window;
 use open_plex_core::{PersonId, RatingKey, SectionId, TagId};
@@ -16,7 +17,7 @@ use open_plex_db::entity::{
 };
 use open_plex_db::write;
 use open_plex_db::SqlMetadataRepository;
-use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
+use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait};
 
 const FILMS: i64 = 6;
 const SERIES: i64 = 7;
@@ -571,4 +572,140 @@ async fn the_count_honors_the_tag_filter() {
     let repository = repository().await;
     let query = filtered(vec![condition(TagKind::Genre, vec![by_id(ACTION)])]);
     assert_eq!(repository.item_count(&query).await.expect("count"), 2);
+}
+
+fn first(n: u32) -> Window {
+    Window::new(None, None, Some(n), None).unwrap()
+}
+
+fn films() -> ItemQuery {
+    ItemQuery::new(SectionId::new(FILMS))
+}
+
+fn names(page: &open_plex_core::Page<open_plex_core::Tag>) -> Vec<&str> {
+    page.items.iter().map(|tag| tag.name.as_str()).collect()
+}
+
+#[tokio::test]
+async fn lists_a_librarys_genres_once_each_by_name() {
+    let repository = repository().await;
+    let scope = TagScope {
+        kind: TagKind::Genre,
+        billed_within: None,
+    };
+
+    // Action is on both Transporters and listed once; the series' genres stay out.
+    let page = repository
+        .tags_in(&films(), scope, first(10))
+        .await
+        .unwrap();
+    assert_eq!(names(&page), ["Action", "Comédie", "Crime", "Thriller"]);
+    assert_eq!(repository.tag_count_in(&films(), scope).await.unwrap(), 4);
+
+    // Resuming from a cursor and landing by offset give the same rows.
+    let head = repository.tags_in(&films(), scope, first(2)).await.unwrap();
+    assert!(head.has_next);
+    let cursor = head.items[1].name_cursor();
+    let after = Window::new(Some(cursor), None, Some(2), None).unwrap();
+    let tail = repository.tags_in(&films(), scope, after).await.unwrap();
+    assert_eq!(names(&tail), ["Crime", "Thriller"]);
+    assert!(!tail.has_next);
+    let skipped = repository
+        .tags_in(&films(), scope, first(2).skipping(2))
+        .await
+        .unwrap();
+    assert_eq!(names(&skipped), names(&tail));
+}
+
+#[tokio::test]
+async fn a_billing_limit_keeps_only_the_first_credits() {
+    let repository = repository().await;
+    // The Transporter bills Action, Crime, Thriller in that order.
+    let scope = TagScope {
+        kind: TagKind::Genre,
+        billed_within: Some(1),
+    };
+    let page = repository
+        .tags_in(&films(), scope, first(10))
+        .await
+        .unwrap();
+    assert_eq!(names(&page), ["Action", "Comédie"]);
+    assert_eq!(repository.tag_count_in(&films(), scope).await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn two_people_sharing_a_name_are_two_entries() {
+    let repository = repository().await;
+    let scope = TagScope {
+        kind: TagKind::Actor,
+        billed_within: None,
+    };
+    let page = repository
+        .tags_in(&films(), scope, first(10))
+        .await
+        .unwrap();
+    let ids: Vec<i64> = page.items.iter().map(|tag| tag.id.get()).collect();
+    assert_eq!(ids, [STATHAM, STATHAM_HOMONYM]);
+    assert!(page.items[0].person.is_some());
+}
+
+#[tokio::test]
+async fn lists_distinct_years_newest_first_and_text_values_ascending() {
+    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    seed(&connection).await;
+    connection
+        .execute_unprepared(&format!(
+            "UPDATE metadata_item SET year = 2002, studio = 'EuropaCorp' WHERE id = {TRANSPORTER};
+             UPDATE metadata_item SET year = 2005, studio = 'EuropaCorp' WHERE id = {TRANSPORTER_2};
+             UPDATE metadata_item SET year = 1976, studio = 'AMLF' WHERE id = {LE_NOUVEAU_JOUET};"
+        ))
+        .await
+        .unwrap();
+    let repository = SqlMetadataRepository::new(connection);
+
+    let years = repository
+        .values_in(&films(), ValueField::Year, first(10))
+        .await
+        .unwrap();
+    assert_eq!(
+        years.items,
+        [
+            FieldValue::Year(2005),
+            FieldValue::Year(2002),
+            FieldValue::Year(1976)
+        ]
+    );
+    let after = Window::new(Some(years.items[0].cursor()), None, Some(10), None).unwrap();
+    let rest = repository
+        .values_in(&films(), ValueField::Year, after)
+        .await
+        .unwrap();
+    assert_eq!(rest.items, [FieldValue::Year(2002), FieldValue::Year(1976)]);
+
+    let studios = repository
+        .values_in(&films(), ValueField::Studio, first(10))
+        .await
+        .unwrap();
+    assert_eq!(
+        studios.items,
+        [
+            FieldValue::Text("AMLF".to_owned()),
+            FieldValue::Text("EuropaCorp".to_owned())
+        ]
+    );
+    assert_eq!(
+        repository
+            .value_count_in(&films(), ValueField::Studio)
+            .await
+            .unwrap(),
+        2
+    );
+    // Nothing set, nothing listed: an absent rating is not a value.
+    assert_eq!(
+        repository
+            .value_count_in(&films(), ValueField::ContentRating)
+            .await
+            .unwrap(),
+        0
+    );
 }

@@ -54,6 +54,12 @@ pub fn router() -> Router<PlexState> {
             "/library/sections/{sectionId}/firstCharacter",
             get(first_character),
         )
+        // The choices of each filter `includeMeta` advertises. Static segments such as
+        // `/all` take precedence over the parameter, so this only sees the rest.
+        .route(
+            "/library/sections/{sectionId}/{filter}",
+            get(crate::filter_values::filter_values),
+        )
         // Also absent from the spec, which declares only `/hubs/search`.
         .route("/search", get(search))
 }

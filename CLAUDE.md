@@ -379,6 +379,10 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   by a measured 20-hour batching rule (`core::recent`, `Library.recentlyAdded` on the official
   API), identical in order to the reference on four libraries; seasons named in the client's
   language from Plex's own catalogs, and an episode without a rating carrying its series';
+- ✅ **filter choices**, `/library/sections/{id}/{filter}`: genres, countries, people, years,
+  decades, content ratings and studios a library's items hold, each with the listing that
+  applies it (`Library.tags`, `years`, `fieldValues` on the official API); the starring list
+  is the actors billed in the first three positions, as measured. `resolution` answers `501`;
 - ⬜ **recently released**, which needs ordering by release date — the nullable-column sort
   in *Open questions*;
 - ⬜ the shelves that need watch state — continue watching with content, recently watched,

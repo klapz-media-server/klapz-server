@@ -179,7 +179,9 @@ async fn import_items(
                 content_rating: ActiveValue::Set(row.plex_text("content_rating")),
                 content_rating_age: ActiveValue::Set(row.plex_opt("content_rating_age")),
                 position: ActiveValue::Set(row.plex_opt("index")),
-                year: ActiveValue::Set(row.plex_opt("year")),
+                // The source writes -1 for 39 episodes whose year it does not know, and the
+                // reference publishes no year for them.
+                year: ActiveValue::Set(row.plex_opt::<i32>("year").filter(|year| *year > 0)),
                 // Stored as an epoch in the source; the API publishes a calendar date.
                 released_on: ActiveValue::Set(
                     row.plex_opt::<i64>("originally_available_at")

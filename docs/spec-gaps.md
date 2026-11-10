@@ -18,6 +18,7 @@ library navigation, so the spec cannot be the only source for routing.
 | `GET /library/metadata/{id}/grandchildren` | `200` | Two levels down: all episodes of a show, all tracks of an artist. **Implemented**, same measurement. |
 | `GET /library/sections` | `200` | The library list — the entry point of all navigation, and what the bundled web client calls. The spec declares only the `/library/sections/all` alias. |
 | `GET /search?query=` | `200` | Global search across libraries. The spec declares only `/hubs/search`. **Implemented**, so the spec-coverage test cannot be what guards it — nothing the spec never mentions can be. |
+| `GET /library/sections/{id}/{filter}` | `200` | The choices of one filter — `genre`, `year`, `decade`, `contentRating`, `director`, `actor`, `writer`, `producer`, `country`, `studio`, `resolution` — each with the listing URL that applies it. The paths `includeMeta` points a client at. **Implemented** but for `resolution`; see *Filter choices* below. |
 | `GET /library/sections/{id}/firstCharacter?type=` | `200` | The A–Z jump bar. Singular, and absent from the spec in that form (see *Wrong in the spec*). **Implemented**, with bucket sets and counts identical to the reference on four libraries. |
 
 Both carry containers the listing endpoints do not; they are described under *Opening a
@@ -83,8 +84,30 @@ derivable from the spec or from the database schema alone.
 | `Media.audioCodec` composition | Composed from the codec *and* that profile: the column stores `dca` for all 12,087 DTS tracks, and the server reports `dca-ma` for the ones whose profile is `ma` (DTS-HD Master Audio). One missing value, three symptoms — `audioProfile`, `videoProfile` and this. |
 | `Stream` presence | Included by `/library/metadata/{ids}`, omitted by `/library/sections/{id}/all`. |
 | Jump-bar buckets | `/library/sections/{id}/firstCharacter?type=` groups by the first character of the sort title, **folded** — 594 films under `C` where a raw first character gives 593, because `Ç` folds to `C`. Ligatures do not fold and get their own bucket: `Œ` is a letter there, with two films. Everything not starting with a letter collapses into `#`. The `key` is percent-encoded (`%23`, `%C5%92`); the count attribute is `size`, not `count`, unlike every other `Directory` in the surface. |
+| Filter choices | `/library/sections/{id}/{filter}` is a `secondary` view like the jump bar: `title2` names it in English whatever the language (`By Genre`, `By Starring Actor`…), `content` is `secondary` except on the actor list, which has none, and a series library adds `nocache`. A genre entry carries `type="genre"`, a person a `thumb`, a country neither. Years and decades run newest first (`key="2020"`, `title="2020s"`), everything else by name. `actor` lists only actors **billed first, second or third** on some item: 10,075 of the reference's 10,251, the rest stale, and none of the 102,000 billed lower. Encodings differ per list, measured over every value of a film library: a content rating's `key` and `fastKey` are percent-encoded once; a studio's `key` is encoded **twice** (`10.80 Films` → `10%252E80%2520Films`) while its `fastKey` is raw (`?studio=10.80 Films`); and the encoding keeps only letters, digits, `-` and `_`, so `.` becomes `%2E`. |
 | Search-result attribute order | `/search` puts the library attributes (`allowSync`, `librarySectionID`, `librarySectionTitle`, `librarySectionUUID`, `personal`, `sourceTitle`) **before** `ratingKey`; `/library/metadata/{ids}` puts the same ones after `titleSort`. Order is observable in XML, so the two shapes are distinct types. |
 | Boolean stream flags | `default` and `forced` are sent only when true, never as `0`. |
+
+### Filter choices: where ours differ
+
+Compared over whole lists on a film and a series library: years, decades, countries and a
+series library's genres are identical as sets; genres miss one. The rest:
+
+- **Always windowed**, at 500, with `totalSize` and `offset`, as `/all` is: the reference
+  returns 10,251 actors in one response.
+- **Derived from the tags, not from the reference's cache**, like the listings: 4,503 directors
+  against 4,581 and 3,195 studios against 3,253, with a few dozen on either side only, and 42
+  of its 49 content ratings.
+- **No `None` rating.** The reference ends the list with `None`, which selects the 3,762 films
+  without a rating; the content-rating filter here cannot express absence, so the entry would
+  select nothing.
+- **No placeholder portrait.** An actor without a photo gets `/:/resources/actor-icon.png?t=…`
+  on the reference (850 of them), nothing here. 134 more show another photo of the same person.
+- **Order follows the folded byte order**, where the reference collates: studios match it
+  case-insensitively, people and genres differ in places, as the listings do.
+- **`resolution` answers `501`.** Its buckets are not the labels items carry: `2k` holds 3,416
+  films whose `videoResolution` is `1080`, and `4k` is absent from a library with films labelled
+  `4k`. Offering them over a filter that selects by minimum width would select the wrong films.
 
 ### Where an `X-Plex-*` value is read from
 

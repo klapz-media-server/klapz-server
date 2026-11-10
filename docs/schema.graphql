@@ -343,6 +343,35 @@ type Features {
 	hardwareTranscoding: Boolean!
 }
 
+type FieldValueConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [FieldValueEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [String!]!
+}
+
+"""
+An edge in a connection.
+"""
+type FieldValueEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: String!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
 """
 One letter of a library's A–Z jump bar.
 """
@@ -821,6 +850,109 @@ type Library implements Node {
 		offset: Int
 	): ItemConnection!
 	"""
+	The tags of one kind that this library's items carry, each once, ordered by name.
+	
+	The choices to offer for a tag filter: only the genres the library's films actually
+	have, not every genre the server knows.
+	"""
+	tags(
+		"""
+		Which kind of tag to list.
+		"""
+		kind: TagType!,
+		"""
+		Only credits billed within an item's first this many positions of their kind: 3 lists a library's leading actors. Omitted, every credit counts.
+		"""
+		billedWithin: Int,
+		"""
+		List only the tags of the items this filter keeps.
+		"""
+		filter: ItemFilterInput,
+		"""
+		Return tags after this cursor.
+		"""
+		after: String,
+		"""
+		Return tags before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many tags from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many tags from the end of the range.
+		"""
+		last: Int,
+		"""
+		Discard this many tags before the page begins.
+		"""
+		offset: Int
+	): LibraryTagConnection!
+	"""
+	The years this library's items were released in, each once, newest first.
+	"""
+	years(
+		"""
+		List only the years of the items this filter keeps.
+		"""
+		filter: ItemFilterInput,
+		"""
+		Return years after this cursor.
+		"""
+		after: String,
+		"""
+		Return years before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many years from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many years from the end of the range.
+		"""
+		last: Int,
+		"""
+		Discard this many years before the page begins.
+		"""
+		offset: Int
+	): YearConnection!
+	"""
+	The values this library's items hold in a text field, each once, in ascending byte
+	order. Items holding none are left out.
+	"""
+	fieldValues(
+		"""
+		Which field to list the values of.
+		"""
+		field: TextField!,
+		"""
+		List only the values of the items this filter keeps.
+		"""
+		filter: ItemFilterInput,
+		"""
+		Return values after this cursor.
+		"""
+		after: String,
+		"""
+		Return values before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many values from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many values from the end of the range.
+		"""
+		last: Int,
+		"""
+		Discard this many values before the page begins.
+		"""
+		offset: Int
+	): FieldValueConnection!
+	"""
 	Aggregates over the contents of this library.
 	"""
 	stats(
@@ -945,12 +1077,68 @@ type LibraryStats {
 	"""
 	itemCount: Int!
 	"""
+	How many distinct tags of one kind the items carry: the size of `Library.tags`.
+	"""
+	tagCount(
+		"""
+		Which kind of tag to count.
+		"""
+		kind: TagType!,
+		"""
+		Count only credits billed within this many positions, as `Library.tags` does.
+		"""
+		billedWithin: Int
+	): Int!
+	"""
+	How many distinct release years the items have: the size of `Library.years`.
+	"""
+	yearCount: Int!
+	"""
+	How many distinct values the items hold in a field: the size of
+	`Library.fieldValues`.
+	"""
+	fieldValueCount(
+		"""
+		Which field to count the values of.
+		"""
+		field: TextField!
+	): Int!
+	"""
 	The first-letter buckets, with a count each, ordered `#` then A–Z.
 	
 	What a client draws as a jump bar beside a long list. One row per letter, so this is
 	28 numbers rather than a walk over the library.
 	"""
 	firstCharacters: [FirstCharacter!]!
+}
+
+type LibraryTagConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [LibraryTagEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Tag!]!
+}
+
+"""
+An edge in a connection.
+"""
+type LibraryTagEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Tag!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type MediaFile implements Node {
@@ -2703,6 +2891,20 @@ enum TagType {
 }
 
 """
+A text field whose distinct values a library can be browsed by.
+"""
+enum TextField {
+	"""
+	The certification, as the metadata provider states it: `PG-13`, `fr/12`.
+	"""
+	CONTENT_RATING
+	"""
+	The studio or network that made the item.
+	"""
+	STUDIO
+}
+
+"""
 The kind of a media track.
 """
 enum TrackKind {
@@ -2852,6 +3054,35 @@ type UserExtensionEdge {
 	The item at the end of the edge
 	"""
 	node: UserExtension!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type YearConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [YearEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Int!]!
+}
+
+"""
+An edge in a connection.
+"""
+type YearEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Int!
 	"""
 	A cursor for use in pagination
 	"""

@@ -12,9 +12,9 @@ use std::collections::BTreeMap;
 use crate::ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use crate::metadata::{
-    self, EpisodeCredit, ExternalId, FirstCharacter, ItemKind, ItemQuery, ItemSort, ItemTag,
-    MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem, MetadataRepository, Person,
-    Rating, SearchQuery, Tag, TagCondition, TagKind, TagRef,
+    self, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind, ItemQuery, ItemSort,
+    ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem, MetadataRepository,
+    Person, Rating, SearchQuery, Tag, TagCondition, TagKind, TagRef, TagScope, ValueField,
 };
 use crate::page::{Cursor, Page, Window};
 
@@ -676,6 +676,44 @@ impl MetadataRepository for InMemoryMetadata {
             .collect())
     }
 
+    async fn tags_in(
+        &self,
+        query: &ItemQuery,
+        scope: TagScope,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError> {
+        Ok(windowed(
+            self.distinct_tags(query, scope),
+            &window,
+            Tag::name_cursor,
+        ))
+    }
+
+    async fn tag_count_in(&self, query: &ItemQuery, scope: TagScope) -> Result<u64, MetadataError> {
+        Ok(self.distinct_tags(query, scope).len() as u64)
+    }
+
+    async fn values_in(
+        &self,
+        query: &ItemQuery,
+        field: ValueField,
+        window: Window,
+    ) -> Result<Page<FieldValue>, MetadataError> {
+        Ok(windowed(
+            self.distinct_values(query, field),
+            &window,
+            FieldValue::cursor,
+        ))
+    }
+
+    async fn value_count_in(
+        &self,
+        query: &ItemQuery,
+        field: ValueField,
+    ) -> Result<u64, MetadataError> {
+        Ok(self.distinct_values(query, field).len() as u64)
+    }
+
     async fn tag(&self, id: TagId) -> Result<Option<Tag>, MetadataError> {
         Ok(self
             .tags
@@ -697,6 +735,46 @@ impl InMemoryMetadata {
     ///
     /// Children are ordered by position, where the cursor is the id alone, so only the
     /// offset and the limit apply — mirroring SQL `OFFSET` after `ORDER BY`.
+    fn distinct_tags(&self, query: &ItemQuery, scope: TagScope) -> Vec<Tag> {
+        let items: Vec<RatingKey> = self.matching(query).iter().map(|item| item.id).collect();
+        let mut tags: Vec<Tag> = Vec::new();
+        // Billing is the order of an item's attachments of one kind, as storage numbers it.
+        let mut billed: BTreeMap<RatingKey, u32> = BTreeMap::new();
+        for attached in &self.tags {
+            if attached.tag.kind != scope.kind || !items.contains(&attached.item_id) {
+                continue;
+            }
+            let position = billed.entry(attached.item_id).or_default();
+            let within = scope.billed_within.is_none_or(|limit| *position < limit);
+            *position += 1;
+            if within && !tags.iter().any(|tag| tag.id == attached.tag.id) {
+                tags.push(attached.tag.clone());
+            }
+        }
+        tags.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
+        tags
+    }
+
+    fn distinct_values(&self, query: &ItemQuery, field: ValueField) -> Vec<FieldValue> {
+        let matched = self.matching(query);
+        let mut values: Vec<FieldValue> = matched
+            .iter()
+            .filter_map(|item| match field {
+                ValueField::Year => item.year.map(FieldValue::Year),
+                ValueField::ContentRating => item.content_rating.clone().map(FieldValue::Text),
+                ValueField::Studio => item.studio.clone().map(FieldValue::Text),
+            })
+            .collect();
+        values.sort_by(|a, b| match (a, b) {
+            (FieldValue::Year(a), FieldValue::Year(b)) => b.cmp(a),
+            (FieldValue::Text(a), FieldValue::Text(b)) => a.cmp(b),
+            (FieldValue::Year(_), FieldValue::Text(_)) => std::cmp::Ordering::Less,
+            (FieldValue::Text(_), FieldValue::Year(_)) => std::cmp::Ordering::Greater,
+        });
+        values.dedup();
+        values
+    }
+
     fn page_of(mut rows: Vec<MetadataItem>, window: &Window) -> Page<MetadataItem> {
         let skip = usize::try_from(window.skip).unwrap_or(usize::MAX);
         rows.drain(..skip.min(rows.len()));
@@ -712,6 +790,40 @@ fn sort_key(item: &MetadataItem) -> String {
         .or(item.title.as_ref())
         .map(|text| text.to_lowercase())
         .unwrap_or_default()
+}
+
+/// Windows an already ordered list, locating cursors by equality as storage locates them
+/// by comparison.
+fn windowed<T>(ordered: Vec<T>, window: &Window, cursor_of: impl Fn(&T) -> Cursor) -> Page<T> {
+    let position = |cursor: &Cursor| ordered.iter().position(|row| cursor_of(row) == *cursor);
+    let start = window
+        .after
+        .as_ref()
+        .and_then(position)
+        .map_or(0, |at| at + 1);
+    let end = window
+        .before
+        .as_ref()
+        .and_then(position)
+        .unwrap_or(ordered.len());
+    let mut slice: Vec<T> = ordered
+        .into_iter()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect();
+
+    if window.is_reversed() {
+        slice.reverse();
+    }
+    let skip = usize::try_from(window.skip).unwrap_or(usize::MAX);
+    slice.drain(..skip.min(slice.len()));
+    slice.truncate(page_limit(window));
+
+    let mut page = Page::from_overfetch(slice, window);
+    if window.is_reversed() {
+        page.items.reverse();
+    }
+    page
 }
 
 fn page_limit(window: &Window) -> usize {

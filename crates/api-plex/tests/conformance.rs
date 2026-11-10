@@ -2522,3 +2522,113 @@ async fn an_unknown_library_has_no_settings() {
     let (status, _, _) = get("/library/sections/999/prefs", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn a_filter_lists_the_genres_a_library_carries() {
+    let body = listing("/library/sections/4/genre").await;
+    let container = &body["MediaContainer"];
+
+    assert_eq!(container["title2"], "By Genre");
+    assert_eq!(container["content"], "secondary");
+    assert_eq!(container["viewGroup"], "secondary");
+    assert!(container.get("nocache").is_none(), "{container}");
+    let genres = container["Directory"].as_array().expect("genres");
+    let titles: Vec<&str> = genres.iter().filter_map(|g| g["title"].as_str()).collect();
+    assert_eq!(titles, ["Action", "Crime", "Thriller"]);
+    assert_eq!(genres[0]["key"], "38");
+    assert_eq!(genres[0]["fastKey"], "/library/sections/4/all?genre=38");
+    assert_eq!(genres[0]["type"], "genre");
+    assert_eq!(container["totalSize"], 3);
+}
+
+#[tokio::test]
+async fn the_starring_list_stops_at_the_third_billed_actor() {
+    // Four of the cast are attached; the reference lists an actor only when billed first,
+    // second or third somewhere.
+    let body = listing("/library/sections/4/actor").await;
+    let container = &body["MediaContainer"];
+
+    assert_eq!(container["title2"], "By Starring Actor");
+    // The one list the reference sends without `content`.
+    assert!(container.get("content").is_none(), "{container}");
+    let names: Vec<&str> = container["Directory"]
+        .as_array()
+        .expect("actors")
+        .iter()
+        .filter_map(|actor| actor["title"].as_str())
+        .collect();
+    assert_eq!(names, ["François Berléand", "Jason Statham", "Shu Qi"]);
+    let statham = &container["Directory"][1];
+    assert_eq!(statham["key"], "472942");
+    assert_eq!(
+        statham["thumb"],
+        "https://metadata-static.plex.tv/c/people/c540bdd39873ee8e8612b0af06fc0d4c.jpg"
+    );
+}
+
+#[tokio::test]
+async fn years_and_decades_list_newest_first() {
+    let years = listing("/library/sections/4/year").await;
+    assert_eq!(years["MediaContainer"]["Directory"][0]["key"], "2009");
+    assert_eq!(
+        years["MediaContainer"]["Directory"][0]["fastKey"],
+        "/library/sections/4/all?year=2009"
+    );
+
+    let decades = listing("/library/sections/4/decade").await;
+    let decade = &decades["MediaContainer"]["Directory"][0];
+    assert_eq!(decade["key"], "2000");
+    assert_eq!(decade["title"], "2000s");
+    assert_eq!(decades["MediaContainer"]["title2"], "By Decade");
+}
+
+#[tokio::test]
+async fn studios_and_ratings_are_encoded_as_the_reference_encodes_them() {
+    let ratings = listing("/library/sections/4/contentRating").await;
+    let rating = &ratings["MediaContainer"]["Directory"][0];
+    assert_eq!(rating["key"], "fr%2F12");
+    assert_eq!(
+        rating["fastKey"],
+        "/library/sections/4/all?contentRating=fr%2F12"
+    );
+    assert_eq!(rating["title"], "fr/12");
+
+    let studios = listing("/library/sections/4/studio").await;
+    let studio = &studios["MediaContainer"]["Directory"][0];
+    assert_eq!(studio["key"], "Lightstorm");
+    assert_eq!(
+        studio["fastKey"],
+        "/library/sections/4/all?studio=Lightstorm"
+    );
+}
+
+#[tokio::test]
+async fn a_series_library_lists_its_shows_choices_uncached() {
+    let body = listing("/library/sections/5/studio?type=2").await;
+    let container = &body["MediaContainer"];
+    assert_eq!(container["nocache"], true);
+    assert_eq!(container["Directory"][0]["title"], "Fifth Season");
+}
+
+#[tokio::test]
+async fn an_unknown_list_is_absent_and_resolution_is_refused() {
+    let (status, _) = get_from(items_app(), "/library/sections/4/nonsense", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // Listed by the reference from buckets our resolution filter does not reproduce.
+    let (status, _) = get_from(items_app(), "/library/sections/4/resolution", None).await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+    // A library that does not exist is a 404, not an empty list.
+    let (status, _) = get_from(items_app(), "/library/sections/99/genre", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_value_list_windows_like_a_listing() {
+    let body =
+        listing("/library/sections/4/genre?X-Plex-Container-Start=1&X-Plex-Container-Size=1").await;
+    let container = &body["MediaContainer"];
+    assert_eq!(container["size"], 1);
+    assert_eq!(container["offset"], 1);
+    assert_eq!(container["totalSize"], 3);
+    assert_eq!(container["Directory"][0]["title"], "Crime");
+}
