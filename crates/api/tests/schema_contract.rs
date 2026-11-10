@@ -1143,3 +1143,24 @@ mutation Stop($input: StopStreamInput!) {
         assert_eq!(data["stopStream"]["clientMutationId"], "m2");
     }
 }
+
+#[tokio::test]
+async fn an_item_is_named_for_a_url_after_its_series_and_itself() {
+    let schema = series_with_episodes();
+    let ids = [22_053, 22_077, 22_078]
+        .map(|key| format!("\"{}\"", GlobalId::encode("Item", key)))
+        .join(",");
+    let data = run_on(
+        &schema,
+        &format!("{{ nodes(ids: [{ids}]) {{ ... on Item {{ slug }} }} }}"),
+    )
+    .await;
+    assert_eq!(
+        data["nodes"],
+        serde_json::json!([
+            { "slug": "the-simpsons" },
+            { "slug": "the-simpsons-s01" },
+            { "slug": "the-simpsons-treehouse-of-horror-xiii" },
+        ])
+    );
+}
