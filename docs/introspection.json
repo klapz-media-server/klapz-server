@@ -181,6 +181,179 @@
           "possibleTypes": null
         },
         {
+          "kind": "ENUM",
+          "name": "ContinueReason",
+          "description": "Why an item is in Continue Watching.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "IN_PROGRESS",
+              "description": "Started and not finished: a film, or an episode.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "UP_NEXT",
+              "description": "The episode after the one last watched: not started yet.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ContinueWatchingConnection",
+          "description": null,
+          "fields": [
+            {
+              "name": "pageInfo",
+              "description": "Information to aid in pagination.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PageInfo",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "edges",
+              "description": "A list of edges.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ContinueWatchingEdge",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nodes",
+              "description": "A list of nodes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INTERFACE",
+                      "name": "Item",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ContinueWatchingEdge",
+          "description": "An edge in a connection.",
+          "fields": [
+            {
+              "name": "node",
+              "description": "The item at the end of the edge",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "INTERFACE",
+                  "name": "Item",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "reason",
+              "description": "Why the item is listed.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "ContinueReason",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "lastViewedAt",
+              "description": "When the work behind it was last played, in seconds since the Unix epoch: the\nfilm's, or for an episode its series', which the list is ordered by.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cursor",
+              "description": "A cursor for use in pagination",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "INPUT_OBJECT",
           "name": "CreatePlayQueueInput",
           "description": "A play queue to create.",
@@ -6782,8 +6955,55 @@
               "deprecationReason": null
             },
             {
+              "name": "continueWatching",
+              "description": "Items whose title matches a search term, across every library.\n\nWhat the caller has started and what comes next, newest first: every film in\nprogress, and for every series the episode in progress or the one after the last\nwatched. Played within the last sixteen weeks; every copy of a work is listed.\n\nEmpty for a caller with no watch state. Pages forward only, by position: the list is\nbuilt whole from the caller's recent viewing, which is bounded by those sixteen weeks.",
+              "args": [
+                {
+                  "name": "library",
+                  "description": "Only this library's items, as returned in `Library.id`.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "ID",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "after",
+                  "description": "Return entries after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many entries.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "ContinueWatchingConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "search",
-              "description": "Items whose title matches a search term, across every library.\n\nMatches a *word prefix*: `hell` finds \"Good News About Hell\", and accents are folded so\n`soiree` finds \"# Pire Soirée\". A term inside a word does not match — the index is a\nrange scan, not a substring scan.\n\nPolymorphic and cross-library by design: results mix films, series and episodes from\ndifferent libraries, which is what a single search box needs. Narrow with `kinds`.\n\nOrdered by sort title. Not by relevance: ranking needs a score this server does not\ncompute, and a title ordering at least gives the cursor a stable position to resume\nfrom. A blank term matches nothing rather than everything.",
+              "description": "Matches a *word prefix*: `hell` finds \"Good News About Hell\", and accents are folded so\n`soiree` finds \"# Pire Soirée\". A term inside a word does not match — the index is a\nrange scan, not a substring scan.\n\nPolymorphic and cross-library by design: results mix films, series and episodes from\ndifferent libraries, which is what a single search box needs. Narrow with `kinds`.\n\nOrdered by sort title. Not by relevance: ranking needs a score this server does not\ncompute, and a title ordering at least gives the cursor a stable position to resume\nfrom. A blank term matches nothing rather than everything.",
               "args": [
                 {
                   "name": "query",

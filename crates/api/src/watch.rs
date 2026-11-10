@@ -7,15 +7,21 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_graphql::dataloader::{DataLoader, Loader};
-use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
-use open_plex_core::metadata::MetadataItem;
-use open_plex_core::watch::{
-    ReportOutcome, Viewer, WatchError, WatchRepository, WatchState, Watching,
+use async_graphql::connection::{
+    query, Connection, ConnectionNameType, Edge, EdgeNameType, EmptyFields,
 };
-use open_plex_core::{now_epoch, RatingKey};
+use async_graphql::dataloader::{DataLoader, Loader};
+use async_graphql::{Context, Enum, InputObject, Object, OutputType, Result, SimpleObject, ID};
+use open_plex_core::metadata::MetadataItem;
+use open_plex_core::page::{Cursor, MAX_ITEMS};
+use open_plex_core::watch::{
+    DeckReason, ReportOutcome, Viewer, WatchError, WatchRepository, WatchState, Watching,
+};
+use open_plex_core::{now_epoch, RatingKey, SectionId};
 
-use crate::item::ITEM_TYPE;
+use crate::cursor::OpaqueCursor;
+use crate::item::{Item, ITEM_TYPE};
+use crate::library::LIBRARY_TYPE;
 use crate::loader::ItemLoader;
 use crate::node::GlobalId;
 use crate::schema::ApiContext;
@@ -302,4 +308,135 @@ pub(crate) async fn keep_watch_position(
         .keep_position(&item, position_ms, now_epoch())
         .await?;
     fresh_state(context, viewer, &item.guid).await
+}
+
+/// Why an item is in Continue Watching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum ContinueReason {
+    /// Started and not finished: a film, or an episode.
+    InProgress,
+    /// The episode after the one last watched: not started yet.
+    UpNext,
+}
+
+impl From<DeckReason> for ContinueReason {
+    fn from(reason: DeckReason) -> Self {
+        match reason {
+            DeckReason::InProgress => Self::InProgress,
+            DeckReason::UpNext => Self::UpNext,
+        }
+    }
+}
+
+/// What a Continue Watching entry says beyond the item.
+#[derive(Debug, Clone, SimpleObject)]
+pub struct ContinueWatchingEdgeFields {
+    /// Why the item is listed.
+    pub reason: ContinueReason,
+    /// When the work behind it was last played, in seconds since the Unix epoch: the
+    /// film's, or for an episode its series', which the list is ordered by.
+    pub last_viewed_at: i64,
+}
+
+/// Names the connection apart from `ItemConnection`, which shares its node type.
+#[derive(Debug)]
+pub struct ContinueWatchingConnectionName;
+
+impl ConnectionNameType for ContinueWatchingConnectionName {
+    fn type_name<T: OutputType>() -> String {
+        "ContinueWatchingConnection".to_owned()
+    }
+}
+
+#[derive(Debug)]
+pub struct ContinueWatchingEdgeName;
+
+impl EdgeNameType for ContinueWatchingEdgeName {
+    fn type_name<T: OutputType>() -> String {
+        "ContinueWatchingEdge".to_owned()
+    }
+}
+
+/// A page of Continue Watching.
+pub type ContinueWatchingConnection = Connection<
+    OpaqueCursor,
+    Item,
+    EmptyFields,
+    ContinueWatchingEdgeFields,
+    ContinueWatchingConnectionName,
+    ContinueWatchingEdgeName,
+>;
+
+/// Default page size of Continue Watching.
+const DEFAULT_ENTRIES: usize = 50;
+
+pub(crate) async fn continue_watching(
+    context: &Context<'_>,
+    library: Option<ID>,
+    after: Option<String>,
+    first: Option<i32>,
+) -> Result<ContinueWatchingConnection> {
+    let visible = crate::access::visible_sections(context);
+    let only = match library {
+        Some(id) => {
+            let section = GlobalId::decode(&id)
+                .ok()
+                .filter(|decoded| decoded.type_name == LIBRARY_TYPE)
+                .map(|decoded| SectionId::new(decoded.key))
+                .ok_or_else(|| async_graphql::Error::new("not a library id"))?;
+            // A library not given reads as one with nothing in it.
+            if visible
+                .as_ref()
+                .is_some_and(|sections| !sections.contains(&section))
+            {
+                Some(Vec::new())
+            } else {
+                Some(vec![section])
+            }
+        }
+        None => visible,
+    };
+    query(
+        after,
+        None,
+        first,
+        None,
+        |after: Option<OpaqueCursor>, _: Option<OpaqueCursor>, first, _| async move {
+            let start = after.map_or(0, |cursor| {
+                usize::try_from(cursor.0.id).map_or(0, |position| position + 1)
+            });
+            let count = first.unwrap_or(DEFAULT_ENTRIES);
+            if count > MAX_ITEMS as usize {
+                return Err(async_graphql::Error::new(format!(
+                    "a page of more than {MAX_ITEMS} is not served"
+                )));
+            }
+            let Some(viewer) = crate::access::caller(context).and_then(Viewer::of) else {
+                return Ok(Connection::new(false, false));
+            };
+            let entries = watching(context, viewer)?
+                .continue_watching(only.as_deref(), now_epoch())
+                .await?;
+            let has_next = entries.len() > start + count;
+            let mut connection = Connection::new(start > 0, has_next);
+            connection
+                .edges
+                .extend(entries.into_iter().enumerate().skip(start).take(count).map(
+                    |(position, entry)| {
+                        Edge::with_additional_fields(
+                            OpaqueCursor(Cursor::by_id(
+                                i64::try_from(position).unwrap_or(i64::MAX),
+                            )),
+                            Item::from_domain(entry.item),
+                            ContinueWatchingEdgeFields {
+                                reason: entry.reason.into(),
+                                last_viewed_at: entry.last_viewed_at,
+                            },
+                        )
+                    },
+                ));
+            Ok::<_, async_graphql::Error>(connection)
+        },
+    )
+    .await
 }

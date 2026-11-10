@@ -10,7 +10,9 @@
 //! first report is already past 90% counts nothing, so a player resuming near the end does
 //! not count a viewing it did not make.
 
-use crate::ids::{RatingKey, UserId};
+use std::collections::HashMap;
+
+use crate::ids::{RatingKey, SectionId, UserId};
 use crate::metadata::{ItemKind, MetadataError, MetadataItem, MetadataRepository};
 use crate::{Principal, Scope};
 
@@ -23,6 +25,33 @@ pub const WATCHED_PERCENT: i64 = 90;
 /// How long a playback is remembered without a report: as long as a playback session, so a
 /// player that pauses for a coffee and resumes is still the same playback.
 pub const VIEWING_LIFETIME_SECONDS: i64 = crate::playback::SESSION_LIFETIME_SECONDS;
+
+/// How far back Continue Watching looks: the reference's `OnDeckWindow`, 16 weeks. What was
+/// last played longer ago is left out.
+pub const DECK_WINDOW_SECONDS: i64 = 16 * 7 * 24 * 60 * 60;
+
+/// The most recent states a Continue Watching list is built from: more than any viewer
+/// plays in sixteen weeks, and a ceiling should one try.
+const DECK_SOURCES: u32 = 1_000;
+
+/// Why an item is in Continue Watching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeckReason {
+    /// Started and not finished: a film, or an episode.
+    InProgress,
+    /// The episode after the one last watched.
+    UpNext,
+}
+
+/// One item of Continue Watching.
+#[derive(Debug, Clone)]
+pub struct DeckEntry {
+    pub item: MetadataItem,
+    pub reason: DeckReason,
+    /// When the work behind it was last played: the film's, or the series' for an episode,
+    /// which is what the list is ordered by.
+    pub last_viewed_at: i64,
+}
 
 /// Whose state it is. The operator watches as itself, though it is nobody's user.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -113,6 +142,14 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
         viewer: Viewer,
         parents: &[RatingKey],
     ) -> Result<Vec<(RatingKey, u64)>, WatchError>;
+
+    /// The states last viewed at `since` or later, newest first, at most `limit`.
+    async fn recent(
+        &self,
+        viewer: Viewer,
+        since: i64,
+        limit: u32,
+    ) -> Result<Vec<(String, WatchState)>, WatchError>;
 
     /// A playback still remembered: reported within [`VIEWING_LIFETIME_SECONDS`].
     async fn viewing(
@@ -238,11 +275,11 @@ impl Watching<'_> {
         }
         let leaves: Vec<String> = self
             .metadata
-            .guids_below(item.id)
+            .descendants(item.id)
             .await?
             .into_iter()
-            .filter(|(kind, _)| is_leaf(*kind))
-            .map(|(_, guid)| guid)
+            .filter(|below| is_leaf(below.kind))
+            .map(|below| below.guid)
             .collect();
         let mut states = self.current(&leaves).await?;
         for (_, state) in &mut states {
@@ -262,13 +299,149 @@ impl Watching<'_> {
         if !is_leaf(item.kind) {
             forgotten.extend(
                 self.metadata
-                    .guids_below(item.id)
+                    .descendants(item.id)
                     .await?
                     .into_iter()
-                    .map(|(_, guid)| (guid, WatchState::default())),
+                    .map(|below| (below.guid, WatchState::default())),
             );
         }
         self.watch.save(self.viewer, &forgotten).await
+    }
+
+    /// What the viewer has started and what comes next, newest first: every film in
+    /// progress, and for every series an episode — the one in progress, else the one after
+    /// the episode last watched. Played within [`DECK_WINDOW_SECONDS`] only.
+    ///
+    /// Every copy of a work is listed, as the reference lists the French and the original
+    /// cut of the same film side by side.
+    ///
+    /// # Errors
+    ///
+    /// Fails when storage does.
+    pub async fn continue_watching(
+        &self,
+        sections: Option<&[SectionId]>,
+        now: i64,
+    ) -> Result<Vec<DeckEntry>, WatchError> {
+        let recent = self
+            .watch
+            .recent(self.viewer, now - DECK_WINDOW_SECONDS, DECK_SOURCES)
+            .await?;
+        let guids: Vec<String> = recent.iter().map(|(guid, _)| guid.clone()).collect();
+        let items = self.metadata.items_by_guid(&guids, sections).await?;
+        let viewed = |guid: &str| {
+            recent
+                .iter()
+                .find(|(recent, _)| recent == guid)
+                .and_then(|(_, state)| state.last_viewed_at)
+        };
+
+        let mut entries = Vec::new();
+        // A series is under way when it or any of its episodes was played: marking a whole
+        // season dates its episodes, not the series.
+        let mut series: HashMap<RatingKey, i64> = HashMap::new();
+        let mut seasons_of_episodes: HashMap<RatingKey, i64> = HashMap::new();
+        for item in items {
+            let Some(last_viewed_at) = viewed(&item.guid) else {
+                continue;
+            };
+            match item.kind {
+                ItemKind::Movie if in_progress(&recent, &item.guid) => {
+                    entries.push(DeckEntry {
+                        item,
+                        reason: DeckReason::InProgress,
+                        last_viewed_at,
+                    });
+                }
+                ItemKind::Show => latest(&mut series, item.id, last_viewed_at),
+                ItemKind::Episode => {
+                    if let Some(season) = item.parent_id {
+                        latest(&mut seasons_of_episodes, season, last_viewed_at);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let season_ids: Vec<RatingKey> = seasons_of_episodes.keys().copied().collect();
+        for season in self.metadata.items_by_id(&season_ids).await? {
+            if let (Some(show), Some(at)) = (season.parent_id, seasons_of_episodes.get(&season.id))
+            {
+                latest(&mut series, show, *at);
+            }
+        }
+        let show_ids: Vec<RatingKey> = series.keys().copied().collect();
+        for show in self.metadata.items_by_id(&show_ids).await? {
+            let last_viewed_at = series.get(&show.id).copied().unwrap_or_default();
+            if let Some((item, reason)) = self.up_next(&show).await? {
+                entries.push(DeckEntry {
+                    item,
+                    reason,
+                    last_viewed_at,
+                });
+            }
+        }
+        entries.sort_by(|a, b| {
+            b.last_viewed_at
+                .cmp(&a.last_viewed_at)
+                .then(a.item.id.cmp(&b.item.id))
+        });
+        Ok(entries)
+    }
+
+    /// The episode of a series to play next, as the reference picks it: one in progress if
+    /// any, the most recently played; else the episode after the one most recently watched,
+    /// the next season's first after a season's last; else, when none was watched, the
+    /// first. Nothing once the series' last episode is the one most recently watched, even
+    /// with earlier ones unwatched.
+    ///
+    /// Specials (season 0) stand outside the sequence: unmeasured, since the reference's
+    /// test library has none, and a special is never what "next" means.
+    async fn up_next(
+        &self,
+        show: &MetadataItem,
+    ) -> Result<Option<(MetadataItem, DeckReason)>, WatchError> {
+        let below = self.metadata.descendants(show.id).await?;
+        let seasons: HashMap<RatingKey, i32> = below
+            .iter()
+            .filter(|item| item.kind == ItemKind::Season)
+            .map(|season| (season.id, season.position.unwrap_or(0)))
+            .collect();
+        let season_of = |episode: &MetadataItem| {
+            episode
+                .parent_id
+                .and_then(|season| seasons.get(&season).copied())
+                .unwrap_or(0)
+        };
+        let mut episodes: Vec<MetadataItem> = below
+            .iter()
+            .filter(|item| item.kind == ItemKind::Episode && season_of(item) > 0)
+            .cloned()
+            .collect();
+        episodes.sort_by_key(|episode| {
+            (
+                season_of(episode),
+                episode.position.unwrap_or(0),
+                episode.id,
+            )
+        });
+
+        let guids: Vec<String> = episodes
+            .iter()
+            .map(|episode| episode.guid.clone())
+            .collect();
+        let states = self.current(&guids).await?;
+        let started = (0..episodes.len())
+            .filter(|index| states[*index].1.offset_ms.is_some())
+            .max_by_key(|index| (states[*index].1.last_viewed_at, *index));
+        if let Some(index) = started {
+            return Ok(Some((episodes.swap_remove(index), DeckReason::InProgress)));
+        }
+        // Ties — a whole season marked at once — go to the latest in order.
+        let last_watched = (0..episodes.len())
+            .filter(|index| states[*index].1.view_count > 0)
+            .max_by_key(|index| (states[*index].1.last_viewed_at, *index));
+        let next = last_watched.map_or(0, |index| index + 1);
+        Ok((next < episodes.len()).then(|| (episodes.swap_remove(next), DeckReason::UpNext)))
     }
 
     /// One more viewing of a film or an episode, counted on its season and series too.
@@ -324,6 +497,19 @@ impl Watching<'_> {
             })
             .collect())
     }
+}
+
+/// Whether a work is started and not finished.
+fn in_progress(recent: &[(String, WatchState)], guid: &str) -> bool {
+    recent
+        .iter()
+        .any(|(recent, state)| recent == guid && state.offset_ms.is_some())
+}
+
+/// Keeps the latest of two dates under a key.
+fn latest(dates: &mut HashMap<RatingKey, i64>, key: RatingKey, at: i64) {
+    let kept = dates.entry(key).or_insert(at);
+    *kept = (*kept).max(at);
 }
 
 const fn is_leaf(kind: ItemKind) -> bool {
@@ -574,6 +760,165 @@ mod tests {
         let season = fixture.state(577_988).await;
         assert_eq!((season.last_viewed_at, season.offset_ms), (Some(NOW), None));
         assert_eq!(fixture.state(577_987).await.last_viewed_at, Some(NOW));
+    }
+
+    /// The reference's test series once given five episodes: season 5 of four, season 6 of
+    /// one, and Soul beside it.
+    fn series() -> Vec<MetadataItem> {
+        let mut season_5 = item(577_988, ItemKind::Season, Some(577_987));
+        season_5.position = Some(5);
+        let mut season_6 = item(578_171, ItemKind::Season, Some(577_987));
+        season_6.position = Some(6);
+        let episode = |id: i64, season: i64, number: i32| {
+            let mut episode = item(id, ItemKind::Episode, Some(season));
+            episode.position = Some(number);
+            episode
+        };
+        vec![
+            item(577_986, ItemKind::Movie, None),
+            item(577_987, ItemKind::Show, None),
+            season_5,
+            season_6,
+            episode(578_173, 577_988, 1),
+            episode(577_990, 577_988, 2),
+            episode(578_174, 577_988, 3),
+            episode(578_175, 577_988, 4),
+            episode(578_172, 578_171, 1),
+        ]
+    }
+
+    struct Deck {
+        metadata: InMemoryMetadata,
+        watch: InMemoryWatch,
+    }
+
+    impl Deck {
+        fn new() -> Self {
+            Self {
+                metadata: InMemoryMetadata::new(series()),
+                watch: InMemoryWatch::over(series()),
+            }
+        }
+
+        fn watching(&self) -> Watching<'_> {
+            Watching {
+                metadata: &self.metadata,
+                watch: &self.watch,
+                viewer: Viewer::Operator,
+            }
+        }
+
+        fn item(id: i64) -> MetadataItem {
+            series()
+                .into_iter()
+                .find(|item| item.id.get() == id)
+                .unwrap()
+        }
+
+        /// Watches the episodes in this order, a second apart.
+        async fn watch(&self, ids: &[i64]) {
+            for (second, id) in (0_i64..).zip(ids) {
+                self.watching()
+                    .mark_watched(&Self::item(*id), NOW + second)
+                    .await
+                    .unwrap();
+            }
+        }
+
+        async fn start(&self, id: i64, at: i64) {
+            self.watching()
+                .keep_position(&Self::item(id), 300_000, at)
+                .await
+                .unwrap();
+        }
+
+        async fn next(&self) -> Vec<(i64, DeckReason)> {
+            self.watching()
+                .continue_watching(None, NOW + 100)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|entry| (entry.item.id.get(), entry.reason))
+                .collect()
+        }
+    }
+
+    const S5E1: i64 = 578_173;
+    const S5E2: i64 = 577_990;
+    const S5E3: i64 = 578_174;
+    const S5E4: i64 = 578_175;
+    const S6E1: i64 = 578_172;
+
+    #[tokio::test]
+    async fn the_next_episode_follows_the_one_most_recently_watched() {
+        // Each case as measured on the reference.
+        for (watched, expected) in [
+            (vec![S5E1], Some(S5E2)),
+            (vec![S5E1, S5E2], Some(S5E3)),
+            (vec![S5E3], Some(S5E4)),
+            (vec![S5E3, S5E1], Some(S5E2)),
+            (vec![S5E1, S5E3], Some(S5E4)),
+            // A season's last leads to the next season's first.
+            (vec![S5E1, S5E2, S5E3, S5E4], Some(S6E1)),
+            (vec![S5E4], Some(S6E1)),
+            // The series' last watched most recently: nothing, earlier ones unwatched or not.
+            (vec![S6E1], None),
+            (vec![S5E1, S5E2, S5E3, S5E4, S6E1], None),
+        ] {
+            let deck = Deck::new();
+            deck.watch(&watched).await;
+            let expected: Vec<(i64, DeckReason)> = expected
+                .map(|id| (id, DeckReason::UpNext))
+                .into_iter()
+                .collect();
+            assert_eq!(deck.next().await, expected, "after {watched:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_episode_in_progress_comes_first() {
+        let deck = Deck::new();
+        deck.start(S5E3, NOW).await;
+        deck.watch(&[S5E1]).await;
+        // Watched after the other was started, and still the started one.
+        assert_eq!(deck.next().await, vec![(S5E3, DeckReason::InProgress)]);
+    }
+
+    #[tokio::test]
+    async fn a_season_marked_at_once_leads_to_the_next() {
+        let deck = Deck::new();
+        deck.watching()
+            .mark_watched(&Deck::item(577_988), NOW)
+            .await
+            .unwrap();
+        assert_eq!(deck.next().await, vec![(S6E1, DeckReason::UpNext)]);
+    }
+
+    #[tokio::test]
+    async fn a_film_is_listed_while_started_and_newest_first() {
+        let deck = Deck::new();
+        deck.start(577_986, NOW + 50).await;
+        deck.watch(&[S5E1]).await;
+        assert_eq!(
+            deck.next().await,
+            vec![
+                (577_986, DeckReason::InProgress),
+                (S5E2, DeckReason::UpNext)
+            ]
+        );
+        // Watched to the end, it leaves.
+        deck.watching()
+            .mark_watched(&Deck::item(577_986), NOW + 60)
+            .await
+            .unwrap();
+        assert_eq!(deck.next().await, vec![(S5E2, DeckReason::UpNext)]);
+    }
+
+    #[tokio::test]
+    async fn what_was_last_played_sixteen_weeks_ago_is_left_out() {
+        let deck = Deck::new();
+        deck.start(577_986, NOW - DECK_WINDOW_SECONDS).await;
+        assert!(deck.next().await.is_empty());
     }
 
     #[test]

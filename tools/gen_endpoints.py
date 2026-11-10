@@ -69,6 +69,7 @@ IMPLEMENTED = frozenset(
         "/:/timeline",
         "/:/scrobble",
         "/:/unscrobble",
+        "/hubs/continueWatching",
     }
 )
 
@@ -103,6 +104,38 @@ OFF_SPEC = (
         "the reference: the session's stored name opens them, an unknown one answers `404`. A "
         "segment far ahead restarts the process there; one of an ended process is held 5 s then "
         "refused.",
+    ),
+    (
+        "done",
+        "GET",
+        "/hubs/continueWatching/items",
+        "user",
+        "Every item of the home Continue Watching shelf",
+        "Films in progress and next episodes, newest first, with `includedAt`. See spec-gaps.md.",
+    ),
+    (
+        "done",
+        "GET",
+        "/hubs/home/continueWatching",
+        "user",
+        "What was started",
+        "Films and episodes in progress, without the next episodes.",
+    ),
+    (
+        "done",
+        "GET",
+        "/hubs/home/onDeck",
+        "user",
+        "The next episodes",
+        "The episode after the one last watched in each series, without what was started.",
+    ),
+    (
+        "done",
+        "GET",
+        "/hubs/sections/{sectionId}/continueWatching/items",
+        "user",
+        "Every item of a library's Continue Watching shelf",
+        "The library's films in progress or its series' next episodes.",
     ),
     (
         "done",

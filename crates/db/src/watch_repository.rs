@@ -9,7 +9,7 @@ use open_plex_core::RatingKey;
 use sea_orm::sea_query::{Alias, Expr, OnConflict};
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromQueryResult, JoinType,
-    QueryFilter, QuerySelect, TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 
 use crate::entity::{metadata_item, viewing, watch_state};
@@ -49,17 +49,7 @@ impl WatchRepository for SqlWatchRepository {
             .all(&self.connection)
             .await
             .map_err(storage)?;
-        Ok(rows
-            .into_iter()
-            .map(|row| {
-                let state = WatchState {
-                    view_count: u32::try_from(row.view_count).unwrap_or(0),
-                    offset_ms: row.offset_ms,
-                    last_viewed_at: row.last_viewed_at,
-                };
-                (row.guid, state)
-            })
-            .collect())
+        Ok(rows.into_iter().map(to_state).collect())
     }
 
     async fn save(
@@ -188,6 +178,23 @@ impl WatchRepository for SqlWatchRepository {
             .collect())
     }
 
+    async fn recent(
+        &self,
+        viewer: Viewer,
+        since: i64,
+        limit: u32,
+    ) -> Result<Vec<(String, WatchState)>, WatchError> {
+        let rows = watch_state::Entity::find()
+            .filter(watch_state::Column::Viewer.eq(viewer_id(viewer)))
+            .filter(watch_state::Column::LastViewedAt.gte(since))
+            .order_by_desc(watch_state::Column::LastViewedAt)
+            .limit(u64::from(limit))
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(rows.into_iter().map(to_state).collect())
+    }
+
     async fn viewing(
         &self,
         viewer: Viewer,
@@ -248,6 +255,15 @@ impl WatchRepository for SqlWatchRepository {
         .map_err(storage)?;
         transaction.commit().await.map_err(storage)
     }
+}
+
+fn to_state(row: watch_state::Model) -> (String, WatchState) {
+    let state = WatchState {
+        view_count: u32::try_from(row.view_count).unwrap_or(0),
+        offset_ms: row.offset_ms,
+        last_viewed_at: row.last_viewed_at,
+    };
+    (row.guid, state)
 }
 
 fn storage(error: sea_orm::DbErr) -> WatchError {

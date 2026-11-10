@@ -397,6 +397,42 @@ query PlexRecentlyAdded($id: ID!, $first: Int!) {
     )
 });
 
+/// Everything Continue Watching needs from the official API.
+pub static CONTINUE_WATCHING_QUERY: LazyLock<String> = LazyLock::new(|| {
+    with_shared_fragments(
+        r"
+query PlexContinueWatching($library: ID, $first: Int!) {
+  continueWatching(library: $library, first: $first) {
+    pageInfo { hasNextPage }
+    edges { reason lastViewedAt node { ...RecentItem } }
+  }
+}
+",
+    )
+});
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContinueWatchingData {
+    pub continue_watching: GqlContinueConnection,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlContinueConnection {
+    pub page_info: GqlForwardPageInfo,
+    pub edges: Vec<GqlContinueEdge>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlContinueEdge {
+    /// `IN_PROGRESS` or `UP_NEXT`.
+    pub reason: String,
+    pub last_viewed_at: i64,
+    pub node: GqlItem,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct RecentlyAddedData {
     pub node: Option<GqlRecentlyAdded>,

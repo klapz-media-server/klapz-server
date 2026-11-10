@@ -2888,3 +2888,87 @@ async fn a_series_counts_the_episodes_watched_below_it() {
     assert_eq!(show["viewedLeafCount"], show["leafCount"]);
     assert_eq!(show["viewCount"], 1);
 }
+
+#[tokio::test]
+async fn continue_watching_lists_films_started_and_next_episodes_newest_first() {
+    let app = watching_app();
+    get_from(
+        app.clone(),
+        "/:/scrobble?identifier=com.plexapp.plugins.library&key=202",
+        None,
+    )
+    .await;
+    // Started a second later, so listed first.
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    get_from(
+        app.clone(),
+        "/:/progress?identifier=com.plexapp.plugins.library&key=100&time=600000",
+        None,
+    )
+    .await;
+
+    let body = json_from(&app, "/hubs/continueWatching").await;
+    let hub = &body["MediaContainer"]["Hub"][0];
+    assert_eq!(hub["hubIdentifier"], "continueWatching");
+    assert_eq!(hub["context"], "hub.continueWatching");
+    assert_eq!(hub["type"], "mixed");
+    assert_eq!(hub["style"], "hero");
+    assert_eq!(hub["hubKey"], "/library/metadata/100,205");
+    let items = hub["Metadata"].as_array().unwrap();
+    assert_eq!(items[0]["ratingKey"], "100");
+    assert_eq!(items[0]["viewOffset"], 600_000);
+    assert_eq!(items[0]["includedAt"], items[0]["lastViewedAt"]);
+    // The episode after the one watched, dated by its series though never played itself.
+    assert_eq!(items[1]["ratingKey"], "205");
+    assert!(items[1].get("lastViewedAt").is_some(), "{}", items[1]);
+    // Lookup-shaped: the library is stated on each item.
+    assert_eq!(items[1]["librarySectionID"], 5);
+
+    let started = json_from(&app, "/hubs/home/continueWatching").await;
+    let keys = |body: &Value| -> Vec<String> {
+        body["MediaContainer"]["Metadata"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| item["ratingKey"].as_str().unwrap().to_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    assert_eq!(keys(&started), ["100"]);
+    assert!(started["MediaContainer"]["Metadata"][0]
+        .get("includedAt")
+        .is_none());
+    assert_eq!(keys(&json_from(&app, "/hubs/home/onDeck").await), ["205"]);
+    assert_eq!(
+        keys(&json_from(&app, "/hubs/sections/5/continueWatching/items").await),
+        ["205"]
+    );
+}
+
+#[tokio::test]
+async fn a_seasons_last_episode_leads_to_the_next_season_on_the_librarys_shelf() {
+    let app = watching_app();
+    get_from(
+        app.clone(),
+        "/:/scrobble?identifier=com.plexapp.plugins.library&key=205",
+        None,
+    )
+    .await;
+    let hubs = json_from(&app, "/hubs/sections/5").await;
+    let shelf = &hubs["MediaContainer"]["Hub"][0];
+    assert_eq!(shelf["hubIdentifier"], "tv.inprogress.5");
+    assert_eq!(shelf["size"], 1);
+    assert_eq!(shelf["hubKey"], "/library/metadata/204");
+    assert_eq!(shelf["Metadata"][0]["ratingKey"], "204");
+}
+
+#[tokio::test]
+async fn continue_watching_is_empty_when_nothing_was_played() {
+    let app = watching_app();
+    let body = json_from(&app, "/hubs/continueWatching").await;
+    let hub = &body["MediaContainer"]["Hub"][0];
+    assert_eq!(hub["size"], 0);
+    assert!(hub.get("hubKey").is_none(), "{hub}");
+}

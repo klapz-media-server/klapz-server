@@ -965,11 +965,20 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
         limit: u32,
     ) -> Result<Vec<crate::recent::EpisodeAddition>, MetadataError>;
 
-    /// The kind and work of everything below a series or a season: its seasons and episodes.
+    /// Everything below a series or a season: its seasons and episodes.
     ///
     /// Unwindowed, and bounded by the series: marking a series watched has to reach every
-    /// episode, 750 of them for the longest here.
-    async fn guids_below(&self, item: RatingKey) -> Result<Vec<(ItemKind, String)>, MetadataError>;
+    /// episode, and finding the next one has to see them all — 750 for the longest here.
+    async fn descendants(&self, item: RatingKey) -> Result<Vec<MetadataItem>, MetadataError>;
+
+    /// Every copy of these works, in the libraries given, or in every library.
+    ///
+    /// Unwindowed: bounded by the works asked for, a handful of copies each.
+    async fn items_by_guid(
+        &self,
+        guids: &[String],
+        sections: Option<&[SectionId]>,
+    ) -> Result<Vec<MetadataItem>, MetadataError>;
 
     /// The items of a library, of one kind, holding any of these tags, with how many.
     ///
@@ -1044,8 +1053,16 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         (**self).value_count_in(query, field).await
     }
 
-    async fn guids_below(&self, item: RatingKey) -> Result<Vec<(ItemKind, String)>, MetadataError> {
-        (**self).guids_below(item).await
+    async fn descendants(&self, item: RatingKey) -> Result<Vec<MetadataItem>, MetadataError> {
+        (**self).descendants(item).await
+    }
+
+    async fn items_by_guid(
+        &self,
+        guids: &[String],
+        sections: Option<&[SectionId]>,
+    ) -> Result<Vec<MetadataItem>, MetadataError> {
+        (**self).items_by_guid(guids, sections).await
     }
 
     async fn item(&self, id: RatingKey) -> Result<MetadataItem, MetadataError> {

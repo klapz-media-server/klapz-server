@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 15 | 5.8 % |
-| `stub` | 182 | 70.0 % |
+| `stub` | 181 | 69.6 % |
 | `partial` | 17 | 6.5 % |
-| `done` | 9 | 3.5 % |
+| `done` | 10 | 3.8 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -30,7 +30,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
 | [Library](#library) | 85 | 1 | 6 | 46 | 8 | 24 |
-| [Hubs](#hubs) | 15 | 0 | 1 | 14 | 0 | 0 |
+| [Hubs](#hubs) | 15 | 1 | 1 | 13 | 0 | 0 |
 | [Content](#content) | 13 | 0 | 2 | 11 | 0 | 0 |
 | [Devices](#devices) | 13 | 0 | 0 | 13 | 0 | 0 |
 | [EPG](#epg) | 13 | 0 | 0 | 9 | 4 | 0 |
@@ -68,6 +68,10 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `partial` | `GET` | `/video/:/transcode/universal/ping` | user | Keep a transcode session alive | `200` for a session it knows, `404` otherwise, as the reference. No test yet. |
 | `partial` | `GET` | `/video/:/transcode/universal/stop` | user | Stop a transcode session | Stops the process and closes the playback session; `404` for one it does not know, as the reference. No test yet. |
 | `partial` | `GET` | `/video/:/transcode/universal/session/{session}/{base}/{file}` | public | A stream's playlist and segments | HLS `index.m3u8` and `.ts` segments, DASH `header` and `.m4s` chunks. No token, as on the reference: the session's stored name opens them, an unknown one answers `404`. A segment far ahead restarts the process there; one of an ended process is held 5 s then refused. |
+| `done` | `GET` | `/hubs/continueWatching/items` | user | Every item of the home Continue Watching shelf | Films in progress and next episodes, newest first, with `includedAt`. See spec-gaps.md. |
+| `done` | `GET` | `/hubs/home/continueWatching` | user | What was started | Films and episodes in progress, without the next episodes. |
+| `done` | `GET` | `/hubs/home/onDeck` | user | The next episodes | The episode after the one last watched in each series, without what was started. |
+| `done` | `GET` | `/hubs/sections/{sectionId}/continueWatching/items` | user | Every item of a library's Continue Watching shelf | The library's films in progress or its series' next episodes. |
 | `done` | `GET` | `/:/progress` | user | Remember where a viewing stopped | Keeps a position past a minute with no check against the end, as the reference does; an unknown item is acknowledged. Not in the spec. |
 | `partial` | `GET` | `/library/sections/{sectionId}/{filter}` | user | The choices of one filter | Genres, countries, directors, writers, starring actors, producers, years, decades, content ratings, studios and resolutions, encoded as the reference encodes each. No `None` rating. Windowed at 500. See `docs/spec-gaps.md`. |
 | `done` | `GET` | `/library/metadata/{id}/userState` | user | An item's state for the watchlist button | Not a route of the reference, which answers `404`: the shape of plex.tv's Discover provider, for Plex Web. Always unwatched: watch state is not recorded yet. |
@@ -172,7 +176,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `stub` | `GET` | `/hubs` | user | Get global hubs |  |
-| `stub` | `GET` | `/hubs/continueWatching` | user | Get the continue watching hub |  |
+| `done` | `GET` | `/hubs/continueWatching` | user | Get the continue watching hub | Films in progress and, for each series, the episode in progress or the one after the last watched, newest first, within 16 weeks, every copy of a work listed; `count` honored. Next-episode rules identical to the reference on 14 measured cases. See spec-gaps.md. |
 | `stub` | `GET` | `/hubs/items` | user | Get a hub's items |  |
 | `stub` | `GET` | `/hubs/metadata/{metadataId}` | user | Get hubs for a section by metadata item |  |
 | `stub` | `GET` | `/hubs/metadata/{metadataId}/postplay` | user | Get postplay hubs |  |

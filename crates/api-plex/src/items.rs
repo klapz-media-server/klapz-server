@@ -181,6 +181,10 @@ pub struct MetadataEntry {
     pub view_offset: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_viewed_at: Option<i64>,
+    /// When an item entered the home Continue Watching shelf, which is when it was last
+    /// played. Only there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub included_at: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub year: Option<i32>,
     /// The series' year, on a season that has none of its own.
@@ -803,6 +807,7 @@ impl MetadataEntry {
             view_count,
             view_offset,
             last_viewed_at,
+            included_at: None,
             year: item.year,
             // Only a season falls back to its series' year, and only when it has none: the
             // reference sends one or the other, never both.

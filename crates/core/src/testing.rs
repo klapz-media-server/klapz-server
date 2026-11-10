@@ -718,7 +718,7 @@ impl MetadataRepository for InMemoryMetadata {
         Ok(self.distinct_values(query, field).len() as u64)
     }
 
-    async fn guids_below(&self, item: RatingKey) -> Result<Vec<(ItemKind, String)>, MetadataError> {
+    async fn descendants(&self, item: RatingKey) -> Result<Vec<MetadataItem>, MetadataError> {
         let children: Vec<&MetadataItem> = self
             .items
             .iter()
@@ -733,7 +733,21 @@ impl MetadataRepository for InMemoryMetadata {
             .iter()
             .copied()
             .chain(grandchildren)
-            .map(|below| (below.kind, below.guid.clone()))
+            .cloned()
+            .collect())
+    }
+
+    async fn items_by_guid(
+        &self,
+        guids: &[String],
+        sections: Option<&[SectionId]>,
+    ) -> Result<Vec<MetadataItem>, MetadataError> {
+        Ok(self
+            .items
+            .iter()
+            .filter(|item| guids.contains(&item.guid))
+            .filter(|item| sections.is_none_or(|sections| sections.contains(&item.section_id)))
+            .cloned()
             .collect())
     }
 
@@ -1580,6 +1594,24 @@ impl crate::watch::WatchRepository for InMemoryWatch {
             })
             .filter(|(_, count)| *count > 0)
             .collect())
+    }
+
+    async fn recent(
+        &self,
+        viewer: crate::watch::Viewer,
+        since: i64,
+        limit: u32,
+    ) -> Result<Vec<(String, crate::watch::WatchState)>, crate::watch::WatchError> {
+        let mut recent: Vec<(String, crate::watch::WatchState)> = Self::lock(&self.states)
+            .iter()
+            .filter(|(who, _, state)| {
+                *who == viewer && state.last_viewed_at.is_some_and(|at| at >= since)
+            })
+            .map(|(_, guid, state)| (guid.clone(), *state))
+            .collect();
+        recent.sort_by(|a, b| b.1.last_viewed_at.cmp(&a.1.last_viewed_at));
+        recent.truncate(limit as usize);
+        Ok(recent)
     }
 
     async fn viewing(

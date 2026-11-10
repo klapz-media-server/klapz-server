@@ -199,6 +199,39 @@ Where ours differ:
 - **History is not imported.** The reference keeps 458,724 watch rows for 283 accounts, and
   the importer copies no account, so nothing ties them to a user here.
 
+### Continue Watching
+
+Measured on the reference's test series, given for the purpose five episodes over two seasons
+(copies of a real one, removed since), and fourteen watch patterns:
+
+- **A series' episode** is the one in progress if any; else the episode after the one most
+  recently watched — not the first unwatched: S5E3 then S5E1 gives S5E2, S5E1 then S5E3 gives
+  S5E4 — the next season's first after a season's last; and nothing once the series' last
+  episode is the most recently watched, earlier ones unwatched or not. A season marked watched
+  at once leads to the next season. Specials stand outside the sequence (unmeasured).
+- **A film** is listed while it has a position, a rewatch included.
+- **The window** is `OnDeckWindow`, 16 weeks since the work was last played; a series counts as
+  played when any of its episodes was. The list is ordered by that date, newest first, and an
+  episode never played carries its series' date as `lastViewedAt` — `includedAt` repeats it on
+  `/hubs/continueWatching`.
+- **Every copy is listed**: a film started in French and original-language libraries appears
+  twice, as the series behind an episode does.
+- **The endpoints**: `/hubs/continueWatching` (shelf `continueWatching`, style `hero`, both
+  kinds) and its `/items`; `/hubs/home/continueWatching` (started only) and `/hubs/home/onDeck`
+  (next episodes only); a library's shelf in `/hubs/sections/{id}` and its `/items`. Items are
+  lookup-shaped, the library on each.
+
+Where ours differ:
+
+- **History is what the reference keeps after `/:/unscrobble`**: a series forgotten entirely
+  still offers its first episode there, from views it remembers. Here a forgotten series
+  leaves the shelf.
+- **Season premieres past the window** (`OnDeckIncludePremieres`) are not offered: the window
+  bounds what is read.
+- **`/library/onDeck` and `/library/sections/{id}/onDeck`** still answer `501`. The reference
+  serves them unwindowed for films, back to 2019 in its library; nothing in Plex Web calls them.
+- **`OnDeckLimit`** (40 series) is not applied; the window bounds the list instead.
+
 ### Where an `X-Plex-*` value is read from
 
 The spec says every `X-Plex-*` header may also travel as a query parameter, and nothing more.

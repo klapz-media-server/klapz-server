@@ -19,6 +19,7 @@ mod m0013_extension_enabled;
 mod m0014_extension_account;
 mod m0015_stream_analysis;
 mod m0016_watch_state;
+mod m0017_guid_index;
 
 use sea_orm_migration::prelude::*;
 
@@ -45,6 +46,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0014_extension_account::Migration),
             Box::new(m0015_stream_analysis::Migration),
             Box::new(m0016_watch_state::Migration),
+            Box::new(m0017_guid_index::Migration),
         ]
     }
 }

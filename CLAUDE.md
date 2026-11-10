@@ -406,8 +406,13 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `markWatched`, `markUnwatched`, `reportViewing`, `keepWatchPosition`) and on the Plex surface
   (`/:/scrobble`, `/:/unscrobble`, `/:/progress`, the timeline's `playbackState`, and
   `viewCount`/`viewOffset`/`lastViewedAt`/`viewedLeafCount` on items);
-- ⬜ the shelves that need watch state — continue watching with content, recently watched,
-  top unwatched, top of a genre or of a person — now that it is kept.
+- ✅ **continue watching**: films in progress and each series' next episode, by the rules
+  measured on fourteen watch patterns (`Watching::continue_watching`), on the official API
+  (`continueWatching`, each entry with its reason) and on the Plex surface
+  (`/hubs/continueWatching`, `/hubs/home/continueWatching`, `/hubs/home/onDeck`, and every
+  library's shelf);
+- ⬜ the other shelves that need watch state — recently watched, top unwatched, top of a genre
+  or of a person — and the `unwatched` and `inProgress` filters.
 
 ## Reference server
 

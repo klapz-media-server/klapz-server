@@ -50,6 +50,58 @@ type ColorDescription {
 }
 
 """
+Why an item is in Continue Watching.
+"""
+enum ContinueReason {
+	"""
+	Started and not finished: a film, or an episode.
+	"""
+	IN_PROGRESS
+	"""
+	The episode after the one last watched: not started yet.
+	"""
+	UP_NEXT
+}
+
+type ContinueWatchingConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ContinueWatchingEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Item!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ContinueWatchingEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Item!
+	"""
+	Why the item is listed.
+	"""
+	reason: ContinueReason!
+	"""
+	When the work behind it was last played, in seconds since the Unix epoch: the
+	film's, or for an episode its series', which the list is ordered by.
+	"""
+	lastViewedAt: Int!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
 A play queue to create.
 """
 input CreatePlayQueueInput {
@@ -2195,6 +2247,28 @@ type Query {
 	"""
 	Items whose title matches a search term, across every library.
 	
+	What the caller has started and what comes next, newest first: every film in
+	progress, and for every series the episode in progress or the one after the last
+	watched. Played within the last sixteen weeks; every copy of a work is listed.
+	
+	Empty for a caller with no watch state. Pages forward only, by position: the list is
+	built whole from the caller's recent viewing, which is bounded by those sixteen weeks.
+	"""
+	continueWatching(
+		"""
+		Only this library's items, as returned in `Library.id`.
+		"""
+		library: ID,
+		"""
+		Return entries after this cursor.
+		"""
+		after: String,
+		"""
+		Return at most this many entries.
+		"""
+		first: Int
+	): ContinueWatchingConnection!
+	"""
 	Matches a *word prefix*: `hell` finds "Good News About Hell", and accents are folded so
 	`soiree` finds "# Pire Soirée". A term inside a word does not match — the index is a
 	range scan, not a substring scan.

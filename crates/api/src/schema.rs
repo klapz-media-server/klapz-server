@@ -235,6 +235,23 @@ impl Query {
 
     /// Items whose title matches a search term, across every library.
     ///
+    /// What the caller has started and what comes next, newest first: every film in
+    /// progress, and for every series the episode in progress or the one after the last
+    /// watched. Played within the last sixteen weeks; every copy of a work is listed.
+    ///
+    /// Empty for a caller with no watch state. Pages forward only, by position: the list is
+    /// built whole from the caller's recent viewing, which is bounded by those sixteen weeks.
+    async fn continue_watching(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Only this library's items, as returned in `Library.id`.")]
+        library: Option<ID>,
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return at most this many entries.")] first: Option<i32>,
+    ) -> Result<crate::watch::ContinueWatchingConnection> {
+        crate::watch::continue_watching(context, library, after, first).await
+    }
+
     /// Matches a *word prefix*: `hell` finds "Good News About Hell", and accents are folded so
     /// `soiree` finds "# Pire Soirée". A term inside a word does not match — the index is a
     /// range scan, not a substring scan.

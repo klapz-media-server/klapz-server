@@ -781,29 +781,41 @@ impl MetadataRepository for SqlMetadataRepository {
             .map_err(storage)
     }
 
-    async fn guids_below(&self, item: RatingKey) -> Result<Vec<(ItemKind, String)>, MetadataError> {
+    async fn descendants(&self, item: RatingKey) -> Result<Vec<MetadataItem>, MetadataError> {
         let children = Query::select()
             .column(metadata_item::Column::Id)
             .from(metadata_item::Entity)
             .and_where(metadata_item::Column::ParentId.eq(item.get()))
             .to_owned();
-        let rows: Vec<(String, String)> = metadata_item::Entity::find()
-            .select_only()
-            .column(metadata_item::Column::Kind)
-            .column(metadata_item::Column::Guid)
+        let rows = metadata_item::Entity::find()
             .filter(
                 Condition::any()
                     .add(metadata_item::Column::ParentId.eq(item.get()))
                     .add(metadata_item::Column::ParentId.in_subquery(children)),
             )
-            .into_tuple()
             .all(&self.connection)
             .await
             .map_err(storage)?;
-        Ok(rows
-            .into_iter()
-            .map(|(kind, guid)| (parse_kind(&kind), guid))
-            .collect())
+        Ok(rows.into_iter().map(to_domain).collect())
+    }
+
+    async fn items_by_guid(
+        &self,
+        guids: &[String],
+        sections: Option<&[SectionId]>,
+    ) -> Result<Vec<MetadataItem>, MetadataError> {
+        if guids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut select = metadata_item::Entity::find()
+            .filter(metadata_item::Column::Guid.is_in(guids.iter().cloned()));
+        if let Some(sections) = sections {
+            select = select.filter(
+                metadata_item::Column::LibrarySectionId.is_in(sections.iter().map(|id| id.get())),
+            );
+        }
+        let rows = select.all(&self.connection).await.map_err(storage)?;
+        Ok(rows.into_iter().map(to_domain).collect())
     }
 
     async fn tags_for(&self, items: &[RatingKey]) -> Result<Vec<ItemTag>, MetadataError> {
