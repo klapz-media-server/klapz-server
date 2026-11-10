@@ -128,6 +128,7 @@ fn app() -> axum::Router {
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
     });
     let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
 

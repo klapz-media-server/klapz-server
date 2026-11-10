@@ -630,7 +630,7 @@ The process keeps its chunks on the 5-second grid even when copying video: 494 c
 seconds, cut 6, 6, 3 around the file's key frames. So a chunk's number says where it is, and a
 predicted manifest is sound. Its files count from 1 and the manifest from 0. The one thing only
 the process knows is the codec string, so we read it from the manifest it writes, and answer
-`start.mpd` once that exists, about 0.7 seconds later.
+the manifest once that exists, about 0.5 seconds later.
 
 A seek needs no new request from the player: it simply asks for a chunk far from where the
 process is. The running process is then replaced by one started with `-ss {chunk × 5}
@@ -827,6 +827,20 @@ answers `404` at once, a wait already under way included. Measured on the refere
 session and a dead process both answer `404` within 0.1 s; it cannot read its files here, so a
 chunk that is merely late could not be timed. The hold is a deliberate choice against retry loops.
 Playlists and manifests are not held.
+
+### Streams at addresses of their own
+
+**Divergence.** The reference answers `start.mpd` and `start.m3u8` with its manifest, whose
+segments are relative URLs under `session/{id}/…` and carry no token. Ours answers `307` to the
+stream the official API's `startStream` started: `/streams/{id}/manifest.mpd?token=…` or
+`/streams/{id}/master.m3u8?token=…`. The id is a fresh UUID, the token a 256-bit secret of that
+stream alone, and every URL the manifest names (headers, chunks, the variant playlist, its
+segments) is an absolute path carrying it, because a relative reference drops the query. A wrong
+or missing secret answers `404`, as an unknown stream does. The manifest's body is otherwise the
+reference's, unchanged. So the Plex binding no longer builds a manifest: there is one, and it is
+the official API's. The cost: a client that does not follow redirects cannot start a stream, and
+a stream's URLs are tied to its secret rather than to the session's name. The transcoder's
+callbacks and `/video/:/transcode/universal/subtitles` keep their Plex routes.
 
 ### Timelines
 
@@ -1156,7 +1170,8 @@ None of this is in the spec. Measured against the reference and plex.tv.
   length at once rather than a duration that grows.
 - A stream's `header` and chunks are served without a token by the reference, from the LAN too:
   the manifest carries no `X-Plex-Token` and players fetch its relative URLs as they are. An
-  unknown session answers `404` with or without a token.
+  unknown session answers `404` with or without a token. Ours are opened by the stream's own
+  secret instead: see "Streams at addresses of their own".
 - A client with no token matches the server it reached with its plex.tv entry through
   `/identity`, so that answer must be the paired server's identifier.
 - Without a token, `GET /` answers `401` on the reference, from loopback and from the LAN alike,

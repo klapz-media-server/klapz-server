@@ -9,6 +9,7 @@ mod auth;
 mod cors;
 mod graphql;
 mod remote_tokens;
+mod streams;
 mod web;
 
 use std::path::PathBuf;
@@ -78,6 +79,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let directory: Arc<dyn AccountDirectory> =
         Arc::new(open_plex_api_plex::plex_tv::PlexTv::new()?);
     clear_stale_sessions(playback.as_ref()).await?;
+    let transcoder = Arc::new(transcoder());
+    transcoder.remove_leftover_sessions();
+    let streams = Arc::new(streams::Streams::new(Arc::clone(&transcoder)));
     let schema = build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity(), open_plex_core::now_epoch()),
         library,
@@ -87,6 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         access: Arc::clone(&users),
         directory: Arc::clone(&directory),
         watch: Arc::new(SqlWatchRepository::new(connection)),
+        streams: Arc::clone(&streams) as Arc<dyn open_plex_core::stream::StreamEngine>,
     });
     tokio::spawn(publish_paired_servers(
         Arc::clone(&users),
@@ -106,8 +111,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // merged *in* with the default rules. So the router holding those paths cannot be the one
     // merged in. GraphQL has no such paths and merges cleanly either way.
     let mut plex_state = PlexState::new(identity(), schema.clone(), accounts);
-    let transcoder = Arc::new(transcoder());
-    transcoder.remove_leftover_sessions();
     plex_state.transcoder = Arc::clone(&transcoder);
     tokio::spawn(expire_playback(
         Arc::clone(&playback),
@@ -116,7 +119,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let mut app = open_plex_api_plex::router(plex_state)
         .merge(graphql::router(schema))
-        .merge(admin::router());
+        .merge(admin::router())
+        .merge(streams::router(streams));
     let web_dir = web::directory();
     if let Some(client) = web::router(&web_dir) {
         tracing::info!(directory = %web_dir.display(), "serving the web client at /web");

@@ -89,6 +89,7 @@ fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
     });
     router(PlexState::new(identity, schema, accounts))
 }
@@ -805,6 +806,7 @@ fn items_app() -> axum::Router {
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(watch),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
     });
     authenticated(router(PlexState::new(identity, schema, accounts)))
 }
@@ -1699,6 +1701,7 @@ fn app_as_user(user: i64, role: LibraryRole) -> axum::Router {
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
     });
     router(PlexState::new(identity, schema, accounts))
         .layer(axum::Extension(user_principal(user, role)))
@@ -1746,6 +1749,7 @@ async fn app_as_paired_user() -> axum::Router {
         access: std::sync::Arc::new(access),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
     });
     router(PlexState::new(identity, schema, accounts))
         .layer(axum::Extension(user_principal(1, LibraryRole::Viewer)))
@@ -2065,6 +2069,7 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
     });
     let app = authenticated(router(PlexState::new(identity, schema, accounts)));
 

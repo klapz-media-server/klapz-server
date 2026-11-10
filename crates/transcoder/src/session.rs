@@ -1177,6 +1177,14 @@ impl Transcoder {
         session.is_some()
     }
 
+    /// Whether the session exists, without counting as a sign of life.
+    pub fn has_session(&self, id: &str) -> bool {
+        self.sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains_key(id)
+    }
+
     /// Whether the session exists; keeps it alive if so.
     pub fn ping_session(&self, id: &str) -> bool {
         self.session(id).is_some()

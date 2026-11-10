@@ -12,6 +12,12 @@ open-plex-api-plex.workspace = true
 open-plex-transcoder.workspace = true
 open-plex-db.workspace = true
 async-graphql.workspace = true
+async-trait.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+subtle.workspace = true
+tower = { workspace = true, features = ["util"] }
+uuid = { version = "1", features = ["v4"] }
 async-graphql-axum.workspace = true
 axum.workspace = true
 form_urlencoded = "1"

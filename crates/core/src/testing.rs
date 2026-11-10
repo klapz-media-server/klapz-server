@@ -1732,3 +1732,50 @@ impl crate::watch::WatchRepository for InMemoryWatch {
         Ok(())
     }
 }
+
+/// A stream engine that runs nothing: it records what it was asked and answers as an engine
+/// copying both tracks would.
+#[derive(Debug, Default)]
+pub struct StubStreams {
+    pub started: std::sync::Mutex<Vec<crate::stream::StreamOrder>>,
+}
+
+#[async_trait::async_trait]
+impl crate::stream::StreamEngine for StubStreams {
+    async fn start(
+        &self,
+        order: crate::stream::StreamOrder,
+    ) -> Result<crate::stream::StartedStream, crate::stream::StreamError> {
+        let url = match order.delivery {
+            crate::stream::Delivery::Original => "/streams/stub/file?token=stub",
+            crate::stream::Delivery::Converted(crate::stream::StreamProtocol::Dash) => {
+                "/streams/stub/manifest.mpd?token=stub"
+            }
+            crate::stream::Delivery::Converted(crate::stream::StreamProtocol::Hls) => {
+                "/streams/stub/master.m3u8?token=stub"
+            }
+        };
+        let started = crate::stream::StartedStream {
+            url: url.to_owned(),
+            subtitles_url: None,
+            video: crate::playback::StreamDecision::Copy,
+            audio: crate::playback::StreamDecision::Copy,
+            output: crate::playback::PlaybackOutput {
+                video_bitrate: order.source.bitrate,
+                audio_bitrate: order.source.audio.bitrate,
+                width: order.source.width,
+                height: order.source.height,
+            },
+            replaced: Vec::new(),
+        };
+        self.started
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(order);
+        Ok(started)
+    }
+
+    fn stop(&self, _key: &str) -> bool {
+        false
+    }
+}

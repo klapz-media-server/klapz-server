@@ -1,16 +1,15 @@
-//! Playback: a file served as it is, or remuxed over HLS.
+//! Playback: a file served as it is, or converted for a player.
 //!
 //! The binding over `open-plex-transcoder`, as `photo` is. It covers Direct Play, Direct Stream
 //! and H.264 re-encoded to a lower quality. Video of any other codec answers `501`.
 //!
+//! A conversion is started through the official API's `startStream`, and `start.mpd` and
+//! `start.m3u8` send the player to the stream's own address, where its manifest and segments
+//! are served.
+//!
 //! `/video/:/transcode/session/…` is the process's own way back in. Those routes are served
 //! without a token and answer only to the unguessable id its session was given.
-//!
-//! A stream's segments carry no token either: the manifest names them without one, and players
-//! fetch them as written, as on the reference. Knowing a session's name is what opens them, so
-//! a manifest gives its stored name, the one that says whose session it is.
 
-use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -18,7 +17,7 @@ use async_graphql::{Name, Value, Variables};
 use axum::body::Body;
 use axum::extract::{Path, Query, RawQuery, Request, State};
 use axum::http::{header, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post, put};
 use axum::Router;
 use open_plex_api::item::ITEM_TYPE;
@@ -26,9 +25,9 @@ use open_plex_api::media::FILE_TYPE;
 use open_plex_api::GlobalId;
 use open_plex_transcoder::media::resolve_within;
 use open_plex_transcoder::plan::{
-    plan_stream, AudioAction, Limits, StreamPlan, StreamSource, Track, VideoAction, VideoEncode,
+    plan_stream, AudioAction, Limits, StreamPlan, StreamSource, VideoAction, VideoEncode,
 };
-use open_plex_transcoder::session::{segment_seconds, Protocol, StreamRequest, SubtitleDelivery};
+use open_plex_transcoder::session::Protocol;
 use serde::Deserialize;
 use serde_json::{json, Value as Json};
 use tower::ServiceExt as _;
@@ -53,10 +52,6 @@ pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
         .route("/video/:/transcode/universal/ping", get(ping))
         .route("/video/:/transcode/universal/stop", get(stop))
         .route("/video/:/transcode/universal/subtitles", get(subtitles))
-        .route(
-            "/video/:/transcode/universal/session/{session}/{base}/{file}",
-            get(session_file),
-        )
         .route(
             "/video/:/transcode/session/{session}/{callback}/source",
             get(callback_source),
@@ -316,14 +311,6 @@ impl<'a> Selection<'a> {
             burn_subtitle: self.delivery == Some(Delivery::Burn),
         };
         Ok(plan_stream(&source, limits)?)
-    }
-}
-
-fn track(stream: &GqlStream) -> Track {
-    Track {
-        index: stream.position,
-        codec: stream.codec.clone().unwrap_or_default(),
-        language: stream.language.clone(),
     }
 }
 
@@ -608,74 +595,12 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<Conversi
     }
 }
 
-const START_SESSION: &str = r"
-mutation PlexStartPlayback($input: StartPlaybackInput!) {
-  startPlaybackSession(input: $input) { key }
-}
-";
 const TOUCH_SESSION: &str = r"
 mutation PlexTouchPlayback($key: String!) { touchPlaybackSession(key: $key) }
 ";
 const END_SESSION: &str = r"
 mutation PlexEndPlayback($key: String!) { endPlaybackSession(key: $key) }
 ";
-
-async fn record_start(
-    state: &PlexState,
-    session: &str,
-    item: &GqlItem,
-    selection: &Selection<'_>,
-    plan: &StreamPlan,
-    client: &ClientIdentity,
-    offset: Option<f64>,
-) -> Result<(), ApiError> {
-    let optional = |value: Option<String>| value.map_or(Value::Null, Value::String);
-    let picture = Picture::of(selection, plan);
-    let fields = [
-        ("key", Value::String(session.to_owned())),
-        ("playbackId", optional(client.session_identifier.clone())),
-        ("itemId", Value::String(item.id.clone())),
-        ("fileId", Value::String(selection.part.id.clone())),
-        (
-            "clientIdentifier",
-            optional(client.identifier.as_ref().map(|id| id.as_str().to_owned())),
-        ),
-        ("clientProduct", optional(client.product.clone())),
-        (
-            "videoDecision",
-            Value::Enum(Name::new(match plan.video {
-                VideoAction::Copy => "COPY",
-                VideoAction::Encode(_) => "TRANSCODE",
-            })),
-        ),
-        (
-            "audioDecision",
-            Value::Enum(Name::new(match plan.audio {
-                AudioAction::Copy => "COPY",
-                AudioAction::ConvertToAac => "TRANSCODE",
-            })),
-        ),
-        ("positionMs", Value::Number(position_ms(offset).into())),
-        (
-            "videoBitrate",
-            Value::Number(picture.video_bandwidth.into()),
-        ),
-        (
-            "audioBitrate",
-            Value::Number(audio_bits(selection, plan).into()),
-        ),
-        ("width", Value::Number(picture.width.into())),
-        ("height", Value::Number(picture.height.into())),
-    ];
-    let input = fields
-        .into_iter()
-        .map(|(name, value)| (Name::new(name), value))
-        .collect();
-    let mut variables = Variables::default();
-    variables.insert(Name::new("input"), Value::Object(input));
-    let _: serde::de::IgnoredAny = gql::execute(&state.schema, START_SESSION, variables).await?;
-    Ok(())
-}
 
 #[allow(
     clippy::cast_possible_truncation,
@@ -697,136 +622,104 @@ async fn touch_session(state: &PlexState, session: &str) {
     }
 }
 
-/// Starts the conversion a request describes, and records the session.
-async fn open_session(
+const START_STREAM: &str = r"
+mutation PlexStartStream($input: StartStreamInput!) {
+  startStream(input: $input) { stream { url } userErrors { code } }
+}
+";
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StartStreamData {
+    start_stream: GqlStartStream,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlStartStream {
+    stream: Option<GqlStarted>,
+    user_errors: Vec<GqlStreamError>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlStarted {
+    url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlStreamError {
+    code: String,
+}
+
+/// Starts the conversion a request describes, through the official API, and sends the player
+/// to the stream's own address: the manifest is the official API's, not rebuilt here.
+async fn start_stream(
     state: &PlexState,
     client: &ClientIdentity,
     params: &PlaybackParams,
     protocol: Protocol,
-) -> Result<(String, GqlItem, StreamPlan), ApiError> {
-    let session = params.session.clone().ok_or(ApiError::BadRequest)?;
+) -> Result<Response, ApiError> {
+    let session = params.session.as_deref().ok_or(ApiError::BadRequest)?;
     let item = item(state, params.rating_key()?).await?;
     let selection = Selection::of(&item, params)?;
-    let plan = selection.plan(params)?;
-    let source = file_of_part(state, selection.part.database_id()).await?;
-    let conversion = gql::session_key(&session);
-
-    let replaced = state
-        .transcoder
-        .start_stream(StreamRequest {
-            session: conversion.clone(),
-            playback: client.session_identifier.as_deref().map(gql::session_key),
-            source,
-            video: track(selection.video),
-            audio: track(selection.audio),
-            plan,
-            offset: params.offset,
-            protocol,
-            total_ms: u64::try_from(selection.version.duration_ms.unwrap_or(0).max(0)).unwrap_or(0),
-            subtitle: selection
-                .subtitle
-                .zip(selection.delivery)
-                .map(|(subtitle, delivery)| match delivery {
-                    Delivery::Burn => SubtitleDelivery::Burn {
-                        track: track(subtitle),
-                        scale: f64::from(params.subtitle_size.unwrap_or(100)) / 100.0,
-                    },
-                    Delivery::Text => SubtitleDelivery::Text {
-                        track: track(subtitle),
-                    },
-                }),
-        })
-        .await?;
-    for stored in replaced {
-        end_record(state, gql::client_key(&stored)).await;
+    let subtitles = match selection.delivery {
+        Some(Delivery::Burn) => "BURN",
+        Some(Delivery::Text) => "TEXT",
+        None => "NONE",
+    };
+    let input = json!({
+        "file": selection.part.id,
+        "protocol": match protocol {
+            Protocol::Hls => "HLS",
+            Protocol::Dash => "DASH",
+        },
+        "audioTrack": selection.audio.id,
+        "subtitleTrack": selection.subtitle.map(|subtitle| &subtitle.id),
+        "subtitles": subtitles,
+        "subtitleScale": f64::from(params.subtitle_size.unwrap_or(100)) / 100.0,
+        "maxVideoBitrate": params
+            .max_video_bitrate
+            .map(|kbps| i32::try_from(u64::from(kbps) * 1000).unwrap_or(i32::MAX)),
+        "convertAudio": params.direct_stream_audio.as_deref() == Some("0"),
+        "adaptive": params.adaptive(),
+        "positionMs": position_ms(params.offset),
+        "key": session,
+        "playbackId": client.session_identifier,
+        "clientIdentifier": client.identifier.as_ref().map(ClientId::as_str),
+        "clientProduct": client.product,
+    });
+    let variables = Variables::from_json(json!({ "input": input }));
+    let data: StartStreamData = gql::execute(&state.schema, START_STREAM, variables).await?;
+    if let Some(error) = data.start_stream.user_errors.first() {
+        return Err(match error.code.as_str() {
+            "FILE_MISSING" => ApiError::NotFound,
+            "VIDEO_NOT_CONVERTIBLE" | "SUBTITLE_NOT_DELIVERABLE" => ApiError::NotImplemented,
+            // The reference answers `400` too when it will not start another stream.
+            _ => ApiError::BadRequest,
+        });
     }
-    let recorded = record_start(
-        state,
-        &session,
-        &item,
-        &selection,
-        &plan,
-        client,
-        params.offset,
-    )
-    .await;
-    if let Err(error) = recorded {
-        // A session nobody can see or stop must not keep running.
-        state.transcoder.stop_session(&conversion);
-        return Err(error);
-    }
-    Ok((session, item, plan))
+    let url = data.start_stream.stream.ok_or(ApiError::BadRequest)?.url;
+    Ok(Redirect::temporary(&url).into_response())
 }
 
-/// `GET /video/:/transcode/universal/start.m3u8`: the master playlist, one variant as on the
-/// reference.
+/// `GET /video/:/transcode/universal/start.m3u8`.
 async fn start_hls(
     _caller: Caller,
     client: ClientIdentity,
     State(state): State<PlexState>,
     Query(params): Query<PlaybackParams>,
 ) -> Result<Response, ApiError> {
-    let (session, item, plan) = open_session(&state, &client, &params, Protocol::Hls).await?;
-    let selection = Selection::of(&item, &params)?;
-
-    let picture = Picture::of(&selection, &plan);
-    let audio_bits = match plan.audio {
-        AudioAction::Copy => 0,
-        AudioAction::ConvertToAac => i64::from(plan.audio_kbps()) * 1000,
-    };
-    let bandwidth = picture.video_bandwidth + audio_bits;
-    let resolution = if picture.width > 0 && picture.height > 0 {
-        format!(",RESOLUTION={}x{}", picture.width, picture.height)
-    } else {
-        String::new()
-    };
-    let frame_rate = selection
-        .version
-        .frame_rate
-        .map_or_else(String::new, |rate| format!(",FRAME-RATE={rate:.6}"));
-    let stored = gql::session_key(&session);
-    Ok(playlist(format!(
-        "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH={bandwidth}{resolution}{frame_rate}\n\
-         session/{stored}/base/index.m3u8\n"
-    )))
+    start_stream(&state, &client, &params, Protocol::Hls).await
 }
 
-/// `GET /video/:/transcode/universal/start.mpd`: the reference's manifest, whole and static.
-///
-/// A copy's codec strings are known only to the process, and read from the manifest it writes.
-/// An encode's are fixed: the reference announces them at once, and so does this.
+/// `GET /video/:/transcode/universal/start.mpd`.
 async fn start_dash(
     _caller: Caller,
     client: ClientIdentity,
     State(state): State<PlexState>,
     Query(params): Query<PlaybackParams>,
 ) -> Result<Response, ApiError> {
-    let (session, item, plan) = open_session(&state, &client, &params, Protocol::Dash).await?;
-    let selection = Selection::of(&item, &params)?;
-    let written = match plan.video {
-        VideoAction::Copy => {
-            state
-                .transcoder
-                .session_manifest(&gql::session_key(&session))
-                .await?
-        }
-        VideoAction::Encode(_) => String::new(),
-    };
-
-    let duration = selection.version.duration_ms.unwrap_or(0).max(0);
-    let picture = Picture::of(&selection, &plan);
-    let audio_bandwidth = audio_bits(&selection, &plan);
-    let body = dash_manifest(&DashManifest {
-        session: &gql::session_key(&session),
-        duration_ms: duration,
-        segment_seconds: segment_seconds(&plan, Protocol::Dash),
-        video_bandwidth: picture.video_bandwidth,
-        width: picture.width,
-        height: picture.height,
-        audio_bandwidth,
-        written: &written,
-    });
-    Ok(([(header::CONTENT_TYPE, "application/dash+xml")], body).into_response())
+    start_stream(&state, &client, &params, Protocol::Dash).await
 }
 
 /// `GET /video/:/transcode/universal/subtitles`: the soft subtitles of a running stream, as the
@@ -864,223 +757,6 @@ async fn subtitles(
 enum Feed {
     Waiting(Arc<open_plex_transcoder::Transcoder>, String),
     Reading(open_plex_transcoder::session::SubtitleReader),
-}
-
-/// What the audio track weighs on its way to the player.
-fn audio_bits(selection: &Selection<'_>, plan: &StreamPlan) -> i64 {
-    match plan.audio {
-        AudioAction::ConvertToAac => i64::from(plan.audio_kbps()) * 1000,
-        AudioAction::Copy => i64::from(selection.audio.bitrate.unwrap_or(0)),
-    }
-}
-
-/// What a manifest announces of the video: the file's, unless it is being re-encoded.
-struct Picture {
-    video_bandwidth: i64,
-    width: i64,
-    height: i64,
-}
-
-impl Picture {
-    fn of(selection: &Selection<'_>, plan: &StreamPlan) -> Self {
-        match plan.video {
-            VideoAction::Copy => Self {
-                video_bandwidth: i64::from(selection.version.bitrate.unwrap_or(0)),
-                width: i64::from(selection.version.width.unwrap_or(0)),
-                height: i64::from(selection.version.height.unwrap_or(0)),
-            },
-            VideoAction::Encode(encode) => Self {
-                video_bandwidth: i64::from(encode.video_kbps) * 1000,
-                width: i64::from(encode.width),
-                height: i64::from(encode.height),
-            },
-        }
-    }
-}
-
-struct DashManifest<'a> {
-    session: &'a str,
-    duration_ms: i64,
-    segment_seconds: u32,
-    video_bandwidth: i64,
-    width: i64,
-    height: i64,
-    audio_bandwidth: i64,
-    /// The manifest the process wrote, which alone states the codecs.
-    written: &'a str,
-}
-
-/// The value of `name` on the `Representation` element with this id.
-fn representation_attribute<'a>(written: &'a str, id: u32, name: &str) -> Option<&'a str> {
-    let opening = format!("<Representation id=\"{id}\"");
-    let element = &written[written.find(&opening)?..];
-    let element = &element[..element.find('>')?];
-    let key = format!("{name}=\"");
-    let value = &element[element.find(&key)? + key.len()..];
-    Some(&value[..value.find('"')?])
-}
-
-fn dash_manifest(manifest: &DashManifest<'_>) -> String {
-    let session = manifest.session;
-    let seconds = manifest.duration_ms / 1000;
-    let duration = format!(
-        "PT{}H{}M{}S",
-        seconds / 3600,
-        seconds / 60 % 60,
-        seconds % 60
-    );
-    let template = format!(
-        "<SegmentTemplate timescale=\"1\" duration=\"{segment}\" \
-         initialization=\"session/{session}/$RepresentationID$/header\" \
-         media=\"session/{session}/$RepresentationID$/$Number$.m4s\" startNumber=\"0\">\n\
-         \t\t\t</SegmentTemplate>",
-        segment = manifest.segment_seconds
-    );
-    let video_codecs =
-        representation_attribute(manifest.written, 0, "codecs").unwrap_or("avc1.640028");
-    let audio_codecs =
-        representation_attribute(manifest.written, 1, "codecs").unwrap_or("mp4a.40.2");
-    let sampling =
-        representation_attribute(manifest.written, 1, "audioSamplingRate").unwrap_or("48000");
-    let channels = manifest
-        .written
-        .find("audio_channel_configuration")
-        .map(|at| &manifest.written[at..])
-        .and_then(|rest| rest.split("value=\"").nth(1))
-        .and_then(|rest| rest.split('"').next())
-        .unwrap_or("2");
-    format!(
-        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
-         <MPD xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n\
-         \txmlns=\"urn:mpeg:dash:schema:mpd:2011\"\n\
-         \txmlns:xlink=\"http://www.w3.org/1999/xlink\"\n\
-         \txsi:schemaLocation=\"urn:mpeg:dash:schema:mpd:2011 http://standards.iso.org/ittf/PubliclyAvailableStandards/MPEG-DASH_schema_files/DASH-MPD.xsd\"\n\
-         \tprofiles=\"urn:mpeg:dash:profile:isoff-live:2011\"\n\
-         \ttype=\"static\"\n\
-         \tmediaPresentationDuration=\"{duration}\"\n\
-         \tmaxSegmentDuration=\"PT{longest}S\"\n\
-         \tminBufferTime=\"PT10S\">\n\
-         \t<Period start=\"PT0S\" id=\"0\" duration=\"{duration}\">\n\
-         \t\t<AdaptationSet segmentAlignment=\"true\">\n\
-         \t\t\t{template}\n\
-         \t\t\t<Representation id=\"0\" mimeType=\"video/mp4\" codecs=\"{video_codecs}\" \
-         bandwidth=\"{video}\" width=\"{width}\" height=\"{height}\">\n\
-         \t\t\t</Representation>\n\
-         \t\t</AdaptationSet>\n\
-         \t\t<AdaptationSet segmentAlignment=\"true\">\n\
-         \t\t\t{template}\n\
-         \t\t\t<Representation id=\"1\" mimeType=\"audio/mp4\" codecs=\"{audio_codecs}\" \
-         bandwidth=\"{audio}\" audioSamplingRate=\"{sampling}\">\n\
-         \t\t\t\t<AudioChannelConfiguration \
-         schemeIdUri=\"urn:mpeg:dash:23003:3:audio_channel_configuration:2011\" \
-         value=\"{channels}\"/>\n\
-         \t\t\t</Representation>\n\
-         \t\t</AdaptationSet>\n\
-         \t</Period>\n\
-         </MPD>\n",
-        longest = manifest.segment_seconds * 2,
-        video = manifest.video_bandwidth,
-        width = manifest.width,
-        height = manifest.height,
-        audio = manifest.audio_bandwidth,
-    )
-}
-
-fn playlist(body: String) -> Response {
-    (
-        [(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")],
-        body,
-    )
-        .into_response()
-}
-
-/// `…/session/{id}/base/index.m3u8` and its segments `…/base/00000.ts`.
-async fn session_file(
-    State(state): State<PlexState>,
-    Path((session, base, file)): Path<(String, String, String)>,
-    request: Request,
-) -> Result<Response, ApiError> {
-    if file == "index.m3u8" {
-        let output = state.transcoder.session_output(&session).await?;
-        return Ok(playlist(media_playlist(&output)));
-    }
-    // A DASH stream is addressed by its number: `…/0/header`, `…/0/12.m4s`.
-    if let Ok(stream) = base.parse::<u32>() {
-        let path = if file == "header" {
-            state.transcoder.dash_header(&session, stream).await?
-        } else {
-            let number = file
-                .strip_suffix(".m4s")
-                .and_then(|stem| stem.parse().ok())
-                .ok_or(ApiError::NotFound)?;
-            state
-                .transcoder
-                .dash_chunk(&session, stream, number)
-                .await?
-        };
-        return Ok(serve(path, request).await);
-    }
-    let number = file
-        .strip_suffix(".ts")
-        .and_then(|stem| stem.parse().ok())
-        .ok_or(ApiError::NotFound)?;
-    let path = state.transcoder.session_segment(&session, number).await?;
-    Ok(serve(path, request).await)
-}
-
-/// The reference builds the whole playlist up front from the media's duration: a fake VOD list
-/// that already ends in `#EXT-X-ENDLIST` while the process is still writing, so a player learns
-/// the real length at once instead of watching it grow. A remux cuts its segments on the file's
-/// own key frames, close to these nominal boundaries. With no duration we fall back to listing
-/// the segments that exist.
-fn media_playlist(output: &open_plex_transcoder::session::Output) -> String {
-    let seconds = output.segment_seconds.max(1);
-    let segment_ms = u64::from(seconds) * 1000;
-    if output.total_ms == 0 {
-        return growing_playlist(output);
-    }
-    let full = output.total_ms / segment_ms;
-    let remainder = output.total_ms % segment_ms;
-    let mut text = format!(
-        "#EXTM3U\n#EXT-X-TARGETDURATION:{seconds}\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-MEDIA-SEQUENCE:0\n"
-    );
-    for number in 0..full {
-        // Writing to a `String` cannot fail.
-        let _ = write!(text, "#EXTINF:{seconds}, nodesc\n{number:05}.ts\n");
-    }
-    if remainder > 0 {
-        // The reference prints the remainder rounded to a whole second, never below one.
-        let last = ((remainder + 500) / 1000).max(1);
-        let _ = write!(text, "#EXTINF:{last}, nodesc\n{full:05}.ts\n");
-    }
-    text.push_str("#EXT-X-ENDLIST\n");
-    text
-}
-
-/// The playlist as segments arrive, used only when the media's duration is unknown.
-fn growing_playlist(output: &open_plex_transcoder::session::Output) -> String {
-    let longest = output
-        .segments
-        .iter()
-        .map(|segment| segment.seconds)
-        .fold(10.0_f64, f64::max);
-    let mut text = format!(
-        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:{}\n#EXT-X-ALLOW-CACHE:NO\n\
-         #EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-MEDIA-SEQUENCE:0\n",
-        longest.ceil()
-    );
-    for segment in &output.segments {
-        // Writing to a `String` cannot fail.
-        let _ = write!(
-            text,
-            "#EXTINF:{:.6}, nodesc\n{:05}.ts\n",
-            segment.seconds, segment.number
-        );
-    }
-    if output.ended {
-        text.push_str("#EXT-X-ENDLIST\n");
-    }
-    text
 }
 
 /// The reference answers `200` to a session it knows and `404` otherwise, for both.
@@ -1177,8 +853,6 @@ async fn acknowledge(RawQuery(_query): RawQuery) -> StatusCode {
 
 #[cfg(test)]
 mod tests {
-    use open_plex_transcoder::session::{Output, Segment};
-
     use super::*;
 
     fn params(query: &str) -> PlaybackParams {
@@ -1234,51 +908,6 @@ mod tests {
         ));
     }
 
-    /// As the process wrote it for a real file.
-    const WRITTEN: &str = r#"<Representation id="0" mimeType="video/mp4" codecs="avc1.64001f" bandwidth="3174670" width="1280">
-<Representation id="1" mimeType="audio/mp4" codecs="mp4a.40.2" bandwidth="256000" audioSamplingRate="48000">
-<AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2" />"#;
-
-    #[test]
-    fn reads_the_codecs_the_process_found() {
-        assert_eq!(
-            representation_attribute(WRITTEN, 0, "codecs"),
-            Some("avc1.64001f")
-        );
-        assert_eq!(
-            representation_attribute(WRITTEN, 1, "audioSamplingRate"),
-            Some("48000")
-        );
-        assert_eq!(representation_attribute(WRITTEN, 2, "codecs"), None);
-    }
-
-    #[test]
-    fn writes_the_references_manifest() {
-        let text = dash_manifest(&DashManifest {
-            session: "s1",
-            duration_ms: 7_200_000,
-            segment_seconds: 5,
-            video_bandwidth: 4_273_000,
-            width: 1920,
-            height: 1080,
-            audio_bandwidth: 256_000,
-            written: WRITTEN,
-        });
-        assert!(text.contains("type=\"static\""));
-        assert!(text.contains("mediaPresentationDuration=\"PT2H0M0S\""));
-        assert!(text.contains("maxSegmentDuration=\"PT10S\""));
-        assert!(
-            text.contains(r#"duration="5" initialization="session/s1/$RepresentationID$/header""#)
-        );
-        assert!(
-            text.contains(r#"media="session/s1/$RepresentationID$/$Number$.m4s" startNumber="0""#)
-        );
-        assert!(
-            text.contains(r#"codecs="avc1.64001f" bandwidth="4273000" width="1920" height="1080""#)
-        );
-        assert!(text.contains(r#"value="2"/>"#));
-    }
-
     #[test]
     fn reads_the_item_out_of_the_path() {
         assert_eq!(
@@ -1289,67 +918,5 @@ mod tests {
             params("path=/etc/passwd").rating_key(),
             Err(ApiError::BadRequest)
         ));
-    }
-
-    #[test]
-    fn the_playlist_predicts_every_segment_from_the_duration() {
-        // Soul: 6_031_568 ms at 10s segments, as captured from the reference.
-        let playlist = media_playlist(&Output {
-            segments: Vec::new(),
-            ended: false,
-            total_ms: 6_031_568,
-            segment_seconds: 10,
-        });
-        assert!(playlist.starts_with(
-            "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-MEDIA-SEQUENCE:0\n"
-        ));
-        assert!(!playlist.contains("EXT-X-VERSION"));
-        assert!(!playlist.contains("PLAYLIST-TYPE"));
-        assert!(playlist.contains("#EXTINF:10, nodesc\n00000.ts\n"));
-        assert!(playlist.contains("#EXTINF:10, nodesc\n00602.ts\n"));
-        assert!(playlist.contains("#EXTINF:2, nodesc\n00603.ts\n"));
-        assert!(!playlist.contains("00604.ts"));
-        assert!(playlist.ends_with("#EXT-X-ENDLIST\n"));
-    }
-
-    #[test]
-    fn a_whole_number_of_segments_leaves_no_remainder() {
-        let playlist = media_playlist(&Output {
-            segments: Vec::new(),
-            ended: false,
-            total_ms: 30_000,
-            segment_seconds: 10,
-        });
-        assert!(playlist.contains("#EXTINF:10, nodesc\n00002.ts\n"));
-        assert!(!playlist.contains("00003.ts"));
-        assert!(playlist.ends_with("#EXT-X-ENDLIST\n"));
-    }
-
-    #[test]
-    fn without_a_duration_the_playlist_lists_what_exists() {
-        let output = Output {
-            segments: vec![
-                Segment {
-                    number: 0,
-                    seconds: 9.0,
-                },
-                Segment {
-                    number: 1,
-                    seconds: 12.5,
-                },
-            ],
-            ended: false,
-            total_ms: 0,
-            segment_seconds: 10,
-        };
-        let running = media_playlist(&output);
-        assert!(running.contains("#EXT-X-TARGETDURATION:13\n"));
-        assert!(running.contains("#EXTINF:9.000000, nodesc\n00000.ts\n"));
-        assert!(!running.contains("ENDLIST"));
-        assert!(media_playlist(&Output {
-            ended: true,
-            ..output
-        })
-        .ends_with("#EXT-X-ENDLIST\n"));
     }
 }

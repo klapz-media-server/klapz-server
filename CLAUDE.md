@@ -107,6 +107,13 @@ without them saying so.
 - **No domain logic in a binding.** A binding translates: parse the request, query, shape the
   response. Review test — if a handler holds a condition expressing a domain rule, it is in the
   wrong place. Presentation decisions (listing order, wire encodings) *are* the binding's job.
+- **Streams are started on the official API, and read at addresses of their own.**
+  `startStream` (Relay: an input with `clientMutationId`, a payload with `userErrors`) reaches
+  the media engine through the `core::stream::StreamEngine` port; `server::streams` implements
+  it over the transcoder and serves `/streams/{id}/…`, opened by a secret per stream rather than
+  the account's token, because a player hands those URLs to components that never see the
+  account. Direct play gets a file address the same way. The stream is identified by the
+  playback session it records, which `stopStream` names.
 - **HTTP token authentication lives in `server`**, because both surfaces share it. It attaches a
   `Principal`; each surface then enforces scope in its own idiom (`Caller`/`AdminCaller`
   extractors on the Plex side, request data on the GraphQL side).
@@ -230,9 +237,11 @@ Places where we knowingly answer differently, each decided rather than overlooke
 - **The transcoder's callbacks carry no token.** `/video/:/transcode/session/{id}/{callback}/…`
   is how the process reads its source and reports its segments. Those routes bypass token
   authentication and answer only to the unguessable id of a running session.
-- **A stream's segments carry no token**, as on the reference: `/video/:/transcode/universal/session/…`
-  answers to the session's name alone, and an unknown one is a `404`. The manifest gives a user's
-  stored name (`u6~…`), since nothing else in the request says whose session it is.
+- **A stream lives at an address of its own.** `start.mpd` and `start.m3u8` start the stream
+  through the official API's `startStream` and answer `307` to `/streams/{id}/manifest.mpd` or
+  `master.m3u8`, whose URLs all carry the stream's own secret (`?token=`, not the account's): the
+  Plex binding builds no manifest. The reference serves its segments under the session's name,
+  without a token.
 - **`/library/metadata/{id}/userState` exists here and not on the reference.** It belongs to
   plex.tv's Discover provider; Plex Web also sends it to the server for an item without a Plex
   GUID, and it answers in that provider's shape, always unwatched.
@@ -436,6 +445,9 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   library's shelf);
 - ✅ the drawn shelves — top of a genre, of a person — drawn as measured on 150 of the
   reference's draws, and rediscover;
+- ✅ **native streams**: `startStream` and `stopStream` on the official API — direct play,
+  direct stream or transcode, decided from the file and the player's limits — read at
+  `/streams/{id}/…?token=…`, and Plex's `start.mpd`/`start.m3u8` redirecting there;
 - ⬜ a series library's "more in" a genre, whose genre follows the viewer's history by a rule
   not found yet.
 

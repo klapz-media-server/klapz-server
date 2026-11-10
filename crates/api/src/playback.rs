@@ -315,6 +315,27 @@ impl Mutation {
         ))
     }
 
+    /// Starts sending a file to a player: as it is when the player reads it, its tracks
+    /// repackaged when they fit, the video re-encoded when they do not or a limit asks for it.
+    /// Records the playback session. A start under a key already streaming the same thing
+    /// keeps it running.
+    async fn start_stream(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The stream to start.")] input: crate::stream::StartStreamInput,
+    ) -> Result<crate::stream::StartStreamPayload> {
+        crate::stream::start_stream(context, input).await
+    }
+
+    /// Stops a stream and closes its session.
+    async fn stop_stream(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The stream to stop.")] input: crate::stream::StopStreamInput,
+    ) -> Result<crate::stream::StopStreamPayload> {
+        crate::stream::stop_stream(context, input).await
+    }
+
     /// Records a sign of life, pushing the session's expiry forward. Whether it is still
     /// running.
     async fn touch_playback_session(

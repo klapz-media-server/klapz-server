@@ -155,10 +155,9 @@ fn is_transcoder_callback(path: &str) -> bool {
     path.starts_with("/video/:/transcode/session/")
 }
 
-/// A stream's playlists and segments, which players fetch without a token, as on the reference.
-/// The session's name opens them, and an unknown one answers `404`.
-fn is_stream_segment(path: &str) -> bool {
-    path.starts_with("/video/:/transcode/universal/session/")
+/// A stream at an address of our own, which carries a secret of its own instead of a token.
+fn is_native_stream(path: &str) -> bool {
+    path.starts_with("/streams/")
 }
 
 pub async fn require_token(
@@ -168,7 +167,7 @@ pub async fn require_token(
 ) -> Response {
     let path = request.uri().path();
     // The web client is public on the reference too: it has to load before it can sign in.
-    if crate::web::is_client_path(path) || is_transcoder_callback(path) || is_stream_segment(path) {
+    if crate::web::is_client_path(path) || is_transcoder_callback(path) || is_native_stream(path) {
         return next.run(request).await;
     }
     let presented = token_from(&request);
@@ -297,10 +296,7 @@ mod tests {
             .route("/library/sections", get(whoami))
             .route("/identity", get(whoami))
             .route("/", get(whoami))
-            .route(
-                "/video/:/transcode/universal/session/s1/0/header",
-                get(whoami),
-            )
+            .route("/streams/s1/0/header", get(whoami))
             .route("/video/:/transcode/universal/start.mpd", get(whoami))
             .layer(axum::middleware::from_fn_with_state(access, require_token))
     }
@@ -571,7 +567,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_streams_segments_need_no_token_but_starting_one_does() {
-        let segment = "/video/:/transcode/universal/session/s1/0/header";
+        // The stream's own secret is checked by its routes.
+        let segment = "/streams/s1/0/header";
         assert_eq!(call(segment, None).await.0, StatusCode::OK);
         assert_eq!(
             call("/video/:/transcode/universal/start.mpd", None).await.0,

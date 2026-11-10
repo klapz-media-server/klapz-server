@@ -41,6 +41,7 @@ pub struct ApiContext {
     pub access: Arc<dyn open_plex_core::access::AccessRepository>,
     pub directory: Arc<dyn open_plex_core::access::AccountDirectory>,
     pub watch: Arc<dyn open_plex_core::watch::WatchRepository>,
+    pub streams: Arc<dyn open_plex_core::stream::StreamEngine>,
 }
 
 /// Anything that can be refetched by its global identifier.

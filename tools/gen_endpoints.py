@@ -96,17 +96,6 @@ OFF_SPEC = (
         "the reference. No test yet.",
     ),
     (
-        "partial",
-        "GET",
-        "/video/:/transcode/universal/session/{session}/{base}/{file}",
-        "public",
-        "A stream's playlist and segments",
-        "HLS `index.m3u8` and `.ts` segments, DASH `header` and `.m4s` chunks. No token, as on "
-        "the reference: the session's stored name opens them, an unknown one answers `404`. A "
-        "segment far ahead restarts the process there; one of an ended process is held 5 s then "
-        "refused.",
-    ),
-    (
         "done",
         "GET",
         "/hubs/home/recentlyAdded",

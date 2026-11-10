@@ -20,6 +20,7 @@ pub mod play_queue;
 pub mod playback;
 pub mod schema;
 pub mod server;
+pub mod stream;
 pub mod tag;
 pub mod watch;
 

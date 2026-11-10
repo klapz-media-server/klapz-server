@@ -1720,8 +1720,10 @@ version = "0.1.0"
 dependencies = [
  "async-graphql",
  "async-graphql-axum",
+ "async-trait",
  "axum",
  "form_urlencoded",
+ "futures-util",
  "http-body-util",
  "ipnet",
  "open-plex-api",
@@ -1729,11 +1731,14 @@ dependencies = [
  "open-plex-core",
  "open-plex-db",
  "open-plex-transcoder",
+ "serde",
+ "subtle",
  "tokio",
  "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

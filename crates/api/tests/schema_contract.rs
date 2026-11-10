@@ -55,6 +55,7 @@ fn schema() -> ApiSchema {
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
     })
 }
 
@@ -90,6 +91,7 @@ fn searchable() -> ApiSchema {
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
     })
 }
 
@@ -482,6 +484,7 @@ fn series_with_episodes() -> ApiSchema {
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
     })
 }
 
@@ -854,6 +857,7 @@ fn watchable() -> ApiSchema {
         access: Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: Arc::new(open_plex_core::testing::InMemoryWatch::over(items)),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
     })
 }
 
@@ -932,4 +936,210 @@ async fn a_caller_without_a_viewer_has_no_watch_state() {
         data["node"].is_null() || data["node"]["watchState"].is_null(),
         "{data}"
     );
+}
+
+fn track(
+    id: i64,
+    kind: open_plex_core::StreamKind,
+    position: i32,
+    codec: &str,
+) -> open_plex_core::MediaStream {
+    open_plex_core::MediaStream {
+        id: open_plex_core::StreamId::new(id),
+        file_id: open_plex_core::PartId::new(910),
+        kind,
+        position,
+        codec: Some(codec.to_owned()),
+        language: Some("fr".to_owned()),
+        channels: None,
+        bitrate: Some(256_000),
+        is_default: true,
+        is_forced: false,
+        external_path: None,
+        title: None,
+        stream_identifier: None,
+        profile: None,
+        bit_depth: None,
+        traits: open_plex_core::metadata::TrackTraits::default(),
+        video: None,
+        audio: None,
+        subtitle: None,
+    }
+}
+
+/// Soul with one file of three tracks, and an engine that records what it is asked.
+fn streamable(engine: Arc<open_plex_core::testing::StubStreams>) -> ApiSchema {
+    use open_plex_core::StreamKind;
+    let version = open_plex_core::MediaVersion {
+        id: open_plex_core::MediaId::new(900),
+        item_id: RatingKey::new(577_986),
+        width: Some(1920),
+        height: Some(1080),
+        aspect_ratio: None,
+        duration_ms: Some(6_031_568),
+        bitrate: Some(4_273_000),
+        container: Some("mkv".to_owned()),
+        video_codec: Some("h264".to_owned()),
+        audio_codec: Some("aac".to_owned()),
+        audio_channels: Some(2),
+        frame_rate: Some(23.976),
+        interlaced: false,
+        optimized_for_streaming: false,
+    };
+    let file = open_plex_core::MediaFile {
+        id: open_plex_core::PartId::new(910),
+        version_id: open_plex_core::MediaId::new(900),
+        position: 0,
+        path: "/films/Soul.mkv".to_owned(),
+        size_bytes: None,
+        duration_ms: Some(6_031_568),
+        layout: open_plex_core::metadata::FileLayout::default(),
+    };
+    let tracks = vec![
+        track(920, StreamKind::Video, 0, "h264"),
+        track(921, StreamKind::Audio, 1, "aac"),
+        track(922, StreamKind::Subtitle, 2, "srt"),
+    ];
+    build_schema(ApiContext {
+        capabilities: open_plex_core::ServerCapabilities::new(
+            open_plex_core::ServerIdentity::new(
+                "0000000000000000000000000000000000000000",
+                "0.1.0",
+            ),
+            0,
+        ),
+        library: Arc::new(
+            InMemoryLibrary::new(vec![section(4, SectionKind::Movie, "Films")]).with_roots(vec![
+                SectionRoot {
+                    id: 1,
+                    section_id: SectionId::new(4),
+                    path: "/films".to_owned(),
+                    created_at: 0,
+                },
+            ]),
+        ),
+        metadata: Arc::new(
+            InMemoryMetadata::new(vec![item(577_986, 4, ItemKind::Movie, "Soul", None)])
+                .with_media(vec![version], vec![file], tracks),
+        ),
+        playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: engine,
+    })
+}
+
+const START_STREAM: &str = r"
+mutation Start($input: StartStreamInput!) {
+  startStream(input: $input) {
+    clientMutationId
+    stream { delivery protocol videoDecision url width }
+    session { id key }
+    userErrors { field code }
+  }
+}";
+
+async fn start(schema: &ApiSchema, input: serde_json::Value) -> Value {
+    let request = as_operator(START_STREAM).variables(async_graphql::Variables::from_json(
+        serde_json::json!({ "input": input }),
+    ));
+    let response = schema.execute(request).await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    serde_json::to_value(response.data).unwrap()["startStream"].clone()
+}
+
+#[tokio::test]
+async fn starting_a_stream_hands_out_its_address_and_records_its_session() {
+    let engine = Arc::new(open_plex_core::testing::StubStreams::default());
+    let schema = streamable(Arc::clone(&engine));
+    let started = start(
+        &schema,
+        serde_json::json!({
+            "clientMutationId": "m1",
+            "file": GlobalId::encode("MediaFile", 910),
+            "subtitleTrack": GlobalId::encode("MediaStream", 922),
+            "subtitles": "TEXT",
+            "maxVideoBitrate": 20_000_000,
+            "positionMs": 60_000,
+            "key": "k1",
+        }),
+    )
+    .await;
+    assert_eq!(started["clientMutationId"], "m1");
+    assert_eq!(started["userErrors"], serde_json::json!([]));
+    assert_eq!(started["stream"]["delivery"], "DIRECT_STREAM");
+    assert_eq!(started["stream"]["protocol"], "DASH");
+    assert_eq!(
+        started["stream"]["url"],
+        "/streams/stub/manifest.mpd?token=stub"
+    );
+    assert_eq!(started["session"]["key"], "k1");
+
+    let orders = engine.started.lock().unwrap();
+    let order = &orders[0];
+    assert_eq!(order.key, "k1");
+    assert_eq!(order.source.roots, vec!["/films".to_owned()]);
+    assert_eq!(order.source.audio.position, 1);
+    assert_eq!(order.limits.max_video_bitrate, Some(20_000_000));
+    assert_eq!(order.position_ms, 60_000);
+    assert!(matches!(
+        &order.subtitle,
+        Some(open_plex_core::stream::SubtitleOutput::Text { track }) if track.position == 2
+    ));
+}
+
+#[tokio::test]
+async fn a_stream_of_a_file_nobody_can_see_is_refused_as_a_user_error() {
+    let engine = Arc::new(open_plex_core::testing::StubStreams::default());
+    let schema = streamable(Arc::clone(&engine));
+    let refused = start(
+        &schema,
+        serde_json::json!({ "file": GlobalId::encode("MediaFile", 911) }),
+    )
+    .await;
+    assert_eq!(refused["stream"], Value::Null);
+    assert_eq!(
+        refused["userErrors"],
+        serde_json::json!([{ "field": ["input", "file"], "code": "FILE_NOT_FOUND" }])
+    );
+    let wrong_track = start(
+        &schema,
+        serde_json::json!({
+            "file": GlobalId::encode("MediaFile", 910),
+            "audioTrack": GlobalId::encode("MediaStream", 922),
+        }),
+    )
+    .await;
+    assert_eq!(wrong_track["userErrors"][0]["code"], "TRACK_NOT_FOUND");
+    assert!(engine.started.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn stopping_a_stream_closes_its_session_once() {
+    let schema = streamable(Arc::new(open_plex_core::testing::StubStreams::default()));
+    let started = start(
+        &schema,
+        serde_json::json!({ "file": GlobalId::encode("MediaFile", 910), "directPlay": true }),
+    )
+    .await;
+    assert_eq!(started["stream"]["delivery"], "DIRECT_PLAY");
+    assert_eq!(started["stream"]["protocol"], Value::Null);
+    let stop = r"
+mutation Stop($input: StopStreamInput!) {
+  stopStream(input: $input) { clientMutationId stopped }
+}";
+    let input = serde_json::json!({
+        "input": { "clientMutationId": "m2", "session": started["session"]["id"] }
+    });
+    for expected in [true, false] {
+        let request =
+            as_operator(stop).variables(async_graphql::Variables::from_json(input.clone()));
+        let response = schema.execute(request).await;
+        assert!(response.errors.is_empty(), "{:?}", response.errors);
+        let data = serde_json::to_value(response.data).unwrap();
+        assert_eq!(data["stopStream"]["stopped"], expected);
+        assert_eq!(data["stopStream"]["clientMutationId"], "m2");
+    }
 }
