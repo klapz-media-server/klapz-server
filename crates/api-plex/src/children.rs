@@ -59,7 +59,7 @@ query PlexChildren($id: ID!, $first: Int!, $offset: Int!) {
       year
       summary
       library { id title uuid kind }
-      stats { seasonCount episodeCount }
+      stats { seasonCount episodeCount watchedEpisodeCount }
       children: seasons(first: $first, offset: $offset) {
         edges { node { ...Shared ... on Season { ...SeasonFields } } }
       }
@@ -227,11 +227,14 @@ struct GqlParent {
     children: Option<GqlItemConnection>,
 }
 
+// Named after the schema's fields, which all end in `Count`.
+#[allow(clippy::struct_field_names)]
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct GqlCounts {
     season_count: Option<u64>,
     episode_count: Option<u64>,
+    watched_episode_count: Option<u64>,
 }
 
 impl GqlParent {
@@ -329,7 +332,7 @@ pub struct ChildrenContainer {
 #[serde(rename_all = "camelCase")]
 pub struct AllEpisodes {
     pub leaf_count: u64,
-    /// Nothing records what was watched yet.
+    /// The caller's watched episodes across the series.
     pub viewed_leaf_count: u64,
     pub key: String,
     pub title: &'static str,
@@ -479,7 +482,7 @@ pub(crate) async fn children(
         let directory = if offset == 0 {
             vec![AllEpisodes {
                 leaf_count: parent.stats.episode_count.unwrap_or(0),
-                viewed_leaf_count: 0,
+                viewed_leaf_count: parent.stats.watched_episode_count.unwrap_or(0),
                 key: format!("/library/metadata/{}/allLeaves", parent.database_id()),
                 title: "All episodes",
             }]

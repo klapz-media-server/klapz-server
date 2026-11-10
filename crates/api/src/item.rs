@@ -22,6 +22,7 @@ use crate::loader::{ChildCountLoader, ItemLoader, LeafCountLoader, LibraryLoader
 use crate::media::Version;
 use crate::node::GlobalId;
 use crate::tag::{external_ids_of, ratings_of, ExternalIdConnection, ItemTags, RatingConnection};
+use crate::watch::WatchStateObject;
 
 /// The type tag all four item kinds share in their global id.
 ///
@@ -77,6 +78,11 @@ const DEFAULT_PAGE_SIZE: u32 = 50;
         name = "library",
         ty = "Option<Library>",
         desc = "The library this item belongs to. The same work present in two libraries is two distinct items with two ids."
+    ),
+    field(
+        name = "watch_state",
+        ty = "Option<WatchStateObject>",
+        desc = "What the caller has watched of the work, shared by every copy of it. Null without a caller."
     )
 )]
 pub enum Item {
@@ -157,6 +163,12 @@ impl Movie {
     /// When the item was added to the library, in seconds since the Unix epoch.
     pub async fn added_at(&self, _context: &Context<'_>) -> Result<i64> {
         Ok(self.0.added_at)
+    }
+
+    /// What the caller has watched of the work, shared by every copy of it. Null without a
+    /// caller.
+    pub async fn watch_state(&self, context: &Context<'_>) -> Result<Option<WatchStateObject>> {
+        crate::watch::state_of(context, &self.0.guid).await
     }
 
     /// When the item's metadata last changed, in seconds since the Unix epoch.
@@ -329,6 +341,12 @@ impl Show {
     /// When the item was added to the library, in seconds since the Unix epoch.
     pub async fn added_at(&self, _context: &Context<'_>) -> Result<i64> {
         Ok(self.0.added_at)
+    }
+
+    /// What the caller has watched of the work, shared by every copy of it. Null without a
+    /// caller.
+    pub async fn watch_state(&self, context: &Context<'_>) -> Result<Option<WatchStateObject>> {
+        crate::watch::state_of(context, &self.0.guid).await
     }
 
     /// When the item's metadata last changed, in seconds since the Unix epoch.
@@ -530,6 +548,11 @@ impl ShowStats {
         let loader = context.data::<DataLoader<LeafCountLoader>>()?;
         Ok(loader.load_one(self.0).await?.unwrap_or(0))
     }
+
+    /// How many of its episodes the caller has watched to the end. Zero without a caller.
+    async fn watched_episode_count(&self, context: &Context<'_>) -> Result<u64> {
+        crate::watch::watched_below(context, self.0).await
+    }
 }
 
 /// A season of a series. Not playable itself: its episodes are.
@@ -574,6 +597,12 @@ impl Season {
     /// When the item was added to the library, in seconds since the Unix epoch.
     pub async fn added_at(&self, _context: &Context<'_>) -> Result<i64> {
         Ok(self.0.added_at)
+    }
+
+    /// What the caller has watched of the work, shared by every copy of it. Null without a
+    /// caller.
+    pub async fn watch_state(&self, context: &Context<'_>) -> Result<Option<WatchStateObject>> {
+        crate::watch::state_of(context, &self.0.guid).await
     }
 
     /// When the item's metadata last changed, in seconds since the Unix epoch.
@@ -688,6 +717,11 @@ impl SeasonStats {
         let loader = context.data::<DataLoader<ChildCountLoader>>()?;
         Ok(loader.load_one(self.0).await?.unwrap_or(0))
     }
+
+    /// How many of its episodes the caller has watched to the end. Zero without a caller.
+    async fn watched_episode_count(&self, context: &Context<'_>) -> Result<u64> {
+        crate::watch::watched_below(context, self.0).await
+    }
 }
 
 /// An episode of a series.
@@ -732,6 +766,12 @@ impl Episode {
     /// When the item was added to the library, in seconds since the Unix epoch.
     pub async fn added_at(&self, _context: &Context<'_>) -> Result<i64> {
         Ok(self.0.added_at)
+    }
+
+    /// What the caller has watched of the work, shared by every copy of it. Null without a
+    /// caller.
+    pub async fn watch_state(&self, context: &Context<'_>) -> Result<Option<WatchStateObject>> {
+        crate::watch::state_of(context, &self.0.guid).await
     }
 
     /// When the item's metadata last changed, in seconds since the Unix epoch.

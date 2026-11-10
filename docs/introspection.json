@@ -464,6 +464,18 @@
               "deprecationReason": null
             },
             {
+              "name": "watchState",
+              "description": "What the caller has watched of the work, shared by every copy of it. Null without a\ncaller.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "WatchState",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "updatedAt",
               "description": "When the item's metadata last changed, in seconds since the Unix epoch.",
               "args": [],
@@ -1749,6 +1761,18 @@
               "type": {
                 "kind": "OBJECT",
                 "name": "Library",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "watchState",
+              "description": "What the caller has watched of the work, shared by every copy of it. Null without a caller.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "WatchState",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -4581,6 +4605,18 @@
               "deprecationReason": null
             },
             {
+              "name": "watchState",
+              "description": "What the caller has watched of the work, shared by every copy of it. Null without a\ncaller.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "WatchState",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "updatedAt",
               "description": "When the item's metadata last changed, in seconds since the Unix epoch.",
               "args": [],
@@ -5048,6 +5084,144 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "markWatched",
+              "description": "Marks an item watched for the caller: a film or an episode once more, a season or a\nseries by each of its episodes once more. Counted on the episode's season and series\ntoo. Returns the item's state after it.",
+              "args": [
+                {
+                  "name": "id",
+                  "description": "The item, as returned in `id`.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "ID",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "WatchState",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "markUnwatched",
+              "description": "Forgets what the caller watched of an item: an episode alone, a season with its\nepisodes, a series with its seasons and episodes. Returns the item's state after it.",
+              "args": [
+                {
+                  "name": "id",
+                  "description": "The item, as returned in `id`.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "ID",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "WatchState",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "reportViewing",
+              "description": "Records where a player stands in a playback. Past a minute and short of 90% of the\nruntime the position is kept; crossing 90% within the playback counts a viewing and\nforgets it.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The player's report.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "ReportViewingInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "ViewingReport",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "keepWatchPosition",
+              "description": "Keeps a position for the caller without asking whether the item is finished: an\nexplicit \"remember where I stopped\". Under a minute, nothing is kept.",
+              "args": [
+                {
+                  "name": "id",
+                  "description": "The item, as returned in `id`.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "ID",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "positionMs",
+                  "description": "Where to resume, in milliseconds.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "Int",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "WatchState",
                   "ofType": null
                 }
               },
@@ -7300,6 +7474,69 @@
           "possibleTypes": null
         },
         {
+          "kind": "INPUT_OBJECT",
+          "name": "ReportViewingInput",
+          "description": "A player's report on a playback.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "itemId",
+              "description": "The item played, as returned in `id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "playbackId",
+              "description": "The player's own identifier for this playback. Reports under one identifier are one\nplayback: crossing 90% of the runtime counts a viewing only if an earlier report of\nthe same playback fell short of it.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "positionMs",
+              "description": "Where the player stands, in milliseconds.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "durationMs",
+              "description": "The runtime the player plays, in milliseconds. Without it nothing is kept: there is\nno end to measure against.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "ENUM",
           "name": "ReportedPlaybackState",
           "description": "Where a player says it stands.",
@@ -7507,6 +7744,18 @@
                   "name": "Int",
                   "ofType": null
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "watchState",
+              "description": "What the caller has watched of the work, shared by every copy of it. Null without a\ncaller.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "WatchState",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -7958,6 +8207,22 @@
               },
               "isDeprecated": false,
               "deprecationReason": null
+            },
+            {
+              "name": "watchedEpisodeCount",
+              "description": "How many of its episodes the caller has watched to the end. Zero without a caller.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
             }
           ],
           "inputFields": null,
@@ -8280,6 +8545,18 @@
                   "name": "Int",
                   "ofType": null
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "watchState",
+              "description": "What the caller has watched of the work, shared by every copy of it. Null without a\ncaller.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "WatchState",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -8825,6 +9102,22 @@
             {
               "name": "episodeCount",
               "description": "How many episodes the series has across all seasons.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "watchedEpisodeCount",
+              "description": "How many of its episodes the caller has watched to the end. Zero without a caller.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
@@ -10377,6 +10670,151 @@
               "type": {
                 "kind": "OBJECT",
                 "name": "DolbyVision",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "ViewingOutcome",
+          "description": "What a report did.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "IGNORED",
+              "description": "Nothing was kept: no runtime given, or a playback that opened past the end.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EARLY",
+              "description": "Nothing kept yet: the playback is under way but short of a minute.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PROGRESS",
+              "description": "The position was kept.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "COMPLETED",
+              "description": "The playback counted as a viewing, with this report or an earlier one.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ViewingReport",
+          "description": "What a report did, and the state it left.",
+          "fields": [
+            {
+              "name": "outcome",
+              "description": "What the report did.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "ViewingOutcome",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "state",
+              "description": "The item's state after it.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "WatchState",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "WatchState",
+          "description": null,
+          "fields": [
+            {
+              "name": "viewCount",
+              "description": "How many times it was watched to the end. On a series or a season, how many of its\nepisodes were, one by one: marking the whole season counts its episodes, not it.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "isWatched",
+              "description": "Whether it was watched to the end at least once.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "offsetMs",
+              "description": "Where an unfinished viewing stopped, in milliseconds. Null when there is none: never\nplayed, played for less than a minute, or watched to the end since.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "lastViewedAt",
+              "description": "When it was last played or watched, in seconds since the Unix epoch. On a series or a\nseason, when any of its episodes was.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
                 "ofType": null
               },
               "isDeprecated": false,

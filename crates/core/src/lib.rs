@@ -15,6 +15,7 @@ pub mod playback;
 pub mod recent;
 pub mod search;
 pub mod similar;
+pub mod watch;
 
 #[cfg(feature = "testing")]
 pub mod testing;

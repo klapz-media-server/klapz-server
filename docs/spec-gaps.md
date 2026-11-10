@@ -157,6 +157,48 @@ reference's items, and every list is the reference's. The one approximation is i
 it counts a class by the frame as stored, so a portrait video could list a class one step
 off, a case 71 versions of 99,911 present.
 
+### Watch state
+
+Measured on the reference's own test library, never on the owner's: each rule below is a
+sequence of calls whose effect was read back after each one.
+
+- **The state belongs to the work.** It is kept per `guid`: the same film in four libraries
+  — French, original language, and both 4K — shows one `viewCount` and one `lastViewedAt`.
+  Marking one copy watched marks them all.
+- **A position under a minute is not kept** (`MinimumProgressTime`, 60,000 ms), whatever the
+  state reported, and does not overwrite one already kept. From a minute to 90% of the
+  runtime (`LibraryVideoPlayedThreshold`), `viewOffset` and `lastViewedAt` follow every report,
+  `playing`, `paused` and `stopped` alike.
+- **Crossing 90% counts a viewing**, clears the offset, and is compared in whole seconds:
+  5,428,410 ms of a 6,031,567 ms film counts, though a hair short of 90% in milliseconds. It
+  has to be a crossing **within one playback**: the report before it, under the same session
+  (or, without one, the same client), fell short of 90%. A playback whose first report is past
+  90% counts nothing and keeps nothing; a second report past 90% in the same playback answers
+  `complete` without counting again. A playback is remembered for five minutes without a report.
+- **Without `duration`** the timeline keeps nothing.
+- **`/:/scrobble`** counts once more on every call and clears the offset; on an episode it
+  counts on its season and series too, whose own counts are of episodes watched one by one —
+  marking a whole season or series counts its episodes, not it. **`/:/unscrobble`** forgets an
+  episode alone, a season with its episodes, a series with all of it; a season forgotten leaves
+  its series' count. **`/:/progress`** keeps any position past a minute, 95% included, and never
+  counts a viewing.
+- **The timeline answers** `playbackState` `ignore`, `progress` or `complete`, then `skipCount`
+  (always 0 here), `viewCount` and `viewOffset`, `-1` for none. A report under a minute reads
+  `progress` from a player naming its session and `ignore` from one that does not — one earlier
+  probe read `ignore` with a session, and the majority is what is reproduced.
+- **On an item**, `viewCount` (once watched), `viewOffset` and `lastViewedAt` come after the
+  ratings and before `year`; `viewedLeafCount`, the caller's watched episodes, is on every series
+  and season, zero included.
+
+Where ours differ:
+
+- **`skipCount` is never kept.** The reference counts skips we have no event for; it is
+  absent on items and 0 in the timeline's answer.
+- **`/:/progress` with a key that is no number** is a `404` here; the reference fails with a
+  `500`.
+- **History is not imported.** The reference keeps 458,724 watch rows for 283 accounts, and
+  the importer copies no account, so nothing ties them to a user here.
+
 ### Where an `X-Plex-*` value is read from
 
 The spec says every `X-Plex-*` header may also travel as a query parameter, and nothing more.

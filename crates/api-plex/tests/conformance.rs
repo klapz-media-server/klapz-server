@@ -88,6 +88,7 @@ fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
     });
     router(PlexState::new(identity, schema, accounts))
 }
@@ -794,6 +795,7 @@ fn items_app() -> axum::Router {
     let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
     let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
     let (library, metadata) = catalog();
+    let watch = open_plex_core::testing::InMemoryWatch::over(metadata.items().to_vec());
     let schema = build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity.clone(), 0),
         library: std::sync::Arc::new(library),
@@ -802,6 +804,7 @@ fn items_app() -> axum::Router {
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(watch),
     });
     authenticated(router(PlexState::new(identity, schema, accounts)))
 }
@@ -1695,6 +1698,7 @@ fn app_as_user(user: i64, role: LibraryRole) -> axum::Router {
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
     });
     router(PlexState::new(identity, schema, accounts))
         .layer(axum::Extension(user_principal(user, role)))
@@ -1741,6 +1745,7 @@ async fn app_as_paired_user() -> axum::Router {
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(access),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
     });
     router(PlexState::new(identity, schema, accounts))
         .layer(axum::Extension(user_principal(1, LibraryRole::Viewer)))
@@ -2059,6 +2064,7 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
     });
     let app = authenticated(router(PlexState::new(identity, schema, accounts)));
 
@@ -2674,4 +2680,211 @@ async fn a_value_list_windows_like_a_listing() {
     assert_eq!(container["offset"], 1);
     assert_eq!(container["totalSize"], 3);
     assert_eq!(container["Directory"][0]["title"], "Crime");
+}
+
+/// One app whose state lives across requests: watch state is what a test changes.
+fn watching_app() -> axum::Router {
+    items_app()
+}
+
+async fn json_from(app: &axum::Router, uri: &str) -> Value {
+    let (status, body) = get_from(app.clone(), uri, Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+    serde_json::from_str(&body).expect("json body")
+}
+
+/// A timeline report from a player naming its playback, as Plex Web does.
+async fn timeline_report(app: &axum::Router, item: i64, position: i64, duration: i64) -> Value {
+    let uri = format!(
+        "/:/timeline?ratingKey={item}&key=/library/metadata/{item}&state=playing&time={position}&duration={duration}"
+    );
+    let request = Request::builder()
+        .uri(uri)
+        .header("X-Plex-Token", TOKEN)
+        .header(header::ACCEPT, "application/json")
+        .header("X-Plex-Client-Identifier", "conformance-player")
+        .header("X-Plex-Session-Identifier", "conformance-playback")
+        .body(Body::empty())
+        .expect("request builds");
+    let response = app.clone().oneshot(request).await.expect("router responds");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    serde_json::from_slice(&body).expect("json body")
+}
+
+fn watched_fields(item: &Value) -> (Value, Value, bool) {
+    (
+        item["viewCount"].clone(),
+        item["viewOffset"].clone(),
+        item.get("lastViewedAt").is_some(),
+    )
+}
+
+#[tokio::test]
+async fn a_scrobble_counts_a_viewing_and_an_unscrobble_forgets_it() {
+    let app = watching_app();
+    let film = || async {
+        json_from(&app, "/library/metadata/100").await["MediaContainer"]["Metadata"][0].clone()
+    };
+    assert_eq!(
+        watched_fields(&film().await),
+        (Value::Null, Value::Null, false)
+    );
+
+    let (status, body) = get_from(
+        app.clone(),
+        "/:/scrobble?identifier=com.plexapp.plugins.library&key=100",
+        None,
+    )
+    .await;
+    // An empty acknowledgement, as the reference sends.
+    assert_eq!((status, body.as_str()), (StatusCode::OK, ""));
+    get_from(
+        app.clone(),
+        "/:/scrobble?identifier=com.plexapp.plugins.library&key=100",
+        None,
+    )
+    .await;
+    let watched = film().await;
+    assert_eq!(watched["viewCount"], 2);
+    assert!(watched.get("lastViewedAt").is_some(), "{watched}");
+    // Placed where the reference places them: after the ratings, before the year.
+    let keys: Vec<&str> = watched
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let position = |name: &str| keys.iter().position(|key| *key == name).unwrap();
+    assert!(position("audienceRating") < position("viewCount"));
+    assert!(position("lastViewedAt") < position("year"));
+
+    get_from(
+        app.clone(),
+        "/:/unscrobble?identifier=com.plexapp.plugins.library&key=100",
+        None,
+    )
+    .await;
+    assert_eq!(
+        watched_fields(&film().await),
+        (Value::Null, Value::Null, false)
+    );
+}
+
+#[tokio::test]
+async fn a_mark_is_refused_as_the_reference_refuses_it() {
+    let app = watching_app();
+    let status = |uri: &'static str| {
+        let app = app.clone();
+        async move { get_from(app, uri, None).await.0 }
+    };
+    assert_eq!(status("/:/scrobble?key=100").await, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        status("/:/scrobble?identifier=com.plexapp.plugins.library").await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        status("/:/scrobble?identifier=tv.plex.provider.discover&key=100").await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        status("/:/unscrobble?identifier=com.plexapp.plugins.library&key=999").await,
+        StatusCode::NOT_FOUND
+    );
+    // `/:/progress` acknowledges an item it does not have.
+    assert_eq!(
+        status("/:/progress?identifier=com.plexapp.plugins.library&key=999&time=120000").await,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn progress_keeps_a_position_without_asking_whether_the_film_is_over() {
+    let app = watching_app();
+    // 95% of Avatar's 9,890,048 ms: a viewing by the timeline, a mere position here.
+    get_from(
+        app.clone(),
+        "/:/progress?identifier=com.plexapp.plugins.library&key=100&time=9395545&state=stopped",
+        None,
+    )
+    .await;
+    let film = json_from(&app, "/library/metadata/100").await;
+    assert_eq!(
+        film["MediaContainer"]["Metadata"][0]["viewOffset"],
+        9_395_545
+    );
+    assert!(film["MediaContainer"]["Metadata"][0]
+        .get("viewCount")
+        .is_none());
+}
+
+#[tokio::test]
+async fn the_timeline_answers_what_became_of_the_watch_state() {
+    let app = watching_app();
+    let duration = 9_890_048;
+    // Under a minute nothing is kept; a player naming its session is told the playback goes
+    // on, as the reference tells it.
+    let early = timeline_report(&app, 100, 30_000, duration).await;
+    assert_eq!(
+        early["MediaContainer"],
+        serde_json::json!({"size": 0, "playbackState": "progress", "skipCount": 0, "viewCount": 0, "viewOffset": -1})
+    );
+    let midway = timeline_report(&app, 100, 120_000, duration).await;
+    assert_eq!(midway["MediaContainer"]["playbackState"], "progress");
+    assert_eq!(midway["MediaContainer"]["viewOffset"], 120_000);
+    let done = timeline_report(&app, 100, duration * 95 / 100, duration).await;
+    assert_eq!(done["MediaContainer"]["playbackState"], "complete");
+    assert_eq!(done["MediaContainer"]["viewCount"], 1);
+    assert_eq!(done["MediaContainer"]["viewOffset"], -1);
+
+    let film = json_from(&app, "/library/metadata/100").await;
+    assert_eq!(film["MediaContainer"]["Metadata"][0]["viewCount"], 1);
+    assert!(film["MediaContainer"]["Metadata"][0]
+        .get("viewOffset")
+        .is_none());
+}
+
+#[tokio::test]
+async fn a_series_counts_the_episodes_watched_below_it() {
+    let app = watching_app();
+    get_from(
+        app.clone(),
+        "/:/scrobble?identifier=com.plexapp.plugins.library&key=202",
+        None,
+    )
+    .await;
+
+    let series = json_from(&app, "/library/sections/5/all").await;
+    let show = &series["MediaContainer"]["Metadata"][0];
+    assert_eq!(show["viewedLeafCount"], 1);
+    // The episode counted on its series too, as on the reference.
+    assert_eq!(show["viewCount"], 1);
+
+    let seasons = json_from(&app, "/library/metadata/200/children").await;
+    let container = &seasons["MediaContainer"];
+    assert_eq!(container["Directory"][0]["viewedLeafCount"], 1);
+    let first = container["Metadata"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|season| season["ratingKey"] == "201")
+        .unwrap();
+    assert_eq!(first["viewedLeafCount"], 1);
+
+    // Marking the whole series watched marks its episodes, not the series again.
+    get_from(
+        app.clone(),
+        "/:/scrobble?identifier=com.plexapp.plugins.library&key=200",
+        None,
+    )
+    .await;
+    let series = json_from(&app, "/library/sections/5/all").await;
+    let show = &series["MediaContainer"]["Metadata"][0];
+    assert_eq!(show["viewedLeafCount"], show["leafCount"]);
+    assert_eq!(show["viewCount"], 1);
 }

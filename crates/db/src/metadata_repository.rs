@@ -781,6 +781,31 @@ impl MetadataRepository for SqlMetadataRepository {
             .map_err(storage)
     }
 
+    async fn guids_below(&self, item: RatingKey) -> Result<Vec<(ItemKind, String)>, MetadataError> {
+        let children = Query::select()
+            .column(metadata_item::Column::Id)
+            .from(metadata_item::Entity)
+            .and_where(metadata_item::Column::ParentId.eq(item.get()))
+            .to_owned();
+        let rows: Vec<(String, String)> = metadata_item::Entity::find()
+            .select_only()
+            .column(metadata_item::Column::Kind)
+            .column(metadata_item::Column::Guid)
+            .filter(
+                Condition::any()
+                    .add(metadata_item::Column::ParentId.eq(item.get()))
+                    .add(metadata_item::Column::ParentId.in_subquery(children)),
+            )
+            .into_tuple()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(rows
+            .into_iter()
+            .map(|(kind, guid)| (parse_kind(&kind), guid))
+            .collect())
+    }
+
     async fn tags_for(&self, items: &[RatingKey]) -> Result<Vec<ItemTag>, MetadataError> {
         if items.is_empty() {
             return Ok(Vec::new());

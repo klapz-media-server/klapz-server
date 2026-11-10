@@ -151,6 +151,10 @@ without them saying so.
   without a token, holding no data, and driven entirely by `/graphql`. That endpoint accepts
   JSON only, because a trusted network is admitted without a token and any page its browsers
   open could otherwise post to it.
+- **Watch state is the viewer's and the work's.** A user watches as itself, the operator as
+  viewer 0 — it has no user row, and a NULL in a key would not be unique — and a caller that is
+  neither, a visitor at a published address, has no watch state at all. Rows are keyed by `guid`,
+  because the reference keeps one state for every copy of a work.
 - **Each Plex user has its own server.** A token resolves to a user, and the Plex surface
   answers with that user's machine identifier, on `/identity` too when a token comes with the
   request. One process and one address: the separation is in what each token sees. Session
@@ -396,8 +400,14 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   4,473 tracks in three languages: no differing field on video or audio tracks;
 - ⬜ **recently released**, which needs ordering by release date — the nullable-column sort
   in *Open questions*;
+- ✅ **watch state**: per viewer and per work (`guid`), so every copy of a film is watched at
+  once; positions, viewings and the parents' counts by the rules measured on the reference
+  (`core::watch`), on the official API (`Item.watchState`, `stats.watchedEpisodeCount`,
+  `markWatched`, `markUnwatched`, `reportViewing`, `keepWatchPosition`) and on the Plex surface
+  (`/:/scrobble`, `/:/unscrobble`, `/:/progress`, the timeline's `playbackState`, and
+  `viewCount`/`viewOffset`/`lastViewedAt`/`viewedLeafCount` on items);
 - ⬜ the shelves that need watch state — continue watching with content, recently watched,
-  top unwatched, top of a genre or of a person — once accounts and `view_state` exist.
+  top unwatched, top of a genre or of a person — now that it is kept.
 
 ## Reference server
 
@@ -445,7 +455,6 @@ absent.
 - Whether any client depends on attribute ordering within an element.
 - A library's `admin` role has little to open yet: changing a library's settings is the only
   route it gates, and that route still answers `501`.
-- `view_state` can now be tied to a user, and is not written yet.
 - **Sorting is still two columns.** `sort=` honors `titleSort` and `addedAt`; the reference
   advertises nine, and the other seven (`originallyAvailableAt`, `rating`, `audienceRating`,
   `duration`, `lastViewedAt`, `mediaHeight`, `random`) are all backed by nullable columns.

@@ -40,6 +40,7 @@ pub struct ApiContext {
     pub play_queues: Arc<dyn open_plex_core::play_queue::PlayQueueRepository>,
     pub access: Arc<dyn open_plex_core::access::AccessRepository>,
     pub directory: Arc<dyn open_plex_core::access::AccountDirectory>,
+    pub watch: Arc<dyn open_plex_core::watch::WatchRepository>,
 }
 
 /// Anything that can be refetched by its global identifier.
@@ -512,6 +513,7 @@ pub fn metadata<'a>(context: &Context<'a>) -> Result<&'a Arc<dyn MetadataReposit
 pub fn build_schema(context: ApiContext) -> ApiSchema {
     let library = Arc::clone(&context.library);
     let metadata = Arc::clone(&context.metadata);
+    let watch = Arc::clone(&context.watch);
 
     Schema::build(Query, crate::playback::Mutation, EmptySubscription)
         .data(context)
@@ -557,5 +559,13 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
             tokio::spawn,
         ))
         .data(DataLoader::new(RatingsLoader::new(metadata), tokio::spawn))
+        .data(DataLoader::new(
+            crate::watch::WatchStateLoader::new(Arc::clone(&watch)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            crate::watch::WatchedLeavesLoader::new(watch),
+            tokio::spawn,
+        ))
         .finish()
 }

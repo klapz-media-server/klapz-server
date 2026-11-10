@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 15 | 5.8 % |
-| `stub` | 184 | 70.8 % |
+| `stub` | 182 | 70.0 % |
 | `partial` | 17 | 6.5 % |
-| `done` | 7 | 2.7 % |
+| `done` | 9 | 3.5 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -50,7 +50,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Log](#log) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Playlist](#playlist) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Preferences](#preferences) | 3 | 0 | 1 | 1 | 1 | 0 |
-| [Timeline](#timeline) | 3 | 0 | 1 | 2 | 0 | 0 |
+| [Timeline](#timeline) | 3 | 2 | 1 | 0 | 0 | 0 |
 | [Updater](#updater) | 3 | 2 | 0 | 1 | 0 | 0 |
 | [Activities](#activities) | 2 | 1 | 0 | 1 | 0 | 0 |
 | [Events](#events) | 2 | 0 | 0 | 2 | 0 | 0 |
@@ -68,6 +68,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `partial` | `GET` | `/video/:/transcode/universal/ping` | user | Keep a transcode session alive | `200` for a session it knows, `404` otherwise, as the reference. No test yet. |
 | `partial` | `GET` | `/video/:/transcode/universal/stop` | user | Stop a transcode session | Stops the process and closes the playback session; `404` for one it does not know, as the reference. No test yet. |
 | `partial` | `GET` | `/video/:/transcode/universal/session/{session}/{base}/{file}` | public | A stream's playlist and segments | HLS `index.m3u8` and `.ts` segments, DASH `header` and `.m4s` chunks. No token, as on the reference: the session's stored name opens them, an unknown one answers `404`. A segment far ahead restarts the process there; one of an ended process is held 5 s then refused. |
+| `done` | `GET` | `/:/progress` | user | Remember where a viewing stopped | Keeps a position past a minute with no check against the end, as the reference does; an unknown item is acknowledged. Not in the spec. |
 | `partial` | `GET` | `/library/sections/{sectionId}/{filter}` | user | The choices of one filter | Genres, countries, directors, writers, starring actors, producers, years, decades, content ratings, studios and resolutions, encoded as the reference encodes each. No `None` rating. Windowed at 500. See `docs/spec-gaps.md`. |
 | `done` | `GET` | `/library/metadata/{id}/userState` | user | An item's state for the watchlist button | Not a route of the reference, which answers `404`: the shape of plex.tv's Discover provider, for Plex Web. Always unwatched: watch state is not recorded yet. |
 | `partial` | `GET` | `/library/search` | user | Search field (universal search) | Films, series and episodes with their listing fields, in three score tiers. Not served: the people and collections the reference mixes in, and its fuzzy matching. See `docs/spec-gaps.md`. |
@@ -429,9 +430,9 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `PUT` | `/:/scrobble` | user | Mark an item as played |  |
-| `partial` | `POST` | `/:/timeline` | user | Report media timeline | Also `GET`, what Plex Web sends, and `PUT`. Updates the state and position of a Direct Stream session; on `stopped` it closes the session and stops its conversion, as the reference does. `TranscodeSession` carries the reference's full field set, from the live conversion (`progress`, `speed`, `maxOffsetAvailable`…). Always answers `playbackState="ignore"`: no watch state is stored yet, and Direct Play has no session to update. See spec-gaps.md. |
-| `stub` | `PUT` | `/:/unscrobble` | user | Mark an item as unplayed |  |
+| `done` | `PUT` | `/:/scrobble` | user | Mark an item as played | Also `GET`, as the reference. A film or an episode once more, counted on its season and series; a season or a series by each of its episodes. Refused as the reference refuses: `400` without `identifier` or `key`, `404` for a foreign provider, a `uri` or an unknown item. See spec-gaps.md. |
+| `partial` | `POST` | `/:/timeline` | user | Report media timeline | Also `GET`, what Plex Web sends, and `PUT`. Updates the state and position of a Direct Stream session; on `stopped` it closes the session and stops its conversion, as the reference does. `TranscodeSession` carries the reference's full field set, from the live conversion (`progress`, `speed`, `maxOffsetAvailable`…). Records the watch state of Direct Play and Direct Stream alike, and answers as the reference: `ignore`, `progress` or `complete`, with `skipCount`, `viewCount` and `viewOffset`. Identical to the reference over an 18-step sequence. See spec-gaps.md. |
+| `done` | `PUT` | `/:/unscrobble` | user | Mark an item as unplayed | Also `GET`. An episode alone, a season with its episodes, a series with everything below it; a series keeps its count when a season is forgotten. |
 
 ## Updater
 

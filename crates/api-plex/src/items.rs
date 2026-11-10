@@ -17,7 +17,7 @@ use crate::language::Language;
 
 use crate::gql_items::{
     GqlConnection, GqlEdge, GqlItem, GqlLibraryRef, GqlPart, GqlProfiled, GqlRating, GqlStream,
-    GqlTag, GqlVersion,
+    GqlTag, GqlVersion, GqlWatchState,
 };
 use crate::stream_labels;
 
@@ -173,6 +173,14 @@ pub struct MetadataEntry {
     pub parent_index: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audience_rating: Option<f64>,
+    /// How many times the caller watched it to the end; absent when never.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view_count: Option<u32>,
+    /// Where the caller's unfinished viewing stopped, in milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view_offset: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_viewed_at: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub year: Option<i32>,
     /// The series' year, on a season that has none of its own.
@@ -188,8 +196,7 @@ pub struct MetadataEntry {
     /// Episodes in the series or season.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub leaf_count: Option<u64>,
-    /// Always zero: playback state is not implemented, and claiming otherwise would mark
-    /// items as watched that nobody has watched.
+    /// The caller's watched episodes; present, zero included, on every series and season.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub viewed_leaf_count: Option<u64>,
     /// Seasons in the series.
@@ -731,6 +738,7 @@ impl MetadataEntry {
     /// the container, a lookup repeats it on each item. Matching that is not cosmetic — a
     /// client reading `librarySectionID` off the item would find nothing in a listing.
     pub fn from_graphql(item: &GqlItem, with_library: bool, language: Language) -> Option<Self> {
+        let (view_count, view_offset, last_viewed_at) = watched(item.watch_state);
         let rating_key = item.database_id()?;
         let kind = item.plex_type();
         let library = item.library.as_ref();
@@ -792,6 +800,9 @@ impl MetadataEntry {
             parent_index: item.parent_index(),
             grandparent_title: item.grandparent_title(),
             parent_title: item.parent_title(language),
+            view_count,
+            view_offset,
+            last_viewed_at,
             year: item.year,
             // Only a season falls back to its series' year, and only when it has none: the
             // reference sends one or the other, never both.
@@ -799,18 +810,10 @@ impl MetadataEntry {
                 .then(|| item.parent().and_then(|parent| parent.year))
                 .flatten(),
             tagline: item.tagline.clone(),
-            // The media's runtime wins where there is media: a reference server reports
-            // 6,050,048 ms for an item whose metadata row says 6,060,000. The metadata value
-            // comes from the matched release, the media value from the actual file, and a
-            // client seeking by percentage needs the one that matches what it is playing.
-            duration: item
-                .versions
-                .first()
-                .and_then(|version| version.duration_ms)
-                .or(item.duration_ms),
+            duration: runtime(item),
             originally_available_at: item.released_on.clone(),
             leaf_count: item.leaf_count(),
-            viewed_leaf_count: item.leaf_count().map(|_| 0),
+            viewed_leaf_count: item.viewed_leaf_count(),
             child_count: item.child_count(),
             added_at: item.added_at,
             updated_at: item.updated_at,
@@ -845,6 +848,29 @@ impl MetadataEntry {
             producer: TagEntry::all(&item.tags.producers, "producer"),
         })
     }
+}
+
+/// The media's runtime where there is media: a reference server reports 6,050,048 ms for an
+/// item whose metadata row says 6,060,000. The metadata value comes from the matched release,
+/// the media value from the actual file, and a client seeking by percentage needs the one
+/// that matches what it is playing.
+fn runtime(item: &GqlItem) -> Option<i64> {
+    item.versions
+        .first()
+        .and_then(|version| version.duration_ms)
+        .or(item.duration_ms)
+}
+
+/// The caller's count, offset and date, as published: a count only once there is one.
+fn watched(state: Option<GqlWatchState>) -> (Option<u32>, Option<i64>, Option<i64>) {
+    let Some(state) = state else {
+        return (None, None, None);
+    };
+    (
+        Some(state.view_count).filter(|count| *count > 0),
+        state.offset_ms,
+        state.last_viewed_at,
+    )
 }
 
 impl MediaEntry {

@@ -67,6 +67,8 @@ IMPLEMENTED = frozenset(
         "/library/metadata/{ids}/related",
         "/library/metadata/{ids}/similar",
         "/:/timeline",
+        "/:/scrobble",
+        "/:/unscrobble",
     }
 )
 
@@ -101,6 +103,15 @@ OFF_SPEC = (
         "the reference: the session's stored name opens them, an unknown one answers `404`. A "
         "segment far ahead restarts the process there; one of an ended process is held 5 s then "
         "refused.",
+    ),
+    (
+        "done",
+        "GET",
+        "/:/progress",
+        "user",
+        "Remember where a viewing stopped",
+        "Keeps a position past a minute with no check against the end, as the reference "
+        "does; an unknown item is acknowledged. Not in the spec.",
     ),
     (
         "partial",

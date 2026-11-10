@@ -137,6 +137,11 @@ type Episode implements Item & Node {
 	"""
 	addedAt: Int!
 	"""
+	What the caller has watched of the work, shared by every copy of it. Null without a
+	caller.
+	"""
+	watchState: WatchState
+	"""
 	When the item's metadata last changed, in seconds since the Unix epoch.
 	"""
 	updatedAt: Int!
@@ -522,6 +527,10 @@ interface Item {
 	The library this item belongs to. The same work present in two libraries is two distinct items with two ids.
 	"""
 	library: Library
+	"""
+	What the caller has watched of the work, shared by every copy of it. Null without a caller.
+	"""
+	watchState: WatchState
 }
 
 type ItemConnection {
@@ -1522,6 +1531,11 @@ type Movie implements Item & Node {
 	"""
 	addedAt: Int!
 	"""
+	What the caller has watched of the work, shared by every copy of it. Null without a
+	caller.
+	"""
+	watchState: WatchState
+	"""
 	When the item's metadata last changed, in seconds since the Unix epoch.
 	"""
 	updatedAt: Int!
@@ -1681,6 +1695,52 @@ type Mutation {
 		"""
 		input: ReportPlaybackInput!
 	): Boolean!
+	"""
+	Marks an item watched for the caller: a film or an episode once more, a season or a
+	series by each of its episodes once more. Counted on the episode's season and series
+	too. Returns the item's state after it.
+	"""
+	markWatched(
+		"""
+		The item, as returned in `id`.
+		"""
+		id: ID!
+	): WatchState!
+	"""
+	Forgets what the caller watched of an item: an episode alone, a season with its
+	episodes, a series with its seasons and episodes. Returns the item's state after it.
+	"""
+	markUnwatched(
+		"""
+		The item, as returned in `id`.
+		"""
+		id: ID!
+	): WatchState!
+	"""
+	Records where a player stands in a playback. Past a minute and short of 90% of the
+	runtime the position is kept; crossing 90% within the playback counts a viewing and
+	forgets it.
+	"""
+	reportViewing(
+		"""
+		The player's report.
+		"""
+		input: ReportViewingInput!
+	): ViewingReport!
+	"""
+	Keeps a position for the caller without asking whether the item is finished: an
+	explicit "remember where I stopped". Under a minute, nothing is kept.
+	"""
+	keepWatchPosition(
+		"""
+		The item, as returned in `id`.
+		"""
+		id: ID!,
+		"""
+		Where to resume, in milliseconds.
+		"""
+		positionMs: Int!
+	): WatchState!
 	"""
 	Creates a play queue from a list of items.
 	"""
@@ -2369,6 +2429,31 @@ input ReportPlaybackInput {
 }
 
 """
+A player's report on a playback.
+"""
+input ReportViewingInput {
+	"""
+	The item played, as returned in `id`.
+	"""
+	itemId: ID!
+	"""
+	The player's own identifier for this playback. Reports under one identifier are one
+	playback: crossing 90% of the runtime counts a viewing only if an earlier report of
+	the same playback fell short of it.
+	"""
+	playbackId: String!
+	"""
+	Where the player stands, in milliseconds.
+	"""
+	positionMs: Int!
+	"""
+	The runtime the player plays, in milliseconds. Without it nothing is kept: there is
+	no end to measure against.
+	"""
+	durationMs: Int
+}
+
+"""
 Where a player says it stands.
 """
 enum ReportedPlaybackState {
@@ -2451,6 +2536,11 @@ type Season implements Item & Node {
 	When the item was added to the library, in seconds since the Unix epoch.
 	"""
 	addedAt: Int!
+	"""
+	What the caller has watched of the work, shared by every copy of it. Null without a
+	caller.
+	"""
+	watchState: WatchState
 	"""
 	When the item's metadata last changed, in seconds since the Unix epoch.
 	"""
@@ -2592,6 +2682,10 @@ type SeasonStats {
 	How many episodes the season has, without paging through them.
 	"""
 	episodeCount: Int!
+	"""
+	How many of its episodes the caller has watched to the end. Zero without a caller.
+	"""
+	watchedEpisodeCount: Int!
 }
 
 type Server implements Node {
@@ -2691,6 +2785,11 @@ type Show implements Item & Node {
 	When the item was added to the library, in seconds since the Unix epoch.
 	"""
 	addedAt: Int!
+	"""
+	What the caller has watched of the work, shared by every copy of it. Null without a
+	caller.
+	"""
+	watchState: WatchState
 	"""
 	When the item's metadata last changed, in seconds since the Unix epoch.
 	"""
@@ -2892,6 +2991,10 @@ type ShowStats {
 	How many episodes the series has across all seasons.
 	"""
 	episodeCount: Int!
+	"""
+	How many of its episodes the caller has watched to the end. Zero without a caller.
+	"""
+	watchedEpisodeCount: Int!
 }
 
 """
@@ -3387,6 +3490,64 @@ type VideoAnalysis {
 	The Dolby Vision configuration. Null on a track without Dolby Vision.
 	"""
 	dolbyVision: DolbyVision
+}
+
+"""
+What a report did.
+"""
+enum ViewingOutcome {
+	"""
+	Nothing was kept: no runtime given, or a playback that opened past the end.
+	"""
+	IGNORED
+	"""
+	Nothing kept yet: the playback is under way but short of a minute.
+	"""
+	EARLY
+	"""
+	The position was kept.
+	"""
+	PROGRESS
+	"""
+	The playback counted as a viewing, with this report or an earlier one.
+	"""
+	COMPLETED
+}
+
+"""
+What a report did, and the state it left.
+"""
+type ViewingReport {
+	"""
+	What the report did.
+	"""
+	outcome: ViewingOutcome!
+	"""
+	The item's state after it.
+	"""
+	state: WatchState!
+}
+
+type WatchState {
+	"""
+	How many times it was watched to the end. On a series or a season, how many of its
+	episodes were, one by one: marking the whole season counts its episodes, not it.
+	"""
+	viewCount: Int!
+	"""
+	Whether it was watched to the end at least once.
+	"""
+	isWatched: Boolean!
+	"""
+	Where an unfinished viewing stopped, in milliseconds. Null when there is none: never
+	played, played for less than a minute, or watched to the end since.
+	"""
+	offsetMs: Int
+	"""
+	When it was last played or watched, in seconds since the Unix epoch. On a series or a
+	season, when any of its episodes was.
+	"""
+	lastViewedAt: Int
 }
 
 type YearConnection {

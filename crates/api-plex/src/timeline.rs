@@ -25,6 +25,11 @@ query PlexTimelineItem($id: ID!) { node(id: $id) { id } }
 const REPORT: &str = r"
 mutation PlexReportPlayback($input: ReportPlaybackInput!) { reportPlayback(input: $input) }
 ";
+const REPORT_VIEWING: &str = r"
+mutation PlexReportViewing($input: ReportViewingInput!) {
+  reportViewing(input: $input) { outcome state { viewCount offsetMs } }
+}
+";
 
 const SESSIONS: &str = r"
 query PlexTimelineSessions {
@@ -45,7 +50,81 @@ pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
 struct TimelineParams {
     state: Option<String>,
     time: Option<String>,
+    duration: Option<String>,
     rating_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewingData {
+    report_viewing: GqlViewingReport,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlViewingReport {
+    outcome: String,
+    state: GqlViewingState,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlViewingState {
+    view_count: u32,
+    offset_ms: Option<i64>,
+}
+
+/// Records the report on the item's watch state and says what became of it, in the
+/// reference's words: `ignore`, `progress` or `complete`, then the item's count and offset,
+/// `-1` standing for none. Failing to record is no reason to disturb a film: the answer is
+/// then the reference's to a report it ignored.
+///
+/// A report too early to keep reads `progress` from a player that names its session and
+/// `ignore` from one that does not, as measured; nothing is kept either way.
+async fn record_viewing(
+    state: &PlexState,
+    item: i64,
+    playback: String,
+    named_session: bool,
+    position: i64,
+    duration: Option<i64>,
+) -> Json {
+    let fields = [
+        (
+            Name::new("itemId"),
+            Value::String(GlobalId::encode(ITEM_TYPE, item)),
+        ),
+        (Name::new("playbackId"), Value::String(playback)),
+        (Name::new("positionMs"), Value::Number(position.into())),
+        (
+            Name::new("durationMs"),
+            duration.map_or(Value::Null, |duration| Value::Number(duration.into())),
+        ),
+    ];
+    let mut variables = Variables::default();
+    variables.insert(
+        Name::new("input"),
+        Value::Object(fields.into_iter().collect()),
+    );
+    match gql::execute::<ViewingData>(&state.schema, REPORT_VIEWING, variables).await {
+        Ok(data) => {
+            let report = data.report_viewing;
+            json!({
+                "playbackState": match report.outcome.as_str() {
+                    "PROGRESS" => "progress",
+                    "EARLY" if named_session => "progress",
+                    "COMPLETED" => "complete",
+                    _ => "ignore",
+                },
+                "skipCount": 0,
+                "viewCount": report.state.view_count,
+                "viewOffset": report.state.offset_ms.unwrap_or(-1),
+            })
+        }
+        Err(error) => {
+            tracing::warn!(%error, "could not record a watch report");
+            json!({ "playbackState": "ignore" })
+        }
+    }
 }
 
 fn reported_state(state: Option<&str>) -> Result<&'static str, ApiError> {
@@ -99,9 +178,9 @@ async fn report(state: &PlexState, playback_id: String, reported: &str, position
 /// even for an item that does not exist, and a `ratingKey` that is not a number is ignored
 /// rather than refused.
 ///
-/// `playbackState` says what became of the item's watch state, `progress` or `complete` on the
-/// reference, and Plex Web moves its own copy of the position on those. Nothing here stores a
-/// watch state yet, so `ignore` is the true answer even when the session was updated.
+/// `playbackState` says what became of the item's watch state, and Plex Web moves its own copy
+/// of the position on `progress` and `complete`. A playback is the client's session, or the
+/// client itself when it names none, as on the reference.
 async fn timeline(
     _caller: Caller,
     State(state): State<PlexState>,
@@ -117,6 +196,11 @@ async fn timeline(
         .transpose()
         .map_err(|_| ApiError::BadRequest)?;
 
+    let duration = params
+        .duration
+        .as_deref()
+        .and_then(|duration| duration.parse::<i64>().ok());
+
     let mut body = json!({ "size": 0, "playbackState": "ignore" });
     let item = params
         .rating_key
@@ -124,6 +208,18 @@ async fn timeline(
         .and_then(|key| key.parse().ok());
     if let Some(item) = item {
         require_item(&state, item).await?;
+        let playback = client
+            .session_identifier
+            .clone()
+            .or_else(|| client.identifier.as_ref().map(|id| id.as_str().to_owned()));
+        if let (Some(playback), Some(position)) = (playback, position) {
+            let named_session = client.session_identifier.is_some();
+            let viewing =
+                record_viewing(&state, item, playback, named_session, position, duration).await;
+            if let (Some(body), Json::Object(viewing)) = (body.as_object_mut(), viewing) {
+                body.extend(viewing);
+            }
+        }
         if let Some(playback_id) = client.session_identifier {
             // Found before the report, which closes the session once the player has stopped.
             let session = latest_session(&state, &playback_id).await;

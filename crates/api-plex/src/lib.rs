@@ -33,6 +33,7 @@ pub mod providers;
 mod related;
 mod resolution;
 pub mod response;
+mod scrobble;
 mod search;
 pub mod sessions;
 mod stream_labels;
@@ -117,9 +118,9 @@ pub fn router(state: PlexState) -> Router {
         // default rules. Our own parameters use the `{name}` form, which is unaffected.
         .without_v07_checks();
 
-    let routes = timeline::add_routes(playback::add_routes(photo::add_routes(prefs::add_routes(
-        routes,
-    ))));
+    let routes = scrobble::add_routes(timeline::add_routes(playback::add_routes(
+        photo::add_routes(prefs::add_routes(routes)),
+    )));
 
     // Added last so a real handler registered above always wins over its stub.
     stubs::add_routes(routes)

@@ -11,6 +11,7 @@ pub mod migration;
 pub mod play_queue_repository;
 pub mod playback_repository;
 pub mod repository;
+pub mod watch_repository;
 pub mod write;
 
 pub use sea_orm::DatabaseConnection;
@@ -22,6 +23,7 @@ pub use metadata_repository::SqlMetadataRepository;
 pub use play_queue_repository::SqlPlayQueueRepository;
 pub use playback_repository::SqlPlaybackRepository;
 pub use repository::SqlLibraryRepository;
+pub use watch_repository::SqlWatchRepository;
 
 /// Opens a connection pool and brings the schema up to date.
 ///

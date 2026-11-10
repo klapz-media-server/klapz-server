@@ -21,6 +21,7 @@ pub mod playback;
 pub mod schema;
 pub mod server;
 pub mod tag;
+pub mod watch;
 
 pub use cursor::{CursorError, OpaqueCursor};
 pub use filter::{ItemFilterInput, ItemOrder, ItemType, SortDirection};

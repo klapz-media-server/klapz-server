@@ -965,6 +965,12 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
         limit: u32,
     ) -> Result<Vec<crate::recent::EpisodeAddition>, MetadataError>;
 
+    /// The kind and work of everything below a series or a season: its seasons and episodes.
+    ///
+    /// Unwindowed, and bounded by the series: marking a series watched has to reach every
+    /// episode, 750 of them for the longest here.
+    async fn guids_below(&self, item: RatingKey) -> Result<Vec<(ItemKind, String)>, MetadataError>;
+
     /// The items of a library, of one kind, holding any of these tags, with how many.
     ///
     /// Unwindowed on purpose, and bounded by the library: a score has to see every candidate
@@ -1036,6 +1042,10 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         field: ValueField,
     ) -> Result<u64, MetadataError> {
         (**self).value_count_in(query, field).await
+    }
+
+    async fn guids_below(&self, item: RatingKey) -> Result<Vec<(ItemKind, String)>, MetadataError> {
+        (**self).guids_below(item).await
     }
 
     async fn item(&self, id: RatingKey) -> Result<MetadataItem, MetadataError> {

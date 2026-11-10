@@ -27,7 +27,7 @@ use open_plex_core::{
 };
 use open_plex_db::{
     import, SqlAccessRepository, SqlLibraryRepository, SqlMetadataRepository,
-    SqlPlayQueueRepository, SqlPlaybackRepository,
+    SqlPlayQueueRepository, SqlPlaybackRepository, SqlWatchRepository,
 };
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
@@ -73,17 +73,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let playback: Arc<dyn PlaybackRepository> =
         Arc::new(SqlPlaybackRepository::new(connection.clone()));
     let users: Arc<dyn AccessRepository> = Arc::new(SqlAccessRepository::new(connection.clone()));
-    let metadata: Arc<dyn MetadataRepository> = Arc::new(SqlMetadataRepository::new(connection));
+    let metadata: Arc<dyn MetadataRepository> =
+        Arc::new(SqlMetadataRepository::new(connection.clone()));
     let directory: Arc<dyn AccountDirectory> =
         Arc::new(open_plex_api_plex::plex_tv::PlexTv::new()?);
-    // No process from before this one is still running, so no session from before is either.
-    let cleared = playback.delete_all().await?;
-    if cleared > 0 {
-        tracing::info!(
-            cleared,
-            "dropped the playback sessions a previous run left behind"
-        );
-    }
+    clear_stale_sessions(playback.as_ref()).await?;
     let schema = build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity(), open_plex_core::now_epoch()),
         library,
@@ -92,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         play_queues: Arc::clone(&play_queues),
         access: Arc::clone(&users),
         directory: Arc::clone(&directory),
+        watch: Arc::new(SqlWatchRepository::new(connection)),
     });
     tokio::spawn(publish_paired_servers(
         Arc::clone(&users),
@@ -162,6 +157,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .await?;
+    Ok(())
+}
+
+/// No process from before this one is still running, so no session from before is either.
+async fn clear_stale_sessions(
+    playback: &dyn PlaybackRepository,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cleared = playback.delete_all().await?;
+    if cleared > 0 {
+        tracing::info!(
+            cleared,
+            "dropped the playback sessions a previous run left behind"
+        );
+    }
     Ok(())
 }
 

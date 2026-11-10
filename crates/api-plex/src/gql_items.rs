@@ -60,6 +60,7 @@ fragment Shared on Item {
   addedAt
   updatedAt
   library { id title uuid kind }
+  watchState { viewCount offsetMs lastViewedAt }
 }
 
 fragment VersionFields on MediaVersion {
@@ -148,7 +149,7 @@ fragment SeasonFields on Season {
   number
   year
   show { id title guid studio number year }
-  seasonStats: stats { episodeCount }
+  seasonStats: stats { episodeCount watchedEpisodeCount }
 }
 
 fragment EpisodeFields on Episode {
@@ -177,7 +178,7 @@ fragment ListedItem on Item {
     contentRatingAge
     audienceRating
     durationMs
-    showStats: stats { seasonCount episodeCount }
+    showStats: stats { seasonCount episodeCount watchedEpisodeCount }
     ...ListedShowTags
   }
   ... on Season { ...SeasonFields }
@@ -222,7 +223,7 @@ fragment ShowLookup on Show {
   contentRatingAge
   audienceRating
   durationMs
-  showStats: stats { seasonCount episodeCount }
+  showStats: stats { seasonCount episodeCount watchedEpisodeCount }
   ...ShowTags
 }
 
@@ -606,6 +607,8 @@ pub struct GqlItem {
     pub show: Option<GqlParentRef>,
     pub show_stats: Option<GqlShowStats>,
     pub season_stats: Option<GqlSeasonStats>,
+    /// The caller's: null for a caller with none.
+    pub watch_state: Option<GqlWatchState>,
     pub versions: Vec<GqlVersion>,
     pub tags: GqlItemTags,
     pub external_ids: GqlConnection<GqlExternalId>,
@@ -648,6 +651,18 @@ impl GqlItem {
             .as_ref()
             .map(|stats| stats.episode_count)
             .or_else(|| self.season_stats.as_ref().map(|stats| stats.episode_count))
+    }
+
+    /// The caller's watched episodes below a series or a season.
+    pub fn viewed_leaf_count(&self) -> Option<u64> {
+        self.show_stats
+            .as_ref()
+            .map(|stats| stats.watched_episode_count)
+            .or_else(|| {
+                self.season_stats
+                    .as_ref()
+                    .map(|stats| stats.watched_episode_count)
+            })
     }
 
     /// The item one level up: the season of an episode, the show of a season.
@@ -811,12 +826,24 @@ impl GqlTag {
 pub struct GqlShowStats {
     pub season_count: u64,
     pub episode_count: u64,
+    #[serde(default)]
+    pub watched_episode_count: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlWatchState {
+    pub view_count: u32,
+    pub offset_ms: Option<i64>,
+    pub last_viewed_at: Option<i64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GqlSeasonStats {
     pub episode_count: u64,
+    #[serde(default)]
+    pub watched_episode_count: u64,
 }
 
 #[derive(Debug, Default, Deserialize)]

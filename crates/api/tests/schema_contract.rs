@@ -54,6 +54,7 @@ fn schema() -> ApiSchema {
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
     })
 }
 
@@ -88,6 +89,7 @@ fn searchable() -> ApiSchema {
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
     })
 }
 
@@ -479,6 +481,7 @@ fn series_with_episodes() -> ApiSchema {
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
     })
 }
 
@@ -762,4 +765,114 @@ fn no_field_gives_out_an_account_token() {
     let start = sdl.find("type AccountLink").unwrap();
     let body = &sdl[start..sdl[start..].find("\n}").unwrap() + start];
     assert!(!body.to_lowercase().contains("token"), "{body}");
+}
+
+/// Bull with one season of two episodes, and Soul, as in the reference's test library.
+fn watchable() -> ApiSchema {
+    let mut items = vec![
+        item(577_986, 4, ItemKind::Movie, "Soul", None),
+        item(577_987, 5, ItemKind::Show, "Bull", None),
+        item(577_988, 5, ItemKind::Season, "Season 1", None),
+        item(577_989, 5, ItemKind::Episode, "Episode 1", None),
+        item(577_990, 5, ItemKind::Episode, "Episode 2", None),
+    ];
+    items[2].parent_id = Some(RatingKey::new(577_987));
+    items[3].parent_id = Some(RatingKey::new(577_988));
+    items[4].parent_id = Some(RatingKey::new(577_988));
+    build_schema(ApiContext {
+        capabilities: open_plex_core::ServerCapabilities::new(
+            open_plex_core::ServerIdentity::new(
+                "0000000000000000000000000000000000000000",
+                "0.1.0",
+            ),
+            0,
+        ),
+        library: Arc::new(InMemoryLibrary::new(vec![
+            section(4, SectionKind::Movie, "Films"),
+            section(5, SectionKind::Show, "Series"),
+        ])),
+        metadata: Arc::new(InMemoryMetadata::new(items.clone())),
+        playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: Arc::new(open_plex_core::testing::InMemoryWatch::over(items)),
+    })
+}
+
+fn item_id(key: i64) -> String {
+    GlobalId::encode("Item", key)
+}
+
+#[tokio::test]
+async fn watch_state_follows_the_callers_marks_and_reports() {
+    let schema = watchable();
+    let episode = item_id(577_989);
+    run_on(
+        &schema,
+        &format!(r#"mutation {{ markWatched(id: "{episode}") {{ viewCount }} }}"#),
+    )
+    .await;
+
+    let series = run_on(
+        &schema,
+        &format!(
+            r#"{{ node(id: "{}") {{ ... on Show {{ watchState {{ viewCount isWatched }} stats {{ watchedEpisodeCount episodeCount }} }} }} }}"#,
+            item_id(577_987)
+        ),
+    )
+    .await;
+    // The episode counts on its series, and is one of two watched.
+    assert_eq!(series["node"]["watchState"]["viewCount"], 1);
+    assert_eq!(series["node"]["stats"]["watchedEpisodeCount"], 1);
+    assert_eq!(series["node"]["stats"]["episodeCount"], 2);
+
+    let soul = item_id(577_986);
+    let report = |position: i64| {
+        format!(
+            r#"mutation {{ reportViewing(input: {{ itemId: "{soul}", playbackId: "p", positionMs: {position}, durationMs: 6031567 }}) {{ outcome state {{ viewCount offsetMs }} }} }}"#
+        )
+    };
+    let progress = run_on(&schema, &report(120_000)).await;
+    assert_eq!(progress["reportViewing"]["outcome"], "PROGRESS");
+    assert_eq!(progress["reportViewing"]["state"]["offsetMs"], 120_000);
+    let done = run_on(&schema, &report(5_500_000)).await;
+    assert_eq!(done["reportViewing"]["outcome"], "COMPLETED");
+    assert_eq!(done["reportViewing"]["state"]["viewCount"], 1);
+    assert_eq!(done["reportViewing"]["state"]["offsetMs"], Value::Null);
+
+    let forgotten = run_on(
+        &schema,
+        &format!(r#"mutation {{ markUnwatched(id: "{soul}") {{ viewCount isWatched }} }}"#),
+    )
+    .await;
+    assert_eq!(forgotten["markUnwatched"]["isWatched"], false);
+}
+
+#[tokio::test]
+async fn a_caller_without_a_viewer_has_no_watch_state() {
+    let schema = watchable();
+    // A visitor at a published address sees no library and has no state to change.
+    let visitor = open_plex_core::Principal::visitor_of("server".to_owned());
+    let query = format!(
+        r#"mutation {{ markWatched(id: "{}") {{ viewCount }} }}"#,
+        item_id(577_986)
+    );
+    let response = schema
+        .execute(async_graphql::Request::new(query).data(visitor))
+        .await;
+    assert!(!response.errors.is_empty());
+
+    // And a request with no caller at all reads no state.
+    let anonymous = schema
+        .execute(format!(
+            r#"{{ node(id: "{}") {{ ... on Movie {{ watchState {{ viewCount }} }} }} }}"#,
+            item_id(577_986)
+        ))
+        .await;
+    let data = serde_json::to_value(anonymous.data).unwrap();
+    assert!(
+        data["node"].is_null() || data["node"]["watchState"].is_null(),
+        "{data}"
+    );
 }

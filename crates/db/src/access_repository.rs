@@ -12,7 +12,9 @@ use sea_orm::{
     QuerySelect, SqlErr, TransactionTrait,
 };
 
-use crate::entity::{extension_account, library_permission, user_extension, users};
+use crate::entity::{
+    extension_account, library_permission, user_extension, users, viewing, watch_state,
+};
 
 #[derive(Debug, Clone)]
 pub struct SqlAccessRepository {
@@ -201,6 +203,17 @@ impl AccessRepository for SqlAccessRepository {
             .map_err(storage)?;
         library_permission::Entity::delete_many()
             .filter(library_permission::Column::UserId.eq(id.get()))
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
+        // No foreign key reaches these: the operator watches as viewer 0, who has no row.
+        watch_state::Entity::delete_many()
+            .filter(watch_state::Column::Viewer.eq(id.get()))
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
+        viewing::Entity::delete_many()
+            .filter(viewing::Column::Viewer.eq(id.get()))
             .exec(&transaction)
             .await
             .map_err(storage)?;

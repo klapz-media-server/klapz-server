@@ -126,6 +126,11 @@ impl InMemoryMetadata {
         self
     }
 
+    /// The items it holds, for a store that has to see the same library.
+    pub fn items(&self) -> &[MetadataItem] {
+        &self.items
+    }
+
     /// Attaches tags, which are kept in the order given: that order is the billing order.
     #[must_use]
     pub fn with_tags(mut self, tags: Vec<ItemTag>) -> Self {
@@ -711,6 +716,25 @@ impl MetadataRepository for InMemoryMetadata {
         field: ValueField,
     ) -> Result<u64, MetadataError> {
         Ok(self.distinct_values(query, field).len() as u64)
+    }
+
+    async fn guids_below(&self, item: RatingKey) -> Result<Vec<(ItemKind, String)>, MetadataError> {
+        let children: Vec<&MetadataItem> = self
+            .items
+            .iter()
+            .filter(|child| child.parent_id == Some(item))
+            .collect();
+        let grandchildren = self.items.iter().filter(|grandchild| {
+            children
+                .iter()
+                .any(|child| grandchild.parent_id == Some(child.id))
+        });
+        Ok(children
+            .iter()
+            .copied()
+            .chain(grandchildren)
+            .map(|below| (below.kind, below.guid.clone()))
+            .collect())
     }
 
     async fn tag(&self, id: TagId) -> Result<Option<Tag>, MetadataError> {
@@ -1469,5 +1493,124 @@ impl crate::play_queue::PlayQueueRepository for InMemoryPlayQueues {
         let count = queues.len();
         queues.retain(|(_, _, created)| *created >= before);
         Ok(u64::try_from(count - queues.len()).unwrap_or(u64::MAX))
+    }
+}
+
+/// Watch state held in memory, over the items whose episodes it counts.
+#[derive(Debug, Default)]
+pub struct InMemoryWatch {
+    /// The library's items, for counting the episodes below a series or a season.
+    items: Vec<MetadataItem>,
+    states: std::sync::Mutex<Vec<(crate::watch::Viewer, String, crate::watch::WatchState)>>,
+    viewings: std::sync::Mutex<Vec<(crate::watch::Viewer, String, crate::watch::Viewing, i64)>>,
+}
+
+impl InMemoryWatch {
+    pub const fn over(items: Vec<MetadataItem>) -> Self {
+        Self {
+            items,
+            states: std::sync::Mutex::new(Vec::new()),
+            viewings: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+        // A test that panicked while holding the lock has already failed; the data is still
+        // what it wrote.
+        mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::watch::WatchRepository for InMemoryWatch {
+    async fn states(
+        &self,
+        viewer: crate::watch::Viewer,
+        guids: &[String],
+    ) -> Result<Vec<(String, crate::watch::WatchState)>, crate::watch::WatchError> {
+        Ok(Self::lock(&self.states)
+            .iter()
+            .filter(|(who, guid, _)| *who == viewer && guids.contains(guid))
+            .map(|(_, guid, state)| (guid.clone(), *state))
+            .collect())
+    }
+
+    async fn save(
+        &self,
+        viewer: crate::watch::Viewer,
+        states: &[(String, crate::watch::WatchState)],
+    ) -> Result<(), crate::watch::WatchError> {
+        let mut stored = Self::lock(&self.states);
+        for (guid, state) in states {
+            stored.retain(|(who, kept, _)| !(*who == viewer && kept == guid));
+            if !state.is_empty() {
+                stored.push((viewer, guid.clone(), *state));
+            }
+        }
+        Ok(())
+    }
+
+    async fn watched_leaves(
+        &self,
+        viewer: crate::watch::Viewer,
+        parents: &[RatingKey],
+    ) -> Result<Vec<(RatingKey, u64)>, crate::watch::WatchError> {
+        let stored = Self::lock(&self.states);
+        let watched = |guid: &str| {
+            stored
+                .iter()
+                .any(|(who, kept, state)| *who == viewer && kept == guid && state.view_count > 0)
+        };
+        let parent_of = |id: RatingKey| self.items.iter().find(|item| item.id == id)?.parent_id;
+        Ok(parents
+            .iter()
+            .map(|parent| {
+                let count = self
+                    .items
+                    .iter()
+                    .filter(|item| item.kind == ItemKind::Episode && watched(&item.guid))
+                    .filter(|item| {
+                        item.parent_id == Some(*parent)
+                            || item.parent_id.and_then(parent_of) == Some(*parent)
+                    })
+                    .count() as u64;
+                (*parent, count)
+            })
+            .filter(|(_, count)| *count > 0)
+            .collect())
+    }
+
+    async fn viewing(
+        &self,
+        viewer: crate::watch::Viewer,
+        playback: &str,
+        now: i64,
+    ) -> Result<Option<crate::watch::Viewing>, crate::watch::WatchError> {
+        Ok(Self::lock(&self.viewings)
+            .iter()
+            .find(|(who, key, _, expires)| *who == viewer && key == playback && *expires > now)
+            .map(|(_, _, viewing, _)| *viewing))
+    }
+
+    async fn remember(
+        &self,
+        viewer: crate::watch::Viewer,
+        playback: &str,
+        viewing: crate::watch::Viewing,
+        now: i64,
+    ) -> Result<(), crate::watch::WatchError> {
+        let mut viewings = Self::lock(&self.viewings);
+        viewings.retain(|(who, key, _, expires)| {
+            !(*who == viewer && (key == playback || *expires <= now))
+        });
+        viewings.push((
+            viewer,
+            playback.to_owned(),
+            viewing,
+            now + crate::watch::VIEWING_LIFETIME_SECONDS,
+        ));
+        Ok(())
     }
 }

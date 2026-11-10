@@ -348,6 +348,49 @@ impl Mutation {
             .await?)
     }
 
+    /// Marks an item watched for the caller: a film or an episode once more, a season or a
+    /// series by each of its episodes once more. Counted on the episode's season and series
+    /// too. Returns the item's state after it.
+    async fn mark_watched(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The item, as returned in `id`.")] id: ID,
+    ) -> Result<crate::watch::WatchStateObject> {
+        crate::watch::mark_watched(context, &id).await
+    }
+
+    /// Forgets what the caller watched of an item: an episode alone, a season with its
+    /// episodes, a series with its seasons and episodes. Returns the item's state after it.
+    async fn mark_unwatched(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The item, as returned in `id`.")] id: ID,
+    ) -> Result<crate::watch::WatchStateObject> {
+        crate::watch::mark_unwatched(context, &id).await
+    }
+
+    /// Records where a player stands in a playback. Past a minute and short of 90% of the
+    /// runtime the position is kept; crossing 90% within the playback counts a viewing and
+    /// forgets it.
+    async fn report_viewing(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The player's report.")] input: crate::watch::ReportViewingInput,
+    ) -> Result<crate::watch::ViewingReport> {
+        crate::watch::report_viewing(context, input).await
+    }
+
+    /// Keeps a position for the caller without asking whether the item is finished: an
+    /// explicit "remember where I stopped". Under a minute, nothing is kept.
+    async fn keep_watch_position(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The item, as returned in `id`.")] id: ID,
+        #[graphql(desc = "Where to resume, in milliseconds.")] position_ms: i64,
+    ) -> Result<crate::watch::WatchStateObject> {
+        crate::watch::keep_watch_position(context, &id, position_ms).await
+    }
+
     /// Creates a play queue from a list of items.
     async fn create_play_queue(
         &self,
