@@ -3029,3 +3029,52 @@ async fn continue_watching_is_empty_when_nothing_was_played() {
     assert_eq!(hub["size"], 0);
     assert!(hub.get("hubKey").is_none(), "{hub}");
 }
+
+#[tokio::test]
+async fn a_series_librarys_recent_list_is_its_shelf_unwindowed() {
+    let body = listing("/hubs/home/recentlyAdded?type=2&sectionID=5").await;
+    let container = &body["MediaContainer"];
+    // The same single entry as the shelf: Severance's three new episodes, as the series.
+    assert_eq!(container["size"], 1);
+    assert_eq!(container["Metadata"][0]["ratingKey"], "200");
+    // Not asked for a window and holding the whole list, so it says nothing of one.
+    assert!(container.get("totalSize").is_none(), "{container}");
+    assert!(container.get("offset").is_none(), "{container}");
+
+    let windowed = listing(
+        "/hubs/home/recentlyAdded?type=2&sectionID=5&X-Plex-Container-Start=0&X-Plex-Container-Size=5",
+    )
+    .await;
+    assert_eq!(windowed["MediaContainer"]["totalSize"], 1);
+    assert_eq!(windowed["MediaContainer"]["offset"], 0);
+}
+
+#[tokio::test]
+async fn a_recent_list_of_no_type_or_the_wrong_kind_is_empty() {
+    // Measured: an empty container, never an error.
+    for query in [
+        "sectionID=5",
+        "type=4&sectionID=5",
+        "type=2&sectionID=4",
+        "type=1&sectionID=5",
+        "type=2&sectionID=999",
+    ] {
+        let body = listing(&format!("/hubs/home/recentlyAdded?{query}")).await;
+        assert_eq!(body["MediaContainer"]["size"], 0, "{query}");
+        assert!(body["MediaContainer"].get("Metadata").is_none(), "{query}");
+    }
+}
+
+#[tokio::test]
+async fn a_film_recent_list_pages_over_the_whole_library() {
+    let body = listing(
+        "/hubs/home/recentlyAdded?type=1&sectionID=4&X-Plex-Container-Start=1&X-Plex-Container-Size=1",
+    )
+    .await;
+    let container = &body["MediaContainer"];
+    let all = listing("/library/sections/4/all").await;
+    assert_eq!(container["totalSize"], all["MediaContainer"]["totalSize"]);
+    assert_eq!(container["offset"], 1);
+    assert_eq!(container["size"], 1);
+    assert_eq!(container["Metadata"][0]["type"], "movie");
+}

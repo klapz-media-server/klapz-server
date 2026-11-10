@@ -52,8 +52,10 @@ impl SqlMetadataRepository {
     /// several versions, and 8 films here do.
     fn selection(query: &ItemQuery) -> Select<metadata_item::Entity> {
         let filter = &query.filter;
-        let mut select = metadata_item::Entity::find()
-            .filter(metadata_item::Column::LibrarySectionId.eq(query.section_id.get()));
+        let mut select = metadata_item::Entity::find().filter(
+            metadata_item::Column::LibrarySectionId
+                .is_in(query.sections.iter().map(|section| section.get())),
+        );
 
         if let Some(kind) = filter.kind {
             select = select.filter(metadata_item::Column::Kind.eq(kind_name(kind)));

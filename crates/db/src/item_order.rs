@@ -51,6 +51,8 @@ struct Term {
 pub(crate) struct ItemOrder {
     /// The ordering's own value; `None` orders by title.
     leading: Option<Leading>,
+    /// Whether ties on the leading value follow the title before the id.
+    ties_by_title: bool,
     direction: Direction,
 }
 
@@ -63,7 +65,9 @@ impl ItemOrder {
         };
         let leading = match sort {
             ItemSort::Title => None,
-            ItemSort::AddedAt => Some(column(metadata_item::Column::AddedAt, KeyType::Int, false)),
+            ItemSort::AddedAt | ItemSort::Arrival => {
+                Some(column(metadata_item::Column::AddedAt, KeyType::Int, false))
+            }
             ItemSort::ReleasedOn => Some(column(
                 metadata_item::Column::ReleasedOn,
                 KeyType::Text,
@@ -114,7 +118,11 @@ impl ItemOrder {
                 nullable: false,
             }),
         };
-        Self { leading, direction }
+        Self {
+            leading,
+            ties_by_title: sort != ItemSort::Arrival,
+            direction,
+        }
     }
 
     fn terms(&self) -> Vec<Term> {
@@ -129,15 +137,18 @@ impl ItemOrder {
                 column(metadata_item::Column::SortKey, descending),
                 column(metadata_item::Column::Id, descending),
             ],
-            Some(leading) => vec![
-                Term {
+            Some(leading) => {
+                let mut terms = vec![Term {
                     expr: leading.expr.clone(),
                     descending,
                     nullable: leading.nullable,
-                },
-                column(metadata_item::Column::SortKey, false),
-                column(metadata_item::Column::Id, false),
-            ],
+                }];
+                if self.ties_by_title {
+                    terms.push(column(metadata_item::Column::SortKey, false));
+                }
+                terms.push(column(metadata_item::Column::Id, false));
+                terms
+            }
         }
     }
 
@@ -218,10 +229,11 @@ impl ItemOrder {
                 .try_get::<Option<f64>>("", KEY_COLUMN)?
                 .map(CursorKey::Real),
         };
-        Ok(Cursor {
-            keys: vec![value.unwrap_or(CursorKey::Absent), sort_key],
-            id: item.id,
-        })
+        let mut keys = vec![value.unwrap_or(CursorKey::Absent)];
+        if self.ties_by_title {
+            keys.push(sort_key);
+        }
+        Ok(Cursor { keys, id: item.id })
     }
 }
 

@@ -108,6 +108,16 @@ OFF_SPEC = (
     (
         "done",
         "GET",
+        "/hubs/home/recentlyAdded",
+        "user",
+        "What a library, or every library of a kind, added lately",
+        "`type=1` films by date added, ties by arrival; `type=2` a series library's grouped "
+        "entries, at most 50; anything else empty. The spec names it only in examples. See "
+        "spec-gaps.md.",
+    ),
+    (
+        "done",
+        "GET",
         "/hubs/continueWatching/items",
         "user",
         "Every item of the home Continue Watching shelf",

@@ -33,8 +33,9 @@ use crate::client::ClientIdentity;
 use crate::error::ApiError;
 use crate::gql;
 use crate::gql_items::{
-    ContinueWatchingData, GqlContinueEdge, GqlRecentlyAdded, RecentlyAddedData, ShelfData,
-    CONTINUE_WATCHING_QUERY, RECENTLY_ADDED_QUERY, SHELF_QUERY,
+    ContinueWatchingData, GqlContinueEdge, GqlRecentEdge, GqlRecentlyAdded, HomeRecentData,
+    LibraryRecentData, RecentlyAddedData, ShelfData, CONTINUE_WATCHING_QUERY, HOME_RECENT_QUERY,
+    LIBRARY_RECENT_QUERY, RECENTLY_ADDED_QUERY, SHELF_QUERY,
 };
 use crate::items::{MetadataEntry, LIBRARY_IDENTIFIER};
 use crate::language::Language;
@@ -49,6 +50,7 @@ pub fn router() -> Router<PlexState> {
         .route("/hubs/continueWatching/items", get(continue_watching_items))
         .route("/hubs/home/continueWatching", get(home_in_progress))
         .route("/hubs/home/onDeck", get(home_up_next))
+        .route("/hubs/home/recentlyAdded", get(home_recently_added))
         .route(
             "/hubs/sections/{sectionId}/continueWatching/items",
             get(section_continue_watching_items),
@@ -618,6 +620,150 @@ impl HubItems {
             metadata,
         }
     }
+}
+
+/// How many entries a series' "recently added" list holds, as the reference caps it.
+const RECENT_SERIES_ENTRIES: u32 = 50;
+
+/// Response to `GET /hubs/home/recentlyAdded`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentItems {
+    size: u32,
+    /// Where the window sits, sent when the client asked for one or the list exceeds it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    offset: Option<u64>,
+    allow_sync: bool,
+    identifier: &'static str,
+    #[serde(rename = "Metadata", skip_serializing_if = "Vec::is_empty")]
+    metadata: Vec<MetadataEntry>,
+}
+
+/// `GET /hubs/home/recentlyAdded?type=&sectionID=`: what a library, or every library of a
+/// kind, added lately. The list behind a series library's "recently added" shelf.
+///
+/// Measured on the reference: `type=1` lists films, `type=2` a series library's grouped
+/// entries, capped at fifty; any other type, or none, an empty container, as does a library
+/// of the other kind or an unknown one. A `sectionID` that is not a number is ignored, and
+/// every library of the kind is listed.
+async fn home_recently_added(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Query(pairs): Query<Vec<(String, String)>>,
+    format: ResponseFormat,
+) -> Result<PlexResponse<RecentItems>, ApiError> {
+    let value = |name: &str| {
+        pairs
+            .iter()
+            .rev()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
+    };
+    let start: Option<u64> = value("X-Plex-Container-Start").and_then(|start| start.parse().ok());
+    let size: Option<u32> = value("X-Plex-Container-Size").and_then(|size| size.parse().ok());
+    // Both or neither, as everywhere a Plex client pages.
+    let window = start.zip(size);
+    let kind = match value("type") {
+        Some("1") => Some("MOVIE"),
+        Some("2") => Some("SHOW"),
+        _ => None,
+    };
+    let section = value("sectionID").and_then(|section| section.parse::<i64>().ok());
+    let language = Language::of(&client);
+
+    let (edges, total) = match kind {
+        Some(kind) => recent_entries(&state, kind, section, window).await?,
+        None => (Vec::new(), 0),
+    };
+    let offset = window.map_or(0, |(start, _)| start);
+    let metadata: Vec<MetadataEntry> = edges
+        .iter()
+        .filter_map(|edge| {
+            let mut item = MetadataEntry::from_graphql(&edge.node, true, language)?;
+            item.added_at = edge.added_at;
+            Some(item)
+        })
+        .collect();
+    let size = u32::try_from(metadata.len()).unwrap_or(u32::MAX);
+    let windowed = window.is_some() || offset + u64::from(size) < total;
+    let body = RecentItems {
+        size,
+        total_size: windowed.then_some(total),
+        offset: windowed.then_some(offset),
+        allow_sync: true,
+        identifier: LIBRARY_IDENTIFIER,
+        metadata,
+    };
+    let response = PlexResponse::new(body, format);
+    Ok(if windowed {
+        response.paged(offset, total)
+    } else {
+        response
+    })
+}
+
+/// One window of the entries, and how many there are in all.
+///
+/// A series list is read whole, its fifty entries being what the total counts; a film list
+/// by window, its total being its libraries' films.
+async fn recent_entries(
+    state: &PlexState,
+    kind: &str,
+    section: Option<i64>,
+    window: Option<(u64, u32)>,
+) -> Result<(Vec<GqlRecentEdge>, u64), ApiError> {
+    let series = kind == "SHOW";
+    let (offset, first) = match (series, window) {
+        (true, _) => (0, RECENT_SERIES_ENTRIES),
+        (false, Some((start, size))) => (start, size.min(MAX_ITEMS)),
+        (false, None) => (0, MAX_ITEMS),
+    };
+    let mut variables = Variables::default();
+    variables.insert(Name::new("first"), Value::Number(first.into()));
+    variables.insert(Name::new("offset"), Value::Number(offset.into()));
+
+    variables.insert(Name::new("kind"), Value::Enum(Name::new(kind)));
+    let (mut edges, film_total) = if let Some(section) = section {
+        variables.insert(
+            Name::new("id"),
+            Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
+        );
+        let data: LibraryRecentData =
+            gql::execute(&state.schema, &LIBRARY_RECENT_QUERY, variables).await?;
+        match data.node {
+            Some(library) if library.kind == kind => {
+                (data.recently_added.edges, library.stats.item_count)
+            }
+            // Unknown, or of the other kind: nothing, as on the reference.
+            _ => return Ok((Vec::new(), 0)),
+        }
+    } else {
+        let data: HomeRecentData =
+            gql::execute(&state.schema, &HOME_RECENT_QUERY, variables).await?;
+        let films = data
+            .libraries
+            .edges
+            .iter()
+            .filter(|edge| edge.node.kind == kind)
+            .map(|edge| edge.node.stats.item_count)
+            .sum();
+        (data.recently_added.edges, films)
+    };
+    if !series {
+        return Ok((edges, film_total));
+    }
+    let total = edges.len() as u64;
+    if let Some((start, size)) = window {
+        let start = usize::try_from(start)
+            .unwrap_or(usize::MAX)
+            .min(edges.len());
+        edges.drain(..start);
+        edges.truncate(usize::try_from(size).unwrap_or(usize::MAX));
+    }
+    Ok((edges, total))
 }
 
 /// The "recently added" shelf, in the form the library's kind calls for.

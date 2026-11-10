@@ -354,6 +354,47 @@ impl Query {
         crate::access::users(context, after, before, first, last).await
     }
 
+    /// What the caller's libraries of one kind added most recently, newest first: the films
+    /// of every film library by date added, ties in the order they arrived, or every series
+    /// library's new episodes grouped as `Library.recentlyAdded` groups them, merged by date.
+    ///
+    /// Pages forward only, by position.
+    async fn recently_added(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Which libraries: those of this kind.")] kind: crate::library::LibraryKind,
+        #[graphql(
+            desc = "Only this library, as returned in `Library.id`. One of another kind lists nothing."
+        )]
+        library: Option<ID>,
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return at most this many entries.")] first: Option<i32>,
+        #[graphql(
+            desc = "Skip this many entries first. A position, for a client that pages by one; it costs the entries it skips."
+        )]
+        offset: Option<u32>,
+    ) -> Result<crate::library::RecentlyAddedConnection> {
+        let kind = kind.into();
+        let mut sections = crate::library::visible_of_kind(context, kind).await?;
+        if let Some(id) = library {
+            let only = GlobalId::decode(&id)
+                .ok()
+                .filter(|decoded| decoded.type_name == crate::library::LIBRARY_TYPE)
+                .ok_or_else(|| async_graphql::Error::new("not a library id"))?;
+            // A library not given, or of another kind, reads as one with nothing in it.
+            sections.retain(|section| section.get() == only.key);
+        }
+        // Ties by arrival, as the reference's cross-library list has them.
+        crate::library::recently_added(
+            context,
+            sections,
+            kind,
+            open_plex_core::ItemSort::Arrival,
+            (after, first, offset),
+        )
+        .await
+    }
+
     /// Every library the caller can see, ordered by identifier.
     ///
     /// Paginated as a Relay connection, with the window pushed down to storage rather than

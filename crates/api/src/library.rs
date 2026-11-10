@@ -13,7 +13,7 @@ use open_plex_core::metadata::{
 use open_plex_core::page::{Cursor, Direction, Window, MAX_ITEMS};
 use open_plex_core::recent::recently_added_episodes;
 use open_plex_core::watch::Viewer;
-use open_plex_core::{Listed, RatingKey};
+use open_plex_core::{Listed, RatingKey, SectionId};
 
 use crate::cursor::OpaqueCursor;
 use crate::filter::{ItemFilterInput, ItemOrder, SortDirection};
@@ -43,6 +43,17 @@ pub enum LibraryKind {
     Artist,
     /// Photographs and home videos.
     Photo,
+}
+
+impl From<LibraryKind> for SectionKind {
+    fn from(kind: LibraryKind) -> Self {
+        match kind {
+            LibraryKind::Movie => Self::Movie,
+            LibraryKind::Show => Self::Show,
+            LibraryKind::Artist => Self::Artist,
+            LibraryKind::Photo => Self::Photo,
+        }
+    }
 }
 
 impl From<SectionKind> for LibraryKind {
@@ -292,37 +303,18 @@ impl Library {
         context: &Context<'_>,
         #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
         #[graphql(desc = "Return at most this many entries.")] first: Option<i32>,
+        #[graphql(
+            desc = "Skip this many entries first. A position, for a client that pages by one; it costs the entries it skips."
+        )]
+        offset: Option<u32>,
     ) -> Result<RecentlyAddedConnection> {
-        query(
-            after,
-            None,
-            first,
-            None,
-            |after: Option<OpaqueCursor>, _: Option<OpaqueCursor>, first, _| async move {
-                let start = after.map_or(0, |cursor| {
-                    usize::try_from(cursor.0.id).map_or(0, |position| position + 1)
-                });
-                let count = first.unwrap_or(DEFAULT_PAGE_SIZE as usize);
-                if count > MAX_ITEMS as usize {
-                    return Err(async_graphql::Error::new(format!(
-                        "a page of more than {MAX_ITEMS} is not served"
-                    )));
-                }
-                let (items, has_next) = self.recent(context, start, count).await?;
-
-                let mut connection = Connection::new(start > 0, has_next);
-                connection.edges.extend(items.into_iter().enumerate().map(
-                    |(index, (item, added_at))| {
-                        let position = i64::try_from(start + index).unwrap_or(i64::MAX);
-                        Edge::with_additional_fields(
-                            OpaqueCursor(Cursor::by_id(position)),
-                            Item::from_domain(item),
-                            RecentlyAddedEdgeFields { added_at },
-                        )
-                    },
-                ));
-                Ok::<_, async_graphql::Error>(connection)
-            },
+        // Ties in title order, as the library's own listing by date added has them.
+        recently_added(
+            context,
+            vec![self.section.id],
+            self.section.kind,
+            ItemSort::AddedAt,
+            (after, first, offset),
         )
         .await
     }
@@ -573,59 +565,133 @@ impl Library {
     }
 }
 
-impl Library {
-    /// The `count` recent items from position `start`, and whether more follow.
-    async fn recent(
-        &self,
-        context: &Context<'_>,
-        start: usize,
-        count: usize,
-    ) -> Result<(Vec<(open_plex_core::MetadataItem, i64)>, bool)> {
-        let metadata = schema::metadata(context)?;
-        if self.section.kind != SectionKind::Show {
-            let query =
-                ItemQuery::new(self.section.id).sorted_by(ItemSort::AddedAt, Direction::Descending);
-            let window = Window::new(
-                None,
-                None,
-                Some(u32::try_from(count).unwrap_or(MAX_ITEMS)),
-                None,
-            )?
-            .skipping(u64::try_from(start).unwrap_or(u64::MAX));
-            let page = metadata.items(&query, window).await?;
-            let items = page
-                .items
-                .into_iter()
-                .map(|Listed { item, .. }| {
-                    let added_at = item.added_at;
-                    (item, added_at)
-                })
-                .collect();
-            return Ok((items, page.has_next));
-        }
+/// What `sections`, all of `kind`, added most recently: one page by position, as
+/// `Library.recentlyAdded` and the root `recentlyAdded` serve it. Films follow `film_order`,
+/// which says how ties on the date fall.
+pub(crate) async fn recently_added(
+    context: &Context<'_>,
+    sections: Vec<SectionId>,
+    kind: SectionKind,
+    film_order: ItemSort,
+    (after, first, offset): (Option<String>, Option<i32>, Option<u32>),
+) -> Result<RecentlyAddedConnection> {
+    let skipped = usize::try_from(offset.unwrap_or(0)).unwrap_or(usize::MAX);
+    query(
+        after,
+        None,
+        first,
+        None,
+        |after: Option<OpaqueCursor>, _: Option<OpaqueCursor>, first, _| async move {
+            let start = after.map_or(skipped, |cursor| {
+                usize::try_from(cursor.0.id).map_or(0, |position| position + 1)
+            });
+            let count = first.unwrap_or(DEFAULT_PAGE_SIZE as usize);
+            if count > MAX_ITEMS as usize {
+                return Err(async_graphql::Error::new(format!(
+                    "a page of more than {MAX_ITEMS} is not served"
+                )));
+            }
+            let (items, has_next) =
+                recent(context, sections, kind, film_order, start, count).await?;
 
-        // One more than asked, to learn whether a further page exists.
-        let entries =
-            recently_added_episodes(metadata.as_ref(), self.section.id, start + count + 1).await?;
-        let has_next = entries.len() > start + count;
-        let wanted: Vec<(RatingKey, i64)> = entries
-            .iter()
-            .skip(start)
-            .take(count)
-            .map(|addition| (addition.entry.item(), addition.added_at))
+            let mut connection = Connection::new(start > 0, has_next);
+            connection.edges.extend(items.into_iter().enumerate().map(
+                |(index, (item, added_at))| {
+                    let position = i64::try_from(start + index).unwrap_or(i64::MAX);
+                    Edge::with_additional_fields(
+                        OpaqueCursor(Cursor::by_id(position)),
+                        Item::from_domain(item),
+                        RecentlyAddedEdgeFields { added_at },
+                    )
+                },
+            ));
+            Ok::<_, async_graphql::Error>(connection)
+        },
+    )
+    .await
+}
+
+/// The `count` recent entries of `sections` from position `start`, and whether more follow.
+///
+/// Series libraries are grouped one by one and then merged by date: an item belongs to one
+/// library, so a batch never spans two.
+async fn recent(
+    context: &Context<'_>,
+    sections: Vec<SectionId>,
+    kind: SectionKind,
+    film_order: ItemSort,
+    start: usize,
+    count: usize,
+) -> Result<(Vec<(open_plex_core::MetadataItem, i64)>, bool)> {
+    let metadata = schema::metadata(context)?;
+    if kind != SectionKind::Show {
+        let query = ItemQuery::across(sections).sorted_by(film_order, Direction::Descending);
+        let window = Window::new(
+            None,
+            None,
+            Some(u32::try_from(count).unwrap_or(MAX_ITEMS)),
+            None,
+        )?
+        .skipping(u64::try_from(start).unwrap_or(u64::MAX));
+        let page = metadata.items(&query, window).await?;
+        let items = page
+            .items
+            .into_iter()
+            .map(|Listed { item, .. }| {
+                let added_at = item.added_at;
+                (item, added_at)
+            })
             .collect();
-        // Batched, then put back in the grouping's order.
-        let loaded = context
-            .data::<DataLoader<ItemLoader>>()?
-            .load_many(wanted.iter().map(|(id, _)| *id))
-            .await?;
-        let items = wanted
-            .iter()
-            .filter_map(|(id, added_at)| Some((loaded.get(id).cloned()?, *added_at)))
-            .collect();
-        Ok((items, has_next))
+        return Ok((items, page.has_next));
     }
 
+    // One more than asked, to learn whether a further page exists.
+    let mut entries = Vec::new();
+    for section in sections {
+        entries
+            .extend(recently_added_episodes(metadata.as_ref(), section, start + count + 1).await?);
+    }
+    // Stable, so one library's order is kept within a shared second.
+    entries.sort_by(|left, right| right.added_at.cmp(&left.added_at));
+    let has_next = entries.len() > start + count;
+    let wanted: Vec<(RatingKey, i64)> = entries
+        .iter()
+        .skip(start)
+        .take(count)
+        .map(|addition| (addition.entry.item(), addition.added_at))
+        .collect();
+    // Batched, then put back in the grouping's order.
+    let loaded = context
+        .data::<DataLoader<ItemLoader>>()?
+        .load_many(wanted.iter().map(|(id, _)| *id))
+        .await?;
+    let items = wanted
+        .iter()
+        .filter_map(|(id, added_at)| Some((loaded.get(id).cloned()?, *added_at)))
+        .collect();
+    Ok((items, has_next))
+}
+
+/// The libraries of `kind` the caller can see.
+pub(crate) async fn visible_of_kind(
+    context: &Context<'_>,
+    kind: SectionKind,
+) -> Result<Vec<SectionId>> {
+    let visible = crate::access::visible_sections(context);
+    // Libraries are a handful; one window holds them all.
+    let window = Window::new(None, None, Some(MAX_ITEMS), None)?;
+    let page = schema::library_repository(context)?
+        .sections(visible.as_deref(), window)
+        .await?;
+    Ok(page
+        .items
+        .into_iter()
+        .filter(|section| section.kind == kind)
+        .map(|section| section.id)
+        .collect())
+}
+
+impl Library {
     /// Builds the storage query from the arguments a client supplied.
     ///
     /// Fails on a tag condition that cannot be honored — a malformed identifier, or one

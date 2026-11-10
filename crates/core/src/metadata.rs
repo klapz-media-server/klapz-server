@@ -544,6 +544,9 @@ pub enum ItemSort {
     Title,
     /// By when the item was added to the library.
     AddedAt,
+    /// By when the item was added, ties in the order items arrived — by id — rather than by
+    /// title: the reference's cross-library "recently added", where 62 of 62 ties follow it.
+    Arrival,
     /// By release date.
     ReleasedOn,
     /// By critics' rating.
@@ -724,7 +727,9 @@ pub fn first_character_bucket(sort_key: &str) -> String {
 /// Which items a listing covers, and in what order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ItemQuery {
-    pub section_id: SectionId,
+    /// The libraries listed: one for a library's own listing, several for what a viewer's
+    /// libraries of a kind added lately. None lists nothing.
+    pub sections: Vec<SectionId>,
     pub filter: ItemFilter,
     pub sort: ItemSort,
     pub direction: Direction,
@@ -732,8 +737,12 @@ pub struct ItemQuery {
 
 impl ItemQuery {
     pub fn new(section_id: SectionId) -> Self {
+        Self::across(vec![section_id])
+    }
+
+    pub fn across(sections: Vec<SectionId>) -> Self {
         Self {
-            section_id,
+            sections,
             filter: ItemFilter::default(),
             sort: ItemSort::Title,
             direction: Direction::Ascending,

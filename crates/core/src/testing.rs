@@ -171,7 +171,7 @@ impl InMemoryMetadata {
         let mut matched: Vec<MetadataItem> = self
             .items
             .iter()
-            .filter(|item| item.section_id == query.section_id)
+            .filter(|item| query.sections.contains(&item.section_id))
             .filter(|item| filter.kind.is_none_or(|kind| item.kind == kind))
             .filter(|item| !filter.top_level_only() || item.parent_id.is_none())
             .filter(|item| {
@@ -261,7 +261,7 @@ impl InMemoryMetadata {
         // Title and date added only: the other orderings read versions or watch state, and
         // storage's tests are where they are checked.
         match query.sort {
-            ItemSort::AddedAt => matched.sort_by(|left, right| {
+            ItemSort::AddedAt | ItemSort::Arrival => matched.sort_by(|left, right| {
                 left.added_at
                     .cmp(&right.added_at)
                     .then(left.id.get().cmp(&right.id.get()))

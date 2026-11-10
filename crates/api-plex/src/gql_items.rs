@@ -461,6 +461,77 @@ pub struct GqlShelfEdge {
     pub node: GqlItem,
 }
 
+/// What one library, or every library of a kind, added most recently, and how many films
+/// that covers.
+pub static HOME_RECENT_QUERY: LazyLock<String> = LazyLock::new(|| {
+    with_shared_fragments(
+        r"
+query PlexHomeRecent($kind: LibraryKind!, $first: Int!, $offset: Int!) {
+  recentlyAdded(kind: $kind, first: $first, offset: $offset) {
+    edges { addedAt node { ...RecentItem } }
+  }
+  libraries(first: 500) {
+    edges { node { kind stats { itemCount } } }
+  }
+}
+",
+    )
+});
+
+/// [`HOME_RECENT_QUERY`] for one library.
+pub static LIBRARY_RECENT_QUERY: LazyLock<String> = LazyLock::new(|| {
+    with_shared_fragments(
+        r"
+query PlexLibraryRecent($id: ID!, $kind: LibraryKind!, $first: Int!, $offset: Int!) {
+  node(id: $id) {
+    ... on Library {
+      kind
+      stats { itemCount }
+    }
+  }
+  recentlyAdded(kind: $kind, library: $id, first: $first, offset: $offset) {
+    edges { addedAt node { ...RecentItem } }
+  }
+}
+",
+    )
+});
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeRecentData {
+    pub recently_added: GqlRecentEdges,
+    pub libraries: GqlKindCounts,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryRecentData {
+    pub node: Option<GqlKindCount>,
+    pub recently_added: GqlRecentEdges,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GqlRecentEdges {
+    pub edges: Vec<GqlRecentEdge>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GqlKindCounts {
+    pub edges: Vec<GqlKindCountEdge>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GqlKindCountEdge {
+    pub node: GqlKindCount,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GqlKindCount {
+    pub kind: String,
+    pub stats: GqlLibraryStats,
+}
+
 /// Everything Continue Watching needs from the official API.
 pub static CONTINUE_WATCHING_QUERY: LazyLock<String> = LazyLock::new(|| {
     with_shared_fragments(
@@ -1151,6 +1222,8 @@ mod tests {
             &*ITEMS_BY_ID_QUERY,
             &*RECENTLY_ADDED_QUERY,
             &*SHELF_QUERY,
+            &*HOME_RECENT_QUERY,
+            &*LIBRARY_RECENT_QUERY,
         ] {
             for name in [
                 "ListedItem",

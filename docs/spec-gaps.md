@@ -517,6 +517,25 @@ Where ours differ:
   (`movie.by.actor.or.director`) and `tv.rediscover`. Each picks a genre, a person or a period
   by a rule not measured yet.
 
+### The list behind "recently added"
+
+`GET /hubs/home/recentlyAdded`, which the spec names only in examples, is where a series
+library's "recently added" shelf leads. Measured:
+
+- `type=1` lists films by date added, **ties by arrival** (ascending id, 62 of 62 ties), where
+  the library's own `sort=addedAt:desc` ties by title; `totalSize` counts the libraries' films.
+- `type=2` lists a series library's entries grouped as the shelf groups them, **at most 50**.
+- `sectionID` narrows to one library; without it, or with one that is not a number (`5,7`),
+  every library of the kind, merged by date. A library of the other kind, an unknown one, or a
+  `type` other than 1 and 2 answers an empty container, never an error.
+- Paging as everywhere: `totalSize` and `offset`, and their headers, only when both container
+  parameters are sent.
+
+Ours match on all of it: the same entries in the same order with a window or without, the
+same container and headers on the empty cases. With no window, a film list holds at most 500
+films and then says where its window sits, as `/all` does (*A listing always windows*). Served
+on the official API by the root `recentlyAdded(kind:, library:)`.
+
 ### Transcoding an image
 
 `GET /photo/:/transcode` needs `url`, `width` and `height`; a missing or non-numeric one answers

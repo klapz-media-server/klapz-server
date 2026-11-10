@@ -413,6 +413,8 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `inProgress`, `allEpisodesWatched` on the official API, read for the caller), and the
   library shelves that are listings — recently released, top unwatched, recently watched,
   recently aired, start watching, top rated — each filled from the `key` it publishes;
+- ✅ **`/hubs/home/recentlyAdded`**, the list behind a series library's shelf: films or grouped
+  series entries, one library or all of a kind (`recentlyAdded(kind:)` on the official API);
 - ✅ **watch state**: per viewer and per work (`guid`), so every copy of a film is watched at
   once; positions, viewings and the parents' counts by the rules measured on the reference
   (`core::watch`), on the official API (`Item.watchState`, `stats.watchedEpisodeCount`,

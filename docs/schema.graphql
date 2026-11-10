@@ -1011,7 +1011,11 @@ type Library implements Node {
 		"""
 		Return at most this many entries.
 		"""
-		first: Int
+		first: Int,
+		"""
+		Skip this many entries first. A position, for a client that pages by one; it costs the entries it skips.
+		"""
+		offset: Int
 	): RecentlyAddedConnection!
 	"""
 	What the caller may do in this library.
@@ -2422,6 +2426,35 @@ type Query {
 		"""
 		last: Int
 	): UserConnection!
+	"""
+	What the caller's libraries of one kind added most recently, newest first: the films
+	of every film library by date added, ties in the order they arrived, or every series
+	library's new episodes grouped as `Library.recentlyAdded` groups them, merged by date.
+	
+	Pages forward only, by position.
+	"""
+	recentlyAdded(
+		"""
+		Which libraries: those of this kind.
+		"""
+		kind: LibraryKind!,
+		"""
+		Only this library, as returned in `Library.id`. One of another kind lists nothing.
+		"""
+		library: ID,
+		"""
+		Return entries after this cursor.
+		"""
+		after: String,
+		"""
+		Return at most this many entries.
+		"""
+		first: Int,
+		"""
+		Skip this many entries first. A position, for a client that pages by one; it costs the entries it skips.
+		"""
+		offset: Int
+	): RecentlyAddedConnection!
 	"""
 	Every library the caller can see, ordered by identifier.
 	

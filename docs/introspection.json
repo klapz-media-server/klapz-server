@@ -2953,6 +2953,16 @@
                     "ofType": null
                   },
                   "defaultValue": null
+                },
+                {
+                  "name": "offset",
+                  "description": "Skip this many entries first. A position, for a client that pages by one; it costs the entries it skips.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
                 }
               ],
               "type": {
@@ -7343,6 +7353,77 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "UserConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "recentlyAdded",
+              "description": "What the caller's libraries of one kind added most recently, newest first: the films\nof every film library by date added, ties in the order they arrived, or every series\nlibrary's new episodes grouped as `Library.recentlyAdded` groups them, merged by date.\n\nPages forward only, by position.",
+              "args": [
+                {
+                  "name": "kind",
+                  "description": "Which libraries: those of this kind.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "LibraryKind",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "library",
+                  "description": "Only this library, as returned in `Library.id`. One of another kind lists nothing.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "ID",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "after",
+                  "description": "Return entries after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many entries.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "offset",
+                  "description": "Skip this many entries first. A position, for a client that pages by one; it costs the entries it skips.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "RecentlyAddedConnection",
                   "ofType": null
                 }
               },
