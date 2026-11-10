@@ -241,6 +241,14 @@ fragment RecentItem on Item {
   ... on Episode { ...EpisodeLookup ...References }
 }
 
+fragment ShelfItem on Item {
+  ...Shared
+  ... on Movie { ...MovieListing }
+  ... on Show { ...ShowLookup }
+  ... on Season { ...SeasonFields }
+  ... on Episode { ...EpisodeLookup }
+}
+
 fragment ListedMovieTags on Movie {
   tags {
     genres(first: 2) { edges { node { name } } }
@@ -398,6 +406,60 @@ query PlexRecentlyAdded($id: ID!, $first: Int!) {
 ",
     )
 });
+
+/// One shelf: the head of a library listing, its items in a shelf's form — a lookup's,
+/// without the external references only the recently added shelf carries.
+pub static SHELF_QUERY: LazyLock<String> = LazyLock::new(|| {
+    with_shared_fragments(
+        r"
+query PlexShelf(
+  $id: ID!
+  $first: Int!
+  $filter: ItemFilterInput
+  $orderBy: ItemOrder!
+  $direction: SortDirection!
+  $seed: Int
+) {
+  node(id: $id) {
+    ... on Library {
+      items(
+        first: $first
+        filter: $filter
+        orderBy: $orderBy
+        direction: $direction
+        seed: $seed
+      ) {
+        pageInfo { hasNextPage }
+        edges { node { ...ShelfItem } }
+      }
+    }
+  }
+}
+",
+    )
+});
+
+#[derive(Debug, Deserialize)]
+pub struct ShelfData {
+    pub node: Option<GqlShelfLibrary>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GqlShelfLibrary {
+    pub items: GqlShelfConnection,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlShelfConnection {
+    pub page_info: GqlForwardPageInfo,
+    pub edges: Vec<GqlShelfEdge>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GqlShelfEdge {
+    pub node: GqlItem,
+}
 
 /// Everything Continue Watching needs from the official API.
 pub static CONTINUE_WATCHING_QUERY: LazyLock<String> = LazyLock::new(|| {
@@ -1088,6 +1150,7 @@ mod tests {
             &*SECTION_ITEMS_QUERY,
             &*ITEMS_BY_ID_QUERY,
             &*RECENTLY_ADDED_QUERY,
+            &*SHELF_QUERY,
         ] {
             for name in [
                 "ListedItem",
@@ -1096,6 +1159,7 @@ mod tests {
                 "ShowLookup",
                 "EpisodeLookup",
                 "RecentItem",
+                "ShelfItem",
                 "Shared",
                 "VersionFields",
                 "SeasonFields",

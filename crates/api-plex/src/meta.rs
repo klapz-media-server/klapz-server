@@ -76,6 +76,8 @@ const MOVIE_FILTERS: &[FilterRow] = &[
     ("country", "string", |c| c.country),
     ("studio", "string", |c| c.studio),
     ("resolution", "string", |c| c.resolution),
+    ("unwatched", "boolean", |c| c.unwatched),
+    ("inProgress", "boolean", |c| c.in_progress),
 ];
 
 const SHOW_FILTERS: &[FilterRow] = &[
@@ -88,11 +90,14 @@ const SHOW_FILTERS: &[FilterRow] = &[
     ("actor", "string", |c| c.actor),
     ("writer", "string", |c| c.writer),
     ("producer", "string", |c| c.producer),
+    ("unwatchedLeaves", "boolean", |c| c.unwatched),
 ];
 
 const EPISODE_FILTERS: &[FilterRow] = &[
     ("year", "integer", |c| c.year),
     ("resolution", "string", |c| c.resolution),
+    ("unwatched", "boolean", |c| c.unwatched),
+    ("inProgress", "boolean", |c| c.in_progress),
 ];
 
 /// `(key, defaultDirection, label)`, in the reference's order for each item type. The title

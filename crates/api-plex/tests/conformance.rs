@@ -2299,18 +2299,39 @@ async fn a_film_library_recommends_its_recent_films_under_the_reference_shelves(
         identifiers,
         [
             "movie.inprogress.4",
+            "movie.recentlyreleased.4",
             "movie.recentlyadded.4",
+            "movie.topunwatched.4",
+            "movie.recentlyviewed.4",
             "recent.library.playlists.4"
         ]
     );
-    assert_eq!(container["size"], 3);
+    assert_eq!(container["size"], 6);
 
     // Nothing is in progress: an empty shelf, as the reference shows one, with no hubKey.
     assert_eq!(hubs[0]["size"], 0);
     assert_eq!(hubs[0]["title"], "Continuer à regarder");
     assert!(hubs[0].get("hubKey").is_none(), "{}", hubs[0]);
 
-    let recent = &hubs[1];
+    // A listing shelf links to its list, the `>` encoded so the link can be followed here.
+    let released = &hubs[1];
+    assert_eq!(released["title"], "Films sortis récemment");
+    assert_eq!(
+        released["key"],
+        "/library/sections/4/all?sort=originallyAvailableAt:desc&originallyAvailableAt%3E=-1y"
+    );
+    assert_eq!(released["context"], "hub.movie.recentlyreleased");
+    assert!(released.get("random").is_none());
+    let unwatched = &hubs[3];
+    assert_eq!(unwatched["title"], "Meilleurs films non vus");
+    assert_eq!(unwatched["random"], true);
+    // Nothing was watched: an empty shelf rather than an absent one, as on the reference.
+    let viewed = &hubs[4];
+    assert_eq!(viewed["title"], "Films regardés récemment");
+    assert_eq!(viewed["size"], 0);
+    assert!(viewed.get("hubKey").is_none(), "{viewed}");
+
+    let recent = &hubs[2];
     assert_eq!(recent["title"], "Récemment ajouté dans VF - Films");
     assert_eq!(recent["key"], "/library/sections/4/all?sort=addedAt:desc");
     assert_eq!(recent["size"], 1);
@@ -2334,10 +2355,11 @@ async fn hub_titles_default_to_english() {
     let body = listing("/hubs/sections/4").await;
     let hubs = body["MediaContainer"]["Hub"].as_array().expect("hubs");
     assert_eq!(hubs[0]["title"], "Continue Watching");
-    assert_eq!(hubs[1]["title"], "Recently Added in VF - Films");
-    // Not asked for, so not there.
-    assert_eq!(hubs.len(), 2);
-    assert!(hubs[1]["Metadata"][0].get("summary").is_some());
+    assert_eq!(hubs[1]["title"], "Recently Released Movies");
+    assert_eq!(hubs[2]["title"], "Recently Added in VF - Films");
+    // Playlists were not asked for, so not there.
+    assert_eq!(hubs.len(), 5);
+    assert!(hubs[2]["Metadata"][0].get("summary").is_some());
 }
 
 #[tokio::test]
@@ -2348,10 +2370,24 @@ async fn a_series_library_groups_its_new_episodes_on_the_recently_added_shelf() 
         .iter()
         .map(|hub| hub["hubIdentifier"].as_str().expect("an identifier"))
         .collect();
-    assert_eq!(identifiers, ["tv.inprogress.5", "tv.recentlyadded.5"]);
+    assert_eq!(
+        identifiers,
+        [
+            "tv.inprogress.5",
+            "tv.recentlyaired.5",
+            "tv.recentlyadded.5",
+            "tv.startwatching.5",
+            "tv.toprated.5",
+            "tv.recentlyviewed.5"
+        ]
+    );
     assert_eq!(hubs[0]["type"], "episode");
+    assert_eq!(hubs[1]["type"], "episode");
+    assert_eq!(hubs[3]["type"], "show");
+    // Nothing was begun, so the series is there to start.
+    assert_eq!(hubs[3]["Metadata"][0]["type"], "show");
 
-    let recent = &hubs[1];
+    let recent = &hubs[2];
     assert_eq!(recent["type"], "mixed");
     assert_eq!(recent["context"], "hub.tv.recentlyadded");
     assert_eq!(recent["key"], "/hubs/home/recentlyAdded?type=2&sectionID=5");

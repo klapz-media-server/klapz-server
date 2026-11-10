@@ -209,6 +209,40 @@ impl InMemoryMetadata {
             })
             .filter(|item| filter.excluded != Some(item.id))
             .filter(|item| {
+                filter.released_from.as_ref().is_none_or(|from| {
+                    item.released_on
+                        .as_ref()
+                        .is_some_and(|released| released >= from)
+                })
+            })
+            .filter(|item| {
+                filter
+                    .audience_rating_from
+                    .is_none_or(|from| item.audience_rating.is_some_and(|rating| rating >= from))
+            })
+            // This fake holds no watch state, so it answers as storage does a caller with
+            // none: nothing watched, nothing in progress, no episode begun.
+            .filter(|_| {
+                filter.watched != Some(true)
+                    && filter.in_progress != Some(true)
+                    && filter.episodes_started != Some(true)
+            })
+            .filter(|item| {
+                // Every item with an episode below it has one unwatched.
+                filter.episodes_watched.is_none_or(|watched| {
+                    let has_episode = self.items.iter().any(|episode| {
+                        episode.kind == ItemKind::Episode
+                            && (episode.parent_id == Some(item.id)
+                                || episode.parent_id.is_some_and(|parent| {
+                                    self.items.iter().any(|season| {
+                                        season.id == parent && season.parent_id == Some(item.id)
+                                    })
+                                }))
+                    });
+                    watched != has_episode
+                })
+            })
+            .filter(|item| {
                 filter.frame.is_none_or(|range| {
                     self.versions.iter().any(|version| {
                         version.item_id == item.id && range.contains(version.width, version.height)

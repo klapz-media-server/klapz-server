@@ -478,13 +478,44 @@ lookup's form (tags with ids, `Guid`, `Rating`), films in the listing's — meas
 An episode with no content rating of its own carries its series': 14 of 15 such episodes on
 the reference, the fifteenth a rating edited after the snapshot.
 
-We serve continue watching (empty), recently added, and recent playlists (empty). Against the
-reference on section 4: the same twelve films in the same order, every shelf attribute
-identical, no field differing. On sections 5, 7, 19 and 20: the same 48 entries in the same
-order; the field differences left are titles and credits edited on the live server since the
-snapshot. Every other shelf is absent rather than approximated. The orders they rest on — release date,
-rating, last viewed — are honored by a listing now (*Ordering a listing*); the shelves are not
-built yet.
+Recently added, against the reference on section 4: the same twelve films in the same order,
+every shelf attribute identical, no field differing. On sections 5, 7, 19 and 20: the same 48
+entries in the same order; the field differences left are titles and credits edited on the
+live server since the snapshot.
+
+The other shelves are a library listing each, and say which: their `key` is the listing,
+`/library/sections/4/all?unwatched=1&audienceRating>=7.0&sort=audienceRating:desc` for top
+unwatched films. Captured, with each list's head as the shelf unless it is `random`:
+
+| Shelf | Library | List behind it | `random` |
+| --- | --- | --- | --- |
+| `recentlyreleased` | films | `sort=originallyAvailableAt:desc&originallyAvailableAt>=-1y` | |
+| `topunwatched` | films | `unwatched=1&audienceRating>=7.0&sort=audienceRating:desc` | yes |
+| `recentlyviewed` | films | `sort=lastViewedAt:desc&unwatched=0&viewOffset=0` | |
+| `recentlyaired` | series | `type=4&sort=originallyAvailableAt:desc` | |
+| `startwatching` | series | `type=2&viewedOrInProgressLeafCount=0` | yes |
+| `toprated` | series | `type=2&unwatchedLeaves=1&audienceRating>=7.0&sort=audienceRating:desc` | yes |
+| `recentlyviewed` | series | `sort=lastViewedAt:desc&unwatched=0&viewOffset=0&type=4` | |
+
+A `random` shelf is a sample of its list, not its head: the six top unwatched films are none
+of the list's first sixty. It holds still across requests. Its items are in a lookup's form
+without `Guid` or `Rating`, which only recently added carries.
+
+We serve these seven, filling each from its own `key` through the listing's parser, so a
+shelf cannot show what its list does not hold. Against the reference: recently released films
+identical in items and order; recently aired episodes the same six, two of them swapped within
+a date (*Ordering a listing*, the ties); every shelf attribute identical in value and order.
+
+Where ours differ:
+
+- **A `random` shelf is our shuffle of its list**, the one a random listing keeps for ten
+  minutes, salted per shelf so two shelves over overlapping lists do not sample alike. The
+  reference's sample and how long it keeps it are not known.
+- **The `key` carries `%3E` for `>`**: a raw `>` is refused by this server's HTTP layer before
+  any handler runs (*Range filter operators*), and a client follows the key as given.
+- **Not served**: a genre's top films (`movie.genre`, `tv.moreingenre`), a person's
+  (`movie.by.actor.or.director`) and `tv.rediscover`. Each picks a genre, a person or a period
+  by a rule not measured yet.
 
 ### Transcoding an image
 
@@ -780,6 +811,32 @@ and the advanced filters' `Field` and `FieldType`.
 
 A filter's `key` (`/library/sections/4/genre`) is the list of its values, and those routes do not
 exist yet: they answer `404`.
+
+### Filtering on what was watched
+
+The reference's filters on watch state, measured on its test libraries with four films
+(untouched, watched, in progress, watched then restarted) and a series through six states:
+
+- **`unwatched=1`** keeps what was never watched to the end: a film in progress is unwatched,
+  a restarted one is not. **Any other value**, `0`, `true` and the empty string included,
+  keeps the watched ones; `unwatched!=1` too.
+- **`inProgress=1`** keeps what has a position, rewatches included; any other value, what has
+  none.
+- **A series counts its own viewings**: one whose only watched episode was unmarked since
+  stays watched (`viewCount` 1, `viewedLeafCount` 0), so `unwatched=1` leaves it out. A series
+  is never `inProgress`.
+- **`unwatchedLeaves=1`** keeps the series with an episode not watched to the end; any other
+  value, those with every episode watched.
+- Two of them combine with `AND`; the same one twice, `unwatched=1&unwatched=0`, is empty.
+
+Ours match on every case above, against our own library with the same files and states, and
+each reads the caller's own state. A caller with no watch state has watched nothing. The same
+flag twice answers `501`, which one flag cannot express.
+
+The shelves also filter on fields the reference does not advertise, which we honor for the
+values they use and refuse otherwise: `audienceRating>=`, `originallyAvailableAt>=` (a date,
+or one counted back from today: `-1y`, `-6w`, `-30d`), `viewOffset=0` and
+`viewedOrInProgressLeafCount=0`.
 
 ### Ordering a listing
 

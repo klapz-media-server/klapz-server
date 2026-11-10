@@ -1,18 +1,23 @@
 //! `GET /hubs/sections/{id}`: the shelves of a library's "Recommended" tab.
 //!
-//! The reference builds up to eight shelves for a film library. Most are not built yet:
-//! recently watched, top unwatched, recently released, top rated. A shelf is served when it can
-//! be answered truthfully, and absent otherwise — an invented shelf would show wrong films
-//! under a title that promises something.
+//! The reference builds seven shelves for a film library and eight for a series library. A
+//! shelf is served when it can be answered truthfully, and absent otherwise — an invented
+//! shelf would show wrong films under a title that promises something.
 //!
 //! Served, in the reference's order:
 //!
 //! - **Continue watching**: the library's films in progress, or its series' next episodes,
 //!   by the rules `core::watch` measured.
+//! - **Recently released**, films out within a year or episodes by air date.
 //! - **Recently added**: a film library's films by date added; a series library's new
 //!   episodes grouped into their season or series, by the rule `core::recent` measured.
+//! - **Start watching**, the series not begun; **top unwatched** films and **top rated**
+//!   series, rated 7 or more by their audience; **recently watched** films or episodes.
 //! - **Recent playlists**, empty, when the client asks for library playlists: there are
 //!   none.
+//!
+//! Left out: the shelves of one genre, one person, and "rediscover", which pick their genre,
+//! person or period in a way not measured yet.
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};
@@ -28,12 +33,13 @@ use crate::client::ClientIdentity;
 use crate::error::ApiError;
 use crate::gql;
 use crate::gql_items::{
-    ContinueWatchingData, GqlContinueEdge, GqlRecentlyAdded, RecentlyAddedData,
-    CONTINUE_WATCHING_QUERY, RECENTLY_ADDED_QUERY,
+    ContinueWatchingData, GqlContinueEdge, GqlRecentlyAdded, RecentlyAddedData, ShelfData,
+    CONTINUE_WATCHING_QUERY, RECENTLY_ADDED_QUERY, SHELF_QUERY,
 };
 use crate::items::{MetadataEntry, LIBRARY_IDENTIFIER};
 use crate::language::Language;
 use crate::response::{PlexResponse, ResponseFormat};
+use crate::translations::Catalog;
 use crate::PlexState;
 
 pub fn router() -> Router<PlexState> {
@@ -86,6 +92,9 @@ pub struct Hub {
     pub size: u32,
     /// Whether the list behind the shelf holds more than the shelf shows.
     pub more: bool,
+    /// Set on a shelf that samples its list rather than showing its head.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub random: Option<bool>,
     pub style: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub promoted: Option<bool>,
@@ -178,7 +187,19 @@ async fn section_hubs(
         language,
         &started,
     )];
+    let (before, after) = if is_film_library {
+        (FILM_SHELVES_BEFORE, FILM_SHELVES_AFTER)
+    } else {
+        (SERIES_SHELVES_BEFORE, SERIES_SHELVES_AFTER)
+    };
+    let prefix = if is_film_library { "movie" } else { "tv" };
+    for listing in before {
+        hubs.push(listing_shelf(&state, section, prefix, listing, &params, language).await?);
+    }
     hubs.push(shelf.hub(items, language));
+    for listing in after {
+        hubs.push(listing_shelf(&state, section, prefix, listing, &params, language).await?);
+    }
     if params.includes_playlists() {
         hubs.push(recent_playlists(section, language));
     }
@@ -195,6 +216,167 @@ async fn section_hubs(
         },
         format,
     ))
+}
+
+/// A shelf showing a library listing: the head of the list its `key` opens, or a sample of
+/// it for a `random` shelf.
+#[derive(Debug)]
+struct ListingShelf {
+    /// The middle of `hubIdentifier`: `recentlyreleased`.
+    name: &'static str,
+    context: &'static str,
+    kind: &'static str,
+    title: fn(&'static Catalog) -> &'static str,
+    /// The listing's query, worded as the reference words it. It is also what fills the
+    /// shelf, read by the same parser as `/all`, so the shelf cannot show what its list
+    /// does not hold.
+    query: &'static str,
+    random: bool,
+}
+
+const FILM_SHELVES_BEFORE: &[ListingShelf] = &[ListingShelf {
+    name: "recentlyreleased",
+    context: "hub.movie.recentlyreleased",
+    kind: "movie",
+    title: |c| c.recently_released_movies,
+    query: "sort=originallyAvailableAt:desc&originallyAvailableAt>=-1y",
+    random: false,
+}];
+
+const FILM_SHELVES_AFTER: &[ListingShelf] = &[
+    ListingShelf {
+        name: "topunwatched",
+        context: "hub.movie.topunwatched",
+        kind: "movie",
+        title: |c| c.top_unwatched_movies,
+        query: "unwatched=1&audienceRating>=7.0&sort=audienceRating:desc",
+        random: true,
+    },
+    ListingShelf {
+        name: "recentlyviewed",
+        context: "hub.movie.recentlyviewed",
+        kind: "movie",
+        title: |c| c.recently_watched_movies,
+        query: "sort=lastViewedAt:desc&unwatched=0&viewOffset=0",
+        random: false,
+    },
+];
+
+const SERIES_SHELVES_BEFORE: &[ListingShelf] = &[ListingShelf {
+    name: "recentlyaired",
+    context: "hub.tv.recentlyaired",
+    kind: "episode",
+    title: |c| c.recently_released_episodes,
+    query: "type=4&sort=originallyAvailableAt:desc",
+    random: false,
+}];
+
+const SERIES_SHELVES_AFTER: &[ListingShelf] = &[
+    ListingShelf {
+        name: "startwatching",
+        context: "hub.tv.startwatching",
+        kind: "show",
+        title: |c| c.start_watching,
+        query: "type=2&viewedOrInProgressLeafCount=0",
+        random: true,
+    },
+    ListingShelf {
+        name: "toprated",
+        context: "hub.tv.toprated",
+        kind: "show",
+        title: |c| c.top_rated_tv,
+        query: "type=2&unwatchedLeaves=1&audienceRating>=7.0&sort=audienceRating:desc",
+        random: true,
+    },
+    ListingShelf {
+        name: "recentlyviewed",
+        context: "hub.tv.recentlyviewed",
+        kind: "episode",
+        title: |c| c.recently_watched_episodes,
+        query: "sort=lastViewedAt:desc&unwatched=0&viewOffset=0&type=4",
+        random: false,
+    },
+];
+
+/// Fills one listing shelf.
+///
+/// A `random` shelf is the listing shuffled, in the shuffle a random listing keeps for its
+/// period: the reference samples one and keeps it for a while too, so a shelf that changes
+/// on every visit would be the deviation.
+async fn listing_shelf(
+    state: &PlexState,
+    section: i64,
+    prefix: &str,
+    shelf: &ListingShelf,
+    params: &HubParams,
+    language: Language,
+) -> Result<Hub, ApiError> {
+    let pairs: Vec<(String, String)> = form_urlencoded::parse(shelf.query.as_bytes())
+        .into_owned()
+        .collect();
+    let request = crate::listing::parse(&pairs)?;
+    let (order_by, direction) = if shelf.random {
+        ("RANDOM", "ASCENDING")
+    } else {
+        request.ordering()
+    };
+    let count = params.count();
+
+    let mut variables = Variables::default();
+    variables.insert(
+        Name::new("id"),
+        Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
+    );
+    variables.insert(Name::new("first"), Value::Number(count.into()));
+    variables.insert(Name::new("orderBy"), Value::Enum(Name::new(order_by)));
+    variables.insert(Name::new("direction"), Value::Enum(Name::new(direction)));
+    // Each shelf its own shuffle: one seed would sample the same series for two shelves
+    // whose lists overlap.
+    let salt = shelf.name.bytes().fold(0_u32, |hash, byte| {
+        hash.wrapping_mul(31).wrapping_add(u32::from(byte))
+    });
+    variables.insert(
+        Name::new("seed"),
+        Value::Number((crate::library::shuffle_seed() ^ salt).into()),
+    );
+    variables.insert(
+        Name::new("filter"),
+        request
+            .filters
+            .to_graphql(crate::library::item_type(request.kind)),
+    );
+    let data: ShelfData = gql::execute(&state.schema, &SHELF_QUERY, variables).await?;
+    let connection = data.node.ok_or(ApiError::NotFound)?.items;
+
+    let mut items: Vec<MetadataEntry> = connection
+        .edges
+        .iter()
+        .filter_map(|edge| MetadataEntry::from_graphql(&edge.node, true, language))
+        .collect();
+    if params.excludes_summary() {
+        for item in &mut items {
+            item.summary = None;
+        }
+    }
+    Ok(Hub {
+        hub_key: lookup_key(&items),
+        // A raw `>` is not a legal URI character, and this server's HTTP layer refuses a
+        // request line holding one, so the key a client follows carries it encoded.
+        key: format!(
+            "/library/sections/{section}/all?{}",
+            shelf.query.replace('>', "%3E")
+        ),
+        title: (shelf.title)(language.catalog()).to_owned(),
+        kind: shelf.kind,
+        hub_identifier: format!("{prefix}.{}.{section}", shelf.name),
+        context: shelf.context,
+        size: u32::try_from(items.len()).unwrap_or(u32::MAX),
+        more: connection.page_info.has_next_page,
+        random: shelf.random.then_some(true),
+        style: "shelf",
+        promoted: None,
+        metadata: items,
+    })
 }
 
 /// The library and its `count` most recently added items, as the official API groups them.
@@ -240,6 +422,7 @@ fn continue_watching_shelf(
         },
         size: u32::try_from(items.len()).unwrap_or(u32::MAX),
         more: started.more,
+        random: None,
         style: "shelf",
         promoted: None,
         metadata: items,
@@ -329,6 +512,7 @@ async fn continue_watching_hub(
         context: "hub.continueWatching",
         size: u32::try_from(items.len()).unwrap_or(u32::MAX),
         more: started.more,
+        random: None,
         style: "hero",
         promoted: None,
         metadata: items,
@@ -477,6 +661,7 @@ impl RecentShelf<'_> {
             },
             size,
             more: self.more,
+            random: None,
             style: "shelf",
             promoted: Some(true),
             metadata: items,
@@ -496,6 +681,7 @@ fn recent_playlists(section: i64, language: Language) -> Hub {
         context: "hub.recent.library.playlists",
         size: 0,
         more: false,
+        random: None,
         style: "shelf",
         promoted: None,
         metadata: Vec::new(),

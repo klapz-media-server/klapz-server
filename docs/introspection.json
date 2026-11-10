@@ -2156,6 +2156,26 @@
               "defaultValue": null
             },
             {
+              "name": "releasedFrom",
+              "description": "Keep only items released on or after this date, written `2025-11-10`.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "audienceRatingFrom",
+              "description": "Keep only items whose audience rating, on its ten-point scale, is at least this.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
               "name": "yearTo",
               "description": "Keep only items released in or before this year.",
               "type": {
@@ -2229,6 +2249,46 @@
               "type": {
                 "kind": "SCALAR",
                 "name": "ID",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "watched",
+              "description": "Keep only items the caller watched to the end at least once, or never. A series counts\nits own viewings, not its episodes': one whose watched episode was unmarked since\nstays watched. A caller without watch state has watched nothing.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "inProgress",
+              "description": "Keep only items the caller has a position in, or has none in.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "allEpisodesWatched",
+              "description": "Keep only items every episode of which the caller watched, or not. An item without\nepisodes has none unwatched.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "anyEpisodeStarted",
+              "description": "Keep only items with an episode the caller watched or started, or with none: the\nseries not yet begun.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean",
                 "ofType": null
               },
               "defaultValue": null

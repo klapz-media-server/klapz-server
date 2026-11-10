@@ -191,10 +191,11 @@ Places where we knowingly answer differently, each decided rather than overlooke
   calls, answers films, series and episodes; the people and collections the reference mixes in
   are absent, and `searchTypes=people` is tolerated rather than refused, since Plex Web sends it
   with every search.
-- **Range filter operators are unreachable.** `year>=2020` travels with a raw `>`, which is not
-  a legal URI character: `hyper` rejects the request line with `400` before any handler runs,
-  and the reference rejects the percent-encoded form in turn. The equality filters work; the
-  parser handles the operators and is tested, for whenever something can deliver them.
+- **Range filter operators need their `>` encoded.** `year>=2020` travels with a raw `>`, which
+  is not a legal URI character: `hyper` rejects the request line with `400` before any handler
+  runs. `year%3E=2020`, the `>` alone encoded, reaches the parser and works; the reference
+  rejects the fully encoded `year%3E%3D2020`, and so do we. The shelves we publish link to
+  their lists in that form.
 - **Listing order need not be byte-identical.** Plex collates titles in Unicode — numeric
   (`6 Days` < `007 Spectre` < `10 000`) and UCA punctuation order (`[` before `#`). We compare
   the folded `sort_key` column byte-wise. Same items, alphabetical and stable, different
@@ -407,7 +408,11 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   by direction, all measured on whole libraries (`docs/spec-gaps.md`). Cursors carry several
   keys, one of which may be absent (`item_order`); a sort we cannot honor answers `501`, like
   a filter;
-- ⬜ **recently released**, now that a listing orders by release date;
+- ✅ **filters and shelves on watch state**: `unwatched`, `inProgress`, `unwatchedLeaves` on
+  `/all` by the rules measured on the reference's test libraries (`ItemFilter.watched`,
+  `inProgress`, `allEpisodesWatched` on the official API, read for the caller), and the
+  library shelves that are listings — recently released, top unwatched, recently watched,
+  recently aired, start watching, top rated — each filled from the `key` it publishes;
 - ✅ **watch state**: per viewer and per work (`guid`), so every copy of a film is watched at
   once; positions, viewings and the parents' counts by the rules measured on the reference
   (`core::watch`), on the official API (`Item.watchState`, `stats.watchedEpisodeCount`,
@@ -419,8 +424,8 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   (`continueWatching`, each entry with its reason) and on the Plex surface
   (`/hubs/continueWatching`, `/hubs/home/continueWatching`, `/hubs/home/onDeck`, and every
   library's shelf);
-- ⬜ the other shelves that need watch state — recently watched, top unwatched, top of a genre
-  or of a person — and the `unwatched` and `inProgress` filters.
+- ⬜ the shelves that pick a genre, a person or a period — top of a genre, of a person,
+  rediscover — whose choice is not measured yet.
 
 ## Reference server
 

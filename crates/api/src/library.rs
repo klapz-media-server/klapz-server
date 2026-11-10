@@ -7,7 +7,8 @@ use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, Object, OutputType, Result, SimpleObject, ID};
 use open_plex_core::library::{LibrarySection, SectionKind, SectionRoot};
 use open_plex_core::metadata::{
-    FieldValue, FirstCharacter as DomainFirstCharacter, ItemQuery, ItemSort, TagScope, ValueField,
+    FieldValue, FirstCharacter as DomainFirstCharacter, ItemFilter, ItemQuery, ItemSort, TagScope,
+    ValueField,
 };
 use open_plex_core::page::{Cursor, Direction, Window, MAX_ITEMS};
 use open_plex_core::recent::recently_added_episodes;
@@ -382,7 +383,7 @@ impl Library {
     ) -> Result<ItemConnection> {
         let viewer = crate::access::caller(context).and_then(Viewer::of);
         let sort = order_by.unwrap_or_default().sort(viewer, seed.unwrap_or(0));
-        let item_query = self.item_query(filter, sort, direction)?;
+        let item_query = self.item_query(context, filter, sort, direction)?;
         let skip = u64::from(offset.unwrap_or(0));
 
         query(
@@ -434,7 +435,7 @@ impl Library {
         >,
         #[graphql(desc = "Discard this many tags before the page begins.")] offset: Option<u32>,
     ) -> Result<LibraryTags> {
-        let item_query = self.item_query(filter, ItemSort::Title, None)?;
+        let item_query = self.item_query(context, filter, ItemSort::Title, None)?;
         let scope = TagScope {
             kind: kind.into(),
             billed_within,
@@ -480,7 +481,7 @@ impl Library {
         >,
         #[graphql(desc = "Discard this many years before the page begins.")] offset: Option<u32>,
     ) -> Result<Years> {
-        let item_query = self.item_query(filter, ItemSort::Title, None)?;
+        let item_query = self.item_query(context, filter, ItemSort::Title, None)?;
         let skip = u64::from(offset.unwrap_or(0));
         query(
             after,
@@ -527,7 +528,7 @@ impl Library {
         last: Option<i32>,
         #[graphql(desc = "Discard this many values before the page begins.")] offset: Option<u32>,
     ) -> Result<FieldValues> {
-        let item_query = self.item_query(filter, ItemSort::Title, None)?;
+        let item_query = self.item_query(context, filter, ItemSort::Title, None)?;
         let skip = u64::from(offset.unwrap_or(0));
         query(
             after,
@@ -561,12 +562,13 @@ impl Library {
     #[allow(clippy::unused_async)]
     async fn stats(
         &self,
+        context: &Context<'_>,
         #[graphql(desc = "Count only the items this filter keeps.")] filter: Option<
             ItemFilterInput,
         >,
     ) -> Result<LibraryStats> {
         Ok(LibraryStats {
-            query: self.item_query(filter, ItemSort::Title, None)?,
+            query: self.item_query(context, filter, ItemSort::Title, None)?,
         })
     }
 }
@@ -630,12 +632,16 @@ impl Library {
     /// naming nothing — rather than dropping it and answering with more than was asked.
     fn item_query(
         &self,
+        context: &Context<'_>,
         filter: Option<ItemFilterInput>,
         sort: ItemSort,
         direction: Option<SortDirection>,
     ) -> Result<ItemQuery> {
+        let mut filter: ItemFilter = filter.unwrap_or_default().try_into()?;
+        // Watch filters read the caller's own state.
+        filter.viewer = crate::access::caller(context).and_then(Viewer::of);
         Ok(ItemQuery::new(self.section.id)
-            .filtered(filter.unwrap_or_default().try_into()?)
+            .filtered(filter)
             .sorted_by(sort, direction.unwrap_or_default().into()))
     }
 }

@@ -20,8 +20,9 @@ use open_plex_api::tag::TAG_TYPE;
 use open_plex_api::GlobalId;
 use open_plex_core::metadata::TagCondition;
 
-/// Filters a film library advertises, captured from the reference server's own
-/// `Meta/Type/Filter` declaration.
+/// Filters the reference advertises, captured from its `Meta/Type/Filter` declarations for
+/// films, series and episodes, and the fields its shelves filter on without advertising them
+/// (`audienceRating`, `originallyAvailableAt`, `viewOffset`, `viewedOrInProgressLeafCount`).
 ///
 /// Membership in this list is what separates "a filter we have not implemented" from "a
 /// parameter that is none of our business". Every entry we cannot translate is refused.
@@ -31,6 +32,7 @@ const KNOWN_FILTERS: &[&str] = &[
     "audioCodec",
     "audioLanguage",
     "audioLayout",
+    "audienceRating",
     "collection",
     "contentRating",
     "country",
@@ -44,6 +46,8 @@ const KNOWN_FILTERS: &[&str] = &[
     "inProgress",
     "label",
     "location",
+    "network",
+    "originallyAvailableAt",
     "producer",
     "resolution",
     "studio",
@@ -52,7 +56,10 @@ const KNOWN_FILTERS: &[&str] = &[
     "title",
     "unmatched",
     "unwatched",
+    "unwatchedLeaves",
     "videoCodec",
+    "viewOffset",
+    "viewedOrInProgressLeafCount",
     "writer",
     "year",
 ];
@@ -160,6 +167,8 @@ const fn tag_type(field: &str) -> Option<&'static str> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Operator {
     Equals,
+    /// `!=`, which splits at its `=` and leaves the `!` on the name.
+    Differs,
     AtLeast,
     AtMost,
 }
@@ -175,6 +184,7 @@ fn split_operator(key: &str) -> (&str, Option<Operator>) {
         ("<=", Operator::AtMost),
         (">", Operator::AtLeast),
         ("<", Operator::AtMost),
+        ("!", Operator::Differs),
     ] {
         if let Some(field) = key.strip_suffix(suffix) {
             return (field, Some(operator));
@@ -224,7 +234,7 @@ impl ListingRequest {
 }
 
 /// The subset of Plex's filters that maps onto `ItemFilterInput`.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Filters {
     pub title_word_prefix: Option<String>,
     pub year_from: Option<i32>,
@@ -237,6 +247,13 @@ pub struct Filters {
     pub tags: Vec<TagFilter>,
     /// `id!=` — the shelf "more by this director", without the film it was opened from.
     pub excluded_id: Option<i64>,
+    pub watched: Option<bool>,
+    pub in_progress: Option<bool>,
+    pub all_episodes_watched: Option<bool>,
+    pub any_episode_started: Option<bool>,
+    /// A calendar date, `2025-11-10`.
+    pub released_from: Option<String>,
+    pub audience_rating_from: Option<f64>,
 }
 
 /// One tag parameter: `genre=38,Crime` is one filter with an id and a name.
@@ -332,6 +349,25 @@ impl Filters {
         }
         if let Some(id) = self.excluded_id {
             set("excludedId", Value::String(GlobalId::encode(ITEM_TYPE, id)));
+        }
+        if let Some(date) = &self.released_from {
+            set("releasedFrom", Value::String(date.clone()));
+        }
+        if let Some(rating) = self
+            .audience_rating_from
+            .and_then(async_graphql::Number::from_f64)
+        {
+            set("audienceRatingFrom", Value::Number(rating));
+        }
+        for (name, value) in [
+            ("watched", self.watched),
+            ("inProgress", self.in_progress),
+            ("allEpisodesWatched", self.all_episodes_watched),
+            ("anyEpisodeStarted", self.any_episode_started),
+        ] {
+            if let Some(value) = value {
+                set(name, Value::Boolean(value));
+            }
         }
 
         if fields.is_empty() {
@@ -466,9 +502,126 @@ fn apply(
         ("resolution", Operator::Equals) => {
             filters.resolution = Some(crate::resolution::known(value).ok_or_else(unsupported)?);
         }
+        // `1` asks for the flag and anything else, `true` and the empty string included, for
+        // its opposite: measured on the reference, `unwatched=true` lists the watched films.
+        // `!=` turns it over, which a flag can express where a year cannot.
+        ("unwatched", operator @ (Operator::Equals | Operator::Differs)) => {
+            filters.watched = Some(!flag(value, operator));
+        }
+        ("inProgress", operator @ (Operator::Equals | Operator::Differs)) => {
+            filters.in_progress = Some(flag(value, operator));
+        }
+        ("unwatchedLeaves", operator @ (Operator::Equals | Operator::Differs)) => {
+            filters.all_episodes_watched = Some(!flag(value, operator));
+        }
+        // What the shelves link to: out within a year, rated 7 or more, watched and not being
+        // rewatched, not begun. Other values of these answer `501`.
+        ("originallyAvailableAt", Operator::AtLeast) => {
+            let today = open_plex_core::now_epoch().div_euclid(SECONDS_PER_DAY);
+            filters.released_from = Some(calendar_date(value, today).ok_or_else(unsupported)?);
+        }
+        ("audienceRating", Operator::AtLeast) => {
+            let rating: f64 = value.parse().map_err(|_| unsupported())?;
+            if !rating.is_finite() {
+                return Err(unsupported());
+            }
+            filters.audience_rating_from = Some(rating);
+        }
+        ("viewOffset", Operator::Equals) if value == "0" => filters.in_progress = Some(false),
+        ("viewedOrInProgressLeafCount", Operator::Equals) if value == "0" => {
+            filters.any_episode_started = Some(false);
+        }
+        (_, Operator::Differs) => {
+            return Err(ListingError::UnsupportedOperator {
+                field: field.to_owned(),
+                operator: "!=".to_owned(),
+            });
+        }
         _ => return Err(unsupported()),
     }
     Ok(())
+}
+
+const SECONDS_PER_DAY: i64 = 86_400;
+
+/// The date a filter value names: a calendar date as given, or one counted back from
+/// `today`, in days since the Unix epoch — `-1y`, `-2m`, `-6w`, `-30d`.
+///
+/// Months and years move the calendar and clamp to the month's last day: a year before
+/// 29 February is 28 February.
+fn calendar_date(value: &str, today: i64) -> Option<String> {
+    let (year, month, day) = if let Some(relative) = value.strip_prefix('-') {
+        counted_back(relative, today)?
+    } else {
+        written(value)?
+    };
+    Some(format!("{year:04}-{month:02}-{day:02}"))
+}
+
+/// `1y`, `2m`, `6w` or `30d` before `today`.
+fn counted_back(relative: &str, today: i64) -> Option<(i64, i64, i64)> {
+    let split = relative.len().checked_sub(1)?;
+    let (count, unit) = (relative.get(..split)?, relative.get(split..)?);
+    let count: i64 = count.parse().ok()?;
+    let months = match unit {
+        "d" => return Some(civil_from_days(today.checked_sub(count)?)),
+        "w" => return Some(civil_from_days(today.checked_sub(count.checked_mul(7)?)?)),
+        "m" => count,
+        "y" => count.checked_mul(12)?,
+        _ => return None,
+    };
+    let (year, month, day) = civil_from_days(today);
+    let total = (year * 12 + month - 1).checked_sub(months)?;
+    let (year, month) = (total.div_euclid(12), total.rem_euclid(12) + 1);
+    Some((year, month, day.min(days_in_month(year, month))))
+}
+
+/// `2024-02-29`, when it is a date the calendar has.
+fn written(value: &str) -> Option<(i64, i64, i64)> {
+    let mut parts = value.split('-');
+    let (Some(year), Some(month), Some(day), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return None;
+    };
+    let (year, month, day): (i64, i64, i64) =
+        (year.parse().ok()?, month.parse().ok()?, day.parse().ok()?);
+    ((1..=12).contains(&month) && (1..=days_in_month(year, month)).contains(&day))
+        .then_some((year, month, day))
+}
+
+const fn days_in_month(year: i64, month: i64) -> i64 {
+    match month {
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    }
+}
+
+/// The proleptic Gregorian date of a day count, by Howard Hinnant's `civil_from_days`.
+const fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let shifted = days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let march_month = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * march_month + 2) / 5 + 1;
+    let month = if march_month < 10 {
+        march_month + 3
+    } else {
+        march_month - 9
+    };
+    let year = year_of_era + era * 400 + if month <= 2 { 1 } else { 0 };
+    (year, month, day)
+}
+
+/// Whether a flag filter asks for the flag: `1` does, anything else asks for its opposite, and
+/// `!=` turns the answer over.
+fn flag(value: &str, operator: Operator) -> bool {
+    (value == "1") != matches!(operator, Operator::Differs)
 }
 
 /// Lists the filters this server can honor, for an operator reading a refusal in the log.
@@ -487,6 +640,9 @@ pub fn supported_filters() -> String {
         "writer",
         "actor",
         "producer",
+        "unwatched",
+        "inProgress",
+        "unwatchedLeaves",
     ] {
         if !out.is_empty() {
             out.push_str(", ");
@@ -508,6 +664,101 @@ mod tests {
             .iter()
             .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
             .collect()
+    }
+
+    #[test]
+    fn reads_the_watch_flags_as_the_reference_does() {
+        let filters = |key: &str, value: &str| parse(&pairs(&[(key, value)])).unwrap().filters;
+        assert_eq!(filters("unwatched", "1").watched, Some(false));
+        // Anything but `1` is the opposite flag.
+        for value in ["0", "true", "2", ""] {
+            assert_eq!(filters("unwatched", value).watched, Some(true), "{value}");
+            assert_eq!(
+                filters("inProgress", value).in_progress,
+                Some(false),
+                "{value}"
+            );
+        }
+        assert_eq!(filters("inProgress", "1").in_progress, Some(true));
+        assert_eq!(
+            filters("unwatchedLeaves", "1").all_episodes_watched,
+            Some(false)
+        );
+        assert_eq!(
+            filters("unwatchedLeaves", "0").all_episodes_watched,
+            Some(true)
+        );
+        // `!=` turns a flag over: `unwatched!=1` lists the watched ones.
+        assert_eq!(filters("unwatched!", "1").watched, Some(true));
+        assert_eq!(filters("inProgress!", "1").in_progress, Some(false));
+        // A repeated flag stays refused: `unwatched=1&unwatched=0` is empty on the reference,
+        // which one flag cannot express.
+        assert!(parse(&pairs(&[("unwatched", "1"), ("unwatched", "0")])).is_err());
+        // And negation stays refused where it is not a flag.
+        assert!(matches!(
+            parse(&pairs(&[("year!", "2022")])),
+            Err(ListingError::UnsupportedOperator { .. })
+        ));
+    }
+
+    #[test]
+    fn a_release_date_is_absolute_or_counted_back_from_today() {
+        // 2026-11-10 is day 20,767 of the epoch.
+        let today = 20_767;
+        assert_eq!(civil_from_days(today), (2026, 11, 10));
+        assert_eq!(civil_from_days(0), (1970, 1, 1));
+        assert_eq!(calendar_date("-1y", today).as_deref(), Some("2025-11-10"));
+        assert_eq!(calendar_date("-6w", today).as_deref(), Some("2026-09-29"));
+        assert_eq!(calendar_date("-30d", today).as_deref(), Some("2026-10-11"));
+        assert_eq!(calendar_date("-11m", today).as_deref(), Some("2025-12-10"));
+        assert_eq!(
+            calendar_date("2024-02-29", today).as_deref(),
+            Some("2024-02-29")
+        );
+        // A year before a 29 February is the 28th.
+        let leap_day = 19_782;
+        assert_eq!(civil_from_days(leap_day), (2024, 2, 29));
+        assert_eq!(
+            calendar_date("-1y", leap_day).as_deref(),
+            Some("2023-02-28")
+        );
+        for value in [
+            "-1x",
+            "-y",
+            "-",
+            "yesterday",
+            "2023-02-29",
+            "2024-13-01",
+            "1700000000",
+        ] {
+            assert_eq!(calendar_date(value, today), None, "{value}");
+        }
+    }
+
+    #[test]
+    fn reads_what_the_shelves_link_to() {
+        let request = parse(&pairs(&[
+            ("unwatched", "0"),
+            ("viewOffset", "0"),
+            ("audienceRating>", "7.0"),
+            ("viewedOrInProgressLeafCount", "0"),
+        ]))
+        .unwrap();
+        assert_eq!(request.filters.in_progress, Some(false));
+        assert_eq!(request.filters.audience_rating_from, Some(7.0));
+        assert_eq!(request.filters.any_episode_started, Some(false));
+        let recent = parse(&pairs(&[("originallyAvailableAt>", "-1y")])).unwrap();
+        assert!(recent.filters.released_from.is_some());
+        // Values beyond those are refused, not dropped.
+        for (key, value) in [
+            ("viewOffset>", "300"),
+            ("viewOffset", "5"),
+            ("viewedOrInProgressLeafCount", "2"),
+            ("audienceRating>", "NaN"),
+            ("originallyAvailableAt", "2020-01-01"),
+        ] {
+            assert!(parse(&pairs(&[(key, value)])).is_err(), "{key}{value}");
+        }
     }
 
     #[test]
@@ -640,7 +891,7 @@ mod tests {
     fn an_advertised_filter_we_cannot_honor_is_refused_not_dropped() {
         // The whole point: dropping `genre` would answer with the entire library and let the
         // client present it as the filtered result.
-        for field in ["collection", "label", "unwatched", "hdr"] {
+        for field in ["collection", "label", "network", "hdr"] {
             let error = parse(&pairs(&[(field, "1")])).expect_err("refused");
             assert!(
                 matches!(&error, ListingError::UnsupportedFilter(name) if name == field),

@@ -153,6 +153,10 @@ pub struct ItemFilterInput {
     pub depth: Option<ItemDepthInput>,
     /// Keep only items released in or after this year.
     pub year_from: Option<i32>,
+    /// Keep only items released on or after this date, written `2025-11-10`.
+    pub released_from: Option<String>,
+    /// Keep only items whose audience rating, on its ten-point scale, is at least this.
+    pub audience_rating_from: Option<f64>,
     /// Keep only items released in or before this year.
     pub year_to: Option<i32>,
     /// Keep only items with exactly this age-rating label, as the metadata source expresses
@@ -181,6 +185,41 @@ pub struct ItemFilterInput {
     pub tags: Option<Vec<TagFilterInput>>,
     /// Leave out this item, as returned in `id`: "the rest of this director's films".
     pub excluded_id: Option<async_graphql::ID>,
+    /// Keep only items the caller watched to the end at least once, or never. A series counts
+    /// its own viewings, not its episodes': one whose watched episode was unmarked since
+    /// stays watched. A caller without watch state has watched nothing.
+    pub watched: Option<bool>,
+    /// Keep only items the caller has a position in, or has none in.
+    pub in_progress: Option<bool>,
+    /// Keep only items every episode of which the caller watched, or not. An item without
+    /// episodes has none unwatched.
+    pub all_episodes_watched: Option<bool>,
+    /// Keep only items with an episode the caller watched or started, or with none: the
+    /// series not yet begun.
+    pub any_episode_started: Option<bool>,
+}
+
+/// Why a filter cannot be honored.
+#[derive(Debug, thiserror::Error)]
+pub enum FilterError {
+    #[error(transparent)]
+    Tag(#[from] TagFilterError),
+    #[error("`{0}` is not a date written YYYY-MM-DD")]
+    NotADate(String),
+}
+
+/// Whether `text` is a calendar date as stored: four digits, two, two, by hyphens. Compared
+/// as text in storage, so a looser form would compare wrongly rather than fail.
+fn is_iso_date(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.len() == 10
+        && bytes.iter().enumerate().all(|(position, byte)| {
+            if position == 4 || position == 7 {
+                *byte == b'-'
+            } else {
+                byte.is_ascii_digit()
+            }
+        })
 }
 
 /// A frame size, in pixels.
@@ -221,9 +260,16 @@ impl From<FrameRangeInput> for FrameRange {
 }
 
 impl TryFrom<ItemFilterInput> for ItemFilter {
-    type Error = TagFilterError;
+    type Error = FilterError;
 
     fn try_from(input: ItemFilterInput) -> Result<Self, Self::Error> {
+        if let Some(date) = input
+            .released_from
+            .as_ref()
+            .filter(|date| !is_iso_date(date))
+        {
+            return Err(FilterError::NotADate(date.clone()));
+        }
         let tags = input
             .tags
             .unwrap_or_default()
@@ -235,6 +281,8 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
             depth: input.depth.unwrap_or_default().into(),
             year_from: input.year_from,
             year_to: input.year_to,
+            released_from: input.released_from,
+            audience_rating_from: input.audience_rating_from,
             content_rating: input.content_rating,
             studio_contains: input.studio_contains,
             // Blank input is no constraint: an empty search box must not become a filter
@@ -248,6 +296,12 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
                 .excluded_id
                 .and_then(|id| crate::GlobalId::decode(&id).ok())
                 .map(|decoded| RatingKey::new(decoded.key)),
+            watched: input.watched,
+            in_progress: input.in_progress,
+            episodes_watched: input.all_episodes_watched,
+            episodes_started: input.any_episode_started,
+            // The caller's, which only the resolver knows.
+            viewer: None,
         })
     }
 }
@@ -314,6 +368,12 @@ mod tests {
                 ids: None,
                 names: Some(vec!["Drama".to_owned()]),
             }]),
+            watched: Some(false),
+            in_progress: Some(true),
+            all_episodes_watched: Some(false),
+            released_from: Some("2025-11-10".to_owned()),
+            audience_rating_from: Some(7.0),
+            any_episode_started: Some(false),
         };
         let filter = ItemFilter::try_from(input).unwrap();
         assert_eq!(filter.kind, Some(ItemKind::Show));
@@ -328,6 +388,26 @@ mod tests {
         assert_eq!(filter.depth, ItemDepth::All);
         assert!(filter.needs_media());
         assert_eq!(filter.tags.len(), 1);
+        assert_eq!(filter.watched, Some(false));
+        assert_eq!(filter.in_progress, Some(true));
+        assert_eq!(filter.episodes_watched, Some(false));
+        assert_eq!(filter.released_from.as_deref(), Some("2025-11-10"));
+        assert_eq!(filter.audience_rating_from, Some(7.0));
+        assert_eq!(filter.episodes_started, Some(false));
+    }
+
+    #[test]
+    fn a_date_in_another_form_is_refused() {
+        for date in ["2025-1-10", "10/11/2025", "2025-11-10T00:00", "-1y"] {
+            let input = ItemFilterInput {
+                released_from: Some(date.to_owned()),
+                ..ItemFilterInput::default()
+            };
+            assert!(
+                matches!(ItemFilter::try_from(input), Err(FilterError::NotADate(_))),
+                "{date}"
+            );
+        }
     }
 
     #[test]

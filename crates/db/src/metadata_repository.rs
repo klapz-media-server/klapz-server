@@ -18,6 +18,7 @@ use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
 use open_plex_core::search;
 use open_plex_core::similar::TagOverlap;
+use open_plex_core::watch::Viewer;
 use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
 use sea_orm::QueryTrait;
@@ -28,9 +29,10 @@ use sea_orm::{
 
 use crate::entity::{
     item_external_id, item_rating, item_tag, item_title_word, media, media_part, media_stream,
-    metadata_item, person, stream_dolby_vision, stream_loudness, tag,
+    metadata_item, person, stream_dolby_vision, stream_loudness, tag, watch_state,
 };
 use crate::item_order::ItemOrder;
+use crate::watch_repository::viewer_id;
 
 #[derive(Debug, Clone)]
 pub struct SqlMetadataRepository {
@@ -103,6 +105,43 @@ impl SqlMetadataRepository {
         }
         for condition in &filter.tags {
             select = select.filter(carries_tag(condition));
+        }
+        let own_guid = Expr::col((metadata_item::Entity, metadata_item::Column::Guid));
+        if let Some(watched) = filter.watched {
+            let viewed = watch_state_where(filter.viewer, own_guid.clone(), viewed());
+            select = select.filter(holds(viewed, watched));
+        }
+        if let Some(in_progress) = filter.in_progress {
+            let kept = watch_state_where(
+                filter.viewer,
+                own_guid,
+                Expr::col((watch_state::Entity, watch_state::Column::OffsetMs)).is_not_null(),
+            );
+            select = select.filter(holds(kept, in_progress));
+        }
+        if let Some(episodes_watched) = filter.episodes_watched {
+            let unwatched =
+                episode_below(|guid| watch_state_where(filter.viewer, guid, viewed()).not());
+            select = select.filter(holds(unwatched, !episodes_watched));
+        }
+        if let Some(episodes_started) = filter.episodes_started {
+            let started = episode_below(|guid| {
+                watch_state_where(
+                    filter.viewer,
+                    guid,
+                    viewed().or(
+                        Expr::col((watch_state::Entity, watch_state::Column::OffsetMs))
+                            .is_not_null(),
+                    ),
+                )
+            });
+            select = select.filter(holds(started, episodes_started));
+        }
+        if let Some(from) = &filter.released_from {
+            select = select.filter(metadata_item::Column::ReleasedOn.gte(from.clone()));
+        }
+        if let Some(from) = filter.audience_rating_from {
+            select = select.filter(metadata_item::Column::AudienceRating.gte(from));
         }
 
         select
@@ -295,6 +334,78 @@ fn word_exists(prefix: &str) -> Condition {
             ))
             .to_owned(),
     ))
+}
+
+/// `condition`, or its negation.
+fn holds(condition: SimpleExpr, expected: bool) -> SimpleExpr {
+    if expected {
+        condition
+    } else {
+        condition.not()
+    }
+}
+
+/// Whether the viewer has a watch-state row for the work `guid` satisfying `predicate`.
+///
+/// A caller with no watch state has none, so the condition is false rather than absent:
+/// "unwatched" then keeps everything and "watched" nothing.
+fn watch_state_where(viewer: Option<Viewer>, guid: Expr, predicate: SimpleExpr) -> SimpleExpr {
+    let Some(viewer) = viewer else {
+        return Expr::value(1).eq(0);
+    };
+    Expr::exists(
+        Query::select()
+            .expr(Expr::val(1))
+            .from(watch_state::Entity)
+            .and_where(
+                Expr::col((watch_state::Entity, watch_state::Column::Viewer)).eq(viewer_id(viewer)),
+            )
+            .and_where(Expr::col((watch_state::Entity, watch_state::Column::Guid)).eq(guid))
+            .and_where(predicate)
+            .to_owned(),
+    )
+}
+
+/// A watch-state row's work was watched to the end at least once.
+fn viewed() -> SimpleExpr {
+    Expr::col((watch_state::Entity, watch_state::Column::ViewCount)).gt(0)
+}
+
+/// Whether the item in the row has an episode, as a child or a grandchild, for which
+/// `condition` holds; `condition` is handed the episode's `guid`.
+fn episode_below(condition: impl FnOnce(Expr) -> SimpleExpr) -> SimpleExpr {
+    let episode = Alias::new("episode");
+    let season = Alias::new("season");
+    let seasons = Query::select()
+        .column((season.clone(), metadata_item::Column::Id))
+        .from_as(metadata_item::Entity, season.clone())
+        .and_where(
+            Expr::col((season, metadata_item::Column::ParentId))
+                .equals((metadata_item::Entity, metadata_item::Column::Id)),
+        )
+        .to_owned();
+    let holds = condition(Expr::col((episode.clone(), metadata_item::Column::Guid)));
+    Expr::exists(
+        Query::select()
+            .expr(Expr::val(1))
+            .from_as(metadata_item::Entity, episode.clone())
+            .and_where(
+                Expr::col((episode.clone(), metadata_item::Column::Kind))
+                    .eq(kind_name(ItemKind::Episode)),
+            )
+            .cond_where(
+                Condition::any()
+                    .add(
+                        Expr::col((episode.clone(), metadata_item::Column::ParentId))
+                            .equals((metadata_item::Entity, metadata_item::Column::Id)),
+                    )
+                    .add(
+                        Expr::col((episode, metadata_item::Column::ParentId)).in_subquery(seasons),
+                    ),
+            )
+            .and_where(holds)
+            .to_owned(),
+    )
 }
 
 /// Wraps `text` in `LIKE` wildcards, escaping the ones it contains.

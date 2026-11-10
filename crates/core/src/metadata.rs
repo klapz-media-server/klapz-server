@@ -569,12 +569,9 @@ pub enum ItemSort {
 /// Narrows a listing to a subset of a library.
 ///
 /// Every field is an `AND`: a filter with a kind and a year range matches items satisfying
-/// both. Absent fields place no constraint.
-///
-/// Filtering on a nullable column is fine — an item with no year simply fails a year
-/// predicate. That is unlike *ordering* by one, which additionally needs the cursor to encode
-/// absence, and is why [`ItemSort`] is shorter than this struct.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// both. Absent fields place no constraint. An item with no value fails a predicate on it: a
+/// film with no year is in no year range.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ItemFilter {
     /// Restricts to one kind. `None` lists every kind the library holds.
     pub kind: Option<ItemKind>,
@@ -582,6 +579,10 @@ pub struct ItemFilter {
     pub depth: ItemDepth,
     /// Earliest release year, inclusive.
     pub year_from: Option<i32>,
+    /// Earliest release date, inclusive, as an ISO 8601 calendar date: `2025-11-10`.
+    pub released_from: Option<String>,
+    /// Lowest audience rating, inclusive, on its ten-point scale.
+    pub audience_rating_from: Option<f64>,
     /// Latest release year, inclusive.
     pub year_to: Option<i32>,
     /// Exact age-rating label, as the metadata source expresses it.
@@ -613,6 +614,21 @@ pub struct ItemFilter {
     pub tags: Vec<TagCondition>,
     /// Leaves this one item out: "the rest of this director's films".
     pub excluded: Option<RatingKey>,
+    /// Keeps only items the viewer watched to the end at least once (`true`), or never
+    /// (`false`). A series counts its own viewings, not its episodes': one whose watched
+    /// episode was unmarked since stays watched, as on the reference.
+    pub watched: Option<bool>,
+    /// Keeps only items with a position kept (`true`), or without (`false`).
+    pub in_progress: Option<bool>,
+    /// Keeps only items every episode of which is watched (`true`), or not (`false`). An
+    /// item with no episode has none unwatched.
+    pub episodes_watched: Option<bool>,
+    /// Keeps only items with an episode watched or in progress (`true`), or with none
+    /// (`false`): the series a viewer has not started.
+    pub episodes_started: Option<bool>,
+    /// Whose watch state the three above read. `None`, a caller with no watch state, has
+    /// watched nothing and has nothing in progress.
+    pub viewer: Option<Viewer>,
 }
 
 /// A frame size, in pixels.
@@ -706,7 +722,7 @@ pub fn first_character_bucket(sort_key: &str) -> String {
 }
 
 /// Which items a listing covers, and in what order.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ItemQuery {
     pub section_id: SectionId,
     pub filter: ItemFilter,
