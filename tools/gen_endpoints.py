@@ -63,6 +63,7 @@ IMPLEMENTED = frozenset(
         "/playQueues/{playQueueId}",
         "/library/parts/{partId}/{changestamp}/{filename}",
         "/library/sections/{sectionId}/prefs",
+        "/library/metadata/{ids}/allLeaves",
         "/library/metadata/{ids}/related",
         "/library/metadata/{ids}/similar",
         "/:/timeline",
@@ -132,8 +133,8 @@ OFF_SPEC = (
         "user",
         "Seasons of a series, episodes of a season",
         "Zero differing fields against the reference on seven parents across two libraries; "
-        "`400` on a film or an episode, as the reference. Gaps: the leading `All episodes` "
-        "`Directory` is omitted while `/allLeaves` answers 501, so `size` is one short.",
+        "`400` on a film or an episode, as the reference. A series' first page leads with the "
+        "`All episodes` entry, counted in `size` but not in `totalSize`, as the reference does.",
     ),
     (
         "partial",

@@ -1,4 +1,5 @@
-//! `GET /library/metadata/{id}/children` and `/grandchildren` — browsing into a series.
+//! `GET /library/metadata/{id}/children`, `/grandchildren` and `/allLeaves` — browsing into a
+//! series.
 //!
 //! Neither is in the spec, and both are how every client opens a series: the seasons of a
 //! show, the episodes of a season, and the episodes of a show as one list. See
@@ -58,7 +59,7 @@ query PlexChildren($id: ID!, $first: Int!, $offset: Int!) {
       year
       summary
       library { id title uuid kind }
-      stats { seasonCount }
+      stats { seasonCount episodeCount }
       children: seasons(first: $first, offset: $offset) {
         edges { node { ...Shared ... on Season { ...SeasonFields } } }
       }
@@ -141,6 +142,64 @@ query PlexGrandchildren($id: ID!, $first: Int!, $offset: Int!) {
     )
 });
 
+/// Everything `/allLeaves` needs. Only a series lists anything: the reference answers a season,
+/// a film or an episode with an empty container that describes the node, measured on seven
+/// seasons of six series.
+static ALL_LEAVES_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    with_shared_fragments(
+        r"
+query PlexAllLeaves($id: ID!, $first: Int!, $offset: Int!) {
+  node(id: $id) {
+    __typename
+    ... on Show {
+      id
+      title
+      number
+      year
+      studio
+      library { id title uuid kind }
+      stats { episodeCount }
+      children: episodes(first: $first, offset: $offset) {
+        edges {
+          node {
+            ...Shared
+            ... on Episode {
+              ...EpisodeFields
+              versions { ...VersionFields files { id path sizeBytes durationMs } }
+              ...ListedEpisodeTags
+            }
+          }
+        }
+      }
+    }
+    ... on Season {
+      id
+      title
+      number
+      year
+      show { id title guid studio number year contentRating }
+      library { id title uuid kind }
+    }
+    ... on Episode {
+      id
+      title
+      number
+      year
+      season { id title number }
+      library { id title uuid kind }
+    }
+    ... on Movie {
+      id
+      title
+      year
+      library { id title uuid kind }
+    }
+  }
+}
+",
+    )
+});
+
 #[derive(Debug, Deserialize)]
 struct ParentData {
     node: Option<GqlParent>,
@@ -160,7 +219,9 @@ struct GqlParent {
     number: Option<i32>,
     year: Option<i32>,
     summary: Option<String>,
+    studio: Option<String>,
     show: Option<GqlParentRef>,
+    season: Option<GqlParentRef>,
     library: Option<GqlLibraryRef>,
     stats: GqlCounts,
     children: Option<GqlItemConnection>,
@@ -254,6 +315,61 @@ pub struct ChildrenContainer {
     pub title2: String,
     pub view_group: &'static str,
     pub view_mode: u32,
+    /// The `All episodes` entry a series' first page leads with.
+    #[serde(rename = "Directory", skip_serializing_if = "Vec::is_empty")]
+    pub directory: Vec<AllEpisodes>,
+    #[serde(rename = "Metadata", skip_serializing_if = "Vec::is_empty")]
+    pub metadata: Vec<MetadataEntry>,
+}
+
+/// The entry a series' seasons are listed under, pointing at every episode at once. In English
+/// whatever the client's language, as on the reference, and counted in `size` but not in
+/// `totalSize`, which counts seasons.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AllEpisodes {
+    pub leaf_count: u64,
+    /// Nothing records what was watched yet.
+    pub viewed_leaf_count: u64,
+    pub key: String,
+    pub title: &'static str,
+}
+
+/// Response body for `GET /library/metadata/{id}/allLeaves`.
+///
+/// It describes the node as the parent of the leaves, even where it has none: a series' title
+/// and year, or a film's. `grandparentTitle` is present for a season and an episode only, and
+/// for an episode it is empty, as on the reference.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AllLeavesContainer {
+    pub size: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u64>,
+    pub allow_sync: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grandparent_title: Option<String>,
+    pub identifier: &'static str,
+    pub key: String,
+    #[serde(rename = "librarySectionID")]
+    pub library_section_id: i64,
+    pub library_section_title: String,
+    #[serde(rename = "librarySectionUUID")]
+    pub library_section_uuid: String,
+    pub media_tag_prefix: &'static str,
+    pub media_tag_version: i64,
+    pub mixed_parents: bool,
+    pub nocache: bool,
+    pub parent_index: i32,
+    pub parent_title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_year: Option<i32>,
+    pub title1: String,
+    pub title2: String,
+    pub view_group: &'static str,
+    pub view_mode: u32,
     #[serde(rename = "Metadata", skip_serializing_if = "Vec::is_empty")]
     pub metadata: Vec<MetadataEntry>,
 }
@@ -326,41 +442,52 @@ pub(crate) async fn children(
     let items = parent.entries(language);
     let total = parent.total();
 
-    let body = match parent.typename.as_str() {
-        "Season" => {
-            let show = parent.show.as_ref();
-            ChildrenContainer {
-                size: u32::try_from(items.len()).unwrap_or(u32::MAX),
-                total_size: total,
-                offset,
-                allow_sync: true,
-                grandparent_content_rating: show.and_then(|show| show.content_rating.clone()),
-                grandparent_rating_key: show.map(GqlParentRef::database_id),
-                grandparent_studio: show.and_then(|show| show.studio.clone()),
-                grandparent_title: show.and_then(|show| show.title.clone()),
-                identifier: LIBRARY_IDENTIFIER,
-                key: parent.database_id().to_string(),
-                library_section_id: library.database_id(),
-                library_section_title: library.title.clone(),
-                library_section_uuid: library.uuid.clone(),
-                media_tag_prefix: MEDIA_TAG_PREFIX,
-                media_tag_version: MEDIA_TAG_VERSION,
-                nocache: true,
-                parent_index: parent.number,
-                parent_title: parent.title.clone().unwrap_or_default(),
-                // The season's year, or the series' when the season has none — the same
-                // fallback the season reports as an item.
-                parent_year: parent.year.or(show.and_then(|show| show.year)),
-                summary: None,
-                title1: show.and_then(|show| show.title.clone()).unwrap_or_default(),
-                title2: language.season_title(parent.title.as_deref(), parent.number),
-                view_group: "episode",
-                view_mode: crate::items::GRID_VIEW_MODE,
-                metadata: items,
-            }
-        }
-        _ => ChildrenContainer {
+    let body = if parent.typename == "Season" {
+        let show = parent.show.as_ref();
+        ChildrenContainer {
             size: u32::try_from(items.len()).unwrap_or(u32::MAX),
+            total_size: total,
+            offset,
+            allow_sync: true,
+            grandparent_content_rating: show.and_then(|show| show.content_rating.clone()),
+            grandparent_rating_key: show.map(GqlParentRef::database_id),
+            grandparent_studio: show.and_then(|show| show.studio.clone()),
+            grandparent_title: show.and_then(|show| show.title.clone()),
+            identifier: LIBRARY_IDENTIFIER,
+            key: parent.database_id().to_string(),
+            library_section_id: library.database_id(),
+            library_section_title: library.title.clone(),
+            library_section_uuid: library.uuid.clone(),
+            media_tag_prefix: MEDIA_TAG_PREFIX,
+            media_tag_version: MEDIA_TAG_VERSION,
+            nocache: true,
+            parent_index: parent.number,
+            parent_title: parent.title.clone().unwrap_or_default(),
+            // The season's year, or the series' when the season has none — the same
+            // fallback the season reports as an item.
+            parent_year: parent.year.or(show.and_then(|show| show.year)),
+            summary: None,
+            title1: show.and_then(|show| show.title.clone()).unwrap_or_default(),
+            title2: language.season_title(parent.title.as_deref(), parent.number),
+            view_group: "episode",
+            view_mode: crate::items::GRID_VIEW_MODE,
+            directory: Vec::new(),
+            metadata: items,
+        }
+    } else {
+        // Measured: present on the first page only, in `size` and not in `totalSize`.
+        let directory = if offset == 0 {
+            vec![AllEpisodes {
+                leaf_count: parent.stats.episode_count.unwrap_or(0),
+                viewed_leaf_count: 0,
+                key: format!("/library/metadata/{}/allLeaves", parent.database_id()),
+                title: "All episodes",
+            }]
+        } else {
+            Vec::new()
+        };
+        ChildrenContainer {
+            size: u32::try_from(items.len() + directory.len()).unwrap_or(u32::MAX),
             total_size: total,
             offset,
             allow_sync: true,
@@ -386,10 +513,91 @@ pub(crate) async fn children(
             title2: parent.title.clone().unwrap_or_default(),
             view_group: "season",
             view_mode: SEASON_VIEW_MODE,
+            directory,
             metadata: items,
-        },
+        }
     };
     Ok(PlexResponse::new(body, format).paged(offset, total))
+}
+
+/// `GET /library/metadata/{id}/allLeaves` — every episode of a series, what its `All episodes`
+/// entry opens.
+///
+/// Its episodes are those of `/grandchildren` with the series' studio on each. Anything else is
+/// an empty container naming the node, the reference's answer for a season too.
+pub(crate) async fn all_leaves(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Path(id): Path<i64>,
+    Query(pairs): Query<Vec<(String, String)>>,
+    format: ResponseFormat,
+) -> Result<PlexResponse<AllLeavesContainer>, ApiError> {
+    let (parent, offset) = open(&state, &ALL_LEAVES_QUERY, id, &pairs).await?;
+    let library = parent.library.as_ref().ok_or(ApiError::NotFound)?;
+    let language = Language::of(&client);
+    let title = parent.title.clone().unwrap_or_default();
+    let mut body = AllLeavesContainer {
+        size: 0,
+        total_size: None,
+        offset: None,
+        allow_sync: true,
+        grandparent_title: None,
+        identifier: LIBRARY_IDENTIFIER,
+        key: parent.database_id().to_string(),
+        library_section_id: library.database_id(),
+        library_section_title: library.title.clone(),
+        library_section_uuid: library.uuid.clone(),
+        media_tag_prefix: MEDIA_TAG_PREFIX,
+        media_tag_version: MEDIA_TAG_VERSION,
+        mixed_parents: true,
+        nocache: true,
+        // Always 1 where the reference was measured, which every sampled node also numbered 1.
+        parent_index: parent.number.unwrap_or(1),
+        parent_title: title.clone(),
+        parent_year: parent.year,
+        title1: library.title.clone(),
+        title2: title.clone(),
+        view_group: "episode",
+        view_mode: crate::items::GRID_VIEW_MODE,
+        metadata: Vec::new(),
+    };
+    match parent.typename.as_str() {
+        "Show" => {
+            let items: Vec<MetadataEntry> = parent
+                .entries(language)
+                .into_iter()
+                .map(|entry| MetadataEntry {
+                    studio: parent.studio.clone(),
+                    ..entry
+                })
+                .collect();
+            let total = parent.stats.episode_count.unwrap_or(0);
+            body.size = u32::try_from(items.len()).unwrap_or(u32::MAX);
+            body.total_size = Some(total);
+            body.offset = Some(offset);
+            body.metadata = items;
+            return Ok(PlexResponse::new(body, format).paged(offset, total));
+        }
+        "Season" => {
+            let show = parent.show.as_ref();
+            body.grandparent_title =
+                Some(show.and_then(|show| show.title.clone()).unwrap_or_default());
+            body.parent_year = parent.year.or(show.and_then(|show| show.year));
+            body.title1 = show.and_then(|show| show.title.clone()).unwrap_or_default();
+            body.title2 = language.season_title(parent.title.as_deref(), parent.number);
+        }
+        "Episode" => {
+            let season = parent.season.as_ref();
+            body.grandparent_title = Some(String::new());
+            body.title1 = language.season_title(
+                season.and_then(|season| season.title.as_deref()),
+                season.and_then(|season| season.number),
+            );
+        }
+        _ => body.view_group = "movie",
+    }
+    Ok(PlexResponse::new(body, format))
 }
 
 /// `GET /library/metadata/{id}/grandchildren` — every episode below a series or a season.

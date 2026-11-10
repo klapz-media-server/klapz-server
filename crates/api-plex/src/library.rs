@@ -41,6 +41,10 @@ pub fn router() -> Router<PlexState> {
         // Neither is in the spec; both are how a client opens a series.
         .route("/library/metadata/{id}/children", get(children::children))
         .route(
+            "/library/metadata/{id}/allLeaves",
+            get(children::all_leaves),
+        )
+        .route(
             "/library/metadata/{id}/grandchildren",
             get(children::grandchildren),
         )

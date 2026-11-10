@@ -19,8 +19,8 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 15 | 5.8 % |
-| `stub` | 185 | 71.2 % |
-| `partial` | 16 | 6.2 % |
+| `stub` | 184 | 70.8 % |
+| `partial` | 17 | 6.5 % |
 | `done` | 7 | 2.7 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 1 | 5 | 47 | 8 | 24 |
+| [Library](#library) | 85 | 1 | 6 | 46 | 8 | 24 |
 | [Hubs](#hubs) | 15 | 0 | 1 | 14 | 0 | 0 |
 | [Content](#content) | 13 | 0 | 2 | 11 | 0 | 0 |
 | [Devices](#devices) | 13 | 0 | 0 | 13 | 0 | 0 |
@@ -71,7 +71,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `done` | `GET` | `/library/metadata/{id}/userState` | user | An item's state for the watchlist button | Not a route of the reference, which answers `404`: the shape of plex.tv's Discover provider, for Plex Web. Always unwatched: watch state is not recorded yet. |
 | `partial` | `GET` | `/library/search` | user | Search field (universal search) | Films, series and episodes with their listing fields, in three score tiers. Not served: the people and collections the reference mixes in, and its fuzzy matching. See `docs/spec-gaps.md`. |
 | `done` | `GET` | `/library/sections` | user | Library sections | Byte-identical to the reference. The spec declares only its `/all` alias. |
-| `partial` | `GET` | `/library/metadata/{id}/children` | user | Seasons of a series, episodes of a season | Zero differing fields against the reference on seven parents across two libraries; `400` on a film or an episode, as the reference. Gaps: the leading `All episodes` `Directory` is omitted while `/allLeaves` answers 501, so `size` is one short. |
+| `partial` | `GET` | `/library/metadata/{id}/children` | user | Seasons of a series, episodes of a season | Zero differing fields against the reference on seven parents across two libraries; `400` on a film or an episode, as the reference. A series' first page leads with the `All episodes` entry, counted in `size` but not in `totalSize`, as the reference does. |
 | `partial` | `GET` | `/library/metadata/{id}/grandchildren` | user | Every episode of a series, season by season | Same field fidelity as `/children`. Gaps: those of `/library/metadata/{ids}`. |
 | `partial` | `GET` | `/search` | user | Global search across libraries | Matches exactly as the reference (word prefix over title, sort title, original title) but returns matches in title order, unranked and uncut. The spec declares only `/hubs/search`. |
 
@@ -89,7 +89,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `todo` | `DELETE` | `/library/metadata/{ids}` | admin | Delete a metadata item |  |
 | `todo` | `PUT` | `/library/metadata/{ids}` | admin | Edit a metadata item |  |
 | `deferred` | `PUT` | `/library/metadata/{ids}/addetect` | admin | Ad-detect an item | scanner/analysis, separate binary |
-| `stub` | `GET` | `/library/metadata/{ids}/allLeaves` | user | Get the leaves of an item |  |
+| `partial` | `GET` | `/library/metadata/{ids}/allLeaves` | user | Get the leaves of an item | A series' episodes with its studio on each, what `/children`'s `All episodes` entry opens; a season, a film or an episode is an empty container naming it, as on the reference (seven seasons of six series measured). Containers identical to the reference on five nodes; the items' gaps are those of `/grandchildren` (artwork, slug, `audienceRatingImage`, `chapterSource`). One id, not a list. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/analyze` | admin | Analyze an item | scanner/analysis, separate binary |
 | `deferred` | `PUT` | `/library/metadata/{ids}/analyzeLoudness` | admin | Detect loudness of audio streams | scanner/analysis, separate binary |
 | `deferred` | `PUT` | `/library/metadata/{ids}/chapterThumbs` | admin | Generate thumbs of chapters for an item | scanner/analysis, separate binary |

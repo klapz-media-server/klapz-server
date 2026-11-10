@@ -1064,9 +1064,19 @@ async fn opening_a_series_lists_its_seasons_under_a_header() {
     assert_eq!(container["viewMode"], 65_593);
     assert_eq!(container["nocache"], true);
     assert_eq!(container["librarySectionID"], 5);
-    assert_eq!(container["size"], 2);
+    // The `All episodes` entry counts in `size` and not in `totalSize`, which counts seasons.
+    assert_eq!(container["size"], 3);
     assert_eq!(container["totalSize"], 2);
     assert!(container.get("grandparentTitle").is_none(), "{container}");
+    assert_eq!(
+        container["Directory"],
+        serde_json::json!([{
+            "leafCount": 3,
+            "viewedLeafCount": 0,
+            "key": "/library/metadata/200/allLeaves",
+            "title": "All episodes"
+        }])
+    );
 
     let seasons = container["Metadata"].as_array().expect("seasons");
     assert_eq!(seasons[0]["ratingKey"], "201");
@@ -1087,6 +1097,59 @@ async fn opening_a_series_lists_its_seasons_under_a_header() {
         "{}",
         seasons[0]
     );
+}
+
+#[tokio::test]
+async fn a_later_page_of_seasons_has_no_all_episodes_entry() {
+    let body =
+        listing("/library/metadata/200/children?X-Plex-Container-Start=1&X-Plex-Container-Size=5")
+            .await;
+    let container = &body["MediaContainer"];
+    assert!(container.get("Directory").is_none(), "{container}");
+    assert_eq!(container["size"], 1);
+}
+
+#[tokio::test]
+async fn all_leaves_of_a_series_are_its_episodes_with_its_studio() {
+    let body = listing("/library/metadata/200/allLeaves").await;
+    let container = &body["MediaContainer"];
+    assert_eq!(container["key"], "200");
+    assert_eq!(container["parentTitle"], "Severance");
+    assert_eq!(container["parentYear"], 2022);
+    assert_eq!(container["title1"], "VF - Series");
+    assert_eq!(container["title2"], "Severance");
+    assert_eq!(container["viewGroup"], "episode");
+    assert_eq!(container["mixedParents"], true);
+    assert!(container.get("grandparentTitle").is_none(), "{container}");
+    let episodes = container["Metadata"].as_array().expect("episodes");
+    assert_eq!(container["size"], episodes.len());
+    assert!(episodes
+        .iter()
+        .all(|e| e["type"] == "episode" && e["studio"] == "Fifth Season"));
+}
+
+#[tokio::test]
+async fn all_leaves_of_anything_but_a_series_is_an_empty_container_naming_it() {
+    let season = listing("/library/metadata/203/allLeaves").await;
+    let season = &season["MediaContainer"];
+    assert_eq!(season["size"], 0);
+    assert!(season.get("Metadata").is_none(), "{season}");
+    assert_eq!(season["grandparentTitle"], "Severance");
+    assert_eq!(season["title1"], "Severance");
+    assert_eq!(season["title2"], "Season 2");
+    assert_eq!(season["parentTitle"], "");
+
+    let episode = listing("/library/metadata/204/allLeaves").await;
+    let episode = &episode["MediaContainer"];
+    assert_eq!(episode["size"], 0);
+    assert_eq!(episode["grandparentTitle"], "");
+    assert_eq!(episode["title1"], "Season 2");
+
+    let film = listing("/library/metadata/100/allLeaves").await;
+    let film = &film["MediaContainer"];
+    assert_eq!(film["size"], 0);
+    assert_eq!(film["viewGroup"], "movie");
+    assert!(film.get("grandparentTitle").is_none(), "{film}");
 }
 
 #[tokio::test]
