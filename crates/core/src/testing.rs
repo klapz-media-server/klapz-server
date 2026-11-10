@@ -1394,6 +1394,23 @@ impl crate::access::AccessRepository for InMemoryAccess {
         Ok(accounts.len() < before)
     }
 
+    async fn move_account(
+        &self,
+        user: crate::ids::UserId,
+        extension: crate::access::Extension,
+        connection_uri: &str,
+        _now: i64,
+    ) -> Result<Option<crate::access::AccountLink>, crate::access::AccessError> {
+        if let Some(link) = locked(&self.accounts)
+            .iter_mut()
+            .find(|link| (link.user, link.extension) == (user, extension))
+        {
+            connection_uri.clone_into(&mut link.connection_uri);
+            link.published_at = None;
+        }
+        self.account_link(user, extension).await
+    }
+
     async fn mark_published(
         &self,
         user: crate::ids::UserId,

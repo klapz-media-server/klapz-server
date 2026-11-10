@@ -172,6 +172,7 @@ const DISABLE_PLEX = `mutation($userId: ID!) { disableExtension(userId: $userId,
 
 const PAIR_PLEX = `mutation($input: PairExtensionInput!) { pairExtension(input: $input) { publishedAt } }`;
 const UNPAIR_PLEX = `mutation($userId: ID!) { unpairExtension(userId: $userId, extension: PLEX) }`;
+const MOVE_PLEX = `mutation($input: MoveExtensionInput!) { moveExtension(input: $input) { publishedAt } }`;
 
 const TOKEN_KEY = "open-plex-operator-token";
 const byId = (id) => document.getElementById(id);
@@ -270,6 +271,21 @@ function pairingRow(user, plex) {
   return el("span", { className: "note" },
     "Paired with ", el("strong", { textContent: account.accountName }), " at ",
     el("code", { textContent: account.connectionUri }), ` (${state}) `,
+    el("button", {
+      type: "button",
+      textContent: "Change address",
+      on: { click: () => {
+        const address = prompt("Address Plex clients will use to reach this server", account.connectionUri);
+        if (address && address.trim() !== account.connectionUri) {
+          act(() => graphql(MOVE_PLEX, { input: {
+            userId: user.id,
+            extension: "PLEX",
+            connectionUri: address.trim(),
+          } }));
+        }
+      } },
+    }),
+    " ",
     el("button", {
       type: "button",
       textContent: "Unpair",

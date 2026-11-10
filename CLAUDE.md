@@ -327,6 +327,9 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
 | `OPENPLEX_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which its binary needs. |
 
 The imported library's files live on another machine, so nothing imported can be played here.
+`python tools/plex_tunnel.py --origin http://LAN-IP:32500` opens a Cloudflare quick tunnel and
+publishes its new address to plex.tv through `moveExtension`, with the server running; it
+refuses a loopback origin, which a trusted network would admit without a token.
 `python tools/seed_test_library.py DIRECTORY` adds a folder of real files as a `Test` library
 (`--remove` takes it out); `python tools/capture_transcoder.py` studies the transcoder alone.
 

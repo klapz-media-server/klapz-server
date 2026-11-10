@@ -306,6 +306,17 @@ pub struct PairExtensionInput {
     pub connection_uri: String,
 }
 
+/// A new address for a paired server.
+#[derive(Debug, InputObject)]
+pub struct MoveExtensionInput {
+    /// The user, as returned in `User.id`. Its connection must be paired.
+    pub user_id: ID,
+    /// The protocol whose address changes.
+    pub extension: ExtensionType,
+    /// Where clients can now reach this server, as `https://host:port`.
+    pub connection_uri: String,
+}
+
 pub(crate) async fn users(
     context: &Context<'_>,
     after: Option<String>,
@@ -422,18 +433,61 @@ pub(crate) async fn connect_extension(
     Ok(ExtensionCredentials { extension, token })
 }
 
+/// The address as stored: checked, and in lower case, since it is compared with `Host`
+/// headers, which are matched in lower case.
+fn connection_uri(uri: &str) -> Result<String> {
+    if !is_connection_uri(uri) {
+        return Err(async_graphql::Error::new(
+            "the address must look like https://host:port, with nothing after it",
+        ));
+    }
+    Ok(uri.to_ascii_lowercase())
+}
+
+/// Tells the service where the link's server is, recording when it took. A failure is
+/// logged, not returned: the link is stored, the server publishes again on its own, and
+/// `publishedAt` stays null until one attempt succeeds.
+async fn publish_now(api: &ApiContext, link: &mut AccountLink) {
+    match publish_link(
+        api.access.as_ref(),
+        api.directory.as_ref(),
+        link,
+        now_epoch(),
+    )
+    .await
+    {
+        Ok(published_at) => link.published_at = Some(published_at),
+        Err(error) => tracing::warn!(%error, "could not publish a server's address"),
+    }
+}
+
+pub(crate) async fn move_extension(
+    context: &Context<'_>,
+    input: MoveExtensionInput,
+) -> Result<AccountLinkObject> {
+    require_operator(context)?;
+    let connection_uri = connection_uri(&input.connection_uri)?;
+    let api = context.data::<ApiContext>()?;
+    let mut link = api
+        .access
+        .move_account(
+            user_id(&input.user_id)?,
+            input.extension.into(),
+            &connection_uri,
+            now_epoch(),
+        )
+        .await?
+        .ok_or_else(|| async_graphql::Error::new("this connection is not paired"))?;
+    publish_now(api, &mut link).await;
+    Ok(AccountLinkObject(link))
+}
+
 pub(crate) async fn pair_extension(
     context: &Context<'_>,
     input: PairExtensionInput,
 ) -> Result<AccountLinkObject> {
     require_operator(context)?;
-    if !is_connection_uri(&input.connection_uri) {
-        return Err(async_graphql::Error::new(
-            "the address must look like https://host:port, with nothing after it",
-        ));
-    }
-    // Compared with `Host` headers later, which are matched in lower case.
-    let connection_uri = input.connection_uri.to_ascii_lowercase();
+    let connection_uri = connection_uri(&input.connection_uri)?;
     let api = context.data::<ApiContext>()?;
     let user = user_id(&input.user_id)?;
     let extension: Extension = input.extension.into();
@@ -452,19 +506,8 @@ pub(crate) async fn pair_extension(
         .access
         .link_account(user, extension, &account, &connection_uri, now_epoch())
         .await?;
-    // The code is spent and the link stored: failing here would only hide that. The server
-    // publishes again on its own, and `publishedAt` stays null until one attempt succeeds.
-    match publish_link(
-        api.access.as_ref(),
-        api.directory.as_ref(),
-        &link,
-        now_epoch(),
-    )
-    .await
-    {
-        Ok(published_at) => link.published_at = Some(published_at),
-        Err(error) => tracing::warn!(%error, "could not publish a newly paired server"),
-    }
+    // The code is spent and the link stored: failing to publish must not hide that.
+    publish_now(api, &mut link).await;
     Ok(AccountLinkObject(link))
 }
 

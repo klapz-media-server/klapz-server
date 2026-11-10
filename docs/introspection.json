@@ -4837,6 +4837,59 @@
           "possibleTypes": null
         },
         {
+          "kind": "INPUT_OBJECT",
+          "name": "MoveExtensionInput",
+          "description": "A new address for a paired server.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "userId",
+              "description": "The user, as returned in `User.id`. Its connection must be paired.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "extension",
+              "description": "The protocol whose address changes.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "ExtensionType",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "connectionUri",
+              "description": "Where clients can now reach this server, as `https://host:port`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "OBJECT",
           "name": "Movie",
           "description": null,
@@ -5852,6 +5905,37 @@
                     "ofType": {
                       "kind": "INPUT_OBJECT",
                       "name": "PairExtensionInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "AccountLink",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "moveExtension",
+              "description": "Changes where a paired server is reached, and tells the extension's service at once:\nwhat a tunnel or a new domain needs, without pairing again. For the server's operator\nonly.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The paired connection, and its new address.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "MoveExtensionInput",
                       "ofType": null
                     }
                   },

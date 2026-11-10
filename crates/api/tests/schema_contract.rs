@@ -717,6 +717,63 @@ async fn pairing_stores_the_account_and_publishes_the_address() {
     assert!(paired["publishedAt"].is_i64());
 }
 
+const MOVE: &str = r"mutation($input: MoveExtensionInput!) {
+    moveExtension(input: $input) { connectionUri publishedAt }
+}";
+
+fn move_input(user: &str, uri: &str) -> async_graphql::Variables {
+    async_graphql::Variables::from_json(serde_json::json!({ "input": {
+        "userId": user, "extension": "PLEX", "connectionUri": uri,
+    }}))
+}
+
+#[tokio::test]
+async fn moving_a_paired_server_publishes_its_new_address_at_once() {
+    let schema = schema();
+    let user = connected_user(&schema).await;
+    let paired = schema
+        .execute(as_operator(PAIR).variables(pair_input(
+            &user,
+            "claim-7",
+            "https://a.example.org:443",
+        )))
+        .await;
+    assert!(paired.errors.is_empty(), "{:?}", paired.errors);
+
+    let moved = schema
+        .execute(as_operator(MOVE).variables(move_input(&user, "https://New.trycloudflare.com")))
+        .await;
+    assert!(moved.errors.is_empty(), "{:?}", moved.errors);
+    let link = &moved.data.into_json().unwrap()["moveExtension"];
+    // Stored in lower case, as `Host` headers are matched.
+    assert_eq!(link["connectionUri"], "https://new.trycloudflare.com");
+    assert!(link["publishedAt"].is_i64(), "{link}");
+}
+
+#[tokio::test]
+async fn moving_refuses_a_bad_address_an_unpaired_connection_and_a_user() {
+    let schema = schema();
+    let user = connected_user(&schema).await;
+    // Not paired yet.
+    let response = schema
+        .execute(as_operator(MOVE).variables(move_input(&user, "https://a.example.org")))
+        .await;
+    assert!(!response.errors.is_empty());
+
+    let paired = schema
+        .execute(as_operator(PAIR).variables(pair_input(&user, "claim-7", "https://a.example.org")))
+        .await;
+    assert!(paired.errors.is_empty(), "{:?}", paired.errors);
+    let response = schema
+        .execute(as_operator(MOVE).variables(move_input(&user, "https://a.example.org/path")))
+        .await;
+    assert!(!response.errors.is_empty());
+    let response = schema
+        .execute(as_user(MOVE).variables(move_input(&user, "https://b.example.org")))
+        .await;
+    assert!(!response.errors.is_empty());
+}
+
 #[tokio::test]
 async fn pairing_is_for_the_operator() {
     let schema = schema();

@@ -1626,6 +1626,24 @@ type MediaVersion implements Node {
 	primaryAudio: MediaStream
 }
 
+"""
+A new address for a paired server.
+"""
+input MoveExtensionInput {
+	"""
+	The user, as returned in `User.id`. Its connection must be paired.
+	"""
+	userId: ID!
+	"""
+	The protocol whose address changes.
+	"""
+	extension: ExtensionType!
+	"""
+	Where clients can now reach this server, as `https://host:port`.
+	"""
+	connectionUri: String!
+}
+
 type Movie implements Item & Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this item.
@@ -1966,6 +1984,17 @@ type Mutation {
 		The account's pairing code, and where to reach the server.
 		"""
 		input: PairExtensionInput!
+	): AccountLink!
+	"""
+	Changes where a paired server is reached, and tells the extension's service at once:
+	what a tunnel or a new domain needs, without pairing again. For the server's operator
+	only.
+	"""
+	moveExtension(
+		"""
+		The paired connection, and its new address.
+		"""
+		input: MoveExtensionInput!
 	): AccountLink!
 	"""
 	Forgets the account tied to a user's connection. Whether there was one. For the server's

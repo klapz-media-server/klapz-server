@@ -346,6 +346,21 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
         connection_uris: &[String],
     ) -> Result<Option<UserExtension>, AccessError>;
 
+    /// Changes where a paired server is reached, and forgets when it was last published:
+    /// the new address is not published until it is. `None` when the connection is not
+    /// paired.
+    ///
+    /// # Errors
+    ///
+    /// A storage failure.
+    async fn move_account(
+        &self,
+        user: UserId,
+        extension: Extension,
+        connection_uri: &str,
+        now: i64,
+    ) -> Result<Option<AccountLink>, AccessError>;
+
     /// Whether there was a link to forget.
     async fn unlink_account(&self, user: UserId, extension: Extension)
         -> Result<bool, AccessError>;

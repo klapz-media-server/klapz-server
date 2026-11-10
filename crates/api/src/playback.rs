@@ -483,6 +483,18 @@ impl Mutation {
         crate::access::pair_extension(context, input).await
     }
 
+    /// Changes where a paired server is reached, and tells the extension's service at once:
+    /// what a tunnel or a new domain needs, without pairing again. For the server's operator
+    /// only.
+    async fn move_extension(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The paired connection, and its new address.")]
+        input: crate::access::MoveExtensionInput,
+    ) -> Result<crate::access::AccountLinkObject> {
+        crate::access::move_extension(context, input).await
+    }
+
     /// Forgets the account tied to a user's connection. Whether there was one. For the server's
     /// operator only.
     async fn unpair_extension(

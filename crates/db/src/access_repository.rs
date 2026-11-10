@@ -494,6 +494,31 @@ impl AccessRepository for SqlAccessRepository {
         Ok(result.rows_affected > 0)
     }
 
+    async fn move_account(
+        &self,
+        user: UserId,
+        extension: Extension,
+        connection_uri: &str,
+        now: i64,
+    ) -> Result<Option<AccountLink>, AccessError> {
+        extension_account::Entity::update_many()
+            .col_expr(
+                extension_account::Column::ConnectionUri,
+                connection_uri.to_owned().into(),
+            )
+            .col_expr(
+                extension_account::Column::PublishedAt,
+                Option::<i64>::None.into(),
+            )
+            .col_expr(extension_account::Column::UpdatedAt, now.into())
+            .filter(extension_account::Column::UserId.eq(user.get()))
+            .filter(extension_account::Column::Extension.eq(extension_name(extension)))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        self.account_link(user, extension).await
+    }
+
     async fn mark_published(
         &self,
         user: UserId,
