@@ -13,8 +13,9 @@ use crate::ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagI
 use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use crate::metadata::{
     self, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind, ItemQuery, ItemSort,
-    ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem, MetadataRepository,
-    Person, Rating, SearchQuery, Tag, TagCondition, TagKind, TagRef, TagScope, ValueField,
+    ItemTag, Listed, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
+    MetadataRepository, Person, Rating, SearchQuery, Tag, TagCondition, TagKind, TagRef, TagScope,
+    ValueField,
 };
 use crate::page::{Cursor, Page, Window};
 
@@ -223,15 +224,17 @@ impl InMemoryMetadata {
             .cloned()
             .collect();
 
+        // Title and date added only: the other orderings read versions or watch state, and
+        // storage's tests are where they are checked.
         match query.sort {
-            ItemSort::Title => matched.sort_by(|left, right| {
-                sort_key(left)
-                    .cmp(&sort_key(right))
-                    .then(left.id.get().cmp(&right.id.get()))
-            }),
             ItemSort::AddedAt => matched.sort_by(|left, right| {
                 left.added_at
                     .cmp(&right.added_at)
+                    .then(left.id.get().cmp(&right.id.get()))
+            }),
+            _ => matched.sort_by(|left, right| {
+                sort_key(left)
+                    .cmp(&sort_key(right))
                     .then(left.id.get().cmp(&right.id.get()))
             }),
         }
@@ -264,7 +267,7 @@ impl MetadataRepository for InMemoryMetadata {
         &self,
         query: &ItemQuery,
         window: Window,
-    ) -> Result<Page<MetadataItem>, MetadataError> {
+    ) -> Result<Page<Listed>, MetadataError> {
         let ordered = self.matching(query);
         let position = |cursor: &Cursor| ordered.iter().position(|item| item.id.get() == cursor.id);
 
@@ -292,7 +295,11 @@ impl MetadataRepository for InMemoryMetadata {
         if window.is_reversed() {
             page.items.reverse();
         }
-        Ok(page)
+        // Positions are found by id here, so the cursor needs nothing else.
+        Ok(page.map(|item| Listed {
+            cursor: Cursor::by_id(item.id.get()),
+            item,
+        }))
     }
 
     async fn item_count(&self, query: &ItemQuery) -> Result<u64, MetadataError> {

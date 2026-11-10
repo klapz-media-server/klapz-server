@@ -5,6 +5,7 @@ use open_plex_core::metadata::{
     FrameRange, FrameSize, ItemDepth, ItemFilter, ItemKind, ItemSort, TagCondition,
 };
 use open_plex_core::page::Direction;
+use open_plex_core::watch::Viewer;
 use open_plex_core::RatingKey;
 
 use crate::tag::{TagFilterError, TagFilterInput};
@@ -74,23 +75,47 @@ impl From<ItemDepthInput> for ItemDepth {
 /// bound as a parameter: an exhaustive match is the only form that is both injection-proof
 /// and verifiable by reading.
 ///
-/// Short on purpose. Both variants are backed by a non-null column, which is what lets a
-/// cursor locate a position unambiguously; ordering by a nullable one — year, rating —
-/// additionally needs the cursor to encode absence and the null position to be pinned.
+/// Under every order but `TITLE`, items with equal values follow in title order, ascending
+/// whichever the direction, as on the reference server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Enum)]
 pub enum ItemOrder {
-    /// By sort title, falling back to the title. Case-insensitive.
+    /// By sort title, falling back to the title. Case-insensitive. Equal titles follow by id, in the same direction.
     #[default]
     Title,
     /// By when the item was added to the library.
     AddedAt,
+    /// By release date. Items without one come first ascending, last descending — as for every order below.
+    ReleasedOn,
+    /// By critics' rating.
+    Rating,
+    /// By audience rating.
+    AudienceRating,
+    /// By running time: an item ranks by its shortest version ascending, by its longest descending.
+    Duration,
+    /// By frame height, the same way: an item ranks by its smallest version ascending, by its largest descending.
+    Height,
+    /// By when the caller last played the item. A caller without watch state has played nothing.
+    LastViewedAt,
+    /// By when a series' episodes were added: a series ranks by its first episode ascending, by its latest descending.
+    EpisodeAddedAt,
+    /// Shuffled, by the `seed` argument: the same seed gives the same order, so pages follow one another.
+    Random,
 }
 
-impl From<ItemOrder> for ItemSort {
-    fn from(order: ItemOrder) -> Self {
-        match order {
-            ItemOrder::Title => Self::Title,
-            ItemOrder::AddedAt => Self::AddedAt,
+impl ItemOrder {
+    /// The storage ordering, for a caller who watches as `viewer`.
+    pub(crate) const fn sort(self, viewer: Option<Viewer>, seed: u32) -> ItemSort {
+        match self {
+            Self::Title => ItemSort::Title,
+            Self::AddedAt => ItemSort::AddedAt,
+            Self::ReleasedOn => ItemSort::ReleasedOn,
+            Self::Rating => ItemSort::Rating,
+            Self::AudienceRating => ItemSort::AudienceRating,
+            Self::Duration => ItemSort::Duration,
+            Self::Height => ItemSort::Height,
+            Self::LastViewedAt => ItemSort::LastViewedAt(viewer),
+            Self::EpisodeAddedAt => ItemSort::EpisodeAddedAt,
+            Self::Random => ItemSort::Shuffled(seed),
         }
     }
 }

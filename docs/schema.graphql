@@ -705,19 +705,50 @@ An enum rather than a string because the value becomes a SQL identifier, which c
 bound as a parameter: an exhaustive match is the only form that is both injection-proof
 and verifiable by reading.
 
-Short on purpose. Both variants are backed by a non-null column, which is what lets a
-cursor locate a position unambiguously; ordering by a nullable one — year, rating —
-additionally needs the cursor to encode absence and the null position to be pinned.
+Under every order but `TITLE`, items with equal values follow in title order, ascending
+whichever the direction, as on the reference server.
 """
 enum ItemOrder {
 	"""
-	By sort title, falling back to the title. Case-insensitive.
+	By sort title, falling back to the title. Case-insensitive. Equal titles follow by id, in the same direction.
 	"""
 	TITLE
 	"""
 	By when the item was added to the library.
 	"""
 	ADDED_AT
+	"""
+	By release date. Items without one come first ascending, last descending — as for every order below.
+	"""
+	RELEASED_ON
+	"""
+	By critics' rating.
+	"""
+	RATING
+	"""
+	By audience rating.
+	"""
+	AUDIENCE_RATING
+	"""
+	By running time: an item ranks by its shortest version ascending, by its longest descending.
+	"""
+	DURATION
+	"""
+	By frame height, the same way: an item ranks by its smallest version ascending, by its largest descending.
+	"""
+	HEIGHT
+	"""
+	By when the caller last played the item. A caller without watch state has played nothing.
+	"""
+	LAST_VIEWED_AT
+	"""
+	By when a series' episodes were added: a series ranks by its first episode ascending, by its latest descending.
+	"""
+	EPISODE_ADDED_AT
+	"""
+	Shuffled, by the `seed` argument: the same seed gives the same order, so pages follow one another.
+	"""
+	RANDOM
 }
 
 """
@@ -1003,6 +1034,10 @@ type Library implements Node {
 		Which direction to order in.
 		"""
 		direction: SortDirection,
+		"""
+		Which shuffle `RANDOM` gives: the same seed, the same order. Ignored by every other order. Omitted, 0.
+		"""
+		seed: Int,
 		"""
 		Discard this many items before the page begins. Prefer cursors: an offset costs the database a traversal of every discarded row, and a concurrent insert shifts it. Provided because a client that renders a scrollbar needs to jump to an absolute position, which no cursor can express.
 		"""

@@ -42,7 +42,7 @@ impl Bound {
     }
 }
 
-/// The value of the ordering column at a cursor's position.
+/// One ordering value at a cursor's position.
 ///
 /// A collection ordered by anything other than its primary key needs that value to resume
 /// from: paginating a title-sorted list by id alone would skip or repeat rows.
@@ -50,27 +50,37 @@ impl Bound {
 pub enum CursorKey {
     Text(String),
     Int(i64),
+    Real(f64),
+    /// The ordering value is missing here: a film with no rating, sorted by rating. Absence
+    /// sorts before every value, as `NULL` does on `SQLite` and on the reference server.
+    Absent,
 }
 
 /// A position in an ordered collection.
 ///
-/// `key` is the ordering column's value and `id` breaks ties, which is what makes the cursor
-/// stable: two films sharing a sort title still have a total order, so no row is skipped or
-/// repeated across pages. A `key` of `None` means the collection is ordered by id alone and
-/// needs no tiebreaker — the case for library sections.
+/// `keys` are the ordering values, most significant first, and `id` breaks the last tie,
+/// which is what makes the cursor stable: two films sharing a sort title still have a total
+/// order, so no row is skipped or repeated across pages. No keys means the collection is
+/// ordered by id alone — the case for library sections.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cursor {
-    pub key: Option<CursorKey>,
+    pub keys: Vec<CursorKey>,
     pub id: i64,
 }
 
 impl Cursor {
     pub const fn by_id(id: i64) -> Self {
-        Self { key: None, id }
+        Self {
+            keys: Vec::new(),
+            id,
+        }
     }
 
     pub fn new(key: CursorKey, id: i64) -> Self {
-        Self { key: Some(key), id }
+        Self {
+            keys: vec![key],
+            id,
+        }
     }
 }
 
@@ -297,7 +307,7 @@ mod tests {
     fn a_window_ordered_by_id_carries_no_sort_key() {
         let window = Window::by_id(Some(4), None, Some(2), None).expect("valid");
         assert_eq!(window.after, Some(Cursor::by_id(4)));
-        assert_eq!(window.after.expect("present").key, None);
+        assert!(window.after.expect("present").keys.is_empty());
     }
 
     #[test]

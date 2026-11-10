@@ -2241,20 +2241,68 @@
         {
           "kind": "ENUM",
           "name": "ItemOrder",
-          "description": "How a library listing is ordered.\n\nAn enum rather than a string because the value becomes a SQL identifier, which cannot be\nbound as a parameter: an exhaustive match is the only form that is both injection-proof\nand verifiable by reading.\n\nShort on purpose. Both variants are backed by a non-null column, which is what lets a\ncursor locate a position unambiguously; ordering by a nullable one — year, rating —\nadditionally needs the cursor to encode absence and the null position to be pinned.",
+          "description": "How a library listing is ordered.\n\nAn enum rather than a string because the value becomes a SQL identifier, which cannot be\nbound as a parameter: an exhaustive match is the only form that is both injection-proof\nand verifiable by reading.\n\nUnder every order but `TITLE`, items with equal values follow in title order, ascending\nwhichever the direction, as on the reference server.",
           "fields": null,
           "inputFields": null,
           "interfaces": null,
           "enumValues": [
             {
               "name": "TITLE",
-              "description": "By sort title, falling back to the title. Case-insensitive.",
+              "description": "By sort title, falling back to the title. Case-insensitive. Equal titles follow by id, in the same direction.",
               "isDeprecated": false,
               "deprecationReason": null
             },
             {
               "name": "ADDED_AT",
               "description": "By when the item was added to the library.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RELEASED_ON",
+              "description": "By release date. Items without one come first ascending, last descending — as for every order below.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RATING",
+              "description": "By critics' rating.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AUDIENCE_RATING",
+              "description": "By audience rating.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DURATION",
+              "description": "By running time: an item ranks by its shortest version ascending, by its longest descending.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HEIGHT",
+              "description": "By frame height, the same way: an item ranks by its smallest version ascending, by its largest descending.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LAST_VIEWED_AT",
+              "description": "By when the caller last played the item. A caller without watch state has played nothing.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EPISODE_ADDED_AT",
+              "description": "By when a series' episodes were added: a series ranks by its first episode ascending, by its latest descending.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RANDOM",
+              "description": "Shuffled, by the `seed` argument: the same seed gives the same order, so pages follow one another.",
               "isDeprecated": false,
               "deprecationReason": null
             }
@@ -2965,6 +3013,16 @@
                   "type": {
                     "kind": "ENUM",
                     "name": "SortDirection",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "seed",
+                  "description": "Which shuffle `RANDOM` gives: the same seed, the same order. Ignored by every other order. Omitted, 0.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
                     "ofType": null
                   },
                   "defaultValue": null

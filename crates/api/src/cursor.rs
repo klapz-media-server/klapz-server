@@ -30,15 +30,25 @@ pub enum CursorError {
 impl CursorType for OpaqueCursor {
     type Error = CursorError;
 
+    /// `i:<id>` for an id-ordered collection, else `k:<id>` and one segment per key:
+    /// `;t<length>:<text>`, `;n<integer>`, `;r<real>` or `;z` for an absent value. Text is
+    /// length-prefixed because a title may hold any character, the separators included.
     fn encode_cursor(&self) -> String {
-        // `i:<id>` for an id-ordered collection, `t:<id>:<text>` or `n:<id>:<number>` when a
-        // sort key is involved. The id comes before the key so the key may contain colons.
-        let plain = match &self.0.key {
-            None => format!("i:{}", self.0.id),
-            Some(CursorKey::Text(text)) => format!("t:{}:{text}", self.0.id),
-            Some(CursorKey::Int(value)) => format!("n:{}:{value}", self.0.id),
-        };
-        STANDARD.encode(plain)
+        let Cursor { keys, id } = &self.0;
+        if keys.is_empty() {
+            return STANDARD.encode(format!("i:{id}"));
+        }
+        let segments: String = keys
+            .iter()
+            .map(|key| match key {
+                CursorKey::Text(text) => format!(";t{}:{text}", text.len()),
+                CursorKey::Int(value) => format!(";n{value}"),
+                // `f64`'s display is the shortest form that parses back to the same value.
+                CursorKey::Real(value) => format!(";r{value}"),
+                CursorKey::Absent => ";z".to_owned(),
+            })
+            .collect();
+        STANDARD.encode(format!("k:{id}{segments}"))
     }
 
     fn decode_cursor(encoded: &str) -> Result<Self, Self::Error> {
@@ -52,18 +62,58 @@ impl CursorType for OpaqueCursor {
             "i" => Ok(Self(Cursor::by_id(
                 rest.parse().map_err(|_| CursorError::Malformed)?,
             ))),
-            "t" | "n" => {
-                let (id, key) = rest.split_once(':').ok_or(CursorError::Malformed)?;
+            "k" => {
+                let (id, mut segments) = rest.split_once(';').ok_or(CursorError::Malformed)?;
                 let id = id.parse().map_err(|_| CursorError::Malformed)?;
-                let key = if tag == "t" {
-                    CursorKey::Text(key.to_owned())
-                } else {
-                    CursorKey::Int(key.parse().map_err(|_| CursorError::Malformed)?)
-                };
-                Ok(Self(Cursor::new(key, id)))
+                let mut keys = Vec::new();
+                loop {
+                    let (key, remainder) = next_key(segments)?;
+                    keys.push(key);
+                    match remainder.strip_prefix(';') {
+                        Some(more) => segments = more,
+                        None if remainder.is_empty() => break,
+                        None => return Err(CursorError::Malformed),
+                    }
+                }
+                Ok(Self(Cursor { keys, id }))
             }
             _ => Err(CursorError::Malformed),
         }
+    }
+}
+
+/// Reads one key segment, its `;` already consumed, and returns what follows it.
+fn next_key(segment: &str) -> Result<(CursorKey, &str), CursorError> {
+    let mut chars = segment.chars();
+    let tag = chars.next().ok_or(CursorError::Malformed)?;
+    let body = chars.as_str();
+    let number_end = body.find(';').unwrap_or(body.len());
+    match tag {
+        't' => {
+            let (length, text) = body.split_once(':').ok_or(CursorError::Malformed)?;
+            let length: usize = length.parse().map_err(|_| CursorError::Malformed)?;
+            let value = text.get(..length).ok_or(CursorError::Malformed)?;
+            let remainder = text.get(length..).ok_or(CursorError::Malformed)?;
+            Ok((CursorKey::Text(value.to_owned()), remainder))
+        }
+        'n' => Ok((
+            CursorKey::Int(
+                body[..number_end]
+                    .parse()
+                    .map_err(|_| CursorError::Malformed)?,
+            ),
+            &body[number_end..],
+        )),
+        'r' => Ok((
+            CursorKey::Real(
+                body[..number_end]
+                    .parse()
+                    .map_err(|_| CursorError::Malformed)?,
+            ),
+            &body[number_end..],
+        )),
+        'z' => Ok((CursorKey::Absent, body)),
+        _ => Err(CursorError::Malformed),
     }
 }
 
@@ -96,12 +146,32 @@ mod tests {
     }
 
     #[test]
-    fn round_trips_a_key_containing_colons() {
-        // Film titles contain colons, which is why the id is encoded before the key.
+    fn round_trips_a_key_containing_the_separators() {
+        // Film titles contain colons and may contain anything, which is why text is
+        // length-prefixed.
         round_trip(&Cursor::new(
-            CursorKey::Text("Jurassic World: Dominion".to_owned()),
+            CursorKey::Text("Jurassic World: Dominion; ;z".to_owned()),
             407_618,
         ));
+        round_trip(&Cursor::new(CursorKey::Text("Amélie;".to_owned()), 1));
+    }
+
+    #[test]
+    fn round_trips_several_keys_an_absent_one_included() {
+        round_trip(&Cursor {
+            keys: vec![
+                CursorKey::Real(7.3),
+                CursorKey::Absent,
+                CursorKey::Text("alien".to_owned()),
+            ],
+            id: 407_618,
+        });
+        round_trip(&Cursor {
+            keys: vec![CursorKey::Absent],
+            id: 3,
+        });
+        // A real rating survives at full precision.
+        round_trip(&Cursor::new(CursorKey::Real(0.1 + 0.2), 3));
     }
 
     #[test]
@@ -126,9 +196,14 @@ mod tests {
             OpaqueCursor::decode_cursor(&STANDARD.encode("i:not-a-number")),
             Err(CursorError::Malformed)
         ));
-        assert!(matches!(
-            OpaqueCursor::decode_cursor(&STANDARD.encode("t:4")),
-            Err(CursorError::Malformed)
-        ));
+        for plain in ["k:4", "k:4;", "k:4;t9:short", "k:4;x1", "k:4;n1x", "k:4;zz"] {
+            assert!(
+                matches!(
+                    OpaqueCursor::decode_cursor(&STANDARD.encode(plain)),
+                    Err(CursorError::Malformed)
+                ),
+                "{plain}"
+            );
+        }
     }
 }

@@ -27,7 +27,7 @@ use crate::gql_items::{
 };
 use crate::items::{MetadataEntry, LIBRARY_IDENTIFIER, MEDIA_TAG_PREFIX, MEDIA_TAG_VERSION};
 use crate::language::Language;
-use crate::library::{item_type, ordering};
+use crate::library::{item_type, shuffle_seed};
 use crate::listing;
 use crate::response::{PlexResponse, ResponseFormat};
 use crate::PlexState;
@@ -164,7 +164,7 @@ async fn expand_section(state: &PlexState, rest: &str) -> Result<Vec<String>, Ap
         .into_owned()
         .collect();
     let request = listing::parse(&pairs)?;
-    let (order_by, direction) = ordering(request.sort.as_deref());
+    let (order_by, direction) = request.ordering();
 
     let mut variables = Variables::default();
     variables.insert(
@@ -175,6 +175,7 @@ async fn expand_section(state: &PlexState, rest: &str) -> Result<Vec<String>, Ap
     variables.insert(Name::new("offset"), Value::Number(0.into()));
     variables.insert(Name::new("orderBy"), Value::Enum(Name::new(order_by)));
     variables.insert(Name::new("direction"), Value::Enum(Name::new(direction)));
+    variables.insert(Name::new("seed"), Value::Number(shuffle_seed().into()));
     variables.insert(
         Name::new("filter"),
         request.filters.to_graphql(item_type(request.kind)),

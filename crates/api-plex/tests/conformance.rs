@@ -2514,8 +2514,29 @@ async fn a_listing_describes_its_filters_only_when_asked() {
     assert_eq!(film["type"], "movie");
     assert_eq!(film["active"], true);
     assert_eq!(film["Filter"][0]["key"], "/library/sections/4/genre");
-    assert_eq!(film["Sort"][1]["key"], "addedAt");
-    assert_eq!(film["Sort"][1]["activeDirection"], "desc");
+    // Sixth in the reference's list, after the title, release date, ratings and duration.
+    assert_eq!(film["Sort"][5]["key"], "addedAt");
+    assert_eq!(film["Sort"][5]["activeDirection"], "desc");
+}
+
+#[tokio::test]
+async fn a_sort_the_listing_cannot_honor_is_refused() {
+    // Rather than answered in title order, which a client would show as what it asked for.
+    for sort in ["unviewedLeafCount:desc", "year", "rating:desc,titleSort"] {
+        let (status, _, _) = get(&format!("/library/sections/4/all?sort={sort}"), None).await;
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{sort}");
+    }
+    for sort in [
+        "rating:desc",
+        "originallyAvailableAt",
+        "lastViewedAt:desc",
+        "random",
+        "mediaHeight:desc",
+        "duration",
+    ] {
+        let (status, _, _) = get(&format!("/library/sections/4/all?sort={sort}"), None).await;
+        assert_eq!(status, StatusCode::OK, "{sort}");
+    }
 }
 
 #[tokio::test]

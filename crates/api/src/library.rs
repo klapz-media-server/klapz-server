@@ -11,7 +11,8 @@ use open_plex_core::metadata::{
 };
 use open_plex_core::page::{Cursor, Direction, Window, MAX_ITEMS};
 use open_plex_core::recent::recently_added_episodes;
-use open_plex_core::RatingKey;
+use open_plex_core::watch::Viewer;
+use open_plex_core::{Listed, RatingKey};
 
 use crate::cursor::OpaqueCursor;
 use crate::filter::{ItemFilterInput, ItemOrder, SortDirection};
@@ -371,11 +372,17 @@ impl Library {
         #[graphql(desc = "How to order the listing.")] order_by: Option<ItemOrder>,
         #[graphql(desc = "Which direction to order in.")] direction: Option<SortDirection>,
         #[graphql(
+            desc = "Which shuffle `RANDOM` gives: the same seed, the same order. Ignored by every other order. Omitted, 0."
+        )]
+        seed: Option<u32>,
+        #[graphql(
             desc = "Discard this many items before the page begins. Prefer cursors: an offset costs the database a traversal of every discarded row, and a concurrent insert shifts it. Provided because a client that renders a scrollbar needs to jump to an absolute position, which no cursor can express."
         )]
         offset: Option<u32>,
     ) -> Result<ItemConnection> {
-        let item_query = self.item_query(filter, order_by, direction)?;
+        let viewer = crate::access::caller(context).and_then(Viewer::of);
+        let sort = order_by.unwrap_or_default().sort(viewer, seed.unwrap_or(0));
+        let item_query = self.item_query(filter, sort, direction)?;
         let skip = u64::from(offset.unwrap_or(0));
 
         query(
@@ -391,13 +398,11 @@ impl Library {
                     .await?;
 
                 let mut connection = Connection::new(page.has_previous, page.has_next);
-                connection.edges.extend(page.items.into_iter().map(|item| {
-                    // The cursor carries the ordering key *and* the id: two films can share
-                    // a sort title, and without the tiebreaker a page boundary would skip
-                    // or repeat one.
-                    let cursor = Cursor::new(item_query.cursor_key(&item), item.id.get());
-                    Edge::new(OpaqueCursor(cursor), Item::from_domain(item))
-                }));
+                connection
+                    .edges
+                    .extend(page.items.into_iter().map(|listed| {
+                        Edge::new(OpaqueCursor(listed.cursor), Item::from_domain(listed.item))
+                    }));
                 Ok::<_, async_graphql::Error>(connection)
             },
         )
@@ -429,7 +434,7 @@ impl Library {
         >,
         #[graphql(desc = "Discard this many tags before the page begins.")] offset: Option<u32>,
     ) -> Result<LibraryTags> {
-        let item_query = self.item_query(filter, None, None)?;
+        let item_query = self.item_query(filter, ItemSort::Title, None)?;
         let scope = TagScope {
             kind: kind.into(),
             billed_within,
@@ -475,7 +480,7 @@ impl Library {
         >,
         #[graphql(desc = "Discard this many years before the page begins.")] offset: Option<u32>,
     ) -> Result<Years> {
-        let item_query = self.item_query(filter, None, None)?;
+        let item_query = self.item_query(filter, ItemSort::Title, None)?;
         let skip = u64::from(offset.unwrap_or(0));
         query(
             after,
@@ -522,7 +527,7 @@ impl Library {
         last: Option<i32>,
         #[graphql(desc = "Discard this many values before the page begins.")] offset: Option<u32>,
     ) -> Result<FieldValues> {
-        let item_query = self.item_query(filter, None, None)?;
+        let item_query = self.item_query(filter, ItemSort::Title, None)?;
         let skip = u64::from(offset.unwrap_or(0));
         query(
             after,
@@ -561,7 +566,7 @@ impl Library {
         >,
     ) -> Result<LibraryStats> {
         Ok(LibraryStats {
-            query: self.item_query(filter, None, None)?,
+            query: self.item_query(filter, ItemSort::Title, None)?,
         })
     }
 }
@@ -589,7 +594,7 @@ impl Library {
             let items = page
                 .items
                 .into_iter()
-                .map(|item| {
+                .map(|Listed { item, .. }| {
                     let added_at = item.added_at;
                     (item, added_at)
                 })
@@ -626,15 +631,12 @@ impl Library {
     fn item_query(
         &self,
         filter: Option<ItemFilterInput>,
-        order_by: Option<ItemOrder>,
+        sort: ItemSort,
         direction: Option<SortDirection>,
     ) -> Result<ItemQuery> {
         Ok(ItemQuery::new(self.section.id)
             .filtered(filter.unwrap_or_default().try_into()?)
-            .sorted_by(
-                order_by.unwrap_or_default().into(),
-                direction.unwrap_or_default().into(),
-            ))
+            .sorted_by(sort, direction.unwrap_or_default().into()))
     }
 }
 

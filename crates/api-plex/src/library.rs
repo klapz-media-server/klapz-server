@@ -246,27 +246,16 @@ pub(crate) fn item_type(kind: Option<i32>) -> Option<&'static str> {
     }
 }
 
-/// Translates Plex's `sort=` into the official API's ordering enum and direction.
+/// How long a shuffle lasts, in seconds.
 ///
-/// Only the two orderings the schema offers are honored, and anything else falls back to
-/// title. That bound is not arbitrary: both supported columns are non-null, which is what
-/// lets a cursor locate a page boundary unambiguously. Ordering by a nullable column needs
-/// the cursor to encode absence first.
-pub(crate) fn ordering(sort: Option<&str>) -> (&'static str, &'static str) {
-    let Some(sort) = sort else {
-        return ("TITLE", "ASCENDING");
-    };
-    let (field, suffix) = sort.split_once(':').unwrap_or((sort, "asc"));
-    let direction = if suffix.eq_ignore_ascii_case("desc") {
-        "DESCENDING"
-    } else {
-        "ASCENDING"
-    };
-    let order = match field {
-        "addedAt" | "added" => "ADDED_AT",
-        _ => "TITLE",
-    };
-    (order, direction)
+/// The reference reshuffles on every request, so a client paging through a random listing
+/// meets some items twice and never sees others. One seed per period keeps the pages of one
+/// browse in step, and a later visit still finds a new order.
+const SHUFFLE_PERIOD_SECONDS: i64 = 600;
+
+/// The seed of the shuffle in effect.
+pub(crate) fn shuffle_seed() -> u32 {
+    u32::try_from(open_plex_core::now_epoch() / SHUFFLE_PERIOD_SECONDS).unwrap_or(0)
 }
 
 /// `GET /library/sections/{sectionId}/all` — the listing clients spend their time in.
@@ -288,7 +277,7 @@ async fn section_items(
     // Capped rather than honored as given: `MAX_ITEMS` is the ceiling every window in this
     // project respects, and a listing is where an uncapped count would hurt most.
     let first = request.size.unwrap_or(DEFAULT_LISTING_SIZE).min(MAX_ITEMS);
-    let (order_by, direction) = ordering(request.sort.as_deref());
+    let (order_by, direction) = request.ordering();
 
     let mut variables = Variables::default();
     variables.insert(
@@ -299,6 +288,7 @@ async fn section_items(
     variables.insert(Name::new("offset"), Value::Number(offset.into()));
     variables.insert(Name::new("orderBy"), Value::Enum(Name::new(order_by)));
     variables.insert(Name::new("direction"), Value::Enum(Name::new(direction)));
+    variables.insert(Name::new("seed"), Value::Number(shuffle_seed().into()));
     variables.insert(
         Name::new("filter"),
         request.filters.to_graphql(item_type(request.kind)),
@@ -322,13 +312,8 @@ async fn section_items(
         .iter()
         .any(|(key, value)| key == "includeMeta" && value == "1")
     {
-        body.meta = crate::meta::build(
-            section,
-            &library.kind,
-            request.kind,
-            request.sort.as_deref(),
-            language,
-        );
+        body.meta =
+            crate::meta::build(section, &library.kind, request.kind, request.sort, language);
     }
     Ok(PlexResponse::new(body, format).paged(offset, total))
 }
@@ -397,17 +382,6 @@ mod tests {
         // 8 is an artist, which this server does not hold: no filter rather than an error.
         assert_eq!(item_type(Some(8)), None);
         assert_eq!(item_type(None), None);
-    }
-
-    #[test]
-    fn reads_the_direction_suffix_off_the_sort_field() {
-        assert_eq!(ordering(None), ("TITLE", "ASCENDING"));
-        assert_eq!(ordering(Some("titleSort")), ("TITLE", "ASCENDING"));
-        assert_eq!(ordering(Some("titleSort:desc")), ("TITLE", "DESCENDING"));
-        assert_eq!(ordering(Some("addedAt:desc")), ("ADDED_AT", "DESCENDING"));
-        assert_eq!(ordering(Some("addedAt")), ("ADDED_AT", "ASCENDING"));
-        // An ordering the schema does not offer falls back rather than failing.
-        assert_eq!(ordering(Some("rating:desc")), ("TITLE", "DESCENDING"));
     }
 }
 

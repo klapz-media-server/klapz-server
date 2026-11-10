@@ -8,7 +8,7 @@
 
 use open_plex_core::metadata::{FrameRange, FrameSize, ScanType};
 use open_plex_core::metadata::{
-    ItemDepth, ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataError, MetadataRepository,
+    ItemDepth, ItemFilter, ItemKind, ItemQuery, ItemSort, Listed, MetadataError, MetadataRepository,
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Window};
 use open_plex_core::{MediaId, PartId, RatingKey, SectionId, StreamId};
@@ -348,10 +348,10 @@ fn page(n: u32) -> Window {
     Window::new(None, None, Some(n), None).expect("window")
 }
 
-fn titles(items: &[open_plex_core::MetadataItem]) -> Vec<String> {
+fn titles(items: &[Listed]) -> Vec<String> {
     items
         .iter()
-        .map(|item| item.title.clone().unwrap_or_default())
+        .map(|listed| listed.item.title.clone().unwrap_or_default())
         .collect()
 }
 
@@ -385,7 +385,7 @@ async fn pages_through_items_sharing_a_sort_title() {
     assert_eq!(titles(&first.items), vec!["Alien", "Dune"]);
     assert!(first.has_next);
 
-    let cursor = Cursor::new(query.cursor_key(&first.items[1]), first.items[1].id.get());
+    let cursor = first.items[1].cursor.clone();
     let second = repository
         .items(
             &query,
@@ -411,7 +411,7 @@ async fn pages_descending() {
     let first = repository.items(&query, page(2)).await.expect("page");
     assert_eq!(titles(&first.items), vec!["Zodiac", "Jurassic World"]);
 
-    let cursor = Cursor::new(query.cursor_key(&first.items[1]), first.items[1].id.get());
+    let cursor = first.items[1].cursor.clone();
     let second = repository
         .items(
             &query,
@@ -656,18 +656,37 @@ async fn reports_a_missing_item() {
 
 #[tokio::test]
 async fn a_cursor_from_one_ordering_is_not_reused_across_orderings() {
-    // The sort key's *type* differs per ordering, and a text cursor cannot resume a numeric
-    // one. This is why `ItemQuery::cursor_key` and the SQL live next to each other.
-    let query = movies();
+    // A title cursor holds one value, a cursor by date added two: the date, then the title
+    // that breaks its ties. Neither can say where it stands in the other.
+    let by_title = movies();
     let by_added = movies().sorted_by(ItemSort::AddedAt, Direction::Ascending);
     let repository = repository().await;
 
-    let first = repository.items(&query, page(1)).await.expect("page");
-    let text_cursor = Cursor::new(query.cursor_key(&first.items[0]), first.items[0].id.get());
-    assert!(matches!(text_cursor.key, Some(CursorKey::Text(_))));
+    let title_cursor = repository
+        .items(&by_title, page(1))
+        .await
+        .expect("page")
+        .items[0]
+        .cursor
+        .clone();
+    assert!(matches!(title_cursor.keys.as_slice(), [CursorKey::Text(_)]));
+    let added_cursor = repository
+        .items(&by_added, page(1))
+        .await
+        .expect("page")
+        .items[0]
+        .cursor
+        .clone();
+    assert!(matches!(
+        added_cursor.keys.as_slice(),
+        [CursorKey::Int(_), CursorKey::Text(_)]
+    ));
 
-    let numeric = by_added.cursor_key(&first.items[0]);
-    assert!(matches!(numeric, CursorKey::Int(_)));
+    for (query, cursor) in [(&by_added, title_cursor), (&by_title, added_cursor)] {
+        let window = Window::new(Some(cursor), None, Some(2), None).expect("window");
+        let error = repository.items(query, window).await.expect_err("mismatch");
+        assert!(matches!(error, MetadataError::CursorMismatch));
+    }
 }
 
 #[tokio::test]
@@ -770,7 +789,9 @@ async fn a_resolution_filter_excludes_items_without_media() {
         .await
         .expect("page")
         .items;
-    assert!(items.iter().all(|item| item.kind == ItemKind::Movie));
+    assert!(items
+        .iter()
+        .all(|listed| listed.item.kind == ItemKind::Movie));
 }
 
 #[tokio::test]
@@ -800,7 +821,7 @@ async fn an_empty_filter_covers_the_top_level() {
         .await
         .expect("items")
         .items;
-    assert!(items.iter().all(|item| item.parent_id.is_none()));
+    assert!(items.iter().all(|listed| listed.item.parent_id.is_none()));
 }
 
 #[tokio::test]

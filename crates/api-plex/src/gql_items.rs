@@ -341,6 +341,7 @@ query PlexSectionItems(
   $filter: ItemFilterInput
   $orderBy: ItemOrder!
   $direction: SortDirection!
+  $seed: Int
 ) {
   node(id: $id) {
     ... on Library {
@@ -355,6 +356,7 @@ query PlexSectionItems(
         filter: $filter
         orderBy: $orderBy
         direction: $direction
+        seed: $seed
       ) {
         edges {
           node {

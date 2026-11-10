@@ -200,6 +200,10 @@ Places where we knowingly answer differently, each decided rather than overlooke
   the folded `sort_key` column byte-wise. Same items, alphabetical and stable, different
   sequence: 299/500 positions match on films, 438/500 on series, median displacement 0. Close
   enough; a UCA dependency plus a re-import of 1.1M rows is not worth the remainder.
+- **A random listing keeps one order for ten minutes.** The reference reshuffles on every
+  request, so paging meets items twice; ours is a shuffle seeded by the clock's ten-minute
+  period, and the official API takes the seed as an argument. A sort we cannot honor
+  (`unviewedLeafCount`, the series order of episodes, a list of fields) answers `501`.
 - **A play queue holds at most 500 entries.** The reference copies a whole library into one;
   every window here is capped by `page::MAX_ITEMS`. Queues are deleted after 7 days.
 - **Quality follows a fixed ladder.** Under `maxVideoBitrate` we re-encode along the sizes and
@@ -398,8 +402,12 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   Plex surface with the labels clients show — `language` named by ICU's rules from CLDR 39
   (`tools/gen_language_names.py`), `displayTitle` and `extendedDisplayTitle` measured on
   4,473 tracks in three languages: no differing field on video or audio tracks;
-- ⬜ **recently released**, which needs ordering by release date — the nullable-column sort
-  in *Open questions*;
+- ✅ **listing order**: the reference's nine film sorts and their series and episode variants,
+  over nullable and computed values — absence first, ties in title order, a version's extreme
+  by direction, all measured on whole libraries (`docs/spec-gaps.md`). Cursors carry several
+  keys, one of which may be absent (`item_order`); a sort we cannot honor answers `501`, like
+  a filter;
+- ⬜ **recently released**, now that a listing orders by release date;
 - ✅ **watch state**: per viewer and per work (`guid`), so every copy of a film is watched at
   once; positions, viewings and the parents' counts by the rules measured on the reference
   (`core::watch`), on the official API (`Item.watchState`, `stats.watchedEpisodeCount`,
@@ -460,12 +468,6 @@ absent.
 - Whether any client depends on attribute ordering within an element.
 - A library's `admin` role has little to open yet: changing a library's settings is the only
   route it gates, and that route still answers `501`.
-- **Sorting is still two columns.** `sort=` honors `titleSort` and `addedAt`; the reference
-  advertises nine, and the other seven (`originallyAvailableAt`, `rating`, `audienceRating`,
-  `duration`, `lastViewedAt`, `mediaHeight`, `random`) are all backed by nullable columns.
-  Ordering by one needs the cursor to encode absence and the null position to be pinned. Note
-  the inconsistency to resolve: an unsupported `sort=` falls back to title, while an
-  unsupported filter answers `501`.
 - **A paired server shows `presence=false` on plex.tv.** The reference becomes present through a
   push connection (`/services/pubsub/servers`) we do not open, and what clients do about the
   absence is not settled.

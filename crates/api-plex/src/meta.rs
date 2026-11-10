@@ -9,6 +9,7 @@
 use serde::Serialize;
 
 use crate::language::Language;
+use crate::listing::Sort;
 use crate::translations::Catalog;
 
 #[derive(Debug, Serialize)]
@@ -94,6 +95,52 @@ const EPISODE_FILTERS: &[FilterRow] = &[
     ("resolution", "string", |c| c.resolution),
 ];
 
+/// `(key, defaultDirection, label)`, in the reference's order for each item type. The title
+/// is not among them: it is written apart, with what only it carries.
+type SortRow = (&'static str, &'static str, Label);
+
+const RELEASE_DATE: SortRow = ("originallyAvailableAt", "desc", |c| c.release_date);
+const CRITIC_RATING: SortRow = ("rating", "desc", |c| c.critic_rating);
+const AUDIENCE_RATING: SortRow = ("audienceRating", "desc", |c| c.audience_rating);
+const DATE_ADDED: SortRow = ("addedAt", "desc", |c| c.date_added);
+const DATE_VIEWED: SortRow = ("lastViewedAt", "desc", |c| c.date_viewed);
+const RANDOMLY: SortRow = ("random", "desc", |c| c.randomly);
+
+const MOVIE_SORTS: &[SortRow] = &[
+    RELEASE_DATE,
+    CRITIC_RATING,
+    AUDIENCE_RATING,
+    ("duration", "desc", |c| c.duration),
+    DATE_ADDED,
+    DATE_VIEWED,
+    ("mediaHeight", "asc", |c| c.resolution),
+    RANDOMLY,
+];
+
+/// Without `unviewedLeafCount`, which the reference lists between audience rating and the
+/// latest episode.
+const SHOW_SORTS: &[SortRow] = &[
+    RELEASE_DATE,
+    CRITIC_RATING,
+    AUDIENCE_RATING,
+    ("episode.addedAt", "desc", |c| c.last_episode_date_added),
+    DATE_VIEWED,
+    RANDOMLY,
+];
+
+/// Seasons and episodes lead with an order by series, season and episode, which is not
+/// offered: a listing cannot order by its items' parents yet.
+const SEASON_SORTS: &[SortRow] = &[RANDOMLY];
+
+const EPISODE_SORTS: &[SortRow] = &[
+    RELEASE_DATE,
+    CRITIC_RATING,
+    AUDIENCE_RATING,
+    DATE_ADDED,
+    DATE_VIEWED,
+    RANDOMLY,
+];
+
 /// One item type a library can list.
 struct TypeRow {
     number: i32,
@@ -101,7 +148,7 @@ struct TypeRow {
     title: Label,
     filters: &'static [FilterRow],
     by_title: bool,
-    by_date_added: bool,
+    sorts: &'static [SortRow],
 }
 
 const MOVIE_TYPES: &[TypeRow] = &[TypeRow {
@@ -110,7 +157,7 @@ const MOVIE_TYPES: &[TypeRow] = &[TypeRow {
     title: |c| c.movies,
     filters: MOVIE_FILTERS,
     by_title: true,
-    by_date_added: true,
+    sorts: MOVIE_SORTS,
 }];
 
 const SHOW_TYPES: &[TypeRow] = &[
@@ -120,7 +167,7 @@ const SHOW_TYPES: &[TypeRow] = &[
         title: |c| c.tv_shows,
         filters: SHOW_FILTERS,
         by_title: true,
-        by_date_added: false,
+        sorts: SHOW_SORTS,
     },
     TypeRow {
         number: 3,
@@ -128,7 +175,7 @@ const SHOW_TYPES: &[TypeRow] = &[
         title: |c| c.seasons,
         filters: &[],
         by_title: false,
-        by_date_added: false,
+        sorts: SEASON_SORTS,
     },
     TypeRow {
         number: 4,
@@ -136,28 +183,22 @@ const SHOW_TYPES: &[TypeRow] = &[
         title: |c| c.episodes,
         filters: EPISODE_FILTERS,
         by_title: false,
-        by_date_added: true,
+        sorts: EPISODE_SORTS,
     },
 ];
 
 const TITLE_KEY: &str = "titleSort";
-const DATE_ADDED_KEY: &str = "addedAt";
 
-/// The sort in effect: the requested one when this type offers it, else what a listing falls
-/// back to, the title.
-fn active_sort(requested: Option<&str>, row: &TypeRow) -> (&'static str, &'static str) {
-    let (key, suffix) = requested.map_or((TITLE_KEY, "asc"), |sort| {
-        sort.split_once(':').unwrap_or((sort, "asc"))
-    });
-    let direction = if suffix.eq_ignore_ascii_case("desc") {
-        "desc"
-    } else {
-        "asc"
-    };
-    match key {
-        DATE_ADDED_KEY if row.by_date_added => (DATE_ADDED_KEY, direction),
-        TITLE_KEY if row.by_title => (TITLE_KEY, direction),
-        _ => (TITLE_KEY, "asc"),
+/// The sort in effect: the requested one, which the listing refused unless this type offers
+/// it, else the title ascending.
+fn active_sort(requested: Option<Sort>, row: &TypeRow) -> Option<(&'static str, &'static str)> {
+    let direction = |sort: Sort| if sort.descending { "desc" } else { "asc" };
+    match requested {
+        Some(sort) if sort.key == TITLE_KEY && row.by_title => Some((TITLE_KEY, direction(sort))),
+        Some(sort) if row.sorts.iter().any(|(key, _, _)| *key == sort.key) => {
+            Some((sort.key, direction(sort)))
+        }
+        _ => row.by_title.then_some((TITLE_KEY, "asc")),
     }
 }
 
@@ -183,17 +224,17 @@ fn sorts(
             title: catalog.sort_title,
         });
     }
-    if row.by_date_added {
-        let mark = marks(DATE_ADDED_KEY);
+    for (key, default_direction, label) in row.sorts {
+        let mark = marks(key);
         sorts.push(MetaSort {
             active: mark.map(|_| true),
             active_direction: mark.map(|(_, direction)| direction),
             default: None,
-            default_direction: "desc",
-            desc_key: format!("{DATE_ADDED_KEY}:desc"),
+            default_direction,
+            desc_key: format!("{key}:desc"),
             first_character_key: None,
-            key: DATE_ADDED_KEY,
-            title: catalog.date_added,
+            key,
+            title: label(catalog),
         });
     }
     sorts
@@ -214,7 +255,7 @@ pub fn build(
     section: i64,
     library_kind: &str,
     requested_type: Option<i32>,
-    sort: Option<&str>,
+    sort: Option<Sort>,
     language: Language,
 ) -> Option<Meta> {
     let rows = match library_kind {
@@ -252,7 +293,7 @@ pub fn build(
                     section,
                     row,
                     catalog,
-                    active.then(|| active_sort(sort, row)),
+                    active.then(|| active_sort(sort, row)).flatten(),
                 ),
             }
         })
@@ -268,6 +309,7 @@ mod tests {
     use crate::client::ClientIdentity;
 
     fn film_meta(requested_type: Option<i32>, sort: Option<&str>) -> serde_json::Value {
+        let sort = sort.map(|sort| Sort::parse(sort).unwrap());
         let meta = build(4, "MOVIE", requested_type, sort, Language::default()).unwrap();
         serde_json::to_value(meta).unwrap()
     }
@@ -316,11 +358,83 @@ mod tests {
     }
 
     #[test]
-    fn a_sort_we_do_not_honor_shows_the_title_the_listing_falls_back_to() {
+    fn a_sort_another_type_offers_leaves_the_title_marked() {
+        // `episode.addedAt` is a series' sort; a film listing marks what it falls back to.
         assert_eq!(
-            active_sorts(&film_meta(None, Some("rating:desc"))),
+            active_sorts(&film_meta(None, Some("episode.addedAt:desc"))),
             sort_pair("titleSort", "asc")
         );
+        assert_eq!(
+            active_sorts(&film_meta(None, Some("rating:desc"))),
+            sort_pair("rating", "desc")
+        );
+    }
+
+    fn sort_keys(meta: &serde_json::Value, row: usize) -> Vec<String> {
+        meta["Type"][row]["Sort"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|sort| sort["key"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn offers_the_reference_sorts_in_its_order() {
+        // Captured from the reference: a film library offers all nine; a series library
+        // lacks `unviewedLeafCount`, and its episodes their order by series.
+        assert_eq!(
+            sort_keys(&film_meta(None, None), 0),
+            [
+                "titleSort",
+                "originallyAvailableAt",
+                "rating",
+                "audienceRating",
+                "duration",
+                "addedAt",
+                "lastViewedAt",
+                "mediaHeight",
+                "random"
+            ]
+        );
+        let shows =
+            serde_json::to_value(build(5, "SHOW", None, None, Language::default())).unwrap();
+        assert_eq!(
+            sort_keys(&shows, 0),
+            [
+                "titleSort",
+                "originallyAvailableAt",
+                "rating",
+                "audienceRating",
+                "episode.addedAt",
+                "lastViewedAt",
+                "random"
+            ]
+        );
+        assert_eq!(sort_keys(&shows, 1), ["random"]);
+        assert_eq!(
+            sort_keys(&shows, 2),
+            [
+                "originallyAvailableAt",
+                "rating",
+                "audienceRating",
+                "addedAt",
+                "lastViewedAt",
+                "random"
+            ]
+        );
+    }
+
+    /// Like the filters: a sort offered must be one a listing accepts.
+    #[test]
+    fn every_sort_offered_is_one_a_listing_honors() {
+        for rows in [MOVIE_TYPES, SHOW_TYPES] {
+            for row in rows {
+                for (key, _, _) in row.sorts {
+                    assert!(Sort::parse(key).is_ok(), "{key}");
+                }
+            }
+        }
     }
 
     #[test]
@@ -340,7 +454,7 @@ mod tests {
             })
         );
         assert_eq!(
-            meta["Type"][0]["Sort"][1],
+            meta["Type"][0]["Sort"][5],
             serde_json::json!({
                 "defaultDirection": "desc",
                 "descKey": "addedAt:desc",

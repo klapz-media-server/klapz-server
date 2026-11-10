@@ -331,7 +331,7 @@ async fn matches(repository: &SqlMetadataRepository, conditions: Vec<TagConditio
         .expect("items")
         .items
         .iter()
-        .map(|item| item.id.get())
+        .map(|listed| listed.item.id.get())
         .collect();
     ids.sort_unstable();
     ids

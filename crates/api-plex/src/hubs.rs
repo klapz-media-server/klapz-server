@@ -1,8 +1,7 @@
 //! `GET /hubs/sections/{id}`: the shelves of a library's "Recommended" tab.
 //!
-//! The reference builds up to eight shelves for a film library. Most rest on what this
-//! server does not have yet: what each user watched (continue watching, recently watched,
-//! top unwatched), and orderings by release date or rating. A shelf is served when it can
+//! The reference builds up to eight shelves for a film library. Most are not built yet:
+//! recently watched, top unwatched, recently released, top rated. A shelf is served when it can
 //! be answered truthfully, and absent otherwise — an invented shelf would show wrong films
 //! under a title that promises something.
 //!

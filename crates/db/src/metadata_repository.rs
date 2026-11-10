@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use open_plex_core::metadata::{
     first_character_bucket, AudioAnalysis, ColorDescription, DolbyVision, EpisodeCredit,
-    ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemKind, ItemQuery, ItemSort,
-    ItemTag, Loudness, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
+    ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemKind, ItemQuery, ItemTag,
+    Listed, Loudness, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
     MetadataRepository, Person, Rating, ScanType, SearchQuery, StreamKind, SubtitleAnalysis, Tag,
     TagCondition, TagKind, TagRef, TagScope, TrackTraits, ValueField, VideoAnalysis,
 };
@@ -22,14 +22,15 @@ use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, 
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
 use sea_orm::QueryTrait;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromQueryResult, JoinType, Order,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult,
+    JoinType, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
 };
 
 use crate::entity::{
     item_external_id, item_rating, item_tag, item_title_word, media, media_part, media_stream,
     metadata_item, person, stream_dolby_vision, stream_loudness, tag,
 };
+use crate::item_order::ItemOrder;
 
 #[derive(Debug, Clone)]
 pub struct SqlMetadataRepository {
@@ -315,34 +316,41 @@ impl MetadataRepository for SqlMetadataRepository {
         &self,
         query: &ItemQuery,
         window: Window,
-    ) -> Result<Page<MetadataItem>, MetadataError> {
-        let sort_column = sort_column(query.sort);
+    ) -> Result<Page<Listed>, MetadataError> {
+        let order = ItemOrder::new(query.sort, query.direction);
         let mut select = Self::selection(query);
-
-        // Cursor filters follow the *sort* direction; the read direction is flipped
-        // separately for a backward page.
         if let Some(after) = window.after.as_ref() {
-            select = select.filter(beyond(sort_column, after, query.direction, true)?);
+            select = order.resume(select, after, true)?;
         }
         if let Some(before) = window.before.as_ref() {
-            select = select.filter(beyond(sort_column, before, query.direction, false)?);
+            select = order.resume(select, before, false)?;
         }
 
-        // `last:` reads from the far end, so the effective order is the sort direction
-        // flipped. The items are put back in reading order below.
-        let descending = query.direction.is_descending() != window.is_reversed();
-        let order = if descending { Order::Desc } else { Order::Asc };
-
-        let rows = select
-            .order_by(sort_column, order.clone())
-            .order_by(metadata_item::Column::Id, order)
+        // `last:` reads from the far end; the items are put back in reading order below.
+        let statement = order
+            .sort(select, window.is_reversed())
             .offset(window.skip)
             .limit(window.fetch_limit())
-            .all(&self.connection)
+            .build(self.connection.get_database_backend());
+        let rows = self
+            .connection
+            .query_all(statement)
             .await
             .map_err(storage)?;
+        let listed = rows
+            .iter()
+            .map(|row| {
+                let model = metadata_item::Model::from_query_result(row, "")?;
+                let cursor = order.cursor(row, &model)?;
+                Ok(Listed {
+                    item: to_domain(model),
+                    cursor,
+                })
+            })
+            .collect::<Result<Vec<_>, sea_orm::DbErr>>()
+            .map_err(storage)?;
 
-        let mut page = Page::from_overfetch(rows, &window).map(to_domain);
+        let mut page = Page::from_overfetch(listed, &window);
         if window.is_reversed() {
             page.items.reverse();
         }
@@ -1297,14 +1305,12 @@ fn keyset(
     direction: Direction,
     after: bool,
 ) -> Result<Condition, MetadataError> {
-    let Some(key) = cursor.key.as_ref() else {
-        // A cursor with no sort key cannot locate a position in a sorted listing.
-        return Err(MetadataError::CursorMismatch);
-    };
-
-    let value = match key {
-        CursorKey::Text(text) => Expr::value(text.clone()),
-        CursorKey::Int(number) => Expr::value(*number),
+    // One value, present: anything else comes from another ordering.
+    let value = match cursor.keys.as_slice() {
+        [CursorKey::Text(text)] => Expr::value(text.clone()),
+        [CursorKey::Int(number)] => Expr::value(*number),
+        [CursorKey::Real(number)] => Expr::value(*number),
+        _ => return Err(MetadataError::CursorMismatch),
     };
 
     let greater = direction.is_descending() != after;
@@ -1325,13 +1331,6 @@ fn keyset(
     Ok(Condition::any()
         .add(beyond_key)
         .add(Condition::all().add(column.eq(value)).add(beyond_id)))
-}
-
-const fn sort_column(sort: ItemSort) -> metadata_item::Column {
-    match sort {
-        ItemSort::Title => metadata_item::Column::SortKey,
-        ItemSort::AddedAt => metadata_item::Column::AddedAt,
-    }
 }
 
 /// Turns a prefix search into a half-open range on the ordering column.

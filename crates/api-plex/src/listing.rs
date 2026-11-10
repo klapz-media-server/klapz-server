@@ -78,6 +78,66 @@ pub enum ListingError {
     /// such ceiling; we do, because every value becomes a bound parameter.
     #[error("the `{field}` filter lists {count} values, past the maximum of {max}", max = TagCondition::MAX_VALUES)]
     TooManyValues { field: String, count: usize },
+    /// A sort we cannot honor. Refused like a filter, rather than answered in title order
+    /// a client would present as the order it asked for.
+    #[error("sorting by `{0}` is not implemented")]
+    UnsupportedSort(String),
+}
+
+/// Plex's sort keys a listing honors, with the official API's order for each.
+pub const SORTS: &[(&str, &str)] = &[
+    ("titleSort", "TITLE"),
+    ("addedAt", "ADDED_AT"),
+    ("originallyAvailableAt", "RELEASED_ON"),
+    ("rating", "RATING"),
+    ("audienceRating", "AUDIENCE_RATING"),
+    ("duration", "DURATION"),
+    ("mediaHeight", "HEIGHT"),
+    ("lastViewedAt", "LAST_VIEWED_AT"),
+    ("episode.addedAt", "EPISODE_ADDED_AT"),
+    ("random", "RANDOM"),
+];
+
+/// A `sort=` a listing honors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sort {
+    /// Plex's key, as the client sent it.
+    pub key: &'static str,
+    /// The official API's `ItemOrder`.
+    pub order: &'static str,
+    pub descending: bool,
+}
+
+impl Sort {
+    /// Reads `field` or `field:direction`.
+    ///
+    /// The reference descends on `desc` exactly and ascends on anything else, `DESC`
+    /// included; it matches the field case-sensitively, and answers `500` for one it does not
+    /// know. A list of fields is how it states tiebreakers, which we cannot choose.
+    pub(crate) fn parse(value: &str) -> Result<Self, ListingError> {
+        let unsupported = || ListingError::UnsupportedSort(value.to_owned());
+        if value.contains(',') {
+            return Err(unsupported());
+        }
+        let (field, suffix) = value.split_once(':').unwrap_or((value, "asc"));
+        let (key, order) = SORTS
+            .iter()
+            .find(|(key, _)| *key == field)
+            .ok_or_else(unsupported)?;
+        Ok(Self {
+            key,
+            order,
+            descending: suffix == "desc",
+        })
+    }
+
+    pub const fn direction(self) -> &'static str {
+        if self.descending {
+            "DESCENDING"
+        } else {
+            "ASCENDING"
+        }
+    }
 }
 
 /// The filters that select by tag, with the schema's name for each kind.
@@ -150,9 +210,17 @@ pub struct ListingRequest {
     pub size: Option<u32>,
     /// Numeric item type: 1 movie, 2 show, 3 season, 4 episode.
     pub kind: Option<i32>,
-    /// Sort field, optionally suffixed `:asc` or `:desc`.
-    pub sort: Option<String>,
+    pub sort: Option<Sort>,
     pub filters: Filters,
+}
+
+impl ListingRequest {
+    /// The official API's order and direction: the title ascending when no sort was asked.
+    pub fn ordering(&self) -> (&'static str, &'static str) {
+        self.sort.map_or(("TITLE", "ASCENDING"), |sort| {
+            (sort.order, sort.direction())
+        })
+    }
 }
 
 /// The subset of Plex's filters that maps onto `ItemFilterInput`.
@@ -291,7 +359,9 @@ pub fn parse(pairs: &[(String, String)]) -> Result<ListingRequest, ListingError>
             "X-Plex-Container-Start" => request.start = value.parse().unwrap_or(0),
             "X-Plex-Container-Size" => request.size = value.parse().ok(),
             "type" => request.kind = value.parse().ok(),
-            "sort" => request.sort = Some(value.clone()),
+            // An empty `sort=` is no sort.
+            "sort" if value.is_empty() => request.sort = None,
+            "sort" => request.sort = Some(Sort::parse(value)?),
             _ => {}
         }
         if CONTROL_PARAMS.contains(&key.as_str()) {
@@ -441,6 +511,40 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_sort_as_the_reference_does() {
+        let sort = |value: &str| Sort::parse(value).map(|sort| (sort.order, sort.descending));
+        assert_eq!(sort("rating:desc").unwrap(), ("RATING", true));
+        assert_eq!(sort("rating").unwrap(), ("RATING", false));
+        // Only `desc` descends: `DESC` and anything else ascend, as measured.
+        assert_eq!(sort("rating:DESC").unwrap(), ("RATING", false));
+        assert_eq!(sort("rating:nullsLast").unwrap(), ("RATING", false));
+        assert_eq!(
+            sort("episode.addedAt:desc").unwrap(),
+            ("EPISODE_ADDED_AT", true)
+        );
+        // Refused rather than answered in title order: a field we do not order by, one
+        // spelt in another case, and a list of tiebreakers.
+        for value in [
+            "year:desc",
+            "Rating:desc",
+            "unviewedLeafCount",
+            "lastViewedAt:desc,titleSort",
+        ] {
+            assert!(
+                matches!(sort(value), Err(ListingError::UnsupportedSort(_))),
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_sort_is_none() {
+        let request = parse(&pairs(&[("sort", "")])).expect("parses");
+        assert_eq!(request.sort, None);
+        assert_eq!(request.ordering(), ("TITLE", "ASCENDING"));
+    }
+
+    #[test]
     fn reads_the_container_window_and_the_view_controls() {
         let request = parse(&pairs(&[
             ("X-Plex-Container-Start", "50"),
@@ -453,7 +557,14 @@ mod tests {
         assert_eq!(request.start, 50);
         assert_eq!(request.size, Some(25));
         assert_eq!(request.kind, Some(2));
-        assert_eq!(request.sort.as_deref(), Some("addedAt:desc"));
+        assert_eq!(
+            request.sort,
+            Some(Sort {
+                key: "addedAt",
+                order: "ADDED_AT",
+                descending: true
+            })
+        );
         assert_eq!(request.filters, Filters::default());
     }
 

@@ -482,8 +482,9 @@ We serve continue watching (empty), recently added, and recent playlists (empty)
 reference on section 4: the same twelve films in the same order, every shelf attribute
 identical, no field differing. On sections 5, 7, 19 and 20: the same 48 entries in the same
 order; the field differences left are titles and credits edited on the live server since the
-snapshot. Every other shelf is absent rather than approximated, since each needs watch state
-or a sort by release date or rating.
+snapshot. Every other shelf is absent rather than approximated. The orders they rest on — release date,
+rating, last viewed — are honored by a listing now (*Ordering a listing*); the shelves are not
+built yet.
 
 ### Transcoding an image
 
@@ -770,20 +771,54 @@ its `Filter`s and `Sort`s, then `FieldType`. Without the parameter, or with `0`,
 requested `type` is the active one, the first by default. The active `Sort` carries `active` and
 `activeDirection`: `sort=addedAt:desc` marks it `desc`, `sort=addedAt` marks it `asc`.
 
-We publish the filters and sorts a listing honors, not the reference's whole list: 11 of 27 and 2
-of 9 for a film library, 9 of 14 and 1 of 8 for a series, none of a season's, 2 of 17 and 1 of 7
-for an episode. A test holds every filter offered to being one `listing::parse` accepts. What we
-do publish has the reference's attributes, wording and relative order on every type compared. A
-sort we do not honor falls back to the title, and `Meta` says so rather than marking what was
-asked. Left out: the `folder` type, which no route serves, and the advanced filters' `Field` and
-`FieldType`.
+We publish the filters and sorts a listing honors, not the reference's whole list: 11 of 27
+filters and all 9 sorts for a film library, 9 of 14 and 7 of 8 for a series, 1 of a season's 2
+sorts, 2 of 17 and 6 of 7 for an episode. Two tests hold every filter and every sort offered to
+being one `listing::parse` accepts. What we do publish has the reference's attributes, wording
+and relative order on every type compared. Left out: the `folder` type, which no route serves,
+and the advanced filters' `Field` and `FieldType`.
 
 A filter's `key` (`/library/sections/4/genre`) is the list of its values, and those routes do not
 exist yet: they answer `404`.
 
-On the listing itself, `sort=addedAt:desc` returned the same 36 films as the reference, with two
-swapped: they share an `addedAt` second, and the reference breaks such ties in no order we could
-find (ascending id for one pair, descending for two others in the same page).
+### Ordering a listing
+
+The reference offers nine sorts on a film library (`includeMeta=1`). Measured over the whole of
+two libraries, 9,667 films and 1,980 series, in both directions:
+
+- **Absence sorts first**: a film with no rating leads an ascending list by rating and ends a
+  descending one, as `NULL` does on its SQLite. We state the position in every `ORDER BY`, since
+  another engine puts `NULL` last.
+- **Ties follow the title, ascending, whichever the direction**: 9,406 of 9,567 tied pairs by
+  rating, 1,065 of 1,080 by date added. The rest is the collation (*Sort collation*). The title
+  sort itself breaks ties by id, in its own direction.
+- **An item with several versions ranks by the smallest ascending and the largest descending**,
+  for `duration` and `mediaHeight`: a 1038- and a 1040-line film is 1038 one way and 1040 the
+  other, as if joined to each version and kept at its first row. `episode.addedAt` does the same
+  over a series' episodes: its first ascending, its latest descending (0 of 1,979 pairs out of
+  order either way, 561 and 585 under the other reading).
+- **`duration` reads the versions**, not the item: two films with no version duration lead the
+  ascending list although they display one.
+- **The field is case-sensitive and the direction is `desc` exactly**: `Rating:desc` is a `500`
+  there, `rating:DESC` ascends.
+
+Against the reference, with the items whose value changed on the live server since the snapshot
+set aside: the sequence of values is identical for every sort and direction compared, `duration`
+lands every film in the same position, `addedAt` 99.7%, `episode.addedAt` 99.7 and 99.9%. The
+positions left differ within ties, by collation — 45.6% for ratings on films, where 5,434 unrated
+ones tie.
+
+Where ours differ:
+
+- **A sort we cannot honor answers `501`**, as a filter does: `unviewedLeafCount`, the series and
+  season orders of seasons and episodes (`show.titleSort,index…`), and a list of fields, which
+  is how the reference states tiebreakers. Its `year`, `viewCount` or `title` work there and are
+  refused here; an unknown field is a `500` there.
+- **`random` keeps one order for ten minutes.** The reference reshuffles on every request, so a
+  client paging a random list meets some items twice and never sees others. Ours is a shuffle
+  seeded by the clock's ten-minute period, so the pages of one browse agree; the official API
+  takes the seed as an argument.
+- **`lastViewedAt` is the caller's own**, like all watch state; a visitor's list is in title order.
 
 ### The shelves under an item
 

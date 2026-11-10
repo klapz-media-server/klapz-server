@@ -2,6 +2,7 @@
 
 use crate::ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use crate::page::{Cursor, CursorKey, Direction, Page, Window};
+use crate::watch::Viewer;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MetadataError {
@@ -531,10 +532,11 @@ impl TagCondition {
 
 /// How a listing is ordered.
 ///
-/// Deliberately short. Every variant here is backed by a `NOT NULL` column, which is what
-/// lets a cursor locate a position unambiguously. Ordering by a nullable column — year,
-/// release date, rating — additionally requires encoding "the value is absent" in the cursor
-/// and pinning where nulls sort; that is worth doing, and is not done yet.
+/// An item with no value sorts before every item with one — first ascending, last
+/// descending — as on the reference server, whose engine orders `NULL` that way. Items with
+/// equal values follow in title order, ascending whichever way the listing runs: also the
+/// reference's rule, and what keeps 5,434 unrated films readable at the end of a list by
+/// rating.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ItemSort {
     /// By sort title, falling back to the title when there is none.
@@ -542,6 +544,26 @@ pub enum ItemSort {
     Title,
     /// By when the item was added to the library.
     AddedAt,
+    /// By release date.
+    ReleasedOn,
+    /// By critics' rating.
+    Rating,
+    /// By audience rating.
+    AudienceRating,
+    /// By the running time of the item's versions: an item ranks by its shortest one
+    /// ascending and by its longest descending, as an item reached through each of its
+    /// versions does on the reference.
+    Duration,
+    /// By the frame height of the item's versions, the same way.
+    Height,
+    /// By when this viewer last played it. `None`, a caller with no watch state, has
+    /// played nothing.
+    LastViewedAt(Option<Viewer>),
+    /// By when a series' episodes were added: its first ascending, its latest descending,
+    /// the way [`ItemSort::Duration`] ranks versions.
+    EpisodeAddedAt,
+    /// A shuffle: the same seed gives the same order, which lets pages agree.
+    Shuffled(u32),
 }
 
 /// Narrows a listing to a subset of a library.
@@ -730,25 +752,16 @@ impl ItemQuery {
         self.filter = filter;
         self
     }
+}
 
-    /// The cursor key locating `item` under this query's ordering.
-    ///
-    /// Lives here rather than in storage because the sort field and the cursor shape have to
-    /// agree, and keeping both in one place is what makes that checkable.
-    pub fn cursor_key(&self, item: &MetadataItem) -> CursorKey {
-        match self.sort {
-            // Lowercased to match the stored ordering column: the listing sorts
-            // case-insensitively, so a cursor built from the raw title would not line up.
-            ItemSort::Title => CursorKey::Text(
-                item.title_sort
-                    .as_ref()
-                    .or(item.title.as_ref())
-                    .map(|text| text.to_lowercase())
-                    .unwrap_or_default(),
-            ),
-            ItemSort::AddedAt => CursorKey::Int(item.added_at),
-        }
-    }
+/// An item with the cursor locating it in the listing it came from.
+///
+/// Built by storage, because only storage has the ordering value at hand: a version's height
+/// or a viewer's last view is not a field of the item.
+#[derive(Debug, Clone)]
+pub struct Listed {
+    pub item: MetadataItem,
+    pub cursor: Cursor,
 }
 
 /// A search across every library.
@@ -806,11 +819,8 @@ impl SearchQuery {
 #[async_trait::async_trait]
 pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
     /// One page of a library's items.
-    async fn items(
-        &self,
-        query: &ItemQuery,
-        window: Window,
-    ) -> Result<Page<MetadataItem>, MetadataError>;
+    async fn items(&self, query: &ItemQuery, window: Window)
+        -> Result<Page<Listed>, MetadataError>;
 
     /// How many items the query matches.
     async fn item_count(&self, query: &ItemQuery) -> Result<u64, MetadataError>;
@@ -1000,7 +1010,7 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         &self,
         query: &ItemQuery,
         window: Window,
-    ) -> Result<Page<MetadataItem>, MetadataError> {
+    ) -> Result<Page<Listed>, MetadataError> {
         (**self).items(query, window).await
     }
 
@@ -1183,32 +1193,6 @@ mod tests {
 
     use super::*;
 
-    fn item(title: Option<&str>, title_sort: Option<&str>, added_at: i64) -> MetadataItem {
-        MetadataItem {
-            id: RatingKey::new(1),
-            section_id: SectionId::new(4),
-            parent_id: None,
-            kind: ItemKind::Movie,
-            guid: "plex://movie/abc".to_owned(),
-            title: title.map(ToOwned::to_owned),
-            title_sort: title_sort.map(ToOwned::to_owned),
-            original_title: None,
-            summary: None,
-            tagline: None,
-            studio: None,
-            content_rating: None,
-            content_rating_age: None,
-            position: None,
-            year: None,
-            released_on: None,
-            duration_ms: None,
-            rating: None,
-            audience_rating: None,
-            added_at,
-            updated_at: 0,
-        }
-    }
-
     #[test]
     fn only_movies_and_episodes_are_playable() {
         // The schema relies on this: shows and seasons expose no media field at all.
@@ -1216,54 +1200,6 @@ mod tests {
         assert!(ItemKind::Episode.is_playable());
         assert!(!ItemKind::Show.is_playable());
         assert!(!ItemKind::Season.is_playable());
-    }
-
-    #[test]
-    fn a_title_cursor_prefers_the_sort_title() {
-        let query = ItemQuery::new(SectionId::new(4));
-        let key = query.cursor_key(&item(Some("The Matrix"), Some("Matrix, The"), 0));
-        // Folded, because the stored ordering column is folded. A cursor carrying the raw
-        // case would not line up with it, and pagination would skip rows.
-        assert_eq!(key, CursorKey::Text("matrix, the".to_owned()));
-    }
-
-    #[test]
-    fn a_title_cursor_falls_back_to_the_title() {
-        let query = ItemQuery::new(SectionId::new(4));
-        let key = query.cursor_key(&item(Some("Avatar"), None, 0));
-        assert_eq!(key, CursorKey::Text("avatar".to_owned()));
-    }
-
-    #[test]
-    fn a_title_cursor_folds_case_so_it_matches_the_stored_ordering() {
-        // Two spellings of the same title must produce the same cursor, or paging past one
-        // would skip the other.
-        let query = ItemQuery::new(SectionId::new(4));
-        assert_eq!(
-            query.cursor_key(&item(Some("ALIEN"), None, 0)),
-            query.cursor_key(&item(Some("alien"), None, 0))
-        );
-    }
-
-    #[test]
-    fn a_title_cursor_on_a_titleless_item_is_empty_rather_than_absent() {
-        // Seasons have no title, and they are ordered by position rather than by title — but
-        // the cursor must still be constructible.
-        let query = ItemQuery::new(SectionId::new(4));
-        assert_eq!(
-            query.cursor_key(&item(None, None, 0)),
-            CursorKey::Text(String::new())
-        );
-    }
-
-    #[test]
-    fn an_added_at_cursor_carries_the_timestamp() {
-        let query =
-            ItemQuery::new(SectionId::new(4)).sorted_by(ItemSort::AddedAt, Direction::Descending);
-        assert_eq!(
-            query.cursor_key(&item(Some("Avatar"), None, 1_655_072_133)),
-            CursorKey::Int(1_655_072_133)
-        );
     }
 
     fn director(id: i64, name: &str) -> Tag {
