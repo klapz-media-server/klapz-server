@@ -2630,15 +2630,39 @@ async fn a_series_library_lists_its_shows_choices_uncached() {
 }
 
 #[tokio::test]
-async fn an_unknown_list_is_absent_and_resolution_is_refused() {
+async fn an_unknown_list_or_library_is_absent() {
     let (status, _) = get_from(items_app(), "/library/sections/4/nonsense", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    // Listed by the reference from buckets our resolution filter does not reproduce.
-    let (status, _) = get_from(items_app(), "/library/sections/4/resolution", None).await;
-    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
     // A library that does not exist is a 404, not an empty list.
     let (status, _) = get_from(items_app(), "/library/sections/99/genre", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn the_resolution_list_names_the_classes_present_without_a_listing_url() {
+    // Avatar's only version is 1920×808: 1080p by its width.
+    let body = listing("/library/sections/4/resolution").await;
+    let container = &body["MediaContainer"];
+    assert_eq!(container["title2"], "By Resolution");
+    assert_eq!(
+        container["Directory"],
+        serde_json::json!([{"key": "1080", "title": "1080p"}])
+    );
+}
+
+#[tokio::test]
+async fn the_resolution_filter_selects_by_class() {
+    let in_class = listing("/library/sections/4/all?resolution=1080").await;
+    assert_eq!(in_class["MediaContainer"]["totalSize"], 1);
+    assert_eq!(
+        in_class["MediaContainer"]["Metadata"][0]["Media"][0]["videoResolution"],
+        "1080"
+    );
+    // 808 lines is not the 1,072 to 1,440 the `2k` filter takes, nor 720p.
+    for class in ["2k", "720", "sd"] {
+        let body = listing(&format!("/library/sections/4/all?resolution={class}")).await;
+        assert_eq!(body["MediaContainer"]["totalSize"], 0, "{class}");
+    }
 }
 
 #[tokio::test]

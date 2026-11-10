@@ -582,21 +582,55 @@ pub struct ItemFilter {
     /// "Sans Laisser de Traces" alike. Served by a word index, not by the title column —
     /// see `search` for the tokenizer the index and this filter must share.
     pub title_word_prefix: Option<String>,
-    /// Keeps only items whose media is at least this wide, in pixels.
+    /// Keeps only items with a version whose frame falls in this range.
     ///
     /// A resolution filter is a property of the file rather than the item, so it is a join
     /// rather than a column — which is why it is the one filter that can slow a listing.
-    pub min_width: Option<i32>,
+    pub frame: Option<FrameRange>,
     /// Keeps only items carrying the named tags. Each condition must hold.
     pub tags: Vec<TagCondition>,
     /// Leaves this one item out: "the rest of this director's films".
     pub excluded: Option<RatingKey>,
 }
 
+/// A frame size, in pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameSize {
+    pub width: i32,
+    pub height: i32,
+}
+
+/// The frames a resolution filter keeps.
+///
+/// Two bounds, because that is the shape of a resolution class: a frame reaches a class by
+/// either dimension — 1920×800 is as much 1080p as 1440×1080 — and leaves it by reaching
+/// the next one. Which sizes the classes have is presentation, chosen by each binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameRange {
+    /// Kept when at least this wide or at least this tall.
+    pub reaching: Option<FrameSize>,
+    /// Kept when narrower and shorter than this.
+    pub short_of: Option<FrameSize>,
+}
+
+impl FrameRange {
+    /// Whether a frame of this size is in the range. A frame of unknown size is in none.
+    pub fn contains(&self, width: Option<i32>, height: Option<i32>) -> bool {
+        let (Some(width), Some(height)) = (width, height) else {
+            return false;
+        };
+        self.reaching
+            .is_none_or(|bound| width >= bound.width || height >= bound.height)
+            && self
+                .short_of
+                .is_none_or(|bound| width < bound.width && height < bound.height)
+    }
+}
+
 impl ItemFilter {
     /// Whether anything here reaches past the item table.
     pub const fn needs_media(&self) -> bool {
-        self.min_width.is_some()
+        self.frame.is_some()
     }
 
     /// Whether to restrict the listing to items with no parent.

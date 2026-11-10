@@ -203,10 +203,9 @@ impl InMemoryMetadata {
             })
             .filter(|item| filter.excluded != Some(item.id))
             .filter(|item| {
-                filter.min_width.is_none_or(|width| {
+                filter.frame.is_none_or(|range| {
                     self.versions.iter().any(|version| {
-                        version.item_id == item.id
-                            && version.width.is_some_and(|value| value >= width)
+                        version.item_id == item.id && range.contains(version.width, version.height)
                     })
                 })
             })

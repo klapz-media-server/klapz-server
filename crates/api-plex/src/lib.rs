@@ -31,6 +31,7 @@ pub mod plex_tv;
 pub mod prefs;
 pub mod providers;
 mod related;
+mod resolution;
 pub mod response;
 mod search;
 pub mod sessions;

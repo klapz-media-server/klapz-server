@@ -458,6 +458,35 @@ type FirstCharacter {
 }
 
 """
+The frames a resolution filter keeps: those reaching one size, by either dimension, and
+short of another, by both.
+"""
+input FrameRangeInput {
+	"""
+	Keep a frame at least this wide or at least this tall: 1920×800 reaches 1902×1070.
+	"""
+	reaching: FrameSizeInput
+	"""
+	Keep a frame narrower and shorter than this.
+	"""
+	shortOf: FrameSizeInput
+}
+
+"""
+A frame size, in pixels.
+"""
+input FrameSizeInput {
+	"""
+	Width in pixels.
+	"""
+	width: Int!
+	"""
+	Height in pixels.
+	"""
+	height: Int!
+}
+
+"""
 Anything that appears in a library listing.
 """
 interface Item {
@@ -592,11 +621,12 @@ input ItemFilterInput {
 	"""
 	titleWordPrefix: String
 	"""
-	Keep only items with a version at least this wide, in pixels — 3840 for 4K.
+	Keep only items with a version whose frame falls in this range: `{reaching: {width:
+	2880, height: 1540}}` for 4K.
 	
 	The one filter that reaches past the item table, so the one that can slow a listing.
 	"""
-	minWidth: Int
+	frame: FrameRangeInput
 	"""
 	Keep only items carrying the named tags. Every condition must hold.
 	"""

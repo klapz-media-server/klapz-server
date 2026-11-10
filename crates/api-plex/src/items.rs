@@ -339,7 +339,7 @@ pub struct MediaEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_codec: Option<String>,
     /// Marketing label for the frame size — `4k`, `1080`, `sd`. Derived, see
-    /// [`resolution_label`].
+    /// [`crate::resolution`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_resolution: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -863,7 +863,7 @@ impl MediaEntry {
                 profile_of(version.primary_audio.as_ref()).as_deref(),
             ),
             video_codec: version.video_codec.clone(),
-            video_resolution: resolution_label(version.width, version.height),
+            video_resolution: crate::resolution::label(version.width, version.height),
             container: version.container.clone(),
             video_frame_rate: version.frame_rate.and_then(frame_rate_label),
             optimized_for_streaming: first_file
@@ -1027,23 +1027,6 @@ fn kilobits(bits_per_second: Option<i32>) -> Option<i32> {
     })
 }
 
-/// Plex's marketing label for a frame size.
-///
-/// Keyed on width with wide tolerances, because that is what the reference server does:
-/// 1796×800 and 1920×1080 both report `1080`, and 3232×1600 reports `4k`. Height only
-/// separates the standard-definition labels, where 720×576 is `576` and 720×404 is `sd`.
-fn resolution_label(width: Option<i32>, height: Option<i32>) -> Option<&'static str> {
-    let width = width?;
-    Some(match (width, height.unwrap_or(0)) {
-        (w, _) if w >= 3000 => "4k",
-        (w, _) if w >= 1700 => "1080",
-        (w, _) if w >= 1200 => "720",
-        (_, h) if h >= 560 => "576",
-        (_, h) if h >= 440 => "480",
-        _ => "sd",
-    })
-}
-
 /// Plex's label for a measured frame rate, or none when it has no name for it.
 ///
 /// The official API publishes the measurement (23.976); this is the display string clients
@@ -1138,20 +1121,6 @@ mod tests {
         assert_eq!(credited_character("čarodějobijec"), "čarodějobijec");
         assert_eq!(credited_character("(uncredited)"), "(uncredited)");
         assert_eq!(credited_character(""), "");
-    }
-
-    #[test]
-    fn labels_resolution_by_width_as_the_reference_does() {
-        // Each pair was observed on the reference server; the odd heights come from
-        // letterboxed transfers, which is why width has to be the key.
-        assert_eq!(resolution_label(Some(3840), Some(2160)), Some("4k"));
-        assert_eq!(resolution_label(Some(3232), Some(1600)), Some("4k"));
-        assert_eq!(resolution_label(Some(1920), Some(1080)), Some("1080"));
-        assert_eq!(resolution_label(Some(1796), Some(800)), Some("1080"));
-        assert_eq!(resolution_label(Some(1280), Some(720)), Some("720"));
-        assert_eq!(resolution_label(Some(720), Some(576)), Some("576"));
-        assert_eq!(resolution_label(Some(720), Some(404)), Some("sd"));
-        assert_eq!(resolution_label(None, Some(1080)), None);
     }
 
     #[test]

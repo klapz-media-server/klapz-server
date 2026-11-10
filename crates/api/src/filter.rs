@@ -1,7 +1,9 @@
 //! Listing arguments: what to keep, and in what order.
 
 use async_graphql::{Enum, InputObject};
-use open_plex_core::metadata::{ItemDepth, ItemFilter, ItemKind, ItemSort, TagCondition};
+use open_plex_core::metadata::{
+    FrameRange, FrameSize, ItemDepth, ItemFilter, ItemKind, ItemSort, TagCondition,
+};
 use open_plex_core::page::Direction;
 use open_plex_core::RatingKey;
 
@@ -145,14 +147,52 @@ pub struct ItemFilterInput {
     /// full-text search, because full-text indexing is the least portable feature across
     /// database engines and the engine is meant to stay swappable.
     pub title_word_prefix: Option<String>,
-    /// Keep only items with a version at least this wide, in pixels — 3840 for 4K.
+    /// Keep only items with a version whose frame falls in this range: `{reaching: {width:
+    /// 2880, height: 1540}}` for 4K.
     ///
     /// The one filter that reaches past the item table, so the one that can slow a listing.
-    pub min_width: Option<i32>,
+    pub frame: Option<FrameRangeInput>,
     /// Keep only items carrying the named tags. Every condition must hold.
     pub tags: Option<Vec<TagFilterInput>>,
     /// Leave out this item, as returned in `id`: "the rest of this director's films".
     pub excluded_id: Option<async_graphql::ID>,
+}
+
+/// A frame size, in pixels.
+#[derive(Debug, Clone, Copy, InputObject)]
+pub struct FrameSizeInput {
+    /// Width in pixels.
+    pub width: i32,
+    /// Height in pixels.
+    pub height: i32,
+}
+
+/// The frames a resolution filter keeps: those reaching one size, by either dimension, and
+/// short of another, by both.
+#[derive(Debug, Clone, Copy, Default, InputObject)]
+pub struct FrameRangeInput {
+    /// Keep a frame at least this wide or at least this tall: 1920×800 reaches 1902×1070.
+    pub reaching: Option<FrameSizeInput>,
+    /// Keep a frame narrower and shorter than this.
+    pub short_of: Option<FrameSizeInput>,
+}
+
+impl From<FrameSizeInput> for FrameSize {
+    fn from(size: FrameSizeInput) -> Self {
+        Self {
+            width: size.width,
+            height: size.height,
+        }
+    }
+}
+
+impl From<FrameRangeInput> for FrameRange {
+    fn from(range: FrameRangeInput) -> Self {
+        Self {
+            reaching: range.reaching.map(Into::into),
+            short_of: range.short_of.map(Into::into),
+        }
+    }
 }
 
 impl TryFrom<ItemFilterInput> for ItemFilter {
@@ -177,7 +217,7 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
             title_word_prefix: input
                 .title_word_prefix
                 .filter(|text| !text.trim().is_empty()),
-            min_width: input.min_width,
+            frame: input.frame.map(Into::into),
             tags,
             excluded: input
                 .excluded_id
@@ -235,7 +275,13 @@ mod tests {
             content_rating: Some("fr/16".to_owned()),
             studio_contains: Some("HBO".to_owned()),
             title_word_prefix: Some("the".to_owned()),
-            min_width: Some(3840),
+            frame: Some(FrameRangeInput {
+                reaching: Some(FrameSizeInput {
+                    width: 2880,
+                    height: 1540,
+                }),
+                short_of: None,
+            }),
             depth: Some(ItemDepthInput::All),
             excluded_id: None,
             tags: Some(vec![TagFilterInput {
@@ -251,7 +297,9 @@ mod tests {
         assert_eq!(filter.content_rating.as_deref(), Some("fr/16"));
         assert_eq!(filter.studio_contains.as_deref(), Some("HBO"));
         assert_eq!(filter.title_word_prefix.as_deref(), Some("the"));
-        assert_eq!(filter.min_width, Some(3840));
+        assert!(filter
+            .frame
+            .is_some_and(|range| range.contains(Some(3840), Some(1600))));
         assert_eq!(filter.depth, ItemDepth::All);
         assert!(filter.needs_media());
         assert_eq!(filter.tags.len(), 1);

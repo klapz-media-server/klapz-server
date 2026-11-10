@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use open_plex_core::metadata::{
     first_character_bucket, AudioAnalysis, ColorDescription, DolbyVision, EpisodeCredit,
-    ExternalId, FieldValue, FileLayout, FirstCharacter, ItemKind, ItemQuery, ItemSort, ItemTag,
-    Loudness, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
+    ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemKind, ItemQuery, ItemSort,
+    ItemTag, Loudness, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
     MetadataRepository, Person, Rating, ScanType, SearchQuery, StreamKind, SubtitleAnalysis, Tag,
     TagCondition, TagKind, TagRef, TagScope, TrackTraits, ValueField, VideoAnalysis,
 };
@@ -87,7 +87,7 @@ impl SqlMetadataRepository {
         if let Some(excluded) = filter.excluded {
             select = select.filter(metadata_item::Column::Id.ne(excluded.get()));
         }
-        if let Some(width) = filter.min_width {
+        if let Some(range) = filter.frame {
             select = select.filter(Expr::exists(
                 Query::select()
                     .expr(Expr::val(1))
@@ -96,7 +96,7 @@ impl SqlMetadataRepository {
                         Expr::col((media::Entity, media::Column::MetadataItemId))
                             .equals((metadata_item::Entity, metadata_item::Column::Id)),
                     )
-                    .and_where(Expr::col((media::Entity, media::Column::Width)).gte(width))
+                    .cond_where(frame_condition(range))
                     .to_owned(),
             ));
         }
@@ -192,6 +192,29 @@ const fn value_direction(field: ValueField) -> Direction {
         ValueField::Year => Direction::Descending,
         ValueField::ContentRating | ValueField::Studio => Direction::Ascending,
     }
+}
+
+/// A version's frame in the range, as [`FrameRange::contains`] states it. A version of
+/// unknown size compares as NULL and is in no range, there as here.
+fn frame_condition(range: FrameRange) -> Condition {
+    let width = || Expr::col((media::Entity, media::Column::Width));
+    let height = || Expr::col((media::Entity, media::Column::Height));
+    let mut condition = Condition::all()
+        .add(width().is_not_null())
+        .add(height().is_not_null());
+    if let Some(bound) = range.reaching {
+        condition = condition.add(
+            Condition::any()
+                .add(width().gte(bound.width))
+                .add(height().gte(bound.height)),
+        );
+    }
+    if let Some(bound) = range.short_of {
+        condition = condition
+            .add(width().lt(bound.width))
+            .add(height().lt(bound.height));
+    }
+    condition
 }
 
 /// Whether the item carries one of the condition's tags.

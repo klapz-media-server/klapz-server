@@ -383,7 +383,10 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
 - ✅ **filter choices**, `/library/sections/{id}/{filter}`: genres, countries, people, years,
   decades, content ratings and studios a library's items hold, each with the listing that
   applies it (`Library.tags`, `years`, `fieldValues` on the official API); the starring list
-  is the actors billed in the first three positions, as measured. `resolution` answers `501`;
+  is the actors billed in the first three positions, as measured;
+- ✅ **resolution**: `videoResolution`, `resolution=` and its value list from one measured ladder
+  (`api-plex::resolution`), over a frame-range filter on the official API (`ItemFilterInput.frame`):
+  identical to the reference on 99,439 versions and every class of eight libraries;
 - ✅ **track analysis**: the media analysis Plex packs into `extra_data` imported into typed
   columns (`media_stream`, `media_part`) and two tables (`stream_dolby_vision`,
   `stream_loudness`), exposed on the official API (`MediaStream.video`, `.audio`,
@@ -438,9 +441,6 @@ absent.
 
 ## Open questions
 
-- **`Media.videoResolution` misses 1.5% of media.** The width-keyed ladder in `items.rs`
-  disagrees with the reference on 108 of 7,298 films (1728×1056 is `720` there, 2048×1080 is
-  `2k`), and the `resolution` filter and its value list wait on the real rule.
 - Default database engine for development (SQLite for now).
 - Whether any client depends on attribute ordering within an element.
 - A library's `admin` role has little to open yet: changing a library's settings is the only

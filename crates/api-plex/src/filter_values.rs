@@ -37,6 +37,8 @@ enum Choice {
     Text {
         field: &'static str,
     },
+    /// The classes of [`crate::resolution`] some version of the library falls in.
+    Resolution,
 }
 
 impl Choice {
@@ -54,6 +56,7 @@ impl Choice {
                 field: "CONTENT_RATING",
             },
             "studio" => Self::Text { field: "STUDIO" },
+            "resolution" => Self::Resolution,
             _ => return None,
         })
     }
@@ -76,6 +79,7 @@ fn view_title(filter: &str) -> &'static str {
         "year" => "By Year",
         "decade" => "By Decade",
         "contentRating" => "By Content Rating",
+        "resolution" => "By Resolution",
         _ => "By Studio",
     }
 }
@@ -120,6 +124,70 @@ query PlexTextChoices($id: ID!, $field: TextField!, $filter: ItemFilterInput, $f
   }
 }
 ";
+
+/// How many items each resolution class holds, one alias per class in
+/// [`crate::resolution::keys`] order: a library lists the classes that hold any.
+const RESOLUTIONS_QUERY: &str = r"
+query PlexResolutions(
+  $id: ID!
+  $f0: ItemFilterInput
+  $f1: ItemFilterInput
+  $f2: ItemFilterInput
+  $f3: ItemFilterInput
+  $f4: ItemFilterInput
+  $f5: ItemFilterInput
+  $f6: ItemFilterInput
+  $f7: ItemFilterInput
+  $f8: ItemFilterInput
+) {
+  node(id: $id) {
+    ... on Library {
+      title
+      kind
+      r0: stats(filter: $f0) { itemCount }
+      r1: stats(filter: $f1) { itemCount }
+      r2: stats(filter: $f2) { itemCount }
+      r3: stats(filter: $f3) { itemCount }
+      r4: stats(filter: $f4) { itemCount }
+      r5: stats(filter: $f5) { itemCount }
+      r6: stats(filter: $f6) { itemCount }
+      r7: stats(filter: $f7) { itemCount }
+      r8: stats(filter: $f8) { itemCount }
+    }
+  }
+}
+";
+
+#[derive(Debug, Deserialize)]
+struct ResolutionsData {
+    node: Option<GqlResolutions>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlResolutions {
+    title: String,
+    kind: String,
+    #[serde(flatten)]
+    counts: std::collections::HashMap<String, GqlItemCount>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlItemCount {
+    item_count: u64,
+}
+
+/// An `ItemFilterInput` with more fields set, null standing for an empty one.
+fn with_fields<const N: usize>(filter: Value, fields: [(&str, Value); N]) -> Value {
+    let mut object = match filter {
+        Value::Object(object) => object,
+        _ => async_graphql::indexmap::IndexMap::new(),
+    };
+    for (name, value) in fields {
+        object.insert(Name::new(name), value);
+    }
+    Value::Object(object)
+}
 
 #[derive(Debug, Deserialize)]
 struct ChoicesData<T> {
@@ -197,7 +265,9 @@ pub struct ChoicesContainer {
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct ChoiceDirectory {
-    fast_key: String,
+    /// Absent from the resolution list, on the reference.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fast_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     thumb: Option<String>,
     key: String,
@@ -215,13 +285,7 @@ pub async fn filter_values(
     format: ResponseFormat,
 ) -> Result<PlexResponse<ChoicesContainer>, ApiError> {
     let Some(choice) = Choice::named(&filter) else {
-        // `resolution` is listed by the reference, from buckets the resolution filter here
-        // does not reproduce: listing them would offer choices that select the wrong films.
-        return Err(if filter == "resolution" {
-            ApiError::NotImplemented
-        } else {
-            ApiError::NotFound
-        });
+        return Err(ApiError::NotFound);
     };
     let request = listing::parse(&pairs)?;
     let offset = request.start;
@@ -232,10 +296,27 @@ pub async fn filter_values(
         Name::new("id"),
         Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
     );
-    variables.insert(
-        Name::new("filter"),
-        request.filters.to_graphql(item_type(request.kind)),
-    );
+    if choice == Choice::Resolution {
+        // A series library lists its episodes' classes whatever `type` says, as the
+        // reference does: shows and seasons have no media.
+        for (position, class) in crate::resolution::keys().enumerate() {
+            variables.insert(
+                Name::new(format!("f{position}")),
+                with_fields(
+                    request.filters.to_graphql(None),
+                    [
+                        ("depth", Value::Enum(Name::new("ALL"))),
+                        ("frame", crate::resolution::label_range(class)),
+                    ],
+                ),
+            );
+        }
+    } else {
+        variables.insert(
+            Name::new("filter"),
+            request.filters.to_graphql(item_type(request.kind)),
+        );
+    }
     // Decades are grouped from every year, which fit in one page: a century of releases is
     // a hundred rows.
     let (first, skip) = if choice == Choice::Decade {
@@ -292,6 +373,7 @@ async fn choices(
     listing: &impl Fn(&str) -> String,
 ) -> Result<Choices, ApiError> {
     Ok(match choice {
+        Choice::Resolution => resolution_choices(state, variables, (offset, size)).await?,
         Choice::Tag { kind } => {
             variables.insert(Name::new("kind"), Value::Enum(Name::new(kind)));
             if kind == "ACTOR" {
@@ -305,7 +387,7 @@ async fn choices(
                 .map(|edge| {
                     let id = database_id(&edge.node.id).to_string();
                     ChoiceDirectory {
-                        fast_key: listing(&id),
+                        fast_key: Some(listing(&id)),
                         thumb: edge
                             .node
                             .person
@@ -350,7 +432,7 @@ async fn choices(
                 .skip(usize::try_from(offset).unwrap_or(usize::MAX))
                 .take(size as usize)
                 .map(|decade| ChoiceDirectory {
-                    fast_key: listing(&decade.to_string()),
+                    fast_key: Some(listing(&decade.to_string())),
                     thumb: None,
                     key: decade.to_string(),
                     title: format!("{decade}s"),
@@ -385,6 +467,45 @@ async fn choices(
     })
 }
 
+/// The resolution classes some version falls in, from one count per class.
+async fn resolution_choices(
+    state: &PlexState,
+    variables: Variables,
+    (offset, size): (u64, u32),
+) -> Result<Choices, ApiError> {
+    let data: ResolutionsData = gql::execute(&state.schema, RESOLUTIONS_QUERY, variables).await?;
+    let library = data.node.ok_or(ApiError::NotFound)?;
+    let present: Vec<&str> = crate::resolution::keys()
+        .enumerate()
+        .filter(|(position, _)| {
+            library
+                .counts
+                .get(&format!("r{position}"))
+                .is_some_and(|stats| stats.item_count > 0)
+        })
+        .map(|(_, class)| class)
+        .collect();
+    let total = present.len() as u64;
+    let entries = present
+        .into_iter()
+        .skip(usize::try_from(offset).unwrap_or(usize::MAX))
+        .take(size as usize)
+        .map(|class| ChoiceDirectory {
+            fast_key: None,
+            thumb: None,
+            key: class.to_owned(),
+            title: crate::resolution::title(class).to_owned(),
+            kind: None,
+        })
+        .collect();
+    Ok(Choices {
+        title: library.title,
+        kind: library.kind,
+        entries,
+        total,
+    })
+}
+
 async fn fetch<T: serde::de::DeserializeOwned>(
     state: &PlexState,
     query: &str,
@@ -396,7 +517,7 @@ async fn fetch<T: serde::de::DeserializeOwned>(
 
 fn plain(value: String, listing: &impl Fn(&str) -> String) -> ChoiceDirectory {
     ChoiceDirectory {
-        fast_key: listing(&value),
+        fast_key: Some(listing(&value)),
         thumb: None,
         key: value.clone(),
         title: value,
@@ -417,7 +538,7 @@ fn text_choice(value: &str, studio: bool, listing: &impl Fn(&str) -> String) -> 
         (encoded.clone(), listing(&encoded))
     };
     ChoiceDirectory {
-        fast_key,
+        fast_key: Some(fast_key),
         thumb: None,
         key,
         title: value.to_owned(),
@@ -468,8 +589,8 @@ mod tests {
         let choice = text_choice("10.80 Films", true, &listing);
         assert_eq!(choice.key, "10%252E80%2520Films");
         assert_eq!(
-            choice.fast_key,
-            "/library/sections/4/all?studio=10.80 Films"
+            choice.fast_key.as_deref(),
+            Some("/library/sections/4/all?studio=10.80 Films")
         );
 
         assert_eq!(
@@ -488,8 +609,8 @@ mod tests {
         let choice = text_choice("fr/Tous publics (2019)", false, &rating);
         assert_eq!(choice.key, "fr%2FTous%20publics%20%282019%29");
         assert_eq!(
-            choice.fast_key,
-            "/library/sections/4/all?contentRating=fr%2FTous%20publics%20%282019%29"
+            choice.fast_key.as_deref(),
+            Some("/library/sections/4/all?contentRating=fr%2FTous%20publics%20%282019%29")
         );
         assert_eq!(text_choice("PG-13", false, &rating).key, "PG-13");
         assert_eq!(text_choice("16+", false, &rating).key, "16%2B");
@@ -507,7 +628,8 @@ mod tests {
     fn names_only_the_lists_it_can_honor() {
         assert_eq!(Choice::named("genre"), Some(Choice::Tag { kind: "GENRE" }));
         assert_eq!(Choice::named("decade"), Some(Choice::Decade));
-        assert_eq!(Choice::named("resolution"), None);
+        assert_eq!(Choice::named("resolution"), Some(Choice::Resolution));
+        assert_eq!(Choice::named("bitrate"), None);
         assert_eq!(Choice::named("Genre"), None);
     }
 }

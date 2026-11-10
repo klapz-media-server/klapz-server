@@ -109,8 +109,8 @@ OFF_SPEC = (
         "user",
         "The choices of one filter",
         "Genres, countries, directors, writers, starring actors, producers, years, decades, "
-        "content ratings and studios, encoded as the reference encodes each. `resolution` "
-        "answers `501`; no `None` rating. Windowed at 500. See `docs/spec-gaps.md`.",
+        "content ratings, studios and resolutions, encoded as the reference encodes each. "
+        "No `None` rating. Windowed at 500. See `docs/spec-gaps.md`.",
     ),
     (
         "done",

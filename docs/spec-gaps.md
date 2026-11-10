@@ -18,7 +18,7 @@ library navigation, so the spec cannot be the only source for routing.
 | `GET /library/metadata/{id}/grandchildren` | `200` | Two levels down: all episodes of a show, all tracks of an artist. **Implemented**, same measurement. |
 | `GET /library/sections` | `200` | The library list — the entry point of all navigation, and what the bundled web client calls. The spec declares only the `/library/sections/all` alias. |
 | `GET /search?query=` | `200` | Global search across libraries. The spec declares only `/hubs/search`. **Implemented**, so the spec-coverage test cannot be what guards it — nothing the spec never mentions can be. |
-| `GET /library/sections/{id}/{filter}` | `200` | The choices of one filter — `genre`, `year`, `decade`, `contentRating`, `director`, `actor`, `writer`, `producer`, `country`, `studio`, `resolution` — each with the listing URL that applies it. The paths `includeMeta` points a client at. **Implemented** but for `resolution`; see *Filter choices* below. |
+| `GET /library/sections/{id}/{filter}` | `200` | The choices of one filter — `genre`, `year`, `decade`, `contentRating`, `director`, `actor`, `writer`, `producer`, `country`, `studio`, `resolution` — each with the listing URL that applies it. The paths `includeMeta` points a client at. **Implemented**; see *Filter choices* below. |
 | `GET /library/sections/{id}/firstCharacter?type=` | `200` | The A–Z jump bar. Singular, and absent from the spec in that form (see *Wrong in the spec*). **Implemented**, with bucket sets and counts identical to the reference on four libraries. |
 
 Both carry containers the listing endpoints do not; they are described under *Opening a
@@ -77,7 +77,7 @@ derivable from the spec or from the database schema alone.
 | Item `duration` | The **media's** duration, not the metadata row's, wherever the item has media: an item whose row says 6,060,000 ms reports 6,050,048. The row's value comes from the matched release, the media's from the file. |
 | `bitrate` unit | Storage holds bits per second; the API publishes kilobits, rounded — 11,285,835 becomes 11,286 and a 63 bit/s subtitle track becomes 0. Applies to `Media` and `Stream` alike. |
 | `aspectRatio` snapping | The measurement is snapped to the nearest of exactly six cinema ratios: 1.33, 1.66, 1.78, 1.85, 2.2, 2.35, clamped at both ends. Verified over 720 media items, which report no other value; 1.5019 comes back as 1.66 and 2.0084 as 1.85, which rules out 1.5 and 2.0 being on the ladder. |
-| `videoResolution` | Derived from the **width**, with wide tolerances: 1796×800 and 1920×1080 both report `1080`, 3232×1600 reports `4k`. Height only separates the standard-definition labels (720×576 is `576`, 720×404 is `sd`). |
+| `videoResolution` | A class reached by **either dimension**, widest first: `8k` 7680 or 4320, `4k` 2880 or 1540, `2.7k` 2802 wide, `2k` 2048 wide, `1080` 1902 or 1070, `720` 1252 or 704, `576` 1016 or 560, `480` 848 or 462, else `sd`. The height is first capped at the width, so a portrait 810×1440 is `720`. Identical on 99,439 of 99,439 versions across eight libraries; the width-only rule it replaces missed 1.5%. See *Resolution* below. |
 | `videoFrameRate` | Only three standards have labels — 23.976/24 → `24p`, 25 → `PAL`, 29.97/30 → `NTSC`. Anything else is **omitted**: a 50 fps file carries no `videoFrameRate` at all. |
 | Rating precision | `rating` and `audienceRating` are published to one decimal; a stored 7.924 reports 7.9. Verified over 280 values with no exception. |
 | `Media.audioProfile` / `videoProfile` | Not columns. They come from the matching stream's `profile`, which lives inside the packed `extra_data` JSON on `media_streams` (`ma:profile`). |
@@ -143,9 +143,19 @@ series library's genres are identical as sets; genres miss one. The rest:
   on the reference (850 of them), nothing here. 134 more show another photo of the same person.
 - **Order follows the folded byte order**, where the reference collates: studios match it
   case-insensitively, people and genres differ in places, as the listings do.
-- **`resolution` answers `501`.** Its buckets are not the labels items carry: `2k` holds 3,416
-  films whose `videoResolution` is `1080`, and `4k` is absent from a library with films labelled
-  `4k`. Offering them over a filter that selects by minimum width would select the wrong films.
+
+#### Resolution
+
+The list, the filter and the label share the ladder of `videoResolution`, and differ in two
+measured ways. The **list** names the classes some version of the library falls in, widest
+first, by `key` and `title` only — no `fastKey` — and a series library lists its episodes'
+whatever `type` says. The **filter** applies the ladder to the frame as stored, without the
+label's cap on the height, and `resolution=2k` is not the `2k` label: it takes every frame
+1,072 to 1,440 lines tall that no wider class claims, 1080p included, which is why it held 3,416
+films labelled `1080`. Over eight libraries, every class of every library selects exactly the
+reference's items, and every list is the reference's. The one approximation is in the list:
+it counts a class by the frame as stored, so a portrait video could list a class one step
+off, a case 71 versions of 99,911 present.
 
 ### Where an `X-Plex-*` value is read from
 
@@ -211,7 +221,8 @@ The field list is not guesswork: the server publishes it per library under
 for a film library.
 
 **Implemented**: `title`, `year` (with `>=`/`<=`), `decade`, `contentRating`, `studio`,
-`resolution`, verified against the reference on 11 of 12 probes with exact totals; and the six
+verified against the reference on 11 of 12 probes with exact totals; `resolution`, identical on
+every class of eight libraries (see *Resolution*); and the six
 tag filters, `genre`, `country`, `director`, `writer`, `actor` and `producer`.
 
 **Refused with `501`**, not silently dropped: every other field on the published list, plus the

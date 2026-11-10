@@ -163,7 +163,8 @@ pub struct Filters {
     pub year_to: Option<i32>,
     pub content_rating: Option<String>,
     pub studio_contains: Option<String>,
-    pub min_width: Option<i32>,
+    /// A resolution class: `4k`, `1080`, `sd`.
+    pub resolution: Option<&'static str>,
     /// One entry per tag parameter; several combine with `AND`.
     pub tags: Vec<TagFilter>,
     /// `id!=` — the shelf "more by this director", without the film it was opened from.
@@ -252,8 +253,8 @@ impl Filters {
         if let Some(studio) = &self.studio_contains {
             set("studioContains", Value::String(studio.clone()));
         }
-        if let Some(width) = self.min_width {
-            set("minWidth", Value::Number(width.into()));
+        if let Some(class) = self.resolution {
+            set("frame", crate::resolution::filter_range(class));
         }
         if !self.tags.is_empty() {
             set(
@@ -270,20 +271,6 @@ impl Filters {
         } else {
             Value::Object(fields)
         }
-    }
-}
-
-/// Minimum frame width for each resolution label Plex filters by.
-///
-/// The inverse of the label the listing emits, with the same thresholds, so a client that
-/// reads `videoResolution: "4k"` off an item and filters by it finds that item again.
-fn resolution_width(label: &str) -> Option<i32> {
-    match label.to_ascii_lowercase().as_str() {
-        "4k" => Some(3000),
-        "1080" => Some(1700),
-        "720" => Some(1200),
-        "576" | "480" | "sd" => Some(0),
-        _ => None,
     }
 }
 
@@ -407,7 +394,7 @@ fn apply(
         // reference, which is every studio containing the word.
         ("studio", Operator::Equals) => filters.studio_contains = Some(value.to_owned()),
         ("resolution", Operator::Equals) => {
-            filters.min_width = Some(resolution_width(value).ok_or_else(unsupported)?);
+            filters.resolution = Some(crate::resolution::known(value).ok_or_else(unsupported)?);
         }
         _ => return Err(unsupported()),
     }
@@ -514,14 +501,13 @@ mod tests {
     }
 
     #[test]
-    fn resolution_maps_to_the_width_the_listing_reports() {
-        // A client reading `videoResolution: "4k"` off an item must find it again by
-        // filtering on that value, so the thresholds have to be the same ones.
-        let filters = parse(&pairs(&[("resolution", "4k")]))
+    fn resolution_takes_the_classes_the_reference_lists() {
+        let filters = parse(&pairs(&[("resolution", "2.7k")]))
             .expect("parses")
             .filters;
-        assert_eq!(filters.min_width, Some(3000));
-        assert!(parse(&pairs(&[("resolution", "8k")])).is_err());
+        assert_eq!(filters.resolution, Some("2.7k"));
+        // Not a class of the reference's: refused rather than ignored.
+        assert!(parse(&pairs(&[("resolution", "6k")])).is_err());
     }
 
     #[test]

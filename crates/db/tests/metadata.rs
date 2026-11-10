@@ -6,7 +6,7 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::metadata::ScanType;
+use open_plex_core::metadata::{FrameRange, FrameSize, ScanType};
 use open_plex_core::metadata::{
     ItemDepth, ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataError, MetadataRepository,
 };
@@ -733,7 +733,13 @@ async fn filters_by_resolution_without_duplicating_multi_version_items() {
     // Jurassic World has a 1920-wide and a 3840-wide version. A join would return it twice;
     // the `EXISTS` subquery returns it once.
     let query = ItemQuery::new(SectionId::new(SECTION)).filtered(ItemFilter {
-        min_width: Some(3840),
+        frame: Some(FrameRange {
+            reaching: Some(FrameSize {
+                width: 2880,
+                height: 1540,
+            }),
+            short_of: None,
+        }),
         ..ItemFilter::default()
     });
     let items = repository()
@@ -749,7 +755,13 @@ async fn filters_by_resolution_without_duplicating_multi_version_items() {
 async fn a_resolution_filter_excludes_items_without_media() {
     // Shows and seasons have none, so a resolution filter must not return them.
     let query = ItemQuery::new(SectionId::new(SECTION)).filtered(ItemFilter {
-        min_width: Some(1),
+        frame: Some(FrameRange {
+            reaching: None,
+            short_of: Some(FrameSize {
+                width: i32::MAX,
+                height: i32::MAX,
+            }),
+        }),
         ..ItemFilter::default()
     });
     let items = repository()
@@ -946,4 +958,42 @@ async fn reads_a_tracks_analysis_with_its_dolby_vision_and_loudness() {
         .expect("files");
     assert!(files[0].layout.has_thumbnail);
     assert_eq!(files[0].layout.has_64bit_offsets, None);
+}
+
+#[tokio::test]
+async fn a_frame_range_keeps_what_reaches_one_size_and_falls_short_of_another() {
+    // The 1920-wide version of Jurassic World is 1080p: it reaches 1902×1070 and falls
+    // short of 4K. Its 3840-wide version is not, so only one of its versions answers.
+    let range = |reaching: (i32, i32), short_of: (i32, i32)| FrameRange {
+        reaching: Some(FrameSize {
+            width: reaching.0,
+            height: reaching.1,
+        }),
+        short_of: Some(FrameSize {
+            width: short_of.0,
+            height: short_of.1,
+        }),
+    };
+    let repository = repository().await;
+    let listed = |frame: FrameRange| {
+        let query = ItemQuery::new(SectionId::new(SECTION)).filtered(ItemFilter {
+            frame: Some(frame),
+            ..ItemFilter::default()
+        });
+        let repository = &repository;
+        async move {
+            titles(
+                &repository
+                    .items(&query, page(50))
+                    .await
+                    .expect("page")
+                    .items,
+            )
+        }
+    };
+    assert!(listed(range((1902, 1070), (2880, 1540)))
+        .await
+        .contains(&"Jurassic World".to_owned()));
+    // Nothing is short of 1×1.
+    assert!(listed(range((0, 0), (1, 1))).await.is_empty());
 }
