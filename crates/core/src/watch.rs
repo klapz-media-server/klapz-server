@@ -12,8 +12,9 @@
 
 use std::collections::HashMap;
 
-use crate::ids::{RatingKey, SectionId, UserId};
+use crate::ids::{PartId, RatingKey, SectionId, UserId};
 use crate::metadata::{ItemKind, MetadataError, MetadataItem, MetadataRepository};
+use crate::tracks::TrackChoice;
 use crate::{Principal, Scope};
 
 /// A position kept, at the least. Shorter ones are taken for a false start.
@@ -167,6 +168,21 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
         playback: &str,
         viewing: Viewing,
         now: i64,
+    ) -> Result<(), WatchError>;
+
+    /// The tracks a viewer chose on these files. A file it chose nothing on is absent.
+    async fn track_choices(
+        &self,
+        viewer: Viewer,
+        files: &[PartId],
+    ) -> Result<Vec<(PartId, TrackChoice)>, WatchError>;
+
+    /// Records a viewer's choice on one file, an empty one deleting it.
+    async fn choose_tracks(
+        &self,
+        viewer: Viewer,
+        file: PartId,
+        choice: TrackChoice,
     ) -> Result<(), WatchError>;
 }
 

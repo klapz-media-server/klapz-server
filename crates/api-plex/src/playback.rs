@@ -27,7 +27,7 @@ use open_plex_transcoder::media::resolve_within;
 use open_plex_transcoder::plan::{
     plan_stream, AudioAction, Limits, StreamPlan, StreamSource, Track, VideoAction, VideoEncode,
 };
-use open_plex_transcoder::session::{segment_seconds, Protocol, StreamRequest};
+use open_plex_transcoder::session::{segment_seconds, BurnedSubtitle, Protocol, StreamRequest};
 use serde::Deserialize;
 use serde_json::{json, Value as Json};
 use tower::ServiceExt as _;
@@ -182,6 +182,11 @@ struct PlaybackParams {
     max_video_bitrate: Option<u32>,
     #[serde(rename = "autoAdjustQuality")]
     auto_adjust_quality: Option<String>,
+    /// How a client wants subtitles: Plex Web in Chrome asks for `burn`.
+    subtitles: Option<String>,
+    /// The size to draw them at, in percent: Plex Web's 50 to 200.
+    #[serde(rename = "subtitleSize")]
+    subtitle_size: Option<u32>,
 }
 
 impl PlaybackParams {
@@ -237,6 +242,10 @@ struct Selection<'a> {
     part: &'a GqlPart,
     video: &'a GqlStream,
     audio: &'a GqlStream,
+    /// The subtitle the caller plays the file with, if any.
+    subtitle: Option<&'a GqlStream>,
+    /// Whether that subtitle is drawn into the picture, which the client asked for.
+    burn: bool,
     version_index: usize,
 }
 
@@ -252,18 +261,25 @@ impl<'a> Selection<'a> {
             .get(PlaybackParams::index_of(params.part_index))
             .ok_or(ApiError::BadRequest)?;
         let of_kind = |kind: &'a str| part.streams.iter().filter(move |s| s.kind == kind);
+        let (selected_audio, selected_subtitle) = part.selected();
         let video = of_kind("VIDEO").next().ok_or(ApiError::BadRequest)?;
+        // A request naming its audio wins over the caller's choice, which the official API
+        // applied, default included.
         let audio = params
             .audio_stream_id
+            .or(selected_audio)
             .and_then(|id| of_kind("AUDIO").find(|stream| stream.database_id() == id))
-            .or_else(|| of_kind("AUDIO").find(|stream| stream.is_default))
             .or_else(|| of_kind("AUDIO").next())
             .ok_or(ApiError::BadRequest)?;
+        let subtitle = selected_subtitle
+            .and_then(|id| of_kind("SUBTITLE").find(|stream| stream.database_id() == id));
         Ok(Self {
             version,
             part,
             video,
             audio,
+            subtitle,
+            burn: subtitle.is_some() && params.subtitles.as_deref() == Some("burn"),
             version_index,
         })
     }
@@ -281,6 +297,7 @@ impl<'a> Selection<'a> {
             max_video_kbps: params.max_video_bitrate,
             convert_audio: params.direct_stream_audio.as_deref() == Some("0"),
             adaptive: params.adaptive(),
+            burn_subtitle: self.burn,
         };
         Ok(plan_stream(&source, limits)?)
     }
@@ -506,12 +523,7 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<Conversi
     };
     let video = json!(selection.video.database_id());
     let audio = json!(selection.audio.database_id());
-    let subtitle = selection
-        .part
-        .streams
-        .iter()
-        .find(|stream| stream.kind == "SUBTITLE" && stream.is_default)
-        .map(|stream| json!(stream.database_id()));
+    let subtitle = selection.subtitle.map(|stream| json!(stream.database_id()));
 
     streams.retain(|stream| {
         stream["id"] == video || stream["id"] == audio || Some(&stream["id"]) == subtitle.as_ref()
@@ -522,10 +534,8 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<Conversi
             continue;
         };
         let is_subtitle = Some(&id) == subtitle.as_ref();
-        // No subtitle is ever selected: nothing here records a viewer's choice of one yet, so
-        // `subtitles=burn` has nothing to burn and the video can be copied.
-        // The listing marks the default track, which a request for another one overrides.
-        if id == audio {
+        // The lookup marks the caller's tracks, which a request naming its audio overrides.
+        if id == audio || is_subtitle {
             fields.insert("selected".into(), json!(true));
         } else {
             fields.shift_remove("selected");
@@ -534,7 +544,12 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<Conversi
             fields.insert("location".into(), json!("direct"));
             continue;
         };
-        if is_subtitle {
+        if is_subtitle && selection.burn {
+            // Drawn into the picture, so carried by the video's segments.
+            fields.insert("decision".into(), json!("burn"));
+            fields.insert("location".into(), json!("segments-video"));
+            fields.insert("burn".into(), json!("1"));
+        } else if is_subtitle {
             fields.insert("decision".into(), json!("ignore"));
             fields.insert("location".into(), json!("sidecar-subs"));
         } else {
@@ -676,6 +691,13 @@ async fn open_session(
             offset: params.offset,
             protocol,
             total_ms: u64::try_from(selection.version.duration_ms.unwrap_or(0).max(0)).unwrap_or(0),
+            subtitle: selection
+                .subtitle
+                .filter(|_| selection.burn)
+                .map(|subtitle| BurnedSubtitle {
+                    track: track(subtitle),
+                    scale: f64::from(params.subtitle_size.unwrap_or(100)) / 100.0,
+                }),
         })
         .await?;
     for stored in replaced {
@@ -1087,6 +1109,10 @@ mod tests {
             direct_stream_audio: None,
             max_video_bitrate: None,
             auto_adjust_quality: parsed.get("autoAdjustQuality").cloned(),
+            subtitles: parsed.get("subtitles").cloned(),
+            subtitle_size: parsed
+                .get("subtitleSize")
+                .and_then(|size| size.parse().ok()),
         }
     }
 

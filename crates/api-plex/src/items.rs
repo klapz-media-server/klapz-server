@@ -933,11 +933,12 @@ impl PartEntry {
             optimized_for_streaming: file.optimized_for_streaming,
             packet_length: file.packet_length,
             video_profile: profile_of(version.primary_video.as_ref()),
-            stream: with_audio_selected(
+            stream: with_selected(
                 file.streams
                     .iter()
                     .map(|stream| StreamEntry::from_graphql(stream, language))
                     .collect(),
+                file.selected(),
             ),
         }
     }
@@ -957,18 +958,21 @@ fn profile_of(track: Option<&GqlProfiled>) -> Option<String> {
     track.and_then(|track| track.profile.clone())
 }
 
-/// Marks the audio track that plays when none is asked for: the first default, or else the
-/// first. Plex Web's player settings read the selected track and crash without one. The
-/// reference also honors an account's language, which agrees on 206 of 219 files measured; we
-/// have no such preference. Subtitles stay unselected: nothing records a viewer's choice.
-fn with_audio_selected(mut streams: Vec<StreamEntry>) -> Vec<StreamEntry> {
-    let audio = |stream: &StreamEntry| stream.stream_type == 2;
-    let chosen = streams
-        .iter()
-        .position(|stream| audio(stream) && stream.default == Some(true))
-        .or_else(|| streams.iter().position(audio));
-    if let Some(chosen) = chosen {
-        streams[chosen].selected = Some(true);
+/// Marks the tracks the caller plays the part with, as the official API chose them: Plex
+/// Web's player settings read the selected tracks, and crash without an audio one.
+fn with_selected(
+    mut streams: Vec<StreamEntry>,
+    (audio, subtitle): (Option<i64>, Option<i64>),
+) -> Vec<StreamEntry> {
+    for stream in &mut streams {
+        let chosen = match stream.stream_type {
+            2 => audio,
+            3 => subtitle,
+            _ => None,
+        };
+        if chosen == Some(stream.id) {
+            stream.selected = Some(true);
+        }
     }
     streams
 }
@@ -1084,14 +1088,14 @@ mod tests {
     // A panicking test is a failing test, which is the intended reporting mechanism.
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-    use super::{with_audio_selected, StreamEntry};
+    use super::{with_selected, StreamEntry};
 
-    fn stream(stream_type: u8, default: bool) -> StreamEntry {
+    fn stream(id: i64, stream_type: u8) -> StreamEntry {
         StreamEntry {
-            id: 1,
+            id,
             stream_type,
             selected: None,
-            default: default.then_some(true),
+            default: None,
             forced: None,
             codec: None,
             index: Some(0),
@@ -1106,40 +1110,25 @@ mod tests {
         }
     }
 
-    fn selected(streams: Vec<StreamEntry>) -> Vec<bool> {
-        with_audio_selected(streams)
-            .iter()
-            .map(|stream| stream.selected == Some(true))
-            .collect()
-    }
-
     #[test]
-    fn the_first_default_audio_track_is_selected() {
-        assert_eq!(
-            selected(vec![
-                stream(1, true),
-                stream(2, false),
-                stream(2, true),
-                stream(2, true),
-            ]),
-            [false, false, true, false]
-        );
-    }
-
-    #[test]
-    fn without_a_default_the_first_audio_track_is_selected() {
-        assert_eq!(
-            selected(vec![stream(1, false), stream(2, false), stream(2, false)]),
-            [false, true, false]
-        );
-    }
-
-    #[test]
-    fn neither_video_nor_subtitles_are_selected() {
-        assert_eq!(
-            selected(vec![stream(1, true), stream(3, true)]),
-            [false, false]
-        );
+    fn marks_the_chosen_audio_and_subtitle_and_nothing_else() {
+        let marked: Vec<bool> = with_selected(
+            vec![
+                stream(1, 1),
+                stream(2, 2),
+                stream(3, 2),
+                stream(4, 3),
+                stream(5, 3),
+            ],
+            (Some(3), Some(4)),
+        )
+        .iter()
+        .map(|stream| stream.selected == Some(true))
+        .collect();
+        assert_eq!(marked, [false, false, true, true, false]);
+        // An audio id never marks a subtitle, nor the reverse.
+        let crossed = with_selected(vec![stream(4, 3)], (Some(4), None));
+        assert_eq!(crossed[0].selected, None);
     }
 
     use super::*;

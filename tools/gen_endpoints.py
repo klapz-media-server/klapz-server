@@ -70,6 +70,7 @@ IMPLEMENTED = frozenset(
         "/:/scrobble",
         "/:/unscrobble",
         "/hubs/continueWatching",
+        "/library/parts/{partId}",
     }
 )
 

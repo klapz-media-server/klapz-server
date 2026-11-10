@@ -12,7 +12,7 @@ use open_plex_core::{RatingKey, UserId};
 use open_plex_db::entity::{library_section, metadata_item};
 use open_plex_db::write;
 use open_plex_db::SqlWatchRepository;
-use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
+use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 const SHOW: i64 = 577_987;
 const SEASON: i64 = 577_988;
@@ -224,4 +224,108 @@ async fn remembers_a_playback_until_it_expires() {
             .unwrap(),
         Some(later)
     );
+}
+
+#[tokio::test]
+async fn a_track_choice_is_kept_per_viewer_and_file_and_an_empty_one_forgotten() {
+    use open_plex_core::tracks::{SubtitleChoice, TrackChoice};
+    use open_plex_core::{PartId, StreamId};
+
+    let (repository, file) = repository_with_a_file().await;
+    let off = TrackChoice {
+        audio: Some(StreamId::new(7)),
+        subtitle: Some(SubtitleChoice::Off),
+    };
+    repository
+        .choose_tracks(Viewer::Operator, file, off)
+        .await
+        .unwrap();
+    let chosen = TrackChoice {
+        audio: None,
+        subtitle: Some(SubtitleChoice::Track(StreamId::new(8))),
+    };
+    repository
+        .choose_tracks(Viewer::User(open_plex_core::UserId::new(3)), file, chosen)
+        .await
+        .unwrap();
+
+    let read = |viewer| {
+        let repository = &repository;
+        async move {
+            repository
+                .track_choices(viewer, &[file, PartId::new(404)])
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(read(Viewer::Operator).await, [(file, off)]);
+    assert_eq!(
+        read(Viewer::User(open_plex_core::UserId::new(3))).await,
+        [(file, chosen)]
+    );
+    repository
+        .choose_tracks(Viewer::Operator, file, TrackChoice::default())
+        .await
+        .unwrap();
+    assert!(read(Viewer::Operator).await.is_empty());
+}
+
+/// The seeded library, with one file for an episode: a choice of tracks belongs to a file.
+async fn repository_with_a_file() -> (SqlWatchRepository, open_plex_core::PartId) {
+    use open_plex_db::entity::{media, media_part};
+
+    let connection = open_plex_db::connect("sqlite::memory:")
+        .await
+        .expect("in-memory database");
+    seed(&connection).await;
+    let episode = metadata_item::Entity::find()
+        .filter(metadata_item::Column::Kind.eq("episode"))
+        .one(&connection)
+        .await
+        .unwrap()
+        .expect("an episode")
+        .id;
+    media::Entity::insert(media::ActiveModel {
+        id: ActiveValue::Set(1),
+        metadata_item_id: ActiveValue::Set(episode),
+        width: ActiveValue::Set(None),
+        height: ActiveValue::Set(None),
+        aspect_ratio: ActiveValue::Set(None),
+        duration_ms: ActiveValue::Set(None),
+        bitrate: ActiveValue::Set(None),
+        container: ActiveValue::Set(None),
+        video_codec: ActiveValue::Set(None),
+        audio_codec: ActiveValue::Set(None),
+        audio_channels: ActiveValue::Set(None),
+        frame_rate: ActiveValue::Set(None),
+        interlaced: ActiveValue::Set(false),
+        optimized_for_streaming: ActiveValue::Set(false),
+        created_at: ActiveValue::Set(0),
+        updated_at: ActiveValue::Set(0),
+    })
+    .exec(&connection)
+    .await
+    .unwrap();
+    media_part::Entity::insert(media_part::ActiveModel {
+        id: ActiveValue::Set(5),
+        media_id: ActiveValue::Set(1),
+        position: ActiveValue::Set(0),
+        path: ActiveValue::Set("e.mkv".to_owned()),
+        size_bytes: ActiveValue::Set(None),
+        duration_ms: ActiveValue::Set(None),
+        created_at: ActiveValue::Set(0),
+        updated_at: ActiveValue::Set(0),
+        has_thumbnail: ActiveValue::Set(false),
+        has_64bit_offsets: ActiveValue::Set(None),
+        optimized_for_streaming: ActiveValue::Set(None),
+        packet_length: ActiveValue::Set(None),
+        has_chapter_text_stream: ActiveValue::Set(false),
+    })
+    .exec(&connection)
+    .await
+    .unwrap();
+    (
+        SqlWatchRepository::new(connection),
+        open_plex_core::PartId::new(5),
+    )
 }

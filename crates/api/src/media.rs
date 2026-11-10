@@ -10,6 +10,9 @@ use open_plex_core::metadata::{
     ScanType, StreamKind, SubtitleAnalysis, TrackTraits, VideoAnalysis,
 };
 
+use open_plex_core::tracks::{selected_tracks, SelectedTracks};
+use open_plex_core::StreamId;
+
 use crate::loader::{FilesLoader, StreamsLoader};
 use crate::node::GlobalId;
 
@@ -249,15 +252,41 @@ impl File {
 
     /// The tracks inside this file, plus any sidecar subtitle files.
     async fn streams(&self, context: &Context<'_>) -> Result<Vec<Track>> {
-        let loader = context.data::<DataLoader<StreamsLoader>>()?;
-        Ok(loader
-            .load_one(self.0.id)
-            .await?
-            .unwrap_or_default()
-            .into_iter()
-            .map(Track)
-            .collect())
+        Ok(self.tracks(context).await?.into_iter().map(Track).collect())
     }
+
+    /// The audio track the caller plays this file with: the one it chose with `chooseTracks`,
+    /// else the file's default, else its first.
+    async fn selected_audio(&self, context: &Context<'_>) -> Result<Option<Track>> {
+        let (tracks, selected) = self.selection(context).await?;
+        Ok(pick(tracks, selected.audio))
+    }
+
+    /// The subtitle the caller plays this file with: the one it chose, none if it chose none,
+    /// else the forced subtitle in the selected audio's language. Null for no subtitle.
+    async fn selected_subtitle(&self, context: &Context<'_>) -> Result<Option<Track>> {
+        let (tracks, selected) = self.selection(context).await?;
+        Ok(pick(tracks, selected.subtitle))
+    }
+}
+
+impl File {
+    async fn tracks(&self, context: &Context<'_>) -> Result<Vec<MediaStream>> {
+        let loader = context.data::<DataLoader<StreamsLoader>>()?;
+        Ok(loader.load_one(self.0.id).await?.unwrap_or_default())
+    }
+
+    async fn selection(&self, context: &Context<'_>) -> Result<(Vec<MediaStream>, SelectedTracks)> {
+        let tracks = self.tracks(context).await?;
+        let choice = crate::watch::track_choice_of(context, self.0.id).await?;
+        let selected = selected_tracks(&tracks, choice);
+        Ok((tracks, selected))
+    }
+}
+
+fn pick(tracks: Vec<MediaStream>, id: Option<StreamId>) -> Option<Track> {
+    let id = id?;
+    tracks.into_iter().find(|track| track.id == id).map(Track)
 }
 
 /// The last path segment, or the whole string when it has no separator.

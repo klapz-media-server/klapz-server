@@ -520,7 +520,7 @@ async fn readable_version(
         .map(|_| version))
 }
 
-async fn readable_file(
+pub(crate) async fn readable_file(
     context: &Context<'_>,
     id: PartId,
 ) -> Result<Option<open_plex_core::MediaFile>> {
@@ -619,6 +619,10 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
         .data(DataLoader::new(RatingsLoader::new(metadata), tokio::spawn))
         .data(DataLoader::new(
             crate::watch::WatchStateLoader::new(Arc::clone(&watch)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            crate::watch::TrackChoiceLoader::new(Arc::clone(&watch)),
             tokio::spawn,
         ))
         .data(DataLoader::new(

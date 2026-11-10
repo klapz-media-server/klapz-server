@@ -235,15 +235,31 @@ fn trusted_networks() -> Result<Vec<ipnet::IpNet>, String> {
 }
 
 /// `OPENPLEX_TRANSCODER` is the patched ffmpeg to run; `OPENPLEX_TRANSCODER_CODECS` where its
-/// separately distributed codecs are, for Plex's own build.
+/// separately distributed codecs are, for Plex's own build; `OPENPLEX_TRANSCODER_FONTS` the
+/// fonts subtitles are burned in with, by default `Resources/Fonts` beside the binary, where a
+/// Plex install keeps them.
 fn transcoder() -> open_plex_transcoder::Transcoder {
     let bind = std::env::var("OPENPLEX_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
     let port = bind.rsplit(':').next().unwrap_or("32500");
+    let binary: std::path::PathBuf = std::env::var_os("OPENPLEX_TRANSCODER")
+        .map_or_else(|| "ffmpeg".into(), std::path::PathBuf::from);
+    let fonts = std::env::var_os("OPENPLEX_TRANSCODER_FONTS")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            binary
+                .parent()
+                .map(|directory| directory.join("Resources").join("Fonts"))
+        })
+        // Absolute, as the process runs in its session's directory.
+        .and_then(|fonts| std::fs::canonicalize(fonts).ok());
+    if fonts.is_none() {
+        tracing::warn!("no subtitle fonts found: subtitles cannot be burned in");
+    }
     open_plex_transcoder::Transcoder::new(open_plex_transcoder::Config {
-        binary: std::env::var_os("OPENPLEX_TRANSCODER")
-            .map_or_else(|| "ffmpeg".into(), std::path::PathBuf::from),
+        binary,
         external_libs: std::env::var_os("OPENPLEX_TRANSCODER_CODECS").map(std::path::PathBuf::from),
         callback_base: format!("http://127.0.0.1:{port}"),
+        fonts,
     })
 }
 

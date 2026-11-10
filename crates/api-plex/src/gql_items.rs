@@ -90,6 +90,8 @@ fragment FileFields on MediaFile {
   optimizedForStreaming
   packetLength
   hasChapterTextStream
+  selectedAudio { id }
+  selectedSubtitle { id }
 }
 
 fragment TrackFields on MediaStream {
@@ -1064,12 +1066,25 @@ pub struct GqlPart {
     pub packet_length: Option<i32>,
     pub has_chapter_text_stream: bool,
     pub streams: Vec<GqlStream>,
+    pub selected_audio: Option<GqlTrackRef>,
+    pub selected_subtitle: Option<GqlTrackRef>,
 }
 
 impl GqlPart {
     pub fn database_id(&self) -> i64 {
         database_id(&self.id)
     }
+
+    /// The tracks the caller plays this part with, by database id.
+    pub fn selected(&self) -> (Option<i64>, Option<i64>) {
+        let id = |track: &Option<GqlTrackRef>| track.as_ref().map(|track| database_id(&track.id));
+        (id(&self.selected_audio), id(&self.selected_subtitle))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GqlTrackRef {
+    pub id: String,
 }
 
 #[derive(Debug, Default, Deserialize)]

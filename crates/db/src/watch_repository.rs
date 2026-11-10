@@ -2,17 +2,18 @@
 
 use std::collections::HashMap;
 
+use open_plex_core::tracks::{SubtitleChoice, TrackChoice};
 use open_plex_core::watch::{
     Viewer, Viewing, WatchError, WatchRepository, WatchState, VIEWING_LIFETIME_SECONDS,
 };
-use open_plex_core::RatingKey;
+use open_plex_core::{PartId, RatingKey, StreamId};
 use sea_orm::sea_query::{Alias, Expr, OnConflict};
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromQueryResult, JoinType,
-    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromQueryResult,
+    JoinType, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 
-use crate::entity::{metadata_item, viewing, watch_state};
+use crate::entity::{metadata_item, track_choice, viewing, watch_state};
 
 #[derive(Debug, Clone)]
 pub struct SqlWatchRepository {
@@ -254,6 +255,81 @@ impl WatchRepository for SqlWatchRepository {
         .await
         .map_err(storage)?;
         transaction.commit().await.map_err(storage)
+    }
+
+    async fn track_choices(
+        &self,
+        viewer: Viewer,
+        files: &[PartId],
+    ) -> Result<Vec<(PartId, TrackChoice)>, WatchError> {
+        if files.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = track_choice::Entity::find()
+            .filter(track_choice::Column::Viewer.eq(viewer_id(viewer)))
+            .filter(track_choice::Column::MediaPartId.is_in(files.iter().map(|file| file.get())))
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let subtitle = if row.subtitle_off {
+                    Some(SubtitleChoice::Off)
+                } else {
+                    row.subtitle_stream_id
+                        .map(|id| SubtitleChoice::Track(StreamId::new(id)))
+                };
+                let choice = TrackChoice {
+                    audio: row.audio_stream_id.map(StreamId::new),
+                    subtitle,
+                };
+                (PartId::new(row.media_part_id), choice)
+            })
+            .collect())
+    }
+
+    async fn choose_tracks(
+        &self,
+        viewer: Viewer,
+        file: PartId,
+        choice: TrackChoice,
+    ) -> Result<(), WatchError> {
+        if choice.is_empty() {
+            track_choice::Entity::delete_by_id((viewer_id(viewer), file.get()))
+                .exec(&self.connection)
+                .await
+                .map_err(storage)?;
+            return Ok(());
+        }
+        let (subtitle_stream_id, subtitle_off) = match choice.subtitle {
+            Some(SubtitleChoice::Track(id)) => (Some(id.get()), false),
+            Some(SubtitleChoice::Off) => (None, true),
+            None => (None, false),
+        };
+        track_choice::Entity::insert(track_choice::ActiveModel {
+            viewer: ActiveValue::Set(viewer_id(viewer)),
+            media_part_id: ActiveValue::Set(file.get()),
+            audio_stream_id: ActiveValue::Set(choice.audio.map(StreamId::get)),
+            subtitle_stream_id: ActiveValue::Set(subtitle_stream_id),
+            subtitle_off: ActiveValue::Set(subtitle_off),
+        })
+        .on_conflict(
+            OnConflict::columns([
+                track_choice::Column::Viewer,
+                track_choice::Column::MediaPartId,
+            ])
+            .update_columns([
+                track_choice::Column::AudioStreamId,
+                track_choice::Column::SubtitleStreamId,
+                track_choice::Column::SubtitleOff,
+            ])
+            .to_owned(),
+        )
+        .exec(&self.connection)
+        .await
+        .map_err(storage)?;
+        Ok(())
     }
 }
 

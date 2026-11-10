@@ -348,6 +348,29 @@ impl Mutation {
             .await?)
     }
 
+    /// Chooses, for the caller, the audio track or the subtitle a file plays with — or no
+    /// subtitles. What is not named keeps its earlier choice. Returns the file.
+    async fn choose_tracks(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The file, as returned in `MediaFile.id`.")] file: ID,
+        #[graphql(desc = "One of the file's audio tracks, as returned in `MediaStream.id`.")]
+        audio_track: Option<ID>,
+        #[graphql(desc = "One of the file's subtitles, as returned in `MediaStream.id`.")]
+        subtitle_track: Option<ID>,
+        #[graphql(desc = "Play the file without subtitles, forced ones included.")]
+        subtitles_off: Option<bool>,
+    ) -> Result<crate::media::File> {
+        crate::watch::choose_tracks(
+            context,
+            &file,
+            audio_track,
+            subtitle_track,
+            subtitles_off.unwrap_or(false),
+        )
+        .await
+    }
+
     /// Marks an item watched for the caller: a film or an episode once more, a season or a
     /// series by each of its episodes once more. Counted on the episode's season and series
     /// too. Returns the item's state after it.

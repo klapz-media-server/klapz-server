@@ -672,8 +672,42 @@ change quality without changing session; we have not observed which Plex Web doe
 Audio is converted whenever the video is re-encoded, `directStreamAudio=1` included,
 which no capture covers. Other codecs than H.264 still answer `501`.
 
-`subtitles=burn` with a selected subtitle forces a video transcode on the reference. Nothing here
-records a viewer's choice of subtitle, so none is ever selected and the video is copied.
+`subtitles=burn` with a selected subtitle forces a video transcode on the reference, and so here
+(*Choosing a track, and burning subtitles in*).
+
+### Choosing a track, and burning subtitles in
+
+`PUT /library/parts/{partId}` is what Plex Web sends when its player's menu changes the audio
+or the subtitles. Measured on the reference's test film:
+
+- `audioStreamID` or `subtitleStreamID` names one of the part's tracks of that kind, and
+  `subtitleStreamID=0` turns subtitles off. The answer is an empty `text/html` `200`, and the
+  next lookup marks the track `selected`. A track of another kind or of no part of this one, or
+  neither parameter, is a `400`. A `GET` on the same address changes nothing.
+- **With no choice made**, the default audio track plays, and the forced subtitle in its
+  language: French forced subtitles under French audio, unchosen.
+- `allParts=1` is sent along; with one file per release it changes nothing measurable.
+
+Ours match on each case. The choice is per viewer and per file, a visitor's automatic.
+
+With a subtitle selected and `subtitles=burn`, which Plex Web in Chrome sends, the reference
+re-encodes the video — 1920 wide, 20 Mbps and CRF 16 with no quality limit, the top of the
+ladder — and draws the subtitle in. The decision marks it `decision="burn"`,
+`location="segments-video"`, `burn="1"`. Its command, captured:
+
+- `-map_inlineass 0:{subtitle}` before the video's filter, which gains a third stage:
+  `[1]inlineass=font_scale={size}:font_path=…/NotoSans-Medium.otf:fonts_dir=…/Fonts:language=fr:
+  overrides=…:outline=2.6:shadow=1.7:font_size=54[2]`, every value escaped twice;
+- `font_scale` is `subtitleSize / 100`, six decimals: 0.5, 1.5, 2.0 for 50, 150, 200, the
+  `font_size` staying 54;
+- a second output, `-map 0:{subtitle} -f null -codec ass nullfile`, which decodes what the
+  filter draws: without it the filter draws nothing.
+
+Ours writes the same filter, character for character on the reference's own paths, from the
+fonts of the Plex install (`Resources/Fonts` beside its binary, or
+`OPENPLEX_TRANSCODER_FONTS`). Checked on a frame: the subtitle is drawn. Not handled, and
+answering `501`: image subtitles (PGS, VobSub), which the process overlays by a command not
+captured, and sidecar files.
 
 ### Play queues
 

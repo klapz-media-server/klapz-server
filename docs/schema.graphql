@@ -1462,6 +1462,16 @@ type MediaFile implements Node {
 	The tracks inside this file, plus any sidecar subtitle files.
 	"""
 	streams: [MediaStream!]!
+	"""
+	The audio track the caller plays this file with: the one it chose with `chooseTracks`,
+	else the file's default, else its first.
+	"""
+	selectedAudio: MediaStream
+	"""
+	The subtitle the caller plays this file with: the one it chose, none if it chose none,
+	else the forced subtitle in the selected audio's language. Null for no subtitle.
+	"""
+	selectedSubtitle: MediaStream
 }
 
 type MediaStream implements Node {
@@ -1841,6 +1851,28 @@ type Mutation {
 		"""
 		input: ReportPlaybackInput!
 	): Boolean!
+	"""
+	Chooses, for the caller, the audio track or the subtitle a file plays with — or no
+	subtitles. What is not named keeps its earlier choice. Returns the file.
+	"""
+	chooseTracks(
+		"""
+		The file, as returned in `MediaFile.id`.
+		"""
+		file: ID!,
+		"""
+		One of the file's audio tracks, as returned in `MediaStream.id`.
+		"""
+		audioTrack: ID,
+		"""
+		One of the file's subtitles, as returned in `MediaStream.id`.
+		"""
+		subtitleTrack: ID,
+		"""
+		Play the file without subtitles, forced ones included.
+		"""
+		subtitlesOff: Boolean
+	): MediaFile!
 	"""
 	Marks an item watched for the caller: a film or an episode once more, a season or a
 	series by each of its episodes once more. Counted on the episode's season and series

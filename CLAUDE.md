@@ -324,6 +324,7 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
 | `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
 | `OPENPLEX_TRANSCODER` | `ffmpeg` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. For now `files/Plex Transcoder.exe`, until the patched source is rebuilt. |
+| `OPENPLEX_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's. Without them, a burn answers `501`. |
 | `OPENPLEX_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which its binary needs. |
 
 The imported library's files live on another machine, so nothing imported can be played here.
@@ -416,6 +417,10 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `inProgress`, `allEpisodesWatched` on the official API, read for the caller), and the
   library shelves that are listings — recently released, top unwatched, recently watched,
   recently aired, start watching, top rated — each filled from the `key` it publishes;
+- ✅ **choosing tracks and burning subtitles in**: `PUT /library/parts/{id}` keeps each viewer's
+  audio and subtitle per file (`chooseTracks`, `MediaFile.selectedAudio`/`selectedSubtitle` on
+  the official API), forced subtitles in the audio's language by default, and `subtitles=burn`
+  draws the chosen text subtitle into a re-encode with the reference's own `inlineass` filter;
 - ✅ **`/hubs/home/recentlyAdded`**, the list behind a series library's shelf: films or grouped
   series entries, one library or all of a kind (`recentlyAdded(kind:)` on the official API);
 - ✅ **watch state**: per viewer and per work (`guid`), so every copy of a film is watched at

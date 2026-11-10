@@ -89,6 +89,10 @@ pub enum TranscodeError {
     OutsideLibrary,
     #[error("the video would have to be converted")]
     VideoNeedsTranscoding,
+    /// An image subtitle, which the process overlays rather than draws, or no fonts to draw
+    /// a text one with.
+    #[error("this subtitle cannot be burned in")]
+    SubtitleCannotBeBurned,
     #[error("too many transcode sessions are running")]
     TooManySessions,
     #[error("no such transcode session")]
@@ -110,6 +114,9 @@ pub struct Config {
     pub external_libs: Option<PathBuf>,
     /// This server, as the process can reach it: `http://127.0.0.1:32500`.
     pub callback_base: String,
+    /// The fonts subtitles are drawn with: Plex's own, `Resources/Fonts` beside its binary.
+    /// Without them nothing is burned in.
+    pub fonts: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -118,6 +125,7 @@ impl Default for Config {
             binary: PathBuf::from("ffmpeg"),
             external_libs: None,
             callback_base: "http://127.0.0.1:32500".to_owned(),
+            fonts: None,
         }
     }
 }

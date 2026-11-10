@@ -3116,3 +3116,58 @@ fn drawn_apart(hubs: &[Value]) -> Vec<String> {
         })
         .collect()
 }
+
+async fn put_status(app: &axum::Router, uri: &str) -> (StatusCode, Option<String>) {
+    let request = Request::builder()
+        .method("PUT")
+        .uri(uri)
+        .header("X-Plex-Token", TOKEN)
+        .body(Body::empty())
+        .expect("request builds");
+    let response = app.clone().oneshot(request).await.expect("router responds");
+    let kind = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned);
+    (response.status(), kind)
+}
+
+#[tokio::test]
+async fn choosing_a_track_is_an_empty_200_and_a_wrong_one_a_400() {
+    let app = watching_app();
+    // As measured: an empty `text/html` 200 for a track of the part and of the kind named,
+    // and for `subtitleStreamID=0`, which turns subtitles off.
+    for uri in [
+        "/library/parts/910?audioStreamID=920",
+        "/library/parts/910?subtitleStreamID=0&allParts=1",
+    ] {
+        assert_eq!(
+            put_status(&app, uri).await,
+            (StatusCode::OK, Some("text/html".to_owned())),
+            "{uri}"
+        );
+    }
+    // Nothing named, an audio track named as a subtitle, a track of no file, a part unknown.
+    for uri in [
+        "/library/parts/910",
+        "/library/parts/910?subtitleStreamID=920",
+        "/library/parts/910?audioStreamID=999",
+        "/library/parts/999?audioStreamID=920",
+        "/library/parts/910?audioStreamID=x",
+    ] {
+        assert_eq!(
+            put_status(&app, uri).await.0,
+            StatusCode::BAD_REQUEST,
+            "{uri}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_lookup_marks_the_audio_the_caller_plays() {
+    let body = json_from(&watching_app(), "/library/metadata/100").await;
+    let stream = &body["MediaContainer"]["Metadata"][0]["Media"][0]["Part"][0]["Stream"][0];
+    assert_eq!(stream["id"], 920);
+    assert_eq!(stream["selected"], true);
+}

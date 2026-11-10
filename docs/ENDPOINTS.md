@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 15 | 5.8 % |
-| `stub` | 181 | 69.6 % |
+| `stub` | 180 | 69.2 % |
 | `partial` | 17 | 6.5 % |
-| `done` | 10 | 3.8 % |
+| `done` | 11 | 4.2 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 1 | 6 | 46 | 8 | 24 |
+| [Library](#library) | 85 | 2 | 6 | 45 | 8 | 24 |
 | [Hubs](#hubs) | 15 | 1 | 1 | 13 | 0 | 0 |
 | [Content](#content) | 13 | 0 | 2 | 11 | 0 | 0 |
 | [Devices](#devices) | 13 | 0 | 0 | 13 | 0 | 0 |
@@ -129,7 +129,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `PUT` | `/library/metadata/{ids}/{element}` | user | Set an item's artwork, theme, etc |  |
 | `stub` | `GET` | `/library/metadata/{ids}/{element}/{timestamp}` | user | Get an item's artwork, theme, etc |  |
 | `deferred` | `PUT` | `/library/optimize` | admin | Optimize the Database | scanner/analysis, separate binary |
-| `stub` | `PUT` | `/library/parts/{partId}` | user | Set stream selection |  |
+| `done` | `PUT` | `/library/parts/{partId}` | user | Set stream selection | The caller's audio or subtitle per file, `subtitleStreamID=0` for none; `400` for a track not of the part or kind. Burned in on `subtitles=burn`. See spec-gaps.md. |
 | `deferred` | `GET` | `/library/parts/{partId}/indexes/{index}` | user | Get BIF index for a part | scanner/analysis, separate binary |
 | `deferred` | `GET` | `/library/parts/{partId}/indexes/{index}/{offset}` | user | Get an image from part BIF | scanner/analysis, separate binary |
 | `partial` | `GET` | `/library/parts/{partId}/{changestamp}/{filename}` | user | Get a media part | Direct Play: the file, by part id, with `Range`. The change stamp and the name are ignored. |

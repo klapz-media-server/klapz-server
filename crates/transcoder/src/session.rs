@@ -84,6 +84,27 @@ pub struct StreamRequest {
     /// The media's full duration in milliseconds, for the predicted HLS playlist; 0 if
     /// unknown.
     pub total_ms: u64,
+    /// A subtitle to draw into the picture. The plan must then encode the video.
+    pub subtitle: Option<BurnedSubtitle>,
+}
+
+/// A subtitle drawn into the picture.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BurnedSubtitle {
+    pub track: Track,
+    /// The client's size, 1.0 for its 100%.
+    pub scale: f64,
+}
+
+impl BurnedSubtitle {
+    /// Text the process draws with libass. Image subtitles it overlays instead, by a command
+    /// not captured yet.
+    fn is_text(&self) -> bool {
+        matches!(
+            self.track.codec.as_str(),
+            "srt" | "subrip" | "ass" | "ssa" | "mov_text" | "webvtt" | "vtt" | "text"
+        )
+    }
 }
 
 impl StreamRequest {
@@ -95,6 +116,7 @@ impl StreamRequest {
             && self.audio == other.audio
             && self.plan == other.plan
             && self.protocol == other.protocol
+            && self.subtitle == other.subtitle
     }
 
     const fn segment_seconds(&self) -> u32 {
@@ -553,18 +575,75 @@ fn video_encoder_options(encode: &VideoEncode) -> Vec<String> {
     args
 }
 
-fn video_arguments(video: &Track, action: VideoAction) -> Vec<String> {
+/// Escapes a value for an option of a filter inside a filtergraph: once for the option
+/// parser, once again for the graph's. The reference's own command escapes this way, `C\\\:`
+/// for a drive's colon.
+fn filter_value(text: &str) -> String {
+    let once = |text: &str| {
+        let mut escaped = String::with_capacity(text.len() * 2);
+        for character in text.chars() {
+            if matches!(
+                character,
+                '\\' | ':' | '=' | ',' | ' ' | '\'' | '[' | ']' | ';'
+            ) {
+                escaped.push('\\');
+            }
+            escaped.push(character);
+        }
+        escaped
+    };
+    once(&once(text))
+}
+
+/// The reference's libass style, as it writes it: Noto Sans Medium, white with a dark outline.
+const SUBTITLE_STYLE: &str = "ScaledBorderAndShadow=yes,FontName=Noto Sans Medium,Bold=500,\
+PrimaryColour=&H00FFFFFF,OutlineColour=&H00020713,BackColour=&HCC000000";
+
+/// The filter that draws a subtitle onto the picture labelled `[1]`, into `[2]`.
+fn burn_filter(subtitle: &BurnedSubtitle, fonts: &Path) -> String {
+    // The reference names the directory in Windows' verbatim form and the font without it.
+    let font = fonts.join("NotoSans-Medium.otf");
+    let font = font.to_string_lossy();
+    let font = font.trim_start_matches(r"\\?\");
+    let language = subtitle
+        .track
+        .language
+        .as_deref()
+        .map_or_else(String::new, |language| format!(":language={language}"));
+    format!(
+        "[1]inlineass=font_scale={:.6}:font_path={}:fonts_dir={}{language}:overrides={}:\
+outline=2.6:shadow=1.7:font_size=54[2]",
+        subtitle.scale,
+        filter_value(font),
+        filter_value(&fonts.to_string_lossy()),
+        filter_value(SUBTITLE_STYLE),
+    )
+}
+
+fn video_arguments(
+    video: &Track,
+    action: VideoAction,
+    burn: Option<(&BurnedSubtitle, &Path)>,
+) -> Vec<String> {
     let mut args = match action {
         VideoAction::Copy => strings(&["-map", &format!("0:{}", video.index)]),
-        VideoAction::Encode(encode) => strings(&[
-            "-filter_complex",
-            &format!(
+        VideoAction::Encode(encode) => {
+            let scale = format!(
                 "[0:{}]scale=w={}:h={}:force_divisible_by=4[0];[0]format=pix_fmts=yuv420p|nv12[1]",
                 video.index, encode.width, encode.height
-            ),
-            "-map",
-            "[1]",
-        ]),
+            );
+            match burn {
+                Some((subtitle, fonts)) => strings(&[
+                    "-map_inlineass",
+                    &format!("0:{}", subtitle.track.index),
+                    "-filter_complex",
+                    &format!("{scale};{}", burn_filter(subtitle, fonts)),
+                    "-map",
+                    "[2]",
+                ]),
+                None => strings(&["-filter_complex", &scale, "-map", "[1]"]),
+            }
+        }
     };
     if let Some(tag) = video.language.as_deref().and_then(language_tag) {
         args.extend(strings(&["-metadata:s:0", &format!("language={tag}")]));
@@ -576,12 +655,17 @@ fn video_arguments(video: &Track, action: VideoAction) -> Vec<String> {
     args
 }
 
-fn audio_arguments(audio: &Track, plan: &StreamPlan) -> Vec<String> {
+fn audio_arguments(audio: &Track, plan: &StreamPlan, burns: bool) -> Vec<String> {
     let converts = plan.audio == AudioAction::ConvertToAac;
     let encodes = plan.video != VideoAction::Copy;
     let mut args = if converts {
-        // Filter outputs are numbered across the command, after the video's two.
-        let label = if encodes { 2 } else { 0 };
+        // Filter outputs are numbered across the command, after the video's: two to scale,
+        // a third to draw a subtitle.
+        let label = match (encodes, burns) {
+            (false, _) => 0,
+            (true, false) => 2,
+            (true, true) => 3,
+        };
         strings(&[
             "-filter_complex",
             &format!(
@@ -610,15 +694,37 @@ fn audio_arguments(audio: &Track, plan: &StreamPlan) -> Vec<String> {
     args
 }
 
-fn stream_arguments(request: &StreamRequest, callback: &str, first_chunk: u32) -> Vec<String> {
+fn stream_arguments(
+    request: &StreamRequest,
+    callback: &str,
+    first_chunk: u32,
+    fonts: Option<&Path>,
+) -> Vec<String> {
     let seconds = request.segment_seconds();
+    let burn = request.subtitle.as_ref().zip(fonts);
     let mut args = input_arguments(request, callback);
-    args.extend(video_arguments(&request.video, request.plan.video));
-    args.extend(audio_arguments(&request.audio, &request.plan));
+    args.extend(video_arguments(&request.video, request.plan.video, burn));
+    args.extend(audio_arguments(
+        &request.audio,
+        &request.plan,
+        burn.is_some(),
+    ));
     args.extend(match request.protocol {
         Protocol::Hls => hls_output(callback, seconds, first_chunk),
         Protocol::Dash => dash_output(callback, seconds, first_chunk),
     });
+    if let Some((subtitle, _)) = burn {
+        // The filter draws only what this output decodes alongside: without it, nothing.
+        args.extend(strings(&[
+            "-map",
+            &format!("0:{}", subtitle.track.index),
+            "-f",
+            "null",
+            "-codec",
+            "ass",
+            "nullfile",
+        ]));
+    }
     args
 }
 
@@ -708,6 +814,11 @@ impl Transcoder {
         &self,
         mut request: StreamRequest,
     ) -> Result<Vec<String>, TranscodeError> {
+        if let Some(subtitle) = &request.subtitle {
+            if !subtitle.is_text() || self.config.fonts.is_none() {
+                return Err(TranscodeError::SubtitleCannotBeBurned);
+            }
+        }
         self.stop_idle_sessions();
         let replaced = self.stop_streams_of(request.playback.as_deref(), &request.session);
         if let Some(running) = self.session(&request.session) {
@@ -796,7 +907,12 @@ impl Transcoder {
     ) -> Result<(), TranscodeError> {
         let mut command = Command::new(&self.config.binary);
         command
-            .args(stream_arguments(request, &session.url, first_chunk))
+            .args(stream_arguments(
+                request,
+                &session.url,
+                first_chunk,
+                self.config.fonts.as_deref(),
+            ))
             .current_dir(&session.directory)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -1180,12 +1296,13 @@ mod tests {
             offset: None,
             protocol: Protocol::Hls,
             total_ms: 0,
+            subtitle: None,
         }
     }
 
     #[test]
     fn writes_the_references_command_line() {
-        let args = stream_arguments(&request(AudioAction::ConvertToAac), "CB", 0);
+        let args = stream_arguments(&request(AudioAction::ConvertToAac), "CB", 0, None);
         // The space inside the filter is what makes it one argument here and several there.
         let joined = args.join(" ").replace("[0:1] aresample", "[0:1]_aresample");
         assert_eq!(joined, CAPTURED);
@@ -1208,7 +1325,7 @@ mod tests {
         let mut asked = request(AudioAction::ConvertToAac);
         asked.protocol = Protocol::Dash;
         asked.audio = track(2, "eac3", "fr");
-        let joined = stream_arguments(&asked, "CB", 1)
+        let joined = stream_arguments(&asked, "CB", 1, None)
             .join(" ")
             .replace("[0:2] aresample", "[0:2]_aresample");
         assert_eq!(joined, CAPTURED_DASH);
@@ -1252,9 +1369,61 @@ mod tests {
         asked
     }
 
+    /// The filter of the reference's command burning Soul's French subtitles at 100%.
+    const CAPTURED_BURN_FILTER: &str = r"[0:5]scale=w=1920:h=1080:force_divisible_by=4[0];[0]format=pix_fmts=yuv420p|nv12[1];[1]inlineass=font_scale=1.000000:font_path=C\\\:\\\\Program\\\ Files\\\\Plex\\\\Plex\\\ Media\\\ Server\\\\Resources\\\\Fonts\\\\NotoSans-Medium.otf:fonts_dir=\\\\\\\\?\\\\C\\\:\\\\Program\\\ Files\\\\Plex\\\\Plex\\\ Media\\\ Server\\\\Resources\\\\Fonts:language=fr:overrides=ScaledBorderAndShadow\\\=yes\\\,FontName\\\=Noto\\\ Sans\\\ Medium\\\,Bold\\\=500\\\,PrimaryColour\\\=&H00FFFFFF\\\,OutlineColour\\\=&H00020713\\\,BackColour\\\=&HCC000000:outline=2.6:shadow=1.7:font_size=54[2]";
+
+    fn burned(scale: f64) -> StreamRequest {
+        let mut asked = encoded(1920, 1080, 20_000, 256, 16);
+        asked.video = track(5, "h264", "en");
+        asked.audio = track(0, "eac3", "fr");
+        asked.offset = None;
+        asked.subtitle = Some(BurnedSubtitle {
+            track: track(3, "srt", "fr"),
+            scale,
+        });
+        asked
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn burns_a_subtitle_with_the_references_filter() {
+        let fonts = Path::new(r"\\?\C:\Program Files\Plex\Plex Media Server\Resources\Fonts");
+        let args = stream_arguments(&burned(1.0), "CB", 1, Some(fonts));
+        let at = |flag: &str| args.iter().position(|arg| arg == flag).unwrap();
+        assert_eq!(args[at("-map_inlineass") + 1], "0:3");
+        // The burn's filter comes right after the subtitle's mapping, and the picture it
+        // draws is what the output maps.
+        assert_eq!(args[at("-map_inlineass") + 3], CAPTURED_BURN_FILTER);
+        assert_eq!(args[at("-map_inlineass") + 5], "[2]");
+        let joined = args.join(" ");
+        assert!(joined.contains("osr=48000[3] -map [3]"), "{joined}");
+        assert!(
+            joined.ends_with("dash -map 0:3 -f null -codec ass nullfile"),
+            "{joined}"
+        );
+    }
+
+    #[test]
+    fn a_subtitle_scales_with_the_clients_size() {
+        let args = stream_arguments(&burned(1.5), "CB", 1, Some(Path::new("fonts")));
+        assert!(args
+            .iter()
+            .any(|arg| arg.contains("inlineass=font_scale=1.500000:")));
+        // Without fonts there is nothing to draw with, and the command is an encode's.
+        let plain = stream_arguments(&burned(1.0), "CB", 1, None).join(" ");
+        assert!(!plain.contains("inlineass"), "{plain}");
+    }
+
+    #[test]
+    fn escapes_a_filter_value_at_both_levels() {
+        assert_eq!(filter_value(r"C:\a b"), r"C\\\:\\\\a\\\ b");
+        assert_eq!(filter_value("A=1,B"), r"A\\\=1\\\,B");
+        assert_eq!(filter_value("&H00-x.otf"), "&H00-x.otf");
+    }
+
     #[test]
     fn writes_the_references_encoding_command_line() {
-        let joined = stream_arguments(&encoded(720, 388, 1333, 167, 20), "CB", 1)
+        let joined = stream_arguments(&encoded(720, 388, 1333, 167, 20), "CB", 1, None)
             .join(" ")
             .replace("[0:1] aresample", "[0:1]_aresample");
         assert_eq!(joined, CAPTURED_ENCODE);
@@ -1265,7 +1434,7 @@ mod tests {
     fn an_encode_seeks_as_the_reference_does() {
         let mut asked = encoded(1280, 692, 2566, 98, 24);
         asked.offset = Some(600.0);
-        let joined = stream_arguments(&asked, "CB", 121).join(" ");
+        let joined = stream_arguments(&asked, "CB", 121, None).join(" ");
         assert!(joined.starts_with("-codec:0 h264 -codec:1 eac3_mf -ss 600 -analyzeduration"));
         assert!(joined.contains("-copyts -y -nostats"));
         assert!(joined.contains("-force_key_frames:0 expr:gte(t,n_forced*5) "));
@@ -1301,7 +1470,7 @@ mod tests {
         let mut asked = request(AudioAction::Copy);
         asked.protocol = Protocol::Dash;
         asked.offset = Some(600.0);
-        let joined = stream_arguments(&asked, "CB", 121).join(" ");
+        let joined = stream_arguments(&asked, "CB", 121, None).join(" ");
         assert!(joined.contains("-ss 600 -noaccurate_seek"));
         assert!(joined.contains("-skip_to_segment 121 "));
     }
@@ -1338,14 +1507,14 @@ mod tests {
     fn an_hls_seek_numbers_its_segments_from_the_target() {
         let mut asked = request(AudioAction::Copy);
         asked.offset = Some(3000.0);
-        let joined = stream_arguments(&asked, "CB", 300).join(" ");
+        let joined = stream_arguments(&asked, "CB", 300, None).join(" ");
         assert!(joined.contains("-ss 3000 -noaccurate_seek"));
         assert!(joined.contains("-segment_start_number 300 "));
     }
 
     #[test]
     fn copied_audio_is_neither_decoded_nor_filtered() {
-        let joined = stream_arguments(&request(AudioAction::Copy), "CB", 1).join(" ");
+        let joined = stream_arguments(&request(AudioAction::Copy), "CB", 1, None).join(" ");
         assert!(!joined.contains("-codec:1 dca"));
         assert!(!joined.contains("aresample"));
         assert!(joined.contains("-map 0:1 -metadata:s:1 language=fra -codec:1 copy"));
@@ -1356,7 +1525,7 @@ mod tests {
         let mut asked = request(AudioAction::Copy);
         asked.video.index = 5;
         asked.audio.index = 0;
-        let joined = stream_arguments(&asked, "CB", 1).join(" ");
+        let joined = stream_arguments(&asked, "CB", 1, None).join(" ");
         assert!(joined.starts_with("-codec:5 h264"));
         assert!(joined.contains("-map 0:5 "));
         assert!(joined.contains("-map 0:0 "));
@@ -1366,7 +1535,7 @@ mod tests {
     fn seeks_before_opening_the_input() {
         let mut asked = request(AudioAction::Copy);
         asked.offset = Some(90.0);
-        let joined = stream_arguments(&asked, "CB", 1).join(" ");
+        let joined = stream_arguments(&asked, "CB", 1, None).join(" ");
         assert!(joined.contains("-ss 90 -noaccurate_seek -analyzeduration"));
     }
 

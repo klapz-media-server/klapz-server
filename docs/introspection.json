@@ -4329,6 +4329,30 @@
               },
               "isDeprecated": false,
               "deprecationReason": null
+            },
+            {
+              "name": "selectedAudio",
+              "description": "The audio track the caller plays this file with: the one it chose with `chooseTracks`,\nelse the file's default, else its first.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "MediaStream",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "selectedSubtitle",
+              "description": "The subtitle the caller plays this file with: the one it chose, none if it chose none,\nelse the forced subtitle in the selected audio's language. Null for no subtitle.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "MediaStream",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
             }
           ],
           "inputFields": null,
@@ -5458,6 +5482,67 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "chooseTracks",
+              "description": "Chooses, for the caller, the audio track or the subtitle a file plays with — or no\nsubtitles. What is not named keeps its earlier choice. Returns the file.",
+              "args": [
+                {
+                  "name": "file",
+                  "description": "The file, as returned in `MediaFile.id`.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "ID",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "audioTrack",
+                  "description": "One of the file's audio tracks, as returned in `MediaStream.id`.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "ID",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "subtitleTrack",
+                  "description": "One of the file's subtitles, as returned in `MediaStream.id`.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "ID",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "subtitlesOff",
+                  "description": "Play the file without subtitles, forced ones included.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Boolean",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "MediaFile",
                   "ofType": null
                 }
               },

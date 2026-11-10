@@ -1575,6 +1575,7 @@ pub struct InMemoryWatch {
     items: Vec<MetadataItem>,
     states: std::sync::Mutex<Vec<(crate::watch::Viewer, String, crate::watch::WatchState)>>,
     viewings: std::sync::Mutex<Vec<(crate::watch::Viewer, String, crate::watch::Viewing, i64)>>,
+    choices: std::sync::Mutex<Vec<(crate::watch::Viewer, PartId, crate::tracks::TrackChoice)>>,
 }
 
 impl InMemoryWatch {
@@ -1583,6 +1584,7 @@ impl InMemoryWatch {
             items,
             states: std::sync::Mutex::new(Vec::new()),
             viewings: std::sync::Mutex::new(Vec::new()),
+            choices: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -1701,6 +1703,32 @@ impl crate::watch::WatchRepository for InMemoryWatch {
             viewing,
             now + crate::watch::VIEWING_LIFETIME_SECONDS,
         ));
+        Ok(())
+    }
+
+    async fn track_choices(
+        &self,
+        viewer: crate::watch::Viewer,
+        files: &[PartId],
+    ) -> Result<Vec<(PartId, crate::tracks::TrackChoice)>, crate::watch::WatchError> {
+        Ok(Self::lock(&self.choices)
+            .iter()
+            .filter(|(who, file, _)| *who == viewer && files.contains(file))
+            .map(|(_, file, choice)| (*file, *choice))
+            .collect())
+    }
+
+    async fn choose_tracks(
+        &self,
+        viewer: crate::watch::Viewer,
+        file: PartId,
+        choice: crate::tracks::TrackChoice,
+    ) -> Result<(), crate::watch::WatchError> {
+        let mut choices = Self::lock(&self.choices);
+        choices.retain(|(who, held, _)| !(*who == viewer && *held == file));
+        if !choice.is_empty() {
+            choices.push((viewer, file, choice));
+        }
         Ok(())
     }
 }

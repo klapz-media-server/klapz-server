@@ -54,7 +54,9 @@ impl From<TranscodeError> for ApiError {
             | TranscodeError::MissingFile
             | TranscodeError::UnknownSession
             | TranscodeError::UnknownSegment => Self::NotFound,
-            TranscodeError::VideoNeedsTranscoding => Self::NotImplemented,
+            TranscodeError::VideoNeedsTranscoding | TranscodeError::SubtitleCannotBeBurned => {
+                Self::NotImplemented
+            }
             TranscodeError::SourceTooLarge
             | TranscodeError::Undecodable
             | TranscodeError::UnusableSize

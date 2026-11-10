@@ -111,6 +111,8 @@ pub struct Limits {
     pub convert_audio: bool,
     /// Automatic quality: always an encode, even when the file would fit the limit.
     pub adaptive: bool,
+    /// A subtitle drawn into the picture, which only an encode can do.
+    pub burn_subtitle: bool,
 }
 
 struct Rung {
@@ -235,6 +237,10 @@ pub fn plan_stream(
         Some(limit) if !fits(limit, source) => {
             VideoAction::Encode(encode_within(limit, source, false)?)
         }
+        // Measured: 1920 wide, 20 Mbps, CRF 16 for Soul burned at no limit — the top rung.
+        limit if limits.burn_subtitle => {
+            VideoAction::Encode(encode_within(limit.unwrap_or(u32::MAX), source, false)?)
+        }
         _ => VideoAction::Copy,
     };
     let audio = if matches!(source.audio_codec, "aac" | "mp3")
@@ -296,6 +302,7 @@ mod tests {
             max_video_kbps: Some(kbps),
             convert_audio: false,
             adaptive: false,
+            burn_subtitle: false,
         }
     }
 
@@ -304,6 +311,26 @@ mod tests {
             VideoAction::Encode(encode) => encode,
             VideoAction::Copy => panic!("the video was copied"),
         }
+    }
+
+    #[test]
+    fn burning_a_subtitle_encodes_at_the_top_rung_or_within_the_limit() {
+        let burn = Limits {
+            burn_subtitle: true,
+            ..Limits::default()
+        };
+        let encode = encode_of(plan_stream(&soul(), burn).unwrap());
+        assert_eq!(
+            (encode.width, encode.video_kbps, encode.crf),
+            (1920, 20_000, 16)
+        );
+        assert_eq!(encode.segment_seconds(), 1);
+        let limited = Limits {
+            max_video_kbps: Some(2000),
+            ..burn
+        };
+        // A limit the file fits would copy; burning encodes anyway.
+        assert_eq!(encode_of(plan_stream(&soul(), limited).unwrap()).width, 720);
     }
 
     #[test]
@@ -334,6 +361,7 @@ mod tests {
             max_video_kbps: None,
             convert_audio: true,
             adaptive: false,
+            burn_subtitle: false,
         };
         assert_eq!(
             plan_stream(&source("h264", "aac"), limits).unwrap().audio,
@@ -428,6 +456,7 @@ mod tests {
             max_video_kbps: limit,
             convert_audio: false,
             adaptive: true,
+            burn_subtitle: false,
         }
     }
 

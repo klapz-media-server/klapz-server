@@ -12,12 +12,13 @@ use async_graphql::connection::{
 };
 use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{Context, Enum, InputObject, Object, OutputType, Result, SimpleObject, ID};
-use open_plex_core::metadata::MetadataItem;
+use open_plex_core::metadata::{MetadataItem, StreamKind};
 use open_plex_core::page::{Cursor, MAX_ITEMS};
+use open_plex_core::tracks::{SubtitleChoice, TrackChoice};
 use open_plex_core::watch::{
     DeckReason, ReportOutcome, Viewer, WatchError, WatchRepository, WatchState, Watching,
 };
-use open_plex_core::{now_epoch, RatingKey, SectionId};
+use open_plex_core::{now_epoch, PartId, RatingKey, SectionId};
 
 use crate::cursor::OpaqueCursor;
 use crate::item::{Item, ITEM_TYPE};
@@ -135,6 +136,134 @@ impl Loader<(Viewer, RatingKey)> for WatchedLeavesLoader {
         }
         Ok(found)
     }
+}
+
+/// Loads the tracks viewers chose on several files.
+#[derive(Debug, Clone)]
+pub struct TrackChoiceLoader {
+    repository: Arc<dyn WatchRepository>,
+}
+
+impl TrackChoiceLoader {
+    pub const fn new(repository: Arc<dyn WatchRepository>) -> Self {
+        Self { repository }
+    }
+}
+
+impl Loader<(Viewer, PartId)> for TrackChoiceLoader {
+    type Value = TrackChoice;
+    type Error = Arc<WatchError>;
+
+    async fn load(
+        &self,
+        keys: &[(Viewer, PartId)],
+    ) -> Result<HashMap<(Viewer, PartId), Self::Value>, Self::Error> {
+        let mut by_viewer: HashMap<Viewer, Vec<PartId>> = HashMap::new();
+        for (viewer, file) in keys {
+            by_viewer.entry(*viewer).or_default().push(*file);
+        }
+        let mut found = HashMap::new();
+        for (viewer, files) in by_viewer {
+            for (file, choice) in self
+                .repository
+                .track_choices(viewer, &files)
+                .await
+                .map_err(Arc::new)?
+            {
+                found.insert((viewer, file), choice);
+            }
+        }
+        Ok(found)
+    }
+}
+
+/// What the caller chose on a file. Nothing for a caller with no state, who gets the automatic
+/// choice.
+pub(crate) async fn track_choice_of(context: &Context<'_>, file: PartId) -> Result<TrackChoice> {
+    let Some(viewer) = crate::access::caller(context).and_then(Viewer::of) else {
+        return Ok(TrackChoice::default());
+    };
+    Ok(context
+        .data::<DataLoader<TrackChoiceLoader>>()?
+        .load_one((viewer, file))
+        .await?
+        .unwrap_or_default())
+}
+
+/// Records the caller's choice of tracks on a file, keeping what it chose before for the kind
+/// it does not name. The tracks must be the file's, and of the kind.
+pub(crate) async fn choose_tracks(
+    context: &Context<'_>,
+    file: &ID,
+    audio: Option<ID>,
+    subtitle: Option<ID>,
+    subtitles_off: bool,
+) -> Result<crate::media::File> {
+    let Some(viewer) = crate::access::caller(context).and_then(Viewer::of) else {
+        return Err(async_graphql::Error::new(
+            "a caller with no watch state has no tracks to choose",
+        ));
+    };
+    if audio.is_none() && subtitle.is_none() && !subtitles_off {
+        return Err(async_graphql::Error::new(
+            "choose an audio track or a subtitle",
+        ));
+    }
+    if subtitle.is_some() && subtitles_off {
+        return Err(async_graphql::Error::new(
+            "a subtitle track and no subtitles cannot both be chosen",
+        ));
+    }
+    let id = GlobalId::decode(file)
+        .ok()
+        .filter(|decoded| decoded.type_name == crate::media::FILE_TYPE)
+        .map(|decoded| PartId::new(decoded.key))
+        .ok_or_else(|| async_graphql::Error::new("not a file id"))?;
+    let readable = crate::schema::readable_file(context, id)
+        .await?
+        .ok_or_else(|| async_graphql::Error::new("no such file"))?;
+    let api = context.data::<ApiContext>()?;
+    let streams = api.metadata.streams_for(&[id]).await?;
+    let track_of = |track: &ID, kind: StreamKind| {
+        GlobalId::decode(track)
+            .ok()
+            .filter(|decoded| decoded.type_name == crate::media::STREAM_TYPE)
+            .and_then(|decoded| {
+                streams
+                    .iter()
+                    .find(|stream| stream.id.get() == decoded.key && stream.kind == kind)
+            })
+            .map(|stream| stream.id)
+            .ok_or_else(|| async_graphql::Error::new("not a track of this kind in this file"))
+    };
+
+    let mut choice = api
+        .watch
+        .track_choices(viewer, &[id])
+        .await?
+        .into_iter()
+        .next()
+        .map(|(_, choice)| choice)
+        .unwrap_or_default();
+    if let Some(audio) = &audio {
+        choice.audio = Some(track_of(audio, StreamKind::Audio)?);
+    }
+    if let Some(subtitle) = &subtitle {
+        choice.subtitle = Some(SubtitleChoice::Track(track_of(
+            subtitle,
+            StreamKind::Subtitle,
+        )?));
+    }
+    if subtitles_off {
+        choice.subtitle = Some(SubtitleChoice::Off);
+    }
+    api.watch.choose_tracks(viewer, id, choice).await?;
+    // The loader may hold the choice from before.
+    context
+        .data::<DataLoader<TrackChoiceLoader>>()?
+        .feed_one((viewer, id), choice)
+        .await;
+    Ok(crate::media::File(readable))
 }
 
 /// The caller's state of a work. Null for a caller with none.
