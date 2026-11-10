@@ -10,9 +10,12 @@
 
 use crate::search::fold;
 
-/// Joins the parts of a name into one slug, skipping parts that give nothing. `None` when no
-/// part does.
-pub fn slug<'a>(parts: impl IntoIterator<Item = &'a str>) -> Option<String> {
+/// What an item is called when nothing in its name survives: no title, or only punctuation.
+pub const UNKNOWN: &str = "unknown";
+
+/// Joins the parts of a name into one slug, skipping parts that give nothing, and falls back
+/// on [`UNKNOWN`] when no part gives anything.
+pub fn slug<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
     let mut slug = String::new();
     for part in parts {
         let piece = slug_of(part);
@@ -24,7 +27,10 @@ pub fn slug<'a>(parts: impl IntoIterator<Item = &'a str>) -> Option<String> {
         }
         slug.push_str(&piece);
     }
-    (!slug.is_empty()).then_some(slug)
+    if slug.is_empty() {
+        return UNKNOWN.to_owned();
+    }
+    slug
 }
 
 fn slug_of(text: &str) -> String {
@@ -65,44 +71,44 @@ fn slug_of(text: &str) -> String {
 mod tests {
     use super::*;
 
-    fn one(text: &str) -> Option<String> {
+    fn one(text: &str) -> String {
         slug([text])
     }
 
     #[test]
     fn folds_accents_and_joins_words_with_one_hyphen() {
-        assert_eq!(
-            one("L'Épée de Saint Gabriel").as_deref(),
-            Some("l-epee-de-saint-gabriel")
-        );
-        assert_eq!(one("Frost / Nixon").as_deref(), Some("frost-nixon"));
-        assert_eq!(one("  Soirée!! ").as_deref(), Some("soiree"));
-        assert_eq!(one("007 Spectre").as_deref(), Some("007-spectre"));
-        assert_eq!(
-            one("#Amour et déconnexion").as_deref(),
-            Some("amour-et-deconnexion")
-        );
+        assert_eq!(one("L'Épée de Saint Gabriel"), "l-epee-de-saint-gabriel");
+        assert_eq!(one("Frost / Nixon"), "frost-nixon");
+        assert_eq!(one("  Soirée!! "), "soiree");
+        assert_eq!(one("007 Spectre"), "007-spectre");
+        assert_eq!(one("#Amour et déconnexion"), "amour-et-deconnexion");
     }
 
     #[test]
     fn spells_out_the_latin_letters_that_do_not_decompose() {
-        assert_eq!(one("Œdipe roi").as_deref(), Some("oedipe-roi"));
-        assert_eq!(one("Straße").as_deref(), Some("strasse"));
+        assert_eq!(one("Œdipe roi"), "oedipe-roi");
+        assert_eq!(one("Straße"), "strasse");
     }
 
     #[test]
     fn keeps_letters_of_other_scripts() {
-        assert_eq!(one("千と千尋の神隠し").as_deref(), Some("千と千尋の神隠し"));
-        assert_eq!(one("Брат 2").as_deref(), Some("брат-2"));
+        assert_eq!(one("千と千尋の神隠し"), "千と千尋の神隠し");
+        assert_eq!(one("Брат 2"), "брат-2");
     }
 
     #[test]
     fn an_episode_is_named_after_its_series_then_itself() {
         assert_eq!(
-            slug(["Bull", "Good News About Hell"]).as_deref(),
-            Some("bull-good-news-about-hell")
+            slug(["Bull", "Good News About Hell"]),
+            "bull-good-news-about-hell"
         );
-        assert_eq!(slug(["Bull", "!!"]).as_deref(), Some("bull"));
-        assert_eq!(slug(["", "?"]), None);
+        assert_eq!(slug(["Bull", "!!"]), "bull");
+    }
+
+    #[test]
+    fn a_name_with_nothing_left_is_unknown() {
+        assert_eq!(slug(["", "?"]), "unknown");
+        assert_eq!(slug(std::iter::empty()), "unknown");
+        assert_eq!(one("« … »"), "unknown");
     }
 }

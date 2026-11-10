@@ -61,8 +61,8 @@ const DEFAULT_PAGE_SIZE: u32 = 50;
     ),
     field(
         name = "slug",
-        ty = "Option<String>",
-        desc = "The item's name for a URL: lowercase, accents folded, words joined by hyphens. A film or a series by its title, a season by its series and its number (`bull-s01`), an episode by its series and its own title (`bull-good-news-about-hell`). A name, not an identity: two items can share one. Null when there is nothing to name it by."
+        ty = "String",
+        desc = "The item's name for a URL: lowercase, accents folded, words joined by hyphens. A film or a series by its title, a season by its series and its number (`bull-s01`), an episode by its series and its own title (`bull-good-news-about-hell`). A name, not an identity: two items can share one. `unknown` when nothing in its name survives."
     ),
     field(
         name = "summary",
@@ -121,7 +121,7 @@ pub type SeasonConnection = Connection<OpaqueCursor, Season, EmptyFields, EmptyF
 pub type EpisodeConnection = Connection<OpaqueCursor, Episode, EmptyFields, EmptyFields>;
 
 /// A film's or a series' slug: its title alone.
-fn slug(title: Option<&str>) -> Option<String> {
+fn slug(title: Option<&str>) -> String {
     open_plex_core::slug::slug(title)
 }
 
@@ -150,8 +150,8 @@ impl Movie {
     }
 
     /// The item's name for a URL: its title, lowercase, accents folded, words joined by
-    /// hyphens. Null when it has no title.
-    pub async fn slug(&self, _context: &Context<'_>) -> Result<Option<String>> {
+    /// hyphens. `unknown` when it has no title.
+    pub async fn slug(&self, _context: &Context<'_>) -> Result<String> {
         Ok(slug(self.0.title.as_deref()))
     }
 
@@ -334,8 +334,8 @@ impl Show {
     }
 
     /// The item's name for a URL: its title, lowercase, accents folded, words joined by
-    /// hyphens. Null when it has no title.
-    pub async fn slug(&self, _context: &Context<'_>) -> Result<Option<String>> {
+    /// hyphens. `unknown` when it has no title.
+    pub async fn slug(&self, _context: &Context<'_>) -> Result<String> {
         Ok(slug(self.0.title.as_deref()))
     }
 
@@ -596,7 +596,7 @@ impl Season {
     }
 
     /// The item's name for a URL: its series' title and its number, `bull-s01`.
-    pub async fn slug(&self, context: &Context<'_>) -> Result<Option<String>> {
+    pub async fn slug(&self, context: &Context<'_>) -> Result<String> {
         let show = parent_of(context, self.0.parent_id).await?;
         let number = self.0.position.map(|number| format!("s{number:02}"));
         Ok(open_plex_core::slug::slug(
@@ -778,8 +778,8 @@ impl Episode {
 
     /// The item's name for a URL: its series' title then its own,
     /// `bull-good-news-about-hell`. An episode without a title is named by its numbers,
-    /// `bull-s01e02`.
-    pub async fn slug(&self, context: &Context<'_>) -> Result<Option<String>> {
+    /// `bull-s01e02`, and one with neither is `unknown`.
+    pub async fn slug(&self, context: &Context<'_>) -> Result<String> {
         let season = parent_of(context, self.0.parent_id).await?;
         let show = match &season {
             Some(season) => parent_of(context, season.parent_id).await?,
