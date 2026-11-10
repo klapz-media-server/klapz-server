@@ -1332,14 +1332,25 @@ impl Transcoder {
         Ok(session.directory.join(format!("init-stream{stream}.m4s")))
     }
 
-    /// Reads a session's text subtitles from their header on.
+    /// Reads a session's text subtitles from their header on, waiting for the session to start:
+    /// Plex Web asks for its subtitles right after the decision, before it starts the stream,
+    /// and the reference holds that request until it does.
     ///
     /// # Errors
     ///
-    /// [`TranscodeError::UnknownSession`], or [`TranscodeError::UnknownSegment`] for a session
-    /// that writes none.
-    pub fn subtitles(&self, id: &str) -> Result<SubtitleReader, TranscodeError> {
-        let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
+    /// [`TranscodeError::UnknownSession`] if none starts in time, or
+    /// [`TranscodeError::UnknownSegment`] for a session that writes no text subtitles.
+    pub async fn subtitles(&self, id: &str) -> Result<SubtitleReader, TranscodeError> {
+        let began = Instant::now();
+        let session = loop {
+            if let Some(session) = self.session(id) {
+                break session;
+            }
+            if began.elapsed() >= WAIT_FOR_OUTPUT {
+                return Err(TranscodeError::UnknownSession);
+            }
+            tokio::time::sleep(FILE_POLL).await;
+        };
         if !matches!(
             session.request.subtitle,
             Some(SubtitleDelivery::Text { .. })
@@ -1747,20 +1758,20 @@ mod tests {
         assert!(joined.contains("-codec:0 copy"), "{joined}");
     }
 
-    fn reader_over(directory: PathBuf, ended: bool) -> SubtitleReader {
+    async fn reader_over(directory: PathBuf, ended: bool) -> SubtitleReader {
         let mut session = session_writing_to(directory, ended);
         Arc::get_mut(&mut session).unwrap().request.subtitle = Some(SubtitleDelivery::Text {
             track: track(2, "srt", "fr"),
         });
         let transcoder = Transcoder::new(crate::Config::default());
         register(&transcoder, session);
-        transcoder.subtitles("known").unwrap()
+        transcoder.subtitles("known").await.unwrap()
     }
 
     #[tokio::test]
     async fn reads_subtitle_pieces_in_order_once_whole() {
         let directory = scratch_directory();
-        let mut reader = reader_over(directory.clone(), false);
+        let mut reader = reader_over(directory.clone(), false).await;
         std::fs::write(directory.join("sub-header"), "[Script Info]").unwrap();
         std::fs::write(directory.join("sub-chunk-00000"), "Dialogue: 0").unwrap();
         std::fs::write(directory.join("sub-chunk-00001"), "Dialogue: 1").unwrap();
@@ -1774,7 +1785,7 @@ mod tests {
     #[tokio::test]
     async fn an_ended_process_gives_its_last_piece_then_the_end() {
         let directory = scratch_directory();
-        let mut reader = reader_over(directory.clone(), true);
+        let mut reader = reader_over(directory.clone(), true).await;
         std::fs::write(directory.join("sub-header"), "[Script Info]").unwrap();
         std::fs::write(directory.join("sub-chunk-00000"), "Dialogue: 0").unwrap();
         assert_eq!(reader.next_piece().await.unwrap(), b"[Script Info]");

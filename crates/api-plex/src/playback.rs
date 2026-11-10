@@ -12,6 +12,7 @@
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use async_graphql::{Name, Value, Variables};
 use axum::body::Body;
@@ -838,16 +839,31 @@ async fn subtitles(
     Query(params): Query<PlaybackParams>,
 ) -> Result<Response, ApiError> {
     let session = params.session.as_deref().ok_or(ApiError::BadRequest)?;
-    let reader = state.transcoder.subtitles(&gql::session_key(session))?;
-    let pieces = futures_util::stream::unfold(reader, |mut reader| async move {
+    // Answered at once, the body waiting for the stream to start, as the reference does:
+    // Plex Web asks for the subtitles before it starts the stream they belong to.
+    let feed = Feed::Waiting(Arc::clone(&state.transcoder), gql::session_key(session));
+    let pieces = futures_util::stream::unfold(feed, |feed| async move {
+        let mut reader = match feed {
+            Feed::Waiting(transcoder, key) => transcoder.subtitles(&key).await.ok()?,
+            Feed::Reading(reader) => reader,
+        };
         let piece = reader.next_piece().await?;
-        Some((Ok::<_, std::convert::Infallible>(piece), reader))
+        Some((
+            Ok::<_, std::convert::Infallible>(piece),
+            Feed::Reading(reader),
+        ))
     });
     Ok((
         [(header::CONTENT_TYPE, "text/vtt")],
         axum::body::Body::from_stream(pieces),
     )
         .into_response())
+}
+
+/// Where a subtitle response stands: waiting for its stream, then reading it.
+enum Feed {
+    Waiting(Arc<open_plex_transcoder::Transcoder>, String),
+    Reading(open_plex_transcoder::session::SubtitleReader),
 }
 
 /// What the audio track weighs on its way to the player.

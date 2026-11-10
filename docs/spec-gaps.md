@@ -725,7 +725,9 @@ it, in the same process:
   sub-header … -segment_list CB/manifest?stream=subtitles… -fflags +flush_packets sub-chunk-%05d`;
 - Plex Web fetches `/video/:/transcode/universal/subtitles` with the stream's own parameters,
   which answers the ASS script whole — header, then each second's events — as the process
-  writes it, on a response left open, declared `text/vtt`. A start, here as there, needs the
+  writes it, on a response left open, declared `text/vtt`. Plex Web asks for it right after
+  the decision, before it starts the stream: the reference answers at once and holds the
+  body until the stream starts, and so do we, for up to 20 seconds. A start, there, needs the
   session to have asked for a decision first.
 
 Ours does the same, the command identical to the captured one. Not handled yet: `sidecar`, for
