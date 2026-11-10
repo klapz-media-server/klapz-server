@@ -617,6 +617,7 @@ query PlexItems($ids: [ID!]!) {
   items: nodes(ids: $ids) {
     ...Shared
     ...References
+    ... on Item { lockedFields }
     ... on Movie {
       originalTitle
       year
@@ -786,6 +787,8 @@ pub struct GqlItem {
     pub tags: GqlItemTags,
     pub external_ids: GqlConnection<GqlExternalId>,
     pub ratings: GqlConnection<GqlRating>,
+    /// `ItemField` names. A lookup asks for them, a listing does not.
+    pub locked_fields: Vec<String>,
 }
 
 impl GqlItem {

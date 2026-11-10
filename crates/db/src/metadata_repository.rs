@@ -5,10 +5,11 @@
 //! Ordering by anything but the primary key needs a composite comparison, which is what the
 //! cursor's sort key is for.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use open_plex_core::edit::{ItemEdit, ItemField};
 use open_plex_core::metadata::{
-    first_character_bucket, AudioAnalysis, ColorDescription, DolbyVision, EpisodeCredit,
+    first_character_bucket, AudioAnalysis, ColorDescription, DolbyVision, Edited, EpisodeCredit,
     ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemFilter, ItemKind,
     ItemQuery, ItemTag, Listed, Loudness, MediaFile, MediaStream, MediaVersion, MetadataError,
     MetadataItem, MetadataRepository, Person, Rating, ScanType, SearchQuery, StreamKind,
@@ -26,14 +27,16 @@ use sea_orm::QueryTrait;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult,
     JoinType, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
+    TransactionTrait,
 };
 
 use crate::entity::{
-    item_external_id, item_rating, item_tag, item_title_word, media, media_part, media_stream,
-    metadata_item, person, stream_dolby_vision, stream_loudness, tag, watch_state,
+    item_external_id, item_field_lock, item_rating, item_tag, item_title_word, media, media_part,
+    media_stream, metadata_item, person, stream_dolby_vision, stream_loudness, tag, watch_state,
 };
 use crate::item_order::ItemOrder;
 use crate::watch_repository::viewer_id;
+use crate::write;
 
 #[derive(Debug, Clone)]
 pub struct SqlMetadataRepository {
@@ -1179,6 +1182,59 @@ impl MetadataRepository for SqlMetadataRepository {
                 provider_key: row.provider_key,
                 thumb_url: row.thumb_url,
             }))
+    }
+
+    async fn locked_fields(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<(RatingKey, ItemField)>, MetadataError> {
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = item_field_lock::Entity::find()
+            .filter(item_field_lock::Column::ItemId.is_in(items.iter().map(|id| id.get())))
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                let field = write::parse_field_name(&row.field);
+                if field.is_none() {
+                    tracing::warn!(field = row.field, "unknown locked field in storage");
+                }
+                Some((RatingKey::new(row.item_id), field?))
+            })
+            .collect())
+    }
+
+    async fn edit_item(&self, id: RatingKey, edit: &ItemEdit) -> Result<Edited, MetadataError> {
+        let transaction = self.connection.begin().await.map_err(storage)?;
+        let mut item = metadata_item::Entity::find_by_id(id.get())
+            .one(&transaction)
+            .await
+            .map_err(storage)?
+            .map(to_domain)
+            .filter(|item| item.kind == edit.kind())
+            .ok_or(MetadataError::ItemNotFound(id))?;
+        let mut locked: BTreeSet<ItemField> = item_field_lock::Entity::find()
+            .filter(item_field_lock::Column::ItemId.eq(id.get()))
+            .all(&transaction)
+            .await
+            .map_err(storage)?
+            .into_iter()
+            .filter_map(|row| write::parse_field_name(&row.field))
+            .collect();
+
+        edit.apply(&mut item, &mut locked);
+        write::update_item(&transaction, &item, &locked)
+            .await
+            .map_err(storage)?;
+        transaction.commit().await.map_err(storage)?;
+        Ok(Edited {
+            item,
+            locked: locked.into_iter().collect(),
+        })
     }
 }
 

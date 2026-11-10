@@ -581,6 +581,22 @@
               "deprecationReason": null
             },
             {
+              "name": "slug",
+              "description": "The item's name for a URL: its series' title then its own,\n`bull-good-news-about-hell`. An episode without a title is named by its numbers,\n`bull-s01e02`, and one with neither is `unknown`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "titleSort",
               "description": "Title to sort by when it differs from `title`. Null when `title` already sorts\ncorrectly.",
               "args": [],
@@ -644,6 +660,30 @@
                 "kind": "OBJECT",
                 "name": "WatchState",
                 "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "lockedFields",
+              "description": "The fields an editor locked, which a metadata refresh leaves as they are.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemField",
+                      "ofType": null
+                    }
+                  }
+                }
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -1884,6 +1924,22 @@
               "deprecationReason": null
             },
             {
+              "name": "slug",
+              "description": "The item's name for a URL: lowercase, accents folded, words joined by hyphens. A film or a series by its title, a season by its series and its number (`bull-s01`), an episode by its series and its own title (`bull-good-news-about-hell`). A name, not an identity: two items can share one. `unknown` when nothing in its name survives.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "summary",
               "description": "Synopsis, in the library's metadata language.",
               "args": [],
@@ -1947,6 +2003,30 @@
                 "kind": "OBJECT",
                 "name": "WatchState",
                 "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "lockedFields",
+              "description": "The fields an editor locked, which a metadata refresh leaves as they are.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemField",
+                      "ofType": null
+                    }
+                  }
+                }
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -2117,6 +2197,239 @@
           "inputFields": null,
           "interfaces": [],
           "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "ItemEditErrorCode",
+          "description": "Why an edit was refused.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "ITEM_NOT_FOUND",
+              "description": "No such item of this type, or not one the caller may edit.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "INVALID_VALUE",
+              "description": "A value the field cannot hold: a date that is not `YYYY-MM-DD`, a rating outside 0 to\n10, a year outside 1 to 9999.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NOT_APPLICABLE",
+              "description": "A field locked or unlocked that this type of item does not hold.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LOCKED_AND_UNLOCKED",
+              "description": "A field both locked and unlocked.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ItemEditUserError",
+          "description": "A problem with what was asked, as opposed to a failure of the server.",
+          "fields": [
+            {
+              "name": "field",
+              "description": "The input field at fault, as a path from the input's root.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "message",
+              "description": "What went wrong, for a person.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "code",
+              "description": "What went wrong, for a program.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "ItemEditErrorCode",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "ItemField",
+          "description": "A field of an item an editor can lock, so that a metadata refresh leaves it as it is.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "TITLE",
+              "description": "`title`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TITLE_SORT",
+              "description": "`titleSort`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ORIGINAL_TITLE",
+              "description": "`originalTitle`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "STUDIO",
+              "description": "`studio`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RATING",
+              "description": "`rating`, the critics' rating.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TAGLINE",
+              "description": "`tagline`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SUMMARY",
+              "description": "`summary`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CONTENT_RATING",
+              "description": "`contentRating`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "POSTER",
+              "description": "The poster.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BACKGROUND",
+              "description": "The background art.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RELEASED_ON",
+              "description": "`releasedOn`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "YEAR",
+              "description": "`year`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GENRES",
+              "description": "The genres among `tags`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "COLLECTIONS",
+              "description": "The collections the item belongs to.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DIRECTORS",
+              "description": "The directors among `tags`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "WRITERS",
+              "description": "The writers among `tags`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CAST",
+              "description": "The cast among `tags`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PRODUCERS",
+              "description": "The producers among `tags`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "COUNTRIES",
+              "description": "The countries among `tags`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AUDIENCE_RATING",
+              "description": "`audienceRating`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
           "possibleTypes": null
         },
         {
@@ -4947,6 +5260,22 @@
               "deprecationReason": null
             },
             {
+              "name": "slug",
+              "description": "The item's name for a URL: its title, lowercase, accents folded, words joined by\nhyphens. `unknown` when it has no title.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "titleSort",
               "description": "Title to sort by when it differs from `title`. Null when `title` already sorts\ncorrectly.",
               "args": [],
@@ -5010,6 +5339,30 @@
                 "kind": "OBJECT",
                 "name": "WatchState",
                 "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "lockedFields",
+              "description": "The fields an editor locked, which a metadata refresh leaves as they are.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemField",
+                      "ofType": null
+                    }
+                  }
+                }
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -5420,6 +5773,68 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "PlaybackSession",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "startStream",
+              "description": "Starts sending a file to a player: as it is when the player reads it, its tracks\nrepackaged when they fit, the video re-encoded when they do not or a limit asks for it.\nRecords the playback session. A start under a key already streaming the same thing\nkeeps it running.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The stream to start.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "StartStreamInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "StartStreamPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "stopStream",
+              "description": "Stops a stream and closes its session.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The stream to stop.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "StopStreamInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "StopStreamPayload",
                   "ofType": null
                 }
               },
@@ -6078,6 +6493,99 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "updateMovie",
+              "description": "Changes a film's metadata and locks. For a library's admins and the operator.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The changes.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "UpdateMovieInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "UpdateMoviePayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "updateShow",
+              "description": "Changes a series' metadata and locks. For a library's admins and the operator.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The changes.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "UpdateShowInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "UpdateShowPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "updateEpisode",
+              "description": "Changes an episode's metadata and locks. For a library's admins and the operator.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The changes.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "UpdateEpisodeInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "UpdateEpisodePayload",
                   "ofType": null
                 }
               },
@@ -8301,6 +8809,22 @@
               "deprecationReason": null
             },
             {
+              "name": "slug",
+              "description": "The item's name for a URL: its series' title and its number, `bull-s01`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "titleSort",
               "description": "Title to sort by when it differs from `title`. Null when `title` already sorts\ncorrectly.",
               "args": [],
@@ -8364,6 +8888,30 @@
                 "kind": "OBJECT",
                 "name": "WatchState",
                 "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "lockedFields",
+              "description": "The fields an editor locked, which a metadata refresh leaves as they are.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemField",
+                      "ofType": null
+                    }
+                  }
+                }
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -9102,6 +9650,22 @@
               "deprecationReason": null
             },
             {
+              "name": "slug",
+              "description": "The item's name for a URL: its title, lowercase, accents folded, words joined by\nhyphens. `unknown` when it has no title.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "titleSort",
               "description": "Title to sort by when it differs from `title`. Null when `title` already sorts\ncorrectly.",
               "args": [],
@@ -9165,6 +9729,30 @@
                 "kind": "OBJECT",
                 "name": "WatchState",
                 "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "lockedFields",
+              "description": "The fields an editor locked, which a metadata refresh leaves as they are.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemField",
+                      "ofType": null
+                    }
+                  }
+                }
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -9934,6 +10522,354 @@
           "possibleTypes": null
         },
         {
+          "kind": "INPUT_OBJECT",
+          "name": "StartStreamInput",
+          "description": "A stream to start.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "file",
+              "description": "The file to play, as returned in `MediaFile.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "directPlay",
+              "description": "The player reads the file as it is: it is sent untouched.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "false"
+            },
+            {
+              "name": "protocol",
+              "description": "How a conversion is cut up.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "StreamProtocolType",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "DASH"
+            },
+            {
+              "name": "audioTrack",
+              "description": "The audio track, as returned in `MediaStream.id`. Left out, the caller's choice.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "subtitleTrack",
+              "description": "The subtitle, as returned in `MediaStream.id`. Left out, the caller's choice.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "subtitles",
+              "description": "How the subtitle reaches the player.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "SubtitleDeliveryType",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "NONE"
+            },
+            {
+              "name": "subtitleScale",
+              "description": "The size burned subtitles are drawn at, 1.0 being the normal size.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Float",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "1.0"
+            },
+            {
+              "name": "maxVideoBitrate",
+              "description": "The most the video may weigh, in bits per second.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "convertAudio",
+              "description": "Convert the audio even when the player could take it as it is.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "false"
+            },
+            {
+              "name": "adaptive",
+              "description": "Automatic quality: always a re-encode.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "false"
+            },
+            {
+              "name": "positionMs",
+              "description": "Where to start, in milliseconds.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "0"
+            },
+            {
+              "name": "key",
+              "description": "The client's own name for this stream: a later start under it replaces this one. A\nfresh name when left out.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "playbackId",
+              "description": "The player's identifier for the whole playback, across changes of quality.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "clientIdentifier",
+              "description": "The client's stable identifier for itself.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "clientProduct",
+              "description": "The application playing.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "StartStreamPayload",
+          "description": "What `startStream` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "The value the input carried.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "stream",
+              "description": "The stream, unless it could not be started.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "StreamObject",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "session",
+              "description": "The playback session recording it, which `stopStream` names.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "PlaybackSession",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why it could not be started. Empty when it was.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "StreamUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "StopStreamInput",
+          "description": "A stream to stop.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "session",
+              "description": "The stream's session, as returned in `StartStreamPayload.session.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "StopStreamPayload",
+          "description": "What `stopStream` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "The value the input carried.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "stopped",
+              "description": "Whether there was a stream to stop.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "ENUM",
           "name": "StreamDecisionType",
           "description": "What the server does to a track on its way to the player.",
@@ -9954,6 +10890,319 @@
               "deprecationReason": null
             }
           ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "StreamDeliveryType",
+          "description": "How the file reaches the player.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "DIRECT_PLAY",
+              "description": "The file as it is.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DIRECT_STREAM",
+              "description": "The tracks repackaged, the video untouched.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TRANSCODE",
+              "description": "The video re-encoded.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "StreamErrorCode",
+          "description": "Why a stream could not be started.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "FILE_NOT_FOUND",
+              "description": "No such file, or not one the caller can see.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FILE_MISSING",
+              "description": "The file is known but not on this machine.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TRACK_NOT_FOUND",
+              "description": "The track named is not one of the file's, of that kind; or the file has none.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VIDEO_NOT_CONVERTIBLE",
+              "description": "The video would need a conversion this server does not do.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SUBTITLE_NOT_DELIVERABLE",
+              "description": "The subtitle cannot be delivered the way asked: an image subtitle, text over HLS, or no\nfonts to burn with.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TOO_MANY_STREAMS",
+              "description": "Too many streams are running.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "StreamObject",
+          "description": "A stream that was started.",
+          "fields": [
+            {
+              "name": "delivery",
+              "description": "How the file reaches the player.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "StreamDeliveryType",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "protocol",
+              "description": "How it is cut up. Null for direct play.",
+              "args": [],
+              "type": {
+                "kind": "ENUM",
+                "name": "StreamProtocolType",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "videoDecision",
+              "description": "What happens to the video track.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "StreamDecisionType",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "audioDecision",
+              "description": "What happens to the audio track.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "StreamDecisionType",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "url",
+              "description": "Where the player reads it, a path on this server: the manifest of a conversion, the file\nitself for direct play. It carries its own secret and needs no token.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "subtitlesUrl",
+              "description": "Where the player reads text subtitles, when they were asked for.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "videoBitrate",
+              "description": "The bitrate of the video sent, in bits per second, when known.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "audioBitrate",
+              "description": "The bitrate of the audio sent, in bits per second, when known.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "width",
+              "description": "The width of the picture sent, when known.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "height",
+              "description": "The height of the picture sent, when known.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "StreamProtocolType",
+          "description": "How a converted stream is cut up for the player.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "DASH",
+              "description": "MPEG-DASH, fragmented MP4.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HLS",
+              "description": "HTTP Live Streaming, MPEG-TS segments.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "StreamUserError",
+          "description": "A problem with what was asked, as opposed to a failure of the server.",
+          "fields": [
+            {
+              "name": "field",
+              "description": "The input field at fault, as a path from the input's root.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "message",
+              "description": "What went wrong, for a person.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "code",
+              "description": "What went wrong, for a program.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "StreamErrorCode",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
           "possibleTypes": null
         },
         {
@@ -10003,6 +11252,35 @@
           "inputFields": null,
           "interfaces": [],
           "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "SubtitleDeliveryType",
+          "description": "How a subtitle reaches the player of a conversion.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "NONE",
+              "description": "No subtitle, whatever was chosen.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BURN",
+              "description": "Drawn into the picture, which re-encodes the video.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TEXT",
+              "description": "As ASS text beside the stream, for the player to draw. DASH only.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
           "possibleTypes": null
         },
         {
@@ -10587,6 +11865,710 @@
                   "kind": "SCALAR",
                   "name": "Int",
                   "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "UpdateEpisodeInput",
+          "description": "Changes to an episode.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "id",
+              "description": "The episode, as returned in `Episode.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "title",
+              "description": "The title. A new one gives a new `titleSort`, the title less a leading article,\nunless `titleSort` is locked or given too.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "titleSort",
+              "description": "The title to sort by.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "originalTitle",
+              "description": "The original-language title.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "summary",
+              "description": "The synopsis.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "contentRating",
+              "description": "The episode's own age-rating label. Cleared, the episode is rated as its series.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "year",
+              "description": "The year the episode first aired, from 1 to 9999.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "releasedOn",
+              "description": "The original air date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given\ntoo; clearing it clears the year.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "audienceRating",
+              "description": "The audience rating, from 0 to 10.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "lock",
+              "description": "Fields to lock, before the values are written.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemField",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": "[]"
+            },
+            {
+              "name": "unlock",
+              "description": "Fields to unlock, before the values are written.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemField",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": "[]"
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "UpdateEpisodePayload",
+          "description": "What `updateEpisode` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "The value the input carried.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "episode",
+              "description": "The episode as it now is, unless the edit was refused.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "Episode",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why the edit was refused. Empty when it was applied.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ItemEditUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "UpdateMovieInput",
+          "description": "Changes to a film.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "id",
+              "description": "The film, as returned in `Movie.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "title",
+              "description": "The title. A new one gives a new `titleSort`, the title less a leading article,\nunless `titleSort` is locked or given too.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "titleSort",
+              "description": "The title to sort by.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "originalTitle",
+              "description": "The original-language title.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "summary",
+              "description": "The synopsis.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "tagline",
+              "description": "The tagline.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "studio",
+              "description": "The production studio.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "contentRating",
+              "description": "The age-rating label, such as `fr/12`.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "year",
+              "description": "The release year, from 1 to 9999.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "releasedOn",
+              "description": "The release date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given too;\nclearing it clears the year.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "rating",
+              "description": "The critics' rating, from 0 to 10.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "audienceRating",
+              "description": "The audience rating, from 0 to 10.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "lock",
+              "description": "Fields to lock, before the values are written.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemField",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": "[]"
+            },
+            {
+              "name": "unlock",
+              "description": "Fields to unlock, before the values are written.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemField",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": "[]"
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "UpdateMoviePayload",
+          "description": "What `updateMovie` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "The value the input carried.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "movie",
+              "description": "The film as it now is, unless the edit was refused.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "Movie",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why the edit was refused. Empty when it was applied.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ItemEditUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "UpdateShowInput",
+          "description": "Changes to a series.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "id",
+              "description": "The series, as returned in `Show.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "title",
+              "description": "The title. A new one gives a new `titleSort`, the title less a leading article,\nunless `titleSort` is locked or given too.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "titleSort",
+              "description": "The title to sort by.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "originalTitle",
+              "description": "The original-language title.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "summary",
+              "description": "The synopsis.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "tagline",
+              "description": "The tagline.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "studio",
+              "description": "The production studio or network.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "contentRating",
+              "description": "The age-rating label, such as `fr/12`.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "year",
+              "description": "The year the series first aired, from 1 to 9999.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "releasedOn",
+              "description": "The first-air date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given too;\nclearing it clears the year.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "audienceRating",
+              "description": "The audience rating, from 0 to 10.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "lock",
+              "description": "Fields to lock, before the values are written.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemField",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": "[]"
+            },
+            {
+              "name": "unlock",
+              "description": "Fields to unlock, before the values are written.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemField",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": "[]"
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "UpdateShowPayload",
+          "description": "What `updateShow` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "The value the input carried.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "show",
+              "description": "The series as it now is, unless the edit was refused.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "Show",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why the edit was refused. Empty when it was applied.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ItemEditUserError",
+                      "ofType": null
+                    }
+                  }
                 }
               },
               "isDeprecated": false,

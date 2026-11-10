@@ -12,6 +12,7 @@ pub mod capabilities;
 pub mod children;
 pub mod client;
 pub mod container;
+mod edit;
 pub mod error;
 mod filter_values;
 pub mod gql;

@@ -5,6 +5,7 @@
 
 pub mod access;
 pub mod auth;
+pub mod edit;
 pub mod identity;
 pub mod ids;
 pub mod library;

@@ -549,4 +549,31 @@ impl Mutation {
     ) -> Result<bool> {
         crate::access::unpair_extension(context, &user_id, extension).await
     }
+
+    /// Changes a film's metadata and locks. For a library's admins and the operator.
+    async fn update_movie(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The changes.")] input: crate::edit::UpdateMovieInput,
+    ) -> Result<crate::edit::UpdateMoviePayload> {
+        crate::edit::update_movie(context, input).await
+    }
+
+    /// Changes a series' metadata and locks. For a library's admins and the operator.
+    async fn update_show(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The changes.")] input: crate::edit::UpdateShowInput,
+    ) -> Result<crate::edit::UpdateShowPayload> {
+        crate::edit::update_show(context, input).await
+    }
+
+    /// Changes an episode's metadata and locks. For a library's admins and the operator.
+    async fn update_episode(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The changes.")] input: crate::edit::UpdateEpisodeInput,
+    ) -> Result<crate::edit::UpdateEpisodePayload> {
+        crate::edit::update_episode(context, input).await
+    }
 }

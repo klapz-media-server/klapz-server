@@ -1144,6 +1144,245 @@ mutation Stop($input: StopStreamInput!) {
     }
 }
 
+/// The reference's two test libraries as its database held them: a film named after its file,
+/// and a series whose season and episode have no title. The film's sort title is locked.
+fn editable() -> ApiSchema {
+    let file_name = "Soul.2020.MULTi.TRUEFRENCH.1080p.WEB.H264-EXTREME_wWw.Extreme-Down.Video";
+    let film = MetadataItem {
+        title_sort: Some(file_name.to_owned()),
+        ..item(577_986, 27, ItemKind::Movie, file_name, None)
+    };
+    let child = |id: i64, kind: ItemKind, parent: i64| MetadataItem {
+        parent_id: Some(RatingKey::new(parent)),
+        title: None,
+        year: (kind == ItemKind::Episode).then_some(2021),
+        ..item(id, 28, kind, "", None)
+    };
+    let items = vec![
+        film,
+        item(577_987, 28, ItemKind::Show, "Bull", None),
+        child(577_988, ItemKind::Season, 577_987),
+        child(578_173, ItemKind::Episode, 577_988),
+    ];
+    let metadata = InMemoryMetadata::new(items).with_locked_fields(vec![(
+        RatingKey::new(577_986),
+        open_plex_core::edit::ItemField::TitleSort,
+    )]);
+
+    build_schema(ApiContext {
+        capabilities: open_plex_core::ServerCapabilities::new(
+            open_plex_core::ServerIdentity::new(
+                "0000000000000000000000000000000000000000",
+                "0.1.0",
+            ),
+            0,
+        ),
+        library: Arc::new(InMemoryLibrary::new(vec![
+            section(27, SectionKind::Movie, "open-plex tests"),
+            section(28, SectionKind::Show, "open-plex tests series"),
+        ])),
+        metadata: Arc::new(metadata),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+    })
+}
+
+const UPDATE_MOVIE: &str = r"
+mutation Edit($input: UpdateMovieInput!) {
+  updateMovie(input: $input) {
+    clientMutationId
+    movie { title titleSort summary year releasedOn rating lockedFields }
+    userErrors { field message code }
+  }
+}";
+
+async fn update_movie(
+    schema: &ApiSchema,
+    request: async_graphql::Request,
+    input: serde_json::Value,
+) -> Value {
+    let variables = async_graphql::Variables::from_json(serde_json::json!({ "input": input }));
+    let response = schema.execute(request.variables(variables)).await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    serde_json::to_value(response.data).unwrap()["updateMovie"].clone()
+}
+
+fn as_role(role: open_plex_core::access::LibraryRole) -> async_graphql::Request {
+    use open_plex_core::access::LibraryAccess;
+    use open_plex_core::{Principal, Scope, UserId};
+    let libraries = [27, 28]
+        .into_iter()
+        .map(|section| (SectionId::new(section), role))
+        .collect();
+    async_graphql::Request::new(UPDATE_MOVIE).data(Principal {
+        name: "someone".to_owned(),
+        scope: Scope::User,
+        libraries: LibraryAccess::Only(libraries),
+        user: Some(UserId::new(1)),
+        server_identifier: None,
+    })
+}
+
+#[tokio::test]
+async fn editing_a_film_writes_what_it_derives_and_changes_only_the_locks_asked() {
+    let schema = editable();
+    let film = GlobalId::encode("Item", 577_986);
+    let edited = update_movie(
+        &schema,
+        as_operator(UPDATE_MOVIE),
+        serde_json::json!({
+            "clientMutationId": "m1",
+            "id": film,
+            "title": "The Soul",
+            "summary": "Probe summary",
+            "releasedOn": "2019-05-01",
+            "rating": 8.1,
+            "unlock": ["TITLE_SORT"],
+            "lock": ["SUMMARY"],
+        }),
+    )
+    .await;
+    assert_eq!(
+        edited,
+        serde_json::json!({
+            "clientMutationId": "m1",
+            "movie": {
+                "title": "The Soul",
+                "titleSort": "Soul",
+                "summary": "Probe summary",
+                "year": 2019,
+                "releasedOn": "2019-05-01",
+                "rating": 8.1,
+                "lockedFields": ["SUMMARY"],
+            },
+            "userErrors": [],
+        })
+    );
+
+    // Read back through `node`, in a request of its own.
+    let data = run_on(
+        &schema,
+        &format!(
+            r#"{{ node(id: "{film}") {{ ... on Movie {{ title titleSort lockedFields }} }} }}"#
+        ),
+    )
+    .await;
+    assert_eq!(
+        data["node"],
+        serde_json::json!({ "title": "The Soul", "titleSort": "Soul", "lockedFields": ["SUMMARY"] })
+    );
+
+    let cleared = update_movie(
+        &schema,
+        as_operator(UPDATE_MOVIE),
+        serde_json::json!({ "id": film, "summary": null, "releasedOn": "", "rating": null }),
+    )
+    .await;
+    assert_eq!(
+        cleared["movie"],
+        serde_json::json!({
+            "title": "The Soul",
+            "titleSort": "Soul",
+            "summary": null,
+            "year": null,
+            "releasedOn": null,
+            "rating": null,
+            "lockedFields": ["SUMMARY"],
+        })
+    );
+}
+
+#[tokio::test]
+async fn only_a_librarys_admin_edits_and_the_others_find_nothing() {
+    use open_plex_core::access::LibraryRole;
+    let schema = editable();
+    let input = serde_json::json!({
+        "id": GlobalId::encode("Item", 577_986),
+        "summary": "Probe summary",
+    });
+
+    let refused = update_movie(&schema, as_role(LibraryRole::Viewer), input.clone()).await;
+    assert_eq!(refused["movie"], Value::Null);
+    assert_eq!(
+        refused["userErrors"],
+        serde_json::json!([
+            { "field": ["input", "id"], "message": "no such item", "code": "ITEM_NOT_FOUND" }
+        ])
+    );
+    let applied = update_movie(&schema, as_role(LibraryRole::Admin), input).await;
+    assert_eq!(applied["movie"]["summary"], "Probe summary");
+}
+
+#[tokio::test]
+async fn an_edit_refuses_another_type_a_bad_value_and_a_field_the_type_lacks() {
+    let schema = editable();
+    let code = |payload: &Value| {
+        (
+            payload["userErrors"][0]["field"].clone(),
+            payload["userErrors"][0]["code"].clone(),
+        )
+    };
+
+    let show = update_movie(
+        &schema,
+        as_operator(UPDATE_MOVIE),
+        serde_json::json!({ "id": GlobalId::encode("Item", 577_987), "summary": "x" }),
+    )
+    .await;
+    assert_eq!(
+        code(&show),
+        (serde_json::json!(["input", "id"]), "ITEM_NOT_FOUND".into())
+    );
+
+    let film = GlobalId::encode("Item", 577_986);
+    for (input, field, expected) in [
+        (
+            serde_json::json!({ "id": film, "releasedOn": "garbage" }),
+            "releasedOn",
+            "INVALID_VALUE",
+        ),
+        (
+            serde_json::json!({ "id": film, "rating": 42 }),
+            "rating",
+            "INVALID_VALUE",
+        ),
+        (
+            serde_json::json!({ "id": film, "lock": ["YEAR"], "unlock": ["YEAR"] }),
+            "unlock",
+            "LOCKED_AND_UNLOCKED",
+        ),
+    ] {
+        let refused = update_movie(&schema, as_operator(UPDATE_MOVIE), input).await;
+        assert_eq!(
+            code(&refused),
+            (serde_json::json!(["input", field]), expected.into()),
+            "{field}"
+        );
+    }
+
+    let response = schema
+        .execute(
+            as_operator(
+                r"mutation Edit($input: UpdateEpisodeInput!) {
+                  updateEpisode(input: $input) { episode { year } userErrors { code } }
+                }",
+            )
+            .variables(async_graphql::Variables::from_json(serde_json::json!({
+                "input": { "id": GlobalId::encode("Item", 578_173), "lock": ["GENRES"] }
+            }))),
+        )
+        .await;
+    let data = serde_json::to_value(response.data).unwrap();
+    assert_eq!(
+        data["updateEpisode"],
+        serde_json::json!({ "episode": null, "userErrors": [{ "code": "NOT_APPLICABLE" }] })
+    );
+}
+
 #[tokio::test]
 async fn an_item_is_named_for_a_url_after_its_series_and_itself() {
     let schema = series_with_episodes();

@@ -448,6 +448,13 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
 - ✅ **native streams**: `startStream` and `stopStream` on the official API — direct play,
   direct stream or transcode, decided from the file and the player's limits — read at
   `/streams/{id}/…?token=…`, and Plex's `start.mpd`/`start.m3u8` redirecting there;
+- ✅ **editing films, series and episodes**: `updateMovie`, `updateShow`, `updateEpisode` on the
+  official API, for a library's admins and the operator, with per-field locks (`lock`,
+  `unlock`, `lockedFields`) kept in `item_field_lock` and imported from Plex's `user_fields`;
+  a title edit rewrites the sort title, its key and the title-word index through
+  `db::write::update_item`, the one write path. On the Plex surface, `PUT
+  /library/sections/{id}/all` with `.value`/`.locked` and `Field` elements on lookups, by the
+  rules measured on the reference's test libraries (`docs/spec-gaps.md`);
 - ⬜ a series library's "more in" a genre, whose genre follows the viewer's history by a rule
   not found yet.
 

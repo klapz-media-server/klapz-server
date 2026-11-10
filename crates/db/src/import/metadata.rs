@@ -17,6 +17,8 @@
 
 use std::collections::HashSet;
 
+use open_plex_core::edit::ItemField;
+use open_plex_core::metadata::{self, ItemKind};
 use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 
 use super::analysis::Analysis;
@@ -45,6 +47,8 @@ pub struct MetadataSummary {
     pub items: usize,
     /// Rows written to the title word index, which the search filter reads.
     pub title_words: usize,
+    /// Fields locked against a metadata refresh, one per item and field.
+    pub locked_fields: usize,
     pub media: usize,
     pub files: usize,
     pub streams: usize,
@@ -67,7 +71,7 @@ pub async fn import(
     let mut item_ids: HashSet<i64> = HashSet::new();
 
     for (metadata_type, kind) in KINDS {
-        let (written, orphans, words) = import_items(
+        let imported = import_items(
             destination,
             source,
             source_path,
@@ -76,10 +80,18 @@ pub async fn import(
             &mut item_ids,
         )
         .await?;
-        summary.items += written;
-        summary.orphans += orphans;
-        summary.title_words += words;
-        tracing::info!(kind, written, orphans, words, "imported items");
+        summary.items += imported.written;
+        summary.orphans += imported.orphans;
+        summary.title_words += imported.words;
+        summary.locked_fields += imported.locks;
+        tracing::info!(
+            kind,
+            written = imported.written,
+            orphans = imported.orphans,
+            words = imported.words,
+            locks = imported.locks,
+            "imported items"
+        );
     }
 
     let media_ids = import_media(destination, source, source_path, &item_ids).await?;
@@ -106,10 +118,16 @@ pub async fn import(
     Ok(summary)
 }
 
-/// Imports one kind of item, with its searchable words.
-///
-/// Returns how many items were written, how many were orphaned, and how many word rows the
-/// title index gained.
+/// What one kind's import wrote.
+struct ImportedItems {
+    written: usize,
+    orphans: usize,
+    /// Rows the title index gained.
+    words: usize,
+    locks: usize,
+}
+
+/// Imports one kind of item, with its searchable words and its locks.
 async fn import_items(
     destination: &DatabaseConnection,
     source: &DatabaseConnection,
@@ -117,11 +135,15 @@ async fn import_items(
     metadata_type: i32,
     kind: &str,
     item_ids: &mut HashSet<i64>,
-) -> Result<(usize, usize, usize), ImportError> {
+) -> Result<ImportedItems, ImportError> {
     let needs_parent = metadata_type == 3 || metadata_type == 4;
     let mut offset = 0_u64;
-    let (mut written, mut orphans) = (0_usize, 0_usize);
-    let mut indexed_words = 0_usize;
+    let mut imported = ImportedItems {
+        written: 0,
+        orphans: 0,
+        words: 0,
+        locks: 0,
+    };
 
     loop {
         let rows = source
@@ -131,7 +153,7 @@ async fn import_items(
                     "SELECT id, library_section_id, parent_id, guid, title, title_sort, \
                      original_title, summary, tagline, studio, content_rating, \
                      content_rating_age, \"index\", year, originally_available_at, duration, \
-                     rating, audience_rating, added_at, updated_at \
+                     rating, audience_rating, added_at, updated_at, user_fields \
                      FROM metadata_items WHERE metadata_type = {metadata_type} \
                      AND library_section_id IS NOT NULL \
                      ORDER BY id LIMIT {SOURCE_PAGE} OFFSET {offset}"
@@ -146,6 +168,7 @@ async fn import_items(
         offset += rows.len() as u64;
 
         let mut batch = Vec::with_capacity(rows.len());
+        let mut locks = Vec::new();
         for row in &rows {
             let id: i64 = row.plex_get("id")?;
             let parent_id: Option<i64> = row.plex_opt("parent_id");
@@ -154,7 +177,7 @@ async fn import_items(
             // key — whether the parent is corrupt in the source or was itself skipped.
             if needs_parent && !parent_id.is_some_and(|parent| item_ids.contains(&parent)) {
                 tracing::warn!(id, kind, ?parent_id, "skipping item with an absent parent");
-                orphans += 1;
+                imported.orphans += 1;
                 continue;
             }
 
@@ -163,11 +186,14 @@ async fn import_items(
             let title = row.plex_text("title");
             let title_sort = row.plex_text("title_sort");
             let original_title = row.plex_text("original_title");
-            let sort_key = title_sort
-                .clone()
-                .or_else(|| title.clone())
-                .unwrap_or_default()
-                .to_lowercase();
+            let sort_key = metadata::sort_key(title_sort.as_deref(), title.as_deref());
+            if let Some(user_fields) = row.plex_text("user_fields") {
+                locks.extend(
+                    locked_fields(&user_fields, metadata_type)
+                        .into_iter()
+                        .map(|field| (id, field)),
+                );
+            }
 
             batch.push(metadata_item::ActiveModel {
                 id: ActiveValue::Set(id),
@@ -203,12 +229,66 @@ async fn import_items(
             item_ids.insert(id);
         }
 
-        written += batch.len();
+        imported.written += batch.len();
         // The one write path, which derives the title-word index from the models themselves.
-        indexed_words += write::insert_items(destination, batch).await?;
+        imported.words += write::insert_items(destination, batch).await?;
+        imported.locks += locks.len();
+        write::insert_locks(destination, locks).await?;
     }
 
-    Ok((written, orphans, indexed_words))
+    Ok(imported)
+}
+
+/// The fields an item's `user_fields` locks, `lockedFields=1|2|9` among its `&`-separated
+/// pairs, that items of its kind hold.
+///
+/// Numbers we have no field for are dropped: Plex numbers fields we do not model, such as
+/// its banner or theme music.
+fn locked_fields(user_fields: &str, metadata_type: i32) -> Vec<ItemField> {
+    let kind = match metadata_type {
+        1 => ItemKind::Movie,
+        2 => ItemKind::Show,
+        3 => ItemKind::Season,
+        _ => ItemKind::Episode,
+    };
+    let mut fields: Vec<ItemField> = user_fields
+        .split('&')
+        .filter_map(|pair| pair.strip_prefix("lockedFields="))
+        .flat_map(|numbers| numbers.split('|'))
+        .filter_map(|number| plex_field(number.parse().ok()?))
+        .filter(|field| field.applies_to(kind))
+        .collect();
+    fields.sort();
+    fields.dedup();
+    fields
+}
+
+/// Plex's number for a lockable field, as `PUT /library/sections/{id}/all` stores them: each
+/// locked alone on a test film of the reference, and read back from its database.
+const fn plex_field(number: u32) -> Option<ItemField> {
+    Some(match number {
+        1 => ItemField::Title,
+        2 => ItemField::TitleSort,
+        3 => ItemField::OriginalTitle,
+        4 => ItemField::Studio,
+        5 => ItemField::Rating,
+        6 => ItemField::Tagline,
+        7 => ItemField::Summary,
+        8 => ItemField::ContentRating,
+        9 => ItemField::Poster,
+        10 => ItemField::Background,
+        13 => ItemField::ReleasedOn,
+        14 => ItemField::Year,
+        15 => ItemField::Genres,
+        16 => ItemField::Collections,
+        17 => ItemField::Directors,
+        18 => ItemField::Writers,
+        19 => ItemField::Cast,
+        23 => ItemField::Producers,
+        24 => ItemField::Countries,
+        30 => ItemField::AudienceRating,
+        _ => return None,
+    })
 }
 
 async fn import_media(
@@ -527,4 +607,42 @@ const fn stream_kind(stream_type: i32) -> Option<&'static str> {
 /// Formats an epoch second as the calendar date the API publishes.
 fn to_date(epoch: i64) -> Option<String> {
     chrono::DateTime::from_timestamp(epoch, 0).map(|moment| moment.format("%Y-%m-%d").to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_locks_plex_packs_into_user_fields() {
+        // Item 429849 of the reference, published with Field elements for title, titleSort,
+        // originalTitle, studio, thumb, originallyAvailableAt, year and writer.
+        assert_eq!(
+            locked_fields("lockedFields=1|2|3|4|9|13|14|18", 1),
+            vec![
+                ItemField::Title,
+                ItemField::TitleSort,
+                ItemField::OriginalTitle,
+                ItemField::Studio,
+                ItemField::Poster,
+                ItemField::ReleasedOn,
+                ItemField::Year,
+                ItemField::Writers,
+            ]
+        );
+        assert_eq!(locked_fields("lockedFields=", 1), Vec::new());
+        // Item 550296: a clear logo and a square art among them, which we do not model.
+        assert_eq!(
+            locked_fields("lockedFields=9|10|36|39", 1),
+            vec![ItemField::Poster, ItemField::Background]
+        );
+    }
+
+    #[test]
+    fn keeps_only_the_locks_a_kind_holds() {
+        assert_eq!(
+            locked_fields("lockedFields=1|4|15", 4),
+            vec![ItemField::Title]
+        );
+    }
 }

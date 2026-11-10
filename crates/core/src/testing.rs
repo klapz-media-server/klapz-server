@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::edit::{ItemEdit, ItemField};
 use crate::ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use crate::metadata::{
@@ -95,9 +96,13 @@ impl LibraryRepository for InMemoryLibrary {
 }
 
 /// An in-memory [`MetadataRepository`].
-#[derive(Debug, Clone, Default)]
+///
+/// Items and locks sit behind locks of their own because an edit writes them; everything else
+/// is fixed at construction.
+#[derive(Debug, Default)]
 pub struct InMemoryMetadata {
-    items: Vec<MetadataItem>,
+    items: std::sync::Mutex<Vec<MetadataItem>>,
+    locked_fields: std::sync::Mutex<Vec<(RatingKey, ItemField)>>,
     versions: Vec<MediaVersion>,
     files: Vec<MediaFile>,
     streams: Vec<MediaStream>,
@@ -107,9 +112,10 @@ pub struct InMemoryMetadata {
 }
 
 impl InMemoryMetadata {
-    pub const fn new(items: Vec<MetadataItem>) -> Self {
+    pub fn new(items: Vec<MetadataItem>) -> Self {
         Self {
-            items,
+            items: std::sync::Mutex::new(items),
+            locked_fields: std::sync::Mutex::default(),
             versions: Vec::new(),
             files: Vec::new(),
             streams: Vec::new(),
@@ -128,8 +134,20 @@ impl InMemoryMetadata {
     }
 
     /// The items it holds, for a store that has to see the same library.
-    pub fn items(&self) -> &[MetadataItem] {
-        &self.items
+    pub fn items(&self) -> Vec<MetadataItem> {
+        self.rows()
+    }
+
+    /// A snapshot: edits replace items, and no guard may be held across a resolver's await.
+    fn rows(&self) -> Vec<MetadataItem> {
+        locked(&self.items).clone()
+    }
+
+    /// Locks fields on items, as an import would.
+    #[must_use]
+    pub fn with_locked_fields(self, locked_fields: Vec<(RatingKey, ItemField)>) -> Self {
+        *locked(&self.locked_fields) = locked_fields;
+        self
     }
 
     /// Attaches tags, which are kept in the order given: that order is the billing order.
@@ -167,9 +185,9 @@ impl InMemoryMetadata {
 
     /// Everything the query keeps, already ordered.
     fn matching(&self, query: &ItemQuery) -> Vec<MetadataItem> {
+        let items = self.rows();
         let filter = &query.filter;
-        let mut matched: Vec<MetadataItem> = self
-            .items
+        let mut matched: Vec<MetadataItem> = items
             .iter()
             .filter(|item| query.sections.contains(&item.section_id))
             .filter(|item| filter.kind.is_none_or(|kind| item.kind == kind))
@@ -230,11 +248,11 @@ impl InMemoryMetadata {
             .filter(|item| {
                 // Every item with an episode below it has one unwatched.
                 filter.episodes_watched.is_none_or(|watched| {
-                    let has_episode = self.items.iter().any(|episode| {
+                    let has_episode = items.iter().any(|episode| {
                         episode.kind == ItemKind::Episode
                             && (episode.parent_id == Some(item.id)
                                 || episode.parent_id.is_some_and(|parent| {
-                                    self.items.iter().any(|season| {
+                                    items.iter().any(|season| {
                                         season.id == parent && season.parent_id == Some(item.id)
                                     })
                                 }))
@@ -354,7 +372,7 @@ impl MetadataRepository for InMemoryMetadata {
         }
 
         let mut matched: Vec<MetadataItem> = self
-            .items
+            .rows()
             .iter()
             .filter(|item| query.kinds.is_empty() || query.kinds.contains(&item.kind))
             .filter(|item| {
@@ -426,7 +444,7 @@ impl MetadataRepository for InMemoryMetadata {
     }
 
     async fn item(&self, id: RatingKey) -> Result<MetadataItem, MetadataError> {
-        self.items
+        self.rows()
             .iter()
             .find(|item| item.id == id)
             .cloned()
@@ -435,7 +453,7 @@ impl MetadataRepository for InMemoryMetadata {
 
     async fn items_by_id(&self, ids: &[RatingKey]) -> Result<Vec<MetadataItem>, MetadataError> {
         Ok(self
-            .items
+            .rows()
             .iter()
             .filter(|item| ids.contains(&item.id))
             .cloned()
@@ -448,7 +466,7 @@ impl MetadataRepository for InMemoryMetadata {
         window: Window,
     ) -> Result<Page<MetadataItem>, MetadataError> {
         let mut rows: Vec<MetadataItem> = self
-            .items
+            .rows()
             .iter()
             .filter(|item| item.parent_id == Some(parent))
             .cloned()
@@ -464,13 +482,13 @@ impl MetadataRepository for InMemoryMetadata {
     ) -> Result<Page<MetadataItem>, MetadataError> {
         // Position of each child, so the grandchildren can be ordered season by season.
         let children: BTreeMap<RatingKey, i32> = self
-            .items
+            .rows()
             .iter()
             .filter(|item| item.parent_id == Some(parent))
             .map(|item| (item.id, item.position.unwrap_or(0)))
             .collect();
         let mut rows: Vec<(i32, MetadataItem)> = self
-            .items
+            .rows()
             .iter()
             .filter_map(|item| {
                 let child = item.parent_id?;
@@ -504,13 +522,13 @@ impl MetadataRepository for InMemoryMetadata {
             .iter()
             .map(|parent| {
                 let children: Vec<RatingKey> = self
-                    .items
+                    .rows()
                     .iter()
                     .filter(|item| item.parent_id == Some(*parent))
                     .map(|item| item.id)
                     .collect();
                 let leaves = self
-                    .items
+                    .rows()
                     .iter()
                     .filter(|item| {
                         item.parent_id
@@ -568,7 +586,7 @@ impl MetadataRepository for InMemoryMetadata {
         tags: &[TagId],
     ) -> Result<Vec<crate::similar::TagOverlap>, MetadataError> {
         Ok(self
-            .items
+            .rows()
             .iter()
             .filter(|item| item.section_id == section && item.kind == kind)
             .filter_map(|item| {
@@ -601,16 +619,16 @@ impl MetadataRepository for InMemoryMetadata {
         &self,
         parents: &[RatingKey],
     ) -> Result<Vec<EpisodeCredit>, MetadataError> {
+        let items = self.rows();
         let mut credits: Vec<EpisodeCredit> = Vec::new();
         for &parent in parents {
-            let episodes: Vec<RatingKey> = self
-                .items
+            let episodes: Vec<RatingKey> = items
                 .iter()
                 .filter(|item| item.kind == ItemKind::Episode)
                 .filter(|episode| {
                     episode.parent_id == Some(parent)
                         || episode.parent_id.is_some_and(|season| {
-                            self.items
+                            items
                                 .iter()
                                 .any(|item| item.id == season && item.parent_id == Some(parent))
                         })
@@ -682,13 +700,12 @@ impl MetadataRepository for InMemoryMetadata {
         after: Option<(i64, RatingKey)>,
         limit: u32,
     ) -> Result<Vec<crate::recent::EpisodeAddition>, MetadataError> {
-        let mut additions: Vec<crate::recent::EpisodeAddition> = self
-            .items
+        let items = self.rows();
+        let mut additions: Vec<crate::recent::EpisodeAddition> = items
             .iter()
             .filter(|item| item.section_id == section && item.kind == ItemKind::Episode)
             .filter_map(|episode| {
-                let season = self
-                    .items
+                let season = items
                     .iter()
                     .find(|item| Some(item.id) == episode.parent_id)?;
                 Some(crate::recent::EpisodeAddition {
@@ -760,12 +777,12 @@ impl MetadataRepository for InMemoryMetadata {
     }
 
     async fn descendants(&self, item: RatingKey) -> Result<Vec<MetadataItem>, MetadataError> {
-        let children: Vec<&MetadataItem> = self
-            .items
+        let items = self.rows();
+        let children: Vec<&MetadataItem> = items
             .iter()
             .filter(|child| child.parent_id == Some(item))
             .collect();
-        let grandchildren = self.items.iter().filter(|grandchild| {
+        let grandchildren = items.iter().filter(|grandchild| {
             children
                 .iter()
                 .any(|child| grandchild.parent_id == Some(child.id))
@@ -784,7 +801,7 @@ impl MetadataRepository for InMemoryMetadata {
         sections: Option<&[SectionId]>,
     ) -> Result<Vec<MetadataItem>, MetadataError> {
         Ok(self
-            .items
+            .rows()
             .iter()
             .filter(|item| guids.contains(&item.guid))
             .filter(|item| sections.is_none_or(|sections| sections.contains(&item.section_id)))
@@ -799,11 +816,47 @@ impl MetadataRepository for InMemoryMetadata {
             .find(|attached| attached.tag.id == id)
             .map(|attached| attached.tag.clone()))
     }
+
+    async fn locked_fields(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<(RatingKey, ItemField)>, MetadataError> {
+        Ok(locked(&self.locked_fields)
+            .iter()
+            .filter(|(item, _)| items.contains(item))
+            .copied()
+            .collect())
+    }
+
+    async fn edit_item(
+        &self,
+        id: RatingKey,
+        edit: &ItemEdit,
+    ) -> Result<metadata::Edited, MetadataError> {
+        let mut items = locked(&self.items);
+        let item = items
+            .iter_mut()
+            .find(|item| item.id == id && item.kind == edit.kind())
+            .ok_or(MetadataError::ItemNotFound(id))?;
+        let mut all_locks = locked(&self.locked_fields);
+        let mut fields: std::collections::BTreeSet<ItemField> = all_locks
+            .iter()
+            .filter(|(locked_item, _)| *locked_item == id)
+            .map(|(_, field)| *field)
+            .collect();
+        edit.apply(item, &mut fields);
+        all_locks.retain(|(locked_item, _)| *locked_item != id);
+        all_locks.extend(fields.iter().map(|field| (id, *field)));
+        Ok(metadata::Edited {
+            item: item.clone(),
+            locked: fields.into_iter().collect(),
+        })
+    }
 }
 
 impl InMemoryMetadata {
     fn count_children(&self, parent: RatingKey) -> u64 {
-        self.items
+        self.rows()
             .iter()
             .filter(|item| item.parent_id == Some(parent))
             .count() as u64
@@ -863,11 +916,7 @@ impl InMemoryMetadata {
 
 /// The ordering key a title-sorted listing uses, matching storage's folded column.
 fn sort_key(item: &MetadataItem) -> String {
-    item.title_sort
-        .as_ref()
-        .or(item.title.as_ref())
-        .map(|text| text.to_lowercase())
-        .unwrap_or_default()
+    metadata::sort_key(item.title_sort.as_deref(), item.title.as_deref())
 }
 
 /// Windows an already ordered list, locating cursors by equality as storage locates them
