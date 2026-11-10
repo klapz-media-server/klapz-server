@@ -3176,3 +3176,321 @@ async fn a_lookup_marks_the_audio_the_caller_plays() {
     assert_eq!(stream["id"], 920);
     assert_eq!(stream["selected"], true);
 }
+
+/// A request with any method, answered with its status, content type, paging headers and body.
+async fn call(
+    app: &axum::Router,
+    method: &str,
+    uri: &str,
+    accept: Option<&str>,
+) -> (StatusCode, String, Vec<(String, String)>, String) {
+    let mut request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("X-Plex-Token", TOKEN);
+    if let Some(accept) = accept {
+        request = request.header(header::ACCEPT, accept);
+    }
+    let response = app
+        .clone()
+        .oneshot(request.body(Body::empty()).expect("request builds"))
+        .await
+        .expect("router responds");
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let paging = response
+        .headers()
+        .iter()
+        .filter(|(name, _)| name.as_str().starts_with("x-plex-container"))
+        .map(|(name, value)| {
+            (
+                name.as_str().to_owned(),
+                value.to_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect();
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    (
+        status,
+        content_type,
+        paging,
+        String::from_utf8_lossy(&body).into_owned(),
+    )
+}
+
+const EMPTY_XML: &str =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer size=\"0\">\n</MediaContainer>\n";
+
+#[tokio::test]
+async fn live_tv_lists_answer_the_empty_container_the_reference_sends_without_a_dvr() {
+    // Captured on the reference, which has no DVR: both formats, byte for byte.
+    let app = app();
+    for uri in ["/livetv/dvrs", "/livetv/sessions"] {
+        let (status, content_type, paging, xml) = call(&app, "GET", uri, None).await;
+        assert_eq!(status, StatusCode::OK, "{uri}");
+        assert_eq!(content_type, "text/xml;charset=utf-8", "{uri}");
+        assert!(paging.is_empty(), "{uri}");
+        assert_eq!(xml, EMPTY_XML, "{uri}");
+        let (_, content_type, _, json) = call(&app, "GET", uri, Some("application/json")).await;
+        assert_eq!(content_type, "application/json", "{uri}");
+        assert_eq!(json, r#"{"MediaContainer":{"size":0}}"#, "{uri}");
+    }
+
+    // Empty here where the reference lists what it has: the grabbers it ships, a tuner left
+    // over from an old setup, plex.tv's guide countries and languages, and recordings it
+    // refuses to list without a subscription. The empty form is the one above.
+    for uri in [
+        "/media/grabbers",
+        "/media/grabbers/devices",
+        "/media/subscriptions",
+        "/media/subscriptions/scheduled",
+        "/livetv/epg/countries",
+        "/livetv/epg/languages",
+        "/media/subscriptions/template?guid=plex://movie/5d776825880197001ec967c8",
+    ] {
+        let (status, _, _, xml) = call(&app, "GET", uri, None).await;
+        assert_eq!((status, xml.as_str()), (StatusCode::OK, EMPTY_XML), "{uri}");
+    }
+    let (status, _, _, xml) = call(&app, "POST", "/media/grabbers/devices/discover", None).await;
+    assert_eq!((status, xml.as_str()), (StatusCode::OK, EMPTY_XML));
+}
+
+#[tokio::test]
+async fn an_empty_live_tv_list_reports_the_window_it_was_asked_for() {
+    let app = app();
+    let uri = "/livetv/dvrs?X-Plex-Container-Start=0&X-Plex-Container-Size=1";
+    let expected_paging = vec![
+        ("x-plex-container-start".to_owned(), "0".to_owned()),
+        ("x-plex-container-total-size".to_owned(), "0".to_owned()),
+    ];
+    let (_, _, mut paging, xml) = call(&app, "GET", uri, None).await;
+    paging.sort();
+    assert_eq!(paging, expected_paging);
+    assert_eq!(
+        xml,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer size=\"0\" totalSize=\"0\" offset=\"0\">\n</MediaContainer>\n"
+    );
+    let (_, _, _, json) = call(&app, "GET", uri, Some("application/json")).await;
+    assert_eq!(
+        json,
+        r#"{"MediaContainer":{"size":0,"totalSize":0,"offset":0}}"#
+    );
+}
+
+#[tokio::test]
+async fn no_dvr_device_recording_or_session_exists() {
+    // Each captured `404` on the reference, for an id it does not know.
+    let app = app();
+    for (method, uri) in [
+        ("GET", "/livetv/dvrs/999"),
+        ("DELETE", "/livetv/dvrs/999"),
+        ("POST", "/livetv/dvrs/999/channels/5/tune"),
+        ("PUT", "/livetv/dvrs/999/devices/999"),
+        ("DELETE", "/livetv/dvrs/999/devices/999"),
+        ("PUT", "/livetv/dvrs/999/lineups?lineup=x"),
+        ("DELETE", "/livetv/dvrs/999/lineups?lineup=x"),
+        ("PUT", "/livetv/dvrs/999/prefs?name=value"),
+        ("POST", "/livetv/dvrs/999/reloadGuide"),
+        ("DELETE", "/livetv/dvrs/999/reloadGuide"),
+        ("GET", "/livetv/sessions/abc"),
+        ("GET", "/livetv/sessions/abc/def/index.m3u8"),
+        ("GET", "/livetv/sessions/abc/def/0"),
+        ("GET", "/media/grabbers/devices/999"),
+        ("PUT", "/media/grabbers/devices/999?enabled=1"),
+        ("DELETE", "/media/grabbers/devices/999"),
+        ("GET", "/media/grabbers/devices/999/channels"),
+        ("PUT", "/media/grabbers/devices/999/channelmap"),
+        ("PUT", "/media/grabbers/devices/999/prefs?name=value"),
+        ("POST", "/media/grabbers/devices/999/scan"),
+        ("DELETE", "/media/grabbers/devices/999/scan"),
+        ("GET", "/media/grabbers/devices/999/thumb/1"),
+        ("DELETE", "/media/grabbers/operations/999"),
+        ("DELETE", "/media/subscriptions/999"),
+        ("PUT", "/media/subscriptions/999/move"),
+        // Under a guide provider this server does not have, as `nope` is on the reference.
+        ("GET", "/livetv/epg/countries/fra/nope/lineups"),
+        ("GET", "/livetv/epg/countries/fra/nope/regions"),
+        ("GET", "/livetv/epg/countries/fra/nope/regions/x/lineups"),
+        ("GET", "/livetv/epg/channelmap?device=x&lineup=y"),
+        ("GET", "/livetv/epg/channels?lineup=lineup://nope/x"),
+        ("GET", "/livetv/epg/lineupchannels?lineup=lineup://nope/x"),
+    ] {
+        let (status, content_type, _, _) = call(&app, method, uri, None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{method} {uri}");
+        assert_eq!(content_type, "text/html", "{method} {uri}");
+    }
+
+    // A guide provider's own routes, which the reference answers `404` without a DVR.
+    for uri in [
+        "/tv.plex.providers.epg.cloud:1/grid",
+        "/tv.plex.providers.epg.cloud:1/lineups/dvr/channels",
+        "/tv.plex.providers.epg.cloud:1/watchnow",
+        "/tv.plex.providers.epg.cloud:1/watchnow/all",
+    ] {
+        let (status, _, _, _) = call(&app, "GET", uri, None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn a_guide_lookup_missing_what_it_names_is_a_bad_request() {
+    // Captured `400`s on the reference.
+    let app = app();
+    for uri in [
+        "/livetv/epg/channelmap",
+        "/livetv/epg/channelmap?device=x",
+        "/livetv/epg/channels",
+        "/livetv/epg/lineupchannels",
+        "/livetv/epg/lineup",
+        "/livetv/epg/lineup?device=x",
+        "/media/subscriptions/template",
+    ] {
+        let (status, content_type, _, _) = call(&app, "GET", uri, None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}");
+        assert_eq!(content_type, "text/html", "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn nothing_can_be_set_up_or_recorded() {
+    let app = app();
+    for (method, uri, expected) in [
+        ("POST", "/livetv/dvrs", StatusCode::BAD_REQUEST),
+        (
+            "POST",
+            "/livetv/dvrs?device=device://tv.plex.grabbers.hdhomerun/x",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "POST",
+            "/media/grabbers/devices?uri=http://10.0.0.2",
+            StatusCode::BAD_REQUEST,
+        ),
+        ("POST", "/media/subscriptions", StatusCode::BAD_REQUEST),
+    ] {
+        let (status, _, _, _) = call(&app, method, uri, None).await;
+        assert_eq!(status, expected, "{method} {uri}");
+    }
+    let (status, content_type, _, body) =
+        call(&app, "POST", "/media/subscriptions/process", None).await;
+    assert_eq!(
+        (status, content_type.as_str(), body.as_str()),
+        (StatusCode::OK, "text/html", "")
+    );
+}
+
+/// The container the reference sends around no item of a kind a library does not hold,
+/// captured on its "VF - Films" with `type=8`, `9` and `10` and a window. `mediaTagVersion`
+/// is the reference's media flag bundle, which this server reports as 0.
+const NO_MUSIC_IN_FILMS: &str = r#"{"MediaContainer":{"size":0,"totalSize":0,"offset":0,"allowSync":true,"art":"/:/resources/movie-fanart.jpg","identifier":"com.plexapp.plugins.library","librarySectionID":4,"librarySectionTitle":"VF - Films","librarySectionUUID":"2cd48489-54c0-41e9-ae62-f3dcb0f3c249","mediaTagPrefix":"/system/bundle/media/flags/","mediaTagVersion":1791210760,"thumb":"/:/resources/movie.png","title1":"VF - Films","title2":"All VF - Films","viewGroup":"movie","viewMode":65592}}"#;
+
+fn with_our_flag_bundle(captured: &str) -> Value {
+    let mut value: Value = serde_json::from_str(captured).expect("captured json");
+    value["MediaContainer"]["mediaTagVersion"] = Value::from(0);
+    value
+}
+
+#[tokio::test]
+async fn a_film_library_lists_no_artist_album_or_track() {
+    for kind in [8, 9, 10] {
+        let uri = format!("/library/sections/4/all?type={kind}");
+        assert_eq!(
+            listing(&uri).await,
+            with_our_flag_bundle(NO_MUSIC_IN_FILMS),
+            "{uri}"
+        );
+    }
+    // And every view of the library agrees: no letter, no genre, no year.
+    for uri in [
+        "/library/sections/4/firstCharacter?type=10",
+        "/library/sections/4/genre?type=10",
+        "/library/sections/4/year?type=9",
+    ] {
+        let body = listing(uri).await;
+        assert_eq!(body["MediaContainer"]["size"], 0, "{uri}");
+        assert!(body["MediaContainer"].get("Directory").is_none(), "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn albums_are_an_empty_view_of_any_library() {
+    // Captured on the reference's film and series libraries, windowed as this server always
+    // windows.
+    let films = r#"{"MediaContainer":{"size":0,"totalSize":0,"offset":0,"allowSync":false,"art":"/:/resources/movie-fanart.jpg","identifier":"com.plexapp.plugins.library","mediaTagPrefix":"/system/bundle/media/flags/","mediaTagVersion":1791210760,"mixedParents":true,"thumb":"/:/resources/movie.png","title1":"VF - Films","title2":"By Album","viewGroup":"album","viewMode":65592}}"#;
+    assert_eq!(
+        listing("/library/sections/4/albums").await,
+        with_our_flag_bundle(films)
+    );
+    let series = listing("/library/sections/5/albums").await;
+    assert_eq!(series["MediaContainer"]["nocache"], true);
+    assert_eq!(series["MediaContainer"]["title2"], "By Album");
+
+    let (status, xml) = get_from(items_app(), "/library/sections/4/albums", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(xml.contains(r#"allowSync="0""#) && xml.contains(r#"mixedParents="1""#));
+
+    let (status, _) = get_from(items_app(), "/library/sections/999/albums", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_music_library_is_listed_and_holds_nothing() {
+    let app = app_with(vec![section(30, SectionKind::Artist, "Musique", false)]);
+    let (_, sections) = get_from(app.clone(), "/library/sections", Some("application/json")).await;
+    let sections: Value = serde_json::from_str(&sections).expect("json");
+    assert_eq!(sections["MediaContainer"]["Directory"][0]["type"], "artist");
+
+    for uri in [
+        "/library/sections/30/all",
+        "/library/sections/30/all?type=8",
+        "/library/sections/30/all?type=10",
+        "/library/sections/30/albums",
+        "/hubs/sections/30",
+    ] {
+        let (status, body) = get_from(app.clone(), uri, Some("application/json")).await;
+        assert_eq!(status, StatusCode::OK, "{uri}");
+        let body: Value = serde_json::from_str(&body).expect("json");
+        assert_eq!(body["MediaContainer"]["size"], 0, "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn a_search_of_one_type_finds_that_kind_only_and_no_track() {
+    let everything = listing("/search?query=avatar").await;
+    assert_eq!(
+        everything["MediaContainer"]["Provider"]
+            .as_array()
+            .map(Vec::len),
+        Some(4)
+    );
+
+    // As the reference answers `type=1`: the films alone, and no other source advertised.
+    let films = listing("/search?query=avatar&type=1").await;
+    assert_eq!(films["MediaContainer"]["Metadata"][0]["title"], "Avatar");
+    assert!(films["MediaContainer"].get("Provider").is_none());
+    assert!(
+        listing("/search?query=avatar&type=2").await["MediaContainer"]
+            .get("Metadata")
+            .is_none()
+    );
+
+    // Captured with `type=10`, and identical with `type=99`.
+    let none = r#"{"MediaContainer":{"size":0,"identifier":"com.plexapp.plugins.library","mediaTagPrefix":"/system/bundle/media/flags/","mediaTagVersion":1791210760}}"#;
+    for kind in [10, 99] {
+        assert_eq!(
+            listing(&format!("/search?query=avatar&type={kind}")).await,
+            with_our_flag_bundle(none),
+            "{kind}"
+        );
+    }
+}

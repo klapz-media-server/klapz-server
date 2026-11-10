@@ -18,10 +18,10 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 15 | 5.8 % |
-| `stub` | 179 | 68.8 % |
+| `todo` | 11 | 4.2 % |
+| `stub` | 130 | 50.0 % |
 | `partial` | 18 | 6.9 % |
-| `done` | 11 | 4.2 % |
+| `done` | 64 | 24.6 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -31,20 +31,20 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | --- | --: | --: | --: | --: | --: | --: |
 | [Library](#library) | 85 | 2 | 6 | 45 | 8 | 24 |
 | [Hubs](#hubs) | 15 | 1 | 1 | 13 | 0 | 0 |
-| [Content](#content) | 13 | 0 | 2 | 11 | 0 | 0 |
-| [Devices](#devices) | 13 | 0 | 0 | 13 | 0 | 0 |
-| [EPG](#epg) | 13 | 0 | 0 | 9 | 4 | 0 |
+| [Content](#content) | 13 | 1 | 2 | 10 | 0 | 0 |
+| [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
+| [EPG](#epg) | 13 | 13 | 0 | 0 | 0 | 0 |
 | [Library Playlists](#library-playlists) | 13 | 0 | 0 | 13 | 0 | 0 |
-| [DVRs](#dvrs) | 12 | 0 | 0 | 12 | 0 | 0 |
+| [DVRs](#dvrs) | 12 | 12 | 0 | 0 | 0 | 0 |
 | [Metadata Agents](#metadata-agents) | 12 | 0 | 0 | 0 | 0 | 12 |
-| [Subscriptions](#subscriptions) | 10 | 0 | 0 | 10 | 0 | 0 |
+| [Subscriptions](#subscriptions) | 10 | 10 | 0 | 0 | 0 | 0 |
 | [Download Queue](#download-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
 | [Play Queue](#play-queue) | 9 | 0 | 2 | 6 | 1 | 0 |
 | [Status](#status) | 6 | 0 | 1 | 5 | 0 | 0 |
 | [Butler](#butler) | 5 | 0 | 0 | 5 | 0 | 0 |
 | [Transcoder](#transcoder) | 5 | 0 | 4 | 1 | 0 | 0 |
 | [General](#general) | 4 | 2 | 0 | 2 | 0 | 0 |
-| [Live TV](#live-tv) | 4 | 0 | 0 | 4 | 0 | 0 |
+| [Live TV](#live-tv) | 4 | 4 | 0 | 0 | 0 | 0 |
 | [Provider](#provider) | 4 | 1 | 0 | 1 | 1 | 1 |
 | [Library Collections](#library-collections) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Log](#log) | 3 | 0 | 0 | 3 | 0 | 0 |
@@ -79,7 +79,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `done` | `GET` | `/library/sections` | user | Library sections | Byte-identical to the reference. The spec declares only its `/all` alias. |
 | `partial` | `GET` | `/library/metadata/{id}/children` | user | Seasons of a series, episodes of a season | Zero differing fields against the reference on seven parents across two libraries; `400` on a film or an episode, as the reference. A series' first page leads with the `All episodes` entry, counted in `size` but not in `totalSize`, as the reference does. |
 | `partial` | `GET` | `/library/metadata/{id}/grandchildren` | user | Every episode of a series, season by season | Same field fidelity as `/children`. Gaps: those of `/library/metadata/{ids}`. |
-| `partial` | `GET` | `/search` | user | Global search across libraries | Matches exactly as the reference (word prefix over title, sort title, original title) but returns matches in title order, unranked and uncut. The spec declares only `/hubs/search`. |
+| `partial` | `GET` | `/search` | user | Global search across libraries | Matches exactly as the reference (word prefix over title, sort title, original title) but returns matches in title order, unranked and uncut. `type=` narrows to one kind without the `Provider` list, as the reference; a music or unknown type finds nothing. The spec declares only `/hubs/search`. |
 
 ## Library
 
@@ -198,7 +198,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `GET` | `/library/collections/{collectionId}/composite/{updatedAt}` | user | Get a collection's image |  |
 | `stub` | `GET` | `/library/collections/{collectionId}/items` | user | Get items in a collection |  |
 | `partial` | `GET` | `/library/metadata/{ids}` | user | Get a metadata item | Items, media and files, served through the GraphQL schema. Zero field differences against the reference on shared items. Seasons are named at read time (`Season N`, `Specials`) and carry their series' guid, studio and year; episodes carry their season's and series' guids and titles. Genres, countries and credits with ids, filters, provider keys and portraits; `Guid` and `Rating`. 355 of 420 sampled items identical: 44 live metadata newer than the snapshot, 21 a credit's portrait (one per person here, one per credit on the reference). Gaps: artwork, view state, `Part.key`, audio/videoProfile (and the `audioCodec` composition that needs them), slug, chapterSource, extras, `Stream.language` as a name rather than a tag. Sort collation differs — see spec-gaps.md. Carries `Stream`, which a listing omits, with the audio track that plays marked `selected`; no subtitle is, as no choice is recorded. |
-| `stub` | `GET` | `/library/sections/{sectionId}/albums` | user | Set section albums |  |
+| `done` | `GET` | `/library/sections/{sectionId}/albums` | user | Set section albums | Empty: no music is held. The official API is asked for albums and has none; container captured on the reference's film and series libraries. Always windowed, like `/all`. |
 | `partial` | `GET` | `/library/sections/{sectionId}/all` | user | Get items in the section | Items, media and files through the GraphQL schema; zero field differences against the reference on shared items. `includeMeta=1` publishes the filters and sorts it honors. Filters: `title` (word prefix), `year`, `decade`, `contentRating`, `studio`, `resolution` — exact totals on 11 of 12 probes; `genre`, `country`, `director`, `writer`, `actor`, `producer` by id or name, comma for OR, repeat for AND — exact totals on 16 probes. Any other advertised filter (`collection`, `label`, …) answers 501 rather than being dropped. Tags in the listing form: first 2 or 3 names per kind, derived from the tags rather than from the reference's stale cache. Gaps: artwork, view state, audio/videoProfile. Sort collation and range operators — see spec-gaps.md. |
 | `stub` | `GET` | `/library/sections/{sectionId}/allLeaves` | user | Set section leaves |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/arts` | user | Set section artwork |  |
@@ -213,37 +213,37 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/media/grabbers` | user | Get available grabbers |  |
-| `stub` | `GET` | `/media/grabbers/devices` | admin | Get all devices |  |
-| `stub` | `POST` | `/media/grabbers/devices` | admin | Add a device |  |
-| `stub` | `POST` | `/media/grabbers/devices/discover` | admin | Tell grabbers to discover devices |  |
-| `stub` | `DELETE` | `/media/grabbers/devices/{deviceId}` | admin | Remove a device |  |
-| `stub` | `GET` | `/media/grabbers/devices/{deviceId}` | admin | Get device details |  |
-| `stub` | `PUT` | `/media/grabbers/devices/{deviceId}` | admin | Enable or disable a device |  |
-| `stub` | `PUT` | `/media/grabbers/devices/{deviceId}/channelmap` | user | Set a device's channel mapping |  |
-| `stub` | `GET` | `/media/grabbers/devices/{deviceId}/channels` | admin | Get a device's channels |  |
-| `stub` | `PUT` | `/media/grabbers/devices/{deviceId}/prefs` | admin | Set device preferences |  |
-| `stub` | `DELETE` | `/media/grabbers/devices/{deviceId}/scan` | user | Tell a device to stop scanning for channels |  |
-| `stub` | `POST` | `/media/grabbers/devices/{deviceId}/scan` | user | Tell a device to scan for channels |  |
-| `stub` | `GET` | `/media/grabbers/devices/{deviceId}/thumb/{version}` | admin | Get device thumb |  |
+| `done` | `GET` | `/media/grabbers` | user | Get available grabbers | Empty container: this server has nothing of the kind. The reference lists the four grabbers it ships; see spec-gaps.md. |
+| `done` | `GET` | `/media/grabbers/devices` | admin | Get all devices | Empty container: this server has nothing of the kind. The reference lists its tuners; see spec-gaps.md. |
+| `done` | `POST` | `/media/grabbers/devices` | admin | Add a device | `400`, the spec's answer for a device that cannot be added: no grabber is there to recognize it. Not captured. |
+| `done` | `POST` | `/media/grabbers/devices/discover` | admin | Tell grabbers to discover devices | Empty device list: there is no grabber to discover with. Not captured. |
+| `done` | `DELETE` | `/media/grabbers/devices/{deviceId}` | admin | Remove a device | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `GET` | `/media/grabbers/devices/{deviceId}` | admin | Get device details | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `PUT` | `/media/grabbers/devices/{deviceId}` | admin | Enable or disable a device | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `PUT` | `/media/grabbers/devices/{deviceId}/channelmap` | user | Set a device's channel mapping | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `GET` | `/media/grabbers/devices/{deviceId}/channels` | admin | Get a device's channels | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `PUT` | `/media/grabbers/devices/{deviceId}/prefs` | admin | Set device preferences | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `DELETE` | `/media/grabbers/devices/{deviceId}/scan` | user | Tell a device to stop scanning for channels | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `POST` | `/media/grabbers/devices/{deviceId}/scan` | user | Tell a device to scan for channels | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `GET` | `/media/grabbers/devices/{deviceId}/thumb/{version}` | admin | Get device thumb | `404`: none exists here. Captured for an unknown id on the reference. |
 
 ## EPG
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/livetv/epg/channelmap` | user | Compute the best channel map |  |
-| `stub` | `GET` | `/livetv/epg/channels` | user | Get channels for a lineup |  |
-| `stub` | `GET` | `/livetv/epg/countries` | user | Get all countries |  |
-| `stub` | `GET` | `/livetv/epg/countries/{country}/{epgId}/lineups` | user | Get lineups for a country via postal code |  |
-| `stub` | `GET` | `/livetv/epg/countries/{country}/{epgId}/regions` | user | Get regions for a country |  |
-| `stub` | `GET` | `/livetv/epg/countries/{country}/{epgId}/regions/{region}/lineups` | user | Get lineups for a region |  |
-| `stub` | `GET` | `/livetv/epg/languages` | user | Get all languages |  |
-| `stub` | `GET` | `/livetv/epg/lineup` | user | Compute the best lineup |  |
-| `stub` | `GET` | `/livetv/epg/lineupchannels` | user | Get the channels for mulitple lineups |  |
-| `todo` | `GET` | `/tv.plex.providers.epg.{identifier}:{deviceId}/grid` | user | Get airing information | needs a hand-written handler: two parameters in segment `tv.plex.providers.epg.{identifier}:{deviceId}` |
-| `todo` | `GET` | `/tv.plex.providers.epg.{identifier}:{deviceId}/lineups/dvr/channels` | user | Get channels for a lineup | needs a hand-written handler: two parameters in segment `tv.plex.providers.epg.{identifier}:{deviceId}` |
-| `todo` | `GET` | `/tv.plex.providers.epg.{identifier}:{deviceId}/watchnow` | user | Get hubs | needs a hand-written handler: two parameters in segment `tv.plex.providers.epg.{identifier}:{deviceId}` |
-| `todo` | `GET` | `/tv.plex.providers.epg.{identifier}:{deviceId}/watchnow/all` | user | Get currently airing | needs a hand-written handler: two parameters in segment `tv.plex.providers.epg.{identifier}:{deviceId}` |
+| `done` | `GET` | `/livetv/epg/channelmap` | user | Compute the best channel map | `400` without `device` and `lineup`, `404` with them, as captured. |
+| `done` | `GET` | `/livetv/epg/channels` | user | Get channels for a lineup | `400` without `lineup`, `404` with one, as captured for a provider it does not know. |
+| `done` | `GET` | `/livetv/epg/countries` | user | Get all countries | Empty container: this server has nothing of the kind. The reference lists plex.tv's 97 guide countries; see spec-gaps.md. |
+| `done` | `GET` | `/livetv/epg/countries/{country}/{epgId}/lineups` | user | Get lineups for a country via postal code | `404`: there is no guide provider, and the reference 404s any provider it does not have. |
+| `done` | `GET` | `/livetv/epg/countries/{country}/{epgId}/regions` | user | Get regions for a country | `404`: there is no guide provider, and the reference 404s any provider it does not have. |
+| `done` | `GET` | `/livetv/epg/countries/{country}/{epgId}/regions/{region}/lineups` | user | Get lineups for a region | `404`: there is no guide provider, and the reference 404s any provider it does not have. |
+| `done` | `GET` | `/livetv/epg/languages` | user | Get all languages | Empty container: this server has nothing of the kind. The reference lists 594 guide languages; see spec-gaps.md. |
+| `done` | `GET` | `/livetv/epg/lineup` | user | Compute the best lineup | `400` without `device` and `lineupGroup`, `404` with them, as captured (the reference's body reads `Unknown media grabber`). |
+| `done` | `GET` | `/livetv/epg/lineupchannels` | user | Get the channels for mulitple lineups | `400` without `lineup`, `404` with one, as captured for a provider it does not know. |
+| `done` | `GET` | `/tv.plex.providers.epg.{identifier}:{deviceId}/grid` | user | Get airing information | `404`, as on the reference without a DVR: no route, since there is no provider to serve one. |
+| `done` | `GET` | `/tv.plex.providers.epg.{identifier}:{deviceId}/lineups/dvr/channels` | user | Get channels for a lineup | `404`, as on the reference without a DVR: no route, since there is no provider to serve one. |
+| `done` | `GET` | `/tv.plex.providers.epg.{identifier}:{deviceId}/watchnow` | user | Get hubs | `404`, as on the reference without a DVR: no route, since there is no provider to serve one. |
+| `done` | `GET` | `/tv.plex.providers.epg.{identifier}:{deviceId}/watchnow/all` | user | Get currently airing | `404`, as on the reference without a DVR: no route, since there is no provider to serve one. |
 
 ## Library Playlists
 
@@ -267,18 +267,18 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/livetv/dvrs` | user | Get DVRs |  |
-| `stub` | `POST` | `/livetv/dvrs` | admin | Create a DVR |  |
-| `stub` | `DELETE` | `/livetv/dvrs/{dvrId}` | admin | Delete a single DVR |  |
-| `stub` | `GET` | `/livetv/dvrs/{dvrId}` | user | Get a single DVR |  |
-| `stub` | `POST` | `/livetv/dvrs/{dvrId}/channels/{channel}/tune` | user | Tune a channel on a DVR |  |
-| `stub` | `DELETE` | `/livetv/dvrs/{dvrId}/devices/{deviceId}` | admin | Remove a device from an existing DVR |  |
-| `stub` | `PUT` | `/livetv/dvrs/{dvrId}/devices/{deviceId}` | admin | Add a device to an existing DVR |  |
-| `stub` | `DELETE` | `/livetv/dvrs/{dvrId}/lineups` | admin | Delete a DVR Lineup |  |
-| `stub` | `PUT` | `/livetv/dvrs/{dvrId}/lineups` | admin | Add a DVR Lineup |  |
-| `stub` | `PUT` | `/livetv/dvrs/{dvrId}/prefs` | admin | Set DVR preferences |  |
-| `stub` | `DELETE` | `/livetv/dvrs/{dvrId}/reloadGuide` | admin | Tell a DVR to stop reloading program guide |  |
-| `stub` | `POST` | `/livetv/dvrs/{dvrId}/reloadGuide` | admin | Tell a DVR to reload program guide |  |
+| `done` | `GET` | `/livetv/dvrs` | user | Get DVRs | Empty container, as the reference answers without a DVR: captured, byte-identical in both formats, window included. |
+| `done` | `POST` | `/livetv/dvrs` | admin | Create a DVR | `400` without `device`, `404` with one: no device exists. Not captured, since it would create a DVR. |
+| `done` | `DELETE` | `/livetv/dvrs/{dvrId}` | admin | Delete a single DVR | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `GET` | `/livetv/dvrs/{dvrId}` | user | Get a single DVR | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `POST` | `/livetv/dvrs/{dvrId}/channels/{channel}/tune` | user | Tune a channel on a DVR | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `DELETE` | `/livetv/dvrs/{dvrId}/devices/{deviceId}` | admin | Remove a device from an existing DVR | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `PUT` | `/livetv/dvrs/{dvrId}/devices/{deviceId}` | admin | Add a device to an existing DVR | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `DELETE` | `/livetv/dvrs/{dvrId}/lineups` | admin | Delete a DVR Lineup | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `PUT` | `/livetv/dvrs/{dvrId}/lineups` | admin | Add a DVR Lineup | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `PUT` | `/livetv/dvrs/{dvrId}/prefs` | admin | Set DVR preferences | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `DELETE` | `/livetv/dvrs/{dvrId}/reloadGuide` | admin | Tell a DVR to stop reloading program guide | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `POST` | `/livetv/dvrs/{dvrId}/reloadGuide` | admin | Tell a DVR to reload program guide | `404`: none exists here. Captured for an unknown id on the reference. |
 
 ## Metadata Agents
 
@@ -301,16 +301,16 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `DELETE` | `/media/grabbers/operations/{operationId}` | user | Cancel an existing grab |  |
-| `stub` | `GET` | `/media/subscriptions` | user | Get all subscriptions |  |
-| `stub` | `POST` | `/media/subscriptions` | user | Create a subscription |  |
-| `stub` | `POST` | `/media/subscriptions/process` | user | Process all subscriptions |  |
-| `stub` | `GET` | `/media/subscriptions/scheduled` | user | Get all scheduled recordings |  |
-| `stub` | `GET` | `/media/subscriptions/template` | user | Get the subscription template |  |
-| `stub` | `DELETE` | `/media/subscriptions/{subscriptionId}` | user | Delete a subscription |  |
-| `stub` | `GET` | `/media/subscriptions/{subscriptionId}` | user | Get a single subscription |  |
-| `stub` | `PUT` | `/media/subscriptions/{subscriptionId}` | user | Edit a subscription |  |
-| `stub` | `PUT` | `/media/subscriptions/{subscriptionId}/move` | admin | Re-order a subscription |  |
+| `done` | `DELETE` | `/media/grabbers/operations/{operationId}` | user | Cancel an existing grab | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `GET` | `/media/subscriptions` | user | Get all subscriptions | Empty container. The reference refuses it `401` without a subscription; see spec-gaps.md. |
+| `done` | `POST` | `/media/subscriptions` | user | Create a subscription | `400`: there is no DVR to record with. Not captured. |
+| `done` | `POST` | `/media/subscriptions/process` | user | Process all subscriptions | Empty `200`, `text/html`: nothing to process. Not captured. |
+| `done` | `GET` | `/media/subscriptions/scheduled` | user | Get all scheduled recordings | Empty container. The reference refuses it `401` without a subscription. |
+| `done` | `GET` | `/media/subscriptions/template` | user | Get the subscription template | `400` without `guid`, as captured; otherwise empty: nothing can be recorded. The reference refuses it `401`. |
+| `done` | `DELETE` | `/media/subscriptions/{subscriptionId}` | user | Delete a subscription | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `GET` | `/media/subscriptions/{subscriptionId}` | user | Get a single subscription | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `PUT` | `/media/subscriptions/{subscriptionId}` | user | Edit a subscription | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `PUT` | `/media/subscriptions/{subscriptionId}/move` | admin | Re-order a subscription | `404`: none exists here. Captured for an unknown id on the reference. |
 
 ## Download Queue
 
@@ -384,10 +384,10 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/livetv/sessions` | user | Get all sessions |  |
-| `stub` | `GET` | `/livetv/sessions/{sessionId}` | user | Get a single session |  |
-| `stub` | `GET` | `/livetv/sessions/{sessionId}/{consumerId}/index.m3u8` | user | Get a session playlist index |  |
-| `stub` | `GET` | `/livetv/sessions/{sessionId}/{consumerId}/{segmentId}` | user | Get a single session segment |  |
+| `done` | `GET` | `/livetv/sessions` | user | Get all sessions | Empty container, as the reference answers without a DVR: captured, byte-identical in both formats, window included. |
+| `done` | `GET` | `/livetv/sessions/{sessionId}` | user | Get a single session | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `GET` | `/livetv/sessions/{sessionId}/{consumerId}/index.m3u8` | user | Get a session playlist index | `404`: none exists here. Captured for an unknown id on the reference. |
+| `done` | `GET` | `/livetv/sessions/{sessionId}/{consumerId}/{segmentId}` | user | Get a single session segment | `404`: none exists here. Captured for an unknown id on the reference. |
 
 ## Provider
 

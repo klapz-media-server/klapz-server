@@ -267,6 +267,12 @@ Places where we knowingly answer differently, each decided rather than overlooke
   from: Plex Web refuses a server older than 1.18.3, and `0.1.0` reads as one. Clients that
   enable features by version then expect exactly the behavior we copied. The official API keeps
   open-plex's own version (`api-plex::general::PLEX_VERSION`).
+- **Live TV answers as a server with nothing set up.** There is no grabber, tuner or guide
+  provider, so every Live TV, DVR, guide and recording list is empty and every one of them by
+  id a `404`, as on the reference without a DVR. Where the reference lists what it has — the
+  grabbers it ships, plex.tv's guide countries and languages — we list nothing, since none of
+  it can be used here; where it refuses recordings `401` for want of a subscription, we answer
+  the empty list (`docs/spec-gaps.md`).
 
 ### Data model
 
@@ -448,6 +454,11 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
 - ✅ **native streams**: `startStream` and `stopStream` on the official API — direct play,
   direct stream or transcode, decided from the file and the player's limits — read at
   `/streams/{id}/…?token=…`, and Plex's `start.mpd`/`start.m3u8` redirecting there;
+- ✅ **Live TV, DVR and music answer empty**: the 52 Live TV, DVR, guide and recording
+  operations as the reference answers them without a DVR (`api-plex::livetv`), and music as
+  held nowhere — `ARTIST`, `ALBUM` and `TRACK` on the official API keep nothing, so music
+  `type`s on listings, filter choices and `/search` answer empty, a music library is listed
+  and empty, and `/library/sections/{id}/albums` is its empty view;
 - ⬜ a series library's "more in" a genre, whose genre follows the viewer's history by a rule
   not found yet.
 

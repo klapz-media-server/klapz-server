@@ -282,11 +282,13 @@ impl Query {
     ) -> Result<crate::item::ItemConnection> {
         let mut search = SearchQuery::new(query);
         search.sections = crate::access::visible_sections(context);
-        search.kinds = kinds
-            .unwrap_or_default()
-            .into_iter()
-            .map(Into::into)
-            .collect();
+        let kinds = kinds.unwrap_or_default();
+        search.kinds = kinds.iter().filter_map(|kind| kind.held()).collect();
+        // Every kind asked for is one this server holds none of. Not passed on as an empty
+        // list, which storage reads as every kind.
+        if !kinds.is_empty() && search.kinds.is_empty() {
+            return Ok(connection::Connection::new(false, false));
+        }
 
         connection::query(
             after,

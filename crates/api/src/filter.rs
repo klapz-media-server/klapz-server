@@ -21,15 +21,24 @@ pub enum ItemType {
     Season,
     /// An episode of a series.
     Episode,
+    /// A musician or a band. This server holds no music yet: a filter naming a music kind
+    /// keeps nothing.
+    Artist,
+    /// An album of an artist.
+    Album,
+    /// A track of an album.
+    Track,
 }
 
-impl From<ItemType> for ItemKind {
-    fn from(kind: ItemType) -> Self {
-        match kind {
-            ItemType::Movie => Self::Movie,
-            ItemType::Show => Self::Show,
-            ItemType::Season => Self::Season,
-            ItemType::Episode => Self::Episode,
+impl ItemType {
+    /// The kind of item this names, or `None` for a kind this server holds none of.
+    pub(crate) const fn held(self) -> Option<ItemKind> {
+        match self {
+            Self::Movie => Some(ItemKind::Movie),
+            Self::Show => Some(ItemKind::Show),
+            Self::Season => Some(ItemKind::Season),
+            Self::Episode => Some(ItemKind::Episode),
+            Self::Artist | Self::Album | Self::Track => None,
         }
     }
 }
@@ -289,7 +298,8 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
             .map(TagCondition::try_from)
             .collect::<Result<_, _>>()?;
         Ok(Self {
-            kind: input.kind.map(Into::into),
+            kind: input.kind.and_then(ItemType::held),
+            kind_not_held: input.kind.is_some_and(|kind| kind.held().is_none()),
             depth: input.depth.unwrap_or_default().into(),
             year_from: input.year_from,
             year_to: input.year_to,
@@ -435,7 +445,25 @@ mod tests {
             ItemKind::Season,
             ItemKind::Episode,
         ] {
-            assert_eq!(ItemKind::from(ItemType::from(kind)), kind);
+            assert_eq!(ItemType::from(kind).held(), Some(kind));
         }
+    }
+
+    #[test]
+    fn a_music_kind_keeps_nothing() {
+        for kind in [ItemType::Artist, ItemType::Album, ItemType::Track] {
+            let input = ItemFilterInput {
+                kind: Some(kind),
+                ..ItemFilterInput::default()
+            };
+            let filter = ItemFilter::try_from(input).unwrap();
+            assert!(filter.kind_not_held, "{kind:?}");
+            assert_eq!(filter.kind, None);
+        }
+        assert!(
+            !ItemFilter::try_from(ItemFilterInput::default())
+                .unwrap()
+                .kind_not_held
+        );
     }
 }

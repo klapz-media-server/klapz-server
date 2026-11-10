@@ -1066,6 +1066,65 @@ A term of several words needs them all, here as on `title=` and `/search`. The r
 wants them in order (`bad breaking` finds nothing); our word index holds no positions, so a
 reversed term finds a little more.
 
+### Live TV and DVR, with none configured
+
+This server has no grabber, no tuner and no guide provider, and answers all 52 Live TV, DVR,
+guide and recording operations as the reference does without a DVR (`livetv.rs`). Captured on
+the reference, which has no DVR and one dead tuner left over from an old setup:
+
+| Request | Reference | Here |
+| --- | --- | --- |
+| `GET /livetv/dvrs`, `/livetv/sessions` | `200`, `<MediaContainer size="0">`, `{"MediaContainer":{"size":0}}`; with both container parameters, `totalSize="0" offset="0"` and the two paging headers | Byte-identical |
+| Anything under `/livetv/dvrs/{id}`, `/livetv/sessions/{id}`, `/media/grabbers/devices/{id}`, `/media/grabbers/operations/{id}`, `/media/subscriptions/{id}` | `404` for an id it does not know, every method (`999`; GET and PUT on a subscription answer `401`, see below) | `404` |
+| `/livetv/epg/countries/{country}/{epgId}/…` | `200` empty `Lineup` lists under its cloud provider, `404` under any other `epgId` | `404`: no provider here |
+| `/livetv/epg/channelmap`, `channels`, `lineupchannels`, `lineup` | `400` missing `device`/`lineup`/`lineupGroup`; `404` for a device or a lineup of a provider it does not know | Same |
+| `/tv.plex.providers.epg.{id}:{device}/…` | `404` | `404`: no route |
+| `GET /media/subscriptions/template` | `400` without `guid` | `400` |
+
+Where we answer otherwise, on purpose:
+
+- **Empty where the reference lists what it has.** `/media/grabbers` (the reference ships four:
+  HDHomeRun, Stream, Download, Remote), `/media/grabbers/devices` (its leftover tuner),
+  `/livetv/epg/countries` (97, from plex.tv's guide) and `/livetv/epg/languages` (594). Not
+  one of them can be used here, and a list is what a client offers. Their empty form is the
+  one above; the reference's own empty devices list was not observable.
+- **No subscription refusal.** The reference answers `401` to `GET /media/subscriptions`,
+  `/scheduled`, `/template?guid=` and to reading or editing one subscription, with the owner's
+  token: a refusal for want of a subscription, which this server does not make. The lists are
+  empty, the template offers nothing, a subscription is a `404`.
+- **Writes that cannot be honored, decided without a capture** — creating on the reference
+  would change it: `POST /livetv/dvrs` is a `400` without `device` and a `404` with one, since
+  no device exists; `POST /media/grabbers/devices` is the spec's `400` for a device that cannot
+  be added; `POST /media/subscriptions` a `400`; discovery an empty device list; processing
+  subscriptions an empty `200`, `text/html`, as the spec types it.
+- **Bodies of two errors.** `/livetv/epg/lineup` with a device it does not know answers `404`
+  with the body `Unknown media grabber`; a lineup of its own provider it cannot parse is a
+  `400` carrying a `MediaContainer` (`message="Failed to parse data" status="-3"`). Ours are
+  the usual HTML pages: clients branch on the status.
+
+`GET /` keeps `livetv="7"` and `allowTuners`, as the reference does without a DVR; whether Live
+TV shows in a client depends on `/media/providers`, which, as on the reference, carries no guide
+provider.
+
+### Music, held nowhere
+
+This server imports no music: a music section is copied as an empty library (`type="artist"`),
+and nothing of kind artist, album or track exists. The reference has no music library either,
+so its empty answers were measured on its film and series libraries:
+
+| Request | Reference | Here |
+| --- | --- | --- |
+| `/library/sections/{id}/all?type=8`, `9`, `10` on a film library | `200`, the library's container with `size="0"` | Same, through the official API: `ItemType` has `ARTIST`, `ALBUM` and `TRACK`, which keep nothing. Before, an unknown `type` placed no filter and listed every film |
+| `firstCharacter`, `genre`, `year` with a music `type` | Empty containers | Same, by the same filter |
+| `/library/sections/{id}/albums` | `size="0"`, `allowSync="0"`, `mixedParents="1"`, `title2="By Album"`, `viewGroup="album"`, `nocache` on a series library; `404` for an unknown library | Same, always windowed like `/all` |
+| `/hubs/home/recentlyAdded?type=8` | Empty | Empty (already so) |
+| `/search?query=dune&type=10` | `size="0"`, no `Provider` | Same. `type` is honored: `type=1` films only, `type=4` episodes only, an unknown number nothing, each without the `Provider` list a search of every kind carries |
+
+A music library's `/hubs/sections/{id}` has no shelf here; Plex's would be a music library's
+own, and there is nothing to fill them. Not measured: the reference has no such library. A
+`type` the official API has no kind for, a photo (13) for one, still places no filter on `/all`,
+where the reference answers empty.
+
 ### Sort collation
 
 **Accepted divergence** — not a bug to fix. The reference server sorts titles with a Unicode
