@@ -84,27 +84,44 @@ pub struct StreamRequest {
     /// The media's full duration in milliseconds, for the predicted HLS playlist; 0 if
     /// unknown.
     pub total_ms: u64,
-    /// A subtitle to draw into the picture. The plan must then encode the video.
-    pub subtitle: Option<BurnedSubtitle>,
+    /// The subtitle the player gets, if any. Drawing it in needs the plan to encode the video.
+    pub subtitle: Option<SubtitleDelivery>,
 }
 
-/// A subtitle drawn into the picture.
+/// How a subtitle reaches the player.
 #[derive(Debug, Clone, PartialEq)]
-pub struct BurnedSubtitle {
-    pub track: Track,
-    /// The client's size, 1.0 for its 100%.
-    pub scale: f64,
+pub enum SubtitleDelivery {
+    /// Drawn into the picture. `scale` is the client's size, 1.0 for its 100%.
+    Burn { track: Track, scale: f64 },
+    /// Converted to ASS beside the stream, in pieces of a second, for the player to draw:
+    /// Plex Web's soft subtitles.
+    Text { track: Track },
 }
 
-impl BurnedSubtitle {
-    /// Text the process draws with libass. Image subtitles it overlays instead, by a command
-    /// not captured yet.
+impl SubtitleDelivery {
+    const fn track(&self) -> &Track {
+        match self {
+            Self::Burn { track, .. } | Self::Text { track } => track,
+        }
+    }
+
+    /// Text the process can draw with libass or convert to ASS. Image subtitles it overlays
+    /// instead, by a command not captured yet.
     fn is_text(&self) -> bool {
         matches!(
-            self.track.codec.as_str(),
+            self.track().codec.as_str(),
             "srt" | "subrip" | "ass" | "ssa" | "mov_text" | "webvtt" | "vtt" | "text"
         )
     }
+}
+
+/// A part of a session's text subtitles, in the order they are read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubtitlePiece {
+    /// The ASS script's header, styles included.
+    Header,
+    /// The events of one second of the stream, numbered from 0.
+    Chunk(u32),
 }
 
 impl StreamRequest {
@@ -121,6 +138,54 @@ impl StreamRequest {
 
     const fn segment_seconds(&self) -> u32 {
         segment_seconds(&self.plan, self.protocol)
+    }
+}
+
+/// A session's text subtitles, piece by piece as the process finishes them.
+#[derive(Debug)]
+pub struct SubtitleReader {
+    session: Arc<Session>,
+    /// The run whose pieces these are: a seek restarts the process, which numbers its pieces
+    /// from 0 again, and they would not follow what was already read.
+    generation: Option<u64>,
+    next: SubtitlePiece,
+}
+
+impl SubtitleReader {
+    /// The next piece once whole: when the one after it exists, or the process has ended.
+    /// `None` at the end: the process ended, was stopped, or restarted for a seek.
+    pub async fn next_piece(&mut self) -> Option<Vec<u8>> {
+        let (path, following) = match self.next {
+            SubtitlePiece::Header => (SUBTITLE_HEADER.to_owned(), subtitle_chunk_name(0)),
+            SubtitlePiece::Chunk(number) => {
+                (subtitle_chunk_name(number), subtitle_chunk_name(number + 1))
+            }
+        };
+        let (path, following) = (
+            self.session.directory.join(path),
+            self.session.directory.join(following),
+        );
+        loop {
+            let current = self
+                .session
+                .with_run(|run| run.as_ref().map(|run| run.generation));
+            if self.session.closed.load(Ordering::Acquire) || current != self.generation {
+                return None;
+            }
+            let ended = self.session.with_progress(|progress| progress.ended);
+            if following.exists() || (ended && path.exists()) {
+                let piece = tokio::fs::read(&path).await.ok()?;
+                self.next = match self.next {
+                    SubtitlePiece::Header => SubtitlePiece::Chunk(0),
+                    SubtitlePiece::Chunk(number) => SubtitlePiece::Chunk(number + 1),
+                };
+                return Some(piece);
+            }
+            if ended {
+                return None;
+            }
+            tokio::time::sleep(FILE_POLL).await;
+        }
     }
 }
 
@@ -600,20 +665,18 @@ const SUBTITLE_STYLE: &str = "ScaledBorderAndShadow=yes,FontName=Noto Sans Mediu
 PrimaryColour=&H00FFFFFF,OutlineColour=&H00020713,BackColour=&HCC000000";
 
 /// The filter that draws a subtitle onto the picture labelled `[1]`, into `[2]`.
-fn burn_filter(subtitle: &BurnedSubtitle, fonts: &Path) -> String {
+fn burn_filter(subtitle: &Track, scale: f64, fonts: &Path) -> String {
     // The reference names the directory in Windows' verbatim form and the font without it.
     let font = fonts.join("NotoSans-Medium.otf");
     let font = font.to_string_lossy();
     let font = font.trim_start_matches(r"\\?\");
     let language = subtitle
-        .track
         .language
         .as_deref()
         .map_or_else(String::new, |language| format!(":language={language}"));
     format!(
-        "[1]inlineass=font_scale={:.6}:font_path={}:fonts_dir={}{language}:overrides={}:\
+        "[1]inlineass=font_scale={scale:.6}:font_path={}:fonts_dir={}{language}:overrides={}:\
 outline=2.6:shadow=1.7:font_size=54[2]",
-        subtitle.scale,
         filter_value(font),
         filter_value(&fonts.to_string_lossy()),
         filter_value(SUBTITLE_STYLE),
@@ -623,7 +686,7 @@ outline=2.6:shadow=1.7:font_size=54[2]",
 fn video_arguments(
     video: &Track,
     action: VideoAction,
-    burn: Option<(&BurnedSubtitle, &Path)>,
+    burn: Option<(&Track, f64, &Path)>,
 ) -> Vec<String> {
     let mut args = match action {
         VideoAction::Copy => strings(&["-map", &format!("0:{}", video.index)]),
@@ -633,11 +696,11 @@ fn video_arguments(
                 video.index, encode.width, encode.height
             );
             match burn {
-                Some((subtitle, fonts)) => strings(&[
+                Some((subtitle, size, fonts)) => strings(&[
                     "-map_inlineass",
-                    &format!("0:{}", subtitle.track.index),
+                    &format!("0:{}", subtitle.index),
                     "-filter_complex",
-                    &format!("{scale};{}", burn_filter(subtitle, fonts)),
+                    &format!("{scale};{}", burn_filter(subtitle, size, fonts)),
                     "-map",
                     "[2]",
                 ]),
@@ -701,7 +764,12 @@ fn stream_arguments(
     fonts: Option<&Path>,
 ) -> Vec<String> {
     let seconds = request.segment_seconds();
-    let burn = request.subtitle.as_ref().zip(fonts);
+    let burn = match (&request.subtitle, fonts) {
+        (Some(SubtitleDelivery::Burn { track, scale }), Some(fonts)) => {
+            Some((track, *scale, fonts))
+        }
+        _ => None,
+    };
     let mut args = input_arguments(request, callback);
     args.extend(video_arguments(&request.video, request.plan.video, burn));
     args.extend(audio_arguments(
@@ -713,11 +781,11 @@ fn stream_arguments(
         Protocol::Hls => hls_output(callback, seconds, first_chunk),
         Protocol::Dash => dash_output(callback, seconds, first_chunk),
     });
-    if let Some((subtitle, _)) = burn {
+    if let Some((subtitle, _, _)) = burn {
         // The filter draws only what this output decodes alongside: without it, nothing.
         args.extend(strings(&[
             "-map",
-            &format!("0:{}", subtitle.track.index),
+            &format!("0:{}", subtitle.index),
             "-f",
             "null",
             "-codec",
@@ -725,7 +793,57 @@ fn stream_arguments(
             "nullfile",
         ]));
     }
+    if let Some(SubtitleDelivery::Text { track }) = &request.subtitle {
+        args.extend(text_subtitle_output(track, callback));
+    }
     args
+}
+
+/// The reference's output for soft subtitles: the track as ASS, its header apart, then a piece
+/// per second, announced on a list of its own the server ignores.
+fn text_subtitle_output(track: &Track, callback: &str) -> Vec<String> {
+    let mut args = strings(&["-map", &format!("0:{}", track.index)]);
+    if let Some(tag) = track.language.as_deref().and_then(language_tag) {
+        args.extend(strings(&["-metadata:s:0", &format!("language={tag}")]));
+    }
+    args.extend(strings(&[
+        "-codec:0",
+        "ass",
+        "-strict_ts:0",
+        "0",
+        "-f",
+        "segment",
+        "-segment_format",
+        "ass",
+        "-segment_time",
+        "1",
+        "-segment_header_filename",
+        SUBTITLE_HEADER,
+        "-segment_start_number",
+        "0",
+        "-segment_list",
+        &format!("{callback}/manifest?stream=subtitles&X-Plex-Http-Pipeline=infinite"),
+        "-segment_list_type",
+        "csv",
+        "-segment_list_size",
+        "5",
+        "-segment_list_separate_stream_times",
+        "1",
+        "-segment_format_options",
+        "ignore_readorder=1",
+        "-segment_list_unfinished",
+        "1",
+        "-fflags",
+        "+flush_packets",
+        "sub-chunk-%05d",
+    ]));
+    args
+}
+
+const SUBTITLE_HEADER: &str = "sub-header";
+
+fn subtitle_chunk_name(number: u32) -> String {
+    format!("sub-chunk-{number:05}")
 }
 
 fn sessions_root() -> PathBuf {
@@ -784,6 +902,12 @@ impl Transcoder {
         found
     }
 
+    /// Whether a session answers to this callback.
+    #[must_use]
+    pub fn has_callback(&self, callback: &str) -> bool {
+        self.by_callback(callback).is_some()
+    }
+
     fn by_callback(&self, callback: &str) -> Option<Arc<Session>> {
         self.sessions
             .lock()
@@ -815,7 +939,8 @@ impl Transcoder {
         mut request: StreamRequest,
     ) -> Result<Vec<String>, TranscodeError> {
         if let Some(subtitle) = &request.subtitle {
-            if !subtitle.is_text() || self.config.fonts.is_none() {
+            let burns = matches!(subtitle, SubtitleDelivery::Burn { .. });
+            if !subtitle.is_text() || (burns && self.config.fonts.is_none()) {
                 return Err(TranscodeError::SubtitleCannotBeBurned);
             }
         }
@@ -1207,6 +1332,28 @@ impl Transcoder {
         Ok(session.directory.join(format!("init-stream{stream}.m4s")))
     }
 
+    /// Reads a session's text subtitles from their header on.
+    ///
+    /// # Errors
+    ///
+    /// [`TranscodeError::UnknownSession`], or [`TranscodeError::UnknownSegment`] for a session
+    /// that writes none.
+    pub fn subtitles(&self, id: &str) -> Result<SubtitleReader, TranscodeError> {
+        let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
+        if !matches!(
+            session.request.subtitle,
+            Some(SubtitleDelivery::Text { .. })
+        ) {
+            return Err(TranscodeError::UnknownSegment);
+        }
+        let generation = session.with_run(|run| run.as_ref().map(|run| run.generation));
+        Ok(SubtitleReader {
+            session,
+            generation,
+            next: SubtitlePiece::Header,
+        })
+    }
+
     /// A finished DASH chunk. `number` counts from zero, as the manifest given to the player
     /// does. One the running process will not get to soon is a seek, and restarts it there.
     ///
@@ -1377,7 +1524,7 @@ mod tests {
         asked.video = track(5, "h264", "en");
         asked.audio = track(0, "eac3", "fr");
         asked.offset = None;
-        asked.subtitle = Some(BurnedSubtitle {
+        asked.subtitle = Some(SubtitleDelivery::Burn {
             track: track(3, "srt", "fr"),
             scale,
         });
@@ -1582,6 +1729,57 @@ mod tests {
 
     fn scratch_directory() -> PathBuf {
         std::env::temp_dir().join(format!("open-plex-test-{}", uuid::Uuid::new_v4().simple()))
+    }
+
+    /// The subtitle output of the reference's command for Soul's French subtitles, `auto`.
+    const CAPTURED_TEXT_SUBTITLES: &str = "dash -map 0:3 -metadata:s:0 language=fra -codec:0 ass -strict_ts:0 0 -f segment -segment_format ass -segment_time 1 -segment_header_filename sub-header -segment_start_number 0 -segment_list CB/manifest?stream=subtitles&X-Plex-Http-Pipeline=infinite -segment_list_type csv -segment_list_size 5 -segment_list_separate_stream_times 1 -segment_format_options ignore_readorder=1 -segment_list_unfinished 1 -fflags +flush_packets sub-chunk-%05d";
+
+    #[test]
+    fn writes_soft_subtitles_as_the_reference_does() {
+        let mut asked = request(AudioAction::ConvertToAac);
+        asked.protocol = Protocol::Dash;
+        asked.subtitle = Some(SubtitleDelivery::Text {
+            track: track(3, "srt", "fr"),
+        });
+        let joined = stream_arguments(&asked, "CB", 1, None).join(" ");
+        assert!(joined.ends_with(CAPTURED_TEXT_SUBTITLES), "{joined}");
+        // Copied video stays copied: a soft subtitle needs no encode.
+        assert!(joined.contains("-codec:0 copy"), "{joined}");
+    }
+
+    fn reader_over(directory: PathBuf, ended: bool) -> SubtitleReader {
+        let mut session = session_writing_to(directory, ended);
+        Arc::get_mut(&mut session).unwrap().request.subtitle = Some(SubtitleDelivery::Text {
+            track: track(2, "srt", "fr"),
+        });
+        let transcoder = Transcoder::new(crate::Config::default());
+        register(&transcoder, session);
+        transcoder.subtitles("known").unwrap()
+    }
+
+    #[tokio::test]
+    async fn reads_subtitle_pieces_in_order_once_whole() {
+        let directory = scratch_directory();
+        let mut reader = reader_over(directory.clone(), false);
+        std::fs::write(directory.join("sub-header"), "[Script Info]").unwrap();
+        std::fs::write(directory.join("sub-chunk-00000"), "Dialogue: 0").unwrap();
+        std::fs::write(directory.join("sub-chunk-00001"), "Dialogue: 1").unwrap();
+        assert_eq!(reader.next_piece().await.unwrap(), b"[Script Info]");
+        assert_eq!(reader.next_piece().await.unwrap(), b"Dialogue: 0");
+        // The last piece may still be written: it waits for the next one, or the end.
+        let pending = tokio::time::timeout(Duration::from_millis(300), reader.next_piece()).await;
+        assert!(pending.is_err());
+    }
+
+    #[tokio::test]
+    async fn an_ended_process_gives_its_last_piece_then_the_end() {
+        let directory = scratch_directory();
+        let mut reader = reader_over(directory.clone(), true);
+        std::fs::write(directory.join("sub-header"), "[Script Info]").unwrap();
+        std::fs::write(directory.join("sub-chunk-00000"), "Dialogue: 0").unwrap();
+        assert_eq!(reader.next_piece().await.unwrap(), b"[Script Info]");
+        assert_eq!(reader.next_piece().await.unwrap(), b"Dialogue: 0");
+        assert_eq!(reader.next_piece().await, None);
     }
 
     fn register(transcoder: &Transcoder, session: Arc<Session>) {

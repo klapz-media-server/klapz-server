@@ -1671,6 +1671,7 @@ dependencies = [
  "async-trait",
  "axum",
  "form_urlencoded",
+ "futures-util",
  "http-body-util",
  "open-plex-api",
  "open-plex-core",

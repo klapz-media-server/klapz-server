@@ -19,8 +19,8 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 15 | 5.8 % |
-| `stub` | 180 | 69.2 % |
-| `partial` | 17 | 6.5 % |
+| `stub` | 179 | 68.8 % |
+| `partial` | 18 | 6.9 % |
 | `done` | 11 | 4.2 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -42,7 +42,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Play Queue](#play-queue) | 9 | 0 | 2 | 6 | 1 | 0 |
 | [Status](#status) | 6 | 0 | 1 | 5 | 0 | 0 |
 | [Butler](#butler) | 5 | 0 | 0 | 5 | 0 | 0 |
-| [Transcoder](#transcoder) | 5 | 0 | 3 | 2 | 0 | 0 |
+| [Transcoder](#transcoder) | 5 | 0 | 4 | 1 | 0 | 0 |
 | [General](#general) | 4 | 2 | 0 | 2 | 0 | 0 |
 | [Live TV](#live-tv) | 4 | 0 | 0 | 4 | 0 | 0 |
 | [Provider](#provider) | 4 | 1 | 0 | 1 | 1 | 1 |
@@ -370,7 +370,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `partial` | `GET` | `/{transcodeType}/:/transcode/universal/decision` | user | Make a decision on media playback | Video only. Direct Play, Direct Stream and H.264 re-encoded under `maxVideoBitrate`, over HLS or DASH, with the decisions the reference gives; `501` for video of another codec and for `protocol=http`. |
 | `stub` | `POST` | `/{transcodeType}/:/transcode/universal/fallback` | user | Manually trigger a transcoder fallback |  |
 | `partial` | `GET` | `/{transcodeType}/:/transcode/universal/start.*` | user | Start A Transcoding Session | Video, Direct Stream, over HLS or DASH. HLS answers the reference's fake VOD playlist, predicted from the duration; DASH its static manifest. A far seek restarts the process at the target segment (`-ss`, `-segment_start_number`, as the reference logs it), and a new session under the same `X-Plex-Session-Identifier` replaces the last. The reference's command lines; video copied, or re-encoded to H.264 under `maxVideoBitrate` along the reference's measured ladder; audio copied or converted to AAC. Same `501`s as the decision. |
-| `stub` | `GET` | `/{transcodeType}/:/transcode/universal/subtitles` | user | Transcode subtitles | The reference serves it without `X-Plex-Client-Identifier` despite the spec, but refuses a request with no resolvable client profile (`X-Plex-Platform`) — see spec-gaps.md. |
+| `partial` | `GET` | `/{transcodeType}/:/transcode/universal/subtitles` | user | Transcode subtitles | Video, DASH, a text subtitle: the stream's ASS script, sent as the process converts it, on a response that stays open. The reference serves it without `X-Plex-Client-Identifier` despite the spec, but refuses a request with no resolvable client profile (`X-Plex-Platform`) — see spec-gaps.md. |
 
 ## General
 

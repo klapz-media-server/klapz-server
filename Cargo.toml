@@ -35,6 +35,8 @@ thiserror = "2"
 # Already in the tree transitively; declared so `core` can fold accents for the title
 # word index without a second normalization implementation.
 unicode-normalization = "0.1"
+# Already in the tree through axum and reqwest; declared to stream a response body.
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

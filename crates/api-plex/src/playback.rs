@@ -27,7 +27,7 @@ use open_plex_transcoder::media::resolve_within;
 use open_plex_transcoder::plan::{
     plan_stream, AudioAction, Limits, StreamPlan, StreamSource, Track, VideoAction, VideoEncode,
 };
-use open_plex_transcoder::session::{segment_seconds, BurnedSubtitle, Protocol, StreamRequest};
+use open_plex_transcoder::session::{segment_seconds, Protocol, StreamRequest, SubtitleDelivery};
 use serde::Deserialize;
 use serde_json::{json, Value as Json};
 use tower::ServiceExt as _;
@@ -51,6 +51,7 @@ pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
         .route("/video/:/transcode/universal/start.mpd", get(start_dash))
         .route("/video/:/transcode/universal/ping", get(ping))
         .route("/video/:/transcode/universal/stop", get(stop))
+        .route("/video/:/transcode/universal/subtitles", get(subtitles))
         .route(
             "/video/:/transcode/universal/session/{session}/{base}/{file}",
             get(session_file),
@@ -244,9 +245,18 @@ struct Selection<'a> {
     audio: &'a GqlStream,
     /// The subtitle the caller plays the file with, if any.
     subtitle: Option<&'a GqlStream>,
-    /// Whether that subtitle is drawn into the picture, which the client asked for.
-    burn: bool,
+    /// How that subtitle reaches the player of a conversion, as the client asked.
+    delivery: Option<Delivery>,
     version_index: usize,
+}
+
+/// What Plex Web asks for a converted file's subtitle, by its burn setting: `burn`, or `auto`
+/// for soft subtitles it draws itself when the server supports them, as this one says it does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Delivery {
+    Burn,
+    /// As ASS beside a DASH stream, read from `/video/:/transcode/universal/subtitles`.
+    Text,
 }
 
 impl<'a> Selection<'a> {
@@ -279,7 +289,12 @@ impl<'a> Selection<'a> {
             video,
             audio,
             subtitle,
-            burn: subtitle.is_some() && params.subtitles.as_deref() == Some("burn"),
+            delivery: subtitle.and_then(|_| match params.subtitles.as_deref() {
+                Some("burn") => Some(Delivery::Burn),
+                // Measured with DASH only; an HLS stream's soft subtitles are not captured.
+                Some("auto") if params.protocol.as_deref() == Some("dash") => Some(Delivery::Text),
+                _ => None,
+            }),
             version_index,
         })
     }
@@ -297,7 +312,7 @@ impl<'a> Selection<'a> {
             max_video_kbps: params.max_video_bitrate,
             convert_audio: params.direct_stream_audio.as_deref() == Some("0"),
             adaptive: params.adaptive(),
-            burn_subtitle: self.burn,
+            burn_subtitle: self.delivery == Some(Delivery::Burn),
         };
         Ok(plan_stream(&source, limits)?)
     }
@@ -360,7 +375,7 @@ async fn decision(
         direct_play,
         subtitles = params.subtitles.as_deref().unwrap_or("-"),
         subtitle = ?selection.subtitle.map(GqlStream::database_id),
-        burn = selection.burn,
+        delivery = ?selection.delivery,
         "decided a playback"
     );
     let entry = MetadataEntry::from_graphql(&item, true, Language::of(&client))
@@ -553,11 +568,18 @@ fn mark_part(part: &mut Json, selection: &Selection<'_>, action: Option<Conversi
             fields.insert("location".into(), json!("direct"));
             continue;
         };
-        if is_subtitle && selection.burn {
+        if is_subtitle && selection.delivery == Some(Delivery::Burn) {
             // Drawn into the picture, so carried by the video's segments.
             fields.insert("decision".into(), json!("burn"));
             fields.insert("location".into(), json!("segments-video"));
             fields.insert("burn".into(), json!("1"));
+        } else if is_subtitle && selection.delivery == Some(Delivery::Text) {
+            // Converted to ASS, which the player fetches apart and draws.
+            fields.insert("codec".into(), json!("ass"));
+            fields.insert("container".into(), json!("ass"));
+            fields.insert("format".into(), json!("ass"));
+            fields.insert("decision".into(), json!("transcode"));
+            fields.insert("location".into(), json!("segments-subs"));
         } else if is_subtitle {
             fields.insert("decision".into(), json!("ignore"));
             fields.insert("location".into(), json!("sidecar-subs"));
@@ -702,10 +724,15 @@ async fn open_session(
             total_ms: u64::try_from(selection.version.duration_ms.unwrap_or(0).max(0)).unwrap_or(0),
             subtitle: selection
                 .subtitle
-                .filter(|_| selection.burn)
-                .map(|subtitle| BurnedSubtitle {
-                    track: track(subtitle),
-                    scale: f64::from(params.subtitle_size.unwrap_or(100)) / 100.0,
+                .zip(selection.delivery)
+                .map(|(subtitle, delivery)| match delivery {
+                    Delivery::Burn => SubtitleDelivery::Burn {
+                        track: track(subtitle),
+                        scale: f64::from(params.subtitle_size.unwrap_or(100)) / 100.0,
+                    },
+                    Delivery::Text => SubtitleDelivery::Text {
+                        track: track(subtitle),
+                    },
                 }),
         })
         .await?;
@@ -799,6 +826,28 @@ async fn start_dash(
         written: &written,
     });
     Ok(([(header::CONTENT_TYPE, "application/dash+xml")], body).into_response())
+}
+
+/// `GET /video/:/transcode/universal/subtitles`: the soft subtitles of a running stream, as the
+/// reference sends them. The ASS script whole, written out as the process converts it, on a
+/// response that stays open until the process ends: header first, then a second at a time.
+/// Declared `text/vtt`, though it is ASS, as the reference declares it.
+async fn subtitles(
+    _caller: Caller,
+    State(state): State<PlexState>,
+    Query(params): Query<PlaybackParams>,
+) -> Result<Response, ApiError> {
+    let session = params.session.as_deref().ok_or(ApiError::BadRequest)?;
+    let reader = state.transcoder.subtitles(&gql::session_key(session))?;
+    let pieces = futures_util::stream::unfold(reader, |mut reader| async move {
+        let piece = reader.next_piece().await?;
+        Some((Ok::<_, std::convert::Infallible>(piece), reader))
+    });
+    Ok((
+        [(header::CONTENT_TYPE, "text/vtt")],
+        axum::body::Body::from_stream(pieces),
+    )
+        .into_response())
 }
 
 /// What the audio track weighs on its way to the player.
@@ -1080,14 +1129,30 @@ async fn callback_source(
 async fn callback_manifest(
     State(state): State<PlexState>,
     Path((_session, callback)): Path<(String, String)>,
-    body: String,
+    body: axum::body::Body,
 ) -> StatusCode {
-    if state.transcoder.announce_segments(&callback, &body) {
-        StatusCode::OK
-    } else {
-        StatusCode::NOT_FOUND
+    if !state.transcoder.has_callback(&callback) {
+        return StatusCode::NOT_FOUND;
     }
+    // Answered before the body is read: Plex's build often sends a request's head and waits
+    // for the answer before its body, as the reference answers at once. Waiting for the body
+    // first would hold both sides, and every announcement after the first would be lost.
+    tokio::spawn(async move {
+        match axum::body::to_bytes(body, MAX_ANNOUNCEMENT_BYTES).await {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes);
+                if !state.transcoder.announce_segments(&callback, &text) {
+                    tracing::debug!("an announcement arrived for a session since stopped");
+                }
+            }
+            Err(error) => tracing::debug!(%error, "a transcoder announcement did not arrive"),
+        }
+    });
+    StatusCode::OK
 }
+
+/// An announcement is a segment list or a manifest: a few kilobytes.
+const MAX_ANNOUNCEMENT_BYTES: usize = 1 << 20;
 
 /// Progress reports. Nothing reads them yet, and the process only needs an answer.
 async fn acknowledge(RawQuery(_query): RawQuery) -> StatusCode {

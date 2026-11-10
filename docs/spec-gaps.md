@@ -709,6 +709,36 @@ fonts of the Plex install (`Resources/Fonts` beside its binary, or
 answering `501`: image subtitles (PGS, VobSub), which the process overlays by a command not
 captured, and sidecar files.
 
+**`burn` is not what Plex Web usually sends.** Its code asks for soft subtitles, which it draws
+itself, whenever the server supports them — by version, which ours passes — and the user's
+burn setting allows: `subtitles=sidecar` when it plays the file directly, `subtitles=auto` when
+the server converts it, with `advancedSubtitles=text` under "only image formats". `burn` comes
+only from "always", or when soft subtitles are impossible.
+
+With `auto` over DASH, the reference copies the video and converts the subtitle to ASS beside
+it, in the same process:
+
+- the decision marks the track `codec`, `container` and `format` `ass`, `decision="transcode"`,
+  `location="segments-subs"`; the manifest holds only the video and the audio;
+- the command gains a second output: `-map 0:{subtitle} -metadata:s:0 language=fra -codec:0
+  ass -strict_ts:0 0 -f segment -segment_format ass -segment_time 1 -segment_header_filename
+  sub-header … -segment_list CB/manifest?stream=subtitles… -fflags +flush_packets sub-chunk-%05d`;
+- Plex Web fetches `/video/:/transcode/universal/subtitles` with the stream's own parameters,
+  which answers the ASS script whole — header, then each second's events — as the process
+  writes it, on a response left open, declared `text/vtt`. A start, here as there, needs the
+  session to have asked for a decision first.
+
+Ours does the same, the command identical to the captured one. Not handled yet: `sidecar`, for
+a file played directly (`/subtitles/:/transcode/universal/start`), and soft subtitles over
+HLS. A seek that restarts the process ends the subtitle response: the new process numbers its
+pieces from 0 again.
+
+**The process often sends a callback's head before its body, and waits for the answer.** With
+two outputs it does so for most of its announcements, which the reference answers at once.
+Answering only once the body has arrived, as we did, held both sides: the first announcement
+passed and the rest, the DASH manifest included, never arrived. Callbacks are now answered on
+their head and read after.
+
 ### Play queues
 
 `POST /playQueues` needs `type` and `uri` (`400`), and `type` otherwise changes nothing: `audio` or
