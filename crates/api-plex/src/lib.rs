@@ -19,6 +19,9 @@ pub mod gql_items;
 pub mod hubs;
 pub mod items;
 pub mod language;
+// Generated tables, kept one per line: formatted, they would be 30,000 lines.
+#[rustfmt::skip]
+mod language_names;
 pub mod listing;
 pub mod meta;
 pub mod photo;
@@ -31,6 +34,7 @@ mod related;
 pub mod response;
 mod search;
 pub mod sessions;
+mod stream_labels;
 pub mod stubs;
 mod timeline;
 pub mod translations;

@@ -53,6 +53,12 @@ STRINGS = {
     "visibility_nowhere": "Exclude from home screen and global search",
     "adult_matching": "Allow matching to explicit content",
     "adult_matching_summary": "Allow matching to adult/pornographic titles and returning adult titles in fix match results. This may hide the title from some features like your Watchlist.",
+    # The words a track's label adds after its language.
+    "unknown": "Unknown",
+    "forced": "Forced",
+    "sdh": "SDH",
+    "descriptive": "Descriptive",
+    "external": "External",
 }
 
 

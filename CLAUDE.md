@@ -16,6 +16,7 @@ with the repo owner happens in French.
 | `docs/plex-db-schema.md` | The real Plex library schema, as a reference only. **Generated**: `python tools/dump_plex_schema.py`. |
 | `docs/wire-format.md` | Authoritative per-field JSON type map and element tables, from live captures. **Generated**: `PLEX_TOKEN=... python tools/capture_plex.py`. |
 | `docs/spec-gaps.md` | Where the spec and the reference server disagree: omissions, wrong paths, aliases, and every undocumented behavior we reproduce. Hand-verified. |
+| `tools/gen_language_names.py` | Language and region names from CLDR 39, the data of the ICU 69 the reference ships. Generates `crates/api-plex/src/language_names.rs`. |
 | `tools/compare_items.py` | Field-by-field diff of our listings and lookups against the reference, aligned by `ratingKey` so ordering and field fidelity stay separate questions. |
 | `docs/endpoint-probe.md` | Which spec `GET` operations the reference server answers. **Generated**: `PLEX_TOKEN=... python tools/probe_endpoints.py`. |
 | `files/` | A complete Plex Media Server install for Windows (233 MB) — binaries, bundled web app, plug-in framework, transcoder profiles. For reverse engineering. |
@@ -383,6 +384,13 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   decades, content ratings and studios a library's items hold, each with the listing that
   applies it (`Library.tags`, `years`, `fieldValues` on the official API); the starring list
   is the actors billed in the first three positions, as measured. `resolution` answers `501`;
+- ✅ **track analysis**: the media analysis Plex packs into `extra_data` imported into typed
+  columns (`media_stream`, `media_part`) and two tables (`stream_dolby_vision`,
+  `stream_loudness`), exposed on the official API (`MediaStream.video`, `.audio`,
+  `.subtitle`, `.traits`; `MediaVersion.primaryVideo`/`primaryAudio`), and published on the
+  Plex surface with the labels clients show — `language` named by ICU's rules from CLDR 39
+  (`tools/gen_language_names.py`), `displayTitle` and `extendedDisplayTitle` measured on
+  4,473 tracks in three languages: no differing field on video or audio tracks;
 - ⬜ **recently released**, which needs ordering by release date — the nullable-column sort
   in *Open questions*;
 - ⬜ the shelves that need watch state — continue watching with content, recently watched,
@@ -430,10 +438,9 @@ absent.
 
 ## Open questions
 
-- **Stream profiles are not imported.** `Media.audioProfile`, `videoProfile` and the
-  `audioCodec` composition (`dca` + profile `ma` → `dca-ma`) all come from one value packed
-  inside `media_streams.extra_data`. Unpacking packed columns into real ones at import is
-  exactly the pattern we want; it is simply not done yet.
+- **`Media.videoResolution` misses 1.5% of media.** The width-keyed ladder in `items.rs`
+  disagrees with the reference on 108 of 7,298 films (1728×1056 is `720` there, 2048×1080 is
+  `2k`), and the `resolution` filter and its value list wait on the real rule.
 - Default database engine for development (SQLite for now).
 - Whether any client depends on attribute ordering within an element.
 - A library's `admin` role has little to open yet: changing a library's settings is the only

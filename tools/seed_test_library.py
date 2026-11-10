@@ -59,6 +59,43 @@ def frame_rate(stream: dict) -> float | None:
     return int(numerator) / int(denominator) if denominator and int(denominator) else None
 
 
+# ffprobe's profile names, as Plex's analysis stores them.
+PROFILES = {"dts": "dts", "dts-hd ma": "ma", "dts-es": "es", "dts-hd hra": "hra", "he-aac": "he-aac", "he-aacv2": "he-aacv2"}
+
+
+def analysis(stream: dict) -> dict:
+    """The columns our schema keeps from a media analysis, read off ffprobe, whose
+    vocabulary Plex's analysis shares: `bt709`, `5.1(side)`, `left`."""
+    profile = stream.get("profile")
+    if profile:
+        profile = PROFILES.get(profile.lower(), profile.lower())
+    pixel_format = stream.get("pix_fmt", "")
+    chroma = next((ratio for key, ratio in (("420", "4:2:0"), ("422", "4:2:2"), ("444", "4:4:4")) if key in pixel_format), None)
+    field_order = stream.get("field_order")
+    depth = stream.get("bits_per_raw_sample")
+    return {
+        "title": stream.get("tags", {}).get("title"),
+        "profile": profile,
+        "bit_depth": int(depth) if depth else (10 if "10" in pixel_format else 8 if pixel_format else None),
+        "width": stream.get("width"),
+        "height": stream.get("height"),
+        "coded_width": stream.get("coded_width"),
+        "coded_height": stream.get("coded_height"),
+        "frame_rate": round(frame_rate(stream), 3) if stream["codec_type"] == "video" and frame_rate(stream) else None,
+        "level": stream.get("level") if stream["codec_type"] == "video" else None,
+        "ref_frames": stream.get("refs") if stream["codec_type"] == "video" else None,
+        "scan_type": None if not field_order or field_order == "unknown" else ("progressive" if field_order == "progressive" else "interlaced"),
+        "chroma_subsampling": chroma,
+        "chroma_location": stream.get("chroma_location"),
+        "color_range": stream.get("color_range"),
+        "color_space": stream.get("color_space"),
+        "color_primaries": stream.get("color_primaries"),
+        "color_transfer": stream.get("color_transfer"),
+        "sampling_rate": int(stream["sample_rate"]) if "sample_rate" in stream else None,
+        "channel_layout": stream.get("channel_layout"),
+    }
+
+
 def seed(database: sqlite3.Connection, directory: Path) -> None:
     now = int(time.time())
     section = next_id(database, "library_section")
@@ -109,13 +146,17 @@ def seed(database: sqlite3.Connection, directory: Path) -> None:
         for stream in streams:
             kind = stream["codec_type"]
             language = stream.get("tags", {}).get("language")
+            measured = analysis(stream)
+            columns = ", ".join(measured)
             database.execute(
                 "insert into media_stream (id, media_part_id, kind, position, codec, language,"
-                " channels, bitrate, is_default, is_forced) values (?,?,?,?,?,?,?,?,?,0)",
+                f" channels, bitrate, is_default, is_forced, {columns})"
+                f" values (?,?,?,?,?,?,?,?,?,0,{','.join('?' * len(measured))})",
                 (next_id(database, "media_stream"), part, kind, stream["index"],
                  "srt" if stream["codec_name"] == "subrip" else stream["codec_name"],
                  LANGUAGES.get(language, language), stream.get("channels"),
-                 int(stream["bit_rate"]) if "bit_rate" in stream else None, int(kind not in seen)),
+                 int(stream["bit_rate"]) if "bit_rate" in stream else None, int(kind not in seen),
+                 *measured.values()),
             )
             seen.add(kind)
         print(f"item {item}, part {part}: {[(s['codec_type'], s['codec_name']) for s in streams]}")

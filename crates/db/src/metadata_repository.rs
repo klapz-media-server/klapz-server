@@ -5,13 +5,14 @@
 //! Ordering by anything but the primary key needs a composite comparison, which is what the
 //! cursor's sort key is for.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use open_plex_core::metadata::{
-    first_character_bucket, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind,
-    ItemQuery, ItemSort, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError,
-    MetadataItem, MetadataRepository, Person, Rating, SearchQuery, StreamKind, Tag, TagCondition,
-    TagKind, TagRef, TagScope, ValueField,
+    first_character_bucket, AudioAnalysis, ColorDescription, DolbyVision, EpisodeCredit,
+    ExternalId, FieldValue, FileLayout, FirstCharacter, ItemKind, ItemQuery, ItemSort, ItemTag,
+    Loudness, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
+    MetadataRepository, Person, Rating, ScanType, SearchQuery, StreamKind, SubtitleAnalysis, Tag,
+    TagCondition, TagKind, TagRef, TagScope, TrackTraits, ValueField, VideoAnalysis,
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
@@ -27,7 +28,7 @@ use sea_orm::{
 
 use crate::entity::{
     item_external_id, item_rating, item_tag, item_title_word, media, media_part, media_stream,
-    metadata_item, person, tag,
+    metadata_item, person, stream_dolby_vision, stream_loudness, tag,
 };
 
 #[derive(Debug, Clone)]
@@ -108,6 +109,40 @@ impl SqlMetadataRepository {
 }
 
 impl SqlMetadataRepository {
+    /// Completes tracks with their Dolby Vision and loudness rows, two batched queries for
+    /// however many tracks: few tracks have either, 2,651 and 89 of 945,000 here.
+    async fn with_analyses(
+        &self,
+        rows: Vec<media_stream::Model>,
+    ) -> Result<Vec<MediaStream>, MetadataError> {
+        let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
+        let mut dolby_vision: HashMap<i64, stream_dolby_vision::Model> =
+            stream_dolby_vision::Entity::find()
+                .filter(stream_dolby_vision::Column::StreamId.is_in(ids.clone()))
+                .all(&self.connection)
+                .await
+                .map_err(storage)?
+                .into_iter()
+                .map(|row| (row.stream_id, row))
+                .collect();
+        let mut loudness: HashMap<i64, stream_loudness::Model> = stream_loudness::Entity::find()
+            .filter(stream_loudness::Column::StreamId.is_in(ids))
+            .all(&self.connection)
+            .await
+            .map_err(storage)?
+            .into_iter()
+            .map(|row| (row.stream_id, row))
+            .collect();
+
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let id = row.id;
+                to_track(row, dolby_vision.remove(&id), loudness.remove(&id))
+            })
+            .collect())
+    }
+
     /// The tags in scope that a query's items carry, each once, with no column selected.
     ///
     /// `IN` over the attachments rather than a join, which would return a tag once per item
@@ -569,7 +604,7 @@ impl MetadataRepository for SqlMetadataRepository {
             .await
             .map_err(storage)?;
 
-        Ok(rows.into_iter().map(to_track).collect())
+        self.with_analyses(rows).await
     }
 
     async fn version(&self, id: MediaId) -> Result<Option<MediaVersion>, MetadataError> {
@@ -589,11 +624,11 @@ impl MetadataRepository for SqlMetadataRepository {
     }
 
     async fn stream(&self, id: StreamId) -> Result<Option<MediaStream>, MetadataError> {
-        Ok(media_stream::Entity::find_by_id(id.get())
-            .one(&self.connection)
+        let rows = media_stream::Entity::find_by_id(id.get())
+            .all(&self.connection)
             .await
-            .map_err(storage)?
-            .map(to_track))
+            .map_err(storage)?;
+        Ok(self.with_analyses(rows).await?.into_iter().next())
     }
 
     async fn tags_in(
@@ -1365,14 +1400,79 @@ fn to_file(row: media_part::Model) -> MediaFile {
         path: row.path,
         size_bytes: row.size_bytes,
         duration_ms: row.duration_ms,
+        layout: FileLayout {
+            has_thumbnail: row.has_thumbnail,
+            has_64bit_offsets: row.has_64bit_offsets,
+            optimized_for_streaming: row.optimized_for_streaming,
+            packet_length: row.packet_length,
+            has_chapter_text_stream: row.has_chapter_text_stream,
+        },
     }
 }
 
-fn to_track(row: media_stream::Model) -> MediaStream {
+fn to_track(
+    row: media_stream::Model,
+    dolby_vision: Option<stream_dolby_vision::Model>,
+    loudness: Option<stream_loudness::Model>,
+) -> MediaStream {
+    let kind = parse_stream_kind(&row.kind);
+    let video = (kind == StreamKind::Video).then(|| {
+        Box::new(VideoAnalysis {
+            width: row.width,
+            height: row.height,
+            coded_width: row.coded_width,
+            coded_height: row.coded_height,
+            frame_rate: row.frame_rate,
+            level: row.level,
+            ref_frames: row.ref_frames,
+            scan_type: row.scan_type.as_deref().and_then(parse_scan_type),
+            chroma_subsampling: row.chroma_subsampling.clone(),
+            chroma_location: row.chroma_location.clone(),
+            color: ColorDescription {
+                range: row.color_range.clone(),
+                space: row.color_space.clone(),
+                primaries: row.color_primaries.clone(),
+                transfer: row.color_transfer.clone(),
+            },
+            has_scaling_matrix: row.has_scaling_matrix,
+            anamorphic: row.is_anamorphic,
+            pixel_aspect_ratio: row.pixel_aspect_ratio.clone(),
+            fourcc: row.fourcc.clone(),
+            closed_captions: row.has_closed_captions,
+            separate_fields: row.has_separate_fields,
+            hdr10_plus: row.has_hdr10_plus,
+            dolby_vision: dolby_vision.map(|record| DolbyVision {
+                version: record.version,
+                profile: record.profile,
+                level: record.level,
+                base_layer_compatibility: record.base_layer_compatibility,
+                has_base_layer: record.has_base_layer,
+                has_enhancement_layer: record.has_enhancement_layer,
+                has_rpu: record.has_rpu,
+            }),
+        })
+    });
+    let audio = (kind == StreamKind::Audio).then(|| AudioAnalysis {
+        sampling_rate: row.sampling_rate,
+        channel_layout: row.channel_layout.clone(),
+        loudness: loudness.map(|measure| Loudness {
+            analysis_version: measure.analysis_version,
+            integrated: measure.integrated,
+            range: measure.loudness_range,
+            true_peak: measure.true_peak,
+            threshold: measure.threshold,
+            gain_offset: measure.gain_offset,
+        }),
+    });
+    let subtitle = (kind == StreamKind::Subtitle).then(|| SubtitleAnalysis {
+        format: row.subtitle_format.clone(),
+        embedded_in_video: row.is_embedded_in_video,
+    });
+
     MediaStream {
         id: StreamId::new(row.id),
         file_id: PartId::new(row.media_part_id),
-        kind: parse_stream_kind(&row.kind),
+        kind,
         position: row.position,
         codec: row.codec,
         language: row.language,
@@ -1381,6 +1481,30 @@ fn to_track(row: media_stream::Model) -> MediaStream {
         is_default: row.is_default,
         is_forced: row.is_forced,
         external_path: row.external_path,
+        title: row.title,
+        stream_identifier: row.stream_identifier,
+        profile: row.profile,
+        bit_depth: row.bit_depth,
+        traits: TrackTraits {
+            original: row.is_original,
+            dub: row.is_dub,
+            commentary: row.is_commentary,
+            hearing_impaired: row.is_hearing_impaired,
+            visual_impaired: row.is_visual_impaired,
+            header_compression: row.has_header_compression,
+        },
+        video,
+        audio,
+        subtitle,
+    }
+}
+
+/// `None` for a value this build does not know, rather than a guess.
+fn parse_scan_type(stored: &str) -> Option<ScanType> {
+    match stored {
+        "progressive" => Some(ScanType::Progressive),
+        "interlaced" => Some(ScanType::Interlaced),
+        _ => None,
     }
 }
 

@@ -19,8 +19,11 @@ use std::collections::HashSet;
 
 use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 
+use super::analysis::Analysis;
 use super::{source_error, tags, ImportError, PlexRow, SOURCE_PAGE};
-use crate::entity::{media, media_part, media_stream, metadata_item};
+use crate::entity::{
+    media, media_part, media_stream, metadata_item, stream_dolby_vision, stream_loudness,
+};
 use crate::write;
 
 /// How many rows to write per statement.
@@ -29,6 +32,10 @@ use crate::write;
 /// `metadata_item` has 23 columns, so 500 rows is 11,500 parameters — comfortably inside
 /// every engine's limit.
 const WRITE_CHUNK: usize = 500;
+
+/// [`WRITE_CHUNK`] for tracks, whose 47 columns would make 500 rows 23,500 parameters:
+/// inside `SQLite`'s 32,766, but not comfortably.
+const STREAM_WRITE_CHUNK: usize = 250;
 
 /// Plex's `metadata_type` values we import, in the order their foreign keys require.
 const KINDS: [(i32, &str); 4] = [(1, "movie"), (2, "show"), (3, "season"), (4, "episode")];
@@ -291,8 +298,8 @@ async fn import_parts(
                 sea_orm::DbBackend::Sqlite,
                 format!(
                     "SELECT id, media_item_id, \"index\", file, size, duration, created_at, \
-                     updated_at FROM media_parts ORDER BY id LIMIT {SOURCE_PAGE} \
-                     OFFSET {offset}"
+                     updated_at, extra_data FROM media_parts ORDER BY id \
+                     LIMIT {SOURCE_PAGE} OFFSET {offset}"
                 ),
             ))
             .await
@@ -316,6 +323,7 @@ async fn import_parts(
                 continue;
             };
             let id: i64 = row.plex_get("id")?;
+            let analysis = Analysis::parse(row.plex_text("extra_data").as_deref());
             batch.push(media_part::ActiveModel {
                 id: ActiveValue::Set(id),
                 media_id: ActiveValue::Set(media_id),
@@ -325,6 +333,13 @@ async fn import_parts(
                 duration_ms: ActiveValue::Set(row.plex_opt("duration")),
                 created_at: ActiveValue::Set(row.plex_opt("created_at").unwrap_or(0)),
                 updated_at: ActiveValue::Set(row.plex_opt("updated_at").unwrap_or(0)),
+                has_thumbnail: ActiveValue::Set(analysis.flag("ma:hasThumbnail")),
+                has_64bit_offsets: ActiveValue::Set(analysis.tristate("ma:has64bitOffsets")),
+                optimized_for_streaming: ActiveValue::Set(
+                    analysis.tristate("ma:optimizedForStreaming"),
+                ),
+                packet_length: ActiveValue::Set(analysis.int("ma:packetLength")),
+                has_chapter_text_stream: ActiveValue::Set(analysis.flag("ma:hasChapterTextStream")),
             });
             written.insert(id);
         }
@@ -354,8 +369,8 @@ async fn import_streams(
                 sea_orm::DbBackend::Sqlite,
                 format!(
                     "SELECT id, media_part_id, stream_type_id, \"index\", codec, language, \
-                     channels, bitrate, \"default\", forced, url FROM media_streams \
-                     ORDER BY id LIMIT {SOURCE_PAGE} OFFSET {offset}"
+                     channels, bitrate, \"default\", forced, url, extra_data \
+                     FROM media_streams ORDER BY id LIMIT {SOURCE_PAGE} OFFSET {offset}"
                 ),
             ))
             .await
@@ -367,6 +382,8 @@ async fn import_streams(
         offset += rows.len() as u64;
 
         let mut batch = Vec::with_capacity(rows.len());
+        let mut dolby_vision = Vec::new();
+        let mut loudness = Vec::new();
         for row in &rows {
             let Some(part_id) = row.plex_opt::<i64>("media_part_id") else {
                 continue;
@@ -377,24 +394,25 @@ async fn import_streams(
             let Some(kind) = row.plex_opt::<i32>("stream_type_id").and_then(stream_kind) else {
                 continue;
             };
-            batch.push(media_stream::ActiveModel {
-                id: ActiveValue::Set(row.plex_get("id")?),
-                media_part_id: ActiveValue::Set(part_id),
-                kind: ActiveValue::Set(kind.to_owned()),
-                position: ActiveValue::Set(row.plex_opt("index").unwrap_or(0)),
-                codec: ActiveValue::Set(row.plex_text("codec")),
-                language: ActiveValue::Set(row.plex_text("language")),
-                channels: ActiveValue::Set(row.plex_opt("channels")),
-                bitrate: ActiveValue::Set(row.plex_opt("bitrate")),
-                is_default: ActiveValue::Set(row.plex_flag("default")),
-                is_forced: ActiveValue::Set(row.plex_flag("forced")),
-                // The source writes an empty string for an embedded track.
-                external_path: ActiveValue::Set(row.plex_text("url")),
-            });
+            let id: i64 = row.plex_get("id")?;
+            let analysis = Analysis::parse(row.plex_text("extra_data").as_deref());
+            dolby_vision.extend(dolby_vision_of(id, &analysis));
+            loudness.extend(loudness_of(id, &analysis));
+            batch.push(stream_row(id, part_id, kind, row, &analysis));
         }
 
-        for chunk in batch.chunks(WRITE_CHUNK) {
+        for chunk in batch.chunks(STREAM_WRITE_CHUNK) {
             media_stream::Entity::insert_many(chunk.to_vec())
+                .exec(destination)
+                .await?;
+        }
+        for chunk in dolby_vision.chunks(WRITE_CHUNK) {
+            stream_dolby_vision::Entity::insert_many(chunk.to_vec())
+                .exec(destination)
+                .await?;
+        }
+        for chunk in loudness.chunks(WRITE_CHUNK) {
+            stream_loudness::Entity::insert_many(chunk.to_vec())
                 .exec(destination)
                 .await?;
         }
@@ -402,6 +420,98 @@ async fn import_streams(
     }
 
     Ok(written)
+}
+
+/// One track, from its source row and the analysis packed into it.
+fn stream_row(
+    id: i64,
+    part: i64,
+    kind: &str,
+    row: &sea_orm::QueryResult,
+    analysis: &Analysis,
+) -> media_stream::ActiveModel {
+    media_stream::ActiveModel {
+        id: ActiveValue::Set(id),
+        media_part_id: ActiveValue::Set(part),
+        kind: ActiveValue::Set(kind.to_owned()),
+        position: ActiveValue::Set(row.plex_opt("index").unwrap_or(0)),
+        codec: ActiveValue::Set(row.plex_text("codec")),
+        language: ActiveValue::Set(row.plex_text("language")),
+        channels: ActiveValue::Set(row.plex_opt("channels")),
+        bitrate: ActiveValue::Set(row.plex_opt("bitrate")),
+        is_default: ActiveValue::Set(row.plex_flag("default")),
+        is_forced: ActiveValue::Set(row.plex_flag("forced")),
+        // The source writes an empty string for an embedded track.
+        external_path: ActiveValue::Set(row.plex_text("url")),
+        title: ActiveValue::Set(analysis.text_as_written("ma:title")),
+        stream_identifier: ActiveValue::Set(analysis.int("ma:streamIdentifier")),
+        profile: ActiveValue::Set(analysis.text("ma:profile")),
+        bit_depth: ActiveValue::Set(analysis.int("ma:bitDepth")),
+        width: ActiveValue::Set(analysis.int("ma:width")),
+        height: ActiveValue::Set(analysis.int("ma:height")),
+        coded_width: ActiveValue::Set(analysis.int("ma:codedWidth")),
+        coded_height: ActiveValue::Set(analysis.int("ma:codedHeight")),
+        frame_rate: ActiveValue::Set(analysis.float("ma:frameRate")),
+        level: ActiveValue::Set(analysis.int("ma:level")),
+        ref_frames: ActiveValue::Set(analysis.int("ma:refFrames")),
+        scan_type: ActiveValue::Set(analysis.text("ma:scanType")),
+        chroma_subsampling: ActiveValue::Set(analysis.text("ma:chromaSubsampling")),
+        chroma_location: ActiveValue::Set(analysis.text("ma:chromaLocation")),
+        color_range: ActiveValue::Set(analysis.text("ma:colorRange")),
+        color_space: ActiveValue::Set(analysis.text("ma:colorSpace")),
+        color_primaries: ActiveValue::Set(analysis.text("ma:colorPrimaries")),
+        color_transfer: ActiveValue::Set(analysis.text("ma:colorTrc")),
+        has_scaling_matrix: ActiveValue::Set(analysis.tristate("ma:hasScalingMatrix")),
+        is_anamorphic: ActiveValue::Set(analysis.tristate("ma:anamorphic")),
+        pixel_aspect_ratio: ActiveValue::Set(analysis.text("ma:pixelAspectRatio")),
+        fourcc: ActiveValue::Set(analysis.text("ma:codecID")),
+        has_closed_captions: ActiveValue::Set(analysis.flag("ma:closedCaptions")),
+        has_separate_fields: ActiveValue::Set(analysis.flag("ma:separateFields")),
+        has_hdr10_plus: ActiveValue::Set(analysis.flag("ma:HDR10PlusPresent")),
+        sampling_rate: ActiveValue::Set(analysis.int("ma:samplingRate")),
+        channel_layout: ActiveValue::Set(analysis.text("ma:audioChannelLayout")),
+        subtitle_format: ActiveValue::Set(analysis.text("ma:format")),
+        is_embedded_in_video: ActiveValue::Set(analysis.flag("ma:embeddedInVideo")),
+        is_original: ActiveValue::Set(analysis.flag("ma:original")),
+        is_dub: ActiveValue::Set(analysis.flag("ma:dub")),
+        is_commentary: ActiveValue::Set(analysis.flag("ma:comment")),
+        is_hearing_impaired: ActiveValue::Set(analysis.flag("ma:hearingImpaired")),
+        is_visual_impaired: ActiveValue::Set(analysis.flag("ma:visualImpaired")),
+        has_header_compression: ActiveValue::Set(analysis.flag("ma:headerCompression")),
+    }
+}
+
+/// A track's Dolby Vision record, when the analysis found one.
+///
+/// Keyed on `DOVIPresent`, which the source writes on every Dolby Vision track; the profile
+/// and level are part of the configuration record, so a track without them is skipped.
+fn dolby_vision_of(stream: i64, analysis: &Analysis) -> Option<stream_dolby_vision::ActiveModel> {
+    if !analysis.flag("ma:DOVIPresent") {
+        return None;
+    }
+    Some(stream_dolby_vision::ActiveModel {
+        stream_id: ActiveValue::Set(stream),
+        version: ActiveValue::Set(analysis.text("ma:DOVIVersion")?),
+        profile: ActiveValue::Set(analysis.int("ma:DOVIProfile")?),
+        level: ActiveValue::Set(analysis.int("ma:DOVILevel")?),
+        base_layer_compatibility: ActiveValue::Set(analysis.int("ma:DOVIBLCompatID")),
+        has_base_layer: ActiveValue::Set(analysis.flag("ma:DOVIBLPresent")),
+        has_enhancement_layer: ActiveValue::Set(analysis.flag("ma:DOVIELPresent")),
+        has_rpu: ActiveValue::Set(analysis.flag("ma:DOVIRPUPresent")),
+    })
+}
+
+/// A track's loudness measurement, when every one of its values is there.
+fn loudness_of(stream: i64, analysis: &Analysis) -> Option<stream_loudness::ActiveModel> {
+    Some(stream_loudness::ActiveModel {
+        stream_id: ActiveValue::Set(stream),
+        analysis_version: ActiveValue::Set(analysis.text("ln:loudnessAnalysisVersion")?),
+        integrated: ActiveValue::Set(analysis.float("ln:loudness")?),
+        loudness_range: ActiveValue::Set(analysis.float("ln:lra")?),
+        true_peak: ActiveValue::Set(analysis.float("ln:peak")?),
+        threshold: ActiveValue::Set(analysis.float("ln:threshold")?),
+        gain_offset: ActiveValue::Set(analysis.float("ln:gainOffset")?),
+    })
 }
 
 /// Plex's `stream_type_id` discriminants. Anything else is a kind we do not model.

@@ -14,8 +14,8 @@ use open_plex_api::{build_schema, ApiContext};
 use open_plex_api_plex::{router, PlexState};
 use open_plex_core::access::{LibraryAccess, LibraryRole};
 use open_plex_core::metadata::{
-    ExternalId, ItemKind, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataItem, Person,
-    Rating, RatingKind, StreamKind, Tag, TagKind,
+    AudioAnalysis, ExternalId, FileLayout, ItemKind, ItemTag, MediaFile, MediaStream, MediaVersion,
+    MetadataItem, Person, Rating, RatingKind, StreamKind, Tag, TagKind, TrackTraits,
 };
 use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
 use open_plex_core::{
@@ -536,6 +536,7 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
         path: "/mnt/movies/Avatar.mkv".to_owned(),
         size_bytes: Some(8_534_980_661),
         duration_ms: Some(9_890_048),
+        layout: FileLayout::default(),
     };
     let stream = MediaStream {
         id: StreamId::new(920),
@@ -543,12 +544,25 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
         kind: StreamKind::Audio,
         position: 1,
         codec: Some("dca".to_owned()),
-        language: Some("fra".to_owned()),
+        // The source stores BCP 47 tags.
+        language: Some("fr".to_owned()),
         channels: Some(6),
         bitrate: Some(1_536_000),
         is_default: true,
         is_forced: false,
         external_path: None,
+        title: None,
+        stream_identifier: None,
+        profile: Some("dts".to_owned()),
+        bit_depth: None,
+        traits: TrackTraits::default(),
+        video: None,
+        audio: Some(AudioAnalysis {
+            sampling_rate: Some(48_000),
+            channel_layout: Some("5.1(side)".to_owned()),
+            loudness: None,
+        }),
+        subtitle: None,
     };
 
     let (external_ids, ratings) = references();
@@ -1019,7 +1033,12 @@ async fn a_lookup_repeats_the_library_on_each_item_and_carries_streams() {
     let stream = &item["Media"][0]["Part"][0]["Stream"][0];
     assert_eq!(stream["streamType"], 2);
     assert_eq!(stream["bitrate"], 1536);
-    assert_eq!(stream["language"], "fra");
+    // Named in the client's language, English when it sends none, beside the stored tag.
+    assert_eq!(stream["language"], "French");
+    assert_eq!(stream["languageTag"], "fr");
+    assert_eq!(stream["languageCode"], "fra");
+    assert_eq!(stream["samplingRate"], 48_000);
+    assert_eq!(stream["displayTitle"], "French (DTS 5.1)");
     assert_eq!(stream["default"], true);
     // Reported only when true, as a reference server does.
     assert!(stream.get("forced").is_none(), "{stream}");

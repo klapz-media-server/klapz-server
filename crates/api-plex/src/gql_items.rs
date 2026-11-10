@@ -75,6 +75,73 @@ fragment VersionFields on MediaVersion {
   durationMs
   frameRate
   optimizedForStreaming
+  primaryVideo { profile }
+  primaryAudio { profile }
+}
+
+fragment FileFields on MediaFile {
+  id
+  path
+  sizeBytes
+  durationMs
+  hasThumbnail
+  has64BitOffsets
+  optimizedForStreaming
+  packetLength
+  hasChapterTextStream
+}
+
+fragment TrackFields on MediaStream {
+  id
+  kind
+  position
+  codec
+  language
+  channels
+  bitrate
+  isDefault
+  isForced
+  isExternal
+  title
+  streamIdentifier
+  profile
+  bitDepth
+  traits { isOriginal isDub isCommentary isHearingImpaired isVisualImpaired hasHeaderCompression }
+  video {
+    width
+    height
+    codedWidth
+    codedHeight
+    frameRate
+    level
+    refFrames
+    scan
+    chromaSubsampling
+    chromaLocation
+    color { range space primaries transfer }
+    hasScalingMatrix
+    isAnamorphic
+    pixelAspectRatio
+    fourcc
+    hasClosedCaptions
+    hasSeparateFields
+    hasHdr10Plus
+    dolbyVision {
+      version
+      profile
+      level
+      baseLayerCompatibility
+      hasBaseLayer
+      hasEnhancementLayer
+      hasRpu
+    }
+  }
+  audio {
+    samplingRate
+    channelLayout
+    loudness { analysisVersion integrated range truePeak threshold gainOffset }
+  }
+  subtitle { format isEmbeddedInVideo }
 }
 
 fragment SeasonFields on Season {
@@ -116,7 +183,7 @@ fragment ListedItem on Item {
   ... on Season { ...SeasonFields }
   ... on Episode {
     ...EpisodeFields
-    versions { ...VersionFields files { id path sizeBytes durationMs } }
+    versions { ...VersionFields files { ...FileFields } }
     ...ListedEpisodeTags
   }
 }
@@ -132,18 +199,15 @@ fragment MovieListing on Movie {
   rating
   audienceRating
   durationMs
-  versions { ...VersionFields files { id path sizeBytes durationMs } }
+  versions { ...VersionFields files { ...FileFields } }
   ...ListedMovieTags
 }
 
 fragment StreamedVersion on MediaVersion {
   ...VersionFields
   files {
-    id
-    path
-    sizeBytes
-    durationMs
-    streams { id kind position codec language channels bitrate isDefault isForced }
+    ...FileFields
+    streams { ...TrackFields }
   }
 }
 
@@ -770,7 +834,16 @@ pub struct GqlVersion {
     pub duration_ms: Option<i64>,
     pub frame_rate: Option<f64>,
     pub optimized_for_streaming: bool,
+    pub primary_video: Option<GqlProfiled>,
+    pub primary_audio: Option<GqlProfiled>,
     pub files: Vec<GqlPart>,
+}
+
+/// A track read only for its profile.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct GqlProfiled {
+    pub profile: Option<String>,
 }
 
 impl GqlVersion {
@@ -786,6 +859,12 @@ pub struct GqlPart {
     pub path: String,
     pub size_bytes: Option<i64>,
     pub duration_ms: Option<i64>,
+    pub has_thumbnail: bool,
+    #[serde(rename = "has64BitOffsets")]
+    pub has_64bit_offsets: Option<bool>,
+    pub optimized_for_streaming: Option<bool>,
+    pub packet_length: Option<i32>,
+    pub has_chapter_text_stream: bool,
     pub streams: Vec<GqlStream>,
 }
 
@@ -807,6 +886,103 @@ pub struct GqlStream {
     pub bitrate: Option<i32>,
     pub is_default: bool,
     pub is_forced: bool,
+    pub is_external: bool,
+    pub title: Option<String>,
+    pub stream_identifier: Option<i32>,
+    pub profile: Option<String>,
+    pub bit_depth: Option<i32>,
+    pub traits: GqlTraits,
+    pub video: Option<GqlVideo>,
+    pub audio: Option<GqlAudio>,
+    pub subtitle: Option<GqlSubtitle>,
+}
+
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent flags the source records one by one, not states to fold into an enum"
+)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlTraits {
+    pub is_original: bool,
+    pub is_dub: bool,
+    pub is_commentary: bool,
+    pub is_hearing_impaired: bool,
+    pub is_visual_impaired: bool,
+    pub has_header_compression: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlVideo {
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    pub coded_width: Option<i32>,
+    pub coded_height: Option<i32>,
+    pub frame_rate: Option<f64>,
+    pub level: Option<i32>,
+    pub ref_frames: Option<i32>,
+    /// `PROGRESSIVE` or `INTERLACED`.
+    pub scan: Option<String>,
+    pub chroma_subsampling: Option<String>,
+    pub chroma_location: Option<String>,
+    pub color: GqlColor,
+    pub has_scaling_matrix: Option<bool>,
+    pub is_anamorphic: Option<bool>,
+    pub pixel_aspect_ratio: Option<String>,
+    pub fourcc: Option<String>,
+    pub has_closed_captions: bool,
+    pub has_separate_fields: bool,
+    #[serde(rename = "hasHdr10Plus")]
+    pub has_hdr10_plus: bool,
+    pub dolby_vision: Option<GqlDolbyVision>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct GqlColor {
+    pub range: Option<String>,
+    pub space: Option<String>,
+    pub primaries: Option<String>,
+    pub transfer: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlDolbyVision {
+    pub version: String,
+    pub profile: i32,
+    pub level: i32,
+    pub base_layer_compatibility: Option<i32>,
+    pub has_base_layer: bool,
+    pub has_enhancement_layer: bool,
+    pub has_rpu: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlAudio {
+    pub sampling_rate: Option<i32>,
+    pub channel_layout: Option<String>,
+    pub loudness: Option<GqlLoudness>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlLoudness {
+    pub analysis_version: String,
+    pub integrated: f64,
+    pub range: f64,
+    pub true_peak: f64,
+    pub threshold: f64,
+    pub gain_offset: f64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlSubtitle {
+    pub format: Option<String>,
+    pub is_embedded_in_video: bool,
 }
 
 impl GqlStream {

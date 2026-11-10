@@ -5,7 +5,10 @@
 
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, Object, Result, ID};
-use open_plex_core::metadata::{MediaFile, MediaStream, MediaVersion, StreamKind};
+use open_plex_core::metadata::{
+    AudioAnalysis, ColorDescription, DolbyVision, Loudness, MediaFile, MediaStream, MediaVersion,
+    ScanType, StreamKind, SubtitleAnalysis, TrackTraits, VideoAnalysis,
+};
 
 use crate::loader::{FilesLoader, StreamsLoader};
 use crate::node::GlobalId;
@@ -131,6 +134,45 @@ impl Version {
             .map(File)
             .collect())
     }
+
+    /// The first video track of the version's files: the one `videoCodec` and the
+    /// dimensions describe.
+    async fn primary_video(&self, context: &Context<'_>) -> Result<Option<Track>> {
+        Ok(self
+            .tracks(context)
+            .await?
+            .into_iter()
+            .find(|track| track.kind == StreamKind::Video)
+            .map(Track))
+    }
+
+    /// The audio track `audioCodec` and `audioChannels` describe: the first matching both,
+    /// else the default one, else the first. Not always the default — a file can mark one
+    /// track default and have been summarised from another.
+    async fn primary_audio(&self, context: &Context<'_>) -> Result<Option<Track>> {
+        let tracks = self.tracks(context).await?;
+        Ok(self.0.primary_audio(&tracks).cloned().map(Track))
+    }
+}
+
+impl Version {
+    /// Every track of every file, files in order, through the loaders the file and track
+    /// fields share, so a page of versions still costs two batched queries.
+    async fn tracks(&self, context: &Context<'_>) -> Result<Vec<MediaStream>> {
+        let files = context
+            .data::<DataLoader<FilesLoader>>()?
+            .load_one(self.0.id)
+            .await?
+            .unwrap_or_default();
+        let mut by_file = context
+            .data::<DataLoader<StreamsLoader>>()?
+            .load_many(files.iter().map(|file| file.id))
+            .await?;
+        Ok(files
+            .iter()
+            .flat_map(|file| by_file.remove(&file.id).unwrap_or_default())
+            .collect())
+    }
 }
 
 /// One file on disk belonging to a version.
@@ -176,6 +218,33 @@ impl File {
     /// Runtime in milliseconds.
     async fn duration_ms(&self) -> Option<i64> {
         self.0.duration_ms
+    }
+
+    /// Whether the file embeds a cover image.
+    async fn has_thumbnail(&self) -> bool {
+        self.0.layout.has_thumbnail
+    }
+
+    /// Whether an MP4 file uses 64-bit chunk offsets, which some older players cannot read.
+    /// Null for a file that is not MP4.
+    async fn has_64bit_offsets(&self) -> Option<bool> {
+        self.0.layout.has_64bit_offsets
+    }
+
+    /// Whether an MP4 file's index precedes its data, so it plays before it has fully
+    /// arrived. Null for a file that is not MP4.
+    async fn optimized_for_streaming(&self) -> Option<bool> {
+        self.0.layout.optimized_for_streaming
+    }
+
+    /// The packet size of an MPEG-TS file in bytes: 188, or 192 for Blu-ray's M2TS.
+    async fn packet_length(&self) -> Option<i32> {
+        self.0.layout.packet_length
+    }
+
+    /// Whether chapter names are carried as a text track.
+    async fn has_chapter_text_stream(&self) -> bool {
+        self.0.layout.has_chapter_text_stream
     }
 
     /// The tracks inside this file, plus any sidecar subtitle files.
@@ -255,6 +324,361 @@ impl Track {
     /// Whether the track lives in a separate file next to the media rather than inside it.
     async fn is_external(&self) -> bool {
         self.0.external_path.is_some()
+    }
+
+    /// The name the file gives the track, often a release tag: `VFF AC3 5.1 @448kb`. Empty
+    /// when the file writes an empty name, null when it writes none.
+    async fn title(&self) -> Option<&str> {
+        self.0.title.as_deref()
+    }
+
+    /// The container's own number for the track: a Matroska track number, an MPEG-TS PID
+    /// (13 bits at most, so always within an `Int`).
+    async fn stream_identifier(&self) -> Option<i32> {
+        self.0
+            .stream_identifier
+            .and_then(|identifier| i32::try_from(identifier).ok())
+    }
+
+    /// The codec profile: `high` or `main 10` for video, `lc` for AAC, `ma` for DTS-HD
+    /// Master Audio, `dolby digital plus + dolby atmos`.
+    async fn profile(&self) -> Option<&str> {
+        self.0.profile.as_deref()
+    }
+
+    /// Bits per sample.
+    async fn bit_depth(&self) -> Option<i32> {
+        self.0.bit_depth
+    }
+
+    /// What the file says the track is for, beyond its language.
+    async fn traits(&self) -> Traits {
+        Traits(self.0.traits)
+    }
+
+    /// What the analysis measured about a video track. Null on any other kind.
+    async fn video(&self) -> Option<Video> {
+        self.0.video.as_deref().cloned().map(Video)
+    }
+
+    /// What the analysis measured about an audio track. Null on any other kind.
+    async fn audio(&self) -> Option<Audio> {
+        self.0.audio.clone().map(Audio)
+    }
+
+    /// What the analysis says about a subtitle track. Null on any other kind.
+    async fn subtitle(&self) -> Option<Subtitle> {
+        self.0.subtitle.clone().map(Subtitle)
+    }
+}
+
+/// What a file says a track is for.
+#[derive(Debug, Clone, Copy)]
+pub struct Traits(pub TrackTraits);
+
+#[Object(name = "TrackTraits")]
+impl Traits {
+    /// In the work's original language.
+    async fn is_original(&self) -> bool {
+        self.0.original
+    }
+
+    /// A dub into another language.
+    async fn is_dub(&self) -> bool {
+        self.0.dub
+    }
+
+    /// A commentary track.
+    async fn is_commentary(&self) -> bool {
+        self.0.commentary
+    }
+
+    /// Meant for the deaf and hard of hearing: subtitles describing sounds as well.
+    async fn is_hearing_impaired(&self) -> bool {
+        self.0.hearing_impaired
+    }
+
+    /// Audio description, for the blind and partially sighted.
+    async fn is_visual_impaired(&self) -> bool {
+        self.0.visual_impaired
+    }
+
+    /// Whether the track uses Matroska header stripping, which some players cannot decode.
+    async fn has_header_compression(&self) -> bool {
+        self.0.header_compression
+    }
+}
+
+/// Whether a picture is drawn whole or in alternating fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum Scan {
+    /// Every frame drawn whole.
+    Progressive,
+    /// Alternating fields of odd and even lines.
+    Interlaced,
+}
+
+impl From<ScanType> for Scan {
+    fn from(scan: ScanType) -> Self {
+        match scan {
+            ScanType::Progressive => Self::Progressive,
+            ScanType::Interlaced => Self::Interlaced,
+        }
+    }
+}
+
+/// What the analysis measured about a video track.
+#[derive(Debug, Clone)]
+pub struct Video(pub VideoAnalysis);
+
+#[Object(name = "VideoAnalysis")]
+impl Video {
+    /// Displayed width in pixels.
+    async fn width(&self) -> Option<i32> {
+        self.0.width
+    }
+
+    /// Displayed height in pixels.
+    async fn height(&self) -> Option<i32> {
+        self.0.height
+    }
+
+    /// Width as encoded, before cropping.
+    async fn coded_width(&self) -> Option<i32> {
+        self.0.coded_width
+    }
+
+    /// Height as encoded, before cropping: 1088 for most 1080-line H.264, which codes
+    /// whole 16-pixel macroblocks.
+    async fn coded_height(&self) -> Option<i32> {
+        self.0.coded_height
+    }
+
+    /// Frames per second, as measured: 23.976.
+    async fn frame_rate(&self) -> Option<f64> {
+        self.0.frame_rate
+    }
+
+    /// The codec's level indicator as coded: 41 is H.264 level 4.1, 120 is HEVC level 4,
+    /// which codes thirty times the level.
+    async fn level(&self) -> Option<i32> {
+        self.0.level
+    }
+
+    /// How many reference frames the decoder must keep.
+    async fn ref_frames(&self) -> Option<i32> {
+        self.0.ref_frames
+    }
+
+    /// Progressive or interlaced. Null when the analysis did not say.
+    async fn scan(&self) -> Option<Scan> {
+        self.0.scan_type.map(Into::into)
+    }
+
+    /// Chroma subsampling: `4:2:0`.
+    async fn chroma_subsampling(&self) -> Option<&str> {
+        self.0.chroma_subsampling.as_deref()
+    }
+
+    /// Where chroma samples sit relative to luma: `left`, `topleft`, `center`.
+    async fn chroma_location(&self) -> Option<&str> {
+        self.0.chroma_location.as_deref()
+    }
+
+    /// How the track's colors are to be read.
+    async fn color(&self) -> Color {
+        Color(self.0.color.clone())
+    }
+
+    /// Whether the encoder used custom quantisation matrices. Null when the analysis did
+    /// not say, which is not the same as false.
+    async fn has_scaling_matrix(&self) -> Option<bool> {
+        self.0.has_scaling_matrix
+    }
+
+    /// Whether pixels are not square. Null when the analysis did not say.
+    async fn is_anamorphic(&self) -> Option<bool> {
+        self.0.anamorphic
+    }
+
+    /// The sample aspect ratio, as a ratio of integers: `16:15`. Set on anamorphic tracks.
+    async fn pixel_aspect_ratio(&self) -> Option<&str> {
+        self.0.pixel_aspect_ratio.as_deref()
+    }
+
+    /// The codec tag a legacy container carries: `XVID`, `DX50`.
+    async fn fourcc(&self) -> Option<&str> {
+        self.0.fourcc.as_deref()
+    }
+
+    /// Whether closed captions (EIA-608) ride inside the picture.
+    async fn has_closed_captions(&self) -> bool {
+        self.0.closed_captions
+    }
+
+    /// Whether fields are coded separately, as an interlaced picture can be.
+    async fn has_separate_fields(&self) -> bool {
+        self.0.separate_fields
+    }
+
+    /// Whether the track carries HDR10+ dynamic metadata.
+    async fn has_hdr10_plus(&self) -> bool {
+        self.0.hdr10_plus
+    }
+
+    /// The Dolby Vision configuration. Null on a track without Dolby Vision.
+    async fn dolby_vision(&self) -> Option<DolbyVisionObject> {
+        self.0.dolby_vision.clone().map(DolbyVisionObject)
+    }
+}
+
+/// How a video track's colors are to be read, in ffmpeg's vocabulary.
+#[derive(Debug, Clone)]
+pub struct Color(pub ColorDescription);
+
+#[Object(name = "ColorDescription")]
+impl Color {
+    /// `tv` for limited range, `pc` for full.
+    async fn range(&self) -> Option<&str> {
+        self.0.range.as_deref()
+    }
+
+    /// The matrix coefficients: `bt709`, `bt2020nc`.
+    async fn space(&self) -> Option<&str> {
+        self.0.space.as_deref()
+    }
+
+    /// The primaries: `bt709`, `bt2020`.
+    async fn primaries(&self) -> Option<&str> {
+        self.0.primaries.as_deref()
+    }
+
+    /// The transfer characteristic: `bt709`; `smpte2084` is PQ, the curve of HDR10 and
+    /// Dolby Vision; `arib-std-b67` is HLG.
+    async fn transfer(&self) -> Option<&str> {
+        self.0.transfer.as_deref()
+    }
+}
+
+/// A Dolby Vision configuration record.
+#[derive(Debug, Clone)]
+pub struct DolbyVisionObject(pub DolbyVision);
+
+#[Object(name = "DolbyVision")]
+impl DolbyVisionObject {
+    /// The record's version, as written: `1.0`.
+    async fn version(&self) -> &str {
+        &self.0.version
+    }
+
+    /// The profile: 5 (single layer, no fallback), 7 (dual layer, Blu-ray), 8 (single layer
+    /// with an HDR10, SDR or HLG fallback).
+    async fn profile(&self) -> i32 {
+        self.0.profile
+    }
+
+    /// The level, which bounds resolution and frame rate.
+    async fn level(&self) -> i32 {
+        self.0.level
+    }
+
+    /// What the base layer plays as without Dolby Vision: 1 HDR10, 2 SDR, 4 HLG, 6 Blu-ray
+    /// HDR10. Null when the record does not say.
+    async fn base_layer_compatibility(&self) -> Option<i32> {
+        self.0.base_layer_compatibility
+    }
+
+    /// Whether the track carries a base layer.
+    async fn has_base_layer(&self) -> bool {
+        self.0.has_base_layer
+    }
+
+    /// Whether the track carries an enhancement layer, as profile 7 does.
+    async fn has_enhancement_layer(&self) -> bool {
+        self.0.has_enhancement_layer
+    }
+
+    /// Whether the track carries the reference processing unit, its dynamic metadata.
+    async fn has_rpu(&self) -> bool {
+        self.0.has_rpu
+    }
+}
+
+/// What the analysis measured about an audio track.
+#[derive(Debug, Clone)]
+pub struct Audio(pub AudioAnalysis);
+
+#[Object(name = "AudioAnalysis")]
+impl Audio {
+    /// Samples per second, in hertz.
+    async fn sampling_rate(&self) -> Option<i32> {
+        self.0.sampling_rate
+    }
+
+    /// The channel layout, in ffmpeg's vocabulary: `stereo`, `5.1(side)`.
+    async fn channel_layout(&self) -> Option<&str> {
+        self.0.channel_layout.as_deref()
+    }
+
+    /// The track's EBU R128 loudness. Null when it was never measured.
+    async fn loudness(&self) -> Option<LoudnessObject> {
+        self.0.loudness.clone().map(LoudnessObject)
+    }
+}
+
+/// An EBU R128 loudness measurement.
+#[derive(Debug, Clone)]
+pub struct LoudnessObject(pub Loudness);
+
+#[Object(name = "Loudness")]
+impl LoudnessObject {
+    /// The version of the analysis that measured it, as written: `0.02`.
+    async fn analysis_version(&self) -> &str {
+        &self.0.analysis_version
+    }
+
+    /// Integrated loudness over the whole track, in LUFS.
+    async fn integrated(&self) -> f64 {
+        self.0.integrated
+    }
+
+    /// Loudness range, in LU: how much the loudness varies.
+    async fn range(&self) -> f64 {
+        self.0.range
+    }
+
+    /// True peak, in dBTP.
+    async fn true_peak(&self) -> f64 {
+        self.0.true_peak
+    }
+
+    /// The gating threshold the integration used, in LUFS.
+    async fn threshold(&self) -> f64 {
+        self.0.threshold
+    }
+
+    /// The gain, in dB, that brings the track to the target loudness.
+    async fn gain_offset(&self) -> f64 {
+        self.0.gain_offset
+    }
+}
+
+/// What the analysis says about a subtitle track.
+#[derive(Debug, Clone)]
+pub struct Subtitle(pub SubtitleAnalysis);
+
+#[Object(name = "SubtitleAnalysis")]
+impl Subtitle {
+    /// The format of a sidecar subtitle file: `srt`, `ssa`. Null for an embedded track,
+    /// whose codec says it.
+    async fn format(&self) -> Option<&str> {
+        self.0.format.as_deref()
+    }
+
+    /// Whether the captions ride inside the video bitstream (EIA-608) rather than in a
+    /// track of their own.
+    async fn is_embedded_in_video(&self) -> bool {
+        self.0.embedded_in_video
     }
 }
 

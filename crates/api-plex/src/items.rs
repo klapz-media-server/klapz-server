@@ -16,9 +16,10 @@ use serde::Serialize;
 use crate::language::Language;
 
 use crate::gql_items::{
-    GqlConnection, GqlEdge, GqlItem, GqlLibraryRef, GqlPart, GqlRating, GqlStream, GqlTag,
-    GqlVersion,
+    GqlConnection, GqlEdge, GqlItem, GqlLibraryRef, GqlPart, GqlProfiled, GqlRating, GqlStream,
+    GqlTag, GqlVersion,
 };
+use crate::stream_labels;
 
 /// Identifier of the metadata provider every library response claims.
 ///
@@ -346,8 +347,16 @@ pub struct MediaEntry {
     /// Frame-rate label, for example `24p`. Derived, see [`frame_rate_label`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_frame_rate: Option<&'static str>,
+    /// A number, `0` or `1`, where the part carries a boolean: the reference's types.
+    /// Present only for a file whose layout was analysed, which is an MP4.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub optimized_for_streaming: Option<bool>,
+    pub optimized_for_streaming: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_profile: Option<String>,
+    #[serde(rename = "has64bitOffsets", skip_serializing_if = "Option::is_none")]
+    pub has_64bit_offsets: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_profile: Option<String>,
     #[serde(rename = "Part", skip_serializing_if = "Vec::is_empty")]
     pub part: Vec<PartEntry>,
 }
@@ -370,7 +379,22 @@ pub struct PartEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub container: Option<String>,
+    #[serde(rename = "has64bitOffsets", skip_serializing_if = "Option::is_none")]
+    pub has_64bit_offsets: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_chapter_text_stream: Option<bool>,
+    /// The string `"1"`, where the neighbouring flags are booleans: the reference's types.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_thumbnail: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optimized_for_streaming: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub packet_length: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_profile: Option<String>,
     #[serde(rename = "Stream", skip_serializing_if = "Vec::is_empty")]
     pub stream: Vec<StreamEntry>,
 }
@@ -390,13 +414,215 @@ pub struct StreamEntry {
     pub forced: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codec: Option<String>,
-    pub index: i32,
+    /// Absent for a sidecar file, which is no track of the media's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channels: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bitrate: Option<i32>,
+    /// The language's name in the client's language: `Anglais (R.-U.)`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language_tag: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language_code: Option<String>,
+    #[serde(flatten)]
+    pub analysis: StreamAnalysis,
+    pub display_title: String,
+    pub extended_display_title: String,
+}
+
+/// What the analysis measured, under the names the reference gives it.
+///
+/// The reference writes these from a packed key/value column, sorted by key, so they come in
+/// ASCII order whatever the track's kind: capitals first. Types are per key and do not
+/// follow the value: `streamIdentifier` and `DOVIVersion` are strings, loudness is strings
+/// with two decimals, `embeddedInVideo` is `"1"`, and flags are booleans.
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamAnalysis {
+    #[serde(rename = "DOVIBLCompatID", skip_serializing_if = "Option::is_none")]
+    pub dovi_bl_compat_id: Option<i32>,
+    #[serde(rename = "DOVIBLPresent", skip_serializing_if = "Option::is_none")]
+    pub dovi_bl_present: Option<bool>,
+    #[serde(rename = "DOVIELPresent", skip_serializing_if = "Option::is_none")]
+    pub dovi_el_present: Option<bool>,
+    #[serde(rename = "DOVILevel", skip_serializing_if = "Option::is_none")]
+    pub dovi_level: Option<i32>,
+    #[serde(rename = "DOVIPresent", skip_serializing_if = "Option::is_none")]
+    pub dovi_present: Option<bool>,
+    #[serde(rename = "DOVIProfile", skip_serializing_if = "Option::is_none")]
+    pub dovi_profile: Option<i32>,
+    #[serde(rename = "DOVIRPUPresent", skip_serializing_if = "Option::is_none")]
+    pub dovi_rpu_present: Option<bool>,
+    #[serde(rename = "DOVIVersion", skip_serializing_if = "Option::is_none")]
+    pub dovi_version: Option<String>,
+    #[serde(rename = "HDR10PlusPresent", skip_serializing_if = "Option::is_none")]
+    pub hdr10_plus_present: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anamorphic: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_channel_layout: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bit_depth: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chroma_location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chroma_subsampling: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closed_captions: Option<bool>,
+    #[serde(rename = "codecID", skip_serializing_if = "Option::is_none")]
+    pub codec_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coded_height: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coded_width: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_primaries: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_range: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_space: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_trc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dub: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedded_in_video: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame_rate: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gain_offset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_scaling_matrix: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_compression: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hearing_impaired: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loudness: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loudness_analysis_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lra: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pixel_aspect_ratio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ref_frames: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sampling_rate: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scan_type: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub separate_fields: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_identifier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visual_impaired: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<i32>,
+}
+
+impl StreamAnalysis {
+    fn from_graphql(stream: &GqlStream) -> Self {
+        let when = |flag: bool| flag.then_some(true);
+        let traits = &stream.traits;
+        let mut analysis = Self {
+            // An empty name is not published, though it still shapes the extended label.
+            title: stream.title.clone().filter(|title| !title.is_empty()),
+            stream_identifier: stream.stream_identifier.map(|id| id.to_string()),
+            profile: stream.profile.clone(),
+            bit_depth: stream.bit_depth,
+            original: when(traits.is_original),
+            dub: when(traits.is_dub),
+            comment: when(traits.is_commentary),
+            hearing_impaired: when(traits.is_hearing_impaired),
+            visual_impaired: when(traits.is_visual_impaired),
+            header_compression: when(traits.has_header_compression),
+            ..Self::default()
+        };
+        if let Some(video) = &stream.video {
+            analysis.width = video.width;
+            analysis.height = video.height;
+            analysis.coded_width = video.coded_width;
+            analysis.coded_height = video.coded_height;
+            analysis.frame_rate = video.frame_rate;
+            analysis.level = video.level;
+            analysis.ref_frames = video.ref_frames;
+            analysis.scan_type = match video.scan.as_deref() {
+                Some("PROGRESSIVE") => Some("progressive"),
+                Some("INTERLACED") => Some("interlaced"),
+                _ => None,
+            };
+            analysis
+                .chroma_subsampling
+                .clone_from(&video.chroma_subsampling);
+            analysis.chroma_location.clone_from(&video.chroma_location);
+            analysis.color_range.clone_from(&video.color.range);
+            analysis.color_space.clone_from(&video.color.space);
+            analysis.color_primaries.clone_from(&video.color.primaries);
+            analysis.color_trc.clone_from(&video.color.transfer);
+            analysis.has_scaling_matrix = video.has_scaling_matrix;
+            analysis.anamorphic = video.is_anamorphic;
+            analysis
+                .pixel_aspect_ratio
+                .clone_from(&video.pixel_aspect_ratio);
+            analysis.codec_id.clone_from(&video.fourcc);
+            analysis.closed_captions = when(video.has_closed_captions);
+            analysis.separate_fields = when(video.has_separate_fields);
+            analysis.hdr10_plus_present = when(video.has_hdr10_plus);
+            if let Some(dolby) = &video.dolby_vision {
+                analysis.dovi_present = Some(true);
+                analysis.dovi_version = Some(dolby.version.clone());
+                analysis.dovi_profile = Some(dolby.profile);
+                analysis.dovi_level = Some(dolby.level);
+                analysis.dovi_bl_compat_id = dolby.base_layer_compatibility;
+                analysis.dovi_bl_present = Some(dolby.has_base_layer);
+                analysis.dovi_el_present = Some(dolby.has_enhancement_layer);
+                analysis.dovi_rpu_present = Some(dolby.has_rpu);
+            }
+        }
+        if let Some(audio) = &stream.audio {
+            analysis.sampling_rate = audio.sampling_rate;
+            analysis
+                .audio_channel_layout
+                .clone_from(&audio.channel_layout);
+            if let Some(loudness) = &audio.loudness {
+                let measure = |value: f64| Some(format!("{value:.2}"));
+                analysis.loudness = measure(loudness.integrated);
+                analysis.lra = measure(loudness.range);
+                analysis.peak = measure(loudness.true_peak);
+                analysis.threshold = measure(loudness.threshold);
+                analysis.gain_offset = measure(loudness.gain_offset);
+                analysis.loudness_analysis_version = Some(loudness.analysis_version.clone());
+            }
+        }
+        if let Some(subtitle) = &stream.subtitle {
+            analysis.format.clone_from(&subtitle.format);
+            analysis.embedded_in_video = subtitle.is_embedded_in_video.then_some("1");
+        }
+        analysis
+    }
 }
 
 /// Which static artwork and layout a library view uses, by media kind.
@@ -588,7 +814,11 @@ impl MetadataEntry {
             child_count: item.child_count(),
             added_at: item.added_at,
             updated_at: item.updated_at,
-            media: item.versions.iter().map(MediaEntry::from_graphql).collect(),
+            media: item
+                .versions
+                .iter()
+                .map(|version| MediaEntry::from_graphql(version, language))
+                .collect(),
             genre: TagEntry::all(&item.tags.genres, "genre"),
             country: TagEntry::all(&item.tags.countries, "country"),
             guids: item
@@ -618,7 +848,8 @@ impl MetadataEntry {
 }
 
 impl MediaEntry {
-    fn from_graphql(version: &GqlVersion) -> Self {
+    fn from_graphql(version: &GqlVersion, language: Language) -> Self {
+        let first_file = version.files.first();
         Self {
             id: version.database_id(),
             duration: version.duration_ms,
@@ -627,41 +858,72 @@ impl MediaEntry {
             height: version.height,
             aspect_ratio: version.aspect_ratio.map(snap_aspect_ratio),
             audio_channels: version.audio_channels,
-            audio_codec: version.audio_codec.clone(),
+            audio_codec: composed_audio_codec(
+                version.audio_codec.as_deref(),
+                profile_of(version.primary_audio.as_ref()).as_deref(),
+            ),
             video_codec: version.video_codec.clone(),
             video_resolution: resolution_label(version.width, version.height),
             container: version.container.clone(),
             video_frame_rate: version.frame_rate.and_then(frame_rate_label),
-            // Reported only when true, which is how a reference server emits it.
-            optimized_for_streaming: version.optimized_for_streaming.then_some(true),
+            optimized_for_streaming: first_file
+                .and_then(|file| file.optimized_for_streaming)
+                .map(|_| u8::from(version.optimized_for_streaming)),
+            audio_profile: profile_of(version.primary_audio.as_ref()),
+            has_64bit_offsets: first_file.and_then(|file| file.has_64bit_offsets),
+            video_profile: profile_of(version.primary_video.as_ref()),
             part: version
                 .files
                 .iter()
-                .map(|file| PartEntry::from_graphql(file, version.container.clone()))
+                .map(|file| PartEntry::from_graphql(file, version, language))
                 .collect(),
         }
     }
 }
 
 impl PartEntry {
-    /// `container` is the version's: a part has none of its own, and a reference server
-    /// repeats the enclosing version's value on every part.
-    fn from_graphql(file: &GqlPart, container: Option<String>) -> Self {
+    /// The container and the profiles are the version's: the reference repeats them on
+    /// every part, a part having none of its own.
+    fn from_graphql(file: &GqlPart, version: &GqlVersion, language: Language) -> Self {
         // The middle segment is a change stamp on the reference, and the name is cosmetic:
         // neither is read back.
-        let extension = container.as_deref().unwrap_or("bin");
+        let extension = version.container.as_deref().unwrap_or("bin");
         Self {
             id: file.database_id(),
             key: format!("/library/parts/{}/0/file.{extension}", file.database_id()),
             duration: file.duration_ms,
             file: file.path.clone(),
             size: file.size_bytes,
-            container,
+            audio_profile: profile_of(version.primary_audio.as_ref()),
+            container: version.container.clone(),
+            has_64bit_offsets: file.has_64bit_offsets,
+            has_chapter_text_stream: file.has_chapter_text_stream.then_some(true),
+            has_thumbnail: file.has_thumbnail.then_some("1"),
+            optimized_for_streaming: file.optimized_for_streaming,
+            packet_length: file.packet_length,
+            video_profile: profile_of(version.primary_video.as_ref()),
             stream: with_audio_selected(
-                file.streams.iter().map(StreamEntry::from_graphql).collect(),
+                file.streams
+                    .iter()
+                    .map(|stream| StreamEntry::from_graphql(stream, language))
+                    .collect(),
             ),
         }
     }
+}
+
+/// The version's audio codec as the reference names it: `dca-ma` for DTS-HD Master Audio,
+/// the stored codec otherwise. Measured over every codec and profile pair of the library;
+/// no other pair is composed, not even `dca` with `hra` or `es`.
+fn composed_audio_codec(codec: Option<&str>, profile: Option<&str>) -> Option<String> {
+    match (codec, profile) {
+        (Some("dca"), Some("ma")) => Some("dca-ma".to_owned()),
+        (codec, _) => codec.map(ToOwned::to_owned),
+    }
+}
+
+fn profile_of(track: Option<&GqlProfiled>) -> Option<String> {
+    track.and_then(|track| track.profile.clone())
 }
 
 /// Marks the audio track that plays when none is asked for: the first default, or else the
@@ -681,7 +943,12 @@ fn with_audio_selected(mut streams: Vec<StreamEntry>) -> Vec<StreamEntry> {
 }
 
 impl StreamEntry {
-    fn from_graphql(stream: &GqlStream) -> Self {
+    fn from_graphql(stream: &GqlStream, language: Language) -> Self {
+        let labels = stream_labels::labels(stream, language);
+        let named = stream
+            .language
+            .as_deref()
+            .map(|tag| stream_labels::language(tag, language));
         Self {
             id: stream.database_id(),
             stream_type: match stream.kind.as_str() {
@@ -693,10 +960,15 @@ impl StreamEntry {
             default: stream.is_default.then_some(true),
             forced: stream.is_forced.then_some(true),
             codec: stream.codec.clone(),
-            index: stream.position,
+            index: (!stream.is_external).then_some(stream.position),
             channels: stream.channels,
             bitrate: kilobits(stream.bitrate),
-            language: stream.language.clone(),
+            language: named.as_ref().map(|label| label.name.clone()),
+            language_tag: named.as_ref().map(|label| label.tag.clone()),
+            language_code: named.map(|label| label.code),
+            analysis: StreamAnalysis::from_graphql(stream),
+            display_title: labels.display,
+            extended_display_title: labels.extended,
         }
     }
 }
@@ -808,10 +1080,15 @@ mod tests {
             default: default.then_some(true),
             forced: None,
             codec: None,
-            index: 0,
+            index: Some(0),
             channels: None,
             bitrate: None,
             language: None,
+            language_tag: None,
+            language_code: None,
+            analysis: super::StreamAnalysis::default(),
+            display_title: String::new(),
+            extended_display_title: String::new(),
         }
     }
 

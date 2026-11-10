@@ -6,6 +6,7 @@
 //! extracted into [`crate::translations`].
 
 use crate::client::ClientIdentity;
+use crate::language_names::{LocaleNames, LOCALES};
 use crate::translations::{Catalog, CATALOGS, ENGLISH};
 
 #[derive(Debug, Clone, Copy)]
@@ -41,6 +42,15 @@ impl Language {
 
     pub(crate) const fn catalog(self) -> &'static Catalog {
         self.0
+    }
+
+    /// The language and region names this client reads, from the same catalog choice.
+    pub(crate) fn names(self) -> &'static LocaleNames {
+        LOCALES
+            .iter()
+            .find(|names| names.catalog == self.0.code)
+            // The generator writes English first, and every catalog has its locale.
+            .unwrap_or(&LOCALES[0])
     }
 
     /// A season's display name, when the source stores none: `Saison 3`, or the language's

@@ -6,12 +6,16 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
+use open_plex_core::metadata::ScanType;
 use open_plex_core::metadata::{
     ItemDepth, ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataError, MetadataRepository,
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Window};
-use open_plex_core::{MediaId, PartId, RatingKey, SectionId};
-use open_plex_db::entity::{library_section, media, media_part, media_stream, metadata_item};
+use open_plex_core::{MediaId, PartId, RatingKey, SectionId, StreamId};
+use open_plex_db::entity::{
+    library_section, media, media_part, media_stream, metadata_item, stream_dolby_vision,
+    stream_loudness,
+};
 use open_plex_db::write;
 use open_plex_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
@@ -265,6 +269,9 @@ async fn seed_parts(connection: &DatabaseConnection) {
             duration_ms: ActiveValue::Set(Some(9_641_185)),
             created_at: ActiveValue::Set(0),
             updated_at: ActiveValue::Set(0),
+            has_thumbnail: ActiveValue::Set(false),
+            has_chapter_text_stream: ActiveValue::Set(false),
+            ..Default::default()
         },
         media_part::ActiveModel {
             id: ActiveValue::Set(1001),
@@ -275,6 +282,9 @@ async fn seed_parts(connection: &DatabaseConnection) {
             duration_ms: ActiveValue::Set(Some(9_641_185)),
             created_at: ActiveValue::Set(0),
             updated_at: ActiveValue::Set(0),
+            has_thumbnail: ActiveValue::Set(true),
+            has_chapter_text_stream: ActiveValue::Set(false),
+            ..Default::default()
         },
     ])
     .exec(connection)
@@ -314,6 +324,19 @@ fn stream(
         is_default: ActiveValue::Set(true),
         is_forced: ActiveValue::Set(forced),
         external_path: ActiveValue::Set(None),
+        // Set rather than left to the column default: a batch insert writes NULL for a
+        // column one row sets and another does not.
+        has_closed_captions: ActiveValue::Set(false),
+        has_separate_fields: ActiveValue::Set(false),
+        has_hdr10_plus: ActiveValue::Set(false),
+        is_embedded_in_video: ActiveValue::Set(false),
+        is_original: ActiveValue::Set(false),
+        is_dub: ActiveValue::Set(false),
+        is_commentary: ActiveValue::Set(false),
+        is_hearing_impaired: ActiveValue::Set(false),
+        is_visual_impaired: ActiveValue::Set(false),
+        has_header_compression: ActiveValue::Set(false),
+        ..Default::default()
     }
 }
 
@@ -804,4 +827,123 @@ async fn reads_episode_additions_newest_first_and_resumes_after_the_last() {
         .expect("additions");
     let episodes: Vec<i64> = rest.iter().map(|addition| addition.episode.get()).collect();
     assert_eq!(episodes, [30]);
+}
+
+/// Values from the reference library: a Dolby Vision profile 8 video track and a DTS track
+/// measured for loudness, both in the 4K file.
+async fn seed_analysed_tracks(connection: &DatabaseConnection) {
+    media_stream::Entity::insert_many([
+        media_stream::ActiveModel {
+            width: ActiveValue::Set(Some(3840)),
+            height: ActiveValue::Set(Some(2160)),
+            coded_height: ActiveValue::Set(Some(2160)),
+            frame_rate: ActiveValue::Set(Some(23.976)),
+            level: ActiveValue::Set(Some(153)),
+            profile: ActiveValue::Set(Some("main 10".to_owned())),
+            scan_type: ActiveValue::Set(Some("progressive".to_owned())),
+            color_transfer: ActiveValue::Set(Some("smpte2084".to_owned())),
+            has_scaling_matrix: ActiveValue::Set(Some(false)),
+            ..stream(1100, 1001, "video", 0, "hevc", Some("en"), false)
+        },
+        media_stream::ActiveModel {
+            sampling_rate: ActiveValue::Set(Some(48_000)),
+            channel_layout: ActiveValue::Set(Some("5.1(side)".to_owned())),
+            profile: ActiveValue::Set(Some("dts".to_owned())),
+            title: ActiveValue::Set(Some("French DTS 754kbps".to_owned())),
+            is_original: ActiveValue::Set(true),
+            ..stream(1101, 1001, "audio", 1, "dca", Some("fr"), false)
+        },
+    ])
+    .exec(connection)
+    .await
+    .expect("streams");
+    stream_dolby_vision::Entity::insert(stream_dolby_vision::ActiveModel {
+        stream_id: ActiveValue::Set(1100),
+        version: ActiveValue::Set("1.0".to_owned()),
+        profile: ActiveValue::Set(8),
+        level: ActiveValue::Set(6),
+        base_layer_compatibility: ActiveValue::Set(Some(1)),
+        has_base_layer: ActiveValue::Set(true),
+        has_enhancement_layer: ActiveValue::Set(false),
+        has_rpu: ActiveValue::Set(true),
+    })
+    .exec(connection)
+    .await
+    .expect("dolby vision");
+    stream_loudness::Entity::insert(stream_loudness::ActiveModel {
+        stream_id: ActiveValue::Set(1101),
+        analysis_version: ActiveValue::Set("0.02".to_owned()),
+        integrated: ActiveValue::Set(-17.79),
+        loudness_range: ActiveValue::Set(21.4),
+        true_peak: ActiveValue::Set(-0.37),
+        threshold: ActiveValue::Set(-29.89),
+        gain_offset: ActiveValue::Set(0.42),
+    })
+    .exec(connection)
+    .await
+    .expect("loudness");
+}
+
+#[tokio::test]
+async fn reads_a_tracks_analysis_with_its_dolby_vision_and_loudness() {
+    let connection = open_plex_db::connect("sqlite::memory:")
+        .await
+        .expect("in-memory database");
+    seed(&connection).await;
+    seed_analysed_tracks(&connection).await;
+    let repository = SqlMetadataRepository::new(connection);
+
+    let tracks = repository
+        .streams_for(&[PartId::new(1001)])
+        .await
+        .expect("streams");
+    let video = tracks
+        .iter()
+        .find(|track| track.id == StreamId::new(1100))
+        .expect("video");
+    let analysis = video
+        .video
+        .as_ref()
+        .expect("a video track has a video analysis");
+    assert!(video.audio.is_none() && video.subtitle.is_none());
+    assert_eq!(analysis.width, Some(3840));
+    assert_eq!(analysis.scan_type, Some(ScanType::Progressive));
+    assert_eq!(analysis.color.transfer.as_deref(), Some("smpte2084"));
+    // Stored as false, which is not the same as never analysed.
+    assert_eq!(analysis.has_scaling_matrix, Some(false));
+    assert_eq!(analysis.anamorphic, None);
+    let dolby = analysis.dolby_vision.as_ref().expect("dolby vision");
+    assert_eq!((dolby.profile, dolby.level), (8, 6));
+    assert_eq!(dolby.base_layer_compatibility, Some(1));
+
+    let audio = tracks
+        .iter()
+        .find(|track| track.id == StreamId::new(1101))
+        .expect("audio");
+    assert!(audio.traits.original);
+    assert_eq!(audio.title.as_deref(), Some("French DTS 754kbps"));
+    let sound = audio
+        .audio
+        .as_ref()
+        .expect("an audio track has an audio analysis");
+    assert_eq!(sound.channel_layout.as_deref(), Some("5.1(side)"));
+    assert_eq!(
+        sound.loudness.as_ref().map(|loudness| loudness.integrated),
+        Some(-17.79)
+    );
+    // The other track of the file has neither record.
+    assert!(tracks
+        .iter()
+        .filter(|track| track.id != StreamId::new(1100))
+        .all(|track| track
+            .video
+            .as_ref()
+            .is_none_or(|video| video.dolby_vision.is_none())));
+
+    let files = repository
+        .files_for(&[MediaId::new(101)])
+        .await
+        .expect("files");
+    assert!(files[0].layout.has_thumbnail);
+    assert_eq!(files[0].layout.has_64bit_offsets, None);
 }

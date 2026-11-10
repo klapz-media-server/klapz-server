@@ -7,6 +7,7 @@
 //! The source is opened read-only: it is a snapshot and must stay untouched. No account is
 //! ever read, so the real names and e-mail addresses it holds are never copied.
 
+mod analysis;
 pub mod library;
 pub mod metadata;
 pub mod tags;

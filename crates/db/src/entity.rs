@@ -23,6 +23,8 @@ pub mod play_queue;
 pub mod play_queue_entry;
 pub mod playback_session;
 pub mod section_root;
+pub mod stream_dolby_vision;
+pub mod stream_loudness;
 pub mod tag;
 pub mod user_extension;
 pub mod users;

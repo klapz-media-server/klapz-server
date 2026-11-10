@@ -16,6 +16,16 @@ pub struct Model {
     pub duration_ms: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
+    /// An embedded cover image.
+    pub has_thumbnail: bool,
+    /// Whether an MP4 uses 64-bit chunk offsets. Null when the container is not MP4.
+    #[sea_orm(column_name = "has_64bit_offsets")]
+    pub has_64bit_offsets: Option<bool>,
+    /// Whether an MP4's index precedes its data. Null when the container is not MP4.
+    pub optimized_for_streaming: Option<bool>,
+    /// The transport packet size of an MPEG-TS file: 188, or 192 for Blu-ray's M2TS.
+    pub packet_length: Option<i32>,
+    pub has_chapter_text_stream: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

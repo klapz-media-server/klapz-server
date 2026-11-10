@@ -98,6 +98,26 @@ pub struct MediaVersion {
     pub optimized_for_streaming: bool,
 }
 
+impl MediaVersion {
+    /// The audio track this version's `audio_codec` and `audio_channels` describe.
+    ///
+    /// The first audio track matching both, else the default one, else the first. Matched
+    /// rather than assumed to be the default: on 243,112 of the reference's 243,159 media
+    /// this is the track whose profile the version reports, and the default track is not
+    /// on 6,671 of them.
+    pub fn primary_audio<'a>(&self, tracks: &'a [MediaStream]) -> Option<&'a MediaStream> {
+        let audio = || {
+            tracks
+                .iter()
+                .filter(|track| track.kind == StreamKind::Audio)
+        };
+        audio()
+            .find(|track| track.codec == self.audio_codec && track.channels == self.audio_channels)
+            .or_else(|| audio().find(|track| track.is_default))
+            .or_else(|| audio().next())
+    }
+}
+
 /// One file on disk.
 #[derive(Debug, Clone)]
 pub struct MediaFile {
@@ -112,6 +132,22 @@ pub struct MediaFile {
     pub path: String,
     pub size_bytes: Option<i64>,
     pub duration_ms: Option<i64>,
+    pub layout: FileLayout,
+}
+
+/// How a file is laid out, as its analysis found it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FileLayout {
+    /// An embedded cover image.
+    pub has_thumbnail: bool,
+    /// Whether an MP4 uses 64-bit chunk offsets. `None` when the file is not MP4.
+    pub has_64bit_offsets: Option<bool>,
+    /// Whether an MP4's index precedes its data, so it plays before it fully arrives.
+    /// `None` when the file is not MP4.
+    pub optimized_for_streaming: Option<bool>,
+    /// The packet size of an MPEG-TS file: 188, or 192 for Blu-ray's M2TS.
+    pub packet_length: Option<i32>,
+    pub has_chapter_text_stream: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,6 +174,146 @@ pub struct MediaStream {
     pub is_forced: bool,
     /// Set when the track lives in its own file.
     pub external_path: Option<String>,
+    /// The name the file gives the track, often a release tag: `VFF AC3 5.1 @448kb`.
+    /// Empty, not `None`, when the file writes an empty name: clients label the two apart.
+    pub title: Option<String>,
+    /// The container's own number for the track: a Matroska track number, an MPEG-TS PID.
+    pub stream_identifier: Option<i64>,
+    /// The codec profile: `high` or `main 10` for video, `lc` for AAC, `ma` for DTS-HD
+    /// Master Audio.
+    pub profile: Option<String>,
+    /// Bits per sample.
+    pub bit_depth: Option<i32>,
+    pub traits: TrackTraits,
+    /// Set on a video track, and only there. Boxed: it is most of a track's size, and only
+    /// one track in three carries it.
+    pub video: Option<Box<VideoAnalysis>>,
+    /// Set on an audio track, and only there.
+    pub audio: Option<AudioAnalysis>,
+    /// Set on a subtitle track, and only there.
+    pub subtitle: Option<SubtitleAnalysis>,
+}
+
+/// What a file says a track is for, beyond its language.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent flags the source records one by one, not states to fold into an enum"
+)]
+pub struct TrackTraits {
+    /// In the work's original language.
+    pub original: bool,
+    pub dub: bool,
+    pub commentary: bool,
+    pub hearing_impaired: bool,
+    /// Audio description.
+    pub visual_impaired: bool,
+    /// Matroska header stripping, which some players cannot decode.
+    pub header_compression: bool,
+}
+
+/// Progressive or interlaced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanType {
+    Progressive,
+    Interlaced,
+}
+
+/// What the analysis measured about a video track.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct VideoAnalysis {
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    /// Dimensions as encoded, before cropping: 1088 for most 1080-line H.264.
+    pub coded_width: Option<i32>,
+    pub coded_height: Option<i32>,
+    /// Frames per second, as measured: 23.976.
+    pub frame_rate: Option<f64>,
+    /// The codec's level indicator as coded: 41 is H.264 level 4.1, 120 is HEVC level 4.
+    pub level: Option<i32>,
+    pub ref_frames: Option<i32>,
+    pub scan_type: Option<ScanType>,
+    /// `4:2:0`.
+    pub chroma_subsampling: Option<String>,
+    pub chroma_location: Option<String>,
+    pub color: ColorDescription,
+    /// `None` when the analysis did not say, which is not the same as false.
+    pub has_scaling_matrix: Option<bool>,
+    pub anamorphic: Option<bool>,
+    /// Sample aspect ratio as a ratio of integers: `16:15`.
+    pub pixel_aspect_ratio: Option<String>,
+    /// The codec tag a legacy container carries: `XVID`, `DX50`.
+    pub fourcc: Option<String>,
+    pub closed_captions: bool,
+    /// Fields coded separately, as an interlaced picture can be.
+    pub separate_fields: bool,
+    pub hdr10_plus: bool,
+    pub dolby_vision: Option<DolbyVision>,
+}
+
+/// How a video track's colors are to be read, in ffmpeg's vocabulary.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ColorDescription {
+    /// `tv` (limited) or `pc` (full).
+    pub range: Option<String>,
+    /// The matrix: `bt709`, `bt2020nc`.
+    pub space: Option<String>,
+    pub primaries: Option<String>,
+    /// The transfer characteristic: `smpte2084` is PQ, the HDR10 curve; `arib-std-b67`
+    /// is HLG.
+    pub transfer: Option<String>,
+}
+
+/// A Dolby Vision configuration record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DolbyVision {
+    /// As written: `1.0`.
+    pub version: String,
+    pub profile: i32,
+    pub level: i32,
+    /// What the base layer plays as without Dolby Vision: 1 HDR10, 2 SDR, 4 HLG,
+    /// 6 Blu-ray HDR10.
+    pub base_layer_compatibility: Option<i32>,
+    pub has_base_layer: bool,
+    pub has_enhancement_layer: bool,
+    /// Whether the track carries the reference processing unit, its dynamic metadata.
+    pub has_rpu: bool,
+}
+
+/// What the analysis measured about an audio track.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AudioAnalysis {
+    /// Hertz.
+    pub sampling_rate: Option<i32>,
+    /// In ffmpeg's vocabulary: `stereo`, `5.1(side)`.
+    pub channel_layout: Option<String>,
+    pub loudness: Option<Loudness>,
+}
+
+/// An EBU R128 loudness measurement.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Loudness {
+    /// As written: `0.02`.
+    pub analysis_version: String,
+    /// Integrated loudness, in LUFS.
+    pub integrated: f64,
+    /// Loudness range, in LU.
+    pub range: f64,
+    /// True peak, in dBTP.
+    pub true_peak: f64,
+    /// The gating threshold of the integration, in LUFS.
+    pub threshold: f64,
+    /// The gain, in dB, that brings the track to the target loudness.
+    pub gain_offset: f64,
+}
+
+/// What the analysis says about a subtitle track.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SubtitleAnalysis {
+    /// The format of a sidecar file: `srt`, `ssa`.
+    pub format: Option<String>,
+    /// Captions carried inside the video bitstream (EIA-608) rather than as a track.
+    pub embedded_in_video: bool,
 }
 
 /// What a tag classifies or credits.

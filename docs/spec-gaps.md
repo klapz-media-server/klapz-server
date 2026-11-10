@@ -88,6 +88,44 @@ derivable from the spec or from the database schema alone.
 | Search-result attribute order | `/search` puts the library attributes (`allowSync`, `librarySectionID`, `librarySectionTitle`, `librarySectionUUID`, `personal`, `sourceTitle`) **before** `ratingKey`; `/library/metadata/{ids}` puts the same ones after `titleSort`. Order is observable in XML, so the two shapes are distinct types. |
 | Boolean stream flags | `default` and `forced` are sent only when true, never as `0`. |
 
+### Tracks: what the analysis measured, and how it is labelled
+
+The reference keeps its media analysis in a packed JSON column, `extra_data`, keyed by the
+component that wrote it (`ma:` analysis, `ln:` loudness, `pv:` markers, `at:` downloaded
+subtitles). Measured over the whole library, each `ma:` and `ln:` key becomes an attribute of
+the same name, with a type per key that does not follow the value: `streamIdentifier` and
+`DOVIVersion` are strings, loudness values are strings with two decimals, `embeddedInVideo`
+is `"1"`, `Part.hasThumbnail` is `"1"` beside boolean neighbours, `Media.optimizedForStreaming`
+is a number beside a boolean on the part. They come in **ASCII order of the key**, capitals
+first (`DOVI…`, `HDR10PlusPresent`, then `anamorphic`…), between `languageCode` and
+`displayTitle`. `requiredBandwidths`, the `pv:` markers and the `at:` keys are not published
+on a lookup and are not imported.
+
+| Attribute | Rule |
+| --- | --- |
+| `language` | ICU's display name of the stored tag in the client's language: standard name, region by its short name (`Anglais (R.-U.)`, `Englisch (UK)`), region dropped when it is the language's likely one (`fr-FR` and `pt-BR` read `Français`, `Portugais`), first letter capitalised where the locale's menus capitalise (`Anglais`, but `English`, and an unknown `qad` reads `Qad` in French only). Identical on 2,516 tracks × 3 languages. `mis` and `und` are the exceptions, `Uncoded language` and `Undetermined language` in every language. |
+| `languageTag`, `languageCode` | The stored tag unchanged; its ISO 639-2/T code (`fra`, `deu`, `ron`), empty for a private-use code. |
+| `Media.audioProfile`, `videoProfile` | The profile of the audio track the version's codec and channel count describe — the first matching both, else the default, else the first (243,112 of 243,159) — and of the first video track. Repeated on the part. |
+| `Media.audioCodec` | `dca-ma` for DTS-HD Master Audio; no other pair is composed, not `dca` with `hra` or `es`. |
+| Video `displayTitle` | A resolution word from both dimensions, not `videoResolution`'s ladder (960×720 is `720`, there is no `576`): `4K`, `1080`, `720`, `480` with `p` or `i`, else `SD`; then `HDR10`, `HDR10+`, `HLG`, `DoVi/` in front of the base layer's, or `DoVi` alone. |
+| Audio `displayTitle` | `Language Traits (Codec Channels + Atmos)`: DTS named by its profile whatever the codec (`DTS-HD MA`, `DTS-ES`, unknown `DCA`), AAC by its (`HE-AAC`, `AAC Main`), channels from the layout without `(side)`, `Audiodescription` for audio description, `Inconnu` without a language. |
+| Subtitle `displayTitle` | `Language Forced SDH`, the words from the client's catalog (`Forcé`, `SME`). |
+| `extendedDisplayTitle` | The track's title, then in parentheses what the title does not already say, word by word: words split on spaces, `-`, `@`, `+`, `/`, commas and brackets but not on `.` or `:` (`.1080p.` says nothing, `DTS:X` is not `DTS`), `AC-3` read as `AC3`. The language is said by its name in itself (`Français`, not `French`) or by the whole stored tag as a word (`FR` for `fr`, not for `fr-FR`); a trait by its English word (`Forced`, `SDH`, `CC`). A title written empty opens the label with a space: ` (1080p HEVC Main)`. 100% of audio, 99.9% of video and 99.4% of subtitle labels identical over 4,473 tracks in three languages. |
+
+Where ours differ, all measured:
+
+- **Downloaded subtitles** read `(Français SRT OpenSubtitles)` on the reference, which names
+  the provider from the `at:` keys; we import none of them and write `Externe`. A sidecar
+  subtitle also carries `key` and `file` there, and no `index`; we omit `index` too, and the
+  `key` waits for a `/library/streams/{id}` route.
+- **`zh-Hant`** reads `Chinois (Taïwan)`: ICU completes a script into its likely region, which
+  the tables here do not carry.
+- **XML writes `frameRate="25.0"`** where the reference writes `25.000`, the stored text: the
+  XML is derived from the JSON value, which is the number `25.0` on both sides.
+- **A loudness of `-0.00`** reads `0.00`: storage keeps the value, not the sign of a zero.
+- **The 1080 threshold** of the video label lies between 1,041 and 1,072 lines (1424×1040 is
+  `720`, 1424×1072 is `1080`); 1,060 is used.
+
 ### Filter choices: where ours differ
 
 Compared over whole lists on a film and a series library: years, decades, countries and a

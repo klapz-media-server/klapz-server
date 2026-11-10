@@ -14,6 +14,41 @@ type AccountLink {
 	publishedAt: Int
 }
 
+type AudioAnalysis {
+	"""
+	Samples per second, in hertz.
+	"""
+	samplingRate: Int
+	"""
+	The channel layout, in ffmpeg's vocabulary: `stereo`, `5.1(side)`.
+	"""
+	channelLayout: String
+	"""
+	The track's EBU R128 loudness. Null when it was never measured.
+	"""
+	loudness: Loudness
+}
+
+type ColorDescription {
+	"""
+	`tv` for limited range, `pc` for full.
+	"""
+	range: String
+	"""
+	The matrix coefficients: `bt709`, `bt2020nc`.
+	"""
+	space: String
+	"""
+	The primaries: `bt709`, `bt2020`.
+	"""
+	primaries: String
+	"""
+	The transfer characteristic: `bt709`; `smpte2084` is PQ, the curve of HDR10 and
+	Dolby Vision; `arib-std-b67` is HLG.
+	"""
+	transfer: String
+}
+
 """
 A play queue to create.
 """
@@ -34,6 +69,39 @@ input CreatePlayQueueInput {
 	Put the entries in random order, playing whichever lands first.
 	"""
 	shuffle: Boolean!
+}
+
+type DolbyVision {
+	"""
+	The record's version, as written: `1.0`.
+	"""
+	version: String!
+	"""
+	The profile: 5 (single layer, no fallback), 7 (dual layer, Blu-ray), 8 (single layer
+	with an HDR10, SDR or HLG fallback).
+	"""
+	profile: Int!
+	"""
+	The level, which bounds resolution and frame rate.
+	"""
+	level: Int!
+	"""
+	What the base layer plays as without Dolby Vision: 1 HDR10, 2 SDR, 4 HLG, 6 Blu-ray
+	HDR10. Null when the record does not say.
+	"""
+	baseLayerCompatibility: Int
+	"""
+	Whether the track carries a base layer.
+	"""
+	hasBaseLayer: Boolean!
+	"""
+	Whether the track carries an enhancement layer, as profile 7 does.
+	"""
+	hasEnhancementLayer: Boolean!
+	"""
+	Whether the track carries the reference processing unit, its dynamic metadata.
+	"""
+	hasRpu: Boolean!
 }
 
 type Episode implements Item & Node {
@@ -1141,6 +1209,33 @@ type LibraryTagEdge {
 	cursor: String!
 }
 
+type Loudness {
+	"""
+	The version of the analysis that measured it, as written: `0.02`.
+	"""
+	analysisVersion: String!
+	"""
+	Integrated loudness over the whole track, in LUFS.
+	"""
+	integrated: Float!
+	"""
+	Loudness range, in LU: how much the loudness varies.
+	"""
+	range: Float!
+	"""
+	True peak, in dBTP.
+	"""
+	truePeak: Float!
+	"""
+	The gating threshold the integration used, in LUFS.
+	"""
+	threshold: Float!
+	"""
+	The gain, in dB, that brings the track to the target loudness.
+	"""
+	gainOffset: Float!
+}
+
 type MediaFile implements Node {
 	"""
 	Globally unique, opaque identifier. Playback and download endpoints take it too.
@@ -1174,6 +1269,28 @@ type MediaFile implements Node {
 	Runtime in milliseconds.
 	"""
 	durationMs: Int
+	"""
+	Whether the file embeds a cover image.
+	"""
+	hasThumbnail: Boolean!
+	"""
+	Whether an MP4 file uses 64-bit chunk offsets, which some older players cannot read.
+	Null for a file that is not MP4.
+	"""
+	has64BitOffsets: Boolean
+	"""
+	Whether an MP4 file's index precedes its data, so it plays before it has fully
+	arrived. Null for a file that is not MP4.
+	"""
+	optimizedForStreaming: Boolean
+	"""
+	The packet size of an MPEG-TS file in bytes: 188, or 192 for Blu-ray's M2TS.
+	"""
+	packetLength: Int
+	"""
+	Whether chapter names are carried as a text track.
+	"""
+	hasChapterTextStream: Boolean!
 	"""
 	The tracks inside this file, plus any sidecar subtitle files.
 	"""
@@ -1222,6 +1339,41 @@ type MediaStream implements Node {
 	Whether the track lives in a separate file next to the media rather than inside it.
 	"""
 	isExternal: Boolean!
+	"""
+	The name the file gives the track, often a release tag: `VFF AC3 5.1 @448kb`. Empty
+	when the file writes an empty name, null when it writes none.
+	"""
+	title: String
+	"""
+	The container's own number for the track: a Matroska track number, an MPEG-TS PID
+	(13 bits at most, so always within an `Int`).
+	"""
+	streamIdentifier: Int
+	"""
+	The codec profile: `high` or `main 10` for video, `lc` for AAC, `ma` for DTS-HD
+	Master Audio, `dolby digital plus + dolby atmos`.
+	"""
+	profile: String
+	"""
+	Bits per sample.
+	"""
+	bitDepth: Int
+	"""
+	What the file says the track is for, beyond its language.
+	"""
+	traits: TrackTraits!
+	"""
+	What the analysis measured about a video track. Null on any other kind.
+	"""
+	video: VideoAnalysis
+	"""
+	What the analysis measured about an audio track. Null on any other kind.
+	"""
+	audio: AudioAnalysis
+	"""
+	What the analysis says about a subtitle track. Null on any other kind.
+	"""
+	subtitle: SubtitleAnalysis
 }
 
 type MediaVersion implements Node {
@@ -1294,6 +1446,17 @@ type MediaVersion implements Node {
 	Usually one; several for a release split across discs — 14 of 157,414 files here.
 	"""
 	files: [MediaFile!]!
+	"""
+	The first video track of the version's files: the one `videoCodec` and the
+	dimensions describe.
+	"""
+	primaryVideo: MediaStream
+	"""
+	The audio track `audioCodec` and `audioChannels` describe: the first matching both,
+	else the default one, else the first. Not always the default — a file can mark one
+	track default and have been summarised from another.
+	"""
+	primaryAudio: MediaStream
 }
 
 type Movie implements Item & Node {
@@ -2212,6 +2375,20 @@ type Root implements Node {
 	createdAt: Int!
 }
 
+"""
+Whether a picture is drawn whole or in alternating fields.
+"""
+enum Scan {
+	"""
+	Every frame drawn whole.
+	"""
+	PROGRESSIVE
+	"""
+	Alternating fields of odd and even lines.
+	"""
+	INTERLACED
+}
+
 type Season implements Item & Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this item.
@@ -2773,6 +2950,19 @@ enum StreamDecisionType {
 	TRANSCODE
 }
 
+type SubtitleAnalysis {
+	"""
+	The format of a sidecar subtitle file: `srt`, `ssa`. Null for an embedded track,
+	whose codec says it.
+	"""
+	format: String
+	"""
+	Whether the captions ride inside the video bitstream (EIA-608) rather than in a
+	track of their own.
+	"""
+	isEmbeddedInVideo: Boolean!
+}
+
 type Tag implements Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this tag, or to an
@@ -2922,6 +3112,33 @@ enum TrackKind {
 	SUBTITLE
 }
 
+type TrackTraits {
+	"""
+	In the work's original language.
+	"""
+	isOriginal: Boolean!
+	"""
+	A dub into another language.
+	"""
+	isDub: Boolean!
+	"""
+	A commentary track.
+	"""
+	isCommentary: Boolean!
+	"""
+	Meant for the deaf and hard of hearing: subtitles describing sounds as well.
+	"""
+	isHearingImpaired: Boolean!
+	"""
+	Audio description, for the blind and partially sighted.
+	"""
+	isVisualImpaired: Boolean!
+	"""
+	Whether the track uses Matroska header stripping, which some players cannot decode.
+	"""
+	hasHeaderCompression: Boolean!
+}
+
 """
 What the transcoder can do.
 """
@@ -3058,6 +3275,88 @@ type UserExtensionEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+type VideoAnalysis {
+	"""
+	Displayed width in pixels.
+	"""
+	width: Int
+	"""
+	Displayed height in pixels.
+	"""
+	height: Int
+	"""
+	Width as encoded, before cropping.
+	"""
+	codedWidth: Int
+	"""
+	Height as encoded, before cropping: 1088 for most 1080-line H.264, which codes
+	whole 16-pixel macroblocks.
+	"""
+	codedHeight: Int
+	"""
+	Frames per second, as measured: 23.976.
+	"""
+	frameRate: Float
+	"""
+	The codec's level indicator as coded: 41 is H.264 level 4.1, 120 is HEVC level 4,
+	which codes thirty times the level.
+	"""
+	level: Int
+	"""
+	How many reference frames the decoder must keep.
+	"""
+	refFrames: Int
+	"""
+	Progressive or interlaced. Null when the analysis did not say.
+	"""
+	scan: Scan
+	"""
+	Chroma subsampling: `4:2:0`.
+	"""
+	chromaSubsampling: String
+	"""
+	Where chroma samples sit relative to luma: `left`, `topleft`, `center`.
+	"""
+	chromaLocation: String
+	"""
+	How the track's colors are to be read.
+	"""
+	color: ColorDescription!
+	"""
+	Whether the encoder used custom quantisation matrices. Null when the analysis did
+	not say, which is not the same as false.
+	"""
+	hasScalingMatrix: Boolean
+	"""
+	Whether pixels are not square. Null when the analysis did not say.
+	"""
+	isAnamorphic: Boolean
+	"""
+	The sample aspect ratio, as a ratio of integers: `16:15`. Set on anamorphic tracks.
+	"""
+	pixelAspectRatio: String
+	"""
+	The codec tag a legacy container carries: `XVID`, `DX50`.
+	"""
+	fourcc: String
+	"""
+	Whether closed captions (EIA-608) ride inside the picture.
+	"""
+	hasClosedCaptions: Boolean!
+	"""
+	Whether fields are coded separately, as an interlaced picture can be.
+	"""
+	hasSeparateFields: Boolean!
+	"""
+	Whether the track carries HDR10+ dynamic metadata.
+	"""
+	hasHdr10Plus: Boolean!
+	"""
+	The Dolby Vision configuration. Null on a track without Dolby Vision.
+	"""
+	dolbyVision: DolbyVision
 }
 
 type YearConnection {
