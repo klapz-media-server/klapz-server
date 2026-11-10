@@ -133,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .layer(cors::layer())
         .layer((
-            TraceLayer::new_for_http(),
+            TraceLayer::new_for_http().make_span_with(request_span),
             TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, Duration::from_secs(30)),
             // A real server sends both of these on every response, errors included, so they
             // belong in a layer rather than in the response wrapper. Only an image says
@@ -232,6 +232,16 @@ fn trusted_networks() -> Result<Vec<ipnet::IpNet>, String> {
         );
     }
     Ok(networks)
+}
+
+/// A request's trace: the method and the path, never the URI. Plex clients carry the token in
+/// the query string, and tower-http's default span would write it to the log.
+fn request_span(request: &axum::extract::Request) -> tracing::Span {
+    tracing::debug_span!(
+        "request",
+        method = %request.method(),
+        path = request.uri().path(),
+    )
 }
 
 /// `OPENPLEX_TRANSCODER` is the patched ffmpeg to run; `OPENPLEX_TRANSCODER_CODECS` where its

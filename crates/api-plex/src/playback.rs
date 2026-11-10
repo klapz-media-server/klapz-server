@@ -354,6 +354,15 @@ async fn decision(
         Some((selection.plan(&params)?, protocol))
     };
 
+    tracing::info!(
+        item = params.rating_key()?,
+        ?protocol,
+        direct_play,
+        subtitles = params.subtitles.as_deref().unwrap_or("-"),
+        subtitle = ?selection.subtitle.map(GqlStream::database_id),
+        burn = selection.burn,
+        "decided a playback"
+    );
     let entry = MetadataEntry::from_graphql(&item, true, Language::of(&client))
         .ok_or(ApiError::BadRequest)?;
     let mut metadata =
