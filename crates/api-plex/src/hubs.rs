@@ -11,13 +11,16 @@
 //! - **Recently released**, films out within a year or episodes by air date.
 //! - **Recently added**: a film library's films by date added; a series library's new
 //!   episodes grouped into their season or series, by the rule `core::recent` measured.
-//! - **Start watching**, the series not begun; **top unwatched** films and **top rated**
+//! - **Top of a genre** and **top of a person**, whose genre or person is drawn among the
+//!   library's.
+//! - **Start watching**, the series not begun; **rediscover**, the series watched between
+//!   five years and six weeks ago and not finished; **top unwatched** films and **top rated**
 //!   series, rated 7 or more by their audience; **recently watched** films or episodes.
 //! - **Recent playlists**, empty, when the client asks for library playlists: there are
 //!   none.
 //!
-//! Left out: the shelves of one genre, one person, and "rediscover", which pick their genre,
-//! person or period in a way not measured yet.
+//! Left out: a series library's "more in" a genre. Its genre is not drawn evenly — four of 45
+//! in 120 draws, all genres of series watched lately, Drama never — by a rule not found yet.
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};
@@ -195,12 +198,16 @@ async fn section_hubs(
         (SERIES_SHELVES_BEFORE, SERIES_SHELVES_AFTER)
     };
     let prefix = if is_film_library { "movie" } else { "tv" };
-    for listing in before {
-        hubs.push(listing_shelf(&state, section, prefix, listing, &params, language).await?);
+    for source in before {
+        if let Some(spec) = source.spec(&state, section, prefix, language).await? {
+            hubs.push(listing_shelf(&state, section, &spec, &params, language).await?);
+        }
     }
     hubs.push(shelf.hub(items, language));
-    for listing in after {
-        hubs.push(listing_shelf(&state, section, prefix, listing, &params, language).await?);
+    for source in after {
+        if let Some(spec) = source.spec(&state, section, prefix, language).await? {
+            hubs.push(listing_shelf(&state, section, &spec, &params, language).await?);
+        }
     }
     if params.includes_playlists() {
         hubs.push(recent_playlists(section, language));
@@ -236,69 +243,291 @@ struct ListingShelf {
     random: bool,
 }
 
-const FILM_SHELVES_BEFORE: &[ListingShelf] = &[ListingShelf {
+const RECENTLY_RELEASED_MOVIES: ListingShelf = ListingShelf {
     name: "recentlyreleased",
     context: "hub.movie.recentlyreleased",
     kind: "movie",
     title: |c| c.recently_released_movies,
     query: "sort=originallyAvailableAt:desc&originallyAvailableAt>=-1y",
     random: false,
-}];
+};
 
-const FILM_SHELVES_AFTER: &[ListingShelf] = &[
-    ListingShelf {
-        name: "topunwatched",
-        context: "hub.movie.topunwatched",
-        kind: "movie",
-        title: |c| c.top_unwatched_movies,
-        query: "unwatched=1&audienceRating>=7.0&sort=audienceRating:desc",
-        random: true,
-    },
-    ListingShelf {
-        name: "recentlyviewed",
-        context: "hub.movie.recentlyviewed",
-        kind: "movie",
-        title: |c| c.recently_watched_movies,
-        query: "sort=lastViewedAt:desc&unwatched=0&viewOffset=0",
-        random: false,
-    },
-];
+const TOP_UNWATCHED_MOVIES: ListingShelf = ListingShelf {
+    name: "topunwatched",
+    context: "hub.movie.topunwatched",
+    kind: "movie",
+    title: |c| c.top_unwatched_movies,
+    query: "unwatched=1&audienceRating>=7.0&sort=audienceRating:desc",
+    random: true,
+};
 
-const SERIES_SHELVES_BEFORE: &[ListingShelf] = &[ListingShelf {
+const RECENTLY_WATCHED_MOVIES: ListingShelf = ListingShelf {
+    name: "recentlyviewed",
+    context: "hub.movie.recentlyviewed",
+    kind: "movie",
+    title: |c| c.recently_watched_movies,
+    query: "sort=lastViewedAt:desc&unwatched=0&viewOffset=0",
+    random: false,
+};
+
+const RECENTLY_AIRED: ListingShelf = ListingShelf {
     name: "recentlyaired",
     context: "hub.tv.recentlyaired",
     kind: "episode",
     title: |c| c.recently_released_episodes,
     query: "type=4&sort=originallyAvailableAt:desc",
     random: false,
-}];
+};
 
-const SERIES_SHELVES_AFTER: &[ListingShelf] = &[
-    ListingShelf {
-        name: "startwatching",
-        context: "hub.tv.startwatching",
-        kind: "show",
-        title: |c| c.start_watching,
-        query: "type=2&viewedOrInProgressLeafCount=0",
-        random: true,
-    },
-    ListingShelf {
-        name: "toprated",
-        context: "hub.tv.toprated",
-        kind: "show",
-        title: |c| c.top_rated_tv,
-        query: "type=2&unwatchedLeaves=1&audienceRating>=7.0&sort=audienceRating:desc",
-        random: true,
-    },
-    ListingShelf {
-        name: "recentlyviewed",
-        context: "hub.tv.recentlyviewed",
-        kind: "episode",
-        title: |c| c.recently_watched_episodes,
-        query: "sort=lastViewedAt:desc&unwatched=0&viewOffset=0&type=4",
-        random: false,
-    },
+const START_WATCHING: ListingShelf = ListingShelf {
+    name: "startwatching",
+    context: "hub.tv.startwatching",
+    kind: "show",
+    title: |c| c.start_watching,
+    query: "type=2&viewedOrInProgressLeafCount=0",
+    random: true,
+};
+
+const REDISCOVER: ListingShelf = ListingShelf {
+    name: "rediscover",
+    context: "hub.tv.rediscover",
+    kind: "show",
+    title: |c| c.rediscover,
+    query: "type=2&lastViewedAt<=-6w&lastViewedAt>=-5y&unwatchedLeaves=1&viewCount>=1",
+    random: true,
+};
+
+const TOP_RATED_TV: ListingShelf = ListingShelf {
+    name: "toprated",
+    context: "hub.tv.toprated",
+    kind: "show",
+    title: |c| c.top_rated_tv,
+    query: "type=2&unwatchedLeaves=1&audienceRating>=7.0&sort=audienceRating:desc",
+    random: true,
+};
+
+const RECENTLY_WATCHED_EPISODES: ListingShelf = ListingShelf {
+    name: "recentlyviewed",
+    context: "hub.tv.recentlyviewed",
+    kind: "episode",
+    title: |c| c.recently_watched_episodes,
+    query: "sort=lastViewedAt:desc&unwatched=0&viewOffset=0&type=4",
+    random: false,
+};
+
+const FILM_SHELVES_BEFORE: &[ShelfSource] = &[ShelfSource::Fixed(&RECENTLY_RELEASED_MOVIES)];
+
+const FILM_SHELVES_AFTER: &[ShelfSource] = &[
+    ShelfSource::TopInGenre,
+    ShelfSource::TopByPerson,
+    ShelfSource::Fixed(&TOP_UNWATCHED_MOVIES),
+    ShelfSource::Fixed(&RECENTLY_WATCHED_MOVIES),
 ];
+
+const SERIES_SHELVES_BEFORE: &[ShelfSource] = &[ShelfSource::Fixed(&RECENTLY_AIRED)];
+
+const SERIES_SHELVES_AFTER: &[ShelfSource] = &[
+    ShelfSource::Fixed(&START_WATCHING),
+    ShelfSource::Fixed(&REDISCOVER),
+    ShelfSource::Fixed(&TOP_RATED_TV),
+    ShelfSource::Fixed(&RECENTLY_WATCHED_EPISODES),
+];
+
+/// Where a listing shelf's list comes from.
+#[derive(Debug)]
+enum ShelfSource {
+    /// The same list in every library of a kind.
+    Fixed(&'static ListingShelf),
+    /// A film library's best unwatched films of one of its genres.
+    TopInGenre,
+    /// A film library's unwatched films by one of its directors, or with one of its actors.
+    TopByPerson,
+}
+
+/// One listing shelf, worded for one library and one language.
+#[derive(Debug)]
+struct ShelfSpec {
+    identifier: String,
+    context: &'static str,
+    kind: &'static str,
+    title: String,
+    /// The listing's query, worded as the reference words it.
+    query: String,
+    random: bool,
+}
+
+impl ShelfSource {
+    /// The shelf this source makes in `section`; none when the library has nothing to draw.
+    ///
+    /// The genre and the person are drawn at random among all the library's, measured on 150
+    /// of the reference's draws: 39 of a film library's 40 genres came up, the one-film genres
+    /// as often as the large ones, and directors and actors about evenly, at any billing. A
+    /// draw can make an empty shelf, and does there too. Ours holds for the shuffle's period,
+    /// as the reference keeps its own for a while.
+    async fn spec(
+        &self,
+        state: &PlexState,
+        section: i64,
+        prefix: &str,
+        language: Language,
+    ) -> Result<Option<ShelfSpec>, ApiError> {
+        let catalog = language.catalog();
+        let named = |template: &str, name: &str| template.replace("{1}", name);
+        Ok(match self {
+            Self::Fixed(fixed) => Some(ShelfSpec {
+                identifier: format!("{prefix}.{}.{section}", fixed.name),
+                context: fixed.context,
+                kind: fixed.kind,
+                title: (fixed.title)(catalog).to_owned(),
+                query: fixed.query.to_owned(),
+                random: fixed.random,
+            }),
+            Self::TopInGenre => drawn_tag(state, section, &["GENRE"], "movie.genre")
+                .await?
+                .map(|(id, name, _)| ShelfSpec {
+                    identifier: format!("movie.genre.{section}.{id}"),
+                    context: "hub.movie.genre",
+                    kind: "movie",
+                    title: named(catalog.top_movies_in, &name),
+                    query: format!("unwatched=1&genre={id}&audienceRating>=7.0"),
+                    random: false,
+                }),
+            Self::TopByPerson => drawn_tag(
+                state,
+                section,
+                &["DIRECTOR", "ACTOR"],
+                "movie.by.actor.or.director",
+            )
+            .await?
+            .map(|(id, name, kind)| {
+                let (template, field) = if kind == "DIRECTOR" {
+                    (catalog.top_movies_by, "director")
+                } else {
+                    (catalog.top_movies_with, "actor")
+                };
+                ShelfSpec {
+                    identifier: format!("movie.by.actor.or.director.{section}.{id}"),
+                    context: "hub.movie.by.actor.or.director",
+                    kind: "movie",
+                    title: named(template, &name),
+                    query: format!("unwatched=1&{field}={id}&sort=audienceRating:desc"),
+                    random: true,
+                }
+            }),
+        })
+    }
+}
+
+/// A number for `purpose`, fixed for the shuffle's period: what each draw and each random
+/// shelf derives its choice from, so two of them do not choose alike.
+fn draw(purpose: &str) -> u32 {
+    let salt = purpose.bytes().fold(0_u32, |hash, byte| {
+        hash.wrapping_mul(31).wrapping_add(u32::from(byte))
+    });
+    // Odd multipliers spread the bits, so neighbouring periods and salts draw apart.
+    (crate::library::shuffle_seed() ^ salt)
+        .wrapping_mul(0x9e37_79b9)
+        .rotate_left(13)
+        .wrapping_mul(0x85eb_ca6b)
+}
+
+/// One of the library's tags, drawn first among `kinds` evenly, then among that kind's tags
+/// evenly: `(id, name, kind)`. None when the library has no tag of any of the kinds.
+async fn drawn_tag(
+    state: &PlexState,
+    section: i64,
+    kinds: &[&'static str],
+    purpose: &str,
+) -> Result<Option<(i64, String, &'static str)>, ApiError> {
+    let library = Value::String(GlobalId::encode(LIBRARY_TYPE, section));
+    let mut counts = Vec::new();
+    for kind in kinds {
+        let mut variables = Variables::default();
+        variables.insert(Name::new("id"), library.clone());
+        variables.insert(Name::new("kind"), Value::Enum(Name::new(*kind)));
+        let data: TagCountData = gql::execute(&state.schema, TAG_COUNT_QUERY, variables).await?;
+        let total = data.node.map_or(0, |library| library.stats.total);
+        if total > 0 {
+            counts.push((*kind, total));
+        }
+    }
+    let Some(choice) = u64::from(draw(purpose)).checked_rem(counts.len() as u64) else {
+        return Ok(None);
+    };
+    let (kind, total) = counts[usize::try_from(choice).unwrap_or(0)];
+    let offset = u64::from(draw(&format!("{purpose}.{kind}"))) % total;
+
+    let mut variables = Variables::default();
+    variables.insert(Name::new("id"), library);
+    variables.insert(Name::new("kind"), Value::Enum(Name::new(kind)));
+    variables.insert(Name::new("offset"), Value::Number(offset.into()));
+    let data: TagAtData = gql::execute(&state.schema, TAG_AT_QUERY, variables).await?;
+    Ok(data
+        .node
+        .and_then(|library| library.tags.edges.into_iter().next())
+        .map(|edge| {
+            (
+                crate::container::decode_key(&edge.node.id),
+                edge.node.name,
+                kind,
+            )
+        }))
+}
+
+const TAG_COUNT_QUERY: &str = r"
+query PlexTagCount($id: ID!, $kind: TagType!) {
+  node(id: $id) { ... on Library { stats { total: tagCount(kind: $kind) } } }
+}
+";
+
+const TAG_AT_QUERY: &str = r"
+query PlexTagAt($id: ID!, $kind: TagType!, $offset: Int!) {
+  node(id: $id) {
+    ... on Library { tags(kind: $kind, first: 1, offset: $offset) { edges { node { id name } } } }
+  }
+}
+";
+
+#[derive(Debug, serde::Deserialize)]
+struct TagCountData {
+    node: Option<TagCountLibrary>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TagCountLibrary {
+    stats: TagCountStats,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TagCountStats {
+    total: u64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TagAtData {
+    node: Option<TagAtLibrary>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TagAtLibrary {
+    tags: TagAtConnection,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TagAtConnection {
+    edges: Vec<TagAtEdge>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TagAtEdge {
+    node: TagAtNode,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TagAtNode {
+    id: String,
+    name: String,
+}
 
 /// Fills one listing shelf.
 ///
@@ -308,8 +537,7 @@ const SERIES_SHELVES_AFTER: &[ListingShelf] = &[
 async fn listing_shelf(
     state: &PlexState,
     section: i64,
-    prefix: &str,
-    shelf: &ListingShelf,
+    shelf: &ShelfSpec,
     params: &HubParams,
     language: Language,
 ) -> Result<Hub, ApiError> {
@@ -334,12 +562,9 @@ async fn listing_shelf(
     variables.insert(Name::new("direction"), Value::Enum(Name::new(direction)));
     // Each shelf its own shuffle: one seed would sample the same series for two shelves
     // whose lists overlap.
-    let salt = shelf.name.bytes().fold(0_u32, |hash, byte| {
-        hash.wrapping_mul(31).wrapping_add(u32::from(byte))
-    });
     variables.insert(
         Name::new("seed"),
-        Value::Number((crate::library::shuffle_seed() ^ salt).into()),
+        Value::Number(draw(&shelf.identifier).into()),
     );
     variables.insert(
         Name::new("filter"),
@@ -362,15 +587,15 @@ async fn listing_shelf(
     }
     Ok(Hub {
         hub_key: lookup_key(&items),
-        // A raw `>` is not a legal URI character, and this server's HTTP layer refuses a
-        // request line holding one, so the key a client follows carries it encoded.
+        // A raw `>` or `<` is not a legal URI character, and this server's HTTP layer refuses
+        // a request line holding one, so the key a client follows carries them encoded.
         key: format!(
             "/library/sections/{section}/all?{}",
-            shelf.query.replace('>', "%3E")
+            shelf.query.replace('>', "%3E").replace('<', "%3C")
         ),
-        title: (shelf.title)(language.catalog()).to_owned(),
+        title: shelf.title.clone(),
         kind: shelf.kind,
-        hub_identifier: format!("{prefix}.{}.{section}", shelf.name),
+        hub_identifier: shelf.identifier.clone(),
         context: shelf.context,
         size: u32::try_from(items.len()).unwrap_or(u32::MAX),
         more: connection.page_info.has_next_page,

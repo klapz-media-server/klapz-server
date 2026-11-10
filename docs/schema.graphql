@@ -724,6 +724,15 @@ input ItemFilterInput {
 	series not yet begun.
 	"""
 	anyEpisodeStarted: Boolean
+	"""
+	Keep only items the caller last played at or after this time, in seconds since the
+	Unix epoch, written as a string because it exceeds 32 bits.
+	"""
+	lastViewedFrom: String
+	"""
+	Keep only items the caller last played at or before this time, as `lastViewedFrom`.
+	"""
+	lastViewedTo: String
 }
 
 """

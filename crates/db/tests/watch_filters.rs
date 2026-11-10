@@ -233,3 +233,24 @@ async fn a_series_with_an_unwatched_episode_has_unwatched_leaves() {
     };
     assert_eq!(titles(complete).await, ["Bull"]);
 }
+
+#[tokio::test]
+async fn a_last_viewed_range_keeps_what_was_played_within_it() {
+    // Every state in the fixture was last played at second 1; Soul never.
+    let within = ItemFilter {
+        last_viewed_from: Some(0),
+        last_viewed_to: Some(5),
+        ..films(OPERATOR)
+    };
+    assert_eq!(titles(within).await, ["Coco", "Luca", "Onward"]);
+    let later = ItemFilter {
+        last_viewed_from: Some(2),
+        ..films(OPERATOR)
+    };
+    assert!(titles(later).await.is_empty());
+    let earlier = ItemFilter {
+        last_viewed_to: Some(0),
+        ..films(OPERATOR)
+    };
+    assert!(titles(earlier).await.is_empty());
+}

@@ -197,6 +197,11 @@ pub struct ItemFilterInput {
     /// Keep only items with an episode the caller watched or started, or with none: the
     /// series not yet begun.
     pub any_episode_started: Option<bool>,
+    /// Keep only items the caller last played at or after this time, in seconds since the
+    /// Unix epoch, written as a string because it exceeds 32 bits.
+    pub last_viewed_from: Option<String>,
+    /// Keep only items the caller last played at or before this time, as `lastViewedFrom`.
+    pub last_viewed_to: Option<String>,
 }
 
 /// Why a filter cannot be honored.
@@ -206,6 +211,13 @@ pub enum FilterError {
     Tag(#[from] TagFilterError),
     #[error("`{0}` is not a date written YYYY-MM-DD")]
     NotADate(String),
+    #[error("`{0}` is not a time in seconds since the Unix epoch")]
+    NotATime(String),
+}
+
+fn epoch(text: Option<String>) -> Result<Option<i64>, FilterError> {
+    text.map(|text| text.parse().map_err(|_| FilterError::NotATime(text)))
+        .transpose()
 }
 
 /// Whether `text` is a calendar date as stored: four digits, two, two, by hyphens. Compared
@@ -300,6 +312,8 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
             in_progress: input.in_progress,
             episodes_watched: input.all_episodes_watched,
             episodes_started: input.any_episode_started,
+            last_viewed_from: epoch(input.last_viewed_from)?,
+            last_viewed_to: epoch(input.last_viewed_to)?,
             // The caller's, which only the resolver knows.
             viewer: None,
         })
@@ -374,6 +388,8 @@ mod tests {
             released_from: Some("2025-11-10".to_owned()),
             audience_rating_from: Some(7.0),
             any_episode_started: Some(false),
+            last_viewed_from: Some("1700000000".to_owned()),
+            last_viewed_to: None,
         };
         let filter = ItemFilter::try_from(input).unwrap();
         assert_eq!(filter.kind, Some(ItemKind::Show));
@@ -394,6 +410,7 @@ mod tests {
         assert_eq!(filter.released_from.as_deref(), Some("2025-11-10"));
         assert_eq!(filter.audience_rating_from, Some(7.0));
         assert_eq!(filter.episodes_started, Some(false));
+        assert_eq!(filter.last_viewed_from, Some(1_700_000_000));
     }
 
     #[test]

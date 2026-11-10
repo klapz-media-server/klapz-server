@@ -9,10 +9,11 @@ use std::collections::{BTreeMap, HashMap};
 
 use open_plex_core::metadata::{
     first_character_bucket, AudioAnalysis, ColorDescription, DolbyVision, EpisodeCredit,
-    ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemKind, ItemQuery, ItemTag,
-    Listed, Loudness, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
-    MetadataRepository, Person, Rating, ScanType, SearchQuery, StreamKind, SubtitleAnalysis, Tag,
-    TagCondition, TagKind, TagRef, TagScope, TrackTraits, ValueField, VideoAnalysis,
+    ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemFilter, ItemKind,
+    ItemQuery, ItemTag, Listed, Loudness, MediaFile, MediaStream, MediaVersion, MetadataError,
+    MetadataItem, MetadataRepository, Person, Rating, ScanType, SearchQuery, StreamKind,
+    SubtitleAnalysis, Tag, TagCondition, TagKind, TagRef, TagScope, TrackTraits, ValueField,
+    VideoAnalysis,
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
@@ -108,37 +109,7 @@ impl SqlMetadataRepository {
         for condition in &filter.tags {
             select = select.filter(carries_tag(condition));
         }
-        let own_guid = Expr::col((metadata_item::Entity, metadata_item::Column::Guid));
-        if let Some(watched) = filter.watched {
-            let viewed = watch_state_where(filter.viewer, own_guid.clone(), viewed());
-            select = select.filter(holds(viewed, watched));
-        }
-        if let Some(in_progress) = filter.in_progress {
-            let kept = watch_state_where(
-                filter.viewer,
-                own_guid,
-                Expr::col((watch_state::Entity, watch_state::Column::OffsetMs)).is_not_null(),
-            );
-            select = select.filter(holds(kept, in_progress));
-        }
-        if let Some(episodes_watched) = filter.episodes_watched {
-            let unwatched =
-                episode_below(|guid| watch_state_where(filter.viewer, guid, viewed()).not());
-            select = select.filter(holds(unwatched, !episodes_watched));
-        }
-        if let Some(episodes_started) = filter.episodes_started {
-            let started = episode_below(|guid| {
-                watch_state_where(
-                    filter.viewer,
-                    guid,
-                    viewed().or(
-                        Expr::col((watch_state::Entity, watch_state::Column::OffsetMs))
-                            .is_not_null(),
-                    ),
-                )
-            });
-            select = select.filter(holds(started, episodes_started));
-        }
+        select = select.filter(watch_conditions(filter));
         if let Some(from) = &filter.released_from {
             select = select.filter(metadata_item::Column::ReleasedOn.gte(from.clone()));
         }
@@ -336,6 +307,59 @@ fn word_exists(prefix: &str) -> Condition {
             ))
             .to_owned(),
     ))
+}
+
+/// What the filter asks of the viewer's watch state, each condition reading its own rows.
+fn watch_conditions(filter: &ItemFilter) -> Condition {
+    let mut condition = Condition::all();
+    let own_guid = Expr::col((metadata_item::Entity, metadata_item::Column::Guid));
+    if let Some(watched) = filter.watched {
+        let viewed = watch_state_where(filter.viewer, own_guid.clone(), viewed());
+        condition = condition.add(holds(viewed, watched));
+    }
+    if let Some(in_progress) = filter.in_progress {
+        let kept = watch_state_where(
+            filter.viewer,
+            own_guid,
+            Expr::col((watch_state::Entity, watch_state::Column::OffsetMs)).is_not_null(),
+        );
+        condition = condition.add(holds(kept, in_progress));
+    }
+    if let Some(episodes_watched) = filter.episodes_watched {
+        let unwatched =
+            episode_below(|guid| watch_state_where(filter.viewer, guid, viewed()).not());
+        condition = condition.add(holds(unwatched, !episodes_watched));
+    }
+    if let Some(episodes_started) = filter.episodes_started {
+        let started = episode_below(|guid| {
+            watch_state_where(
+                filter.viewer,
+                guid,
+                viewed().or(
+                    Expr::col((watch_state::Entity, watch_state::Column::OffsetMs)).is_not_null(),
+                ),
+            )
+        });
+        condition = condition.add(holds(started, episodes_started));
+    }
+    let last_viewed = || Expr::col((watch_state::Entity, watch_state::Column::LastViewedAt));
+    if let Some(from) = filter.last_viewed_from {
+        let guid = Expr::col((metadata_item::Entity, metadata_item::Column::Guid));
+        condition = condition.add(watch_state_where(
+            filter.viewer,
+            guid,
+            last_viewed().gte(from),
+        ));
+    }
+    if let Some(to) = filter.last_viewed_to {
+        let guid = Expr::col((metadata_item::Entity, metadata_item::Column::Guid));
+        condition = condition.add(watch_state_where(
+            filter.viewer,
+            guid,
+            last_viewed().lte(to),
+        ));
+    }
+    condition
 }
 
 /// `condition`, or its negation.

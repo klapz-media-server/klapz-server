@@ -629,7 +629,12 @@ pub struct ItemFilter {
     /// Keeps only items with an episode watched or in progress (`true`), or with none
     /// (`false`): the series a viewer has not started.
     pub episodes_started: Option<bool>,
-    /// Whose watch state the three above read. `None`, a caller with no watch state, has
+    /// Keeps only items the viewer last played at or after this time, in seconds since the
+    /// Unix epoch. An item never played is in no range.
+    pub last_viewed_from: Option<i64>,
+    /// Keeps only items the viewer last played at or before this time.
+    pub last_viewed_to: Option<i64>,
+    /// Whose watch state the filters above read. `None`, a caller with no watch state, has
     /// watched nothing and has nothing in progress.
     pub viewer: Option<Viewer>,
 }

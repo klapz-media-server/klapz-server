@@ -22,7 +22,8 @@ use open_plex_core::metadata::TagCondition;
 
 /// Filters the reference advertises, captured from its `Meta/Type/Filter` declarations for
 /// films, series and episodes, and the fields its shelves filter on without advertising them
-/// (`audienceRating`, `originallyAvailableAt`, `viewOffset`, `viewedOrInProgressLeafCount`).
+/// (`audienceRating`, `lastViewedAt`, `originallyAvailableAt`, `viewCount`, `viewOffset`,
+/// `viewedOrInProgressLeafCount`).
 ///
 /// Membership in this list is what separates "a filter we have not implemented" from "a
 /// parameter that is none of our business". Every entry we cannot translate is refused.
@@ -45,6 +46,7 @@ const KNOWN_FILTERS: &[&str] = &[
     "hdr10plus",
     "inProgress",
     "label",
+    "lastViewedAt",
     "location",
     "network",
     "originallyAvailableAt",
@@ -58,6 +60,7 @@ const KNOWN_FILTERS: &[&str] = &[
     "unwatched",
     "unwatchedLeaves",
     "videoCodec",
+    "viewCount",
     "viewOffset",
     "viewedOrInProgressLeafCount",
     "writer",
@@ -253,6 +256,9 @@ pub struct Filters {
     pub any_episode_started: Option<bool>,
     /// A calendar date, `2025-11-10`.
     pub released_from: Option<String>,
+    /// Seconds since the Unix epoch.
+    pub last_viewed_from: Option<i64>,
+    pub last_viewed_to: Option<i64>,
     pub audience_rating_from: Option<f64>,
 }
 
@@ -352,6 +358,12 @@ impl Filters {
         }
         if let Some(date) = &self.released_from {
             set("releasedFrom", Value::String(date.clone()));
+        }
+        if let Some(time) = self.last_viewed_from {
+            set("lastViewedFrom", Value::String(time.to_string()));
+        }
+        if let Some(time) = self.last_viewed_to {
+            set("lastViewedTo", Value::String(time.to_string()));
         }
         if let Some(rating) = self
             .audience_rating_from
@@ -453,8 +465,8 @@ pub fn parse(pairs: &[(String, String)]) -> Result<ListingRequest, ListingError>
             return Err(ListingError::UnsupportedFilter(field.to_owned()));
         }
         // The same field twice is an AND of two constraints. Only a range survives that, and
-        // only for the two fields that have one.
-        if seen_filters.contains(&field) && !matches!(field, "year" | "decade") {
+        // only for the fields that have one.
+        if seen_filters.contains(&field) && !matches!(field, "year" | "decade" | "lastViewedAt") {
             return Err(ListingError::UnsupportedFilter(field.to_owned()));
         }
         seen_filters.push(field);
@@ -528,6 +540,17 @@ fn apply(
             filters.audience_rating_from = Some(rating);
         }
         ("viewOffset", Operator::Equals) if value == "0" => filters.in_progress = Some(false),
+        // "Rediscover": what was watched, last played between five years and six weeks ago.
+        ("viewCount", Operator::AtLeast) if value == "1" => filters.watched = Some(true),
+        ("viewCount", Operator::Equals) if value == "0" => filters.watched = Some(false),
+        ("lastViewedAt", Operator::AtLeast) => {
+            filters.last_viewed_from =
+                Some(instant(value, open_plex_core::now_epoch()).ok_or_else(unsupported)?);
+        }
+        ("lastViewedAt", Operator::AtMost) => {
+            filters.last_viewed_to =
+                Some(instant(value, open_plex_core::now_epoch()).ok_or_else(unsupported)?);
+        }
         ("viewedOrInProgressLeafCount", Operator::Equals) if value == "0" => {
             filters.any_episode_started = Some(false);
         }
@@ -588,6 +611,29 @@ fn written(value: &str) -> Option<(i64, i64, i64)> {
         (year.parse().ok()?, month.parse().ok()?, day.parse().ok()?);
     ((1..=12).contains(&month) && (1..=days_in_month(year, month)).contains(&day))
         .then_some((year, month, day))
+}
+
+/// The time a filter value names, in seconds since the Unix epoch: one given as such, or one
+/// counted back from `now` as [`calendar_date`] counts, at the same time of day.
+fn instant(value: &str, now: i64) -> Option<i64> {
+    if !value.starts_with('-') {
+        return value.parse().ok();
+    }
+    let today = now.div_euclid(SECONDS_PER_DAY);
+    let (year, month, day) = counted_back(value.strip_prefix('-')?, today)?;
+    let back = today.checked_sub(days_from_civil(year, month, day))?;
+    now.checked_sub(back.checked_mul(SECONDS_PER_DAY)?)
+}
+
+/// Howard Hinnant's `days_from_civil`, the inverse of [`civil_from_days`].
+const fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let march_month = if month > 2 { month - 3 } else { month + 9 };
+    let day_of_year = (153 * march_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
 }
 
 const fn days_in_month(year: i64, month: i64) -> i64 {
@@ -733,6 +779,37 @@ mod tests {
         ] {
             assert_eq!(calendar_date(value, today), None, "{value}");
         }
+    }
+
+    #[test]
+    fn a_time_is_given_or_counted_back_at_the_same_hour() {
+        // 2026-11-10 13:00 UTC.
+        let now = 20_767 * 86_400 + 13 * 3_600;
+        assert_eq!(days_from_civil(2026, 11, 10), 20_767);
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        assert_eq!(instant("-6w", now), Some(now - 42 * 86_400));
+        // Five calendar years, one of them leap: 1,826 days.
+        assert_eq!(instant("-5y", now), Some(now - 1_826 * 86_400));
+        assert_eq!(instant("1784650830", now), Some(1_784_650_830));
+        assert_eq!(instant("-6x", now), None);
+        assert_eq!(instant("soon", now), None);
+    }
+
+    #[test]
+    fn reads_what_rediscover_links_to() {
+        let request = parse(&pairs(&[
+            ("type", "2"),
+            ("lastViewedAt<", "-6w"),
+            ("lastViewedAt>", "-5y"),
+            ("unwatchedLeaves", "1"),
+            ("viewCount>", "1"),
+        ]))
+        .unwrap();
+        let filters = request.filters;
+        assert!(filters.last_viewed_from < filters.last_viewed_to);
+        assert_eq!(filters.watched, Some(true));
+        assert_eq!(filters.all_episodes_watched, Some(false));
+        assert!(parse(&pairs(&[("viewCount>", "3")])).is_err());
     }
 
     #[test]

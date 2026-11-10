@@ -2291,22 +2291,39 @@ async fn a_film_library_recommends_its_recent_films_under_the_reference_shelves(
     );
 
     let hubs = container["Hub"].as_array().expect("hubs");
-    let identifiers: Vec<&str> = hubs
-        .iter()
-        .map(|hub| hub["hubIdentifier"].as_str().expect("an identifier"))
-        .collect();
     assert_eq!(
-        identifiers,
+        drawn_apart(hubs),
         [
             "movie.inprogress.4",
             "movie.recentlyreleased.4",
             "movie.recentlyadded.4",
+            "movie.genre.4",
+            "movie.by.actor.or.director.4",
             "movie.topunwatched.4",
             "movie.recentlyviewed.4",
             "recent.library.playlists.4"
         ]
     );
-    assert_eq!(container["size"], 6);
+    assert_eq!(container["size"], 8);
+
+    // A drawn genre names itself in the identifier, the title and the list.
+    let genre = &hubs[3];
+    let id = genre["hubIdentifier"]
+        .as_str()
+        .and_then(|identifier| identifier.rsplit('.').next())
+        .expect("a genre id");
+    assert_eq!(
+        genre["key"],
+        format!("/library/sections/4/all?unwatched=1&genre={id}&audienceRating%3E=7.0")
+    );
+    assert!(
+        genre["title"]
+            .as_str()
+            .is_some_and(|title| title.starts_with("Meilleurs films de ")),
+        "{genre}"
+    );
+    assert!(genre.get("random").is_none());
+    assert_eq!(hubs[4]["random"], true);
 
     // Nothing is in progress: an empty shelf, as the reference shows one, with no hubKey.
     assert_eq!(hubs[0]["size"], 0);
@@ -2322,11 +2339,11 @@ async fn a_film_library_recommends_its_recent_films_under_the_reference_shelves(
     );
     assert_eq!(released["context"], "hub.movie.recentlyreleased");
     assert!(released.get("random").is_none());
-    let unwatched = &hubs[3];
+    let unwatched = &hubs[5];
     assert_eq!(unwatched["title"], "Meilleurs films non vus");
     assert_eq!(unwatched["random"], true);
     // Nothing was watched: an empty shelf rather than an absent one, as on the reference.
-    let viewed = &hubs[4];
+    let viewed = &hubs[6];
     assert_eq!(viewed["title"], "Films regardés récemment");
     assert_eq!(viewed["size"], 0);
     assert!(viewed.get("hubKey").is_none(), "{viewed}");
@@ -2358,7 +2375,7 @@ async fn hub_titles_default_to_english() {
     assert_eq!(hubs[1]["title"], "Recently Released Movies");
     assert_eq!(hubs[2]["title"], "Recently Added in VF - Films");
     // Playlists were not asked for, so not there.
-    assert_eq!(hubs.len(), 5);
+    assert_eq!(hubs.len(), 7);
     assert!(hubs[2]["Metadata"][0].get("summary").is_some());
 }
 
@@ -2377,6 +2394,7 @@ async fn a_series_library_groups_its_new_episodes_on_the_recently_added_shelf() 
             "tv.recentlyaired.5",
             "tv.recentlyadded.5",
             "tv.startwatching.5",
+            "tv.rediscover.5",
             "tv.toprated.5",
             "tv.recentlyviewed.5"
         ]
@@ -3077,4 +3095,24 @@ async fn a_film_recent_list_pages_over_the_whole_library() {
     assert_eq!(container["offset"], 1);
     assert_eq!(container["size"], 1);
     assert_eq!(container["Metadata"][0]["type"], "movie");
+}
+
+/// A library's shelf identifiers, without the id of the genre or person a shelf was drawn
+/// for: the draw changes with the shuffle's period.
+fn drawn_apart(hubs: &[Value]) -> Vec<String> {
+    hubs.iter()
+        .map(|hub| {
+            let identifier = hub["hubIdentifier"].as_str().expect("an identifier");
+            if identifier.starts_with("movie.genre.")
+                || identifier.starts_with("movie.by.actor.or.director.")
+            {
+                identifier
+                    .rsplit_once('.')
+                    .map_or(identifier, |(head, _)| head)
+                    .to_owned()
+            } else {
+                identifier.to_owned()
+            }
+        })
+        .collect()
 }

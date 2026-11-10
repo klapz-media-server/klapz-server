@@ -426,8 +426,10 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   (`continueWatching`, each entry with its reason) and on the Plex surface
   (`/hubs/continueWatching`, `/hubs/home/continueWatching`, `/hubs/home/onDeck`, and every
   library's shelf);
-- ⬜ the shelves that pick a genre, a person or a period — top of a genre, of a person,
-  rediscover — whose choice is not measured yet.
+- ✅ the drawn shelves — top of a genre, of a person — drawn as measured on 150 of the
+  reference's draws, and rediscover;
+- ⬜ a series library's "more in" a genre, whose genre follows the viewer's history by a rule
+  not found yet.
 
 ## Reference server
 

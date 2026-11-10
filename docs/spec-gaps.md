@@ -511,11 +511,33 @@ Where ours differ:
 - **A `random` shelf is our shuffle of its list**, the one a random listing keeps for ten
   minutes, salted per shelf so two shelves over overlapping lists do not sample alike. The
   reference's sample and how long it keeps it are not known.
-- **The `key` carries `%3E` for `>`**: a raw `>` is refused by this server's HTTP layer before
-  any handler runs (*Range filter operators*), and a client follows the key as given.
-- **Not served**: a genre's top films (`movie.genre`, `tv.moreingenre`), a person's
-  (`movie.by.actor.or.director`) and `tv.rediscover`. Each picks a genre, a person or a period
-  by a rule not measured yet.
+- **The `key` carries `%3E` for `>` and `%3C` for `<`**: a raw one is refused by this server's
+  HTTP layer before any handler runs (*Range filter operators*), and a client follows the key
+  as given.
+- **Not served**: a series library's `tv.moreingenre`. Its genre is not drawn evenly: 120
+  draws gave four genres of 45 — comedy 48 times, animation 31, fantasy 23, reality 18 — all
+  genres of series watched lately, while drama, the library's largest and as present in that
+  history, never came up. The rule is not found.
+
+Three more shelves are drawn or dated, measured on 150 draws of a film library (each new
+query string is a new draw there, kept for that string: `?nonce=1` answers the same until
+the cache turns, as does each `X-Plex-Language`):
+
+| Shelf | List behind it | `random` |
+| --- | --- | --- |
+| `movie.genre.{s}.{genre}` | `unwatched=1&genre={genre}&audienceRating>=7.0` | |
+| `movie.by.actor.or.director.{s}.{person}` | `unwatched=1&director={person}&sort=audienceRating:desc`, or `actor=` | yes |
+| `tv.rediscover.{s}` | `type=2&lastViewedAt<=-6w&lastViewedAt>=-5y&unwatchedLeaves=1&viewCount>=1` | yes |
+
+- **The genre is drawn evenly among the library's**: 39 of 40 came up, one-film genres as
+  often as the largest; a draw can give an empty shelf, and is still shown.
+- **The person is a director or an actor about evenly** (81 and 69), at any billing — the 98th
+  credited came up — and with no condition: one whose films were all watched came up too.
+- Titles: `Top Movies in {genre}`, `Top Movies by {director}`, `Top Movies with {actor}`.
+
+Ours draw the same way, from the shuffle's ten-minute seed, salted per shelf; which genre or
+person comes up is not the reference's, as no draw could be. Rediscover reads the caller's
+own history.
 
 ### The list behind "recently added"
 
@@ -854,7 +876,8 @@ flag twice answers `501`, which one flag cannot express.
 
 The shelves also filter on fields the reference does not advertise, which we honor for the
 values they use and refuse otherwise: `audienceRating>=`, `originallyAvailableAt>=` (a date,
-or one counted back from today: `-1y`, `-6w`, `-30d`), `viewOffset=0` and
+or one counted back from today: `-1y`, `-6w`, `-30d`), `lastViewedAt>=` and `<=` (a time, or
+one counted back from now), `viewCount>=1`, `viewOffset=0` and
 `viewedOrInProgressLeafCount=0`.
 
 ### Ordering a listing

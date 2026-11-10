@@ -2292,6 +2292,26 @@
                 "ofType": null
               },
               "defaultValue": null
+            },
+            {
+              "name": "lastViewedFrom",
+              "description": "Keep only items the caller last played at or after this time, in seconds since the\nUnix epoch, written as a string because it exceeds 32 bits.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "lastViewedTo",
+              "description": "Keep only items the caller last played at or before this time, as `lastViewedFrom`.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
             }
           ],
           "interfaces": null,
