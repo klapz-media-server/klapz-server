@@ -74,6 +74,34 @@ IMPLEMENTED = frozenset(
 # spec row for the carry-over to key on. Each is described in docs/spec-gaps.md.
 OFF_SPEC = (
     (
+        "partial",
+        "GET",
+        "/video/:/transcode/universal/ping",
+        "user",
+        "Keep a transcode session alive",
+        "`200` for a session it knows, `404` otherwise, as the reference. No test yet.",
+    ),
+    (
+        "partial",
+        "GET",
+        "/video/:/transcode/universal/stop",
+        "user",
+        "Stop a transcode session",
+        "Stops the process and closes the playback session; `404` for one it does not know, as "
+        "the reference. No test yet.",
+    ),
+    (
+        "partial",
+        "GET",
+        "/video/:/transcode/universal/session/{session}/{base}/{file}",
+        "public",
+        "A stream's playlist and segments",
+        "HLS `index.m3u8` and `.ts` segments, DASH `header` and `.m4s` chunks. No token, as on "
+        "the reference: the session's stored name opens them, an unknown one answers `404`. A "
+        "segment far ahead restarts the process there; one of an ended process is held 5 s then "
+        "refused.",
+    ),
+    (
         "done",
         "GET",
         "/library/metadata/{id}/userState",
