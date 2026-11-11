@@ -696,6 +696,32 @@ async fn connected_user(schema: &ApiSchema) -> String {
     id
 }
 
+/// A request from the user `id` names, with no library.
+fn as_user_with_id(id: &str, query: &str) -> async_graphql::Request {
+    use open_plex_core::access::LibraryAccess;
+    use open_plex_core::{Principal, Scope, UserId};
+    let key = GlobalId::decode(id).unwrap().key;
+    async_graphql::Request::new(query).data(Principal {
+        name: "someone".to_owned(),
+        scope: Scope::User,
+        libraries: LibraryAccess::Only(std::collections::HashMap::new()),
+        user: Some(UserId::new(key)),
+        server_identifier: None,
+    })
+}
+
+async fn second_connected_user(schema: &ApiSchema) -> String {
+    let created = schema
+        .execute(as_operator(
+            r#"mutation { createUser(email: "b@example.org") { id } }"#,
+        ))
+        .await;
+    created.data.into_json().unwrap()["createUser"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
 fn pair_input(user: &str, code: &str, uri: &str) -> async_graphql::Variables {
     async_graphql::Variables::from_json(serde_json::json!({ "input": {
         "userId": user, "extension": "PLEX", "code": code, "connectionUri": uri,
@@ -754,9 +780,10 @@ async fn moving_a_paired_server_publishes_its_new_address_at_once() {
 }
 
 #[tokio::test]
-async fn moving_refuses_a_bad_address_an_unpaired_connection_and_a_user() {
+async fn moving_refuses_a_bad_address_an_unpaired_connection_and_another_user() {
     let schema = schema();
     let user = connected_user(&schema).await;
+    let other = second_connected_user(&schema).await;
     // Not paired yet.
     let response = schema
         .execute(as_operator(MOVE).variables(move_input(&user, "https://a.example.org")))
@@ -772,19 +799,96 @@ async fn moving_refuses_a_bad_address_an_unpaired_connection_and_a_user() {
         .await;
     assert!(!response.errors.is_empty());
     let response = schema
-        .execute(as_user(MOVE).variables(move_input(&user, "https://b.example.org")))
+        .execute(
+            as_user_with_id(&other, MOVE).variables(move_input(&user, "https://b.example.org")),
+        )
         .await;
-    assert!(!response.errors.is_empty());
+    assert_eq!(response.errors[0].message, "not found");
 }
 
 #[tokio::test]
-async fn pairing_is_for_the_operator() {
+async fn a_user_moves_and_unpairs_its_own_server() {
     let schema = schema();
     let user = connected_user(&schema).await;
+    let paired = schema
+        .execute(as_user_with_id(&user, PAIR).variables(pair_input(
+            &user,
+            "claim-7",
+            "https://a.example.org",
+        )))
+        .await;
+    assert!(paired.errors.is_empty(), "{:?}", paired.errors);
+    let moved = schema
+        .execute(as_user_with_id(&user, MOVE).variables(move_input(&user, "https://b.example.org")))
+        .await;
+    assert!(moved.errors.is_empty(), "{:?}", moved.errors);
+
+    let unpair = "mutation($id: ID!) { unpairExtension(userId: $id, extension: PLEX) }";
+    let variables = async_graphql::Variables::from_json(serde_json::json!({ "id": user }));
+    let unpaired = schema
+        .execute(as_user_with_id(&user, unpair).variables(variables))
+        .await;
+    assert!(unpaired.errors.is_empty(), "{:?}", unpaired.errors);
+    assert_eq!(unpaired.data.into_json().unwrap()["unpairExtension"], true);
+}
+
+#[tokio::test]
+async fn pairing_is_for_the_operator_and_the_user_itself() {
+    let schema = schema();
+    let user = connected_user(&schema).await;
+    let other = second_connected_user(&schema).await;
     let response = schema
-        .execute(as_user(PAIR).variables(pair_input(&user, "claim-7", "https://a.example.org")))
+        .execute(as_user_with_id(&other, PAIR).variables(pair_input(
+            &user,
+            "claim-7",
+            "https://a.example.org",
+        )))
         .await;
     assert_eq!(response.errors[0].message, "not found");
+
+    let response = schema
+        .execute(as_user_with_id(&user, PAIR).variables(pair_input(
+            &user,
+            "claim-7",
+            "https://a.example.org",
+        )))
+        .await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    assert_eq!(
+        response.data.into_json().unwrap()["pairExtension"]["accountName"],
+        "account 7"
+    );
+}
+
+const VIEWER: &str = "{ viewer { isOperator user { id email } } }";
+
+#[tokio::test]
+async fn the_viewer_is_the_operator_or_a_user() {
+    let schema = schema();
+    let user = connected_user(&schema).await;
+
+    let operator = schema
+        .execute(as_operator(VIEWER))
+        .await
+        .data
+        .into_json()
+        .unwrap();
+    assert_eq!(operator["viewer"]["isOperator"], true);
+    assert!(operator["viewer"]["user"].is_null());
+
+    let itself = schema
+        .execute(as_user_with_id(&user, VIEWER))
+        .await
+        .data
+        .into_json()
+        .unwrap();
+    assert_eq!(itself["viewer"]["isOperator"], false);
+    assert_eq!(itself["viewer"]["user"]["id"], user.as_str());
+    assert_eq!(itself["viewer"]["user"]["email"], "a@example.org");
+
+    let nobody = schema.execute(VIEWER).await.data.into_json().unwrap();
+    assert_eq!(nobody["viewer"]["isOperator"], false);
+    assert!(nobody["viewer"]["user"].is_null());
 }
 
 #[tokio::test]
@@ -1163,4 +1267,357 @@ async fn an_item_is_named_for_a_url_after_its_series_and_itself() {
             { "slug": "the-simpsons-treehouse-of-horror-xiii" },
         ])
     );
+}
+
+fn sessions() -> Arc<open_plex_api::Sessions> {
+    Arc::new(open_plex_api::Sessions::new(
+        Arc::new(open_plex_core::account::SessionKey::generate()),
+        true,
+    ))
+}
+
+/// A request from nobody, as the transport sends sign-ins: no principal, the session keys.
+fn anonymous(
+    query: &str,
+    sessions: &Arc<open_plex_api::Sessions>,
+    variables: Value,
+) -> async_graphql::Request {
+    async_graphql::Request::new(query)
+        .data(Arc::clone(sessions))
+        .variables(async_graphql::Variables::from_json(variables))
+}
+
+const SIGN_UP: &str = r"mutation($input: SignUpInput!) {
+    signUp(input: $input) { created userErrors { field code } }
+}";
+const SIGN_IN: &str = r"mutation($input: SignInInput!) {
+    signIn(input: $input) { user { email active } userErrors { field code } }
+}";
+
+fn credentials(email: &str, password: &str) -> Value {
+    serde_json::json!({ "input": { "email": email, "password": password } })
+}
+
+async fn run_on_as_operator(schema: &ApiSchema, query: &str) -> Value {
+    let response = schema.execute(as_operator(query)).await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    response.data.into_json().unwrap()
+}
+
+async fn user_id_of(schema: &ApiSchema, email: &str) -> String {
+    let data = run_on_as_operator(schema, "{ users(first: 10) { nodes { id email } } }").await;
+    data["users"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|user| user["email"] == email)
+        .map(|user| user["id"].as_str().unwrap().to_owned())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_user_who_signs_up_waits_for_the_operator_then_signs_in_with_a_cookie() {
+    let schema = schema();
+    let sessions = sessions();
+    let signed_up = schema
+        .execute(anonymous(
+            SIGN_UP,
+            &sessions,
+            credentials(" Alice@Example.org ", "correct horse"),
+        ))
+        .await;
+    assert!(signed_up.errors.is_empty(), "{:?}", signed_up.errors);
+    assert_eq!(
+        signed_up.data.into_json().unwrap()["signUp"]["created"],
+        true
+    );
+
+    let users = run_on_as_operator(
+        &schema,
+        "{ users(first: 10) { nodes { email active hasPassword } } }",
+    )
+    .await;
+    assert_eq!(
+        users["users"]["nodes"][0],
+        serde_json::json!({ "email": "alice@example.org", "active": false, "hasPassword": true })
+    );
+
+    // The right password, on an account still waiting.
+    let waiting = schema
+        .execute(anonymous(
+            SIGN_IN,
+            &sessions,
+            credentials("alice@example.org", "correct horse"),
+        ))
+        .await;
+    assert!(waiting.http_headers.get("set-cookie").is_none());
+    assert_eq!(
+        waiting.data.into_json().unwrap()["signIn"]["userErrors"][0]["code"],
+        "INACTIVE"
+    );
+
+    let id = user_id_of(&schema, "alice@example.org").await;
+    let activate = schema
+        .execute(
+            as_operator("mutation($id: ID!) { activateUser(id: $id) { active } }").variables(
+                async_graphql::Variables::from_json(serde_json::json!({ "id": id })),
+            ),
+        )
+        .await;
+    assert_eq!(
+        activate.data.into_json().unwrap()["activateUser"]["active"],
+        true
+    );
+
+    let signed_in = schema
+        .execute(anonymous(
+            SIGN_IN,
+            &sessions,
+            credentials("ALICE@example.org", "correct horse"),
+        ))
+        .await;
+    let cookie = signed_in
+        .http_headers
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(cookie.starts_with("open_plex_session="), "{cookie}");
+    for attribute in ["HttpOnly", "SameSite=Lax", "Secure", "Path=/"] {
+        assert!(cookie.contains(attribute), "{cookie}");
+    }
+    assert_eq!(
+        signed_in.data.into_json().unwrap()["signIn"]["user"],
+        serde_json::json!({ "email": "alice@example.org", "active": true })
+    );
+
+    // The cookie names this user, for the transport to read back.
+    let token = cookie
+        .trim_start_matches("open_plex_session=")
+        .split(';')
+        .next()
+        .unwrap();
+    let named = sessions
+        .key()
+        .verify(token, open_plex_core::now_epoch())
+        .unwrap();
+    assert_eq!(GlobalId::encode("User", named.get()), id);
+}
+
+#[tokio::test]
+async fn a_wrong_password_and_an_unknown_address_get_the_same_answer() {
+    let schema = schema();
+    let sessions = sessions();
+    schema
+        .execute(anonymous(
+            SIGN_UP,
+            &sessions,
+            credentials("a@example.org", "correct horse"),
+        ))
+        .await;
+    for (email, password) in [
+        ("a@example.org", "wrong horse!"),
+        ("nobody@example.org", "correct horse"),
+        ("not an address", "x"),
+    ] {
+        let response = schema
+            .execute(anonymous(SIGN_IN, &sessions, credentials(email, password)))
+            .await;
+        assert!(response.http_headers.get("set-cookie").is_none());
+        let data = response.data.into_json().unwrap();
+        assert!(data["signIn"]["user"].is_null());
+        assert_eq!(
+            data["signIn"]["userErrors"][0]["code"], "INVALID_CREDENTIALS",
+            "{email}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn signing_up_refuses_a_bad_address_a_short_password_and_a_taken_address() {
+    let schema = schema();
+    let sessions = sessions();
+    for (email, password, field, code) in [
+        ("not an address", "correct horse", "email", "INVALID_EMAIL"),
+        ("a@example.org", "short", "password", "WEAK_PASSWORD"),
+    ] {
+        let data = schema
+            .execute(anonymous(SIGN_UP, &sessions, credentials(email, password)))
+            .await
+            .data
+            .into_json()
+            .unwrap();
+        assert_eq!(data["signUp"]["created"], false);
+        assert_eq!(
+            data["signUp"]["userErrors"][0],
+            serde_json::json!({ "field": ["input", field], "code": code })
+        );
+    }
+    run_on_as_operator(
+        &schema,
+        r#"mutation { createUser(email: "b@example.org") { id } }"#,
+    )
+    .await;
+    let taken = schema
+        .execute(anonymous(
+            SIGN_UP,
+            &sessions,
+            credentials("B@example.org", "correct horse"),
+        ))
+        .await;
+    assert_eq!(
+        taken.data.into_json().unwrap()["signUp"]["userErrors"][0]["code"],
+        "EMAIL_TAKEN"
+    );
+}
+
+#[tokio::test]
+async fn an_address_is_refused_after_five_failed_sign_ins() {
+    let schema = schema();
+    let sessions = sessions();
+    schema
+        .execute(anonymous(
+            SIGN_UP,
+            &sessions,
+            credentials("a@example.org", "correct horse"),
+        ))
+        .await;
+    for _ in 0..5 {
+        schema
+            .execute(anonymous(
+                SIGN_IN,
+                &sessions,
+                credentials("a@example.org", "wrong horse!"),
+            ))
+            .await;
+    }
+    // Even the right password, now.
+    let response = schema
+        .execute(anonymous(
+            SIGN_IN,
+            &sessions,
+            credentials("a@example.org", "correct horse"),
+        ))
+        .await;
+    assert_eq!(
+        response.data.into_json().unwrap()["signIn"]["userErrors"][0]["code"],
+        "TOO_MANY_ATTEMPTS"
+    );
+}
+
+#[tokio::test]
+async fn letting_users_in_is_for_the_operator_and_signing_out_clears_the_cookie() {
+    let schema = schema();
+    let sessions = sessions();
+    let user = connected_user(&schema).await;
+    let deactivate = "mutation($id: ID!) { deactivateUser(id: $id) { active } }";
+    let variables = || async_graphql::Variables::from_json(serde_json::json!({ "id": user }));
+    let refused = schema
+        .execute(as_user_with_id(&user, deactivate).variables(variables()))
+        .await;
+    assert_eq!(refused.errors[0].message, "not found");
+    let done = schema
+        .execute(as_operator(deactivate).variables(variables()))
+        .await;
+    assert_eq!(
+        done.data.into_json().unwrap()["deactivateUser"]["active"],
+        false
+    );
+
+    let out = schema
+        .execute(anonymous(
+            "mutation { signOut }",
+            &sessions,
+            serde_json::json!({}),
+        ))
+        .await;
+    let cookie = out
+        .http_headers
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(
+        cookie.starts_with("open_plex_session=;") && cookie.contains("Max-Age=0"),
+        "{cookie}"
+    );
+}
+
+#[tokio::test]
+async fn signing_in_needs_the_session_keys_the_transport_attaches() {
+    let response = schema()
+        .execute(async_graphql::Request::new(SIGN_IN).variables(
+            async_graphql::Variables::from_json(credentials("a@example.org", "correct horse")),
+        ))
+        .await;
+    assert_eq!(
+        response.errors[0].message,
+        "signing in is not available on this server"
+    );
+}
+
+#[test]
+fn no_field_gives_out_a_password_or_a_session_token() {
+    let sdl = schema().sdl();
+    for name in ["type SignInPayload", "type SignUpPayload", "type User "] {
+        let start = sdl.find(name).unwrap();
+        let body = &sdl[start..sdl[start..].find("\n}").unwrap() + start];
+        // Field names only: descriptions sit between triple quotes and may say anything.
+        let mut in_description = false;
+        let fields: Vec<String> = body
+            .lines()
+            .filter(|line| {
+                let quotes = line.trim() == "\"\"\"";
+                if quotes {
+                    in_description = !in_description;
+                }
+                !quotes && !in_description
+            })
+            .filter_map(|line| line.trim().split([':', '(']).next())
+            .map(str::to_lowercase)
+            .collect();
+        assert!(
+            fields
+                .iter()
+                .all(|field| field != "password" && !field.contains("token")),
+            "{fields:?}"
+        );
+    }
+}
+
+/// The GraphQL endpoint admits nobody so they can sign in: everything that reads content must
+/// answer them as if there were none.
+#[tokio::test]
+async fn nobody_reads_nothing_from_any_entry_point() {
+    let schema = series_with_episodes();
+    let show = GlobalId::encode("Item", 22_053);
+    let library = GlobalId::encode("Library", 5);
+    let queries = [
+        format!(r#"{{ node(id: "{show}") {{ id }} }}"#),
+        format!(r#"{{ node(id: "{library}") {{ id }} }}"#),
+        format!(r#"{{ nodes(ids: ["{show}", "{library}"]) {{ id }} }}"#),
+        r#"{ search(query: "simpsons") { edges { node { id } } } }"#.to_owned(),
+        "{ libraries(first: 10) { edges { node { id } } } }".to_owned(),
+        "{ recentlyAdded(kind: SHOW, first: 10) { edges { node { id } } } }".to_owned(),
+        "{ continueWatching(first: 10) { edges { node { id } } } }".to_owned(),
+        "{ viewer { isOperator user { id } } }".to_owned(),
+    ];
+    for query in queries {
+        let response = schema.execute(query.as_str()).await;
+        let data = response.data.into_json().unwrap();
+        let text = data.to_string();
+        assert!(
+            !text.contains(&show) && !text.contains(&library) && !text.contains("true"),
+            "{query} → {text} {:?}",
+            response.errors
+        );
+    }
+    for denied in [
+        "{ users(first: 1) { edges { node { id } } } }",
+        "{ playbackSessions(first: 1) { edges { node { id } } } }",
+    ] {
+        let response = schema.execute(denied).await;
+        assert!(!response.errors.is_empty(), "{denied}");
+    }
 }

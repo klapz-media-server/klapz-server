@@ -4,6 +4,7 @@
 //! whatever its protocol expects, so adding a second binding costs no change in this crate.
 
 pub mod access;
+pub mod account;
 pub mod auth;
 pub mod identity;
 pub mod ids;

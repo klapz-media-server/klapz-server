@@ -28,6 +28,7 @@ pub mod stream_loudness;
 pub mod tag;
 pub mod track_choice;
 pub mod user_extension;
+pub mod user_password;
 pub mod users;
 pub mod viewing;
 pub mod watch_state;

@@ -1062,6 +1062,38 @@ pub struct InMemoryAccess {
     permissions: std::sync::Mutex<Vec<crate::access::LibraryPermission>>,
     extensions: std::sync::Mutex<Vec<(crate::access::UserExtension, String)>>,
     accounts: std::sync::Mutex<Vec<crate::access::AccountLink>>,
+    passwords: std::sync::Mutex<Vec<(crate::ids::UserId, String)>>,
+}
+
+impl InMemoryAccess {
+    fn insert_user(
+        &self,
+        email: &str,
+        active: bool,
+        now: i64,
+    ) -> Result<crate::access::User, crate::access::AccessError> {
+        let mut users = locked(&self.users);
+        if users.iter().any(|user| user.email == email) {
+            return Err(crate::access::AccessError::EmailTaken);
+        }
+        let user = crate::access::User {
+            id: crate::ids::UserId::new(i64::try_from(users.len()).unwrap_or(0) + 1),
+            email: email.to_owned(),
+            active,
+            created_at: now,
+            updated_at: now,
+        };
+        users.push(user.clone());
+        Ok(user)
+    }
+
+    /// The user behind a grant, when it is active.
+    fn active_user(&self, id: crate::ids::UserId) -> Option<crate::access::User> {
+        locked(&self.users)
+            .iter()
+            .find(|user| user.id == id && user.active)
+            .cloned()
+    }
 }
 
 /// An account service that answers from the code or token it is given.
@@ -1148,18 +1180,58 @@ impl crate::access::AccessRepository for InMemoryAccess {
         email: &str,
         now: i64,
     ) -> Result<crate::access::User, crate::access::AccessError> {
-        let mut users = locked(&self.users);
-        if users.iter().any(|user| user.email == email) {
-            return Err(crate::access::AccessError::EmailTaken);
-        }
-        let user = crate::access::User {
-            id: crate::ids::UserId::new(i64::try_from(users.len()).unwrap_or(0) + 1),
-            email: email.to_owned(),
-            created_at: now,
-            updated_at: now,
-        };
-        users.push(user.clone());
+        self.insert_user(email, true, now)
+    }
+
+    async fn sign_up(
+        &self,
+        email: &str,
+        password_hash: &str,
+        now: i64,
+    ) -> Result<crate::access::User, crate::access::AccessError> {
+        let user = self.insert_user(email, false, now)?;
+        locked(&self.passwords).push((user.id, password_hash.to_owned()));
         Ok(user)
+    }
+
+    async fn credentials(
+        &self,
+        email: &str,
+    ) -> Result<Option<(crate::access::User, String)>, crate::access::AccessError> {
+        let Some(user) = locked(&self.users)
+            .iter()
+            .find(|user| user.email == email)
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        Ok(locked(&self.passwords)
+            .iter()
+            .find(|(owner, _)| *owner == user.id)
+            .map(|(_, hash)| (user, hash.clone())))
+    }
+
+    async fn has_password(
+        &self,
+        user: crate::ids::UserId,
+    ) -> Result<bool, crate::access::AccessError> {
+        Ok(locked(&self.passwords)
+            .iter()
+            .any(|(owner, _)| *owner == user))
+    }
+
+    async fn set_active(
+        &self,
+        user: crate::ids::UserId,
+        active: bool,
+        now: i64,
+    ) -> Result<Option<crate::access::User>, crate::access::AccessError> {
+        let mut users = locked(&self.users);
+        Ok(users.iter_mut().find(|held| held.id == user).map(|held| {
+            held.active = active;
+            held.updated_at = now;
+            held.clone()
+        }))
     }
 
     async fn users(
@@ -1190,6 +1262,7 @@ impl crate::access::AccessRepository for InMemoryAccess {
         locked(&self.permissions).retain(|permission| permission.user != id);
         locked(&self.extensions).retain(|(extension, _)| extension.user != id);
         locked(&self.accounts).retain(|link| link.user != id);
+        locked(&self.passwords).retain(|(owner, _)| *owner != id);
         let mut users = locked(&self.users);
         let before = users.len();
         users.retain(|user| user.id != id);
@@ -1301,7 +1374,7 @@ impl crate::access::AccessRepository for InMemoryAccess {
         let Some(extension) = found else {
             return Ok(None);
         };
-        let Some(user) = self.user(extension.user).await? else {
+        let Some(user) = self.active_user(extension.user) else {
             return Ok(None);
         };
         let permissions = self.permissions(user.id).await?;
@@ -1442,7 +1515,7 @@ impl crate::access::AccessRepository for InMemoryAccess {
             .iter()
             .find(|(held, _)| held.user == owner && held.extension == extension && held.enabled)
             .map(|(held, _)| held.clone());
-        let (Some(extension), Some(user)) = (connection, self.user(owner).await?) else {
+        let (Some(extension), Some(user)) = (connection, self.active_user(owner)) else {
             return Ok(None);
         };
         let permissions = self.permissions(user.id).await?;

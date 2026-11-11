@@ -323,6 +323,11 @@ impl Query {
         crate::playback::sessions(context, after, before, first, last).await
     }
 
+    /// Who is asking: the operator, a user, or no one.
+    async fn viewer(&self, context: &Context<'_>) -> crate::access::Viewer {
+        crate::access::viewer(context)
+    }
+
     /// The account the caller's connection is paired with on the extension's own service.
     /// Null for the operator, who connects through no extension.
     async fn viewer_account(

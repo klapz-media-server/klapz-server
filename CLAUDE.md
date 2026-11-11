@@ -154,6 +154,29 @@ without them saying so.
   that lead to a library's content check it; every Plex query runs as the request's caller
   (`gql::run_as_caller`). A request with no caller sees nothing: forgetting to attach one fails
   closed. What a user was not given answers as if it did not exist.
+- **A user can sign in with a password, and waits for the operator first.** `signUp` creates an
+  inactive user with an Argon2id hash (`user_password`, one row per user); `activateUser` /
+  `deactivateUser` are the operator's. An inactive user opens nothing, whatever it presents:
+  its Plex token and its sessions stop at once. A user the operator creates is active and has
+  no password. `signIn` answers `INVALID_CREDENTIALS` alike for an unknown address and a wrong
+  password (a decoy hash keeps the timing the same), tells `INACTIVE` only with the right
+  password, and limits failures to five per address per fifteen minutes.
+- **A session is a signed JWT in an `HttpOnly; SameSite=Lax` cookie**, `open_plex_session`,
+  HS256 with `OPENPLEX_SESSION_SECRET` (32 bytes at least; without it a key is drawn per process
+  and sessions end with it), `Secure` unless `OPENPLEX_INSECURE_COOKIES=1`. Nothing stores it:
+  the transport checks the signature and expiry, then the user's current state, on every
+  request. Precedence is token, then cookie, then trusted network, so a user signed in on a
+  trusted network is that user. `signOut` clears the cookie; a copied token stays valid until it
+  expires (30 days) unless its user is shut out.
+- **`/graphql` admits nobody**, so a browser can sign in before it is anyone. The request goes
+  through with no principal, which every resolver already answers as "nothing exists";
+  `nobody_reads_nothing_from_any_entry_point` keeps it that way. Every other route still
+  answers `401`.
+- **A user pairs its own server.** `pairExtension`, `moveExtension` and `unpairExtension` are
+  open to the operator and to the user they name, so a client can offer pairing in the user's
+  own settings; issuing and revoking the token (`connectExtension`, `disableExtension`) stays the
+  operator's. `viewer` says who is asking (`isOperator`, and the `User` when it is one), which is
+  how a client decides what to offer.
 - **`/admin` is the operator's page.** Users, their libraries, their Plex connection; served
   without a token, holding no data, and driven entirely by `/graphql`. That endpoint accepts
   JSON only, because a trusted network is admitted without a token and any page its browsers
@@ -166,8 +189,8 @@ without them saying so.
   answers with that user's machine identifier, on `/identity` too when a token comes with the
   request. One process and one address: the separation is in what each token sees. Session
   identifiers are chosen by clients, so they are stored under a per-user name.
-- **Pairing ties one user's server to one plex.tv account.** The operator pastes a code from
-  `plex.tv/claim` and an address in `/admin`; `extension_account` keeps the account, its token
+- **Pairing ties one user's server to one plex.tv account.** The operator, or the user itself,
+  gives a code from `plex.tv/claim` and an address; `extension_account` keeps the account, its token
   and the address, which is republished at startup and hourly. plex.tv is reached through the
   `AccountDirectory` port, implemented in `api-plex::plex_tv`. `/identity` with no token shows
   the server published at the address the request was sent to, when only one is. CORS admits

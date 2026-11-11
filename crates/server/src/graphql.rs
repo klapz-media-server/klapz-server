@@ -12,22 +12,31 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Router};
-use open_plex_api::ApiSchema;
+use std::sync::Arc;
+
+use open_plex_api::{ApiSchema, Sessions};
 use open_plex_core::Principal;
 
-pub fn router(schema: ApiSchema) -> Router {
+#[derive(Clone)]
+struct GraphqlState {
+    schema: ApiSchema,
+    sessions: Arc<Sessions>,
+}
+
+pub fn router(schema: ApiSchema, sessions: Arc<Sessions>) -> Router {
     Router::new()
         .route("/graphql", post(execute))
         .route("/graphql", get(graphiql))
-        .with_state(schema)
+        .with_state(GraphqlState { schema, sessions })
 }
 
 /// Executes an operation on behalf of the authenticated caller.
 ///
 /// The principal is attached by the token middleware and forwarded into the request data, so
-/// resolvers can scope results to the caller without knowing how authentication happened.
+/// resolvers can scope results to the caller without knowing how authentication happened. The
+/// session keys go along, for the operations that sign in and out.
 async fn execute(
-    State(schema): State<ApiSchema>,
+    State(GraphqlState { schema, sessions }): State<GraphqlState>,
     principal: Option<Extension<Principal>>,
     headers: HeaderMap,
     request: GraphQLRequest,
@@ -35,7 +44,7 @@ async fn execute(
     if !is_json(&headers) {
         return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
     }
-    let mut request: Request = request.into_inner();
+    let mut request: Request = request.into_inner().data(sessions);
     if let Some(Extension(principal)) = principal {
         request = request.data(principal);
     }

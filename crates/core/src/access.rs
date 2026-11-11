@@ -2,7 +2,8 @@
 //!
 //! Our own model, not Plex's: a user is an e-mail address, a permission gives one user one role
 //! on one library, and an extension is one protocol a user can connect through. Without a
-//! permission on a library, a user does not know it exists.
+//! permission on a library, a user does not know it exists. A user that is not active — one
+//! that signed up and waits for the operator — opens nothing, however it authenticates.
 
 use std::collections::HashMap;
 
@@ -31,6 +32,8 @@ pub enum Extension {
 pub struct User {
     pub id: UserId,
     pub email: String,
+    /// Off until the operator lets in someone who signed up; off again when it shuts one out.
+    pub active: bool,
     /// Epoch seconds, as is the one below.
     pub created_at: i64,
     pub updated_at: i64,
@@ -96,18 +99,27 @@ pub struct Grant {
 impl Grant {
     #[must_use]
     pub fn into_principal(self) -> Principal {
-        let libraries: HashMap<SectionId, LibraryRole> = self
-            .permissions
-            .iter()
-            .map(|permission| (permission.section, permission.role))
-            .collect();
         Principal {
-            name: self.user.email,
-            scope: Scope::User,
-            libraries: LibraryAccess::Only(libraries),
-            user: Some(self.user.id),
             server_identifier: Some(self.extension.external_id),
+            ..user_principal(self.user, &self.permissions)
         }
+    }
+}
+
+/// The caller a user is, with the libraries it was given. No server identifier: that is an
+/// extension's, and a user signed in with its password came through none.
+#[must_use]
+pub fn user_principal(user: User, permissions: &[LibraryPermission]) -> Principal {
+    let libraries: HashMap<SectionId, LibraryRole> = permissions
+        .iter()
+        .map(|permission| (permission.section, permission.role))
+        .collect();
+    Principal {
+        name: user.email,
+        scope: Scope::User,
+        libraries: LibraryAccess::Only(libraries),
+        user: Some(user.id),
+        server_identifier: None,
     }
 }
 
@@ -253,10 +265,37 @@ pub enum AccessError {
 
 #[async_trait::async_trait]
 pub trait AccessRepository: Send + Sync + std::fmt::Debug {
+    /// An active user, as the operator creates them.
+    ///
     /// # Errors
     ///
     /// [`AccessError::EmailTaken`], or a storage failure.
     async fn create_user(&self, email: &str, now: i64) -> Result<User, AccessError>;
+
+    /// A user that signed up: inactive, with its password hash.
+    ///
+    /// # Errors
+    ///
+    /// [`AccessError::EmailTaken`], or a storage failure.
+    async fn sign_up(
+        &self,
+        email: &str,
+        password_hash: &str,
+        now: i64,
+    ) -> Result<User, AccessError>;
+
+    /// The user with this address and its password hash, when it has one.
+    async fn credentials(&self, email: &str) -> Result<Option<(User, String)>, AccessError>;
+
+    async fn has_password(&self, user: UserId) -> Result<bool, AccessError>;
+
+    /// Lets a user in or shuts it out. The user as it now is; `None` when there is none.
+    async fn set_active(
+        &self,
+        user: UserId,
+        active: bool,
+        now: i64,
+    ) -> Result<Option<User>, AccessError>;
 
     async fn users(&self, window: Window) -> Result<Page<User>, AccessError>;
 
@@ -310,7 +349,7 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
 
     async fn extensions(&self, user: UserId) -> Result<Vec<UserExtension>, AccessError>;
 
-    /// What a token opens, if it is one of an extension's.
+    /// What a token opens, if it is one of an extension's and its user is active.
     async fn grant(
         &self,
         extension: Extension,
@@ -373,7 +412,7 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
     ) -> Result<(), AccessError>;
 
     /// What an account opens: the rights of the user it is paired with, if that connection is
-    /// on.
+    /// on and that user active.
     async fn grant_for_account(
         &self,
         extension: Extension,
@@ -416,6 +455,7 @@ mod tests {
             user: User {
                 id: UserId::new(3),
                 email: "a@example.org".to_owned(),
+                active: true,
                 created_at: 0,
                 updated_at: 0,
             },

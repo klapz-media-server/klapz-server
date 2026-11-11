@@ -9,6 +9,7 @@
 //! `core` and never on `open-plex-db`.
 
 pub mod access;
+pub mod account;
 pub mod cursor;
 pub mod filter;
 pub mod item;
@@ -24,6 +25,7 @@ pub mod stream;
 pub mod tag;
 pub mod watch;
 
+pub use account::{Sessions, SESSION_COOKIE};
 pub use cursor::{CursorError, OpaqueCursor};
 pub use filter::{ItemFilterInput, ItemOrder, ItemType, SortDirection};
 pub use item::{Episode, Item, ItemConnection, Movie, Season, Show};

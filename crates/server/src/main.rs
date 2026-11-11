@@ -20,6 +20,7 @@ use axum::http::{header, HeaderValue, StatusCode};
 use open_plex_api::{build_schema, ApiContext};
 use open_plex_api_plex::PlexState;
 use open_plex_core::access::{publish_link, AccessRepository, AccountDirectory, Extension};
+use open_plex_core::account::SessionKey;
 use open_plex_core::metadata::MetadataRepository;
 use open_plex_core::play_queue::PlayQueueRepository;
 use open_plex_core::playback::PlaybackRepository;
@@ -98,10 +99,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&directory),
     ));
     let accounts = accounts();
+    let (session_key, sessions) = sessions()?;
     let access = Arc::new(
         auth::Access::new(accounts.clone(), trusted_networks()?)
             .with_users(users)
-            .with_remote_tokens(remote_tokens::RemoteTokens::new(directory)),
+            .with_remote_tokens(remote_tokens::RemoteTokens::new(directory))
+            .with_sessions(session_key),
     );
 
     // The Plex surface is the base and GraphQL is merged into it, which inverts the
@@ -118,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         transcoder,
     ));
     let mut app = open_plex_api_plex::router(plex_state)
-        .merge(graphql::router(schema))
+        .merge(graphql::router(schema, sessions))
         .merge(admin::router())
         .merge(streams::router(streams));
     let web_dir = web::directory();
@@ -218,6 +221,48 @@ fn accounts() -> Accounts {
             Accounts::default()
         }
     }
+}
+
+/// The key sessions are signed with, for the transport to check them, and the sign-in
+/// machinery around it, for the schema.
+fn sessions() -> Result<(Arc<SessionKey>, Arc<open_plex_api::Sessions>), String> {
+    let key = Arc::new(session_key()?);
+    let sessions = open_plex_api::Sessions::new(Arc::clone(&key), secure_cookies());
+    Ok((key, Arc::new(sessions)))
+}
+
+/// What sessions are signed with, from `OPENPLEX_SESSION_SECRET`.
+///
+/// Without one, a key is drawn for this process: signing in works, but every session ends when
+/// the server stops. A secret too short to sign with stops the server instead of being used.
+fn session_key() -> Result<SessionKey, String> {
+    match std::env::var("OPENPLEX_SESSION_SECRET") {
+        Ok(secret) if !secret.is_empty() => {
+            SessionKey::from_secret(secret.as_bytes()).ok_or_else(|| {
+                format!(
+                    "OPENPLEX_SESSION_SECRET: at least {} bytes are needed",
+                    SessionKey::MIN_SECRET_BYTES
+                )
+            })
+        }
+        _ => {
+            tracing::warn!(
+                "OPENPLEX_SESSION_SECRET is not set: sessions will not survive a restart"
+            );
+            Ok(SessionKey::generate())
+        }
+    }
+}
+
+/// Whether the session cookie is for HTTPS only. On unless `OPENPLEX_INSECURE_COOKIES=1`, for a
+/// server reached over plain HTTP on a local network; browsers count `http://localhost` as
+/// secure either way.
+fn secure_cookies() -> bool {
+    let insecure = std::env::var("OPENPLEX_INSECURE_COOKIES").is_ok_and(|value| value == "1");
+    if insecure {
+        tracing::warn!("OPENPLEX_INSECURE_COOKIES=1: session cookies also travel over plain HTTP");
+    }
+    !insecure
 }
 
 /// The networks admitted without a token, from `OPENPLEX_ALLOWED_NETWORKS`.
