@@ -20,14 +20,9 @@ use open_plex_api_plex::{router, PlexState};
 use open_plex_core::library::{LibrarySection, SectionKind};
 use open_plex_core::metadata::{ItemKind, MetadataItem};
 use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{
-    Accounts, Credential, Principal, RatingKey, Scope, SectionId, ServerCapabilities,
-    ServerIdentity,
-};
+use open_plex_core::{RatingKey, SectionId, ServerCapabilities, ServerIdentity};
 use serde_json::Value;
 use tower::ServiceExt;
-
-const TOKEN: &str = "coverage-token";
 
 /// Whether the spec writes this path in a shape no router can express.
 ///
@@ -135,12 +130,11 @@ fn app() -> axum::Router {
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
     });
-    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
 
     // A principal is attached directly: authentication lives in the `server` crate, and this
     // test is about routing, not about credentials.
-    router(PlexState::new(identity, schema, accounts))
-        .layer(axum::Extension(Principal::operator("owner")))
+    router(PlexState::new(identity, schema))
+        .layer(axum::Extension(open_plex_core::testing::owner()))
 }
 
 /// Fills path parameters with values of a plausible shape.

@@ -19,7 +19,6 @@ use open_plex_core::metadata::{
     ItemSort, Person, Rating, RatingKind, Tag, TagCondition, TagKind, TagRef, TagSearch, TagUse,
 };
 use open_plex_core::page::{Cursor, Direction, Window, MAX_ITEMS};
-use open_plex_core::watch::Viewer;
 use open_plex_core::{PersonId, RatingKey, SectionId, TagId};
 
 use crate::cursor::OpaqueCursor;
@@ -303,7 +302,7 @@ async fn works(
     });
 
     let mut filter: ItemFilter = filter.unwrap_or_default().try_into()?;
-    filter.viewer = crate::access::caller(context).and_then(Viewer::of);
+    filter.viewer = crate::access::viewer_id(context);
     filter.credited = Some(credited);
     Ok(
         ItemQuery::across(libraries.into_iter().map(|library| library.id).collect())

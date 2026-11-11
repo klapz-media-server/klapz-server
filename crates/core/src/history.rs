@@ -8,9 +8,8 @@
 //! [`WatchRepository::record_viewings`](crate::watch::WatchRepository::record_viewings), and
 //! read apart.
 
-use crate::ids::{HistoryId, RatingKey, SectionId};
+use crate::ids::{HistoryId, RatingKey, SectionId, UserId};
 use crate::page::{Cursor, CursorKey, Direction};
-use crate::watch::Viewer;
 
 /// How a viewing came about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,7 +24,7 @@ pub enum ViewingKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HistoryEntry {
     pub id: HistoryId,
-    pub viewer: Viewer,
+    pub viewer: UserId,
     /// The copy watched: the item, not the work, so the entry names the library it was in.
     pub item: RatingKey,
     /// The item's library.
@@ -46,9 +45,9 @@ pub struct NewViewing {
 /// Whose viewings a query reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryScope {
-    /// Every viewer's: the operator's view.
+    /// Every viewer's: an owner's view.
     Everyone,
-    Viewer(Viewer),
+    Viewer(UserId),
 }
 
 /// How a history is ordered. Ties go to the order entries were written in.
@@ -135,7 +134,7 @@ impl HistoryQuery {
 mod tests {
     use super::*;
 
-    fn entry(viewer: Viewer, item: i64, kind: ViewingKind, viewed_at: i64) -> HistoryEntry {
+    fn entry(viewer: UserId, item: i64, kind: ViewingKind, viewed_at: i64) -> HistoryEntry {
         HistoryEntry {
             id: HistoryId::new(1),
             viewer,
@@ -148,9 +147,9 @@ mod tests {
 
     #[test]
     fn a_series_reads_its_episodes_entries() {
-        let mut query = HistoryQuery::of(HistoryScope::Viewer(Viewer::Operator));
+        let mut query = HistoryQuery::of(HistoryScope::Viewer(UserId::new(1)));
         query.item = Some(RatingKey::new(577_987));
-        let episode = entry(Viewer::Operator, 577_989, ViewingKind::Played, 10);
+        let episode = entry(UserId::new(1), 577_989, ViewingKind::Played, 10);
         let lineage = [RatingKey::new(577_988), RatingKey::new(577_987)];
         assert!(query.admits(&episode, &lineage));
         assert!(!query.admits(&episode, &[]));
@@ -158,13 +157,8 @@ mod tests {
 
     #[test]
     fn one_viewer_reads_only_its_own() {
-        let query = HistoryQuery::of(HistoryScope::Viewer(Viewer::Operator));
-        let theirs = entry(
-            Viewer::User(crate::UserId::new(7)),
-            577_986,
-            ViewingKind::Played,
-            10,
-        );
+        let query = HistoryQuery::of(HistoryScope::Viewer(UserId::new(1)));
+        let theirs = entry(UserId::new(7), 577_986, ViewingKind::Played, 10);
         assert!(!query.admits(&theirs, &[]));
         assert!(HistoryQuery::of(HistoryScope::Everyone).admits(&theirs, &[]));
     }
@@ -175,8 +169,8 @@ mod tests {
         query.viewed_since = Some(10);
         query.viewed_until = Some(10);
         query.kind = Some(ViewingKind::Marked);
-        assert!(query.admits(&entry(Viewer::Operator, 1, ViewingKind::Marked, 10), &[]));
-        assert!(!query.admits(&entry(Viewer::Operator, 1, ViewingKind::Played, 10), &[]));
-        assert!(!query.admits(&entry(Viewer::Operator, 1, ViewingKind::Marked, 11), &[]));
+        assert!(query.admits(&entry(UserId::new(1), 1, ViewingKind::Marked, 10), &[]));
+        assert!(!query.admits(&entry(UserId::new(1), 1, ViewingKind::Played, 10), &[]));
+        assert!(!query.admits(&entry(UserId::new(1), 1, ViewingKind::Marked, 11), &[]));
     }
 }

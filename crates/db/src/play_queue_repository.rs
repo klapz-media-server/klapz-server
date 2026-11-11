@@ -79,7 +79,7 @@ async fn loaded<C: ConnectionTrait>(
     let last_added = entry_at(connection, row.id, row.last_added_position).await?;
     Ok(PlayQueue {
         id: row.id,
-        user: row.user_id.map(open_plex_core::UserId::new),
+        user: open_plex_core::UserId::new(row.user_id),
         client: row.client,
         kind: PlayQueueKind::parse(&row.kind).unwrap_or_default(),
         source_uri: row.source_uri,
@@ -161,14 +161,10 @@ impl PlayQueueRepository for SqlPlayQueueRepository {
     async fn create(&self, queue: NewPlayQueue, now: i64) -> Result<PlayQueue, PlayQueueError> {
         let transaction = self.connection.begin().await.map_err(storage)?;
         if let Some(client) = &queue.client {
-            let user = match queue.user {
-                Some(user) => play_queue::Column::UserId.eq(user.get()),
-                None => play_queue::Column::UserId.is_null(),
-            };
             let replaced: Vec<i64> = play_queue::Entity::find()
                 .select_only()
                 .column(play_queue::Column::Id)
-                .filter(user)
+                .filter(play_queue::Column::UserId.eq(queue.user.get()))
                 .filter(play_queue::Column::Client.eq(client.as_str()))
                 .filter(play_queue::Column::Kind.eq(queue.kind.as_str()))
                 .into_tuple()
@@ -181,7 +177,7 @@ impl PlayQueueRepository for SqlPlayQueueRepository {
         let contents = queue.initial_contents();
         let row = play_queue::ActiveModel {
             id: ActiveValue::NotSet,
-            user_id: ActiveValue::Set(queue.user.map(open_plex_core::UserId::get)),
+            user_id: ActiveValue::Set(queue.user.get()),
             client: ActiveValue::Set(queue.client.clone()),
             kind: ActiveValue::Set(queue.kind.as_str().to_owned()),
             source_uri: ActiveValue::Set(queue.source_uri.clone()),

@@ -21,7 +21,6 @@ uuid = { version = "1", features = ["v4"] }
 async-graphql-axum.workspace = true
 axum.workspace = true
 form_urlencoded = "1"
-ipnet.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
 tower-http.workspace = true
 tracing.workspace = true

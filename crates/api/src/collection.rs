@@ -2,7 +2,7 @@
 //!
 //! A collection is its library's: whoever may read the library reads the collection and
 //! everything in it, and asking for one in another library answers as asking for nothing.
-//! Its library's admins and the operator change it, as they edit the library's items.
+//! Its library's admins and the server's owners change it, as they edit the library's items.
 //!
 //! A smart collection keeps a listing of its library — filter, order, direction — in the
 //! shape `Library.items` takes it, and lists it anew on every read.
@@ -26,7 +26,6 @@ use open_plex_core::collection::{
 };
 use open_plex_core::metadata::{ItemDepth, ItemFilter, ItemKind, ItemQuery, ItemSort};
 use open_plex_core::page::{Direction, MAX_ITEMS};
-use open_plex_core::watch::Viewer;
 use open_plex_core::{now_epoch, CollectionId, MetadataItem, RatingKey, SectionId};
 
 use crate::cursor::OpaqueCursor;
@@ -476,7 +475,7 @@ impl CollectionObject {
 /// The listing a smart collection runs for its reader.
 fn smart_query(context: &Context<'_>, collection: &Collection, rule: &str) -> Result<ItemQuery> {
     let rule = SmartCollectionRuleInput::read(rule)?;
-    let viewer = crate::access::caller(context).and_then(Viewer::of);
+    let viewer = crate::access::viewer_id(context);
     let sort = rule.order_by.unwrap_or_default().sort(viewer, 0);
     crate::library::listing_query(
         context,
@@ -499,7 +498,7 @@ fn chosen_query(context: &Context<'_>, collection: &Collection) -> ItemQuery {
         collections: vec![CollectionCondition {
             any_of: vec![CollectionRef::Id(collection.id)],
         }],
-        viewer: crate::access::caller(context).and_then(Viewer::of),
+        viewer: crate::access::viewer_id(context),
         ..ItemFilter::default()
     };
     ItemQuery::new(collection.section)

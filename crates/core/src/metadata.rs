@@ -1,10 +1,11 @@
 //! Library contents: items, their media, and the queries bindings run against them.
 
 use crate::edit::{ItemEdit, ItemField};
-use crate::ids::{MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
+use crate::ids::{
+    MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
+};
 use crate::marker::{Marker, NewMarker};
 use crate::page::{Cursor, CursorKey, Direction, Page, Window};
-use crate::watch::Viewer;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MetadataError {
@@ -14,7 +15,7 @@ pub enum MetadataError {
     /// mistake, typically reusing a cursor after changing the sort field.
     #[error("the cursor does not match the requested ordering")]
     CursorMismatch,
-    /// Storage failed. Boxed so the cause chain survives for the operator's logs without
+    /// Storage failed. Boxed so the cause chain survives for the server's logs without
     /// `core` knowing which engine is in use.
     #[error("metadata storage failed")]
     Storage(#[source] Box<dyn std::error::Error + Send + Sync>),
@@ -580,7 +581,7 @@ pub enum ItemSort {
     Height,
     /// By when this viewer last played it. `None`, a caller with no watch state, has
     /// played nothing.
-    LastViewedAt(Option<Viewer>),
+    LastViewedAt(Option<UserId>),
     /// By when a series' episodes were added: its first ascending, its latest descending,
     /// the way [`ItemSort::Duration`] ranks versions.
     EpisodeAddedAt,
@@ -671,7 +672,7 @@ pub struct ItemFilter {
     pub last_viewed_to: Option<i64>,
     /// Whose watch state the filters above read. `None`, a caller with no watch state, has
     /// watched nothing and has nothing in progress.
-    pub viewer: Option<Viewer>,
+    pub viewer: Option<UserId>,
 }
 
 /// A frame size, in pixels.
@@ -1158,7 +1159,7 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
     async fn markers(
         &self,
         items: &[RatingKey],
-        viewer: Option<Viewer>,
+        viewer: Option<UserId>,
     ) -> Result<Vec<Marker>, MetadataError>;
 
     /// One marker, whoever owns it.
@@ -1392,7 +1393,7 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
     async fn markers(
         &self,
         items: &[RatingKey],
-        viewer: Option<Viewer>,
+        viewer: Option<UserId>,
     ) -> Result<Vec<Marker>, MetadataError> {
         (**self).markers(items, viewer).await
     }

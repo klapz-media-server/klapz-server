@@ -17,7 +17,6 @@ use crate::ids::{HistoryId, PartId, RatingKey, SectionId, UserId};
 use crate::metadata::{ItemKind, MetadataError, MetadataItem, MetadataRepository};
 use crate::page::{Page, Window};
 use crate::tracks::TrackChoice;
-use crate::{Principal, Scope};
 
 /// A position kept, at the least. Shorter ones are taken for a false start.
 pub const MINIMUM_PROGRESS_MS: i64 = 60_000;
@@ -54,27 +53,6 @@ pub struct DeckEntry {
     /// When the work behind it was last played: the film's, or the series' for an episode,
     /// which is what the list is ordered by.
     pub last_viewed_at: i64,
-}
-
-/// Whose state it is. The operator watches as itself, though it is nobody's user.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Viewer {
-    Operator,
-    User(UserId),
-}
-
-impl Viewer {
-    /// Whose state a caller reads and writes: a user its own, the operator its own, and
-    /// anyone else none. A caller with no user is the operator only when it is an
-    /// administrator: a visitor at a published address has no user either, and must not be
-    /// handed the operator's history.
-    pub fn of(principal: &Principal) -> Option<Self> {
-        match (principal.user, principal.scope) {
-            (Some(user), _) => Some(Self::User(user)),
-            (None, Scope::Admin) => Some(Self::Operator),
-            (None, _) => None,
-        }
-    }
 }
 
 /// What a viewer has watched of one work.
@@ -131,19 +109,19 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
     /// The states of these works for one viewer. A work never touched is absent.
     async fn states(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         guids: &[String],
     ) -> Result<Vec<(String, WatchState)>, WatchError>;
 
     /// Writes these states, an empty one deleting the row.
-    async fn save(&self, viewer: Viewer, states: &[(String, WatchState)])
+    async fn save(&self, viewer: UserId, states: &[(String, WatchState)])
         -> Result<(), WatchError>;
 
     /// Writes these states and adds these viewings to the viewer's history, at once. The one
     /// way an entry is written: a viewing in the history is one the state counted.
     async fn record_viewings(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         states: &[(String, WatchState)],
         viewings: &[NewViewing],
     ) -> Result<(), WatchError>;
@@ -167,14 +145,14 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
     /// How many episodes below each series or season a viewer has watched to the end.
     async fn watched_leaves(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         parents: &[RatingKey],
     ) -> Result<Vec<(RatingKey, u64)>, WatchError>;
 
     /// The states last viewed at `since` or later, newest first, at most `limit`.
     async fn recent(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         since: i64,
         limit: u32,
     ) -> Result<Vec<(String, WatchState)>, WatchError>;
@@ -182,7 +160,7 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
     /// A playback still remembered: reported within [`VIEWING_LIFETIME_SECONDS`].
     async fn viewing(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         playback: &str,
         now: i64,
     ) -> Result<Option<Viewing>, WatchError>;
@@ -191,7 +169,7 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
     /// this viewer's that expired.
     async fn remember(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         playback: &str,
         viewing: Viewing,
         now: i64,
@@ -200,14 +178,14 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
     /// The tracks a viewer chose on these files. A file it chose nothing on is absent.
     async fn track_choices(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         files: &[PartId],
     ) -> Result<Vec<(PartId, TrackChoice)>, WatchError>;
 
     /// Records a viewer's choice on one file, an empty one deleting it.
     async fn choose_tracks(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         file: PartId,
         choice: TrackChoice,
     ) -> Result<(), WatchError>;
@@ -227,7 +205,7 @@ const fn past_the_end(position_ms: i64, duration_ms: i64) -> bool {
 pub struct Watching<'a> {
     pub metadata: &'a dyn MetadataRepository,
     pub watch: &'a dyn WatchRepository,
-    pub viewer: Viewer,
+    pub viewer: UserId,
 }
 
 impl Watching<'_> {
@@ -611,6 +589,7 @@ mod tests {
 
     const SOUL_MS: i64 = 6_031_567;
     const NOW: i64 = 1_794_318_000;
+    const VIEWER: UserId = UserId::new(1);
 
     fn item(id: i64, kind: ItemKind, parent: Option<i64>) -> MetadataItem {
         MetadataItem {
@@ -666,14 +645,14 @@ mod tests {
             Watching {
                 metadata: &self.metadata,
                 watch: &self.watch,
-                viewer: Viewer::Operator,
+                viewer: VIEWER,
             }
         }
 
         async fn state(&self, id: i64) -> WatchState {
             let guid = format!("tv.plex.agents.none://{id}");
             self.watch
-                .states(Viewer::Operator, &[guid])
+                .states(VIEWER, &[guid])
                 .await
                 .unwrap()
                 .first()
@@ -816,7 +795,7 @@ mod tests {
     }
 
     async fn history(watch: &InMemoryWatch) -> Vec<(i64, ViewingKind)> {
-        let query = HistoryQuery::of(HistoryScope::Viewer(Viewer::Operator));
+        let query = HistoryQuery::of(HistoryScope::Viewer(VIEWER));
         let window = Window::by_id(None, None, Some(50), None).unwrap();
         watch
             .history(&query, window)
@@ -927,7 +906,7 @@ mod tests {
             Watching {
                 metadata: &self.metadata,
                 watch: &self.watch,
-                viewer: Viewer::Operator,
+                viewer: VIEWER,
             }
         }
 
@@ -1042,18 +1021,6 @@ mod tests {
         let deck = Deck::new();
         deck.start(577_986, NOW - DECK_WINDOW_SECONDS).await;
         assert!(deck.next().await.is_empty());
-    }
-
-    #[test]
-    fn only_an_administrator_without_a_user_watches_as_the_operator() {
-        assert_eq!(
-            Viewer::of(&Principal::operator("owner")),
-            Some(Viewer::Operator)
-        );
-        assert_eq!(
-            Viewer::of(&Principal::visitor_of("server".to_owned())),
-            None
-        );
     }
 
     #[test]

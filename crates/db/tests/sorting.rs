@@ -6,7 +6,6 @@
 use open_plex_core::edit::CalendarDate;
 use open_plex_core::metadata::{ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataRepository};
 use open_plex_core::page::{Direction, Window};
-use open_plex_core::watch::Viewer;
 use open_plex_core::{SectionId, UserId};
 use open_plex_db::entity::{library_section, media, metadata_item, watch_state};
 use open_plex_db::write;
@@ -197,8 +196,8 @@ async fn seed(connection: &DatabaseConnection) {
         .await
         .expect("versions");
 
-    // The operator watched Casablanca, then Alien; user 7 watched Dune only.
-    watch_state::Entity::insert_many([viewed(0, 3, 50), viewed(0, 1, 70), viewed(7, 4, 10)])
+    // User 1 watched Casablanca, then Alien; user 7 watched Dune only.
+    watch_state::Entity::insert_many([viewed(1, 3, 50), viewed(1, 1, 70), viewed(7, 4, 10)])
         .exec(connection)
         .await
         .expect("watch state");
@@ -363,14 +362,14 @@ async fn a_film_ranks_by_its_smallest_version_ascending_and_its_largest_descendi
 #[tokio::test]
 async fn orders_by_when_this_viewer_last_played() {
     assert_order(
-        ItemSort::LastViewedAt(Some(Viewer::Operator)),
+        ItemSort::LastViewedAt(Some(UserId::new(1))),
         Direction::Descending,
         &["Alien", "Casablanca", "Brazil", "Dune", "Eraserhead"],
     )
     .await;
-    // Another viewer's history is not the operator's.
+    // Another viewer's history is not user 1's.
     assert_order(
-        ItemSort::LastViewedAt(Some(Viewer::User(UserId::new(7)))),
+        ItemSort::LastViewedAt(Some(UserId::new(7))),
         Direction::Descending,
         &["Dune", "Alien", "Brazil", "Casablanca", "Eraserhead"],
     )

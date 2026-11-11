@@ -22,14 +22,12 @@ use axum::http::{header, HeaderValue, StatusCode};
 use open_plex_api::{build_schema, ApiContext};
 use open_plex_api_plex::PlexState;
 use open_plex_core::access::{publish_link, AccessRepository, AccountDirectory, Extension};
-use open_plex_core::account::SessionKey;
+use open_plex_core::account::{ensure_admin, AdminAccount, AdminAccountError, SessionKey};
 use open_plex_core::lifecycle::SessionLocks;
 use open_plex_core::metadata::MetadataRepository;
 use open_plex_core::play_queue::PlayQueueRepository;
 use open_plex_core::playback::PlaybackRepository;
-use open_plex_core::{
-    Accounts, Credential, LibraryRepository, Scope, ServerCapabilities, ServerIdentity,
-};
+use open_plex_core::{LibraryRepository, ServerCapabilities, ServerIdentity};
 use open_plex_db::{
     import, SqlAccessRepository, SqlLibraryRepository, SqlMetadataRepository,
     SqlPlayQueueRepository, SqlPlaybackRepository, SqlWatchRepository,
@@ -81,6 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let playback: Arc<dyn PlaybackRepository> =
         Arc::new(SqlPlaybackRepository::new(connection.clone()));
     let users: Arc<dyn AccessRepository> = Arc::new(SqlAccessRepository::new(connection.clone()));
+    ensure_admin_account(users.as_ref()).await?;
     let metadata: Arc<dyn MetadataRepository> =
         Arc::new(SqlMetadataRepository::new(connection.clone()));
     let directory: Arc<dyn AccountDirectory> =
@@ -115,11 +114,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&users),
         Arc::clone(&directory),
     ));
-    let accounts = accounts();
     let (session_key, sign_in) = sign_in()?;
     let access = Arc::new(
-        auth::Access::new(accounts.clone(), trusted_networks()?)
-            .with_users(users)
+        auth::Access::new(users)
             .with_remote_tokens(remote_tokens::RemoteTokens::new(directory))
             .with_sessions(session_key),
     );
@@ -130,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // those unless the router has `without_v07_checks`, and `merge` re-validates whatever is
     // merged *in* with the default rules. So the router holding those paths cannot be the one
     // merged in. GraphQL has no such paths and merges cleanly either way.
-    let mut plex_state = PlexState::new(identity(), schema.clone(), accounts);
+    let mut plex_state = PlexState::new(identity(), schema.clone());
     plex_state.transcoder = Arc::clone(&transcoder);
     let sweep = expire_playback(sessions.clone(), play_queues, Arc::clone(&transcoder));
     tokio::spawn(sweep);
@@ -178,7 +175,7 @@ async fn serve_until_signal(
     sessions: streams::Sessions,
 ) -> std::io::Result<()> {
     let ended = Arc::new(tokio::sync::Notify::new());
-    // With the peer's address attached, which is what a trusted network is checked against.
+    // With the peer's address attached, which is how the transcoder's callbacks know loopback.
     let serving = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
@@ -273,23 +270,40 @@ async fn run_import(
     Ok(())
 }
 
-/// Reads the accepted credentials from the environment.
+/// Makes sure the built-in `admin` account exists, an active owner, before anything is served.
 ///
-/// No token configured means no authenticated route is reachable, which is the safe failure:
-/// the alternative — serving the library to anyone while the operator believes it is
-/// configured — is how a self-hosted server ends up public.
-fn accounts() -> Accounts {
-    match std::env::var("OPENPLEX_TOKEN") {
-        Ok(token) if !token.is_empty() => {
-            Accounts::new(vec![Credential::new(token, "owner", Scope::Admin)])
-        }
-        _ => {
-            tracing::warn!(
-                "OPENPLEX_TOKEN is not set: every authenticated endpoint will answer 401"
+/// `OPENPLEX_ADMIN_PASSWORD` sets its password, at creation and on every start; without it, a
+/// new account gets a generated one and an existing one keeps its own. A password the policy
+/// refuses stops the server. A generated password goes to standard output, once, and never
+/// to the logs, which may be kept or shipped where a password must not go.
+async fn ensure_admin_account(users: &dyn AccessRepository) -> Result<(), String> {
+    let configured = std::env::var("OPENPLEX_ADMIN_PASSWORD")
+        .ok()
+        .filter(|password| !password.is_empty());
+    match ensure_admin(users, configured.as_deref(), open_plex_core::now_epoch()).await {
+        Ok(AdminAccount::Created {
+            generated_password: Some(password),
+        }) => {
+            println!(
+                "\nopen-plex created its `admin` account. Its password, shown this once:\n\n    \
+                 {password}\n\nSign in with it at /admin. Set OPENPLEX_ADMIN_PASSWORD to \
+                 choose another.\n"
             );
-            Accounts::default()
+            tracing::info!("created the admin account, with a generated password");
         }
+        Ok(AdminAccount::Created {
+            generated_password: None,
+        }) => tracing::info!("created the admin account, with OPENPLEX_ADMIN_PASSWORD"),
+        Ok(AdminAccount::PasswordReplaced) => {
+            tracing::info!("the admin account takes OPENPLEX_ADMIN_PASSWORD");
+        }
+        Ok(AdminAccount::Kept) => {}
+        Err(error @ AdminAccountError::WeakPassword) => {
+            return Err(format!("OPENPLEX_ADMIN_PASSWORD: {error}"));
+        }
+        Err(error) => return Err(format!("could not set the admin account up: {error}")),
     }
+    Ok(())
 }
 
 /// The key sessions are signed with, for the transport to check them, and the sign-in
@@ -332,24 +346,6 @@ fn secure_cookies() -> bool {
         tracing::warn!("OPENPLEX_INSECURE_COOKIES=1: session cookies also travel over plain HTTP");
     }
     !insecure
-}
-
-/// The networks admitted without a token, from `OPENPLEX_ALLOWED_NETWORKS`.
-///
-/// None unless configured. Each one is an authentication bypass, so the server says so when
-/// it starts with any.
-fn trusted_networks() -> Result<Vec<ipnet::IpNet>, String> {
-    let networks =
-        auth::parse_networks(&std::env::var("OPENPLEX_ALLOWED_NETWORKS").unwrap_or_default())
-            .map_err(|error| format!("OPENPLEX_ALLOWED_NETWORKS: {error}"))?;
-    if !networks.is_empty() {
-        let list: Vec<String> = networks.iter().map(ToString::to_string).collect();
-        tracing::warn!(
-            networks = %list.join(","),
-            "requests from these networks are admitted without a token"
-        );
-    }
-    Ok(networks)
 }
 
 /// A request's trace: the method and the path, never the URI. Plex clients carry the token in

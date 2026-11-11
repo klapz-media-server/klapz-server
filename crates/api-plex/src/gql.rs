@@ -12,31 +12,53 @@ use async_graphql::{Request, Variables};
 use axum::middleware::Next;
 use axum::response::Response;
 use open_plex_api::ApiSchema;
-use open_plex_core::Principal;
+use open_plex_core::{Principal, PublishedServer};
 use serde::de::DeserializeOwned;
 
 use crate::error::ApiError;
 
+/// Who a request is from, and for a request from nobody, which server its address shows.
+#[derive(Debug, Clone, Default)]
+struct RequestOrigin {
+    caller: Option<Principal>,
+    published: Option<PublishedServer>,
+}
+
 tokio::task_local! {
     /// Who the request being handled is from. Task-local rather than passed along so that no
     /// query can be written that forgets it: the schema shows nothing to a request without one.
-    static CALLER: Option<Principal>;
+    static ORIGIN: RequestOrigin;
 }
 
 /// Makes the authenticated caller, if any, the one every query of this request runs as.
 pub async fn run_as_caller(request: axum::extract::Request, next: Next) -> Response {
-    let caller = request.extensions().get::<Principal>().cloned();
-    CALLER.scope(caller, next.run(request)).await
+    let origin = RequestOrigin {
+        caller: request.extensions().get::<Principal>().cloned(),
+        published: request.extensions().get::<PublishedServer>().cloned(),
+    };
+    ORIGIN.scope(origin, next.run(request)).await
 }
 
 fn caller() -> Option<Principal> {
-    CALLER.try_with(Clone::clone).ok().flatten()
+    ORIGIN
+        .try_with(|origin| origin.caller.clone())
+        .ok()
+        .flatten()
 }
 
-/// The machine identifier this request's caller knows the server by: each user has its own.
+/// The machine identifier this request knows the server by: each user has its own, and a
+/// request from nobody sees the one published at the address it used.
 pub fn machine_identifier(server: &str) -> String {
-    caller()
-        .and_then(|caller| caller.server_identifier)
+    ORIGIN
+        .try_with(|origin| {
+            origin
+                .caller
+                .as_ref()
+                .and_then(|caller| caller.server_identifier.clone())
+                .or_else(|| origin.published.clone().map(|PublishedServer(id)| id))
+        })
+        .ok()
+        .flatten()
         .unwrap_or_else(|| server.to_owned())
 }
 

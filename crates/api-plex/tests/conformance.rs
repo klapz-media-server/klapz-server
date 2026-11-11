@@ -19,9 +19,8 @@ use open_plex_core::metadata::{
 };
 use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
 use open_plex_core::{
-    Accounts, Credential, LibrarySection, MediaId, PartId, PersonId, Principal, RatingKey, Scope,
-    SectionId, SectionKind, SectionRoot, ServerCapabilities, ServerIdentity, StreamId, TagId,
-    UserId,
+    LibrarySection, MediaId, PartId, PersonId, Principal, RatingKey, SectionId, SectionKind,
+    SectionRoot, ServerCapabilities, ServerIdentity, StreamId, TagId, UserId,
 };
 use serde_json::Value;
 use tower::ServiceExt;
@@ -76,7 +75,6 @@ fn app_from(library: InMemoryLibrary) -> axum::Router {
 
 fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
     let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
-    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
     // One identity for both surfaces, as the binary wires it: `/identity` reads the
     // adapter's copy while `/` reads the schema's, and a client that sees two different
     // machine identifiers from one server treats it as two servers.
@@ -94,11 +92,11 @@ fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
     });
-    router(PlexState::new(identity, schema, accounts))
+    router(PlexState::new(identity, schema))
 }
 
 fn authenticated(router: axum::Router) -> axum::Router {
-    router.layer(axum::Extension(Principal::operator("owner")))
+    router.layer(axum::Extension(open_plex_core::testing::owner()))
 }
 
 /// Builds an app over an arbitrary catalog, for tests about ordering and flags.
@@ -797,7 +795,6 @@ fn item(id: i64, section: i64, kind: ItemKind, parent: Option<i64>, title: &str)
 
 fn items_app() -> axum::Router {
     let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
-    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
     let (library, metadata) = catalog();
     let watch = open_plex_core::testing::InMemoryWatch::over(metadata.items());
     let schema = build_schema(ApiContext {
@@ -814,7 +811,7 @@ fn items_app() -> axum::Router {
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
     });
-    authenticated(router(PlexState::new(identity, schema, accounts)))
+    authenticated(router(PlexState::new(identity, schema)))
 }
 
 async fn get_from(app: axum::Router, uri: &str, accept: Option<&str>) -> (StatusCode, String) {
@@ -1696,7 +1693,6 @@ async fn media_providers_refuses_a_request_with_no_authenticated_caller() {
 /// and no permission on the series (section 5).
 fn app_as_user(user: i64, role: LibraryRole) -> axum::Router {
     let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
-    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
     let (library, metadata) = catalog();
     let schema = build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity.clone(), 0),
@@ -1712,16 +1708,15 @@ fn app_as_user(user: i64, role: LibraryRole) -> axum::Router {
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
     });
-    router(PlexState::new(identity, schema, accounts))
-        .layer(axum::Extension(user_principal(user, role)))
+    router(PlexState::new(identity, schema)).layer(axum::Extension(user_principal(user, role)))
 }
 
 fn user_principal(user: i64, role: LibraryRole) -> Principal {
     Principal {
         name: format!("user{user}"),
-        scope: Scope::User,
+        role: open_plex_core::ServerRole::User,
         libraries: LibraryAccess::Only(std::iter::once((SectionId::new(4), role)).collect()),
-        user: Some(UserId::new(user)),
+        user: UserId::new(user),
         server_identifier: Some(format!("server-of-user-{user}")),
     }
 }
@@ -1731,7 +1726,10 @@ async fn app_as_paired_user() -> axum::Router {
     use open_plex_core::access::{AccessRepository, Extension, RemoteAccount};
 
     let access = open_plex_core::testing::InMemoryAccess::default();
-    let user = access.create_user("a@example.org", 0).await.unwrap().id;
+    let user = access
+        .add_user("alice", open_plex_core::ServerRole::User)
+        .unwrap()
+        .id;
     access
         .connect_extension(user, Extension::Plex, "server-of-user-1", "digest", 0)
         .await
@@ -1747,7 +1745,6 @@ async fn app_as_paired_user() -> axum::Router {
         .unwrap();
 
     let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
-    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
     let (library, metadata) = catalog();
     let schema = build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity.clone(), 0),
@@ -1763,7 +1760,7 @@ async fn app_as_paired_user() -> axum::Router {
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
     });
-    router(PlexState::new(identity, schema, accounts))
+    router(PlexState::new(identity, schema))
         .layer(axum::Extension(user_principal(1, LibraryRole::Viewer)))
 }
 
@@ -1940,9 +1937,20 @@ async fn each_user_has_its_own_server_identifier() {
 }
 
 #[tokio::test]
-async fn the_operator_keeps_the_servers_identifier() {
+async fn an_owner_without_an_extension_keeps_the_servers_identifier() {
     let (_, _, body) = get("/identity", Some("application/json")).await;
     assert!(body.contains("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"));
+}
+
+#[tokio::test]
+async fn a_stranger_sees_the_server_published_at_the_address_it_used() {
+    // What the transport attaches to a request naming no account, at a published address.
+    let app = unauthenticated(InMemoryLibrary::new(Vec::new())).layer(axum::Extension(
+        open_plex_core::PublishedServer("server-published-here".to_owned()),
+    ));
+    let (status, body) = get_from(app, "/identity", Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("server-published-here"), "{body}");
 }
 
 #[tokio::test]
@@ -1969,7 +1977,7 @@ async fn only_a_librarys_admin_gets_past_changing_it() {
 }
 
 #[tokio::test]
-async fn server_settings_stay_with_the_operator() {
+async fn server_wide_views_stay_with_owners() {
     assert_eq!(user_get("/status/sessions").await.0, StatusCode::NOT_FOUND);
     assert_eq!(user_get("/updater/status").await.0, StatusCode::NOT_FOUND);
 }
@@ -2069,7 +2077,6 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
     use open_plex_core::testing::InMemoryPlayback;
 
     let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
-    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
     let (library, metadata) = catalog();
     let playback = std::sync::Arc::new(InMemoryPlayback::default());
     let schema = build_schema(ApiContext {
@@ -2086,15 +2093,15 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
     });
-    let app = authenticated(router(PlexState::new(identity, schema, accounts)));
+    let app = authenticated(router(PlexState::new(identity, schema)));
 
     // Plex Web's two identifiers differ: `session` names the conversion, this one the playback.
     playback
         .start(
             NewPlaybackSession {
-                key: "transcode-session".to_owned(),
-                user: None,
-                playback_id: Some("tab".to_owned()),
+                key: open_plex_core::testing::owner().session_key("transcode-session"),
+                user: open_plex_core::testing::owner().user,
+                playback_id: Some(open_plex_core::testing::owner().session_key("tab")),
                 item: RatingKey::new(100),
                 part: PartId::new(1),
                 client: None,
@@ -3156,7 +3163,6 @@ async fn a_lookup_marks_the_audio_the_caller_plays() {
 fn editing_app(principal: Principal) -> axum::Router {
     use open_plex_core::edit::ItemField;
     let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
-    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
     let file_name = "Soul.2020.MULTi.TRUEFRENCH.1080p.WEB.H264-EXTREME_wWw.Extreme-Down.Video";
     let film = MetadataItem {
         title_sort: Some(file_name.to_owned()),
@@ -3199,7 +3205,7 @@ fn editing_app(principal: Principal) -> axum::Router {
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
     });
-    router(PlexState::new(identity, schema, accounts)).layer(axum::Extension(principal))
+    router(PlexState::new(identity, schema)).layer(axum::Extension(principal))
 }
 
 async fn put_on(app: &axum::Router, uri: &str) -> (StatusCode, String, String) {
@@ -3243,7 +3249,7 @@ async fn film_after(app: &axum::Router) -> Value {
 
 #[tokio::test]
 async fn a_lookup_lists_its_locked_fields_last_as_the_reference_does() {
-    let app = editing_app(Principal::operator("owner"));
+    let app = editing_app(open_plex_core::testing::owner());
     let (status, xml) = get_from(app.clone(), "/library/metadata/577987", None).await;
     assert_eq!(status, StatusCode::OK);
     // As the reference lists item 429849's, but for `writer`: a series holds no writer.
@@ -3284,7 +3290,7 @@ async fn a_lookup_lists_its_locked_fields_last_as_the_reference_does() {
 
 #[tokio::test]
 async fn an_edit_answers_an_empty_200_and_locks_only_what_it_says() {
-    let app = editing_app(Principal::operator("owner"));
+    let app = editing_app(open_plex_core::testing::owner());
     let (status, content_type, body) = put_on(
         &app,
         "/library/sections/27/all?type=1&id=577986&includeExternalMedia=1\
@@ -3331,7 +3337,7 @@ async fn an_edit_answers_an_empty_200_and_locks_only_what_it_says() {
 
 #[tokio::test]
 async fn an_edit_ignores_items_of_another_type_or_library_as_the_reference_does() {
-    let app = editing_app(Principal::operator("owner"));
+    let app = editing_app(open_plex_core::testing::owner());
     for uri in [
         "/library/sections/27/all?type=2&id=577986&summary.value=wrong%20type",
         "/library/sections/28/all?type=1&id=577986&summary.value=wrong%20section",
@@ -3344,7 +3350,7 @@ async fn an_edit_ignores_items_of_another_type_or_library_as_the_reference_does(
 
 #[tokio::test]
 async fn an_edit_refuses_what_it_cannot_honor_and_what_makes_no_sense() {
-    let app = editing_app(Principal::operator("owner"));
+    let app = editing_app(open_plex_core::testing::owner());
     for (uri, expected) in [
         (
             "/library/sections/27/all?id=577986&summary.value=x",
@@ -3431,7 +3437,7 @@ async fn show_after(app: &axum::Router) -> Value {
 
 #[tokio::test]
 async fn an_item_edit_takes_the_specs_bare_fields_and_every_item_named() {
-    let app = editing_app(Principal::operator("owner"));
+    let app = editing_app(open_plex_core::testing::owner());
     // As on the reference: `type` ignored, the bare form of the spec, `.value` winning over it,
     // and a lock that is neither `0` nor `1` let pass.
     let (status, content_type, body) = put_on(
@@ -3460,7 +3466,7 @@ async fn an_item_edit_takes_the_specs_bare_fields_and_every_item_named() {
 
 #[tokio::test]
 async fn an_item_edit_answers_as_the_reference_does_when_it_edits_nothing() {
-    let app = editing_app(Principal::operator("owner"));
+    let app = editing_app(open_plex_core::testing::owner());
     for (uri, expected) in [
         // Measured on the reference: no parameter, and a field name it does not know.
         ("/library/metadata/577986", StatusCode::BAD_REQUEST),
@@ -4412,7 +4418,6 @@ async fn playing(
     };
 
     let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
-    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
     let (library, metadata) = catalog();
     let playback = std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default());
     let streams = std::sync::Arc::new(open_plex_core::testing::StubStreams::default());
@@ -4433,9 +4438,9 @@ async fn playing(
     playback
         .start(
             NewPlaybackSession {
-                key: key.to_owned(),
-                user: None,
-                playback_id: playback_id.map(str::to_owned),
+                key: open_plex_core::testing::owner().session_key(key),
+                user: open_plex_core::testing::owner().user,
+                playback_id: playback_id.map(|id| open_plex_core::testing::owner().session_key(id)),
                 item: RatingKey::new(100),
                 part: PartId::new(1),
                 client: None,
@@ -4449,7 +4454,7 @@ async fn playing(
         )
         .await
         .expect("start");
-    let app = authenticated(router(PlexState::new(identity, schema, accounts)));
+    let app = authenticated(router(PlexState::new(identity, schema)));
     (app, playback, streams)
 }
 
@@ -4467,7 +4472,7 @@ async fn send(app: axum::Router, method: &str, uri: &str) -> StatusCode {
 }
 
 #[tokio::test]
-async fn the_operator_terminates_a_session_and_its_player_hears_why() {
+async fn an_owner_terminates_a_session_and_its_player_hears_why() {
     use open_plex_core::playback::PlaybackRepository;
 
     let (app, playback, streams) = playing("transcode-session", Some("tab")).await;
@@ -4514,7 +4519,7 @@ async fn the_operator_terminates_a_session_and_its_player_hears_why() {
     );
     assert_eq!(
         *streams.stopped.lock().expect("lock"),
-        ["transcode-session"]
+        ["u1000~transcode-session"]
     );
     assert_eq!(
         get_from(app.clone(), "/status/sessions", Some("application/json"))
@@ -4559,7 +4564,7 @@ async fn the_operator_terminates_a_session_and_its_player_hears_why() {
     .await;
     assert!(!answer.contains("termination"));
     assert!(playback
-        .keys_of_playback("tab")
+        .keys_of_playback(&open_plex_core::testing::owner().session_key("tab"))
         .await
         .expect("keys")
         .is_empty());
@@ -4573,7 +4578,8 @@ async fn ping_and_stop_answer_from_the_official_api() {
     let stop = "/video/:/transcode/universal/stop?session=conversion";
     assert_eq!(send(app.clone(), "GET", ping).await, StatusCode::OK);
     assert_eq!(send(app.clone(), "GET", stop).await, StatusCode::OK);
-    assert_eq!(*streams.stopped.lock().expect("lock"), ["conversion"]);
+    // The engine knows the session by the name it is stored under, the caller's own.
+    assert_eq!(*streams.stopped.lock().expect("lock"), ["u1000~conversion"]);
     // As on the reference once it is stopped.
     assert_eq!(send(app.clone(), "GET", stop).await, StatusCode::NOT_FOUND);
     assert_eq!(send(app.clone(), "GET", ping).await, StatusCode::NOT_FOUND);
@@ -4635,7 +4641,6 @@ fn markers_app(principal: Principal) -> axum::Router {
 /// The test libraries over a given store, for several callers to share one.
 fn markers_app_over(store: std::sync::Arc<InMemoryMetadata>, principal: Principal) -> axum::Router {
     let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
-    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
     let library = InMemoryLibrary::new(vec![
         section(27, SectionKind::Movie, "open-plex tests", false),
         section(28, SectionKind::Show, "open-plex tests series", false),
@@ -4654,21 +4659,21 @@ fn markers_app_over(store: std::sync::Arc<InMemoryMetadata>, principal: Principa
         collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
     });
-    router(PlexState::new(identity, schema, accounts)).layer(axum::Extension(principal))
+    router(PlexState::new(identity, schema)).layer(axum::Extension(principal))
 }
 
 /// A user given the test libraries as a viewer.
 fn test_libraries_viewer(user: i64) -> Principal {
     Principal {
         name: format!("user{user}"),
-        scope: Scope::User,
+        role: open_plex_core::ServerRole::User,
         libraries: LibraryAccess::Only(
             [27, 28]
                 .into_iter()
                 .map(|section| (SectionId::new(section), LibraryRole::Viewer))
                 .collect(),
         ),
-        user: Some(UserId::new(user)),
+        user: UserId::new(user),
         server_identifier: None,
     }
 }
@@ -4725,7 +4730,7 @@ fn marker_lines(xml: &str) -> Vec<&str> {
 
 #[tokio::test]
 async fn markers_are_published_on_request_only() {
-    let app = markers_app(Principal::operator("owner"));
+    let app = markers_app(open_plex_core::testing::owner());
     let (_, _, plain) = marker_request(&app, "GET", "/library/metadata/578173", None).await;
     assert!(!plain.contains("<Marker"), "{plain}");
     let (_, _, zero) = marker_request(
@@ -4779,7 +4784,7 @@ async fn markers_are_published_on_request_only() {
 
 #[tokio::test]
 async fn an_episodes_markers_come_with_it_where_it_is_listed() {
-    let app = markers_app(Principal::operator("owner"));
+    let app = markers_app(open_plex_core::testing::owner());
     for uri in [
         "/library/metadata/577988/children?includeMarkers=1",
         "/library/metadata/577987/grandchildren?includeMarkers=1",
@@ -4797,7 +4802,7 @@ async fn an_episodes_markers_come_with_it_where_it_is_listed() {
 
 #[tokio::test]
 async fn a_bookmark_is_added_read_moved_and_removed_as_the_reference_answers() {
-    let app = markers_app(Principal::operator("owner"));
+    let app = markers_app(open_plex_core::testing::owner());
     // Captured on Soul: a new bookmark comes back before it has an id.
     let (status, content_type, xml) = marker_request(
         &app,
@@ -4884,7 +4889,7 @@ async fn a_bookmark_is_added_read_moved_and_removed_as_the_reference_answers() {
 
 #[tokio::test]
 async fn a_bookmarks_attributes_come_in_alphabetical_order() {
-    let app = markers_app(Principal::operator("owner"));
+    let app = markers_app(open_plex_core::testing::owner());
     // As captured on Bull's first episode: a point, named and coloured.
     let (status, _, _) = marker_request(
         &app,
@@ -4913,7 +4918,7 @@ async fn a_bookmarks_attributes_come_in_alphabetical_order() {
 
 #[tokio::test]
 async fn a_marker_route_refuses_what_the_reference_refuses() {
-    let app = markers_app(Principal::operator("owner"));
+    let app = markers_app(open_plex_core::testing::owner());
     for (method, uri, expected) in [
         // A type by number, an unknown name, no start, a negative one, an empty span.
         (
@@ -5028,7 +5033,7 @@ async fn a_bookmark_is_its_keepers_and_nobody_elses() {
     .await;
     assert!(mine.contains("<Attributes id=\"3\" />"), "{mine}");
 
-    for other in [test_libraries_viewer(4), Principal::operator("owner")] {
+    for other in [test_libraries_viewer(4), open_plex_core::testing::owner()] {
         let app = markers_app_over(std::sync::Arc::clone(&store), other);
         let (_, _, theirs) = marker_request(
             &app,
@@ -5046,7 +5051,7 @@ async fn a_bookmark_is_its_keepers_and_nobody_elses() {
 
 #[tokio::test]
 async fn a_play_queue_carries_the_markers_a_player_skips_by() {
-    let app = markers_app(Principal::operator("owner"));
+    let app = markers_app(open_plex_core::testing::owner());
     let uri = "server%3A%2F%2Fdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef%2Fcom.plexapp.plugins.library%2Flibrary%2Fmetadata%2F578173";
     // What Plex Web sends to start playing an episode, and to read the queue back.
     let (status, _, created) = marker_request(

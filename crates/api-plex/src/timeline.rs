@@ -42,7 +42,7 @@ query PlexTimelineSessions($playback: String!) {
 }
 ";
 
-/// What the reference's decision table calls an operator's termination. Plex Web only checks
+/// What the reference's decision table calls an administrator's termination. Plex Web only checks
 /// that a code is there, and shows the text.
 const ADMIN_TERMINATION_CODE: u32 = 2006;
 const ADMIN_TERMINATION_TEXT: &str = "Admin Terminated Playback.";
@@ -267,7 +267,7 @@ struct GqlTermination {
     reason: Option<String>,
 }
 
-/// Where a playback stands: its latest session playing, or the operator's termination of it.
+/// Where a playback stands: its latest session playing, or an owner's termination of it.
 #[derive(Debug, Default)]
 struct PlaybackFound {
     session: Option<GqlSession>,

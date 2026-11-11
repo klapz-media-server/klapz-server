@@ -9,7 +9,7 @@ use open_plex_api::{build_schema, ApiContext, ApiSchema, GlobalId};
 use open_plex_core::access::{LibraryAccess, LibraryRole};
 use open_plex_core::metadata::{ItemKind, MetadataItem};
 use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata, InMemoryPlaylists};
-use open_plex_core::{LibrarySection, Principal, RatingKey, Scope, SectionId, SectionKind, UserId};
+use open_plex_core::{LibrarySection, Principal, RatingKey, SectionId, SectionKind, UserId};
 use serde_json::{json, Value};
 
 const FILM: i64 = 577_986;
@@ -93,9 +93,9 @@ fn schema() -> ApiSchema {
 fn user(id: i64) -> Principal {
     Principal {
         name: format!("user {id}"),
-        scope: Scope::User,
+        role: open_plex_core::ServerRole::User,
         libraries: LibraryAccess::Only(HashMap::from([(SectionId::new(28), LibraryRole::Viewer)])),
-        user: Some(UserId::new(id)),
+        user: UserId::new(id),
         server_identifier: None,
     }
 }
@@ -186,7 +186,7 @@ async fn a_new_queue_names_its_player_and_kind() {
     let schema = schema();
     let queue = create(
         &schema,
-        Principal::operator("owner"),
+        open_plex_core::testing::owner(),
         &[EPISODE_1, EPISODE_2],
     )
     .await;
@@ -199,11 +199,11 @@ async fn a_new_queue_names_its_player_and_kind() {
 #[tokio::test]
 async fn additions_answer_with_the_queue_and_echo_the_mutation_id() {
     let schema = schema();
-    let operator = || Principal::operator("owner");
-    let queue = create(&schema, operator(), &[EPISODE_1, EPISODE_2]).await;
+    let owner = || open_plex_core::testing::owner();
+    let queue = create(&schema, owner(), &[EPISODE_1, EPISODE_2]).await;
     let payload = mutate(
         &schema,
-        operator(),
+        owner(),
         "addToPlayQueue",
         "AddToPlayQueueInput",
         json!({
@@ -222,7 +222,7 @@ async fn additions_answer_with_the_queue_and_echo_the_mutation_id() {
 
     let refused = mutate(
         &schema,
-        operator(),
+        owner(),
         "shufflePlayQueue",
         "PlayQueueInput",
         json!({ "playQueueId": queue["id"] }),
@@ -238,12 +238,12 @@ async fn additions_answer_with_the_queue_and_echo_the_mutation_id() {
 #[tokio::test]
 async fn a_move_after_an_entry_of_another_queue_is_refused() {
     let schema = schema();
-    let operator = || Principal::operator("owner");
-    let first = create(&schema, operator(), &[EPISODE_1, EPISODE_2]).await;
-    let second = create_for(&schema, operator(), &[FILM, EPISODE_1], "another player").await;
+    let owner = || open_plex_core::testing::owner();
+    let first = create(&schema, owner(), &[EPISODE_1, EPISODE_2]).await;
+    let second = create_for(&schema, owner(), &[FILM, EPISODE_1], "another player").await;
     let refused = mutate(
         &schema,
-        operator(),
+        owner(),
         "movePlayQueueEntry",
         "MovePlayQueueEntryInput",
         json!({
@@ -258,7 +258,7 @@ async fn a_move_after_an_entry_of_another_queue_is_refused() {
     );
     let moved = mutate(
         &schema,
-        operator(),
+        owner(),
         "movePlayQueueEntry",
         "MovePlayQueueEntryInput",
         json!({ "entryId": entry_ids(&first)[1] }),
@@ -337,12 +337,12 @@ async fn another_viewer_s_queue_and_entries_answer_as_nothing() {
 #[tokio::test]
 async fn removing_clearing_and_resetting_follow_the_entry_playing() {
     let schema = schema();
-    let operator = || Principal::operator("owner");
-    let queue = create(&schema, operator(), &[EPISODE_1, EPISODE_2, FILM]).await;
+    let owner = || open_plex_core::testing::owner();
+    let queue = create(&schema, owner(), &[EPISODE_1, EPISODE_2, FILM]).await;
     let ids = entry_ids(&queue);
     let removed = mutate(
         &schema,
-        operator(),
+        owner(),
         "removeFromPlayQueue",
         "RemoveFromPlayQueueInput",
         json!({ "entryId": ids[0] }),
@@ -351,7 +351,7 @@ async fn removing_clearing_and_resetting_follow_the_entry_playing() {
     assert_eq!(removed["playQueue"]["selectedEntry"]["id"], ids[1].as_str());
     let reset = mutate(
         &schema,
-        operator(),
+        owner(),
         "resetPlayQueue",
         "PlayQueueInput",
         json!({ "playQueueId": queue["id"] }),
@@ -360,7 +360,7 @@ async fn removing_clearing_and_resetting_follow_the_entry_playing() {
     assert_eq!(reset["playQueue"]["version"], 2, "a reset raises nothing");
     let cleared = mutate(
         &schema,
-        operator(),
+        owner(),
         "clearPlayQueue",
         "PlayQueueInput",
         json!({ "playQueueId": queue["id"] }),
@@ -369,7 +369,7 @@ async fn removing_clearing_and_resetting_follow_the_entry_playing() {
     assert_eq!(order(&cleared["playQueue"]), [EPISODE_2]);
     let unshuffled = mutate(
         &schema,
-        operator(),
+        owner(),
         "unshufflePlayQueue",
         "PlayQueueInput",
         json!({ "playQueueId": queue["id"] }),

@@ -12,7 +12,6 @@ use open_plex_core::metadata::{
 };
 use open_plex_core::page::{Cursor, Direction, Window, MAX_ITEMS};
 use open_plex_core::recent::recently_added_episodes;
-use open_plex_core::watch::Viewer;
 use open_plex_core::{Listed, RatingKey, SectionId};
 
 use crate::cursor::OpaqueCursor;
@@ -428,7 +427,7 @@ impl Library {
         )]
         offset: Option<u32>,
     ) -> Result<ItemConnection> {
-        let viewer = crate::access::caller(context).and_then(Viewer::of);
+        let viewer = crate::access::viewer_id(context);
         let sort = order_by.unwrap_or_default().sort(viewer, seed.unwrap_or(0));
         let item_query = self.item_query(context, filter, sort, direction)?;
         let skip = u64::from(offset.unwrap_or(0));
@@ -775,7 +774,7 @@ pub(crate) fn listing_query(
 ) -> Result<ItemQuery> {
     let mut filter: ItemFilter = filter.unwrap_or_default().try_into()?;
     // Watch filters read the caller's own state.
-    filter.viewer = crate::access::caller(context).and_then(Viewer::of);
+    filter.viewer = crate::access::viewer_id(context);
     Ok(ItemQuery::new(section)
         .filtered(filter)
         .sorted_by(sort, direction.unwrap_or_default().into()))

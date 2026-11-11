@@ -1,8 +1,7 @@
 //! What was watched, viewing by viewing, on the official API.
 //!
-//! A user reads and deletes its own history; the operator, who manages the server, reads and
-//! deletes everyone's, and its own viewings are those of viewer 0. A caller with no watch
-//! state, a visitor at a published address, has no history and sees none. Within that, an
+//! A user reads and deletes its own history; an owner, who manages the server, reads and
+//! deletes everyone's. A request with no caller has no history and sees none. Within that, an
 //! entry is visible only while its item's library is, as everywhere.
 
 // Resolvers are `async` even when they only read a field: async-graphql requires that shape,
@@ -14,8 +13,7 @@ use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID
 use open_plex_core::history::{
     HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, ViewingKind,
 };
-use open_plex_core::watch::Viewer;
-use open_plex_core::{HistoryId, Principal, RatingKey, Scope, SectionId, UserId};
+use open_plex_core::{HistoryId, RatingKey, SectionId, UserId};
 
 use crate::cursor::OpaqueCursor;
 use crate::filter::SortDirection;
@@ -81,7 +79,7 @@ impl From<HistoryOrderType> for HistoryOrder {
 /// Narrows a history. Every field is combined with `AND`.
 #[derive(Debug, Default, InputObject)]
 pub struct HistoryFilterInput {
-    /// Only the caller's own viewings. The operator's are those it made itself.
+    /// Only the caller's own viewings, which for an owner leaves out everyone else's.
     pub mine: Option<bool>,
     /// Only this user's viewings, as returned in `User.id`. A user naming another sees
     /// nothing.
@@ -122,12 +120,9 @@ impl HistoryEntryObject {
         ID(GlobalId::encode(LIBRARY_TYPE, self.0.section.get()))
     }
 
-    /// Who watched. Null when the operator did.
+    /// Who watched. Null once that user is deleted.
     async fn user(&self, context: &Context<'_>) -> Result<Option<crate::access::UserObject>> {
-        match self.0.viewer {
-            Viewer::Operator => Ok(None),
-            Viewer::User(user) => crate::access::user_node(context, user.get()).await,
-        }
+        crate::access::user_node(context, self.0.viewer.get()).await
     }
 
     /// How the viewing came about.
@@ -164,12 +159,6 @@ impl HistoryTotal {
 pub type HistoryConnection =
     Connection<OpaqueCursor, HistoryEntryObject, HistoryTotal, EmptyFields>;
 
-/// Whether the caller manages the server: no user, and an administrator. A visitor has no
-/// user either.
-fn is_operator(caller: &Principal) -> bool {
-    caller.user.is_none() && caller.scope.allows(Scope::Admin)
-}
-
 fn decoded(id: &ID, type_name: &str) -> Result<i64> {
     GlobalId::decode(id)
         .ok()
@@ -199,19 +188,16 @@ fn history_query(
             "`mine` and `user` cannot both be given",
         ));
     }
-    let scope = if is_operator(caller) {
+    let scope = if caller.is_owner() {
         match (mine, named) {
-            (true, _) => HistoryScope::Viewer(Viewer::Operator),
-            (false, Some(user)) => HistoryScope::Viewer(Viewer::User(user)),
+            (true, _) => HistoryScope::Viewer(caller.user),
+            (false, Some(user)) => HistoryScope::Viewer(user),
             (false, None) => HistoryScope::Everyone,
         }
+    } else if named.is_none_or(|named| named == caller.user) {
+        HistoryScope::Viewer(caller.user)
     } else {
-        match caller.user {
-            Some(user) if named.is_none_or(|named| named == user) => {
-                HistoryScope::Viewer(Viewer::User(user))
-            }
-            _ => return Ok(None),
-        }
+        return Ok(None);
     };
 
     let asked = filter
@@ -307,7 +293,7 @@ pub(crate) async fn viewing_history(
     .await
 }
 
-/// An entry the caller may see: its own, or anyone's for the operator, in a library it can
+/// An entry the caller may see: its own, or anyone's for an owner, in a library it can
 /// read. Unknown and not visible read the same.
 pub(crate) async fn visible_entry(
     context: &Context<'_>,
@@ -322,12 +308,7 @@ pub(crate) async fn visible_entry(
         .history_entry(id)
         .await?;
     Ok(entry
-        .filter(|entry| {
-            is_operator(caller)
-                || caller
-                    .user
-                    .is_some_and(|user| entry.viewer == Viewer::User(user))
-        })
+        .filter(|entry| caller.owns(entry.viewer))
         .filter(|entry| crate::access::can_read(context, entry.section))
         .map(HistoryEntryObject))
 }

@@ -22,8 +22,9 @@ use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
 use open_plex_core::search;
 use open_plex_core::similar::TagOverlap;
-use open_plex_core::watch::Viewer;
-use open_plex_core::{MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
+use open_plex_core::{
+    MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
+};
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
 use sea_orm::QueryTrait;
 use sea_orm::{
@@ -39,7 +40,6 @@ use crate::entity::{
 };
 use crate::item_order::ItemOrder;
 use crate::marker_store;
-use crate::watch_repository::viewer_id;
 use crate::write;
 
 #[derive(Debug, Clone)]
@@ -534,7 +534,7 @@ fn holds(condition: SimpleExpr, expected: bool) -> SimpleExpr {
 ///
 /// A caller with no watch state has none, so the condition is false rather than absent:
 /// "unwatched" then keeps everything and "watched" nothing.
-fn watch_state_where(viewer: Option<Viewer>, guid: Expr, predicate: SimpleExpr) -> SimpleExpr {
+fn watch_state_where(viewer: Option<UserId>, guid: Expr, predicate: SimpleExpr) -> SimpleExpr {
     let Some(viewer) = viewer else {
         return Expr::value(1).eq(0);
     };
@@ -543,7 +543,7 @@ fn watch_state_where(viewer: Option<Viewer>, guid: Expr, predicate: SimpleExpr) 
             .expr(Expr::val(1))
             .from(watch_state::Entity)
             .and_where(
-                Expr::col((watch_state::Entity, watch_state::Column::Viewer)).eq(viewer_id(viewer)),
+                Expr::col((watch_state::Entity, watch_state::Column::Viewer)).eq(viewer.get()),
             )
             .and_where(Expr::col((watch_state::Entity, watch_state::Column::Guid)).eq(guid))
             .and_where(predicate)
@@ -1515,7 +1515,7 @@ impl MetadataRepository for SqlMetadataRepository {
     async fn markers(
         &self,
         items: &[RatingKey],
-        viewer: Option<Viewer>,
+        viewer: Option<UserId>,
     ) -> Result<Vec<Marker>, MetadataError> {
         marker_store::markers(&self.connection, items, viewer)
             .await

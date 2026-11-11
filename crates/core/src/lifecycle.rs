@@ -1,7 +1,7 @@
 //! A playback session from its start to its end: the stored session and the stream behind it,
 //! which begin together and end together.
 //!
-//! Whatever ends a session — the player stopping, the operator terminating it, a client asking
+//! Whatever ends a session — the player stopping, an owner terminating it, a client asking
 //! to stop the stream, the session expiring, its stream going idle, a stream read whose
 //! session is gone — comes through here and takes both down: the stream (its process, its
 //! addresses, what it wrote) and the row. Each change to one key is made under that key's
@@ -44,7 +44,7 @@ impl SessionLocks {
 pub enum StartError {
     #[error(transparent)]
     Stream(#[from] StreamError),
-    /// The key names a session the operator terminated, which its player has not stopped yet.
+    /// The key names a session an owner terminated, which its player has not stopped yet.
     #[error("this session was terminated")]
     Terminated,
     #[error(transparent)]
@@ -129,7 +129,7 @@ impl Lifecycle<'_> {
         Ok(ended)
     }
 
-    /// Terminates a session for the operator: its stream stops at once, and the row stays for
+    /// Terminates a session for an owner: its stream stops at once, and the row stays for
     /// its player to learn why. The session as it now stands, unless no live one has this key.
     ///
     /// # Errors
@@ -351,7 +351,7 @@ mod tests {
     fn recorded(key: &str) -> NewPlaybackSession {
         NewPlaybackSession {
             key: key.to_owned(),
-            user: None,
+            user: crate::UserId::new(1),
             playback_id: Some("tab".to_owned()),
             item: RatingKey::new(1),
             part: PartId::new(1),

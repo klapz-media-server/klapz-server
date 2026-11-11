@@ -1,6 +1,6 @@
 //! Play queues on the official API.
 //!
-//! A queue is its viewer's, as a playlist is: the operator's or one user's, and anyone else's
+//! A queue is its user's, and an owner of the server reaches everyone's; anyone else's
 //! answers as nothing. Its entries stay under their libraries' rights. Every edit follows the
 //! rules `core::play_queue` holds, measured on the reference.
 

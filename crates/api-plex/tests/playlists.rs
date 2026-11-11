@@ -12,8 +12,8 @@ use open_plex_core::access::{LibraryAccess, LibraryRole};
 use open_plex_core::metadata::{ItemKind, MetadataItem};
 use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata, InMemoryPlaylists};
 use open_plex_core::{
-    Accounts, LibrarySection, Principal, RatingKey, Scope, SectionId, SectionKind,
-    ServerCapabilities, ServerIdentity, UserId,
+    LibrarySection, Principal, RatingKey, SectionId, SectionKind, ServerCapabilities,
+    ServerIdentity, UserId,
 };
 use serde_json::Value;
 use tower::ServiceExt;
@@ -120,16 +120,11 @@ fn schema() -> ApiSchema {
 
 fn app_as(schema: &ApiSchema, caller: Principal) -> axum::Router {
     let identity = ServerIdentity::new(MACHINE, "0.1.0-dev");
-    router(PlexState::new(
-        identity,
-        schema.clone(),
-        Accounts::new(Vec::new()),
-    ))
-    .layer(axum::Extension(caller))
+    router(PlexState::new(identity, schema.clone())).layer(axum::Extension(caller))
 }
 
-fn operator(schema: &ApiSchema) -> axum::Router {
-    app_as(schema, Principal::operator("owner"))
+fn owner(schema: &ApiSchema) -> axum::Router {
+    app_as(schema, open_plex_core::testing::owner())
 }
 
 /// A user given the series library alone.
@@ -138,11 +133,11 @@ fn user(schema: &ApiSchema, id: i64) -> axum::Router {
         schema,
         Principal {
             name: format!("user{id}"),
-            scope: Scope::User,
+            role: open_plex_core::ServerRole::User,
             libraries: LibraryAccess::Only(
                 std::iter::once((SectionId::new(28), LibraryRole::Viewer)).collect(),
             ),
-            user: Some(UserId::new(id)),
+            user: UserId::new(id),
             server_identifier: None,
         },
     )
@@ -213,7 +208,7 @@ fn rating_keys(container: &Value) -> Vec<String> {
 #[tokio::test]
 async fn a_created_playlist_answers_as_the_reference_does() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(
         &app,
         "OP Dumb",
@@ -261,7 +256,7 @@ async fn a_created_playlist_answers_as_the_reference_does() {
 #[tokio::test]
 async fn the_listing_adds_the_play_count_and_puts_smart_playlists_first() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     create(&app, "AA Nothing", "/library/metadata/999999", false).await;
     create(&app, "ZZ Smart", "/library/sections/28/all?type=4", true).await;
     create(&app, "OP Lib", "/library/sections/28/all?type=4", false).await;
@@ -325,7 +320,7 @@ async fn the_listing_adds_the_play_count_and_puts_smart_playlists_first() {
 #[tokio::test]
 async fn items_carry_their_library_and_their_entry() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(
         &app,
         "OP Dumb",
@@ -378,7 +373,7 @@ async fn items_carry_their_library_and_their_entry() {
 #[tokio::test]
 async fn adding_drops_repeats_and_counts_what_was_asked() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, "OP", &format!("/library/metadata/{FILM}"), false).await;
     let key = created["ratingKey"].as_str().unwrap();
     // The series stands for its two episodes.
@@ -425,7 +420,7 @@ async fn entries(app: &axum::Router, key: &str) -> Vec<(i64, String)> {
 #[tokio::test]
 async fn entries_move_after_another_or_first_and_leave() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(
         &app,
         "OP",
@@ -498,7 +493,7 @@ async fn entries_move_after_another_or_first_and_leave() {
 #[tokio::test]
 async fn an_edit_renames_and_locks_and_answers_an_empty_200() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, "OP Dumb", "/library/metadata/999999", false).await;
     let key = created["ratingKey"].as_str().unwrap();
     let (status, body) = send(
@@ -529,7 +524,7 @@ async fn an_edit_renames_and_locks_and_answers_an_empty_200() {
 #[tokio::test]
 async fn a_smart_playlist_lists_its_rule_and_refuses_entry_changes() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(
         &app,
         "OP Smart",
@@ -600,7 +595,7 @@ async fn a_smart_playlist_lists_its_rule_and_refuses_entry_changes() {
 #[tokio::test]
 async fn a_smart_playlist_with_a_filter_it_cannot_honor_is_refused() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let (status, _) = send(
         &app,
         Method::POST,
@@ -619,7 +614,7 @@ async fn a_smart_playlist_with_a_filter_it_cannot_honor_is_refused() {
 #[tokio::test]
 async fn generators_are_one_per_entry_and_none_exists_by_id() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(
         &app,
         "OP",
@@ -657,7 +652,7 @@ async fn generators_are_one_per_entry_and_none_exists_by_id() {
 #[tokio::test]
 async fn what_the_reference_refuses_is_refused() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     for uri in [
         "/playlists".to_owned(),
         format!(
@@ -699,7 +694,7 @@ async fn what_the_reference_refuses_is_refused() {
 #[tokio::test]
 async fn an_upload_names_a_path_and_is_refused() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let (status, _) = send(
         &app,
         Method::POST,
@@ -715,7 +710,7 @@ async fn an_upload_names_a_path_and_is_refused() {
 #[tokio::test]
 async fn deleting_answers_no_content_and_then_not_found() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, "OP", &format!("/library/metadata/{FILM}"), false).await;
     let key = created["ratingKey"].as_str().unwrap();
     let (status, _) = send(&app, Method::DELETE, &format!("/playlists/{key}"), true).await;
@@ -725,12 +720,12 @@ async fn deleting_answers_no_content_and_then_not_found() {
 }
 
 #[tokio::test]
-async fn a_user_sees_neither_the_operators_playlists_nor_items_it_was_not_given() {
+async fn a_user_sees_neither_an_owners_playlists_nor_items_it_was_not_given() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(
         &app,
-        "Operator's",
+        "Owner's",
         &format!("/library/metadata/{FILM},{EPISODE_1}"),
         false,
     )
@@ -762,7 +757,7 @@ async fn a_user_sees_neither_the_operators_playlists_nor_items_it_was_not_given(
 #[tokio::test]
 async fn a_play_queue_plays_a_playlist_and_counts_the_play() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(
         &app,
         "OP Lib",

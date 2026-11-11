@@ -13,7 +13,7 @@ use open_plex_api::{build_schema, ApiContext, ApiSchema, GlobalId};
 use open_plex_core::access::{LibraryAccess, LibraryRole};
 use open_plex_core::metadata::{ItemKind, MetadataItem};
 use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata, InMemoryPlaylists};
-use open_plex_core::{LibrarySection, Principal, RatingKey, Scope, SectionId, SectionKind, UserId};
+use open_plex_core::{LibrarySection, Principal, RatingKey, SectionId, SectionKind, UserId};
 use serde_json::{json, Value};
 
 const FILM: i64 = 577_986;
@@ -95,17 +95,17 @@ fn schema() -> ApiSchema {
     })
 }
 
-fn operator() -> Principal {
-    Principal::operator("owner")
+fn owner() -> Principal {
+    open_plex_core::testing::owner()
 }
 
 /// A user who may read only the series library.
 fn user(id: i64) -> Principal {
     Principal {
         name: format!("user {id}"),
-        scope: Scope::User,
+        role: open_plex_core::ServerRole::User,
         libraries: LibraryAccess::Only(HashMap::from([(SectionId::new(28), LibraryRole::Viewer)])),
-        user: Some(UserId::new(id)),
+        user: UserId::new(id),
         server_identifier: None,
     }
 }
@@ -178,7 +178,7 @@ async fn a_new_playlist_holds_its_items_once_and_sums_their_durations() {
     let schema = schema();
     let data = run(
         &schema,
-        operator(),
+        owner(),
         CREATE,
         json!({ "input": {
             "clientMutationId": "c1",
@@ -201,7 +201,7 @@ async fn a_new_playlist_holds_its_items_once_and_sums_their_durations() {
 async fn a_series_is_not_an_item_a_playlist_holds() {
     let data = run(
         &schema(),
-        operator(),
+        owner(),
         CREATE,
         json!({ "input": { "title": "OP", "kind": "VIDEO", "itemIds": [item_id(SHOW)] } }),
     )
@@ -216,7 +216,7 @@ async fn a_series_is_not_an_item_a_playlist_holds() {
 #[tokio::test]
 async fn a_playlist_is_its_owners_alone() {
     let schema = schema();
-    let id = create(&schema, operator(), "Operator's", &[EPISODE_1]).await;
+    let id = create(&schema, owner(), "Owner's", &[EPISODE_1]).await;
     let seen_by_user = run(&schema, user(7), READ, json!({ "id": id })).await;
     assert_eq!(seen_by_user["node"], Value::Null);
 
@@ -234,7 +234,7 @@ mutation Rename($id: ID!) {
     let listing = r"{ playlists(first: 10) { totalCount edges { node { title } } } }";
     let theirs = run(&schema, user(7), listing, json!({})).await;
     assert_eq!(theirs["playlists"]["totalCount"], 0);
-    let mine = run(&schema, operator(), listing, json!({})).await;
+    let mine = run(&schema, owner(), listing, json!({})).await;
     assert_eq!(mine["playlists"]["totalCount"], 1);
 }
 
@@ -253,17 +253,17 @@ async fn items_of_a_library_the_owner_cannot_read_are_hidden_and_cannot_be_added
         json!([{ "field": ["input", "itemIds"], "code": "ITEM_NOT_FOUND" }])
     );
 
-    // The operator's playlist read by the operator sees both libraries.
-    let id = create(&schema, operator(), "Mixed", &[FILM, EPISODE_1]).await;
-    let read = run(&schema, operator(), READ, json!({ "id": id })).await;
+    // The owner's playlist read by the owner sees both libraries.
+    let id = create(&schema, owner(), "Mixed", &[FILM, EPISODE_1]).await;
+    let read = run(&schema, owner(), READ, json!({ "id": id })).await;
     assert_eq!(item_ids(&read), [item_id(FILM), item_id(EPISODE_1)]);
 }
 
 #[tokio::test]
 async fn entries_move_and_leave() {
     let schema = schema();
-    let id = create(&schema, operator(), "OP", &[FILM, EPISODE_1, EPISODE_2]).await;
-    let read = run(&schema, operator(), READ, json!({ "id": id })).await;
+    let id = create(&schema, owner(), "OP", &[FILM, EPISODE_1, EPISODE_2]).await;
+    let read = run(&schema, owner(), READ, json!({ "id": id })).await;
     let entries: Vec<String> = read["node"]["entries"]["edges"]
         .as_array()
         .unwrap()
@@ -281,24 +281,18 @@ mutation Move($entry: ID!, $after: ID) {
 ";
     run(
         &schema,
-        operator(),
+        owner(),
         move_entry,
         json!({ "entry": entries[2], "after": entries[0] }),
     )
     .await;
-    let read = run(&schema, operator(), READ, json!({ "id": id })).await;
+    let read = run(&schema, owner(), READ, json!({ "id": id })).await;
     assert_eq!(
         item_ids(&read),
         [item_id(FILM), item_id(EPISODE_2), item_id(EPISODE_1)]
     );
-    run(
-        &schema,
-        operator(),
-        move_entry,
-        json!({ "entry": entries[1] }),
-    )
-    .await;
-    let read = run(&schema, operator(), READ, json!({ "id": id })).await;
+    run(&schema, owner(), move_entry, json!({ "entry": entries[1] })).await;
+    let read = run(&schema, owner(), READ, json!({ "id": id })).await;
     assert_eq!(
         item_ids(&read),
         [item_id(EPISODE_1), item_id(FILM), item_id(EPISODE_2)]
@@ -309,9 +303,9 @@ mutation Remove($entry: ID!) {
   removeFromPlaylist(input: { entryId: $entry }) { playlist { itemCount } userErrors { code } }
 }
 ";
-    let removed = run(&schema, operator(), remove, json!({ "entry": entries[0] })).await;
+    let removed = run(&schema, owner(), remove, json!({ "entry": entries[0] })).await;
     assert_eq!(removed["removeFromPlaylist"]["playlist"]["itemCount"], 2);
-    let again = run(&schema, operator(), remove, json!({ "entry": entries[0] })).await;
+    let again = run(&schema, owner(), remove, json!({ "entry": entries[0] })).await;
     assert_eq!(
         again["removeFromPlaylist"]["userErrors"],
         json!([{ "code": "ENTRY_NOT_FOUND" }])
@@ -321,7 +315,7 @@ mutation Remove($entry: ID!) {
 #[tokio::test]
 async fn adding_counts_only_what_was_not_there() {
     let schema = schema();
-    let id = create(&schema, operator(), "OP", &[FILM]).await;
+    let id = create(&schema, owner(), "OP", &[FILM]).await;
     let add = r"
 mutation Add($id: ID!, $items: [ID!]!) {
   addToPlaylist(input: { playlistId: $id, itemIds: $items }) {
@@ -332,7 +326,7 @@ mutation Add($id: ID!, $items: [ID!]!) {
 ";
     let added = run(
         &schema,
-        operator(),
+        owner(),
         add,
         json!({ "id": id, "items": [item_id(EPISODE_2), item_id(FILM)] }),
     )
@@ -368,7 +362,7 @@ async fn a_smart_playlist_lists_its_rule() {
     let library = GlobalId::encode("Library", 28);
     let data = run(
         &schema,
-        operator(),
+        owner(),
         CREATE_SMART,
         json!({ "library": library }),
     )
@@ -392,7 +386,7 @@ async fn a_smart_playlist_lists_its_rule() {
     let clear = r"
 mutation Clear($id: ID!) { clearPlaylist(input: { id: $id }) { userErrors { code } } }
 ";
-    let refused = run(&schema, operator(), clear, json!({ "id": id })).await;
+    let refused = run(&schema, owner(), clear, json!({ "id": id })).await;
     assert_eq!(
         refused["clearPlaylist"]["userErrors"],
         json!([{ "code": "SMART_PLAYLIST" }])
@@ -415,32 +409,30 @@ async fn a_rule_over_a_library_the_caller_cannot_read_is_refused() {
 }
 
 #[tokio::test]
-async fn a_visitor_has_no_playlists() {
+async fn a_request_from_nobody_has_no_playlists() {
     let schema = schema();
-    create(&schema, operator(), "Operator's", &[FILM]).await;
-    let visitor = Principal::visitor_of("abc".to_owned());
-    let listing = run(
-        &schema,
-        visitor,
-        r"{ playlists(first: 10) { totalCount edges { node { id } } } }",
-        json!({}),
-    )
-    .await;
+    create(&schema, owner(), "Owner's", &[FILM]).await;
+    let listing = schema
+        .execute(r"{ playlists(first: 10) { totalCount edges { node { id } } } }")
+        .await
+        .data
+        .into_json()
+        .unwrap();
     assert_eq!(listing["playlists"]["totalCount"], 0);
 }
 
 #[tokio::test]
 async fn deleting_answers_the_id_and_then_not_found() {
     let schema = schema();
-    let id = create(&schema, operator(), "OP", &[FILM]).await;
+    let id = create(&schema, owner(), "OP", &[FILM]).await;
     let delete = r"
 mutation Delete($id: ID!) {
   deletePlaylist(input: { id: $id }) { deletedPlaylistId userErrors { code } }
 }
 ";
-    let deleted = run(&schema, operator(), delete, json!({ "id": id })).await;
+    let deleted = run(&schema, owner(), delete, json!({ "id": id })).await;
     assert_eq!(deleted["deletePlaylist"]["deletedPlaylistId"], id);
-    let again = run(&schema, operator(), delete, json!({ "id": id })).await;
+    let again = run(&schema, owner(), delete, json!({ "id": id })).await;
     assert_eq!(
         again["deletePlaylist"]["userErrors"],
         json!([{ "code": "PLAYLIST_NOT_FOUND" }])

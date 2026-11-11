@@ -2,7 +2,7 @@
 
 use open_plex_core::access::{
     AccessError, AccessRepository, AccountLink, Extension, Grant, LibraryPermission, LibraryRole,
-    RemoteAccount, User, UserExtension,
+    Login, NewUser, RemoteAccount, ServerRole, User, UserExtension,
 };
 use open_plex_core::page::{Page, Window};
 use open_plex_core::{SectionId, UserId};
@@ -56,28 +56,19 @@ impl SqlAccessRepository {
         }))
     }
 
-    async fn insert_user(
-        &self,
+    /// Whether one of the two unique columns already holds the value: checked before the
+    /// insert, because a violated constraint does not say portably which one it was.
+    async fn taken(
         connection: &impl sea_orm::ConnectionTrait,
-        email: &str,
-        active: bool,
-        now: i64,
-    ) -> Result<User, AccessError> {
-        let row = users::ActiveModel {
-            id: ActiveValue::NotSet,
-            email: ActiveValue::Set(email.to_owned()),
-            active: ActiveValue::Set(active),
-            created_at: ActiveValue::Set(now),
-            updated_at: ActiveValue::Set(now),
-        };
-        let inserted = users::Entity::insert(row)
-            .exec_with_returning(connection)
+        column: users::Column,
+        value: &str,
+    ) -> Result<bool, AccessError> {
+        Ok(users::Entity::find()
+            .filter(column.eq(value))
+            .one(connection)
             .await
-            .map_err(|error| match error.sql_err() {
-                Some(SqlErr::UniqueConstraintViolation(_)) => AccessError::EmailTaken,
-                _ => storage(error),
-            })?;
-        Ok(user_of(inserted))
+            .map_err(storage)?
+            .is_some())
     }
 
     async fn require_user(&self, id: UserId) -> Result<(), AccessError> {
@@ -91,6 +82,22 @@ impl SqlAccessRepository {
 
 fn storage(error: sea_orm::DbErr) -> AccessError {
     AccessError::Storage(Box::new(error))
+}
+
+const fn server_role_name(role: ServerRole) -> &'static str {
+    match role {
+        ServerRole::User => "user",
+        ServerRole::Owner => "owner",
+    }
+}
+
+/// A role this version does not know grants nothing beyond a user's.
+fn server_role_of(name: &str) -> ServerRole {
+    if name == "owner" {
+        ServerRole::Owner
+    } else {
+        ServerRole::User
+    }
 }
 
 const fn role_name(role: LibraryRole) -> &'static str {
@@ -122,7 +129,9 @@ fn extension_of(name: &str) -> Option<Extension> {
 fn user_of(row: users::Model) -> User {
     User {
         id: UserId::new(row.id),
+        username: row.username,
         email: row.email,
+        role: server_role_of(&row.role),
         active: row.active,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -164,34 +173,55 @@ fn account_link_of(row: extension_account::Model, connection: UserExtension) -> 
 
 #[async_trait::async_trait]
 impl AccessRepository for SqlAccessRepository {
-    async fn create_user(&self, email: &str, now: i64) -> Result<User, AccessError> {
-        self.insert_user(&self.connection, email, true, now).await
-    }
-
-    async fn sign_up(
-        &self,
-        email: &str,
-        password_hash: &str,
-        now: i64,
-    ) -> Result<User, AccessError> {
+    async fn create_user(&self, new: NewUser<'_>, now: i64) -> Result<User, AccessError> {
         let transaction = self.connection.begin().await.map_err(storage)?;
-        let user = self.insert_user(&transaction, email, false, now).await?;
-        user_password::Entity::insert(user_password::ActiveModel {
-            user_id: ActiveValue::Set(user.id.get()),
-            password_hash: ActiveValue::Set(password_hash.to_owned()),
+        if Self::taken(&transaction, users::Column::Username, new.username).await? {
+            return Err(AccessError::UsernameTaken);
+        }
+        if let Some(email) = new.email {
+            if Self::taken(&transaction, users::Column::Email, email).await? {
+                return Err(AccessError::EmailTaken);
+            }
+        }
+        let row = users::ActiveModel {
+            id: ActiveValue::NotSet,
+            username: ActiveValue::Set(new.username.to_owned()),
+            email: ActiveValue::Set(new.email.map(str::to_owned)),
+            role: ActiveValue::Set(server_role_name(new.role).to_owned()),
+            active: ActiveValue::Set(new.active),
             created_at: ActiveValue::Set(now),
             updated_at: ActiveValue::Set(now),
-        })
-        .exec(&transaction)
-        .await
-        .map_err(storage)?;
+        };
+        let user = users::Entity::insert(row)
+            .exec_with_returning(&transaction)
+            .await
+            .map_err(|error| match error.sql_err() {
+                // Two creations racing past the checks above.
+                Some(SqlErr::UniqueConstraintViolation(_)) => AccessError::UsernameTaken,
+                _ => storage(error),
+            })?;
+        if let Some(hash) = new.password_hash {
+            user_password::Entity::insert(user_password::ActiveModel {
+                user_id: ActiveValue::Set(user.id),
+                password_hash: ActiveValue::Set(hash.to_owned()),
+                created_at: ActiveValue::Set(now),
+                updated_at: ActiveValue::Set(now),
+            })
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
+        }
         transaction.commit().await.map_err(storage)?;
-        Ok(user)
+        Ok(user_of(user))
     }
 
-    async fn credentials(&self, email: &str) -> Result<Option<(User, String)>, AccessError> {
+    async fn credentials(&self, login: &Login) -> Result<Option<(User, String)>, AccessError> {
+        let by = match login {
+            Login::Username(username) => users::Column::Username.eq(username.as_str()),
+            Login::Email(email) => users::Column::Email.eq(email.as_str()),
+        };
         let Some(user) = users::Entity::find()
-            .filter(users::Column::Email.eq(email))
+            .filter(by)
             .one(&self.connection)
             .await
             .map_err(storage)?
@@ -205,12 +235,64 @@ impl AccessRepository for SqlAccessRepository {
             .map(|password| (user_of(user), password.password_hash)))
     }
 
+    async fn user_named(&self, username: &str) -> Result<Option<User>, AccessError> {
+        Ok(users::Entity::find()
+            .filter(users::Column::Username.eq(username))
+            .one(&self.connection)
+            .await
+            .map_err(storage)?
+            .map(user_of))
+    }
+
     async fn has_password(&self, user: UserId) -> Result<bool, AccessError> {
         Ok(user_password::Entity::find_by_id(user.get())
             .one(&self.connection)
             .await
             .map_err(storage)?
             .is_some())
+    }
+
+    async fn set_password(
+        &self,
+        user: UserId,
+        password_hash: &str,
+        now: i64,
+    ) -> Result<(), AccessError> {
+        self.require_user(user).await?;
+        user_password::Entity::insert(user_password::ActiveModel {
+            user_id: ActiveValue::Set(user.get()),
+            password_hash: ActiveValue::Set(password_hash.to_owned()),
+            created_at: ActiveValue::Set(now),
+            updated_at: ActiveValue::Set(now),
+        })
+        .on_conflict(
+            OnConflict::column(user_password::Column::UserId)
+                .update_columns([
+                    user_password::Column::PasswordHash,
+                    user_password::Column::UpdatedAt,
+                ])
+                .to_owned(),
+        )
+        .exec(&self.connection)
+        .await
+        .map_err(storage)?;
+        Ok(())
+    }
+
+    async fn set_role(
+        &self,
+        user: UserId,
+        role: ServerRole,
+        now: i64,
+    ) -> Result<Option<User>, AccessError> {
+        users::Entity::update_many()
+            .col_expr(users::Column::Role, server_role_name(role).into())
+            .col_expr(users::Column::UpdatedAt, now.into())
+            .filter(users::Column::Id.eq(user.get()))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        self.user(user).await
     }
 
     async fn set_active(
@@ -285,7 +367,7 @@ impl AccessRepository for SqlAccessRepository {
             .exec(&transaction)
             .await
             .map_err(storage)?;
-        // No foreign key reaches these: the operator watches as viewer 0, who has no row.
+        // No foreign key reaches these: they were keyed before every viewer had a row.
         watch_state::Entity::delete_many()
             .filter(watch_state::Column::Viewer.eq(id.get()))
             .exec(&transaction)

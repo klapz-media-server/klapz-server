@@ -1,7 +1,7 @@
 //! What the caller has watched, and the mutations that move it.
 //!
 //! Every field and mutation here is the caller's own: a user reads and writes its own state,
-//! the operator its own, and a request with no caller has none. The rules are in
+//! and a request with no caller has none. The rules are in
 //! `core::watch`; these resolvers find the item, check it is visible, and call them.
 
 use std::collections::HashMap;
@@ -16,9 +16,9 @@ use open_plex_core::metadata::{MetadataItem, StreamKind};
 use open_plex_core::page::{Cursor, MAX_ITEMS};
 use open_plex_core::tracks::{SubtitleChoice, TrackChoice};
 use open_plex_core::watch::{
-    DeckReason, ReportOutcome, Viewer, WatchError, WatchRepository, WatchState, Watching,
+    DeckReason, ReportOutcome, WatchError, WatchRepository, WatchState, Watching,
 };
-use open_plex_core::{now_epoch, PartId, RatingKey, SectionId};
+use open_plex_core::{now_epoch, PartId, RatingKey, SectionId, UserId};
 
 use crate::cursor::OpaqueCursor;
 use crate::item::{Item, ITEM_TYPE};
@@ -73,15 +73,15 @@ impl WatchStateLoader {
     }
 }
 
-impl Loader<(Viewer, String)> for WatchStateLoader {
+impl Loader<(UserId, String)> for WatchStateLoader {
     type Value = WatchState;
     type Error = Arc<WatchError>;
 
     async fn load(
         &self,
-        keys: &[(Viewer, String)],
-    ) -> Result<HashMap<(Viewer, String), Self::Value>, Self::Error> {
-        let mut by_viewer: HashMap<Viewer, Vec<String>> = HashMap::new();
+        keys: &[(UserId, String)],
+    ) -> Result<HashMap<(UserId, String), Self::Value>, Self::Error> {
+        let mut by_viewer: HashMap<UserId, Vec<String>> = HashMap::new();
         for (viewer, guid) in keys {
             by_viewer.entry(*viewer).or_default().push(guid.clone());
         }
@@ -112,15 +112,15 @@ impl WatchedLeavesLoader {
     }
 }
 
-impl Loader<(Viewer, RatingKey)> for WatchedLeavesLoader {
+impl Loader<(UserId, RatingKey)> for WatchedLeavesLoader {
     type Value = u64;
     type Error = Arc<WatchError>;
 
     async fn load(
         &self,
-        keys: &[(Viewer, RatingKey)],
-    ) -> Result<HashMap<(Viewer, RatingKey), Self::Value>, Self::Error> {
-        let mut by_viewer: HashMap<Viewer, Vec<RatingKey>> = HashMap::new();
+        keys: &[(UserId, RatingKey)],
+    ) -> Result<HashMap<(UserId, RatingKey), Self::Value>, Self::Error> {
+        let mut by_viewer: HashMap<UserId, Vec<RatingKey>> = HashMap::new();
         for (viewer, parent) in keys {
             by_viewer.entry(*viewer).or_default().push(*parent);
         }
@@ -151,15 +151,15 @@ impl TrackChoiceLoader {
     }
 }
 
-impl Loader<(Viewer, PartId)> for TrackChoiceLoader {
+impl Loader<(UserId, PartId)> for TrackChoiceLoader {
     type Value = TrackChoice;
     type Error = Arc<WatchError>;
 
     async fn load(
         &self,
-        keys: &[(Viewer, PartId)],
-    ) -> Result<HashMap<(Viewer, PartId), Self::Value>, Self::Error> {
-        let mut by_viewer: HashMap<Viewer, Vec<PartId>> = HashMap::new();
+        keys: &[(UserId, PartId)],
+    ) -> Result<HashMap<(UserId, PartId), Self::Value>, Self::Error> {
+        let mut by_viewer: HashMap<UserId, Vec<PartId>> = HashMap::new();
         for (viewer, file) in keys {
             by_viewer.entry(*viewer).or_default().push(*file);
         }
@@ -181,7 +181,7 @@ impl Loader<(Viewer, PartId)> for TrackChoiceLoader {
 /// What the caller chose on a file. Nothing for a caller with no state, who gets the automatic
 /// choice.
 pub(crate) async fn track_choice_of(context: &Context<'_>, file: PartId) -> Result<TrackChoice> {
-    let Some(viewer) = crate::access::caller(context).and_then(Viewer::of) else {
+    let Some(viewer) = crate::access::viewer_id(context) else {
         return Ok(TrackChoice::default());
     };
     Ok(context
@@ -200,7 +200,7 @@ pub(crate) async fn choose_tracks(
     subtitle: Option<ID>,
     subtitles_off: bool,
 ) -> Result<crate::media::File> {
-    let Some(viewer) = crate::access::caller(context).and_then(Viewer::of) else {
+    let Some(viewer) = crate::access::viewer_id(context) else {
         return Err(async_graphql::Error::new(
             "a caller with no watch state has no tracks to choose",
         ));
@@ -272,7 +272,7 @@ pub(crate) async fn state_of(
     context: &Context<'_>,
     guid: &str,
 ) -> Result<Option<WatchStateObject>> {
-    let Some(viewer) = crate::access::caller(context).and_then(Viewer::of) else {
+    let Some(viewer) = crate::access::viewer_id(context) else {
         return Ok(None);
     };
     let state = context
@@ -286,7 +286,7 @@ pub(crate) async fn state_of(
 /// How many episodes below a series or a season the caller watched. Zero for a caller with
 /// no watch state.
 pub(crate) async fn watched_below(context: &Context<'_>, parent: RatingKey) -> Result<u64> {
-    let Some(viewer) = crate::access::caller(context).and_then(Viewer::of) else {
+    let Some(viewer) = crate::access::viewer_id(context) else {
         return Ok(0);
     };
     Ok(context
@@ -346,9 +346,8 @@ pub struct ViewingReport {
 }
 
 /// Finds an item the caller may see, with the caller's viewer.
-async fn visible_item(context: &Context<'_>, id: &ID) -> Result<(MetadataItem, Viewer)> {
-    let viewer = crate::access::caller(context)
-        .and_then(Viewer::of)
+async fn visible_item(context: &Context<'_>, id: &ID) -> Result<(MetadataItem, UserId)> {
+    let viewer = crate::access::viewer_id(context)
         .ok_or_else(|| async_graphql::Error::new("no watch state for this caller"))?;
     let key = GlobalId::decode(id)
         .ok()
@@ -365,7 +364,7 @@ async fn visible_item(context: &Context<'_>, id: &ID) -> Result<(MetadataItem, V
     Ok((item, viewer))
 }
 
-fn watching<'a>(context: &'a Context<'_>, viewer: Viewer) -> Result<Watching<'a>> {
+fn watching<'a>(context: &'a Context<'_>, viewer: UserId) -> Result<Watching<'a>> {
     let api = context.data::<ApiContext>()?;
     Ok(Watching {
         metadata: api.metadata.as_ref(),
@@ -378,7 +377,7 @@ fn watching<'a>(context: &'a Context<'_>, viewer: Viewer) -> Result<Watching<'a>
 /// value from before the mutation.
 async fn fresh_state(
     context: &Context<'_>,
-    viewer: Viewer,
+    viewer: UserId,
     guid: &str,
 ) -> Result<WatchStateObject> {
     let state = context
@@ -541,7 +540,7 @@ pub(crate) async fn continue_watching(
                     "a page of more than {MAX_ITEMS} is not served"
                 )));
             }
-            let Some(viewer) = crate::access::caller(context).and_then(Viewer::of) else {
+            let Some(viewer) = crate::access::viewer_id(context) else {
                 return Ok(Connection::new(false, false));
             };
             let entries = watching(context, viewer)?

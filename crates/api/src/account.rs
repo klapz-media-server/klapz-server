@@ -1,22 +1,23 @@
-//! Signing up, in and out with an e-mail address and a password.
+//! Signing up, in and out with a username or an e-mail address and a password.
 //!
 //! These are the operations a caller makes before it is anyone, so none of them requires a
-//! caller. A session travels as a signed token in an `HttpOnly` cookie, set here and read by the
-//! transport on every request; what a session opens is decided again each time from the user's
-//! current state. Someone who signs up waits, inactive, until the operator lets them in.
+//! caller. A session is a signed token, set here in an `HttpOnly` cookie and read by the
+//! transport on every request; a client that is no browser reads it from that cookie and sends
+//! it back as `Authorization: Bearer`. What a session opens is decided again each time from the
+//! user's current state. Someone who signs up waits, inactive, until an owner lets them in.
 
 use std::sync::Arc;
 
-use async_graphql::{Context, Enum, InputObject, Result, SimpleObject, ID};
-use open_plex_core::access::AccessError;
+use async_graphql::{Context, Enum, InputObject, Result, SimpleObject};
+use open_plex_core::access::{AccessError, Login, NewUser, ServerRole};
 use open_plex_core::account::{
-    hash_password, is_acceptable_password, normalized_email, verify_against_nothing,
-    verify_password, SessionKey, SignInThrottle, PASSWORD_LENGTH, SESSION_LIFETIME_SECONDS,
+    hash_password, is_acceptable_password, login_of, normalized_email, normalized_username,
+    verify_against_nothing, verify_password, SessionKey, SignInThrottle, PASSWORD_LENGTH,
+    SESSION_LIFETIME_SECONDS, USERNAME_LENGTH,
 };
 use open_plex_core::now_epoch;
 
-use crate::access::{require_operator, UserObject};
-use crate::node::GlobalId;
+use crate::access::UserObject;
 use crate::schema::ApiContext;
 
 /// The cookie a session travels in.
@@ -81,19 +82,28 @@ fn sessions<'c>(context: &Context<'c>) -> Result<&'c Sessions> {
 /// Why an account operation was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
 pub enum AccountErrorCode {
+    /// Not 3 to 32 letters, digits, `.`, `_` or `-` starting with a letter or a digit.
+    InvalidUsername,
+    /// Another user has this username, whatever its case.
+    UsernameTaken,
     /// Not an e-mail address.
     InvalidEmail,
     /// Shorter than 8 characters, or longer than 256.
     WeakPassword,
     /// The address already has a user.
     EmailTaken,
-    /// No user with this address and this password. Worded the same for both, so a stranger
-    /// cannot learn which addresses have an account.
+    /// No user with this username or address and this password. Worded the same for both, so
+    /// a stranger cannot learn which accounts exist.
     InvalidCredentials,
-    /// The password is right, but the operator has not let this user in yet, or shut it out.
+    /// The password is right, but no owner has let this user in yet, or one shut it out.
     Inactive,
-    /// Too many failed attempts on this address: wait fifteen minutes.
+    /// Too many failed attempts on this username or address: wait fifteen minutes.
     TooManyAttempts,
+    /// No such user.
+    UserNotFound,
+    /// The built-in `admin` account stays an active owner: it cannot be demoted, deactivated
+    /// or deleted.
+    BuiltInAccount,
 }
 
 /// A problem with what was asked, as opposed to a failure of the server.
@@ -108,8 +118,15 @@ pub struct AccountUserError {
 }
 
 impl AccountUserError {
-    fn new(field: &str, code: AccountErrorCode) -> Self {
+    pub(crate) fn new(field: &str, code: AccountErrorCode) -> Self {
         let message = match code {
+            AccountErrorCode::InvalidUsername => format!(
+                "a username has {} to {} letters, digits, dots, dashes or underscores, \
+                 and starts with a letter or a digit",
+                USERNAME_LENGTH.start(),
+                USERNAME_LENGTH.end()
+            ),
+            AccountErrorCode::UsernameTaken => "this username is taken".to_owned(),
             AccountErrorCode::InvalidEmail => "this is not an e-mail address".to_owned(),
             AccountErrorCode::WeakPassword => format!(
                 "a password has between {} and {} characters",
@@ -117,9 +134,15 @@ impl AccountUserError {
                 PASSWORD_LENGTH.end()
             ),
             AccountErrorCode::EmailTaken => "this address already has an account".to_owned(),
-            AccountErrorCode::InvalidCredentials => "wrong address or password".to_owned(),
-            AccountErrorCode::Inactive => "this account waits for the operator".to_owned(),
+            AccountErrorCode::InvalidCredentials => {
+                "wrong username, address or password".to_owned()
+            }
+            AccountErrorCode::Inactive => "this account waits for an owner".to_owned(),
             AccountErrorCode::TooManyAttempts => "too many attempts: try again later".to_owned(),
+            AccountErrorCode::UserNotFound => "no such user".to_owned(),
+            AccountErrorCode::BuiltInAccount => {
+                "the admin account stays an active owner".to_owned()
+            }
         };
         Self {
             field: vec!["input".to_owned(), field.to_owned()],
@@ -134,8 +157,11 @@ impl AccountUserError {
 pub struct SignUpInput {
     /// Echoed back in the payload, for the client to match the two.
     pub client_mutation_id: Option<String>,
-    /// The address to sign in with. Compared without regard to case.
-    pub email: String,
+    /// The name to sign in with: 3 to 32 letters, digits, `.`, `_` or `-`, starting with a
+    /// letter or a digit. Stored in lower case.
+    pub username: String,
+    /// An address to sign in with as well. Compared without regard to case.
+    pub email: Option<String>,
     /// Between 8 and 256 characters.
     #[graphql(secret)]
     pub password: String,
@@ -146,7 +172,7 @@ pub struct SignUpInput {
 pub struct SignUpPayload {
     /// The value the input carried.
     pub client_mutation_id: Option<String>,
-    /// Whether the account was created. It waits for the operator to let it in.
+    /// Whether the account was created. It waits for an owner to let it in.
     pub created: bool,
     /// Why it was not. Empty when it was.
     pub user_errors: Vec<AccountUserError>,
@@ -157,15 +183,16 @@ pub struct SignUpPayload {
 pub struct SignInInput {
     /// Echoed back in the payload, for the client to match the two.
     pub client_mutation_id: Option<String>,
-    /// The address the account was created with.
-    pub email: String,
+    /// The account's username, or its e-mail address.
+    pub login: String,
     /// Its password.
     #[graphql(secret)]
     pub password: String,
 }
 
-/// What `signIn` did. On success the session is in a cookie, out of reach of scripts: there is
-/// no token here to keep.
+/// What `signIn` did. On success the session is in the `open_plex_session` cookie, out of reach
+/// of a page's scripts: there is no token here to keep. A client that is no browser reads the
+/// cookie's value from `Set-Cookie` and presents it as `Authorization: Bearer <value>`.
 #[derive(Debug, SimpleObject)]
 pub struct SignInPayload {
     /// The value the input carried.
@@ -184,8 +211,13 @@ pub(crate) async fn sign_up(context: &Context<'_>, input: SignUpInput) -> Result
             user_errors: vec![AccountUserError::new(field, code)],
         })
     };
-    let Some(email) = normalized_email(&input.email) else {
-        return refuse("email", AccountErrorCode::InvalidEmail);
+    let Some(username) = normalized_username(&input.username) else {
+        return refuse("username", AccountErrorCode::InvalidUsername);
+    };
+    let email = match input.email.as_deref().map(normalized_email) {
+        None => None,
+        Some(Some(email)) => Some(email),
+        Some(None) => return refuse("email", AccountErrorCode::InvalidEmail),
     };
     if !is_acceptable_password(&input.password) {
         return refuse("password", AccountErrorCode::WeakPassword);
@@ -196,14 +228,37 @@ pub(crate) async fn sign_up(context: &Context<'_>, input: SignUpInput) -> Result
         .hash_work(move || hash_password(&password))
         .await??;
     let api = context.data::<ApiContext>()?;
-    match api.access.sign_up(&email, &hash, now_epoch()).await {
+    let created = api
+        .access
+        .create_user(
+            NewUser {
+                username: &username,
+                email: email.as_deref(),
+                role: ServerRole::User,
+                active: false,
+                password_hash: Some(&hash),
+            },
+            now_epoch(),
+        )
+        .await;
+    match created {
         Ok(_) => Ok(SignUpPayload {
             client_mutation_id: input.client_mutation_id,
             created: true,
             user_errors: Vec::new(),
         }),
+        Err(AccessError::UsernameTaken) => refuse("username", AccountErrorCode::UsernameTaken),
         Err(AccessError::EmailTaken) => refuse("email", AccountErrorCode::EmailTaken),
         Err(error) => Err(error.into()),
+    }
+}
+
+/// What a login's failures are counted under: the identifier as normalized, so that `Alice`
+/// and `alice` share their attempts. What can be no login shares one count.
+fn throttle_key(login: Option<&Login>) -> &str {
+    match login {
+        Some(Login::Username(name) | Login::Email(name)) => name,
+        None => "",
     }
 }
 
@@ -217,13 +272,17 @@ pub(crate) async fn sign_in(context: &Context<'_>, input: SignInInput) -> Result
     };
     let sessions = sessions(context)?;
     let now = now_epoch();
-    // Not an address cannot have an account: the same answer as a wrong password.
-    let email = normalized_email(&input.email).unwrap_or_default();
-    if !sessions.throttle.allows(&email, now) {
-        return refuse("email", AccountErrorCode::TooManyAttempts);
+    // What can be no login cannot have an account: the same answer as a wrong password.
+    let login = login_of(&input.login);
+    let key = throttle_key(login.as_ref());
+    if !sessions.throttle.allows(key, now) {
+        return refuse("login", AccountErrorCode::TooManyAttempts);
     }
     let api = context.data::<ApiContext>()?;
-    let credentials = api.access.credentials(&email).await?;
+    let credentials = match &login {
+        Some(login) => api.access.credentials(login).await?,
+        None => None,
+    };
     let password = input.password.clone();
     let (user, matches) = if let Some((user, hash)) = credentials {
         let matches = sessions
@@ -237,12 +296,12 @@ pub(crate) async fn sign_in(context: &Context<'_>, input: SignInInput) -> Result
         (None, false)
     };
     let Some(user) = user.filter(|_| matches) else {
-        sessions.throttle.record_failure(&email, now);
+        sessions.throttle.record_failure(key, now);
         return refuse("password", AccountErrorCode::InvalidCredentials);
     };
-    sessions.throttle.clear(&email);
+    sessions.throttle.clear(key);
     if !user.active {
-        return refuse("email", AccountErrorCode::Inactive);
+        return refuse("login", AccountErrorCode::Inactive);
     }
     let token = sessions.key.issue(user.id, now)?;
     context.append_http_header(
@@ -262,20 +321,4 @@ pub(crate) fn sign_out(context: &Context<'_>) -> Result<bool> {
     let sessions = sessions(context)?;
     context.append_http_header("Set-Cookie", sessions.cookie("", 0));
     Ok(true)
-}
-
-pub(crate) async fn set_active(
-    context: &Context<'_>,
-    user: &ID,
-    active: bool,
-) -> Result<UserObject> {
-    require_operator(context)?;
-    let id = open_plex_core::UserId::new(GlobalId::decode(user)?.key);
-    context
-        .data::<ApiContext>()?
-        .access
-        .set_active(id, active, now_epoch())
-        .await?
-        .map(UserObject)
-        .ok_or_else(crate::access::denied)
 }

@@ -1,6 +1,7 @@
 //! Playlists on the official API.
 //!
-//! A playlist is its owner's: the operator's, or one user's. Nobody else reaches it, and
+//! A playlist is its owner's: one user's, an owner of the server included. Nobody else
+//! reaches it, and
 //! asking for someone else's answers as asking for nothing. Its items stay under their
 //! libraries' rights, so what a playlist shows follows what its owner may read today.
 //!
@@ -26,9 +27,8 @@ use open_plex_core::playlist::{
     PlaylistFilter, PlaylistKind, PlaylistQuery, PlaylistRepository, PlaylistSort, PlaylistTotals,
     SmartRule,
 };
-use open_plex_core::watch::Viewer;
 use open_plex_core::{
-    now_epoch, MetadataItem, PlaylistEntryId, PlaylistId, RatingKey, SectionId, SectionKind,
+    now_epoch, MetadataItem, PlaylistEntryId, PlaylistId, RatingKey, SectionId, SectionKind, UserId,
 };
 
 use crate::cursor::OpaqueCursor;
@@ -54,8 +54,8 @@ fn playlists<'c>(context: &Context<'c>) -> Result<&'c dyn PlaylistRepository> {
 
 /// Whose playlists the caller reads and writes. A caller with no watch state, a visitor, has
 /// none.
-fn viewer(context: &Context<'_>) -> Option<Viewer> {
-    crate::access::caller(context).and_then(Viewer::of)
+fn viewer(context: &Context<'_>) -> Option<UserId> {
+    crate::access::viewer_id(context)
 }
 
 /// What a playlist plays.

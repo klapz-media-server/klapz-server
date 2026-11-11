@@ -4,7 +4,7 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "watch_state")]
 pub struct Model {
-    /// A user's id, or 0 for the operator.
+    /// A user's id.
     #[sea_orm(primary_key, auto_increment = false)]
     pub viewer: i64,
     #[sea_orm(primary_key, auto_increment = false)]

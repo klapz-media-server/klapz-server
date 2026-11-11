@@ -9,7 +9,7 @@ pub enum LibraryError {
     SectionNotFound(SectionId),
     /// Storage failed.
     ///
-    /// Boxed rather than stringified so the cause chain survives for the operator's logs:
+    /// Boxed rather than stringified so the cause chain survives for the server's logs:
     /// flattening it into a `String` is the `Other(String)` smell in disguise. Boxed rather
     /// than typed because `core` must not know which storage engine is in use.
     ///

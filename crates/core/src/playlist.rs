@@ -5,9 +5,8 @@
 //! rights: an entry whose item lies in a library the viewer cannot see is not shown, not
 //! counted, and comes back if the library is given again.
 
-use crate::ids::{PlaylistEntryId, PlaylistId, RatingKey, SectionId};
+use crate::ids::{PlaylistEntryId, PlaylistId, RatingKey, SectionId, UserId};
 use crate::page::{Cursor, CursorKey, Direction, Page, Window};
-use crate::watch::Viewer;
 
 /// Distance between the positions of entries added one after another. Wide, so that many
 /// moves between two neighbours fit before the playlist has to be renumbered.
@@ -42,7 +41,7 @@ pub enum PlaylistField {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewPlaylist {
-    pub owner: Viewer,
+    pub owner: UserId,
     pub title: String,
     pub summary: String,
     pub kind: PlaylistKind,
@@ -56,7 +55,7 @@ pub struct NewPlaylist {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Playlist {
     pub id: PlaylistId,
-    pub owner: Viewer,
+    pub owner: UserId,
     /// Stable and unique across servers, unlike the id.
     pub guid: String,
     pub title: String,
@@ -144,7 +143,7 @@ pub struct PlaylistFilter {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaylistQuery {
-    pub owner: Viewer,
+    pub owner: UserId,
     pub filter: PlaylistFilter,
     pub sort: PlaylistSort,
     pub direction: Direction,

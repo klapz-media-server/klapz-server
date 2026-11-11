@@ -93,13 +93,13 @@ impl From<StreamDecisionType> for StreamDecision {
     }
 }
 
-/// The operator ending a session.
+/// An owner ending a session.
 #[derive(Debug, Clone, SimpleObject)]
 #[graphql(name = "PlaybackTermination")]
 pub struct PlaybackTerminationObject {
     /// When it was terminated.
     pub terminated_at: DateTime,
-    /// What the operator told the player, when it said anything.
+    /// What the owner told the player, when it said anything.
     pub reason: Option<String>,
 }
 
@@ -123,7 +123,7 @@ impl PlaybackSessionObject {
         ID(GlobalId::encode(PLAYBACK_TYPE, self.0.id))
     }
 
-    /// Set once the operator has terminated the session: its stream is stopped, and the
+    /// Set once an owner has terminated the session: its stream is stopped, and the
     /// session stays until its player stops or it expires, so that the player can learn why.
     async fn termination(&self) -> Option<PlaybackTerminationObject> {
         self.0.termination.clone().map(Into::into)
@@ -228,7 +228,8 @@ pub(crate) async fn sessions(
     first: Option<i32>,
     last: Option<i32>,
 ) -> Result<PlaybackConnection> {
-    let owner = crate::access::require_caller(context)?.user;
+    let caller = crate::access::require_caller(context)?;
+    let owner = (!caller.is_owner()).then_some(caller.user);
     query(
         after,
         before,
@@ -296,7 +297,7 @@ pub struct ReportPlaybackInput {
     pub position_ms: Option<i64>,
 }
 
-/// A session for the operator to end.
+/// A session for an owner to end.
 #[derive(Debug, InputObject)]
 pub struct TerminatePlaybackSessionInput {
     /// Echoed back in the payload, for the client to match the two.
@@ -340,7 +341,7 @@ async fn terminate(
     context: &Context<'_>,
     input: TerminatePlaybackSessionInput,
 ) -> Result<TerminatePlaybackSessionPayload> {
-    crate::access::require_operator(context)?;
+    crate::access::require_owner(context)?;
     let api = context.data::<ApiContext>()?;
     let now = now_epoch();
     let found = match GlobalId::decode(&input.session) {
@@ -443,9 +444,9 @@ impl Mutation {
         crate::stream::start_stream(context, input).await
     }
 
-    /// Ends a session for the operator: its stream stops at once, and its player learns why
-    /// from `PlaybackSession.termination` or `playbackTermination`, until it stops. For the
-    /// server's operator only.
+    /// Ends a session for an owner: its stream stops at once, and its player learns why from
+    /// `PlaybackSession.termination` or `playbackTermination`, until it stops. For the
+    /// server's owners only.
     async fn terminate_playback_session(
         &self,
         context: &Context<'_>,
@@ -565,7 +566,7 @@ impl Mutation {
         crate::watch::keep_watch_position(context, &id, position_ms).await
     }
 
-    /// Deletes one viewing from a history: the caller's own, or anyone's for the operator.
+    /// Deletes one viewing from a history: the caller's own, or anyone's for an owner.
     /// What was watched stays as it is, as on the reference.
     async fn delete_history_entry(
         &self,
@@ -667,26 +668,37 @@ impl Mutation {
         Ok(api.lifecycle().end(&key).await?)
     }
 
-    /// Creates a user. For the server's operator only.
+    /// Creates a user, active, with no password and no library. For the server's owners only.
     async fn create_user(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "The user's e-mail address.")] email: String,
-    ) -> Result<crate::access::UserObject> {
-        crate::access::create_user(context, email).await
+        #[graphql(desc = "The user's username, and its address if it has one.")]
+        input: crate::access::CreateUserInput,
+    ) -> Result<crate::access::CreateUserPayload> {
+        crate::access::create_user(context, input).await
     }
 
-    /// Deletes a user, its permissions and its connections. Whether there was one. For the
-    /// server's operator only.
+    /// Deletes a user, its permissions and its connections. For the server's owners only; the
+    /// built-in `admin` account cannot be deleted.
     async fn delete_user(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "The user, as returned in `User.id`.")] id: ID,
-    ) -> Result<bool> {
-        crate::access::delete_user(context, &id).await
+        #[graphql(desc = "The user to delete.")] input: crate::access::UserInput,
+    ) -> Result<crate::access::DeleteUserPayload> {
+        crate::access::delete_user(context, input).await
     }
 
-    /// Gives a user a role on a library, replacing the one it had. For the server's operator
+    /// Makes a user an owner of the server, or no longer one. For the server's owners only; the
+    /// built-in `admin` account cannot be demoted.
+    async fn set_user_role(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The user and its new role.")] input: crate::access::SetUserRoleInput,
+    ) -> Result<crate::access::UserPayload> {
+        crate::access::set_role(context, input).await
+    }
+
+    /// Gives a user a role on a library, replacing the one it had. For the server's owners
     /// only.
     async fn set_library_permission(
         &self,
@@ -696,7 +708,7 @@ impl Mutation {
         crate::access::set_library_permission(context, input).await
     }
 
-    /// Takes a library away from a user. Whether it had access. For the server's operator only.
+    /// Takes a library away from a user. Whether it had access. For the server's owners only.
     async fn remove_library_permission(
         &self,
         context: &Context<'_>,
@@ -707,7 +719,7 @@ impl Mutation {
     }
 
     /// Switches a user's connection off: its token stops working and its identifier is kept.
-    /// Whether it was on. For the server's operator only.
+    /// Whether it was on. For the server's owners only.
     async fn disable_extension(
         &self,
         context: &Context<'_>,
@@ -718,7 +730,7 @@ impl Mutation {
     }
 
     /// Connects a user through an extension, returning a new token. Called again, it replaces
-    /// the token and keeps the identifier clients recognize. For the server's operator only.
+    /// the token and keeps the identifier clients recognize. For the server's owners only.
     async fn connect_extension(
         &self,
         context: &Context<'_>,
@@ -730,7 +742,7 @@ impl Mutation {
     }
 
     /// Ties a user's connection to its account on the extension's own service, and tells that
-    /// service where the server can be reached. For the server's operator, and for the user
+    /// service where the server can be reached. For the server's owners, and for the user
     /// itself.
     async fn pair_extension(
         &self,
@@ -742,7 +754,7 @@ impl Mutation {
     }
 
     /// Changes where a paired server is reached, and tells the extension's service at once:
-    /// what a tunnel or a new domain needs, without pairing again. For the server's operator,
+    /// what a tunnel or a new domain needs, without pairing again. For the server's owners,
     /// and for the user itself.
     async fn move_extension(
         &self,
@@ -754,7 +766,7 @@ impl Mutation {
     }
 
     /// Forgets the account tied to a user's connection. Whether there was one. For the server's
-    /// operator, and for the user itself.
+    /// owners, and for the user itself.
     async fn unpair_extension(
         &self,
         context: &Context<'_>,
@@ -764,24 +776,25 @@ impl Mutation {
         crate::access::unpair_extension(context, &user_id, extension).await
     }
 
-    /// Creates an account that signs in with a password. It waits, inactive, until the
-    /// operator lets it in. Open to anyone.
+    /// Creates an account that signs in with a password. It waits, inactive, until an owner
+    /// lets it in. Open to anyone.
     async fn sign_up(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "The address and password of the new account.")]
+        #[graphql(desc = "The username, address and password of the new account.")]
         input: crate::account::SignUpInput,
     ) -> Result<crate::account::SignUpPayload> {
         crate::account::sign_up(context, input).await
     }
 
-    /// Checks an address and its password and, when they match an active user, opens a
-    /// session for it: a cookie the server reads on every request. Open to anyone; failed
-    /// attempts on one address are limited.
+    /// Checks a username or an address and its password and, when they match an active user,
+    /// opens a session for it: a cookie the server reads on every request, whose value a
+    /// client that is no browser can present as `Authorization: Bearer`. Open to anyone;
+    /// failed attempts on one username or address are limited.
     async fn sign_in(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "The address and password to sign in with.")]
+        #[graphql(desc = "The username or address, and the password, to sign in with.")]
         input: crate::account::SignInInput,
     ) -> Result<crate::account::SignInPayload> {
         crate::account::sign_in(context, input).await
@@ -792,26 +805,27 @@ impl Mutation {
         crate::account::sign_out(context)
     }
 
-    /// Lets in a user who signed up, or one that was shut out. For the server's operator only.
+    /// Lets in a user who signed up, or one that was shut out. For the server's owners only.
     async fn activate_user(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "The user, as returned in `User.id`.")] id: ID,
-    ) -> Result<crate::access::UserObject> {
-        crate::account::set_active(context, &id, true).await
+        #[graphql(desc = "The user to let in.")] input: crate::access::UserInput,
+    ) -> Result<crate::access::UserPayload> {
+        crate::access::set_active(context, input, true).await
     }
 
     /// Shuts a user out: its sessions and its tokens stop opening anything at once, and it
-    /// keeps its libraries for when it is let in again. For the server's operator only.
+    /// keeps its libraries for when it is let in again. For the server's owners only; the
+    /// built-in `admin` account cannot be shut out.
     async fn deactivate_user(
         &self,
         context: &Context<'_>,
-        #[graphql(desc = "The user, as returned in `User.id`.")] id: ID,
-    ) -> Result<crate::access::UserObject> {
-        crate::account::set_active(context, &id, false).await
+        #[graphql(desc = "The user to shut out.")] input: crate::access::UserInput,
+    ) -> Result<crate::access::UserPayload> {
+        crate::access::set_active(context, input, false).await
     }
 
-    /// Changes a film's metadata and locks. For a library's admins and the operator.
+    /// Changes a film's metadata and locks. For a library's admins and the server's owners.
     async fn update_movie(
         &self,
         context: &Context<'_>,
@@ -820,7 +834,7 @@ impl Mutation {
         crate::edit::update_movie(context, input).await
     }
 
-    /// Changes a series' metadata and locks. For a library's admins and the operator.
+    /// Changes a series' metadata and locks. For a library's admins and the server's owners.
     async fn update_show(
         &self,
         context: &Context<'_>,
@@ -829,7 +843,7 @@ impl Mutation {
         crate::edit::update_show(context, input).await
     }
 
-    /// Changes an episode's metadata and locks. For a library's admins and the operator.
+    /// Changes an episode's metadata and locks. For a library's admins and the server's owners.
     async fn update_episode(
         &self,
         context: &Context<'_>,
@@ -839,7 +853,7 @@ impl Mutation {
     }
 
     /// Adds a marker to a film or an episode: an intro, credits or a commercial, for its
-    /// library's admins and the operator, or a bookmark of the caller's own.
+    /// library's admins and the server's owners, or a bookmark of the caller's own.
     async fn add_marker(
         &self,
         context: &Context<'_>,
@@ -849,7 +863,7 @@ impl Mutation {
     }
 
     /// Moves a marker or changes what it says. The work's markers for its library's admins
-    /// and the operator, a bookmark for its owner.
+    /// and the server's owners, a bookmark for its owner.
     async fn update_marker(
         &self,
         context: &Context<'_>,
@@ -858,7 +872,7 @@ impl Mutation {
         crate::marker::update(context, input).await
     }
 
-    /// Removes a marker. The work's markers for its library's admins and the operator, a
+    /// Removes a marker. The work's markers for its library's admins and the server's owners, a
     /// bookmark for its owner.
     async fn delete_marker(
         &self,
@@ -933,7 +947,7 @@ impl Mutation {
     }
 
     /// Creates a collection in a library: of chosen items, or smart with a rule. For the
-    /// library's admins and the operator.
+    /// library's admins and the server's owners.
     async fn create_collection(
         &self,
         context: &Context<'_>,
@@ -944,7 +958,7 @@ impl Mutation {
     }
 
     /// Renames, describes, sets, locks or unlocks a collection. For its library's admins and
-    /// the operator.
+    /// the server's owners.
     async fn update_collection(
         &self,
         context: &Context<'_>,
@@ -954,7 +968,7 @@ impl Mutation {
     }
 
     /// Deletes a collection; its items stay in the library. For its library's admins and the
-    /// operator.
+    /// server's owners.
     async fn delete_collection(
         &self,
         context: &Context<'_>,
@@ -965,7 +979,7 @@ impl Mutation {
     }
 
     /// Adds items to a collection of chosen items, skipping those it holds. For its library's
-    /// admins and the operator.
+    /// admins and the server's owners.
     async fn add_to_collection(
         &self,
         context: &Context<'_>,
@@ -976,7 +990,7 @@ impl Mutation {
     }
 
     /// Takes an item out of a collection of chosen items. For its library's admins and the
-    /// operator.
+    /// server's owners.
     async fn remove_from_collection(
         &self,
         context: &Context<'_>,
@@ -987,7 +1001,7 @@ impl Mutation {
     }
 
     /// Moves an item of a collection after another, or first, in its custom order. For its
-    /// library's admins and the operator.
+    /// library's admins and the server's owners.
     async fn move_collection_item(
         &self,
         context: &Context<'_>,
@@ -998,7 +1012,7 @@ impl Mutation {
     }
 
     /// Takes every item out of a collection of chosen items, keeping the collection. For its
-    /// library's admins and the operator.
+    /// library's admins and the server's owners.
     async fn clear_collection(
         &self,
         context: &Context<'_>,

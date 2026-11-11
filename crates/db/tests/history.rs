@@ -10,7 +10,7 @@ use open_plex_core::history::{
     HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, NewViewing, ViewingKind,
 };
 use open_plex_core::page::{Direction, Window};
-use open_plex_core::watch::{Viewer, WatchRepository, WatchState};
+use open_plex_core::watch::{WatchRepository, WatchState};
 use open_plex_core::{HistoryId, RatingKey, SectionId, UserId};
 use open_plex_db::entity::{library_section, metadata_item};
 use open_plex_db::write;
@@ -110,13 +110,13 @@ const fn watched_once() -> WatchState {
     }
 }
 
-/// The operator played Soul, marked the season's two episodes, then played episode 1; user
+/// User 1 played Soul, marked the season's two episodes, then played episode 1; user
 /// 7 played Soul.
 async fn watch(repository: &SqlWatchRepository) {
-    let operator = Viewer::Operator;
+    let user_one = UserId::new(1);
     repository
         .record_viewings(
-            operator,
+            user_one,
             &[(guid(SOUL), watched_once())],
             &[viewing(SOUL, ViewingKind::Played, NOW + 30)],
         )
@@ -127,17 +127,17 @@ async fn watch(repository: &SqlWatchRepository) {
         viewing(EPISODE_2, ViewingKind::Marked, NOW + 10),
     ];
     repository
-        .record_viewings(operator, &[], &marked)
+        .record_viewings(user_one, &[], &marked)
         .await
         .unwrap();
     let played = [viewing(EPISODE_1, ViewingKind::Played, NOW + 20)];
     repository
-        .record_viewings(operator, &[], &played)
+        .record_viewings(user_one, &[], &played)
         .await
         .unwrap();
     let theirs = [viewing(SOUL, ViewingKind::Played, NOW)];
     repository
-        .record_viewings(Viewer::User(UserId::new(7)), &[], &theirs)
+        .record_viewings(UserId::new(7), &[], &theirs)
         .await
         .unwrap();
 }
@@ -154,8 +154,8 @@ async fn items(repository: &SqlWatchRepository, query: &HistoryQuery) -> Vec<i64
     ids(&repository.history(query, first(50)).await.unwrap().items)
 }
 
-const fn operator() -> HistoryQuery {
-    HistoryQuery::of(HistoryScope::Viewer(Viewer::Operator))
+const fn user_one() -> HistoryQuery {
+    HistoryQuery::of(HistoryScope::Viewer(UserId::new(1)))
 }
 
 #[tokio::test]
@@ -164,24 +164,24 @@ async fn writes_the_state_and_the_entries_together() {
     watch(&repository).await;
     assert_eq!(
         repository
-            .states(Viewer::Operator, &[guid(SOUL)])
+            .states(UserId::new(1), &[guid(SOUL)])
             .await
             .unwrap(),
         vec![(guid(SOUL), watched_once())]
     );
     assert_eq!(
-        items(&repository, &operator()).await,
+        items(&repository, &user_one()).await,
         vec![SOUL, EPISODE_1, EPISODE_2, EPISODE_1]
     );
     assert_eq!(
         items(&repository, &HistoryQuery::of(HistoryScope::Everyone)).await,
         vec![SOUL, EPISODE_1, EPISODE_2, EPISODE_1, SOUL]
     );
-    let theirs = HistoryQuery::of(HistoryScope::Viewer(Viewer::User(UserId::new(7))));
+    let theirs = HistoryQuery::of(HistoryScope::Viewer(UserId::new(7)));
     let entry = repository.history(&theirs, first(5)).await.unwrap().items[0];
     assert_eq!(entry.section, SectionId::new(27));
     assert_eq!(entry.kind, ViewingKind::Played);
-    assert_eq!(entry.viewer, Viewer::User(UserId::new(7)));
+    assert_eq!(entry.viewer, UserId::new(7));
 }
 
 #[tokio::test]
@@ -189,7 +189,7 @@ async fn a_series_or_a_season_reads_its_episodes_entries() {
     let (repository, _) = repository().await;
     watch(&repository).await;
     for parent in [SHOW, SEASON] {
-        let mut query = operator();
+        let mut query = user_one();
         query.item = Some(RatingKey::new(parent));
         assert_eq!(
             items(&repository, &query).await,
@@ -197,7 +197,7 @@ async fn a_series_or_a_season_reads_its_episodes_entries() {
         );
         assert_eq!(repository.history_count(&query).await.unwrap(), 3);
     }
-    let mut query = operator();
+    let mut query = user_one();
     query.item = Some(RatingKey::new(EPISODE_2));
     assert_eq!(items(&repository, &query).await, vec![EPISODE_2]);
 }
@@ -206,15 +206,15 @@ async fn a_series_or_a_season_reads_its_episodes_entries() {
 async fn filters_by_library_kind_and_date() {
     let (repository, _) = repository().await;
     watch(&repository).await;
-    let mut query = operator();
+    let mut query = user_one();
     query.sections = Some(vec![SectionId::new(27)]);
     assert_eq!(items(&repository, &query).await, vec![SOUL]);
 
-    let mut query = operator();
+    let mut query = user_one();
     query.kind = Some(ViewingKind::Played);
     assert_eq!(items(&repository, &query).await, vec![SOUL, EPISODE_1]);
 
-    let mut query = operator();
+    let mut query = user_one();
     query.viewed_since = Some(NOW + 10);
     query.viewed_until = Some(NOW + 20);
     assert_eq!(
@@ -228,7 +228,7 @@ async fn filters_by_library_kind_and_date() {
 async fn pages_through_an_order_by_date_from_either_end() {
     let (repository, _) = repository().await;
     watch(&repository).await;
-    let mut query = operator();
+    let mut query = user_one();
     query.order = HistoryOrder::ViewedAt;
     query.direction = Direction::Descending;
     // Ties on the date go to the order written, reversed with the rest.
@@ -273,7 +273,7 @@ async fn pages_through_an_order_by_date_from_either_end() {
 async fn orders_by_library_and_lands_at_an_offset() {
     let (repository, _) = repository().await;
     watch(&repository).await;
-    let mut query = operator();
+    let mut query = user_one();
     query.order = HistoryOrder::Library;
     query.direction = Direction::Descending;
     assert_eq!(
@@ -293,7 +293,7 @@ async fn deleting_an_entry_leaves_the_state_and_an_entry_goes_with_its_item() {
     let (repository, connection) = repository().await;
     watch(&repository).await;
     let soul = repository
-        .history(&operator(), first(1))
+        .history(&user_one(), first(1))
         .await
         .unwrap()
         .items[0];
@@ -303,7 +303,7 @@ async fn deleting_an_entry_leaves_the_state_and_an_entry_goes_with_its_item() {
     assert_eq!(repository.history_entry(soul.id).await.unwrap(), None);
     assert_eq!(
         repository
-            .states(Viewer::Operator, &[guid(SOUL)])
+            .states(UserId::new(1), &[guid(SOUL)])
             .await
             .unwrap(),
         vec![(guid(SOUL), watched_once())]

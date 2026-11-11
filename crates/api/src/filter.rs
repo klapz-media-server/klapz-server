@@ -6,8 +6,7 @@ use open_plex_core::metadata::{
     FrameRange, FrameSize, ItemDepth, ItemFilter, ItemKind, ItemSort, TagCondition,
 };
 use open_plex_core::page::Direction;
-use open_plex_core::watch::Viewer;
-use open_plex_core::{CollectionId, RatingKey};
+use open_plex_core::{CollectionId, RatingKey, UserId};
 
 use crate::tag::{TagFilterError, TagFilterInput};
 use crate::DateTime;
@@ -115,7 +114,7 @@ pub enum ItemOrder {
 
 impl ItemOrder {
     /// The storage ordering, for a caller who watches as `viewer`.
-    pub(crate) const fn sort(self, viewer: Option<Viewer>, seed: u32) -> ItemSort {
+    pub(crate) const fn sort(self, viewer: Option<UserId>, seed: u32) -> ItemSort {
         match self {
             Self::Title => ItemSort::Title,
             Self::AddedAt => ItemSort::AddedAt,

@@ -8,13 +8,17 @@
 #![allow(clippy::unused_async)]
 
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
-use async_graphql::{Context, Enum, InputObject, Object, Result, ID};
+use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
 use open_plex_core::access::{
     is_connection_uri, new_external_id, new_token, publish_link, token_digest, AccessError,
-    AccessRepository, AccountLink, Extension, LibraryPermission, LibraryRole, User, UserExtension,
+    AccessRepository, AccountLink, Extension, LibraryPermission, LibraryRole, NewUser, ServerRole,
+    User, UserExtension,
 };
+use open_plex_core::account::{normalized_email, normalized_username};
 use open_plex_core::page::Cursor;
-use open_plex_core::{now_epoch, Principal, Scope, SectionId, UserId};
+use open_plex_core::{now_epoch, Principal, SectionId, UserId};
+
+use crate::account::{AccountErrorCode, AccountUserError};
 
 use crate::cursor::OpaqueCursor;
 use crate::library::Library;
@@ -39,6 +43,12 @@ pub(crate) fn require_caller<'c>(context: &Context<'c>) -> Result<&'c Principal>
     caller(context).ok_or_else(denied)
 }
 
+/// Whose watch state, history, playlists and bookmarks the caller reads and writes: its own.
+/// `None` for a request with no caller, which has none.
+pub(crate) fn viewer_id(context: &Context<'_>) -> Option<UserId> {
+    caller(context).map(|caller| caller.user)
+}
+
 pub(crate) fn can_read(context: &Context<'_>, section: SectionId) -> bool {
     role(context, section).is_some()
 }
@@ -56,18 +66,15 @@ pub(crate) fn visible_sections(context: &Context<'_>) -> Option<Vec<SectionId>> 
     caller(context).map_or_else(|| Some(Vec::new()), |caller| caller.libraries.sections())
 }
 
-pub(crate) fn require_operator(context: &Context<'_>) -> Result<()> {
-    if caller(context).is_some_and(|caller| caller.scope.allows(Scope::Admin)) {
-        Ok(())
-    } else {
-        Err(denied())
-    }
+pub(crate) fn require_owner<'c>(context: &Context<'c>) -> Result<&'c Principal> {
+    caller(context)
+        .filter(|caller| caller.is_owner())
+        .ok_or_else(denied)
 }
 
-/// The operator, or a user acting on itself: how a user pairs its own server.
-fn require_operator_or_self(context: &Context<'_>, user: UserId) -> Result<()> {
-    let caller = require_caller(context)?;
-    if caller.scope.allows(Scope::Admin) || caller.user == Some(user) {
+/// An owner, or a user acting on itself: how a user pairs its own server.
+fn require_owner_or_self(context: &Context<'_>, user: UserId) -> Result<()> {
+    if require_caller(context)?.owns(user) {
         Ok(())
     } else {
         Err(denied())
@@ -105,6 +112,34 @@ impl From<LibraryRoleType> for LibraryRole {
         match role {
             LibraryRoleType::Viewer => Self::Viewer,
             LibraryRoleType::Admin => Self::Admin,
+        }
+    }
+}
+
+/// What a user may do on the server as a whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum ServerRoleType {
+    /// Reaches the libraries it was given, with the role given on each.
+    User,
+    /// Reaches every library as its admin, and manages users, their libraries and connections,
+    /// everyone's playback sessions and viewing history.
+    Owner,
+}
+
+impl From<ServerRole> for ServerRoleType {
+    fn from(role: ServerRole) -> Self {
+        match role {
+            ServerRole::User => Self::User,
+            ServerRole::Owner => Self::Owner,
+        }
+    }
+}
+
+impl From<ServerRoleType> for ServerRole {
+    fn from(role: ServerRoleType) -> Self {
+        match role {
+            ServerRoleType::User => Self::User,
+            ServerRoleType::Owner => Self::Owner,
         }
     }
 }
@@ -148,18 +183,34 @@ impl UserObject {
         ID(GlobalId::encode(USER_TYPE, self.0.id.get()))
     }
 
-    /// The user's e-mail address.
-    async fn email(&self) -> &str {
-        &self.0.email
+    /// The name the user is known and signs in by: unique, in lower case.
+    async fn username(&self) -> &str {
+        &self.0.username
     }
 
-    /// Whether the user may use the server. A user who signs up waits inactive until the
-    /// operator lets them in; inactive, nothing it presents opens anything.
+    /// The user's e-mail address, which it can also sign in with. Null when it gave none.
+    async fn email(&self) -> Option<&str> {
+        self.0.email.as_deref()
+    }
+
+    /// What the user may do on the server as a whole.
+    async fn role(&self) -> ServerRoleType {
+        self.0.role.into()
+    }
+
+    /// Whether this is the account the server creates for itself, `admin`: an owner that
+    /// cannot be demoted, deactivated or deleted.
+    async fn built_in(&self) -> bool {
+        self.0.is_built_in()
+    }
+
+    /// Whether the user may use the server. A user who signs up waits inactive until an owner
+    /// lets them in; inactive, nothing it presents opens anything.
     async fn active(&self) -> bool {
         self.0.active
     }
 
-    /// Whether the user can sign in with a password: a user the operator created has none.
+    /// Whether the user can sign in with a password: a user an owner created has none.
     async fn has_password(&self, context: &Context<'_>) -> Result<bool> {
         Ok(repository(context)?.has_password(self.0.id).await?)
     }
@@ -342,21 +393,20 @@ pub struct MoveExtensionInput {
 /// connection.
 #[derive(Debug, Clone, Copy)]
 pub struct Viewer {
-    operator: bool,
-    user: Option<UserId>,
+    caller: Option<(UserId, ServerRole)>,
 }
 
 #[Object]
 impl Viewer {
-    /// Whether the caller is the server's operator, who manages users and sees every library.
-    async fn is_operator(&self) -> bool {
-        self.operator
+    /// The caller's role on the server: an owner manages users and sees every library. Null
+    /// for a request with no caller, which has signed in as nobody.
+    async fn role(&self) -> Option<ServerRoleType> {
+        self.caller.map(|(_, role)| role.into())
     }
 
-    /// The caller as a user. Null for the operator, who is nobody's user, and for a request
-    /// with no caller.
+    /// The user asking. Null for a request with no caller.
     async fn user(&self, context: &Context<'_>) -> Result<Option<UserObject>> {
-        let Some(user) = self.user else {
+        let Some((user, _)) = self.caller else {
             return Ok(None);
         };
         Ok(repository(context)?.user(user).await?.map(UserObject))
@@ -364,10 +414,8 @@ impl Viewer {
 }
 
 pub(crate) fn viewer(context: &Context<'_>) -> Viewer {
-    let caller = caller(context);
     Viewer {
-        operator: caller.is_some_and(|caller| caller.scope.allows(Scope::Admin)),
-        user: caller.and_then(|caller| caller.user),
+        caller: caller(context).map(|caller| (caller.user, caller.role)),
     }
 }
 
@@ -378,7 +426,7 @@ pub(crate) async fn users(
     first: Option<i32>,
     last: Option<i32>,
 ) -> Result<Connection<OpaqueCursor, UserObject, EmptyFields, EmptyFields>> {
-    require_operator(context)?;
+    require_owner(context)?;
     query(
         after,
         before,
@@ -397,34 +445,227 @@ pub(crate) async fn users(
     .await
 }
 
-/// A user is visible to the operator and to itself.
+/// A user is visible to an owner and to itself.
 pub(crate) async fn user_node(context: &Context<'_>, id: i64) -> Result<Option<UserObject>> {
     let id = UserId::new(id);
-    if !require_caller(context)?.owns(Some(id)) {
+    if !require_caller(context)?.owns(id) {
         return Ok(None);
     }
     Ok(repository(context)?.user(id).await?.map(UserObject))
 }
 
-pub(crate) async fn create_user(context: &Context<'_>, email: String) -> Result<UserObject> {
-    require_operator(context)?;
-    Ok(UserObject(
-        repository(context)?
-            .create_user(&email, now_epoch())
-            .await?,
-    ))
+/// A user to create.
+#[derive(Debug, InputObject)]
+pub struct CreateUserInput {
+    /// Echoed back in the payload, for the client to match the two.
+    pub client_mutation_id: Option<String>,
+    /// 3 to 32 letters, digits, `.`, `_` or `-`, starting with a letter or a digit. Stored in
+    /// lower case: two users cannot differ by case alone.
+    pub username: String,
+    /// An address the user can also sign in with. Compared without regard to case.
+    pub email: Option<String>,
 }
 
-pub(crate) async fn delete_user(context: &Context<'_>, id: &ID) -> Result<bool> {
-    require_operator(context)?;
-    Ok(repository(context)?.delete_user(user_id(id)?).await?)
+/// What `createUser` did.
+#[derive(Debug, SimpleObject)]
+pub struct CreateUserPayload {
+    /// The value the input carried.
+    pub client_mutation_id: Option<String>,
+    /// The user created: active, with no password and no library. Null when none was.
+    pub user: Option<UserObject>,
+    /// Why none was. Empty when one was.
+    pub user_errors: Vec<AccountUserError>,
+}
+
+pub(crate) async fn create_user(
+    context: &Context<'_>,
+    input: CreateUserInput,
+) -> Result<CreateUserPayload> {
+    require_owner(context)?;
+    let refuse = |field: &str, code| {
+        Ok(CreateUserPayload {
+            client_mutation_id: input.client_mutation_id.clone(),
+            user: None,
+            user_errors: vec![AccountUserError::new(field, code)],
+        })
+    };
+    let Some(username) = normalized_username(&input.username) else {
+        return refuse("username", AccountErrorCode::InvalidUsername);
+    };
+    let email = match input.email.as_deref().map(normalized_email) {
+        None => None,
+        Some(Some(email)) => Some(email),
+        Some(None) => return refuse("email", AccountErrorCode::InvalidEmail),
+    };
+    let created = repository(context)?
+        .create_user(
+            NewUser {
+                username: &username,
+                email: email.as_deref(),
+                role: ServerRole::User,
+                active: true,
+                password_hash: None,
+            },
+            now_epoch(),
+        )
+        .await;
+    match created {
+        Ok(user) => Ok(CreateUserPayload {
+            client_mutation_id: input.client_mutation_id,
+            user: Some(UserObject(user)),
+            user_errors: Vec::new(),
+        }),
+        Err(AccessError::UsernameTaken) => refuse("username", AccountErrorCode::UsernameTaken),
+        Err(AccessError::EmailTaken) => refuse("email", AccountErrorCode::EmailTaken),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// The user a mutation names.
+#[derive(Debug, InputObject)]
+pub struct UserInput {
+    /// Echoed back in the payload, for the client to match the two.
+    pub client_mutation_id: Option<String>,
+    /// The user, as returned in `User.id`.
+    pub user_id: ID,
+}
+
+/// What a change to a user did.
+#[derive(Debug, SimpleObject)]
+pub struct UserPayload {
+    /// The value the input carried.
+    pub client_mutation_id: Option<String>,
+    /// The user as it now is. Null when it could not be changed.
+    pub user: Option<UserObject>,
+    /// Why it could not. Empty when it was.
+    pub user_errors: Vec<AccountUserError>,
+}
+
+/// A server role to give a user.
+#[derive(Debug, InputObject)]
+pub struct SetUserRoleInput {
+    /// Echoed back in the payload, for the client to match the two.
+    pub client_mutation_id: Option<String>,
+    /// The user, as returned in `User.id`.
+    pub user_id: ID,
+    /// What the user may now do on the server.
+    pub role: ServerRoleType,
+}
+
+/// What `deleteUser` did.
+#[derive(Debug, SimpleObject)]
+pub struct DeleteUserPayload {
+    /// The value the input carried.
+    pub client_mutation_id: Option<String>,
+    /// Whether a user was deleted.
+    pub deleted: bool,
+    /// Why none was. Empty when one was.
+    pub user_errors: Vec<AccountUserError>,
+}
+
+/// The user an owner names, unless it is the built-in account and `protect` says the change
+/// would leave the server without its admin. The error to answer otherwise.
+async fn managed_user(
+    context: &Context<'_>,
+    id: &ID,
+    protect: bool,
+) -> Result<std::result::Result<User, AccountUserError>> {
+    require_owner(context)?;
+    let found = match GlobalId::decode(id) {
+        Ok(decoded) if decoded.type_name == USER_TYPE => {
+            repository(context)?.user(UserId::new(decoded.key)).await?
+        }
+        _ => None,
+    };
+    Ok(match found {
+        None => Err(AccountUserError::new(
+            "userId",
+            AccountErrorCode::UserNotFound,
+        )),
+        Some(user) if protect && user.is_built_in() => Err(AccountUserError::new(
+            "userId",
+            AccountErrorCode::BuiltInAccount,
+        )),
+        Some(user) => Ok(user),
+    })
+}
+
+pub(crate) async fn set_role(
+    context: &Context<'_>,
+    input: SetUserRoleInput,
+) -> Result<UserPayload> {
+    let role = ServerRole::from(input.role);
+    let user = match managed_user(context, &input.user_id, role != ServerRole::Owner).await? {
+        Ok(user) => user,
+        Err(error) => {
+            return Ok(UserPayload {
+                client_mutation_id: input.client_mutation_id,
+                user: None,
+                user_errors: vec![error],
+            })
+        }
+    };
+    let changed = repository(context)?
+        .set_role(user.id, role, now_epoch())
+        .await?;
+    Ok(UserPayload {
+        client_mutation_id: input.client_mutation_id,
+        user: changed.map(UserObject),
+        user_errors: Vec::new(),
+    })
+}
+
+pub(crate) async fn set_active(
+    context: &Context<'_>,
+    input: UserInput,
+    active: bool,
+) -> Result<UserPayload> {
+    let user = match managed_user(context, &input.user_id, !active).await? {
+        Ok(user) => user,
+        Err(error) => {
+            return Ok(UserPayload {
+                client_mutation_id: input.client_mutation_id,
+                user: None,
+                user_errors: vec![error],
+            })
+        }
+    };
+    let changed = repository(context)?
+        .set_active(user.id, active, now_epoch())
+        .await?;
+    Ok(UserPayload {
+        client_mutation_id: input.client_mutation_id,
+        user: changed.map(UserObject),
+        user_errors: Vec::new(),
+    })
+}
+
+pub(crate) async fn delete_user(
+    context: &Context<'_>,
+    input: UserInput,
+) -> Result<DeleteUserPayload> {
+    let user = match managed_user(context, &input.user_id, true).await? {
+        Ok(user) => user,
+        Err(error) => {
+            return Ok(DeleteUserPayload {
+                client_mutation_id: input.client_mutation_id,
+                deleted: false,
+                user_errors: vec![error],
+            })
+        }
+    };
+    Ok(DeleteUserPayload {
+        client_mutation_id: input.client_mutation_id,
+        deleted: repository(context)?.delete_user(user.id).await?,
+        user_errors: Vec::new(),
+    })
 }
 
 pub(crate) async fn set_library_permission(
     context: &Context<'_>,
     input: SetLibraryPermissionInput,
 ) -> Result<bool> {
-    require_operator(context)?;
+    require_owner(context)?;
     let section = SectionId::new(GlobalId::decode(&input.library_id)?.key);
     if crate::schema::load_library(context, section)
         .await?
@@ -450,7 +691,7 @@ pub(crate) async fn remove_library_permission(
     user: &ID,
     library: &ID,
 ) -> Result<bool> {
-    require_operator(context)?;
+    require_owner(context)?;
     let section = SectionId::new(GlobalId::decode(library)?.key);
     Ok(repository(context)?
         .remove_permission(user_id(user)?, section)
@@ -462,7 +703,7 @@ pub(crate) async fn disable_extension(
     user: &ID,
     extension: ExtensionType,
 ) -> Result<bool> {
-    require_operator(context)?;
+    require_owner(context)?;
     Ok(repository(context)?
         .disable_extension(user_id(user)?, extension.into(), now_epoch())
         .await?)
@@ -473,7 +714,7 @@ pub(crate) async fn connect_extension(
     user: &ID,
     extension: ExtensionType,
 ) -> Result<ExtensionCredentials> {
-    require_operator(context)?;
+    require_owner(context)?;
     let token = new_token();
     let extension = repository(context)?
         .connect_extension(
@@ -520,7 +761,7 @@ pub(crate) async fn move_extension(
     input: MoveExtensionInput,
 ) -> Result<AccountLinkObject> {
     let user = user_id(&input.user_id)?;
-    require_operator_or_self(context, user)?;
+    require_owner_or_self(context, user)?;
     let connection_uri = connection_uri(&input.connection_uri)?;
     let api = context.data::<ApiContext>()?;
     let mut link = api
@@ -537,7 +778,7 @@ pub(crate) async fn pair_extension(
     input: PairExtensionInput,
 ) -> Result<AccountLinkObject> {
     let user = user_id(&input.user_id)?;
-    require_operator_or_self(context, user)?;
+    require_owner_or_self(context, user)?;
     let connection_uri = connection_uri(&input.connection_uri)?;
     let api = context.data::<ApiContext>()?;
     let extension: Extension = input.extension.into();
@@ -565,7 +806,7 @@ pub(crate) async fn viewer_account(
     context: &Context<'_>,
     extension: ExtensionType,
 ) -> Result<Option<AccountLinkObject>> {
-    let Some(user) = caller(context).and_then(|caller| caller.user) else {
+    let Some(user) = viewer_id(context) else {
         return Ok(None);
     };
     Ok(repository(context)?
@@ -580,7 +821,7 @@ pub(crate) async fn unpair_extension(
     extension: ExtensionType,
 ) -> Result<bool> {
     let user = user_id(user)?;
-    require_operator_or_self(context, user)?;
+    require_owner_or_self(context, user)?;
     Ok(repository(context)?
         .unlink_account(user, extension.into())
         .await?)

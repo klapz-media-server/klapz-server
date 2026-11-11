@@ -1,36 +1,33 @@
-//! HTTP token authentication, shared by every surface.
+//! HTTP authentication, shared by every surface.
 //!
 //! Lives here rather than in a binding because the official GraphQL API and the Plex adapter
-//! both need it, and neither should depend on the other. The middleware resolves the token
-//! to a [`Principal`] and attaches it to the request; each surface then enforces scope in
-//! its own idiom.
+//! both need it, and neither should depend on the other. The middleware resolves the request's
+//! credential to the user it belongs to — a [`Principal`] — and attaches it; each surface then
+//! enforces roles in its own idiom. There is no caller that is not a user.
 //!
-//! A browser that signed in with a password presents a session cookie instead of a token; the
-//! token, when there is one, wins, and the cookie wins over a trusted network, so a user signed
-//! in on that network is that user rather than the operator.
+//! Three credentials, tried in this order, the first that opens something winning:
 //!
-//! A request with no valid token is still admitted when it comes from a network the operator
-//! trusts, which is Plex's `allowedNetworks`: the one way a client with no plex.tv account,
-//! Plex Web among them, can talk to the server at all. It is an authentication bypass by
-//! design, so it is off unless configured, and it trusts the socket's address alone.
+//! - a Plex token, `X-Plex-Token`, issued here to one user's extension or by plex.tv to the
+//!   account a user paired;
+//! - a session as `Authorization: Bearer`, what a script or an API client sends after
+//!   `signIn`;
+//! - the same session in its cookie, what a browser sends.
 
-use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, Request, State};
+use axum::extract::{Request, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use ipnet::IpNet;
 use open_plex_core::access::{
     connection_uris_for_host, token_digest, user_principal, AccessRepository, Extension,
 };
 use open_plex_core::account::SessionKey;
-use open_plex_core::{Accounts, Principal};
+use open_plex_core::{Principal, PublishedServer};
 
 use crate::remote_tokens::RemoteTokens;
 
-/// The header and query parameter carrying the token.
+/// The header and query parameter carrying a Plex token.
 ///
 /// Both forms are required for compatibility: the artwork and stream URLs a server hands out
 /// embed the token in the query string, and the bundled Plex web client passes every
@@ -45,61 +42,27 @@ const TOKEN_KEY: &str = "X-Plex-Token";
 /// carry on anonymously into refusals it can only present as "not authorized".
 const PUBLIC_PATHS: &[&str] = &["/identity", crate::admin::PATH];
 
-/// Who may use the server: the accepted tokens, and the networks trusted without one.
-#[derive(Debug, Clone, Default)]
+/// Who may use the server: the users, the tokens issued to them and the sessions they open.
+#[derive(Debug)]
 pub struct Access {
-    accounts: Accounts,
-    trusted_networks: Vec<IpNet>,
-    users: Option<Arc<dyn AccessRepository>>,
+    users: Arc<dyn AccessRepository>,
     remote: Option<Arc<RemoteTokens>>,
     sessions: Option<Arc<SessionKey>>,
 }
 
 impl Access {
-    pub const fn new(accounts: Accounts, trusted_networks: Vec<IpNet>) -> Self {
+    pub fn new(users: Arc<dyn AccessRepository>) -> Self {
         Self {
-            accounts,
-            trusted_networks,
-            users: None,
+            users,
             remote: None,
             sessions: None,
         }
     }
 
-    /// Accepts the session cookies this key signed.
+    /// Accepts the sessions this key signed.
     #[must_use]
     pub fn with_sessions(mut self, key: Arc<SessionKey>) -> Self {
         self.sessions = Some(key);
-        self
-    }
-
-    /// The active user a session cookie names, with its libraries.
-    async fn session_of(&self, token: &str) -> Option<Principal> {
-        let user = self
-            .sessions
-            .as_ref()?
-            .verify(token, open_plex_core::now_epoch())?;
-        let users = self.users.as_ref()?;
-        let found = match users.user(user).await {
-            Ok(found) => found.filter(|user| user.active)?,
-            Err(error) => {
-                tracing::warn!(%error, "could not look a session's user up");
-                return None;
-            }
-        };
-        match users.permissions(found.id).await {
-            Ok(permissions) => Some(user_principal(found, &permissions)),
-            Err(error) => {
-                tracing::warn!(%error, "could not read a session's permissions");
-                None
-            }
-        }
-    }
-
-    /// Adds the users whose tokens are stored, on top of the operator's.
-    #[must_use]
-    pub fn with_users(mut self, users: Arc<dyn AccessRepository>) -> Self {
-        self.users = Some(users);
         self
     }
 
@@ -111,19 +74,46 @@ impl Access {
         self
     }
 
-    /// Who a token belongs to. A storage failure refuses the token rather than the server.
-    async fn authenticate(&self, token: &str) -> Option<Principal> {
-        if let Some(operator) = self.accounts.authenticate(token) {
-            return Some(operator.clone());
+    /// The active user a session names, with its libraries. The signature is checked by the
+    /// key, in constant time.
+    async fn session_of(&self, token: &str) -> Option<Principal> {
+        let user = self
+            .sessions
+            .as_ref()?
+            .verify(token, open_plex_core::now_epoch())?;
+        let found = match self.users.user(user).await {
+            Ok(found) => found.filter(|user| user.active)?,
+            Err(error) => {
+                tracing::warn!(%error, "could not look a session's user up");
+                return None;
+            }
+        };
+        match self.users.permissions(found.id).await {
+            Ok(permissions) => Some(user_principal(found, &permissions)),
+            Err(error) => {
+                tracing::warn!(%error, "could not read a session's permissions");
+                None
+            }
         }
-        let users = self.users.as_ref()?;
-        let grant = match users.grant(Extension::Plex, &token_digest(token)).await {
+    }
+
+    /// Who a Plex token belongs to. Looked up by its digest, so no comparison runs on the token
+    /// itself. A storage failure refuses the token rather than the server.
+    async fn plex_token_of(&self, token: &str) -> Option<Principal> {
+        let grant = match self
+            .users
+            .grant(Extension::Plex, &token_digest(token))
+            .await
+        {
             Ok(None) => {
                 let Some(account) = self.remote.as_ref()?.account_of(token).await else {
                     tracing::debug!("refused a token no account service attributes");
                     return None;
                 };
-                let grant = users.grant_for_account(Extension::Plex, &account).await;
+                let grant = self
+                    .users
+                    .grant_for_account(Extension::Plex, &account)
+                    .await;
                 if matches!(grant, Ok(None)) {
                     tracing::debug!(%account, "refused the token of an account not paired here");
                 }
@@ -140,16 +130,11 @@ impl Access {
         }
     }
 
-    /// Who a request naming no account is, from the address it was sent to.
-    async fn visitor_at(&self, host: &str) -> Option<Principal> {
+    /// The server published at the address a request naming no account was sent to.
+    async fn published_at(&self, host: &str) -> Option<PublishedServer> {
         let uris = connection_uris_for_host(host);
-        match self
-            .users
-            .as_ref()?
-            .connection_at(Extension::Plex, &uris)
-            .await
-        {
-            Ok(connection) => connection.map(|found| Principal::visitor_of(found.external_id)),
+        match self.users.connection_at(Extension::Plex, &uris).await {
+            Ok(connection) => connection.map(|found| PublishedServer(found.external_id)),
             Err(error) => {
                 tracing::warn!(%error, "could not look an address up");
                 None
@@ -157,35 +142,42 @@ impl Access {
         }
     }
 
-    /// Whether a peer address falls in a trusted network.
-    ///
-    /// Reduced to its canonical form first: a dual-stack socket reports an IPv4 client as
-    /// `::ffff:127.0.0.1`, which `127.0.0.1/32` would otherwise fail to match.
-    fn trusts(&self, peer: IpAddr) -> bool {
-        let peer = peer.to_canonical();
-        self.trusted_networks
-            .iter()
-            .any(|network| network.contains(&peer))
+    /// The user behind the first of the request's credentials that opens something.
+    async fn caller_of(&self, credentials: Credentials) -> Option<Principal> {
+        if let Some(token) = credentials.plex_token {
+            if let Some(principal) = self.plex_token_of(&token).await {
+                return Some(principal);
+            }
+        }
+        for session in [credentials.bearer, credentials.cookie]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(principal) = self.session_of(&session).await {
+                return Some(principal);
+            }
+        }
+        None
     }
 }
 
-/// Reads a comma-separated list of networks, each an address or a CIDR range.
-///
-/// # Errors
-///
-/// Fails on the first entry that is neither, naming it: a typo in a security setting must
-/// stop the server rather than leave it quietly trusting less, or more, than intended.
-pub fn parse_networks(list: &str) -> Result<Vec<IpNet>, String> {
-    list.split(',')
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-        .map(|entry| {
-            entry
-                .parse::<IpNet>()
-                .or_else(|_| entry.parse::<IpAddr>().map(IpNet::from))
-                .map_err(|_| format!("`{entry}` is not an address or a network"))
-        })
-        .collect()
+/// What a request presents, read before anything is awaited: a request's body cannot be held
+/// across an await.
+#[derive(Default)]
+struct Credentials {
+    plex_token: Option<String>,
+    bearer: Option<String>,
+    cookie: Option<String>,
+}
+
+impl Credentials {
+    fn of(request: &Request) -> Self {
+        Self {
+            plex_token: token_from(request),
+            bearer: bearer_token(request).map(str::to_owned),
+            cookie: session_cookie(request).map(str::to_owned),
+        }
+    }
 }
 
 /// The transcoder process calling back. It holds no token: these routes answer only on
@@ -209,43 +201,29 @@ pub async fn require_token(
     if crate::web::is_client_path(path) || is_transcoder_callback(path) || is_native_stream(path) {
         return next.run(request).await;
     }
-    let presented = token_from(&request);
-    let by_token = match presented {
-        Some(presented) => access.authenticate(&presented).await,
-        None => None,
-    };
+    let caller = access.caller_of(Credentials::of(&request)).await;
+
     // Public, but a caller who says who it is sees its own server's identifier, and one that
     // does not, the identifier of the server published at the address it used.
     if PUBLIC_PATHS.contains(&request.uri().path()) {
-        let principal = if by_token.is_some() {
-            by_token
+        if let Some(principal) = caller {
+            request.extensions_mut().insert(principal);
         } else {
-            // Read first: a request's body cannot be held across an await.
             let host = request
                 .headers()
                 .get(header::HOST)
                 .and_then(|host| host.to_str().ok())
                 .map(str::to_owned);
-            match host {
-                Some(host) => access.visitor_at(&host).await,
-                None => None,
+            if let Some(host) = host {
+                if let Some(published) = access.published_at(&host).await {
+                    request.extensions_mut().insert(published);
+                }
             }
-        };
-        if let Some(principal) = principal {
-            request.extensions_mut().insert(principal);
         }
         return next.run(request).await;
     }
 
-    let by_token = match (by_token, session_cookie(&request).map(str::to_owned)) {
-        (Some(principal), _) => Some(principal),
-        // Read first: a request's body cannot be held across an await.
-        (None, Some(session)) => access.session_of(&session).await,
-        (None, None) => None,
-    };
-    // A token that does not match still lets a trusted peer in: a client that once signed in
-    // elsewhere keeps sending its stale one, and refusing it would refuse the peer we trust.
-    let Some(principal) = by_token.or_else(|| trusted_peer(&access, &request)) else {
+    let Some(principal) = caller else {
         // Signing in happens on the GraphQL endpoint, before the caller is anyone. It goes
         // through with no principal, which the schema answers as nobody: it sees nothing.
         if request.uri().path() == "/graphql" {
@@ -262,17 +240,6 @@ pub async fn require_token(
     next.run(request).await
 }
 
-/// The principal of a request admitted for where it comes from.
-///
-/// The address is the socket's, never `X-Forwarded-For` or `X-Real-IP`: those are written by
-/// the client, and `X-Forwarded-For: 127.0.0.1` would otherwise grant anyone access.
-fn trusted_peer(access: &Access, request: &Request) -> Option<Principal> {
-    let ConnectInfo(peer) = request.extensions().get::<ConnectInfo<SocketAddr>>()?;
-    access
-        .trusts(peer.ip())
-        .then(|| Principal::operator("trusted network"))
-}
-
 /// The session cookie's value, if the request carries one.
 fn session_cookie(request: &Request) -> Option<&str> {
     request
@@ -287,7 +254,19 @@ fn session_cookie(request: &Request) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
-/// Reads the token from the header, falling back to the query string.
+/// The session an `Authorization: Bearer` header carries. The scheme is case-insensitive.
+fn bearer_token(request: &Request) -> Option<&str> {
+    let value = request
+        .headers()
+        .get(header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
+    let (scheme, token) = value.split_once(' ')?;
+    let token = token.trim();
+    (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then_some(token)
+}
+
+/// Reads the Plex token from the header, falling back to the query string.
 ///
 /// Header first because it is the form that does not end up in logs or `Referer`.
 fn token_from(request: &Request) -> Option<String> {
@@ -326,122 +305,124 @@ mod tests {
     use axum::http::Request;
     use axum::routing::get;
     use axum::{Extension, Router};
-    use open_plex_core::{Credential, Scope};
+    use open_plex_core::access::{
+        token_digest, AccessRepository, Extension as Protocol, NewUser, RemoteAccount, ServerRole,
+    };
+    use open_plex_core::account::SessionKey;
+    use open_plex_core::testing::{InMemoryAccess, StubDirectory};
+    use open_plex_core::{Principal, PublishedServer};
     use tower::ServiceExt;
 
-    use std::net::SocketAddr;
+    use super::{require_token, Access, Arc, StatusCode};
 
-    use axum::extract::ConnectInfo;
+    /// The Plex token of `alice`, an active owner.
+    const TOKEN: &str = "alice-plex-token";
 
-    use super::{parse_networks, require_token, Access, Accounts, Arc, StatusCode};
-
-    const TOKEN: &str = "owner-token";
-
-    /// Echoes the authenticated principal's name, or `anonymous` on a public route.
-    async fn whoami(principal: Option<Extension<open_plex_core::Principal>>) -> String {
-        principal.map_or_else(
-            || "anonymous".to_owned(),
-            |Extension(principal)| principal.name,
-        )
+    /// Echoes the caller's username, the server a stranger sees, or `anonymous`.
+    async fn whoami(
+        principal: Option<Extension<Principal>>,
+        published: Option<Extension<PublishedServer>>,
+    ) -> String {
+        match (principal, published) {
+            (Some(Extension(principal)), _) => principal.name,
+            (None, Some(Extension(PublishedServer(server)))) => format!("visitor of {server}"),
+            (None, None) => "anonymous".to_owned(),
+        }
     }
 
-    fn app() -> Router {
-        app_trusting("")
+    struct Fixture {
+        app: Router,
+        key: Arc<SessionKey>,
+        alice: open_plex_core::UserId,
+        bob: open_plex_core::UserId,
     }
 
-    fn app_trusting(networks: &str) -> Router {
-        let access = Arc::new(Access::new(
-            Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]),
-            parse_networks(networks).unwrap(),
-        ));
-        Router::new()
+    /// `alice`, an active owner with a Plex token and paired with the stub directory's account
+    /// when `paired`, its connection switched off unless `enabled`; and `bob`, who signed up
+    /// and waits.
+    async fn fixture(paired: bool, enabled: bool) -> Fixture {
+        let users = Arc::new(InMemoryAccess::default());
+        let alice = users
+            .create_user(
+                NewUser {
+                    username: "alice",
+                    email: Some("alice@example.org"),
+                    role: ServerRole::Owner,
+                    active: true,
+                    password_hash: None,
+                },
+                0,
+            )
+            .await
+            .unwrap()
+            .id;
+        let bob = users
+            .create_user(
+                NewUser {
+                    username: "bob",
+                    email: None,
+                    role: ServerRole::User,
+                    active: false,
+                    password_hash: Some("$argon2id$x"),
+                },
+                0,
+            )
+            .await
+            .unwrap()
+            .id;
+        users
+            .connect_extension(alice, Protocol::Plex, "server", &token_digest(TOKEN), 0)
+            .await
+            .unwrap();
+        if paired {
+            let account = RemoteAccount {
+                id: "linked".to_owned(),
+                name: "alice".to_owned(),
+                token: StubDirectory::ACCOUNT_TOKEN.to_owned(),
+            };
+            users
+                .link_account(alice, Protocol::Plex, &account, "https://a.example.org", 0)
+                .await
+                .unwrap();
+        }
+        if !enabled {
+            users
+                .disable_extension(alice, Protocol::Plex, 0)
+                .await
+                .unwrap();
+        }
+        let key = Arc::new(SessionKey::generate());
+        let access = Arc::new(
+            Access::new(users)
+                .with_remote_tokens(crate::remote_tokens::RemoteTokens::new(Arc::new(
+                    StubDirectory::default(),
+                )))
+                .with_sessions(Arc::clone(&key)),
+        );
+        let app = Router::new()
             // Plex's paths have segments starting with a colon.
             .without_v07_checks()
             .route("/library/sections", get(whoami))
             .route("/identity", get(whoami))
+            .route("/graphql", get(whoami))
             .route("/", get(whoami))
             .route("/streams/s1/0/header", get(whoami))
             .route("/video/:/transcode/universal/start.mpd", get(whoami))
-            .layer(axum::middleware::from_fn_with_state(access, require_token))
-    }
-
-    /// A request as it arrives from `peer`, with no token, through a router trusting
-    /// `networks`.
-    async fn call_from(networks: &str, peer: &str, forwarded_for: Option<&str>) -> StatusCode {
-        let mut request = Request::builder().uri("/library/sections");
-        if let Some(forwarded) = forwarded_for {
-            request = request.header("X-Forwarded-For", forwarded);
+            .layer(axum::middleware::from_fn_with_state(access, require_token));
+        Fixture {
+            app,
+            key,
+            alice,
+            bob,
         }
-        let mut request = request.body(Body::empty()).unwrap();
-        request
-            .extensions_mut()
-            .insert(ConnectInfo(peer.parse::<SocketAddr>().unwrap()));
-        app_trusting(networks)
-            .oneshot(request)
-            .await
-            .unwrap()
-            .status()
     }
 
-    #[tokio::test]
-    async fn admits_a_peer_from_a_trusted_network_without_a_token() {
-        assert_eq!(
-            call_from("127.0.0.1/32", "127.0.0.1:51000", None).await,
-            StatusCode::OK
-        );
-        assert_eq!(
-            call_from("::1/128", "[::1]:51000", None).await,
-            StatusCode::OK
-        );
+    async fn app() -> Router {
+        fixture(false, true).await.app
     }
 
-    #[tokio::test]
-    async fn trusts_nobody_by_default() {
-        assert_eq!(
-            call_from("", "127.0.0.1:51000", None).await,
-            StatusCode::UNAUTHORIZED
-        );
-    }
-
-    #[tokio::test]
-    async fn refuses_a_peer_outside_the_trusted_networks() {
-        assert_eq!(
-            call_from("127.0.0.1/32", "192.168.1.20:51000", None).await,
-            StatusCode::UNAUTHORIZED
-        );
-    }
-
-    #[tokio::test]
-    async fn never_trusts_a_forwarded_address() {
-        // The header is the client's word for where it comes from; the socket is the fact.
-        assert_eq!(
-            call_from("127.0.0.1/32", "192.168.1.20:51000", Some("127.0.0.1")).await,
-            StatusCode::UNAUTHORIZED
-        );
-    }
-
-    #[tokio::test]
-    async fn matches_an_ipv4_peer_seen_through_a_dual_stack_socket() {
-        assert_eq!(
-            call_from("127.0.0.1/32", "[::ffff:127.0.0.1]:51000", None).await,
-            StatusCode::OK
-        );
-    }
-
-    #[test]
-    fn reads_addresses_and_ranges_and_refuses_anything_else() {
-        assert_eq!(parse_networks("127.0.0.1/32, ::1").unwrap().len(), 2);
-        assert!(parse_networks("").unwrap().is_empty());
-        assert!(parse_networks("127.0.0.1/33").is_err());
-        assert!(parse_networks("localhost").is_err());
-    }
-
-    async fn call(uri: &str, header: Option<&str>) -> (StatusCode, String) {
-        let mut request = Request::builder().uri(uri);
-        if let Some(token) = header {
-            request = request.header("X-Plex-Token", token);
-        }
-        let response = app()
+    async fn send(app: Router, request: axum::http::request::Builder) -> (StatusCode, String) {
+        let response = app
             .oneshot(request.body(Body::empty()).expect("request builds"))
             .await
             .expect("router responds");
@@ -453,50 +434,47 @@ mod tests {
         (status, String::from_utf8_lossy(&body).into_owned())
     }
 
-    #[tokio::test]
-    async fn accepts_the_token_in_a_header() {
-        let (status, body) = call("/library/sections", Some(TOKEN)).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body, "owner");
+    async fn call(uri: &str, token: Option<&str>) -> (StatusCode, String) {
+        let mut request = Request::builder().uri(uri);
+        if let Some(token) = token {
+            request = request.header("X-Plex-Token", token);
+        }
+        send(app().await, request).await
     }
 
     #[tokio::test]
-    async fn accepts_the_token_in_the_query_string() {
+    async fn accepts_a_plex_token_in_a_header() {
+        assert_eq!(
+            call("/library/sections", Some(TOKEN)).await,
+            (StatusCode::OK, "alice".to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn accepts_a_plex_token_in_the_query_string() {
         // Artwork and stream URLs a server hands out carry it this way, and the bundled web
         // client passes every X-Plex-* value as a query parameter.
         let (status, body) = call(&format!("/library/sections?X-Plex-Token={TOKEN}"), None).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body, "owner");
+        assert_eq!((status, body.as_str()), (StatusCode::OK, "alice"));
     }
 
     #[tokio::test]
     async fn prefers_the_header_over_the_query_string() {
         // The header is the form that does not leak into logs or `Referer`.
         let (status, body) = call("/library/sections?X-Plex-Token=wrong", Some(TOKEN)).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body, "owner");
+        assert_eq!((status, body.as_str()), (StatusCode::OK, "alice"));
     }
 
     #[tokio::test]
-    async fn refuses_a_missing_or_unknown_token() {
-        assert_eq!(
-            call("/library/sections", None).await.0,
-            StatusCode::UNAUTHORIZED
-        );
-        assert_eq!(
-            call("/library/sections", Some("nope")).await.0,
-            StatusCode::UNAUTHORIZED
-        );
-    }
-
-    #[tokio::test]
-    async fn refuses_a_truncated_token() {
-        // The case a non-constant-time comparison would expose one byte at a time.
+    async fn refuses_a_missing_unknown_or_truncated_token() {
         let truncated = &TOKEN[..TOKEN.len() - 1];
-        assert_eq!(
-            call("/library/sections", Some(truncated)).await.0,
-            StatusCode::UNAUTHORIZED
-        );
+        for token in [None, Some("nope"), Some(truncated)] {
+            assert_eq!(
+                call("/library/sections", token).await.0,
+                StatusCode::UNAUTHORIZED,
+                "{token:?}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -510,130 +488,64 @@ mod tests {
         assert_eq!(body.len(), 91);
     }
 
-    /// A router knowing one user, paired with the account behind the stub directory's token.
-    async fn app_with_paired_user(enabled: bool) -> Router {
-        use open_plex_core::access::{AccessRepository, Extension as Protocol, RemoteAccount};
-        use open_plex_core::testing::{InMemoryAccess, StubDirectory};
-
-        let users = Arc::new(InMemoryAccess::default());
-        let user = users.create_user("a@example.org", 0).await.unwrap().id;
-        users
-            .connect_extension(user, Protocol::Plex, "server", "digest", 0)
-            .await
-            .unwrap();
-        let account = RemoteAccount {
-            id: "linked".to_owned(),
-            name: "alice".to_owned(),
-            token: StubDirectory::ACCOUNT_TOKEN.to_owned(),
-        };
-        users
-            .link_account(user, Protocol::Plex, &account, "https://a.example.org", 0)
-            .await
-            .unwrap();
-        if !enabled {
-            users
-                .disable_extension(user, Protocol::Plex, 0)
-                .await
-                .unwrap();
-        }
-        let access = Arc::new(
-            Access::new(Accounts::default(), Vec::new())
-                .with_users(users)
-                .with_remote_tokens(crate::remote_tokens::RemoteTokens::new(Arc::new(
-                    StubDirectory::default(),
-                ))),
-        );
-        Router::new()
-            .route("/library/sections", get(whoami))
-            .route("/identity", get(whoami))
-            .layer(axum::middleware::from_fn_with_state(access, require_token))
-    }
-
-    async fn identity_asked_at(app: Router, host: &str) -> String {
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/identity")
-                    .header("Host", host)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let body = http_body_util::BodyExt::collect(response.into_body())
-            .await
-            .unwrap()
-            .to_bytes();
-        String::from_utf8_lossy(&body).into_owned()
-    }
-
     #[tokio::test]
     async fn the_address_used_says_whose_identifier_a_stranger_sees() {
-        assert_eq!(
-            identity_asked_at(app_with_paired_user(true).await, "A.example.org").await,
-            "visitor"
-        );
-        assert_eq!(
-            identity_asked_at(app_with_paired_user(true).await, "b.example.org").await,
-            "anonymous"
-        );
-        assert_eq!(
-            identity_asked_at(app_with_paired_user(false).await, "a.example.org").await,
-            "anonymous"
-        );
-    }
-
-    async fn status_with(app: Router, token: &str) -> (StatusCode, String) {
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/library/sections")
-                    .header("X-Plex-Token", token)
-                    .body(Body::empty())
-                    .unwrap(),
+        let asked_at = |app: Router, host: &'static str| {
+            send(
+                app,
+                Request::builder().uri("/identity").header("Host", host),
             )
-            .await
-            .unwrap();
-        let status = response.status();
-        let body = http_body_util::BodyExt::collect(response.into_body())
-            .await
-            .unwrap()
-            .to_bytes();
-        (status, String::from_utf8_lossy(&body).into_owned())
+        };
+        assert_eq!(
+            asked_at(fixture(true, true).await.app, "A.example.org")
+                .await
+                .1,
+            "visitor of server"
+        );
+        assert_eq!(
+            asked_at(fixture(true, true).await.app, "b.example.org")
+                .await
+                .1,
+            "anonymous"
+        );
+        assert_eq!(
+            asked_at(fixture(true, false).await.app, "a.example.org")
+                .await
+                .1,
+            "anonymous"
+        );
     }
 
     #[tokio::test]
     async fn a_token_of_a_paired_account_acts_as_its_user() {
-        let (status, name) = status_with(
-            app_with_paired_user(true).await,
-            open_plex_core::testing::StubDirectory::ACCOUNT_TOKEN,
+        let (status, name) = send(
+            fixture(true, true).await.app,
+            Request::builder()
+                .uri("/library/sections")
+                .header("X-Plex-Token", StubDirectory::ACCOUNT_TOKEN),
         )
         .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(name, "a@example.org");
+        assert_eq!((status, name.as_str()), (StatusCode::OK, "alice"));
     }
 
     #[tokio::test]
-    async fn a_token_the_service_does_not_know_is_refused() {
-        let (status, _) = status_with(app_with_paired_user(true).await, "someone-else").await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn a_switched_off_connection_refuses_its_accounts_token() {
-        let (status, _) = status_with(
-            app_with_paired_user(false).await,
-            open_plex_core::testing::StubDirectory::ACCOUNT_TOKEN,
-        )
-        .await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    async fn a_switched_off_connection_refuses_its_tokens() {
+        for token in [TOKEN, StubDirectory::ACCOUNT_TOKEN] {
+            let (status, _) = send(
+                fixture(true, false).await.app,
+                Request::builder()
+                    .uri("/library/sections")
+                    .header("X-Plex-Token", token),
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{token}");
+        }
     }
 
     #[tokio::test]
     async fn a_streams_segments_need_no_token_but_starting_one_does() {
         // The stream's own secret is checked by its routes.
-        let segment = "/streams/s1/0/header";
-        assert_eq!(call(segment, None).await.0, StatusCode::OK);
+        assert_eq!(call("/streams/s1/0/header", None).await.0, StatusCode::OK);
         assert_eq!(
             call("/video/:/transcode/universal/start.mpd", None).await.0,
             StatusCode::UNAUTHORIZED
@@ -651,100 +563,92 @@ mod tests {
     async fn lets_identity_through_unauthenticated() {
         // Clients call it to decide whether a host is a Plex server at all, before they hold
         // any token.
-        let (status, body) = call("/identity", None).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body, "anonymous");
-    }
-
-    use open_plex_core::access::AccessRepository;
-    use open_plex_core::account::SessionKey;
-
-    /// A router accepting sessions, with one active and one inactive user, trusting
-    /// `networks`, and the cookie of each.
-    async fn app_with_sessions(networks: &str) -> (Router, String, String) {
-        let users = Arc::new(open_plex_core::testing::InMemoryAccess::default());
-        let active = users.create_user("alice@example.org", 0).await.unwrap();
-        let waiting = users
-            .sign_up("bob@example.org", "$argon2id$x", 0)
-            .await
-            .unwrap();
-        let key = Arc::new(SessionKey::generate());
-        let now = open_plex_core::now_epoch();
-        let cookie =
-            |token: String| format!("theme=dark; {}={token}", open_plex_api::SESSION_COOKIE);
-        let alice = cookie(key.issue(active.id, now).unwrap());
-        let bob = cookie(key.issue(waiting.id, now).unwrap());
-        let access = Arc::new(
-            Access::new(Accounts::default(), parse_networks(networks).unwrap())
-                .with_users(users)
-                .with_sessions(key),
-        );
-        let app = Router::new()
-            .route("/library/sections", get(whoami))
-            .route("/graphql", get(whoami))
-            .layer(axum::middleware::from_fn_with_state(access, require_token));
-        (app, alice, bob)
-    }
-
-    async fn call_with_cookie(
-        app: Router,
-        path: &str,
-        cookie: Option<&str>,
-    ) -> (StatusCode, String) {
-        let mut request = Request::builder().uri(path);
-        if let Some(cookie) = cookie {
-            request = request.header("Cookie", cookie);
-        }
-        let mut request = request.body(Body::empty()).unwrap();
-        request.extensions_mut().insert(ConnectInfo(
-            "127.0.0.1:51000".parse::<SocketAddr>().unwrap(),
-        ));
-        let response = app.oneshot(request).await.unwrap();
-        let status = response.status();
-        let body = http_body_util::BodyExt::collect(response.into_body())
-            .await
-            .unwrap()
-            .to_bytes();
-        (status, String::from_utf8_lossy(&body).into_owned())
-    }
-
-    #[tokio::test]
-    async fn a_session_cookie_acts_as_its_user() {
-        let (app, alice, _) = app_with_sessions("").await;
         assert_eq!(
-            call_with_cookie(app, "/library/sections", Some(&alice)).await,
-            (StatusCode::OK, "alice@example.org".to_owned())
+            call("/identity", None).await,
+            (StatusCode::OK, "anonymous".to_owned())
         );
     }
 
+    fn cookie(session: &str) -> String {
+        format!("theme=dark; {}={session}", open_plex_api::SESSION_COOKIE)
+    }
+
     #[tokio::test]
-    async fn a_session_wins_over_a_trusted_network() {
-        let (app, alice, _) = app_with_sessions("127.0.0.1/32").await;
-        let (_, body) = call_with_cookie(app.clone(), "/library/sections", Some(&alice)).await;
-        assert_eq!(body, "alice@example.org");
-        let (_, body) = call_with_cookie(app, "/library/sections", None).await;
-        assert_eq!(body, "trusted network");
+    async fn a_session_acts_as_its_user_in_a_cookie_or_as_a_bearer() {
+        let fixture = fixture(false, true).await;
+        let session = fixture
+            .key
+            .issue(fixture.alice, open_plex_core::now_epoch())
+            .unwrap();
+        for request in [
+            Request::builder().header("Cookie", cookie(&session)),
+            Request::builder().header("Authorization", format!("Bearer {session}")),
+            Request::builder().header("Authorization", format!("bearer {session}")),
+        ] {
+            assert_eq!(
+                send(fixture.app.clone(), request.uri("/library/sections")).await,
+                (StatusCode::OK, "alice".to_owned())
+            );
+        }
     }
 
     #[tokio::test]
     async fn the_session_of_an_inactive_user_or_an_altered_one_opens_nothing() {
-        let (app, alice, bob) = app_with_sessions("").await;
-        let altered = format!("{alice}x");
-        for cookie in [bob.as_str(), altered.as_str()] {
-            let (status, _) =
-                call_with_cookie(app.clone(), "/library/sections", Some(cookie)).await;
-            assert_eq!(status, StatusCode::UNAUTHORIZED, "{cookie}");
+        let fixture = fixture(false, true).await;
+        let now = open_plex_core::now_epoch();
+        let waiting = fixture.key.issue(fixture.bob, now).unwrap();
+        let altered = format!("{}x", fixture.key.issue(fixture.alice, now).unwrap());
+        let foreign = SessionKey::generate().issue(fixture.alice, now).unwrap();
+        for session in [&waiting, &altered, &foreign] {
+            for request in [
+                Request::builder().header("Cookie", cookie(session)),
+                Request::builder().header("Authorization", format!("Bearer {session}")),
+            ] {
+                let (status, _) = send(fixture.app.clone(), request.uri("/library/sections")).await;
+                assert_eq!(status, StatusCode::UNAUTHORIZED, "{session}");
+            }
         }
     }
 
     #[tokio::test]
+    async fn a_plex_token_is_not_a_bearer_session() {
+        let (status, _) = send(
+            app().await,
+            Request::builder()
+                .uri("/library/sections")
+                .header("Authorization", format!("Bearer {TOKEN}")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn a_stale_token_falls_back_to_the_session() {
+        let fixture = fixture(false, true).await;
+        let session = fixture
+            .key
+            .issue(fixture.alice, open_plex_core::now_epoch())
+            .unwrap();
+        let (status, name) = send(
+            fixture.app,
+            Request::builder()
+                .uri("/library/sections")
+                .header("X-Plex-Token", "stale")
+                .header("Cookie", cookie(&session)),
+        )
+        .await;
+        assert_eq!((status, name.as_str()), (StatusCode::OK, "alice"));
+    }
+
+    #[tokio::test]
     async fn the_graphql_endpoint_lets_nobody_through_to_sign_in_and_nothing_else_does() {
-        let (app, _, _) = app_with_sessions("").await;
         assert_eq!(
-            call_with_cookie(app.clone(), "/graphql", None).await,
+            call("/graphql", None).await,
             (StatusCode::OK, "anonymous".to_owned())
         );
-        let (status, _) = call_with_cookie(app, "/library/sections", None).await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            call("/library/sections", None).await.0,
+            StatusCode::UNAUTHORIZED
+        );
     }
 }

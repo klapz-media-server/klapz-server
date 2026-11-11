@@ -1307,7 +1307,7 @@ mod tests {
     fn recorded(key: &str) -> NewPlaybackSession {
         NewPlaybackSession {
             key: key.to_owned(),
-            user: None,
+            user: open_plex_core::UserId::new(1),
             playback_id: None,
             item: open_plex_core::RatingKey::new(1),
             part: open_plex_core::PartId::new(1),

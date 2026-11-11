@@ -21,7 +21,7 @@ pub const PREFIX: &str = "/web";
 /// The web client's routes, or `None` when `dir` holds no client.
 ///
 /// Absent rather than failing: the server is fully usable without the web client, and an
-/// operator who did not install one should not have to configure it away.
+/// installation without one should not have to configure it away.
 pub fn router(dir: &Path) -> Option<Router> {
     if !dir.join("index.html").is_file() {
         return None;

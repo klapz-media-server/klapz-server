@@ -9,7 +9,6 @@
 
 use open_plex_core::marker::{MarkerKind, MarkerValues, NewMarker};
 use open_plex_core::metadata::{MetadataItem, MetadataRepository};
-use open_plex_core::watch::Viewer;
 use open_plex_core::{MarkerId, RatingKey, UserId};
 use open_plex_db::entity::{item_marker, library_section, metadata_item};
 use open_plex_db::write;
@@ -18,8 +17,8 @@ use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 const EPISODE: i64 = 423_845;
 const FILM: i64 = 577_986;
-const VIEWER: Viewer = Viewer::User(UserId::new(3));
-const OTHER: Viewer = Viewer::User(UserId::new(4));
+const VIEWER: UserId = UserId::new(3);
+const OTHER: UserId = UserId::new(4);
 
 fn item(id: i64, kind: &str) -> metadata_item::ActiveModel {
     metadata_item::ActiveModel {
@@ -115,7 +114,7 @@ async fn film(repository: &SqlMetadataRepository) -> MetadataItem {
 
 fn bookmark(
     film: &MetadataItem,
-    viewer: Viewer,
+    viewer: UserId,
     start: i64,
     end: Option<i64>,
     title: Option<&str>,
@@ -204,7 +203,7 @@ async fn a_bookmark_is_seen_by_its_owner_and_by_nobody_else() {
     };
     assert_eq!(seen(Some(VIEWER)).await, 1);
     assert_eq!(seen(Some(OTHER)).await, 0);
-    assert_eq!(seen(Some(Viewer::Operator)).await, 0);
+    assert_eq!(seen(Some(UserId::new(1))).await, 0);
     assert_eq!(seen(None).await, 0);
 }
 

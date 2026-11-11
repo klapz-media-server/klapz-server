@@ -2,7 +2,7 @@
 //! by a saved listing.
 //!
 //! A collection belongs to its library, not to a viewer: whoever may read the library sees it
-//! and everything in it, and the library's admins and the operator change it. It holds items
+//! and everything in it, and the library's admins and the server's owners change it. It holds items
 //! of one kind, all from its library, each once.
 
 use crate::ids::{CollectionId, RatingKey, SectionId};

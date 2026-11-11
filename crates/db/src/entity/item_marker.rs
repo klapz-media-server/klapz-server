@@ -7,7 +7,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub item_id: i64,
-    /// Whose bookmark: a user's id, 0 for the operator. Null for the work's own markers.
+    /// Whose bookmark: a user's id. Null for the work's own markers.
     pub owner: Option<i64>,
     /// `intro`, `credits`, `commercial` or `bookmark`.
     pub kind: String,

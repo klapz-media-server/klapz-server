@@ -395,8 +395,8 @@ impl Query {
     /// runtime, and each film or episode marked watched. A position kept is no viewing, and
     /// marking an item unwatched leaves its history as it is.
     ///
-    /// A user reads its own; the operator reads everyone's, its own with `mine`. Empty for a
-    /// caller with no watch state. In the order recorded unless asked otherwise.
+    /// A user reads its own; an owner reads everyone's, its own with `mine`. Empty for a
+    /// request with no caller. In the order recorded unless asked otherwise.
     // One Rust parameter per field argument; see the note on `Library.items`.
     #[allow(clippy::too_many_arguments)]
     async fn viewing_history(
@@ -427,7 +427,7 @@ impl Query {
         .await
     }
 
-    /// Why the operator terminated one of the caller's playbacks, while its player has not
+    /// Why an owner terminated one of the caller's playbacks, while its player has not
     /// stopped: a player that finds its stream gone asks here.
     async fn playback_termination(
         &self,
@@ -437,7 +437,7 @@ impl Query {
         crate::playback::termination(context, &playback_id).await
     }
 
-    /// The caller's own playlists. Empty for a caller who is neither the operator nor a user.
+    /// The caller's own playlists. Empty for a request with no caller.
     // One Rust parameter per field argument; see the note on `Library.items`.
     #[allow(clippy::too_many_arguments)]
     async fn playlists(
@@ -532,13 +532,13 @@ impl Query {
         .await
     }
 
-    /// Who is asking: the operator, a user, or no one.
+    /// Who is asking: a user, or no one.
     async fn viewer(&self, context: &Context<'_>) -> crate::access::Viewer {
         crate::access::viewer(context)
     }
 
     /// The account the caller's connection is paired with on the extension's own service.
-    /// Null for the operator, who connects through no extension.
+    /// Null when it is not paired, or for a request with no caller.
     async fn viewer_account(
         &self,
         context: &Context<'_>,
@@ -547,7 +547,7 @@ impl Query {
         crate::access::viewer_account(context, extension).await
     }
 
-    /// The people who can be given access to this server. For its operator only.
+    /// The people who can be given access to this server. For its owners only.
     async fn users(
         &self,
         context: &Context<'_>,

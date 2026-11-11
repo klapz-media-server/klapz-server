@@ -12,8 +12,8 @@ use open_plex_core::access::{LibraryAccess, LibraryRole};
 use open_plex_core::metadata::{ItemKind, MetadataItem};
 use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata, InMemoryPlaylists};
 use open_plex_core::{
-    Accounts, LibrarySection, Principal, RatingKey, Scope, SectionId, SectionKind,
-    ServerCapabilities, ServerIdentity, UserId,
+    LibrarySection, Principal, RatingKey, SectionId, SectionKind, ServerCapabilities,
+    ServerIdentity, UserId,
 };
 use serde_json::Value;
 use tower::ServiceExt;
@@ -100,16 +100,11 @@ fn schema() -> ApiSchema {
 
 fn app_as(schema: &ApiSchema, caller: Principal) -> axum::Router {
     let identity = ServerIdentity::new(MACHINE, "0.1.0-dev");
-    router(PlexState::new(
-        identity,
-        schema.clone(),
-        Accounts::new(Vec::new()),
-    ))
-    .layer(axum::Extension(caller))
+    router(PlexState::new(identity, schema.clone())).layer(axum::Extension(caller))
 }
 
-fn operator(schema: &ApiSchema) -> axum::Router {
-    app_as(schema, Principal::operator("owner"))
+fn owner(schema: &ApiSchema) -> axum::Router {
+    app_as(schema, open_plex_core::testing::owner())
 }
 
 fn user(schema: &ApiSchema, id: i64) -> axum::Router {
@@ -117,7 +112,7 @@ fn user(schema: &ApiSchema, id: i64) -> axum::Router {
         schema,
         Principal {
             name: format!("user{id}"),
-            scope: Scope::User,
+            role: open_plex_core::ServerRole::User,
             libraries: LibraryAccess::Only(
                 [
                     (SectionId::new(27), LibraryRole::Viewer),
@@ -126,7 +121,7 @@ fn user(schema: &ApiSchema, id: i64) -> axum::Router {
                 .into_iter()
                 .collect(),
             ),
-            user: Some(UserId::new(id)),
+            user: UserId::new(id),
             server_identifier: None,
         },
     )
@@ -239,7 +234,7 @@ async fn add(app: &axum::Router, queue: i64, key: i64, next: bool) -> Value {
 #[tokio::test]
 async fn additions_go_where_the_reference_puts_them() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, SHOW, "").await;
     let queue = queue_id(&created);
     let [first, _] = ids(&created)[..] else {
@@ -291,7 +286,7 @@ async fn additions_go_where_the_reference_puts_them() {
 #[tokio::test]
 async fn adding_a_series_queues_its_episodes_and_nothing_adds_nothing() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let queue = queue_id(&create(&app, FILM, "").await);
     let added = add(&app, queue, SHOW, true).await;
     assert_eq!(rating_keys(&added), [FILM, EPISODE_1, EPISODE_2]);
@@ -315,7 +310,7 @@ async fn adding_a_series_queues_its_episodes_and_nothing_adds_nothing() {
 #[tokio::test]
 async fn an_empty_queue_plays_what_is_added_first() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let empty = container(&app, Method::POST, "/playQueues?type=video&uri=nonsense").await;
     assert!(empty.get("playQueueSelectedItemID").is_none());
     let queue = queue_id(&empty);
@@ -332,7 +327,7 @@ async fn an_empty_queue_plays_what_is_added_first() {
 #[tokio::test]
 async fn moves_follow_the_reference_s_reading_of_after() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let queue = queue_id(&create(&app, SHOW, "").await);
     let added = add(&app, queue, FILM, false).await;
     let [e1, soul, e2] = ids(&added)[..] else {
@@ -373,7 +368,7 @@ async fn moves_follow_the_reference_s_reading_of_after() {
 #[tokio::test]
 async fn a_removal_answers_with_the_container_as_it_was() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let queue = queue_id(&create(&app, SHOW, "").await);
     add(&app, queue, FILM, false).await;
     let added = add(&app, queue, FILM, false).await;
@@ -410,7 +405,7 @@ async fn a_removal_answers_with_the_container_as_it_was() {
 #[tokio::test]
 async fn clearing_keeps_the_entry_playing() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let queue = queue_id(&create(&app, SHOW, "").await);
     let added = add(&app, queue, FILM, false).await;
     let cleared = container(&app, Method::DELETE, &format!("/playQueues/{queue}/items")).await;
@@ -427,7 +422,7 @@ async fn clearing_keeps_the_entry_playing() {
 #[tokio::test]
 async fn a_reset_answers_with_the_container_as_it_was() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = container(
         &app,
         Method::POST,
@@ -456,7 +451,7 @@ async fn a_reset_answers_with_the_container_as_it_was() {
 #[tokio::test]
 async fn shuffling_keeps_the_entry_playing_and_renews_the_others() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, SHOW, &format!("&key=/library/metadata/{EPISODE_2}")).await;
     let queue = queue_id(&created);
     let [e1, e2] = ids(&created)[..] else {
@@ -489,7 +484,7 @@ async fn shuffling_keeps_the_entry_playing_and_renews_the_others() {
 #[tokio::test]
 async fn a_player_keeps_one_queue_of_each_type() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let create_for = |client: &'static str, kind: &'static str| {
         let app = app.clone();
         async move {
@@ -523,7 +518,7 @@ async fn a_player_keeps_one_queue_of_each_type() {
 #[tokio::test]
 async fn continuous_plays_an_episode_on_to_the_end_of_its_series() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let first = create(&app, EPISODE_1, "&continuous=1").await;
     assert_eq!(rating_keys(&first), [EPISODE_1, EPISODE_2]);
     assert_eq!(
@@ -542,7 +537,7 @@ async fn continuous_plays_an_episode_on_to_the_end_of_its_series() {
 #[tokio::test]
 async fn repeat_fills_the_window_from_the_other_end() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let queue = queue_id(&create(&app, SHOW, "").await);
     for _ in 0..3 {
         add(&app, queue, FILM, false).await;
@@ -560,7 +555,7 @@ async fn repeat_fills_the_window_from_the_other_end() {
 #[tokio::test]
 async fn an_unknown_queue_is_not_found_everywhere() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     for (method, uri) in [
         (Method::GET, "/playQueues/99999999".to_owned()),
         (
@@ -619,7 +614,7 @@ async fn another_viewer_s_queue_does_not_exist() {
 #[tokio::test]
 async fn xml_names_each_entry_after_its_type() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let queue = queue_id(&create(&app, SHOW, "").await);
     let (status, body) = send_as(
         &app,

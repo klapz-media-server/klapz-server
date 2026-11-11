@@ -17,7 +17,6 @@ use sea_orm::{Condition, Order, QueryFilter, QueryOrder, QueryResult, QuerySelec
 
 use crate::entity::{media, metadata_item, watch_state};
 use crate::metadata_repository::kind_name;
-use crate::watch_repository::viewer_id;
 
 /// The column the leading value is read back from.
 const KEY_COLUMN: &str = "order_key";
@@ -101,7 +100,7 @@ impl ItemOrder {
                                 .from(watch_state::Entity)
                                 .and_where(
                                     Expr::col((watch_state::Entity, watch_state::Column::Viewer))
-                                        .eq(viewer_id(viewer)),
+                                        .eq(viewer.get()),
                                 )
                                 .and_where(
                                     Expr::col((watch_state::Entity, watch_state::Column::Guid))

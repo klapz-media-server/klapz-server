@@ -27,10 +27,11 @@ pub mod stream;
 pub mod tracks;
 pub mod watch;
 
-#[cfg(feature = "testing")]
+#[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
-pub use auth::{Accounts, Credential, Principal, Scope};
+pub use access::ServerRole;
+pub use auth::{Principal, PublishedServer};
 pub use identity::{
     now_epoch, ServerCapabilities, ServerFeatures, ServerIdentity, TranscoderCapabilities,
 };

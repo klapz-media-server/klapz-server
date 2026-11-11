@@ -5,9 +5,7 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::watch::{
-    Viewer, Viewing, WatchRepository, WatchState, VIEWING_LIFETIME_SECONDS,
-};
+use open_plex_core::watch::{Viewing, WatchRepository, WatchState, VIEWING_LIFETIME_SECONDS};
 use open_plex_core::{RatingKey, UserId};
 use open_plex_db::entity::{library_section, metadata_item};
 use open_plex_db::write;
@@ -100,18 +98,18 @@ fn watched(count: u32) -> WatchState {
 #[tokio::test]
 async fn keeps_one_state_per_viewer_and_work() {
     let repository = repository().await;
-    let alice = Viewer::User(UserId::new(7));
+    let alice = UserId::new(7);
     repository
-        .save(Viewer::Operator, &[(guid(EPISODE_1), watched(1))])
+        .save(UserId::new(1), &[(guid(EPISODE_1), watched(1))])
         .await
         .unwrap();
     repository
-        .save(Viewer::Operator, &[(guid(EPISODE_1), watched(2))])
+        .save(UserId::new(1), &[(guid(EPISODE_1), watched(2))])
         .await
         .unwrap();
 
     let mine = repository
-        .states(Viewer::Operator, &[guid(EPISODE_1), guid(EPISODE_2)])
+        .states(UserId::new(1), &[guid(EPISODE_1), guid(EPISODE_2)])
         .await
         .unwrap();
     assert_eq!(mine, vec![(guid(EPISODE_1), watched(2))]);
@@ -124,14 +122,11 @@ async fn keeps_one_state_per_viewer_and_work() {
 
     // An empty state is no row at all.
     repository
-        .save(
-            Viewer::Operator,
-            &[(guid(EPISODE_1), WatchState::default())],
-        )
+        .save(UserId::new(1), &[(guid(EPISODE_1), WatchState::default())])
         .await
         .unwrap();
     assert!(repository
-        .states(Viewer::Operator, &[guid(EPISODE_1)])
+        .states(UserId::new(1), &[guid(EPISODE_1)])
         .await
         .unwrap()
         .is_empty());
@@ -147,7 +142,7 @@ async fn counts_the_episodes_watched_below_a_season_and_a_series() {
     };
     repository
         .save(
-            Viewer::Operator,
+            UserId::new(1),
             &[
                 (guid(EPISODE_1), watched(3)),
                 (guid(EPISODE_2), in_progress),
@@ -158,7 +153,7 @@ async fn counts_the_episodes_watched_below_a_season_and_a_series() {
 
     let mut counts = repository
         .watched_leaves(
-            Viewer::Operator,
+            UserId::new(1),
             &[RatingKey::new(SHOW), RatingKey::new(SEASON)],
         )
         .await
@@ -170,7 +165,7 @@ async fn counts_the_episodes_watched_below_a_season_and_a_series() {
         vec![(RatingKey::new(SHOW), 1), (RatingKey::new(SEASON), 1)]
     );
     assert!(repository
-        .watched_leaves(Viewer::User(UserId::new(7)), &[RatingKey::new(SHOW)])
+        .watched_leaves(UserId::new(7), &[RatingKey::new(SHOW)])
         .await
         .unwrap()
         .is_empty());
@@ -185,12 +180,12 @@ async fn remembers_a_playback_until_it_expires() {
         completed: false,
     };
     repository
-        .remember(Viewer::Operator, "client:session", viewing, NOW)
+        .remember(UserId::new(1), "client:session", viewing, NOW)
         .await
         .unwrap();
     assert_eq!(
         repository
-            .viewing(Viewer::Operator, "client:session", NOW + 10)
+            .viewing(UserId::new(1), "client:session", NOW + 10)
             .await
             .unwrap(),
         Some(viewing)
@@ -198,7 +193,7 @@ async fn remembers_a_playback_until_it_expires() {
     assert_eq!(
         repository
             .viewing(
-                Viewer::Operator,
+                UserId::new(1),
                 "client:session",
                 NOW + VIEWING_LIFETIME_SECONDS
             )
@@ -214,12 +209,12 @@ async fn remembers_a_playback_until_it_expires() {
         ..viewing
     };
     repository
-        .remember(Viewer::Operator, "client:session", later, NOW + 20)
+        .remember(UserId::new(1), "client:session", later, NOW + 20)
         .await
         .unwrap();
     assert_eq!(
         repository
-            .viewing(Viewer::Operator, "client:session", NOW + 30)
+            .viewing(UserId::new(1), "client:session", NOW + 30)
             .await
             .unwrap(),
         Some(later)
@@ -237,7 +232,7 @@ async fn a_track_choice_is_kept_per_viewer_and_file_and_an_empty_one_forgotten()
         subtitle: Some(SubtitleChoice::Off),
     };
     repository
-        .choose_tracks(Viewer::Operator, file, off)
+        .choose_tracks(UserId::new(1), file, off)
         .await
         .unwrap();
     let chosen = TrackChoice {
@@ -245,7 +240,7 @@ async fn a_track_choice_is_kept_per_viewer_and_file_and_an_empty_one_forgotten()
         subtitle: Some(SubtitleChoice::Track(StreamId::new(8))),
     };
     repository
-        .choose_tracks(Viewer::User(open_plex_core::UserId::new(3)), file, chosen)
+        .choose_tracks(open_plex_core::UserId::new(3), file, chosen)
         .await
         .unwrap();
 
@@ -258,16 +253,13 @@ async fn a_track_choice_is_kept_per_viewer_and_file_and_an_empty_one_forgotten()
                 .unwrap()
         }
     };
-    assert_eq!(read(Viewer::Operator).await, [(file, off)]);
-    assert_eq!(
-        read(Viewer::User(open_plex_core::UserId::new(3))).await,
-        [(file, chosen)]
-    );
+    assert_eq!(read(UserId::new(1)).await, [(file, off)]);
+    assert_eq!(read(open_plex_core::UserId::new(3)).await, [(file, chosen)]);
     repository
-        .choose_tracks(Viewer::Operator, file, TrackChoice::default())
+        .choose_tracks(UserId::new(1), file, TrackChoice::default())
         .await
         .unwrap();
-    assert!(read(Viewer::Operator).await.is_empty());
+    assert!(read(UserId::new(1)).await.is_empty());
 }
 
 /// The seeded library, with one file for an episode: a choice of tracks belongs to a file.

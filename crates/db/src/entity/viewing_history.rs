@@ -6,7 +6,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    /// A user's id, or 0 for the operator.
+    /// A user's id.
     pub viewer: i64,
     pub item_id: i64,
     pub kind: String,

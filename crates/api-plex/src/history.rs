@@ -2,7 +2,7 @@
 //!
 //! Bound onto `viewingHistory` and `deleteHistoryEntry`. Each Plex user has a server of its
 //! own here, so the history a token reads is its own viewer's, every entry `accountID` 1 —
-//! the account a server's owner has on the reference. The operator's GraphQL view of
+//! the account a server's owner has on the reference. An owner's GraphQL view of
 //! everyone's history has no counterpart on this surface.
 //!
 //! Measured on the reference: the listing holds what was played to the end (`viewType` 0)

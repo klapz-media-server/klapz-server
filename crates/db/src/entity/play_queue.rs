@@ -6,8 +6,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    #[sea_orm(column_type = "Text")]
-    pub user_id: Option<i64>,
+    pub user_id: i64,
     /// The player it was made for, as it identifies itself.
     pub client: Option<String>,
     /// `video`, `audio` or `photo`: a player keeps one queue of each.

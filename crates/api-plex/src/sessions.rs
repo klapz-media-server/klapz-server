@@ -1,4 +1,4 @@
-//! `GET /status/sessions`: what is playing on the server right now, and the operator ending a
+//! `GET /status/sessions`: what is playing on the server right now, and an owner ending a
 //! session of it.
 //!
 //! Plex Web polls it to draw the activity indicator and its dashboard. Sessions come from the

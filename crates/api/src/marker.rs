@@ -2,7 +2,7 @@
 //! that add, change and remove one.
 //!
 //! Who may write follows whose a marker is. An intro, the credits or a commercial belongs to
-//! the work, and is written by the item's library's admins and the operator, as an item's
+//! the work, and is written by the item's library's admins and the server's owners, as an item's
 //! metadata is. A bookmark belongs to the caller who keeps it, and to nobody else: any caller
 //! who reads the item may keep one, and only its owner sees, moves or removes it. What a caller
 //! may not write answers as if it did not exist.
@@ -19,8 +19,7 @@ use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{Context, Enum, InputObject, MaybeUndefined, Object, Result, SimpleObject, ID};
 use open_plex_core::marker::{Marker, MarkerError, MarkerKind, MarkerValues, NewMarker};
 use open_plex_core::metadata::{MetadataError, MetadataItem, MetadataRepository};
-use open_plex_core::watch::Viewer;
-use open_plex_core::{MarkerId, RatingKey};
+use open_plex_core::{MarkerId, RatingKey, UserId};
 
 use crate::cursor::OpaqueCursor;
 use crate::item::{Item, ITEM_TYPE};
@@ -139,19 +138,19 @@ impl MarkersLoader {
     }
 }
 
-impl Loader<(Option<Viewer>, RatingKey)> for MarkersLoader {
+impl Loader<(Option<UserId>, RatingKey)> for MarkersLoader {
     type Value = Vec<Marker>;
     type Error = Arc<MetadataError>;
 
     async fn load(
         &self,
-        keys: &[(Option<Viewer>, RatingKey)],
-    ) -> Result<HashMap<(Option<Viewer>, RatingKey), Self::Value>, Self::Error> {
-        let mut by_viewer: HashMap<Option<Viewer>, Vec<RatingKey>> = HashMap::new();
+        keys: &[(Option<UserId>, RatingKey)],
+    ) -> Result<HashMap<(Option<UserId>, RatingKey), Self::Value>, Self::Error> {
+        let mut by_viewer: HashMap<Option<UserId>, Vec<RatingKey>> = HashMap::new();
         for (viewer, item) in keys {
             by_viewer.entry(*viewer).or_default().push(*item);
         }
-        let mut found: HashMap<(Option<Viewer>, RatingKey), Self::Value> = HashMap::new();
+        let mut found: HashMap<(Option<UserId>, RatingKey), Self::Value> = HashMap::new();
         for (viewer, items) in by_viewer {
             for marker in self
                 .repository
@@ -166,8 +165,8 @@ impl Loader<(Option<Viewer>, RatingKey)> for MarkersLoader {
     }
 }
 
-fn viewer_of(context: &Context<'_>) -> Option<Viewer> {
-    crate::access::caller(context).and_then(Viewer::of)
+fn viewer_of(context: &Context<'_>) -> Option<UserId> {
+    crate::access::viewer_id(context)
 }
 
 /// The markers of an item the caller reads, in the order they were added.

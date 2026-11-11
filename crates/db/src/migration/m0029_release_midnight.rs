@@ -311,7 +311,7 @@ mod tests {
             .await
             .unwrap();
 
-        Migrator::up(&connection, None).await.unwrap();
+        Migrator::up(&connection, Some(1)).await.unwrap();
         assert_eq!(
             column::<i64>(&connection, RELEASED).await,
             [

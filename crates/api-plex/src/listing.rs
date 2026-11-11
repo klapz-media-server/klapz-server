@@ -79,7 +79,7 @@ const CONTROL_PARAMS: &[&str] = &[
 
 #[derive(Debug, thiserror::Error)]
 pub enum ListingError {
-    /// A filter the server advertises that we cannot translate yet. Named so the operator's
+    /// A filter the server advertises that we cannot translate yet. Named so the server's
     /// log says which one, and so the message is actionable rather than "not implemented".
     #[error("the `{0}` filter is not implemented")]
     UnsupportedFilter(String),

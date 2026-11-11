@@ -28,7 +28,6 @@ jsonwebtoken = { version = "9", default-features = false }
 axum = "0.8"
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "net", "fs", "signal"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "pnm", "webp"] }
-ipnet = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 tower = "0.5"
 tower-http = { version = "0.6", default-features = false, features = ["trace", "timeout", "limit", "set-header", "fs", "cors"] }

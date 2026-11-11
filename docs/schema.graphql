@@ -3,6 +3,14 @@ Why an account operation was refused.
 """
 enum AccountErrorCode {
 	"""
+	Not 3 to 32 letters, digits, `.`, `_` or `-` starting with a letter or a digit.
+	"""
+	INVALID_USERNAME
+	"""
+	Another user has this username, whatever its case.
+	"""
+	USERNAME_TAKEN
+	"""
 	Not an e-mail address.
 	"""
 	INVALID_EMAIL
@@ -15,18 +23,27 @@ enum AccountErrorCode {
 	"""
 	EMAIL_TAKEN
 	"""
-	No user with this address and this password. Worded the same for both, so a stranger
-	cannot learn which addresses have an account.
+	No user with this username or address and this password. Worded the same for both, so
+	a stranger cannot learn which accounts exist.
 	"""
 	INVALID_CREDENTIALS
 	"""
-	The password is right, but the operator has not let this user in yet, or shut it out.
+	The password is right, but no owner has let this user in yet, or one shut it out.
 	"""
 	INACTIVE
 	"""
-	Too many failed attempts on this address: wait fifteen minutes.
+	Too many failed attempts on this username or address: wait fifteen minutes.
 	"""
 	TOO_MANY_ATTEMPTS
+	"""
+	No such user.
+	"""
+	USER_NOT_FOUND
+	"""
+	The built-in `admin` account stays an active owner: it cannot be demoted, deactivated
+	or deleted.
+	"""
+	BUILT_IN_ACCOUNT
 }
 
 type AccountLink {
@@ -849,6 +866,43 @@ type CreatePlaylistPayload {
 }
 
 """
+A user to create.
+"""
+input CreateUserInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	3 to 32 letters, digits, `.`, `_` or `-`, starting with a letter or a digit. Stored in
+	lower case: two users cannot differ by case alone.
+	"""
+	username: String!
+	"""
+	An address the user can also sign in with. Compared without regard to case.
+	"""
+	email: String
+}
+
+"""
+What `createUser` did.
+"""
+type CreateUserPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The user created: active, with no password and no library. Null when none was.
+	"""
+	user: User
+	"""
+	Why none was. Empty when one was.
+	"""
+	userErrors: [AccountUserError!]!
+}
+
+"""
 A date-time as RFC 3339 defines it, with an offset. Written in UTC (`Z`) to the second;
 read with any offset, a fraction of a second dropped.
 """
@@ -980,6 +1034,24 @@ type DeletePlaylistPayload {
 	Why the request was refused. Empty on success.
 	"""
 	userErrors: [PlaylistUserError!]!
+}
+
+"""
+What `deleteUser` did.
+"""
+type DeleteUserPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	Whether a user was deleted.
+	"""
+	deleted: Boolean!
+	"""
+	Why none was. Empty when one was.
+	"""
+	userErrors: [AccountUserError!]!
 }
 
 type DolbyVision {
@@ -1469,7 +1541,7 @@ type HistoryEntry implements Node {
 	"""
 	libraryId: ID!
 	"""
-	Who watched. Null when the operator did.
+	Who watched. Null once that user is deleted.
 	"""
 	user: User
 	"""
@@ -1530,7 +1602,7 @@ Narrows a history. Every field is combined with `AND`.
 """
 input HistoryFilterInput {
 	"""
-	Only the caller's own viewings. The operator's are those it made itself.
+	Only the caller's own viewings, which for an owner leaves out everyone else's.
 	"""
 	mine: Boolean
 	"""
@@ -3364,9 +3436,9 @@ type Mutation {
 		input: StartStreamInput!
 	): StartStreamPayload!
 	"""
-	Ends a session for the operator: its stream stops at once, and its player learns why
-	from `PlaybackSession.termination` or `playbackTermination`, until it stops. For the
-	server's operator only.
+	Ends a session for an owner: its stream stops at once, and its player learns why from
+	`PlaybackSession.termination` or `playbackTermination`, until it stops. For the
+	server's owners only.
 	"""
 	terminatePlaybackSession(
 		"""
@@ -3474,7 +3546,7 @@ type Mutation {
 		positionMs: Int!
 	): WatchState!
 	"""
-	Deletes one viewing from a history: the caller's own, or anyone's for the operator.
+	Deletes one viewing from a history: the caller's own, or anyone's for an owner.
 	What was watched stays as it is, as on the reference.
 	"""
 	deleteHistoryEntry(
@@ -3572,26 +3644,36 @@ type Mutation {
 		key: String!
 	): Boolean!
 	"""
-	Creates a user. For the server's operator only.
+	Creates a user, active, with no password and no library. For the server's owners only.
 	"""
 	createUser(
 		"""
-		The user's e-mail address.
+		The user's username, and its address if it has one.
 		"""
-		email: String!
-	): User!
+		input: CreateUserInput!
+	): CreateUserPayload!
 	"""
-	Deletes a user, its permissions and its connections. Whether there was one. For the
-	server's operator only.
+	Deletes a user, its permissions and its connections. For the server's owners only; the
+	built-in `admin` account cannot be deleted.
 	"""
 	deleteUser(
 		"""
-		The user, as returned in `User.id`.
+		The user to delete.
 		"""
-		id: ID!
-	): Boolean!
+		input: UserInput!
+	): DeleteUserPayload!
 	"""
-	Gives a user a role on a library, replacing the one it had. For the server's operator
+	Makes a user an owner of the server, or no longer one. For the server's owners only; the
+	built-in `admin` account cannot be demoted.
+	"""
+	setUserRole(
+		"""
+		The user and its new role.
+		"""
+		input: SetUserRoleInput!
+	): UserPayload!
+	"""
+	Gives a user a role on a library, replacing the one it had. For the server's owners
 	only.
 	"""
 	setLibraryPermission(
@@ -3601,7 +3683,7 @@ type Mutation {
 		input: SetLibraryPermissionInput!
 	): Boolean!
 	"""
-	Takes a library away from a user. Whether it had access. For the server's operator only.
+	Takes a library away from a user. Whether it had access. For the server's owners only.
 	"""
 	removeLibraryPermission(
 		"""
@@ -3615,7 +3697,7 @@ type Mutation {
 	): Boolean!
 	"""
 	Switches a user's connection off: its token stops working and its identifier is kept.
-	Whether it was on. For the server's operator only.
+	Whether it was on. For the server's owners only.
 	"""
 	disableExtension(
 		"""
@@ -3629,7 +3711,7 @@ type Mutation {
 	): Boolean!
 	"""
 	Connects a user through an extension, returning a new token. Called again, it replaces
-	the token and keeps the identifier clients recognize. For the server's operator only.
+	the token and keeps the identifier clients recognize. For the server's owners only.
 	"""
 	connectExtension(
 		"""
@@ -3643,7 +3725,7 @@ type Mutation {
 	): ExtensionCredentials!
 	"""
 	Ties a user's connection to its account on the extension's own service, and tells that
-	service where the server can be reached. For the server's operator, and for the user
+	service where the server can be reached. For the server's owners, and for the user
 	itself.
 	"""
 	pairExtension(
@@ -3654,7 +3736,7 @@ type Mutation {
 	): AccountLink!
 	"""
 	Changes where a paired server is reached, and tells the extension's service at once:
-	what a tunnel or a new domain needs, without pairing again. For the server's operator,
+	what a tunnel or a new domain needs, without pairing again. For the server's owners,
 	and for the user itself.
 	"""
 	moveExtension(
@@ -3665,7 +3747,7 @@ type Mutation {
 	): AccountLink!
 	"""
 	Forgets the account tied to a user's connection. Whether there was one. For the server's
-	operator, and for the user itself.
+	owners, and for the user itself.
 	"""
 	unpairExtension(
 		"""
@@ -3678,23 +3760,24 @@ type Mutation {
 		extension: ExtensionType!
 	): Boolean!
 	"""
-	Creates an account that signs in with a password. It waits, inactive, until the
-	operator lets it in. Open to anyone.
+	Creates an account that signs in with a password. It waits, inactive, until an owner
+	lets it in. Open to anyone.
 	"""
 	signUp(
 		"""
-		The address and password of the new account.
+		The username, address and password of the new account.
 		"""
 		input: SignUpInput!
 	): SignUpPayload!
 	"""
-	Checks an address and its password and, when they match an active user, opens a
-	session for it: a cookie the server reads on every request. Open to anyone; failed
-	attempts on one address are limited.
+	Checks a username or an address and its password and, when they match an active user,
+	opens a session for it: a cookie the server reads on every request, whose value a
+	client that is no browser can present as `Authorization: Bearer`. Open to anyone;
+	failed attempts on one username or address are limited.
 	"""
 	signIn(
 		"""
-		The address and password to sign in with.
+		The username or address, and the password, to sign in with.
 		"""
 		input: SignInInput!
 	): SignInPayload!
@@ -3703,26 +3786,27 @@ type Mutation {
 	"""
 	signOut: Boolean!
 	"""
-	Lets in a user who signed up, or one that was shut out. For the server's operator only.
+	Lets in a user who signed up, or one that was shut out. For the server's owners only.
 	"""
 	activateUser(
 		"""
-		The user, as returned in `User.id`.
+		The user to let in.
 		"""
-		id: ID!
-	): User!
+		input: UserInput!
+	): UserPayload!
 	"""
 	Shuts a user out: its sessions and its tokens stop opening anything at once, and it
-	keeps its libraries for when it is let in again. For the server's operator only.
+	keeps its libraries for when it is let in again. For the server's owners only; the
+	built-in `admin` account cannot be shut out.
 	"""
 	deactivateUser(
 		"""
-		The user, as returned in `User.id`.
+		The user to shut out.
 		"""
-		id: ID!
-	): User!
+		input: UserInput!
+	): UserPayload!
 	"""
-	Changes a film's metadata and locks. For a library's admins and the operator.
+	Changes a film's metadata and locks. For a library's admins and the server's owners.
 	"""
 	updateMovie(
 		"""
@@ -3731,7 +3815,7 @@ type Mutation {
 		input: UpdateMovieInput!
 	): UpdateMoviePayload!
 	"""
-	Changes a series' metadata and locks. For a library's admins and the operator.
+	Changes a series' metadata and locks. For a library's admins and the server's owners.
 	"""
 	updateShow(
 		"""
@@ -3740,7 +3824,7 @@ type Mutation {
 		input: UpdateShowInput!
 	): UpdateShowPayload!
 	"""
-	Changes an episode's metadata and locks. For a library's admins and the operator.
+	Changes an episode's metadata and locks. For a library's admins and the server's owners.
 	"""
 	updateEpisode(
 		"""
@@ -3750,7 +3834,7 @@ type Mutation {
 	): UpdateEpisodePayload!
 	"""
 	Adds a marker to a film or an episode: an intro, credits or a commercial, for its
-	library's admins and the operator, or a bookmark of the caller's own.
+	library's admins and the server's owners, or a bookmark of the caller's own.
 	"""
 	addMarker(
 		"""
@@ -3760,7 +3844,7 @@ type Mutation {
 	): AddMarkerPayload!
 	"""
 	Moves a marker or changes what it says. The work's markers for its library's admins
-	and the operator, a bookmark for its owner.
+	and the server's owners, a bookmark for its owner.
 	"""
 	updateMarker(
 		"""
@@ -3769,7 +3853,7 @@ type Mutation {
 		input: UpdateMarkerInput!
 	): UpdateMarkerPayload!
 	"""
-	Removes a marker. The work's markers for its library's admins and the operator, a
+	Removes a marker. The work's markers for its library's admins and the server's owners, a
 	bookmark for its owner.
 	"""
 	deleteMarker(
@@ -3843,7 +3927,7 @@ type Mutation {
 	): PlaylistPayload!
 	"""
 	Creates a collection in a library: of chosen items, or smart with a rule. For the
-	library's admins and the operator.
+	library's admins and the server's owners.
 	"""
 	createCollection(
 		"""
@@ -3853,7 +3937,7 @@ type Mutation {
 	): CollectionPayload!
 	"""
 	Renames, describes, sets, locks or unlocks a collection. For its library's admins and
-	the operator.
+	the server's owners.
 	"""
 	updateCollection(
 		"""
@@ -3863,7 +3947,7 @@ type Mutation {
 	): CollectionPayload!
 	"""
 	Deletes a collection; its items stay in the library. For its library's admins and the
-	operator.
+	server's owners.
 	"""
 	deleteCollection(
 		"""
@@ -3873,7 +3957,7 @@ type Mutation {
 	): DeleteCollectionPayload!
 	"""
 	Adds items to a collection of chosen items, skipping those it holds. For its library's
-	admins and the operator.
+	admins and the server's owners.
 	"""
 	addToCollection(
 		"""
@@ -3883,7 +3967,7 @@ type Mutation {
 	): AddToCollectionPayload!
 	"""
 	Takes an item out of a collection of chosen items. For its library's admins and the
-	operator.
+	server's owners.
 	"""
 	removeFromCollection(
 		"""
@@ -3893,7 +3977,7 @@ type Mutation {
 	): RemoveFromCollectionPayload!
 	"""
 	Moves an item of a collection after another, or first, in its custom order. For its
-	library's admins and the operator.
+	library's admins and the server's owners.
 	"""
 	moveCollectionItem(
 		"""
@@ -3903,7 +3987,7 @@ type Mutation {
 	): CollectionPayload!
 	"""
 	Takes every item out of a collection of chosen items, keeping the collection. For its
-	library's admins and the operator.
+	library's admins and the server's owners.
 	"""
 	clearCollection(
 		"""
@@ -4319,7 +4403,7 @@ type PlaybackSession implements Node {
 	"""
 	id: ID!
 	"""
-	Set once the operator has terminated the session: its stream is stopped, and the
+	Set once an owner has terminated the session: its stream is stopped, and the
 	session stays until its player stops or it expires, so that the player can learn why.
 	"""
 	termination: PlaybackTermination
@@ -4438,7 +4522,7 @@ enum PlaybackStateType {
 }
 
 """
-The operator ending a session.
+An owner ending a session.
 """
 type PlaybackTermination {
 	"""
@@ -4446,7 +4530,7 @@ type PlaybackTermination {
 	"""
 	terminatedAt: DateTime!
 	"""
-	What the operator told the player, when it said anything.
+	What the owner told the player, when it said anything.
 	"""
 	reason: String
 }
@@ -4950,8 +5034,8 @@ type Query {
 	runtime, and each film or episode marked watched. A position kept is no viewing, and
 	marking an item unwatched leaves its history as it is.
 	
-	A user reads its own; the operator reads everyone's, its own with `mine`. Empty for a
-	caller with no watch state. In the order recorded unless asked otherwise.
+	A user reads its own; an owner reads everyone's, its own with `mine`. Empty for a
+	request with no caller. In the order recorded unless asked otherwise.
 	"""
 	viewingHistory(
 		"""
@@ -4988,7 +5072,7 @@ type Query {
 		offset: Int
 	): HistoryEntryConnection!
 	"""
-	Why the operator terminated one of the caller's playbacks, while its player has not
+	Why an owner terminated one of the caller's playbacks, while its player has not
 	stopped: a player that finds its stream gone asks here.
 	"""
 	playbackTermination(
@@ -4998,7 +5082,7 @@ type Query {
 		playbackId: String!
 	): PlaybackTermination
 	"""
-	The caller's own playlists. Empty for a caller who is neither the operator nor a user.
+	The caller's own playlists. Empty for a request with no caller.
 	"""
 	playlists(
 		"""
@@ -5093,12 +5177,12 @@ type Query {
 		offset: Int
 	): CollectionConnection!
 	"""
-	Who is asking: the operator, a user, or no one.
+	Who is asking: a user, or no one.
 	"""
 	viewer: Viewer!
 	"""
 	The account the caller's connection is paired with on the extension's own service.
-	Null for the operator, who connects through no extension.
+	Null when it is not paired, or for a request with no caller.
 	"""
 	viewerAccount(
 		"""
@@ -5107,7 +5191,7 @@ type Query {
 		extension: ExtensionType!
 	): AccountLink
 	"""
-	The people who can be given access to this server. For its operator only.
+	The people who can be given access to this server. For its owners only.
 	"""
 	users(
 		"""
@@ -5726,6 +5810,21 @@ type Server implements Node {
 }
 
 """
+What a user may do on the server as a whole.
+"""
+enum ServerRoleType {
+	"""
+	Reaches the libraries it was given, with the role given on each.
+	"""
+	USER
+	"""
+	Reaches every library as its admin, and manages users, their libraries and connections,
+	everyone's playback sessions and viewing history.
+	"""
+	OWNER
+}
+
+"""
 A role to give a user on a library.
 """
 input SetLibraryPermissionInput {
@@ -5741,6 +5840,24 @@ input SetLibraryPermissionInput {
 	What the user may do there.
 	"""
 	role: LibraryRoleType!
+}
+
+"""
+A server role to give a user.
+"""
+input SetUserRoleInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The user, as returned in `User.id`.
+	"""
+	userId: ID!
+	"""
+	What the user may now do on the server.
+	"""
+	role: ServerRoleType!
 }
 
 type Show implements Item & Node {
@@ -6026,9 +6143,9 @@ input SignInInput {
 	"""
 	clientMutationId: String
 	"""
-	The address the account was created with.
+	The account's username, or its e-mail address.
 	"""
-	email: String!
+	login: String!
 	"""
 	Its password.
 	"""
@@ -6036,8 +6153,9 @@ input SignInInput {
 }
 
 """
-What `signIn` did. On success the session is in a cookie, out of reach of scripts: there is
-no token here to keep.
+What `signIn` did. On success the session is in the `open_plex_session` cookie, out of reach
+of a page's scripts: there is no token here to keep. A client that is no browser reads the
+cookie's value from `Set-Cookie` and presents it as `Authorization: Bearer <value>`.
 """
 type SignInPayload {
 	"""
@@ -6063,9 +6181,14 @@ input SignUpInput {
 	"""
 	clientMutationId: String
 	"""
-	The address to sign in with. Compared without regard to case.
+	The name to sign in with: 3 to 32 letters, digits, `.`, `_` or `-`, starting with a
+	letter or a digit. Stored in lower case.
 	"""
-	email: String!
+	username: String!
+	"""
+	An address to sign in with as well. Compared without regard to case.
+	"""
+	email: String
 	"""
 	Between 8 and 256 characters.
 	"""
@@ -6081,7 +6204,7 @@ type SignUpPayload {
 	"""
 	clientMutationId: String
 	"""
-	Whether the account was created. It waits for the operator to let it in.
+	Whether the account was created. It waits for an owner to let it in.
 	"""
 	created: Boolean!
 	"""
@@ -6413,7 +6536,7 @@ enum StreamErrorCode {
 	"""
 	TOO_MANY_STREAMS
 	"""
-	The key names a session the operator terminated: its player has to stop first.
+	The key names a session an owner terminated: its player has to stop first.
 	"""
 	SESSION_TERMINATED
 }
@@ -6771,7 +6894,7 @@ enum TerminatePlaybackErrorCode {
 }
 
 """
-A session for the operator to end.
+A session for an owner to end.
 """
 input TerminatePlaybackSessionInput {
 	"""
@@ -7291,16 +7414,29 @@ type User implements Node {
 	"""
 	id: ID!
 	"""
-	The user's e-mail address.
+	The name the user is known and signs in by: unique, in lower case.
 	"""
-	email: String!
+	username: String!
 	"""
-	Whether the user may use the server. A user who signs up waits inactive until the
-	operator lets them in; inactive, nothing it presents opens anything.
+	The user's e-mail address, which it can also sign in with. Null when it gave none.
+	"""
+	email: String
+	"""
+	What the user may do on the server as a whole.
+	"""
+	role: ServerRoleType!
+	"""
+	Whether this is the account the server creates for itself, `admin`: an owner that
+	cannot be demoted, deactivated or deleted.
+	"""
+	builtIn: Boolean!
+	"""
+	Whether the user may use the server. A user who signs up waits inactive until an owner
+	lets them in; inactive, nothing it presents opens anything.
 	"""
 	active: Boolean!
 	"""
-	Whether the user can sign in with a password: a user the operator created has none.
+	Whether the user can sign in with a password: a user an owner created has none.
 	"""
 	hasPassword: Boolean!
 	"""
@@ -7398,6 +7534,38 @@ type UserExtensionEdge {
 	cursor: String!
 }
 
+"""
+The user a mutation names.
+"""
+input UserInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The user, as returned in `User.id`.
+	"""
+	userId: ID!
+}
+
+"""
+What a change to a user did.
+"""
+type UserPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The user as it now is. Null when it could not be changed.
+	"""
+	user: User
+	"""
+	Why it could not. Empty when it was.
+	"""
+	userErrors: [AccountUserError!]!
+}
+
 type VideoAnalysis {
 	"""
 	Displayed width in pixels.
@@ -7482,12 +7650,12 @@ type VideoAnalysis {
 
 type Viewer {
 	"""
-	Whether the caller is the server's operator, who manages users and sees every library.
+	The caller's role on the server: an owner manages users and sees every library. Null
+	for a request with no caller, which has signed in as nobody.
 	"""
-	isOperator: Boolean!
+	role: ServerRoleType
 	"""
-	The caller as a user. Null for the operator, who is nobody's user, and for a request
-	with no caller.
+	The user asking. Null for a request with no caller.
 	"""
 	user: User
 }

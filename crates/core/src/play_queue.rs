@@ -46,8 +46,7 @@ impl PlayQueueKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewPlayQueue {
-    /// `None` for the server's operator.
-    pub user: Option<UserId>,
+    pub user: UserId,
     /// The player it was made for. Its previous queue of the same kind is deleted; a queue
     /// made for no player in particular replaces nothing.
     pub client: Option<String>,
@@ -96,7 +95,7 @@ pub struct PlayQueueEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlayQueue {
     pub id: i64,
-    pub user: Option<UserId>,
+    pub user: UserId,
     pub client: Option<String>,
     pub kind: PlayQueueKind,
     pub source_uri: String,
@@ -438,7 +437,7 @@ mod tests {
     #[test]
     fn a_new_queue_selects_what_it_was_told_to() {
         let queue = NewPlayQueue {
-            user: None,
+            user: crate::UserId::new(1),
             client: None,
             kind: PlayQueueKind::Video,
             source_uri: String::new(),
@@ -455,7 +454,7 @@ mod tests {
     #[test]
     fn shuffling_on_creation_plays_the_selected_item_first() {
         let queue = NewPlayQueue {
-            user: None,
+            user: crate::UserId::new(1),
             client: None,
             kind: PlayQueueKind::Video,
             source_uri: String::new(),

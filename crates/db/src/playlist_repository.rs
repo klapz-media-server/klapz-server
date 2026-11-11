@@ -9,7 +9,6 @@ use open_plex_core::playlist::{
     PlaylistEdit, PlaylistEntry, PlaylistError, PlaylistField, PlaylistKind, PlaylistQuery,
     PlaylistRepository, PlaylistSort, PlaylistTotals, SmartRule, POSITION_GAP,
 };
-use open_plex_core::watch::Viewer;
 use open_plex_core::{PlaylistEntryId, PlaylistId, RatingKey, SectionId, UserId};
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
 use sea_orm::{
@@ -19,7 +18,6 @@ use sea_orm::{
 };
 
 use crate::entity::{media, metadata_item, playlist, playlist_entry};
-use crate::watch_repository::viewer_id;
 
 /// `SQLite` refuses a statement with too many bound values.
 const BATCH: usize = 200;
@@ -56,14 +54,6 @@ fn kind_of(name: &str) -> PlaylistKind {
     }
 }
 
-fn owner_of(stored: i64) -> Viewer {
-    if stored == 0 {
-        Viewer::Operator
-    } else {
-        Viewer::User(UserId::new(stored))
-    }
-}
-
 fn to_playlist(row: playlist::Model) -> Playlist {
     let rule = row
         .rule_section_id
@@ -81,7 +71,7 @@ fn to_playlist(row: playlist::Model) -> Playlist {
     .collect();
     Playlist {
         id: PlaylistId::new(row.id),
-        owner: owner_of(row.owner),
+        owner: UserId::new(row.owner),
         guid: row.guid,
         title: row.title,
         summary: row.summary,
@@ -241,8 +231,7 @@ impl PlaylistOrder {
 }
 
 fn filtered(query: &PlaylistQuery) -> Select<playlist::Entity> {
-    let mut select =
-        playlist::Entity::find().filter(playlist::Column::Owner.eq(viewer_id(query.owner)));
+    let mut select = playlist::Entity::find().filter(playlist::Column::Owner.eq(query.owner.get()));
     let filter = &query.filter;
     if let Some(kind) = filter.kind {
         select = select.filter(playlist::Column::Kind.eq(kind_name(kind)));
@@ -383,7 +372,7 @@ impl PlaylistRepository for SqlPlaylistRepository {
             .unzip();
         let row = playlist::ActiveModel {
             id: ActiveValue::NotSet,
-            owner: ActiveValue::Set(viewer_id(new.owner)),
+            owner: ActiveValue::Set(new.owner.get()),
             guid: ActiveValue::Set(new_guid()),
             sort_key: ActiveValue::Set(sort_key(&new.title)),
             title: ActiveValue::Set(new.title),

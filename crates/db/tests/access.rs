@@ -3,8 +3,8 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use open_plex_core::access::{
-    token_digest, AccessError, AccessRepository, Extension, LibraryPermission, LibraryRole,
-    RemoteAccount,
+    token_digest, AccessError, AccessRepository, Extension, LibraryPermission, LibraryRole, Login,
+    NewUser, RemoteAccount, ServerRole,
 };
 use open_plex_core::page::Window;
 use open_plex_core::{SectionId, UserId};
@@ -14,6 +14,30 @@ const NOW: i64 = 1_700_000_000;
 
 async fn repository() -> SqlAccessRepository {
     SqlAccessRepository::new(connect("sqlite::memory:").await.expect("database"))
+}
+
+/// An active user with no password, named after its address, as an owner creates one.
+fn active(email: &'static str) -> NewUser<'static> {
+    NewUser {
+        username: email.split('@').next().unwrap(),
+        email: Some(email),
+        role: ServerRole::User,
+        active: true,
+        password_hash: None,
+    }
+}
+
+/// A user that signed up: inactive, with its password.
+fn signed_up(email: &'static str, password_hash: &'static str) -> NewUser<'static> {
+    NewUser {
+        active: false,
+        password_hash: Some(password_hash),
+        ..active(email)
+    }
+}
+
+fn by_email(email: &str) -> Login {
+    Login::Email(email.to_owned())
 }
 
 fn permission(user: UserId, section: i64, role: LibraryRole) -> LibraryPermission {
@@ -27,8 +51,13 @@ fn permission(user: UserId, section: i64, role: LibraryRole) -> LibraryPermissio
 #[tokio::test]
 async fn a_user_is_stored_with_its_dates() {
     let repository = repository().await;
-    let user = repository.create_user("a@example.org", NOW).await.unwrap();
-    assert_eq!(user.email, "a@example.org");
+    let user = repository
+        .create_user(active("a@example.org"), NOW)
+        .await
+        .unwrap();
+    assert_eq!(user.username, "a");
+    assert_eq!(user.email.as_deref(), Some("a@example.org"));
+    assert_eq!(user.role, ServerRole::User);
     assert_eq!((user.created_at, user.updated_at), (NOW, NOW));
     assert_eq!(repository.user(user.id).await.unwrap(), Some(user.clone()));
     let page = repository
@@ -46,8 +75,8 @@ fn account(id: &str) -> RemoteAccount {
     }
 }
 
-async fn connected(repository: &SqlAccessRepository, email: &str) -> UserId {
-    let user = repository.create_user(email, NOW).await.unwrap().id;
+async fn connected(repository: &SqlAccessRepository, email: &'static str) -> UserId {
+    let user = repository.create_user(active(email), NOW).await.unwrap().id;
     repository
         .connect_extension(user, Extension::Plex, email, &token_digest(email), NOW)
         .await
@@ -106,7 +135,7 @@ async fn a_paired_account_is_stored_and_opens_what_its_user_may_reach() {
 async fn pairing_needs_a_connection_and_a_free_account() {
     let repository = repository().await;
     let bare = repository
-        .create_user("bare@example.org", NOW)
+        .create_user(active("bare@example.org"), NOW)
         .await
         .unwrap()
         .id;
@@ -287,20 +316,114 @@ async fn unpairing_or_deleting_the_user_forgets_the_account() {
 }
 
 #[tokio::test]
-async fn an_address_has_one_user() {
+async fn an_address_and_a_username_have_one_user_each() {
     let repository = repository().await;
-    repository.create_user("a@example.org", NOW).await.unwrap();
+    repository
+        .create_user(active("a@example.org"), NOW)
+        .await
+        .unwrap();
     assert!(matches!(
-        repository.create_user("a@example.org", NOW).await,
+        repository
+            .create_user(
+                NewUser {
+                    username: "other",
+                    ..active("a@example.org")
+                },
+                NOW
+            )
+            .await,
         Err(AccessError::EmailTaken)
     ));
+    assert!(matches!(
+        repository.create_user(active("a@other.example"), NOW).await,
+        Err(AccessError::UsernameTaken)
+    ));
+}
+
+#[tokio::test]
+async fn users_without_an_address_do_not_collide() {
+    let repository = repository().await;
+    for username in ["admin", "bob"] {
+        let user = repository
+            .create_user(
+                NewUser {
+                    username,
+                    email: None,
+                    role: ServerRole::Owner,
+                    active: true,
+                    password_hash: Some("$argon2id$hash"),
+                },
+                NOW,
+            )
+            .await
+            .unwrap();
+        assert_eq!(user.email, None);
+        assert_eq!(user.role, ServerRole::Owner);
+    }
+    let (admin, hash) = repository
+        .credentials(&Login::Username("admin".to_owned()))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (admin.username.as_str(), hash.as_str()),
+        ("admin", "$argon2id$hash")
+    );
+    assert_eq!(
+        repository
+            .user_named("bob")
+            .await
+            .unwrap()
+            .unwrap()
+            .username,
+        "bob"
+    );
+    assert_eq!(repository.user_named("carol").await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn a_role_and_a_password_can_change() {
+    let repository = repository().await;
+    let user = repository
+        .create_user(active("a@example.org"), NOW)
+        .await
+        .unwrap();
+    let promoted = repository
+        .set_role(user.id, ServerRole::Owner, NOW + 1)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (promoted.role, promoted.updated_at),
+        (ServerRole::Owner, NOW + 1)
+    );
+    for hash in ["$argon2id$first", "$argon2id$second"] {
+        repository.set_password(user.id, hash, NOW).await.unwrap();
+        let (_, stored) = repository
+            .credentials(&by_email("a@example.org"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored, hash);
+    }
+    assert!(matches!(
+        repository
+            .set_password(UserId::new(999), "$argon2id$x", NOW)
+            .await,
+        Err(AccessError::UnknownUser)
+    ));
+    assert!(repository
+        .set_role(UserId::new(999), ServerRole::Owner, NOW)
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]
 async fn a_permission_is_per_library_and_can_change_or_go() {
     let repository = repository().await;
     let user = repository
-        .create_user("a@example.org", NOW)
+        .create_user(active("a@example.org"), NOW)
         .await
         .unwrap()
         .id;
@@ -349,12 +472,12 @@ async fn a_permission_needs_a_user() {
 async fn a_token_opens_its_users_access_and_nothing_else() {
     let repository = repository().await;
     let first = repository
-        .create_user("a@example.org", NOW)
+        .create_user(active("a@example.org"), NOW)
         .await
         .unwrap()
         .id;
     let second = repository
-        .create_user("b@example.org", NOW)
+        .create_user(active("b@example.org"), NOW)
         .await
         .unwrap()
         .id;
@@ -391,7 +514,7 @@ async fn a_token_opens_its_users_access_and_nothing_else() {
 async fn reconnecting_replaces_the_token_and_keeps_the_identifier() {
     let repository = repository().await;
     let user = repository
-        .create_user("a@example.org", NOW)
+        .create_user(active("a@example.org"), NOW)
         .await
         .unwrap()
         .id;
@@ -421,7 +544,7 @@ async fn reconnecting_replaces_the_token_and_keeps_the_identifier() {
 async fn a_disabled_connection_opens_nothing_and_comes_back_with_its_identifier() {
     let repository = repository().await;
     let user = repository
-        .create_user("a@example.org", NOW)
+        .create_user(active("a@example.org"), NOW)
         .await
         .unwrap()
         .id;
@@ -468,7 +591,7 @@ async fn a_disabled_connection_opens_nothing_and_comes_back_with_its_identifier(
 async fn deleting_a_user_closes_its_access() {
     let repository = repository().await;
     let user = repository
-        .create_user("a@example.org", NOW)
+        .create_user(active("a@example.org"), NOW)
         .await
         .unwrap()
         .id;
@@ -494,29 +617,38 @@ async fn deleting_a_user_closes_its_access() {
 async fn a_user_who_signs_up_waits_inactive_with_its_password() {
     let repository = repository().await;
     let user = repository
-        .sign_up("b@example.org", "$argon2id$hash", NOW)
+        .create_user(signed_up("b@example.org", "$argon2id$hash"), NOW)
         .await
         .unwrap();
     assert!(!user.active);
     assert!(repository.has_password(user.id).await.unwrap());
     let (found, hash) = repository
-        .credentials("b@example.org")
+        .credentials(&by_email("b@example.org"))
         .await
         .unwrap()
         .unwrap();
     assert_eq!((found.id, hash.as_str()), (user.id, "$argon2id$hash"));
 
-    let created = repository.create_user("c@example.org", NOW).await.unwrap();
-    assert!(created.active, "a user the operator creates is let in");
+    let created = repository
+        .create_user(active("c@example.org"), NOW)
+        .await
+        .unwrap();
+    assert!(created.active, "a user an owner creates is let in");
     assert!(!repository.has_password(created.id).await.unwrap());
     assert!(repository
-        .credentials("c@example.org")
+        .credentials(&by_email("c@example.org"))
         .await
         .unwrap()
         .is_none());
     assert!(matches!(
         repository
-            .sign_up("c@example.org", "$argon2id$x", NOW)
+            .create_user(
+                NewUser {
+                    username: "someone-else",
+                    ..signed_up("c@example.org", "$argon2id$x")
+                },
+                NOW
+            )
             .await,
         Err(AccessError::EmailTaken)
     ));
@@ -557,18 +689,18 @@ async fn an_inactive_user_opens_nothing_until_it_is_let_in() {
 async fn deleting_a_user_forgets_its_password() {
     let repository = repository().await;
     let user = repository
-        .sign_up("b@example.org", "$argon2id$hash", NOW)
+        .create_user(signed_up("b@example.org", "$argon2id$hash"), NOW)
         .await
         .unwrap();
     assert!(repository.delete_user(user.id).await.unwrap());
     assert!(!repository.has_password(user.id).await.unwrap());
     let again = repository
-        .sign_up("b@example.org", "$argon2id$other", NOW)
+        .create_user(signed_up("b@example.org", "$argon2id$other"), NOW)
         .await
         .unwrap();
     assert_eq!(
         repository
-            .credentials("b@example.org")
+            .credentials(&by_email("b@example.org"))
             .await
             .unwrap()
             .unwrap()

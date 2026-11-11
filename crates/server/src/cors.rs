@@ -2,8 +2,9 @@
 //!
 //! `app.plex.tv` calls the server from another origin, so without these headers a browser hides
 //! every response from it. Only Plex's own domains are allowed, as on the reference. Any other
-//! origin must stay refused: a network the operator trusts is admitted without a token, so a
-//! page allowed to read answers from such a peer could read everything the operator can.
+//! origin must stay refused: a browser here carries its user's session, and Plex Web its
+//! token in every URL, so a page allowed to read the answers could read whatever that user
+//! can.
 
 use std::time::Duration;
 
@@ -30,7 +31,8 @@ fn is_plex_origin(origin: &str) -> bool {
         })
 }
 
-/// The operator's surfaces are not Plex's, and no Plex page has any business reading them.
+/// The official API and the owners' page are not Plex's, and no Plex page has any business
+/// reading them.
 fn is_plex_surface(path: &str) -> bool {
     !path.starts_with("/graphql") && path != crate::admin::PATH
 }
@@ -149,7 +151,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_operators_surfaces_stay_closed_even_to_plex() {
+    async fn the_official_surfaces_stay_closed_even_to_plex() {
         for path in ["/graphql", "/admin"] {
             let response = answer(Method::GET, path, "https://app.plex.tv").await;
             assert_eq!(allowed_origin(&response), None, "{path}");

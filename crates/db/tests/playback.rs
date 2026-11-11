@@ -19,7 +19,7 @@ async fn repository() -> SqlPlaybackRepository {
 fn session(key: &str) -> NewPlaybackSession {
     NewPlaybackSession {
         key: key.to_owned(),
-        user: None,
+        user: open_plex_core::UserId::new(1),
         playback_id: Some("player".to_owned()),
         item: RatingKey::new(10),
         part: PartId::new(20),

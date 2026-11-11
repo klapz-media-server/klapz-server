@@ -51,9 +51,10 @@ async fn execute(
     GraphQLResponse::from(schema.execute(request).await).into_response()
 }
 
-/// A web page can send any site a form or `text/plain` without asking, but not JSON. A trusted
-/// network is admitted without a token, so without this any page its browsers open could
-/// change users; refusing the rest makes the browser ask first, and nothing here says yes.
+/// A web page can send any site a form or `text/plain` without asking, but not JSON. The
+/// session cookie is `SameSite=Lax`, which a page of the same site — another port, another
+/// subdomain — still gets sent along, so without this such a page could act as whoever is
+/// signed in; refusing the rest makes the browser ask first, and nothing here says yes.
 fn is_json(headers: &HeaderMap) -> bool {
     headers
         .get(header::CONTENT_TYPE)

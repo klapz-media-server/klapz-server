@@ -61,7 +61,7 @@ pub struct Setting {
     pub enum_values: Option<String>,
 }
 
-/// `GET` and `PUT /:/prefs`, to a caller with a token as to the operator.
+/// `GET` and `PUT /:/prefs`, to any caller, an owner of the server included.
 async fn refuse_prefs(_caller: Caller) -> ApiError {
     ApiError::Forbidden
 }

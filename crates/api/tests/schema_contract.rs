@@ -15,8 +15,8 @@ use open_plex_core::{
 };
 use serde_json::Value;
 
-fn as_operator(query: impl Into<String>) -> async_graphql::Request {
-    async_graphql::Request::new(query.into()).data(open_plex_core::Principal::operator("owner"))
+fn as_owner(query: impl Into<String>) -> async_graphql::Request {
+    async_graphql::Request::new(query.into()).data(open_plex_core::testing::owner())
 }
 
 fn schema() -> ApiSchema {
@@ -150,7 +150,7 @@ fn item(
 }
 
 async fn run_on(schema: &ApiSchema, query: &str) -> Value {
-    let response = schema.execute(as_operator(query)).await;
+    let response = schema.execute(as_owner(query)).await;
     assert!(
         response.errors.is_empty(),
         "query failed: {:?}",
@@ -160,7 +160,7 @@ async fn run_on(schema: &ApiSchema, query: &str) -> Value {
 }
 
 async fn run(query: &str) -> Value {
-    let response = schema().execute(as_operator(query)).await;
+    let response = schema().execute(as_owner(query)).await;
     assert!(
         response.errors.is_empty(),
         "query failed: {:?}",
@@ -287,7 +287,7 @@ async fn connections_report_cursors_and_page_boundaries() {
 async fn node_rejects_a_malformed_identifier_rather_than_returning_null() {
     // Null would read as "deleted"; this is a client bug and must say so.
     let response = schema()
-        .execute(as_operator(r#"{ node(id: "not-base64!") { id } }"#))
+        .execute(as_owner(r#"{ node(id: "not-base64!") { id } }"#))
         .await;
     assert!(!response.errors.is_empty());
 }
@@ -330,7 +330,7 @@ async fn nodes_refuses_a_batch_past_the_cap() {
         .collect::<Vec<_>>()
         .join(", ");
     let response = schema()
-        .execute(as_operator(format!("{{ nodes(ids: [{ids}]) {{ id }} }}")))
+        .execute(as_owner(format!("{{ nodes(ids: [{ids}]) {{ id }} }}")))
         .await;
 
     let message = response
@@ -696,13 +696,13 @@ async fn a_tag_list_pages_by_cursor() {
 
 fn as_user(query: &str) -> async_graphql::Request {
     use open_plex_core::access::{LibraryAccess, LibraryRole};
-    use open_plex_core::{Principal, Scope, SectionId, UserId};
+    use open_plex_core::{Principal, SectionId, UserId};
     let libraries = std::iter::once((SectionId::new(4), LibraryRole::Viewer)).collect();
     async_graphql::Request::new(query).data(Principal {
         name: "someone".to_owned(),
-        scope: Scope::User,
+        role: open_plex_core::ServerRole::User,
         libraries: LibraryAccess::Only(libraries),
-        user: Some(UserId::new(1)),
+        user: UserId::new(1),
         server_identifier: None,
     })
 }
@@ -717,20 +717,144 @@ async fn a_request_with_no_caller_sees_no_library() {
 }
 
 #[tokio::test]
-async fn managing_users_is_for_the_operator() {
+async fn managing_users_is_for_owners() {
     for operation in [
-        r#"mutation { createUser(email: "a@example.org") { id } }"#,
+        r#"mutation { createUser(input: { username: "user-a", email: "a@example.org" }) { user { id } } }"#,
+        r#"mutation { setUserRole(input: { userId: "VXNlcjox", role: OWNER }) { user { id } } }"#,
+        r#"mutation { deleteUser(input: { userId: "VXNlcjox" }) { deleted } }"#,
         "{ users(first: 1) { edges { node { id } } } }",
     ] {
         let response = schema().execute(as_user(operation)).await;
         assert!(!response.errors.is_empty(), "{operation}");
     }
     let response = schema()
-        .execute(as_operator(
-            r#"mutation { createUser(email: "a@example.org") { email } }"#,
+        .execute(as_owner(
+            r#"mutation { createUser(input: { username: " Alice ", email: "A@example.org" }) {
+                user { username email role active hasPassword builtIn } userErrors { code } } }"#,
         ))
         .await;
     assert!(response.errors.is_empty(), "{:?}", response.errors);
+    assert_eq!(
+        response.data.into_json().unwrap()["createUser"],
+        serde_json::json!({
+            "user": {
+                "username": "alice",
+                "email": "a@example.org",
+                "role": "USER",
+                "active": true,
+                "hasPassword": false,
+                "builtIn": false,
+            },
+            "userErrors": [],
+        })
+    );
+}
+
+const CREATE_USER: &str = r"mutation($input: CreateUserInput!) {
+    createUser(input: $input) { user { id } userErrors { field code } }
+}";
+
+async fn create_user(schema: &ApiSchema, input: Value) -> Value {
+    let response = schema
+        .execute(
+            as_owner(CREATE_USER).variables(async_graphql::Variables::from_json(
+                serde_json::json!({ "input": input }),
+            )),
+        )
+        .await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    response.data.into_json().unwrap()["createUser"].clone()
+}
+
+#[tokio::test]
+async fn a_username_is_checked_and_unique_whatever_its_case() {
+    let schema = schema();
+    let created = create_user(&schema, serde_json::json!({ "username": "Alice" })).await;
+    assert_eq!(created["userErrors"], serde_json::json!([]));
+    for (input, field, code) in [
+        (
+            serde_json::json!({ "username": "ALICE" }),
+            "username",
+            "USERNAME_TAKEN",
+        ),
+        (
+            serde_json::json!({ "username": "al" }),
+            "username",
+            "INVALID_USERNAME",
+        ),
+        (
+            serde_json::json!({ "username": "a@b.org" }),
+            "username",
+            "INVALID_USERNAME",
+        ),
+        (
+            serde_json::json!({ "username": "bob", "email": "nope" }),
+            "email",
+            "INVALID_EMAIL",
+        ),
+    ] {
+        let refused = create_user(&schema, input.clone()).await;
+        assert_eq!(refused["user"], Value::Null, "{input}");
+        assert_eq!(
+            refused["userErrors"],
+            serde_json::json!([{ "field": ["input", field], "code": code }]),
+            "{input}"
+        );
+    }
+}
+
+const USER_CHANGES: &str = r"mutation($id: ID!) {
+    demote: setUserRole(input: { userId: $id, role: USER }) { user { role } userErrors { code } }
+    promote: setUserRole(input: { userId: $id, role: OWNER }) { user { role } userErrors { code } }
+    deactivate: deactivateUser(input: { userId: $id }) { user { active } userErrors { code } }
+    activate: activateUser(input: { userId: $id }) { user { active } userErrors { code } }
+    delete: deleteUser(input: { userId: $id }) { deleted userErrors { code } }
+}";
+
+async fn change_user(schema: &ApiSchema, id: &str) -> Value {
+    let response = schema
+        .execute(
+            as_owner(USER_CHANGES).variables(async_graphql::Variables::from_json(
+                serde_json::json!({ "id": id }),
+            )),
+        )
+        .await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    response.data.into_json().unwrap()
+}
+
+#[tokio::test]
+async fn an_owner_grants_and_revokes_the_owner_role() {
+    let schema = schema();
+    let created = create_user(&schema, serde_json::json!({ "username": "bob" })).await;
+    let id = created["user"]["id"].as_str().unwrap();
+    let changed = change_user(&schema, id).await;
+    assert_eq!(changed["demote"]["user"]["role"], "USER");
+    assert_eq!(changed["promote"]["user"]["role"], "OWNER");
+    assert_eq!(changed["deactivate"]["user"]["active"], false);
+    assert_eq!(changed["activate"]["user"]["active"], true);
+    assert_eq!(changed["delete"]["deleted"], true);
+    let gone = change_user(&schema, id).await;
+    assert_eq!(gone["promote"]["userErrors"][0]["code"], "USER_NOT_FOUND");
+    assert_eq!(gone["delete"]["userErrors"][0]["code"], "USER_NOT_FOUND");
+}
+
+#[tokio::test]
+async fn the_admin_account_is_never_demoted_shut_out_or_deleted() {
+    let schema = schema();
+    let created = create_user(&schema, serde_json::json!({ "username": "admin" })).await;
+    let id = created["user"]["id"].as_str().unwrap();
+    let changed = change_user(&schema, id).await;
+    for refused in ["demote", "deactivate", "delete"] {
+        assert_eq!(
+            changed[refused]["userErrors"],
+            serde_json::json!([{ "code": "BUILT_IN_ACCOUNT" }]),
+            "{refused}"
+        );
+    }
+    assert_eq!(changed["promote"]["user"]["role"], "OWNER");
+    assert_eq!(changed["activate"]["user"]["active"], true);
+    assert_eq!(changed["delete"]["deleted"], false);
 }
 
 const PAIR: &str = r"mutation($input: PairExtensionInput!) {
@@ -739,17 +863,17 @@ const PAIR: &str = r"mutation($input: PairExtensionInput!) {
 
 async fn connected_user(schema: &ApiSchema) -> String {
     let created = schema
-        .execute(as_operator(
-            r#"mutation { createUser(email: "a@example.org") { id } }"#,
+        .execute(as_owner(
+            r#"mutation { createUser(input: { username: "user-a", email: "a@example.org" }) { user { id } } }"#,
         ))
         .await;
-    let id = created.data.into_json().unwrap()["createUser"]["id"]
+    let id = created.data.into_json().unwrap()["createUser"]["user"]["id"]
         .as_str()
         .unwrap()
         .to_owned();
     let connected = schema
         .execute(
-            as_operator(
+            as_owner(
                 "mutation($id: ID!) { connectExtension(userId: $id, extension: PLEX) { token } }",
             )
             .variables(async_graphql::Variables::from_json(
@@ -764,24 +888,24 @@ async fn connected_user(schema: &ApiSchema) -> String {
 /// A request from the user `id` names, with no library.
 fn as_user_with_id(id: &str, query: &str) -> async_graphql::Request {
     use open_plex_core::access::LibraryAccess;
-    use open_plex_core::{Principal, Scope, UserId};
+    use open_plex_core::{Principal, UserId};
     let key = GlobalId::decode(id).unwrap().key;
     async_graphql::Request::new(query).data(Principal {
         name: "someone".to_owned(),
-        scope: Scope::User,
+        role: open_plex_core::ServerRole::User,
         libraries: LibraryAccess::Only(std::collections::HashMap::new()),
-        user: Some(UserId::new(key)),
+        user: UserId::new(key),
         server_identifier: None,
     })
 }
 
 async fn second_connected_user(schema: &ApiSchema) -> String {
     let created = schema
-        .execute(as_operator(
-            r#"mutation { createUser(email: "b@example.org") { id } }"#,
+        .execute(as_owner(
+            r#"mutation { createUser(input: { username: "user-b", email: "b@example.org" }) { user { id } } }"#,
         ))
         .await;
-    created.data.into_json().unwrap()["createUser"]["id"]
+    created.data.into_json().unwrap()["createUser"]["user"]["id"]
         .as_str()
         .unwrap()
         .to_owned()
@@ -798,7 +922,7 @@ async fn pairing_stores_the_account_and_publishes_the_address() {
     let schema = schema();
     let user = connected_user(&schema).await;
     let response = schema
-        .execute(as_operator(PAIR).variables(pair_input(
+        .execute(as_owner(PAIR).variables(pair_input(
             &user,
             " claim-7 ",
             "https://a.example.org:443",
@@ -826,7 +950,7 @@ async fn moving_a_paired_server_publishes_its_new_address_at_once() {
     let schema = schema();
     let user = connected_user(&schema).await;
     let paired = schema
-        .execute(as_operator(PAIR).variables(pair_input(
+        .execute(as_owner(PAIR).variables(pair_input(
             &user,
             "claim-7",
             "https://a.example.org:443",
@@ -835,7 +959,7 @@ async fn moving_a_paired_server_publishes_its_new_address_at_once() {
     assert!(paired.errors.is_empty(), "{:?}", paired.errors);
 
     let moved = schema
-        .execute(as_operator(MOVE).variables(move_input(&user, "https://New.trycloudflare.com")))
+        .execute(as_owner(MOVE).variables(move_input(&user, "https://New.trycloudflare.com")))
         .await;
     assert!(moved.errors.is_empty(), "{:?}", moved.errors);
     let link = &moved.data.into_json().unwrap()["moveExtension"];
@@ -855,16 +979,16 @@ async fn moving_refuses_a_bad_address_an_unpaired_connection_and_another_user() 
     let other = second_connected_user(&schema).await;
     // Not paired yet.
     let response = schema
-        .execute(as_operator(MOVE).variables(move_input(&user, "https://a.example.org")))
+        .execute(as_owner(MOVE).variables(move_input(&user, "https://a.example.org")))
         .await;
     assert!(!response.errors.is_empty());
 
     let paired = schema
-        .execute(as_operator(PAIR).variables(pair_input(&user, "claim-7", "https://a.example.org")))
+        .execute(as_owner(PAIR).variables(pair_input(&user, "claim-7", "https://a.example.org")))
         .await;
     assert!(paired.errors.is_empty(), "{:?}", paired.errors);
     let response = schema
-        .execute(as_operator(MOVE).variables(move_input(&user, "https://a.example.org/path")))
+        .execute(as_owner(MOVE).variables(move_input(&user, "https://a.example.org/path")))
         .await;
     assert!(!response.errors.is_empty());
     let response = schema
@@ -902,7 +1026,7 @@ async fn a_user_moves_and_unpairs_its_own_server() {
 }
 
 #[tokio::test]
-async fn pairing_is_for_the_operator_and_the_user_itself() {
+async fn pairing_is_for_owners_and_the_user_itself() {
     let schema = schema();
     let user = connected_user(&schema).await;
     let other = second_connected_user(&schema).await;
@@ -929,21 +1053,20 @@ async fn pairing_is_for_the_operator_and_the_user_itself() {
     );
 }
 
-const VIEWER: &str = "{ viewer { isOperator user { id email } } }";
+const VIEWER: &str = "{ viewer { role user { id username email role } } }";
 
 #[tokio::test]
-async fn the_viewer_is_the_operator_or_a_user() {
+async fn the_viewer_is_a_user_with_its_role_or_nobody() {
     let schema = schema();
     let user = connected_user(&schema).await;
 
-    let operator = schema
-        .execute(as_operator(VIEWER))
+    let owner = schema
+        .execute(as_owner(VIEWER))
         .await
         .data
         .into_json()
         .unwrap();
-    assert_eq!(operator["viewer"]["isOperator"], true);
-    assert!(operator["viewer"]["user"].is_null());
+    assert_eq!(owner["viewer"]["role"], "OWNER");
 
     let itself = schema
         .execute(as_user_with_id(&user, VIEWER))
@@ -951,12 +1074,13 @@ async fn the_viewer_is_the_operator_or_a_user() {
         .data
         .into_json()
         .unwrap();
-    assert_eq!(itself["viewer"]["isOperator"], false);
+    assert_eq!(itself["viewer"]["role"], "USER");
     assert_eq!(itself["viewer"]["user"]["id"], user.as_str());
+    assert_eq!(itself["viewer"]["user"]["username"], "user-a");
     assert_eq!(itself["viewer"]["user"]["email"], "a@example.org");
 
     let nobody = schema.execute(VIEWER).await.data.into_json().unwrap();
-    assert_eq!(nobody["viewer"]["isOperator"], false);
+    assert!(nobody["viewer"]["role"].is_null());
     assert!(nobody["viewer"]["user"].is_null());
 }
 
@@ -969,22 +1093,22 @@ async fn pairing_refuses_a_bad_address_a_bad_code_and_a_user_not_connected() {
         ("wrong", "https://a.example.org"),
     ] {
         let response = schema
-            .execute(as_operator(PAIR).variables(pair_input(&user, code, uri)))
+            .execute(as_owner(PAIR).variables(pair_input(&user, code, uri)))
             .await;
         assert!(!response.errors.is_empty(), "{code} {uri}");
     }
 
     let created = schema
-        .execute(as_operator(
-            r#"mutation { createUser(email: "b@example.org") { id } }"#,
+        .execute(as_owner(
+            r#"mutation { createUser(input: { username: "user-b", email: "b@example.org" }) { user { id } } }"#,
         ))
         .await;
-    let bare = created.data.into_json().unwrap()["createUser"]["id"]
+    let bare = created.data.into_json().unwrap()["createUser"]["user"]["id"]
         .as_str()
         .unwrap()
         .to_owned();
     let response = schema
-        .execute(as_operator(PAIR).variables(pair_input(&bare, "claim-7", "https://a.example.org")))
+        .execute(as_owner(PAIR).variables(pair_input(&bare, "claim-7", "https://a.example.org")))
         .await;
     assert_eq!(
         response.errors[0].message,
@@ -1089,14 +1213,13 @@ async fn watch_state_follows_the_callers_marks_and_reports() {
 #[tokio::test]
 async fn a_caller_without_a_viewer_has_no_watch_state() {
     let schema = watchable();
-    // A visitor at a published address sees no library and has no state to change.
-    let visitor = open_plex_core::Principal::visitor_of("server".to_owned());
+    // A user given no library sees nothing it could change.
     let query = format!(
         r#"mutation {{ markWatched(id: "{}") {{ viewCount }} }}"#,
         item_id(577_986)
     );
     let response = schema
-        .execute(async_graphql::Request::new(query).data(visitor))
+        .execute(as_user_with_id(&GlobalId::encode("User", 9), &query))
         .await;
     assert!(!response.errors.is_empty());
 
@@ -1143,7 +1266,7 @@ async fn history_of(
 }
 
 #[tokio::test]
-async fn a_user_reads_its_own_history_and_the_operator_everyones() {
+async fn a_user_reads_its_own_history_and_an_owner_everyones() {
     let schema = watchable();
     let soul = item_id(577_986);
     run_on(
@@ -1166,21 +1289,20 @@ async fn a_user_reads_its_own_history_and_the_operator_everyones() {
     assert_eq!(theirs[0]["item"]["id"], soul);
     assert_eq!(theirs[0]["kind"], "MARKED");
 
-    // The season marked is one entry per episode, the operator's own, with no user.
+    // The season marked is one entry per episode, the owner's own.
     let (total, mine) = history_of(
         &schema,
-        as_operator(HISTORY),
+        as_owner(HISTORY),
         serde_json::json!({ "mine": true }),
     )
     .await;
     assert_eq!(total, 2);
-    assert!(mine.iter().all(|entry| entry["user"].is_null()));
-    let (total, _) = history_of(&schema, as_operator(HISTORY), Value::Null).await;
+    let (total, _) = history_of(&schema, as_owner(HISTORY), Value::Null).await;
     assert_eq!(total, 3);
     let series = serde_json::json!({ "item": item_id(577_987) });
-    assert_eq!(history_of(&schema, as_operator(HISTORY), series).await.0, 2);
+    assert_eq!(history_of(&schema, as_owner(HISTORY), series).await.0, 2);
 
-    // A user naming another reads nothing, and refetches nothing of the operator's.
+    // A user naming another reads nothing, and refetches nothing of the owner's.
     let other = serde_json::json!({ "user": GlobalId::encode("User", 2) });
     assert_eq!(history_of(&schema, as_user(HISTORY), other).await.0, 0);
     let refetch = format!(
@@ -1191,13 +1313,12 @@ async fn a_user_reads_its_own_history_and_the_operator_everyones() {
     assert_eq!(response.data.into_json().unwrap()["node"], Value::Null);
     assert_eq!(run_on(&schema, &refetch).await["node"]["id"], mine[0]["id"]);
 
-    let visitor = open_plex_core::Principal::visitor_of("server".to_owned());
-    let request = async_graphql::Request::new(HISTORY).data(visitor);
-    assert_eq!(history_of(&schema, request, Value::Null).await, (0, vec![]));
+    let nobody = async_graphql::Request::new(HISTORY);
+    assert_eq!(history_of(&schema, nobody, Value::Null).await, (0, vec![]));
 }
 
 #[tokio::test]
-async fn deleting_a_history_entry_is_for_its_viewer_and_the_operator() {
+async fn deleting_a_history_entry_is_for_its_viewer_and_owners() {
     let schema = watchable();
     let soul = item_id(577_986);
     run_on(
@@ -1205,7 +1326,7 @@ async fn deleting_a_history_entry_is_for_its_viewer_and_the_operator() {
         &format!(r#"mutation {{ markWatched(id: "{soul}") {{ viewCount }} }}"#),
     )
     .await;
-    let (_, entries) = history_of(&schema, as_operator(HISTORY), Value::Null).await;
+    let (_, entries) = history_of(&schema, as_owner(HISTORY), Value::Null).await;
     let entry = entries[0]["id"].as_str().unwrap().to_owned();
     let delete = format!(
         r#"mutation {{ deleteHistoryEntry(input: {{ clientMutationId: "c", entry: "{entry}" }}) {{
@@ -1228,9 +1349,7 @@ async fn deleting_a_history_entry_is_for_its_viewer_and_the_operator() {
     assert_eq!(deleted["deleteHistoryEntry"]["clientMutationId"], "c");
     assert_eq!(deleted["deleteHistoryEntry"]["deletedEntryId"], entry);
     assert_eq!(
-        history_of(&schema, as_operator(HISTORY), Value::Null)
-            .await
-            .0,
+        history_of(&schema, as_owner(HISTORY), Value::Null).await.0,
         0
     );
     // What was watched stays.
@@ -1349,7 +1468,7 @@ mutation Start($input: StartStreamInput!) {
 }";
 
 async fn start(schema: &ApiSchema, input: serde_json::Value) -> Value {
-    let request = as_operator(START_STREAM).variables(async_graphql::Variables::from_json(
+    let request = as_owner(START_STREAM).variables(async_graphql::Variables::from_json(
         serde_json::json!({ "input": input }),
     ));
     let response = schema.execute(request).await;
@@ -1386,7 +1505,8 @@ async fn starting_a_stream_hands_out_its_address_and_records_its_session() {
 
     let orders = engine.started.lock().unwrap();
     let order = &orders[0];
-    assert_eq!(order.key, "k1");
+    // Stored under the caller's own name, as every session is.
+    assert_eq!(order.key, "u1000~k1");
     assert_eq!(order.source.roots, vec!["/films".to_owned()]);
     assert_eq!(order.source.audio.position, 1);
     assert_eq!(order.limits.max_video_bitrate, Some(20_000_000));
@@ -1441,8 +1561,7 @@ mutation Stop($input: StopStreamInput!) {
         "input": { "clientMutationId": "m2", "session": started["session"]["id"] }
     });
     for expected in [true, false] {
-        let request =
-            as_operator(stop).variables(async_graphql::Variables::from_json(input.clone()));
+        let request = as_owner(stop).variables(async_graphql::Variables::from_json(input.clone()));
         let response = schema.execute(request).await;
         assert!(response.errors.is_empty(), "{:?}", response.errors);
         let data = serde_json::to_value(response.data).unwrap();
@@ -1452,7 +1571,7 @@ mutation Stop($input: StopStreamInput!) {
 }
 
 #[tokio::test]
-async fn the_operator_terminates_a_session_which_its_player_can_still_read() {
+async fn an_owner_terminates_a_session_which_its_player_can_still_read() {
     let engine = Arc::new(open_plex_core::testing::StubStreams::default());
     let schema = streamable(Arc::clone(&engine));
     let started = start(
@@ -1488,7 +1607,7 @@ mutation Terminate($input: TerminatePlaybackSessionInput!) {
     assert!(engine.stopped.lock().unwrap().is_empty());
 
     let response =
-        run(as_operator(terminate).variables(async_graphql::Variables::from_json(input.clone())))
+        run(as_owner(terminate).variables(async_graphql::Variables::from_json(input.clone())))
             .await;
     assert!(response.errors.is_empty(), "{:?}", response.errors);
     let data = serde_json::to_value(response.data).unwrap();
@@ -1496,7 +1615,7 @@ mutation Terminate($input: TerminatePlaybackSessionInput!) {
     assert_eq!(payload["clientMutationId"], "t1");
     assert_eq!(payload["userErrors"], serde_json::json!([]));
     assert_eq!(payload["session"]["termination"]["reason"], "Bedtime");
-    assert_eq!(*engine.stopped.lock().unwrap(), ["k1"]);
+    assert_eq!(*engine.stopped.lock().unwrap(), ["u1000~k1"]);
 
     // No longer playing, but still there for its player to read.
     let read = format!(
@@ -1507,7 +1626,7 @@ mutation Terminate($input: TerminatePlaybackSessionInput!) {
 }}"#,
         session.as_str().unwrap()
     );
-    let response = run(as_operator(read)).await;
+    let response = run(as_owner(read)).await;
     assert!(response.errors.is_empty(), "{:?}", response.errors);
     let data = serde_json::to_value(response.data).unwrap();
     assert_eq!(data["playbackSessions"]["edges"], serde_json::json!([]));
@@ -1515,11 +1634,11 @@ mutation Terminate($input: TerminatePlaybackSessionInput!) {
     assert_eq!(data["node"]["termination"]["reason"], "Bedtime");
 
     let touch = r#"mutation { touchPlaybackSession(key: "k1") }"#;
-    let data = serde_json::to_value(run(as_operator(touch)).await.data).unwrap();
+    let data = serde_json::to_value(run(as_owner(touch)).await.data).unwrap();
     assert_eq!(data["touchPlaybackSession"], false);
 
     let again =
-        run(as_operator(terminate).variables(async_graphql::Variables::from_json(input))).await;
+        run(as_owner(terminate).variables(async_graphql::Variables::from_json(input))).await;
     let data = serde_json::to_value(again.data).unwrap();
     assert_eq!(
         data["terminatePlaybackSession"]["userErrors"],
@@ -1528,10 +1647,10 @@ mutation Terminate($input: TerminatePlaybackSessionInput!) {
 
     // The player stops: the session goes, its stream asked to stop again, harmlessly.
     let stopped = r#"mutation { reportPlayback(input: { playbackId: "tab", state: STOPPED }) }"#;
-    let data = serde_json::to_value(run(as_operator(stopped)).await.data).unwrap();
+    let data = serde_json::to_value(run(as_owner(stopped)).await.data).unwrap();
     assert_eq!(data["reportPlayback"], true);
     let data = serde_json::to_value(
-        run(as_operator(
+        run(as_owner(
             r#"{ playbackTermination(playbackId: "tab") { reason } }"#,
         ))
         .await
@@ -1539,7 +1658,7 @@ mutation Terminate($input: TerminatePlaybackSessionInput!) {
     )
     .unwrap();
     assert_eq!(data["playbackTermination"], Value::Null);
-    assert_eq!(*engine.stopped.lock().unwrap(), ["k1", "k1"]);
+    assert_eq!(*engine.stopped.lock().unwrap(), ["u1000~k1", "u1000~k1"]);
 }
 
 #[tokio::test]
@@ -1558,12 +1677,12 @@ async fn a_player_stopping_stops_every_stream_of_its_playback() {
         .await;
     }
     let stopped = r#"mutation { reportPlayback(input: { playbackId: "tab", state: STOPPED }) }"#;
-    let data = serde_json::to_value(schema.execute(as_operator(stopped)).await.data).unwrap();
+    let data = serde_json::to_value(schema.execute(as_owner(stopped)).await.data).unwrap();
     assert_eq!(data["reportPlayback"], true);
     let mut keys = engine.stopped.lock().unwrap().clone();
     keys.sort();
-    assert_eq!(keys, ["k1", "k2"]);
-    let data = serde_json::to_value(schema.execute(as_operator(stopped)).await.data).unwrap();
+    assert_eq!(keys, ["u1000~k1", "u1000~k2"]);
+    let data = serde_json::to_value(schema.execute(as_owner(stopped)).await.data).unwrap();
     assert_eq!(data["reportPlayback"], false);
 }
 
@@ -1639,16 +1758,16 @@ async fn update_movie(
 
 fn as_role(role: open_plex_core::access::LibraryRole) -> async_graphql::Request {
     use open_plex_core::access::LibraryAccess;
-    use open_plex_core::{Principal, Scope, UserId};
+    use open_plex_core::{Principal, UserId};
     let libraries = [27, 28]
         .into_iter()
         .map(|section| (SectionId::new(section), role))
         .collect();
     async_graphql::Request::new(UPDATE_MOVIE).data(Principal {
         name: "someone".to_owned(),
-        scope: Scope::User,
+        role: open_plex_core::ServerRole::User,
         libraries: LibraryAccess::Only(libraries),
-        user: Some(UserId::new(1)),
+        user: UserId::new(1),
         server_identifier: None,
     })
 }
@@ -1659,7 +1778,7 @@ async fn editing_a_film_writes_what_it_derives_and_changes_only_the_locks_asked(
     let film = GlobalId::encode("Item", 577_986);
     let edited = update_movie(
         &schema,
-        as_operator(UPDATE_MOVIE),
+        as_owner(UPDATE_MOVIE),
         serde_json::json!({
             "clientMutationId": "m1",
             "id": film,
@@ -1705,7 +1824,7 @@ async fn editing_a_film_writes_what_it_derives_and_changes_only_the_locks_asked(
 
     let cleared = update_movie(
         &schema,
-        as_operator(UPDATE_MOVIE),
+        as_owner(UPDATE_MOVIE),
         serde_json::json!({ "id": film, "summary": null, "releasedOn": null, "rating": null }),
     )
     .await;
@@ -1756,7 +1875,7 @@ async fn an_edit_refuses_another_type_a_bad_value_and_a_field_the_type_lacks() {
 
     let show = update_movie(
         &schema,
-        as_operator(UPDATE_MOVIE),
+        as_owner(UPDATE_MOVIE),
         serde_json::json!({ "id": GlobalId::encode("Item", 577_987), "summary": "x" }),
     )
     .await;
@@ -1783,7 +1902,7 @@ async fn an_edit_refuses_another_type_a_bad_value_and_a_field_the_type_lacks() {
             "LOCKED_AND_UNLOCKED",
         ),
     ] {
-        let refused = update_movie(&schema, as_operator(UPDATE_MOVIE), input).await;
+        let refused = update_movie(&schema, as_owner(UPDATE_MOVIE), input).await;
         assert_eq!(
             code(&refused),
             (serde_json::json!(["input", field]), expected.into()),
@@ -1794,7 +1913,7 @@ async fn an_edit_refuses_another_type_a_bad_value_and_a_field_the_type_lacks() {
     // Not a date-time at all: refused before the mutation runs.
     let garbage = schema
         .execute(
-            as_operator(UPDATE_MOVIE).variables(async_graphql::Variables::from_json(
+            as_owner(UPDATE_MOVIE).variables(async_graphql::Variables::from_json(
                 serde_json::json!({
                     "input": { "id": film, "releasedOn": "2019-05-01" }
                 }),
@@ -1810,7 +1929,7 @@ async fn an_edit_refuses_another_type_a_bad_value_and_a_field_the_type_lacks() {
 
     let response = schema
         .execute(
-            as_operator(
+            as_owner(
                 r"mutation Edit($input: UpdateEpisodeInput!) {
                   updateEpisode(input: $input) { episode { year } userErrors { code } }
                 }",
@@ -1870,39 +1989,43 @@ const SIGN_UP: &str = r"mutation($input: SignUpInput!) {
     signUp(input: $input) { created userErrors { field code } }
 }";
 const SIGN_IN: &str = r"mutation($input: SignInInput!) {
-    signIn(input: $input) { user { email active } userErrors { field code } }
+    signIn(input: $input) { user { username email active } userErrors { field code } }
 }";
 
-fn credentials(email: &str, password: &str) -> Value {
-    serde_json::json!({ "input": { "email": email, "password": password } })
+fn sign_up_input(username: &str, email: Option<&str>, password: &str) -> Value {
+    serde_json::json!({ "input": { "username": username, "email": email, "password": password } })
 }
 
-async fn run_on_as_operator(schema: &ApiSchema, query: &str) -> Value {
-    let response = schema.execute(as_operator(query)).await;
+fn credentials(login: &str, password: &str) -> Value {
+    serde_json::json!({ "input": { "login": login, "password": password } })
+}
+
+async fn run_on_as_owner(schema: &ApiSchema, query: &str) -> Value {
+    let response = schema.execute(as_owner(query)).await;
     assert!(response.errors.is_empty(), "{:?}", response.errors);
     response.data.into_json().unwrap()
 }
 
-async fn user_id_of(schema: &ApiSchema, email: &str) -> String {
-    let data = run_on_as_operator(schema, "{ users(first: 10) { nodes { id email } } }").await;
+async fn user_id_of(schema: &ApiSchema, username: &str) -> String {
+    let data = run_on_as_owner(schema, "{ users(first: 10) { nodes { id username } } }").await;
     data["users"]["nodes"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|user| user["email"] == email)
+        .find(|user| user["username"] == username)
         .map(|user| user["id"].as_str().unwrap().to_owned())
         .unwrap()
 }
 
 #[tokio::test]
-async fn a_user_who_signs_up_waits_for_the_operator_then_signs_in_with_a_cookie() {
+async fn a_user_who_signs_up_waits_for_an_owner_then_signs_in_with_a_cookie() {
     let schema = schema();
     let sessions = sessions();
     let signed_up = schema
         .execute(anonymous(
             SIGN_UP,
             &sessions,
-            credentials(" Alice@Example.org ", "correct horse"),
+            sign_up_input("Alice", Some(" Alice@Example.org "), "correct horse"),
         ))
         .await;
     assert!(signed_up.errors.is_empty(), "{:?}", signed_up.errors);
@@ -1911,14 +2034,20 @@ async fn a_user_who_signs_up_waits_for_the_operator_then_signs_in_with_a_cookie(
         true
     );
 
-    let users = run_on_as_operator(
+    let users = run_on_as_owner(
         &schema,
-        "{ users(first: 10) { nodes { email active hasPassword } } }",
+        "{ users(first: 10) { nodes { username email role active hasPassword } } }",
     )
     .await;
     assert_eq!(
         users["users"]["nodes"][0],
-        serde_json::json!({ "email": "alice@example.org", "active": false, "hasPassword": true })
+        serde_json::json!({
+            "username": "alice",
+            "email": "alice@example.org",
+            "role": "USER",
+            "active": false,
+            "hasPassword": true,
+        })
     );
 
     // The right password, on an account still waiting.
@@ -1935,19 +2064,31 @@ async fn a_user_who_signs_up_waits_for_the_operator_then_signs_in_with_a_cookie(
         "INACTIVE"
     );
 
-    let id = user_id_of(&schema, "alice@example.org").await;
+    let id = user_id_of(&schema, "alice").await;
     let activate = schema
         .execute(
-            as_operator("mutation($id: ID!) { activateUser(id: $id) { active } }").variables(
-                async_graphql::Variables::from_json(serde_json::json!({ "id": id })),
-            ),
+            as_owner(
+                "mutation($id: ID!) { activateUser(input: { userId: $id }) { user { active } } }",
+            )
+            .variables(async_graphql::Variables::from_json(
+                serde_json::json!({ "id": id }),
+            )),
         )
         .await;
     assert_eq!(
-        activate.data.into_json().unwrap()["activateUser"]["active"],
+        activate.data.into_json().unwrap()["activateUser"]["user"]["active"],
         true
     );
 
+    // By its username as well as by its address, whatever their case.
+    let by_username = schema
+        .execute(anonymous(
+            SIGN_IN,
+            &sessions,
+            credentials(" ALICE ", "correct horse"),
+        ))
+        .await;
+    assert!(by_username.http_headers.get("set-cookie").is_some());
     let signed_in = schema
         .execute(anonymous(
             SIGN_IN,
@@ -1968,7 +2109,7 @@ async fn a_user_who_signs_up_waits_for_the_operator_then_signs_in_with_a_cookie(
     }
     assert_eq!(
         signed_in.data.into_json().unwrap()["signIn"]["user"],
-        serde_json::json!({ "email": "alice@example.org", "active": true })
+        serde_json::json!({ "username": "alice", "email": "alice@example.org", "active": true })
     );
 
     // The cookie names this user, for the transport to read back.
@@ -1985,19 +2126,21 @@ async fn a_user_who_signs_up_waits_for_the_operator_then_signs_in_with_a_cookie(
 }
 
 #[tokio::test]
-async fn a_wrong_password_and_an_unknown_address_get_the_same_answer() {
+async fn a_wrong_password_and_an_unknown_account_get_the_same_answer() {
     let schema = schema();
     let sessions = sessions();
     schema
         .execute(anonymous(
             SIGN_UP,
             &sessions,
-            credentials("a@example.org", "correct horse"),
+            sign_up_input("alice", Some("a@example.org"), "correct horse"),
         ))
         .await;
     for (email, password) in [
         ("a@example.org", "wrong horse!"),
+        ("alice", "wrong horse!"),
         ("nobody@example.org", "correct horse"),
+        ("nobody", "correct horse"),
         ("not an address", "x"),
     ] {
         let response = schema
@@ -2014,15 +2157,32 @@ async fn a_wrong_password_and_an_unknown_address_get_the_same_answer() {
 }
 
 #[tokio::test]
-async fn signing_up_refuses_a_bad_address_a_short_password_and_a_taken_address() {
+async fn signing_up_refuses_a_bad_name_or_address_a_short_password_and_what_is_taken() {
     let schema = schema();
     let sessions = sessions();
-    for (email, password, field, code) in [
-        ("not an address", "correct horse", "email", "INVALID_EMAIL"),
-        ("a@example.org", "short", "password", "WEAK_PASSWORD"),
+    for (username, email, password, field, code) in [
+        (
+            "alice",
+            Some("not an address"),
+            "correct horse",
+            "email",
+            "INVALID_EMAIL",
+        ),
+        (
+            "alice",
+            Some("a@example.org"),
+            "short",
+            "password",
+            "WEAK_PASSWORD",
+        ),
+        ("a b", None, "correct horse", "username", "INVALID_USERNAME"),
     ] {
         let data = schema
-            .execute(anonymous(SIGN_UP, &sessions, credentials(email, password)))
+            .execute(anonymous(
+                SIGN_UP,
+                &sessions,
+                sign_up_input(username, email, password),
+            ))
             .await
             .data
             .into_json()
@@ -2033,33 +2193,38 @@ async fn signing_up_refuses_a_bad_address_a_short_password_and_a_taken_address()
             serde_json::json!({ "field": ["input", field], "code": code })
         );
     }
-    run_on_as_operator(
+    run_on_as_owner(
         &schema,
-        r#"mutation { createUser(email: "b@example.org") { id } }"#,
+        r#"mutation { createUser(input: { username: "user-b", email: "b@example.org" }) { user { id } } }"#,
     )
     .await;
-    let taken = schema
-        .execute(anonymous(
-            SIGN_UP,
-            &sessions,
-            credentials("B@example.org", "correct horse"),
-        ))
-        .await;
-    assert_eq!(
-        taken.data.into_json().unwrap()["signUp"]["userErrors"][0]["code"],
-        "EMAIL_TAKEN"
-    );
+    for (username, email, code) in [
+        ("other", Some("B@example.org"), "EMAIL_TAKEN"),
+        ("USER-B", None, "USERNAME_TAKEN"),
+    ] {
+        let taken = schema
+            .execute(anonymous(
+                SIGN_UP,
+                &sessions,
+                sign_up_input(username, email, "correct horse"),
+            ))
+            .await;
+        assert_eq!(
+            taken.data.into_json().unwrap()["signUp"]["userErrors"][0]["code"],
+            code
+        );
+    }
 }
 
 #[tokio::test]
-async fn an_address_is_refused_after_five_failed_sign_ins() {
+async fn an_identifier_is_refused_after_five_failed_sign_ins() {
     let schema = schema();
     let sessions = sessions();
     schema
         .execute(anonymous(
             SIGN_UP,
             &sessions,
-            credentials("a@example.org", "correct horse"),
+            sign_up_input("alice", Some("a@example.org"), "correct horse"),
         ))
         .await;
     for _ in 0..5 {
@@ -2086,21 +2251,22 @@ async fn an_address_is_refused_after_five_failed_sign_ins() {
 }
 
 #[tokio::test]
-async fn letting_users_in_is_for_the_operator_and_signing_out_clears_the_cookie() {
+async fn letting_users_in_is_for_owners_and_signing_out_clears_the_cookie() {
     let schema = schema();
     let sessions = sessions();
     let user = connected_user(&schema).await;
-    let deactivate = "mutation($id: ID!) { deactivateUser(id: $id) { active } }";
+    let deactivate =
+        "mutation($id: ID!) { deactivateUser(input: { userId: $id }) { user { active } } }";
     let variables = || async_graphql::Variables::from_json(serde_json::json!({ "id": user }));
     let refused = schema
         .execute(as_user_with_id(&user, deactivate).variables(variables()))
         .await;
     assert_eq!(refused.errors[0].message, "not found");
     let done = schema
-        .execute(as_operator(deactivate).variables(variables()))
+        .execute(as_owner(deactivate).variables(variables()))
         .await;
     assert_eq!(
-        done.data.into_json().unwrap()["deactivateUser"]["active"],
+        done.data.into_json().unwrap()["deactivateUser"]["user"]["active"],
         false
     );
 
@@ -2181,7 +2347,7 @@ async fn nobody_reads_nothing_from_any_entry_point() {
         "{ libraries(first: 10) { edges { node { id } } } }".to_owned(),
         "{ recentlyAdded(kind: SHOW, first: 10) { edges { node { id } } } }".to_owned(),
         "{ continueWatching(first: 10) { edges { node { id } } } }".to_owned(),
-        "{ viewer { isOperator user { id } } }".to_owned(),
+        "{ viewer { role user { id } } }".to_owned(),
     ];
     for query in queries {
         let response = schema.execute(query.as_str()).await;
@@ -2423,16 +2589,16 @@ fn user_in(
     query: &str,
 ) -> async_graphql::Request {
     use open_plex_core::access::LibraryAccess;
-    use open_plex_core::{Principal, Scope, UserId};
+    use open_plex_core::{Principal, UserId};
     let libraries = [27, 28]
         .into_iter()
         .map(|section| (SectionId::new(section), role))
         .collect();
     async_graphql::Request::new(query).data(Principal {
         name: format!("user {user}"),
-        scope: Scope::User,
+        role: open_plex_core::ServerRole::User,
         libraries: LibraryAccess::Only(libraries),
-        user: Some(UserId::new(user)),
+        user: UserId::new(user),
         server_identifier: None,
     })
 }
@@ -2505,7 +2671,7 @@ async fn an_episode_lists_the_markers_its_detection_found_in_order() {
     ]);
     let query = markers_query(578_173, "Episode");
     assert_eq!(
-        markers_seen(&schema, as_operator(query.as_str())).await,
+        markers_seen(&schema, as_owner(query.as_str())).await,
         expected
     );
     assert_eq!(
@@ -2574,7 +2740,7 @@ async fn the_works_markers_are_written_by_a_librarys_admins_only() {
     );
     let id = added["marker"]["id"].clone();
 
-    // A viewer cannot move it either; the operator can, and the detection's version goes.
+    // A viewer cannot move it either; an owner can, and the detection's version goes.
     let refused = mutate(
         &schema,
         user_in(3, LibraryRole::Viewer, UPDATE_MARKER),
@@ -2584,7 +2750,7 @@ async fn the_works_markers_are_written_by_a_librarys_admins_only() {
     assert_eq!(refused["userErrors"][0]["code"], "MARKER_NOT_FOUND");
     let updated = mutate(
         &schema,
-        as_operator(UPDATE_MARKER),
+        as_owner(UPDATE_MARKER),
         serde_json::json!({ "id": GlobalId::encode("Marker", 1), "startMs": 2_200_000 }),
     )
     .await;
@@ -2604,7 +2770,7 @@ async fn the_works_markers_are_written_by_a_librarys_admins_only() {
         deleted,
         serde_json::json!({ "clientMutationId": "d", "deletedMarkerId": id, "userErrors": [] })
     );
-    let left = markers_seen(&schema, as_operator(markers_query(578_173, "Episode"))).await;
+    let left = markers_seen(&schema, as_owner(markers_query(578_173, "Episode"))).await;
     assert_eq!(left.as_array().unwrap().len(), 2);
 }
 
@@ -2638,7 +2804,7 @@ async fn a_bookmark_is_its_keepers_alone() {
     );
     for other in [
         user_in(4, LibraryRole::Admin, &film),
-        as_operator(film.as_str()),
+        as_owner(film.as_str()),
     ] {
         assert_eq!(markers_seen(&schema, other).await, serde_json::json!([]));
     }
@@ -2706,7 +2872,7 @@ async fn an_add_refuses_what_a_marker_cannot_be() {
     ];
     for (mut input, field, code) in cases {
         input["itemId"] = Value::from(episode.as_str());
-        let refused = mutate(&schema, as_operator(ADD_MARKER), input).await;
+        let refused = mutate(&schema, as_owner(ADD_MARKER), input).await;
         assert_eq!(
             refused["userErrors"][0]["field"],
             serde_json::json!(["input", field]),
@@ -2716,7 +2882,7 @@ async fn an_add_refuses_what_a_marker_cannot_be() {
     }
     let on_a_series = mutate(
         &schema,
-        as_operator(ADD_MARKER),
+        as_owner(ADD_MARKER),
         serde_json::json!({
             "itemId": GlobalId::encode("Item", 577_987),
             "kind": "BOOKMARK",

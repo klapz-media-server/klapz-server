@@ -1,6 +1,6 @@
 use sea_orm::entity::prelude::*;
 
-/// A playlist, owned by one viewer: 0 is the operator.
+/// A playlist, owned by one user.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "playlist")]
 pub struct Model {

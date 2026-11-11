@@ -8,7 +8,7 @@ use open_plex_core::history::{
 use open_plex_core::page::{Cursor, CursorKey, Page, Window};
 use open_plex_core::tracks::{SubtitleChoice, TrackChoice};
 use open_plex_core::watch::{
-    Viewer, Viewing, WatchError, WatchRepository, WatchState, VIEWING_LIFETIME_SECONDS,
+    Viewing, WatchError, WatchRepository, WatchState, VIEWING_LIFETIME_SECONDS,
 };
 use open_plex_core::{HistoryId, PartId, RatingKey, SectionId, StreamId, UserId};
 use sea_orm::sea_query::{Alias, Expr, OnConflict, Query, SimpleExpr};
@@ -31,26 +31,18 @@ impl SqlWatchRepository {
     }
 }
 
-/// The stored form of a viewer: 0 is the operator, who has no user row.
-pub(crate) const fn viewer_id(viewer: Viewer) -> i64 {
-    match viewer {
-        Viewer::Operator => 0,
-        Viewer::User(user) => user.get(),
-    }
-}
-
 #[async_trait::async_trait]
 impl WatchRepository for SqlWatchRepository {
     async fn states(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         guids: &[String],
     ) -> Result<Vec<(String, WatchState)>, WatchError> {
         if guids.is_empty() {
             return Ok(Vec::new());
         }
         let rows = watch_state::Entity::find()
-            .filter(watch_state::Column::Viewer.eq(viewer_id(viewer)))
+            .filter(watch_state::Column::Viewer.eq(viewer.get()))
             .filter(watch_state::Column::Guid.is_in(guids.iter().cloned()))
             .all(&self.connection)
             .await
@@ -60,21 +52,21 @@ impl WatchRepository for SqlWatchRepository {
 
     async fn save(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         states: &[(String, WatchState)],
     ) -> Result<(), WatchError> {
         let transaction = self.connection.begin().await.map_err(storage)?;
-        save_states(&transaction, viewer_id(viewer), states).await?;
+        save_states(&transaction, viewer.get(), states).await?;
         transaction.commit().await.map_err(storage)
     }
 
     async fn record_viewings(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         states: &[(String, WatchState)],
         viewings: &[NewViewing],
     ) -> Result<(), WatchError> {
-        let viewer = viewer_id(viewer);
+        let viewer = viewer.get();
         let transaction = self.connection.begin().await.map_err(storage)?;
         save_states(&transaction, viewer, states).await?;
         if !viewings.is_empty() {
@@ -161,7 +153,7 @@ impl WatchRepository for SqlWatchRepository {
 
     async fn watched_leaves(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         parents: &[RatingKey],
     ) -> Result<Vec<(RatingKey, u64)>, WatchError> {
         #[derive(FromQueryResult)]
@@ -176,10 +168,7 @@ impl WatchRepository for SqlWatchRepository {
         let keys: Vec<i64> = parents.iter().map(|id| id.get()).collect();
         let watched = || {
             Condition::all()
-                .add(
-                    Expr::col((watch_state::Entity, watch_state::Column::Viewer))
-                        .eq(viewer_id(viewer)),
-                )
+                .add(Expr::col((watch_state::Entity, watch_state::Column::Viewer)).eq(viewer.get()))
                 .add(Expr::col((watch_state::Entity, watch_state::Column::ViewCount)).gt(0))
         };
         let joined = |select: sea_orm::Select<metadata_item::Entity>| {
@@ -243,12 +232,12 @@ impl WatchRepository for SqlWatchRepository {
 
     async fn recent(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         since: i64,
         limit: u32,
     ) -> Result<Vec<(String, WatchState)>, WatchError> {
         let rows = watch_state::Entity::find()
-            .filter(watch_state::Column::Viewer.eq(viewer_id(viewer)))
+            .filter(watch_state::Column::Viewer.eq(viewer.get()))
             .filter(watch_state::Column::LastViewedAt.gte(since))
             .order_by_desc(watch_state::Column::LastViewedAt)
             .limit(u64::from(limit))
@@ -260,12 +249,12 @@ impl WatchRepository for SqlWatchRepository {
 
     async fn viewing(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         playback: &str,
         now: i64,
     ) -> Result<Option<Viewing>, WatchError> {
         Ok(
-            viewing::Entity::find_by_id((viewer_id(viewer), playback.to_owned()))
+            viewing::Entity::find_by_id((viewer.get(), playback.to_owned()))
                 .filter(viewing::Column::ExpiresAt.gt(now))
                 .one(&self.connection)
                 .await
@@ -280,12 +269,12 @@ impl WatchRepository for SqlWatchRepository {
 
     async fn remember(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         playback: &str,
         remembered: Viewing,
         now: i64,
     ) -> Result<(), WatchError> {
-        let viewer = viewer_id(viewer);
+        let viewer = viewer.get();
         let transaction = self.connection.begin().await.map_err(storage)?;
         // Anything of this viewer's that has expired goes now: playbacks are few per viewer,
         // and no sweep has to know about them.
@@ -321,14 +310,14 @@ impl WatchRepository for SqlWatchRepository {
 
     async fn track_choices(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         files: &[PartId],
     ) -> Result<Vec<(PartId, TrackChoice)>, WatchError> {
         if files.is_empty() {
             return Ok(Vec::new());
         }
         let rows = track_choice::Entity::find()
-            .filter(track_choice::Column::Viewer.eq(viewer_id(viewer)))
+            .filter(track_choice::Column::Viewer.eq(viewer.get()))
             .filter(track_choice::Column::MediaPartId.is_in(files.iter().map(|file| file.get())))
             .all(&self.connection)
             .await
@@ -353,12 +342,12 @@ impl WatchRepository for SqlWatchRepository {
 
     async fn choose_tracks(
         &self,
-        viewer: Viewer,
+        viewer: UserId,
         file: PartId,
         choice: TrackChoice,
     ) -> Result<(), WatchError> {
         if choice.is_empty() {
-            track_choice::Entity::delete_by_id((viewer_id(viewer), file.get()))
+            track_choice::Entity::delete_by_id((viewer.get(), file.get()))
                 .exec(&self.connection)
                 .await
                 .map_err(storage)?;
@@ -370,7 +359,7 @@ impl WatchRepository for SqlWatchRepository {
             None => (None, false),
         };
         track_choice::Entity::insert(track_choice::ActiveModel {
-            viewer: ActiveValue::Set(viewer_id(viewer)),
+            viewer: ActiveValue::Set(viewer.get()),
             media_part_id: ActiveValue::Set(file.get()),
             audio_stream_id: ActiveValue::Set(choice.audio.map(StreamId::get)),
             subtitle_stream_id: ActiveValue::Set(subtitle_stream_id),
@@ -457,10 +446,7 @@ impl HistoryRow {
     fn into_entry(self) -> HistoryEntry {
         HistoryEntry {
             id: HistoryId::new(self.id),
-            viewer: match self.viewer {
-                0 => Viewer::Operator,
-                user => Viewer::User(UserId::new(user)),
-            },
+            viewer: UserId::new(self.viewer),
             item: RatingKey::new(self.item_id),
             section: SectionId::new(self.section_id),
             kind: if self.kind == kind_name(ViewingKind::Marked) {
@@ -503,7 +489,7 @@ fn joined_history() -> Select<viewing_history::Entity> {
 fn history_select(query: &HistoryQuery) -> Select<viewing_history::Entity> {
     let mut select = joined_history();
     if let HistoryScope::Viewer(viewer) = query.scope {
-        select = select.filter(viewing_history::Column::Viewer.eq(viewer_id(viewer)));
+        select = select.filter(viewing_history::Column::Viewer.eq(viewer.get()));
     }
     if let Some(item) = query.item.map(RatingKey::get) {
         let parent = || Expr::col((metadata_item::Entity, metadata_item::Column::ParentId));

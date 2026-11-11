@@ -18,7 +18,7 @@ async fn repository() -> SqlPlayQueueRepository {
 fn queue(count: i64, selected: usize) -> NewPlayQueue {
     NewPlayQueue {
         playlist: None,
-        user: None,
+        user: open_plex_core::UserId::new(1),
         client: None,
         kind: PlayQueueKind::Video,
         source_uri: "library://x/item/1".to_owned(),
@@ -154,7 +154,7 @@ async fn a_player_s_new_queue_replaces_its_previous_one_of_the_same_kind() {
         assert!(repository.queue(kept).await.expect("read").is_some());
     }
     let mut another_user = for_client("a", PlayQueueKind::Video);
-    another_user.user = Some(open_plex_core::UserId::new(7));
+    another_user.user = open_plex_core::UserId::new(7);
     repository.create(another_user, NOW).await.expect("create");
     assert!(repository.queue(second.id).await.expect("read").is_some());
 }

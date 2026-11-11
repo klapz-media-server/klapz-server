@@ -10,8 +10,7 @@
 //! Offsets are in milliseconds from the start of the media.
 
 use crate::metadata::MetadataItem;
-use crate::watch::Viewer;
-use crate::{MarkerId, RatingKey};
+use crate::{MarkerId, RatingKey, UserId};
 
 /// What a marker marks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -38,7 +37,7 @@ pub struct Marker {
     pub item: RatingKey,
     pub kind: MarkerKind,
     /// The viewer a bookmark belongs to; `None` for the work's own markers.
-    pub owner: Option<Viewer>,
+    pub owner: Option<UserId>,
     pub start_ms: i64,
     /// Where it ends. A bookmark may mark a point and have none; the work's markers always
     /// have one, except 51 credits of the reference library that end before they start, kept as
@@ -79,7 +78,7 @@ pub enum MarkerError {
 pub struct NewMarker {
     item: RatingKey,
     kind: MarkerKind,
-    owner: Option<Viewer>,
+    owner: Option<UserId>,
     values: MarkerValues,
 }
 
@@ -104,7 +103,7 @@ impl NewMarker {
     pub fn new(
         item: &MetadataItem,
         kind: MarkerKind,
-        viewer: Option<Viewer>,
+        viewer: Option<UserId>,
         values: MarkerValues,
     ) -> Result<Self, MarkerError> {
         if !item.kind.is_playable() {
@@ -132,7 +131,7 @@ impl NewMarker {
         self.kind
     }
 
-    pub const fn owner(&self) -> Option<Viewer> {
+    pub const fn owner(&self) -> Option<UserId> {
         self.owner
     }
 
@@ -220,7 +219,7 @@ impl Marker {
     }
 
     /// Whether `viewer` sees this marker: the work's are everyone's, a bookmark its owner's.
-    pub fn is_visible_to(&self, viewer: Option<Viewer>) -> bool {
+    pub fn is_visible_to(&self, viewer: Option<UserId>) -> bool {
         self.owner.is_none() || self.owner == viewer
     }
 }
@@ -270,7 +269,7 @@ mod tests {
         }
     }
 
-    const VIEWER: Viewer = Viewer::User(UserId::new(3));
+    const VIEWER: UserId = UserId::new(3);
 
     #[test]
     fn the_works_markers_have_no_owner_and_a_bookmark_its_viewers() {
@@ -395,7 +394,7 @@ mod tests {
             ..stored.clone()
         }));
         assert!(!bookmark.duplicates(&Marker {
-            owner: Some(Viewer::Operator),
+            owner: Some(UserId::new(1)),
             ..stored
         }));
     }
@@ -445,7 +444,7 @@ mod tests {
             color: None,
         };
         assert!(bookmark.is_visible_to(Some(VIEWER)));
-        assert!(!bookmark.is_visible_to(Some(Viewer::Operator)));
+        assert!(!bookmark.is_visible_to(Some(UserId::new(1))));
         assert!(!bookmark.is_visible_to(None));
         let intro = Marker {
             kind: MarkerKind::Intro,

@@ -1,17 +1,32 @@
 //! Users, what they may reach, and how an extension knows them.
 //!
-//! Our own model, not Plex's: a user is an e-mail address, a permission gives one user one role
-//! on one library, and an extension is one protocol a user can connect through. Without a
-//! permission on a library, a user does not know it exists. A user that is not active — one
-//! that signed up and waits for the operator — opens nothing, however it authenticates.
+//! Our own model, not Plex's: a user is a username, perhaps with an e-mail address; a permission
+//! gives one user one role on one library, and an extension is one protocol a user can connect
+//! through. Without a permission on a library, a user does not know it exists — unless it owns
+//! the server, which reaches every library. A user that is not active — one that signed up and
+//! waits for an owner — opens nothing, however it authenticates.
 
 use std::collections::HashMap;
 
 use sha2::{Digest, Sha256};
 
-use crate::auth::{Principal, Scope};
+use crate::auth::Principal;
 use crate::ids::{SectionId, UserId};
 use crate::page::{Page, Window};
+
+/// The account every server has, created at startup: an owner that cannot be demoted,
+/// deactivated or deleted, so that someone can always manage the server.
+pub const ADMIN_USERNAME: &str = "admin";
+
+/// What a user may do on the server as a whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ServerRole {
+    /// Reaches the libraries it was given.
+    #[default]
+    User,
+    /// Reaches every library as its admin, and manages users, sessions and everyone's history.
+    Owner,
+}
 
 /// What a user may do in one library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -31,12 +46,45 @@ pub enum Extension {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct User {
     pub id: UserId,
-    pub email: String,
-    /// Off until the operator lets in someone who signed up; off again when it shuts one out.
+    /// How the user is known and signs in: lower case, unique.
+    pub username: String,
+    pub email: Option<String>,
+    pub role: ServerRole,
+    /// Off until an owner lets in someone who signed up; off again when it shuts one out.
     pub active: bool,
     /// Epoch seconds, as is the one below.
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+impl User {
+    /// Whether this is the account the server creates for itself, which always stays an
+    /// active owner.
+    #[must_use]
+    pub fn is_built_in(&self) -> bool {
+        self.username == ADMIN_USERNAME
+    }
+}
+
+/// A user to create.
+#[derive(Debug, Clone, Copy)]
+pub struct NewUser<'a> {
+    /// Already normalized: see [`crate::account::normalized_username`].
+    pub username: &'a str,
+    /// Already normalized: see [`crate::account::normalized_email`].
+    pub email: Option<&'a str>,
+    pub role: ServerRole,
+    pub active: bool,
+    /// An Argon2id hash, for a user that signs in with a password.
+    pub password_hash: Option<&'a str>,
+}
+
+/// What a user signs in with: its username, or its e-mail address when it has one. Never
+/// ambiguous, since a username holds no `@`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Login {
+    Username(String),
+    Email(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,19 +154,25 @@ impl Grant {
     }
 }
 
-/// The caller a user is, with the libraries it was given. No server identifier: that is an
-/// extension's, and a user signed in with its password came through none.
+/// The caller a user is, with the libraries it was given, or all of them for an owner. No
+/// server identifier: that is an extension's, and a user signed in with its password came
+/// through none.
 #[must_use]
 pub fn user_principal(user: User, permissions: &[LibraryPermission]) -> Principal {
-    let libraries: HashMap<SectionId, LibraryRole> = permissions
-        .iter()
-        .map(|permission| (permission.section, permission.role))
-        .collect();
+    let libraries = match user.role {
+        ServerRole::Owner => LibraryAccess::All,
+        ServerRole::User => LibraryAccess::Only(
+            permissions
+                .iter()
+                .map(|permission| (permission.section, permission.role))
+                .collect::<HashMap<SectionId, LibraryRole>>(),
+        ),
+    };
     Principal {
-        name: user.email,
-        scope: Scope::User,
-        libraries: LibraryAccess::Only(libraries),
-        user: Some(user.id),
+        user: user.id,
+        name: user.username,
+        role: user.role,
+        libraries,
         server_identifier: None,
     }
 }
@@ -126,6 +180,7 @@ pub fn user_principal(user: User, permissions: &[LibraryPermission]) -> Principa
 /// Which libraries a caller reaches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LibraryAccess {
+    /// An owner's: every library, as its admin.
     All,
     Only(HashMap<SectionId, LibraryRole>),
 }
@@ -141,7 +196,7 @@ impl LibraryAccess {
     }
 
     /// Whether the caller may change what a library holds: its items' metadata, its settings.
-    /// A library's admins may, and the operator, who administers every library.
+    /// A library's admins may, and an owner, who administers every library.
     #[must_use]
     pub fn may_edit(&self, section: SectionId) -> bool {
         self.role(section) == Some(LibraryRole::Admin)
@@ -254,6 +309,8 @@ pub async fn publish_link(
 
 #[derive(Debug, thiserror::Error)]
 pub enum AccessError {
+    #[error("this username is taken")]
+    UsernameTaken,
     #[error("this e-mail address already has a user")]
     EmailTaken,
     #[error("no such user")]
@@ -272,29 +329,40 @@ pub enum AccessError {
 
 #[async_trait::async_trait]
 pub trait AccessRepository: Send + Sync + std::fmt::Debug {
-    /// An active user, as the operator creates them.
+    /// A user, with its password when it has one.
     ///
     /// # Errors
     ///
-    /// [`AccessError::EmailTaken`], or a storage failure.
-    async fn create_user(&self, email: &str, now: i64) -> Result<User, AccessError>;
+    /// [`AccessError::UsernameTaken`], [`AccessError::EmailTaken`], or a storage failure.
+    async fn create_user(&self, new: NewUser<'_>, now: i64) -> Result<User, AccessError>;
 
-    /// A user that signed up: inactive, with its password hash.
-    ///
-    /// # Errors
-    ///
-    /// [`AccessError::EmailTaken`], or a storage failure.
-    async fn sign_up(
-        &self,
-        email: &str,
-        password_hash: &str,
-        now: i64,
-    ) -> Result<User, AccessError>;
+    /// The user a login names and its password hash, when it has one.
+    async fn credentials(&self, login: &Login) -> Result<Option<(User, String)>, AccessError>;
 
-    /// The user with this address and its password hash, when it has one.
-    async fn credentials(&self, email: &str) -> Result<Option<(User, String)>, AccessError>;
+    async fn user_named(&self, username: &str) -> Result<Option<User>, AccessError>;
 
     async fn has_password(&self, user: UserId) -> Result<bool, AccessError>;
+
+    /// Gives a user a password, replacing the one it had.
+    ///
+    /// # Errors
+    ///
+    /// [`AccessError::UnknownUser`], or a storage failure.
+    async fn set_password(
+        &self,
+        user: UserId,
+        password_hash: &str,
+        now: i64,
+    ) -> Result<(), AccessError>;
+
+    /// Makes a user an owner of the server, or no longer one. The user as it now is; `None`
+    /// when there is none.
+    async fn set_role(
+        &self,
+        user: UserId,
+        role: ServerRole,
+        now: i64,
+    ) -> Result<Option<User>, AccessError>;
 
     /// Lets a user in or shuts it out. The user as it now is; `None` when there is none.
     async fn set_active(
@@ -461,7 +529,9 @@ mod tests {
         Grant {
             user: User {
                 id: UserId::new(3),
-                email: "a@example.org".to_owned(),
+                username: "alice".to_owned(),
+                email: Some("a@example.org".to_owned()),
+                role: ServerRole::User,
                 active: true,
                 created_at: 0,
                 updated_at: 0,
@@ -489,7 +559,7 @@ mod tests {
             Some(LibraryRole::Viewer)
         );
         assert_eq!(principal.libraries.role(SectionId::new(5)), None);
-        assert_eq!(principal.scope, Scope::User);
+        assert!(!principal.is_owner());
         assert_eq!(principal.server_identifier.as_deref(), Some("server"));
     }
 
@@ -497,6 +567,15 @@ mod tests {
     fn a_user_without_permissions_reaches_nothing() {
         let principal = grant(Vec::new()).into_principal();
         assert_eq!(principal.libraries.sections(), Some(Vec::new()));
+    }
+
+    #[test]
+    fn an_owner_reaches_every_library_whatever_it_was_given() {
+        let mut owner = grant(Vec::new());
+        owner.user.role = ServerRole::Owner;
+        let principal = owner.into_principal();
+        assert!(principal.is_owner());
+        assert_eq!(principal.libraries, LibraryAccess::All);
     }
 
     #[test]

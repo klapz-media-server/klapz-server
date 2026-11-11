@@ -6,8 +6,13 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
+    /// In lower case, so that uniqueness ignores case.
     #[sea_orm(unique)]
-    pub email: String,
+    pub username: String,
+    #[sea_orm(unique)]
+    pub email: Option<String>,
+    /// `owner` or `user`.
+    pub role: String,
     pub active: bool,
     pub created_at: i64,
     pub updated_at: i64,

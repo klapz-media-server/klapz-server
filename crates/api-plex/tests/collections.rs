@@ -14,8 +14,8 @@ use open_plex_core::edit::CalendarDate;
 use open_plex_core::metadata::{ItemKind, MetadataItem};
 use open_plex_core::testing::{InMemoryCollections, InMemoryLibrary, InMemoryMetadata};
 use open_plex_core::{
-    Accounts, LibrarySection, Principal, RatingKey, Scope, SectionId, SectionKind,
-    ServerCapabilities, ServerIdentity, UserId,
+    LibrarySection, Principal, RatingKey, SectionId, SectionKind, ServerCapabilities,
+    ServerIdentity, UserId,
 };
 use serde_json::Value;
 use tower::ServiceExt;
@@ -112,13 +112,12 @@ fn app_as(schema: &ApiSchema, caller: Principal) -> axum::Router {
     router(PlexState::new(
         ServerIdentity::new(MACHINE, "0.1.0-dev"),
         schema.clone(),
-        Accounts::new(Vec::new()),
     ))
     .layer(axum::Extension(caller))
 }
 
-fn operator(schema: &ApiSchema) -> axum::Router {
-    app_as(schema, Principal::operator("owner"))
+fn owner(schema: &ApiSchema) -> axum::Router {
+    app_as(schema, open_plex_core::testing::owner())
 }
 
 /// A user given the series library as a viewer, and nothing else.
@@ -127,11 +126,11 @@ fn viewer(schema: &ApiSchema) -> axum::Router {
         schema,
         Principal {
             name: "user7".to_owned(),
-            scope: Scope::User,
+            role: open_plex_core::ServerRole::User,
             libraries: LibraryAccess::Only(
                 std::iter::once((SectionId::new(28), LibraryRole::Viewer)).collect(),
             ),
-            user: Some(UserId::new(7)),
+            user: UserId::new(7),
             server_identifier: None,
         },
     )
@@ -205,7 +204,7 @@ fn rating_keys(container: &Value) -> Vec<String> {
 #[tokio::test]
 async fn a_created_collection_answers_as_the_reference_does() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, 27, 1, "OP Coll A", &[FILM]).await;
     // Captured on POST /library/collections: no library on the collection, in this order.
     assert_eq!(
@@ -249,7 +248,7 @@ async fn a_created_collection_answers_as_the_reference_does() {
 #[tokio::test]
 async fn a_lookup_and_a_listing_show_a_collection_with_its_library_where_the_reference_does() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, 28, 4, "OP Coll D", &[EPISODE_1, EPISODE_2]).await;
     let key = created["ratingKey"].as_str().unwrap().to_owned();
 
@@ -307,7 +306,7 @@ async fn a_lookup_and_a_listing_show_a_collection_with_its_library_where_the_ref
 #[tokio::test]
 async fn its_children_are_items_in_a_listing_form_naming_their_library() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, 28, 4, "OP Coll D", &[EPISODE_1, EPISODE_2]).await;
     let key = created["ratingKey"].as_str().unwrap().to_owned();
     let children = json(
@@ -353,7 +352,7 @@ async fn its_children_are_items_in_a_listing_form_naming_their_library() {
 #[tokio::test]
 async fn adding_moving_and_removing_answer_as_measured() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, 28, 4, "OP Coll D", &[EPISODE_1]).await;
     let key = created["ratingKey"].as_str().unwrap().to_owned();
     let items = format!("/library/collections/{key}/items");
@@ -436,7 +435,7 @@ async fn adding_moving_and_removing_answer_as_measured() {
 #[tokio::test]
 async fn the_order_and_mode_are_set_through_prefs() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, 28, 4, "OP Coll D", &[EPISODE_1, EPISODE_2]).await;
     let key = created["ratingKey"].as_str().unwrap().to_owned();
     let prefs = format!("/library/metadata/{key}/prefs");
@@ -490,7 +489,7 @@ async fn the_order_and_mode_are_set_through_prefs() {
 #[tokio::test]
 async fn an_item_names_its_collections_and_a_listing_filters_on_them() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, 27, 1, "OP Coll A", &[FILM]).await;
     let number = created["index"].as_i64().unwrap();
 
@@ -541,7 +540,7 @@ async fn an_item_names_its_collections_and_a_listing_filters_on_them() {
 #[tokio::test]
 async fn deleting_by_tag_empties_and_deleting_the_metadata_removes() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, 27, 1, "OP Coll A", &[FILM]).await;
     let key = created["ratingKey"].as_str().unwrap().to_owned();
     let number = created["index"].as_i64().unwrap();
@@ -598,7 +597,7 @@ async fn deleting_by_tag_empties_and_deleting_the_metadata_removes() {
 #[tokio::test]
 async fn creation_refuses_what_the_reference_refuses() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     for refused in [
         "/library/collections?type=1&title=OP%20X1&sectionId=999",
         "/library/collections?type=1&sectionId=27",
@@ -626,7 +625,7 @@ async fn creation_refuses_what_the_reference_refuses() {
 #[tokio::test]
 async fn a_smart_collection_carries_its_content_and_lists_it() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = json(
         &app,
         Method::POST,
@@ -672,7 +671,7 @@ async fn a_smart_collection_carries_its_content_and_lists_it() {
 #[tokio::test]
 async fn a_viewer_reads_collections_and_changes_none() {
     let schema = schema();
-    let created = create(&operator(&schema), 28, 2, "OP Coll C", &[SHOW]).await;
+    let created = create(&owner(&schema), 28, 2, "OP Coll C", &[SHOW]).await;
     let key = created["ratingKey"].as_str().unwrap().to_owned();
     let app = viewer(&schema);
     json(&app, Method::GET, &format!("/library/metadata/{key}")).await;
@@ -699,7 +698,7 @@ async fn a_viewer_reads_collections_and_changes_none() {
 #[tokio::test]
 async fn a_type_18_edit_renames_and_locks() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, 27, 1, "OP Lock", &[FILM]).await;
     let key = created["ratingKey"].as_str().unwrap().to_owned();
     let (status_code, _) = send(
@@ -741,7 +740,7 @@ async fn a_type_18_edit_renames_and_locks() {
 #[tokio::test]
 async fn the_search_shelf_lists_a_collection_as_the_reference_does() {
     let schema = schema();
-    let app = operator(&schema);
+    let app = owner(&schema);
     let created = create(&app, 27, 1, "OP Coll A", &[FILM]).await;
     let number = created["index"].as_i64().unwrap();
     let body = json(&app, Method::GET, "/hubs/search?query=OP%20Coll&limit=10").await;

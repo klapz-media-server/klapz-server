@@ -41,8 +41,7 @@ pub struct PlaybackOutput {
 pub struct NewPlaybackSession {
     /// The client's own identifier for this conversion. Changes with the quality.
     pub key: String,
-    /// `None` for the server's operator.
-    pub user: Option<UserId>,
+    pub user: UserId,
     /// The player's identifier for the whole playback, which is what its reports name.
     pub playback_id: Option<String>,
     pub item: RatingKey,
@@ -55,13 +54,13 @@ pub struct NewPlaybackSession {
     pub output: PlaybackOutput,
 }
 
-/// The operator ending a session. The session stays readable, and stops counting as playing,
+/// An owner ending a session. The session stays readable, and stops counting as playing,
 /// until its player hears of it: a player that stops, or the session's expiry, removes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Termination {
     /// Epoch seconds.
     pub at: i64,
-    /// What the operator told the player, if anything.
+    /// What the owner told the player, if anything.
     pub reason: Option<String>,
 }
 
@@ -69,7 +68,7 @@ pub struct Termination {
 pub struct PlaybackSession {
     pub id: i64,
     pub key: String,
-    pub user: Option<UserId>,
+    pub user: UserId,
     pub playback_id: Option<String>,
     pub item: RatingKey,
     pub part: PartId,

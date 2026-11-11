@@ -1066,7 +1066,7 @@ impl MetadataRepository for InMemoryMetadata {
     async fn markers(
         &self,
         items: &[RatingKey],
-        viewer: Option<crate::watch::Viewer>,
+        viewer: Option<crate::ids::UserId>,
     ) -> Result<Vec<Marker>, MetadataError> {
         Ok(locked(&self.markers)
             .iter()
@@ -1394,7 +1394,7 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
                 .rows()
                 .iter()
                 .filter(|row| row.expires_at > now && row.termination.is_none())
-                .filter(|row| only.is_none() || row.user == only)
+                .filter(|row| only.is_none_or(|user| row.user == user))
                 .cloned()
                 .collect(),
             has_previous: false,
@@ -1442,24 +1442,53 @@ pub struct InMemoryAccess {
 }
 
 impl InMemoryAccess {
+    /// An active user with no password, as an owner creates one.
+    ///
+    /// # Errors
+    ///
+    /// As [`crate::access::AccessRepository::create_user`].
+    pub fn add_user(
+        &self,
+        username: &str,
+        role: crate::access::ServerRole,
+    ) -> Result<crate::access::User, crate::access::AccessError> {
+        self.insert_user(
+            crate::access::NewUser {
+                username,
+                email: None,
+                role,
+                active: true,
+                password_hash: None,
+            },
+            0,
+        )
+    }
+
     fn insert_user(
         &self,
-        email: &str,
-        active: bool,
+        new: crate::access::NewUser<'_>,
         now: i64,
     ) -> Result<crate::access::User, crate::access::AccessError> {
         let mut users = locked(&self.users);
-        if users.iter().any(|user| user.email == email) {
+        if users.iter().any(|user| user.username == new.username) {
+            return Err(crate::access::AccessError::UsernameTaken);
+        }
+        if new.email.is_some() && users.iter().any(|user| user.email.as_deref() == new.email) {
             return Err(crate::access::AccessError::EmailTaken);
         }
         let user = crate::access::User {
             id: crate::ids::UserId::new(i64::try_from(users.len()).unwrap_or(0) + 1),
-            email: email.to_owned(),
-            active,
+            username: new.username.to_owned(),
+            email: new.email.map(str::to_owned),
+            role: new.role,
+            active: new.active,
             created_at: now,
             updated_at: now,
         };
         users.push(user.clone());
+        if let Some(hash) = new.password_hash {
+            locked(&self.passwords).push((user.id, hash.to_owned()));
+        }
         Ok(user)
     }
 
@@ -1553,30 +1582,22 @@ fn locked<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 impl crate::access::AccessRepository for InMemoryAccess {
     async fn create_user(
         &self,
-        email: &str,
+        new: crate::access::NewUser<'_>,
         now: i64,
     ) -> Result<crate::access::User, crate::access::AccessError> {
-        self.insert_user(email, true, now)
-    }
-
-    async fn sign_up(
-        &self,
-        email: &str,
-        password_hash: &str,
-        now: i64,
-    ) -> Result<crate::access::User, crate::access::AccessError> {
-        let user = self.insert_user(email, false, now)?;
-        locked(&self.passwords).push((user.id, password_hash.to_owned()));
-        Ok(user)
+        self.insert_user(new, now)
     }
 
     async fn credentials(
         &self,
-        email: &str,
+        login: &crate::access::Login,
     ) -> Result<Option<(crate::access::User, String)>, crate::access::AccessError> {
         let Some(user) = locked(&self.users)
             .iter()
-            .find(|user| user.email == email)
+            .find(|user| match login {
+                crate::access::Login::Username(name) => &user.username == name,
+                crate::access::Login::Email(email) => user.email.as_ref() == Some(email),
+            })
             .cloned()
         else {
             return Ok(None);
@@ -1587,6 +1608,16 @@ impl crate::access::AccessRepository for InMemoryAccess {
             .map(|(_, hash)| (user, hash.clone())))
     }
 
+    async fn user_named(
+        &self,
+        username: &str,
+    ) -> Result<Option<crate::access::User>, crate::access::AccessError> {
+        Ok(locked(&self.users)
+            .iter()
+            .find(|user| user.username == username)
+            .cloned())
+    }
+
     async fn has_password(
         &self,
         user: crate::ids::UserId,
@@ -1594,6 +1625,35 @@ impl crate::access::AccessRepository for InMemoryAccess {
         Ok(locked(&self.passwords)
             .iter()
             .any(|(owner, _)| *owner == user))
+    }
+
+    async fn set_password(
+        &self,
+        user: crate::ids::UserId,
+        password_hash: &str,
+        _now: i64,
+    ) -> Result<(), crate::access::AccessError> {
+        if !locked(&self.users).iter().any(|held| held.id == user) {
+            return Err(crate::access::AccessError::UnknownUser);
+        }
+        let mut passwords = locked(&self.passwords);
+        passwords.retain(|(owner, _)| *owner != user);
+        passwords.push((user, password_hash.to_owned()));
+        Ok(())
+    }
+
+    async fn set_role(
+        &self,
+        user: crate::ids::UserId,
+        role: crate::access::ServerRole,
+        now: i64,
+    ) -> Result<Option<crate::access::User>, crate::access::AccessError> {
+        let mut users = locked(&self.users);
+        Ok(users.iter_mut().find(|held| held.id == user).map(|held| {
+            held.role = role;
+            held.updated_at = now;
+            held.clone()
+        }))
     }
 
     async fn set_active(
@@ -2118,9 +2178,9 @@ impl crate::play_queue::PlayQueueRepository for InMemoryPlayQueues {
 pub struct InMemoryWatch {
     /// The library's items, for counting the episodes below a series or a season.
     items: Vec<MetadataItem>,
-    states: std::sync::Mutex<Vec<(crate::watch::Viewer, String, crate::watch::WatchState)>>,
-    viewings: std::sync::Mutex<Vec<(crate::watch::Viewer, String, crate::watch::Viewing, i64)>>,
-    choices: std::sync::Mutex<Vec<(crate::watch::Viewer, PartId, crate::tracks::TrackChoice)>>,
+    states: std::sync::Mutex<Vec<(crate::ids::UserId, String, crate::watch::WatchState)>>,
+    viewings: std::sync::Mutex<Vec<(crate::ids::UserId, String, crate::watch::Viewing, i64)>>,
+    choices: std::sync::Mutex<Vec<(crate::ids::UserId, PartId, crate::tracks::TrackChoice)>>,
     history: std::sync::Mutex<Vec<crate::history::HistoryEntry>>,
 }
 
@@ -2177,7 +2237,7 @@ impl InMemoryWatch {
 impl crate::watch::WatchRepository for InMemoryWatch {
     async fn states(
         &self,
-        viewer: crate::watch::Viewer,
+        viewer: crate::ids::UserId,
         guids: &[String],
     ) -> Result<Vec<(String, crate::watch::WatchState)>, crate::watch::WatchError> {
         Ok(Self::lock(&self.states)
@@ -2189,7 +2249,7 @@ impl crate::watch::WatchRepository for InMemoryWatch {
 
     async fn save(
         &self,
-        viewer: crate::watch::Viewer,
+        viewer: crate::ids::UserId,
         states: &[(String, crate::watch::WatchState)],
     ) -> Result<(), crate::watch::WatchError> {
         let mut stored = Self::lock(&self.states);
@@ -2204,7 +2264,7 @@ impl crate::watch::WatchRepository for InMemoryWatch {
 
     async fn record_viewings(
         &self,
-        viewer: crate::watch::Viewer,
+        viewer: crate::ids::UserId,
         states: &[(String, crate::watch::WatchState)],
         viewings: &[crate::history::NewViewing],
     ) -> Result<(), crate::watch::WatchError> {
@@ -2279,7 +2339,7 @@ impl crate::watch::WatchRepository for InMemoryWatch {
 
     async fn watched_leaves(
         &self,
-        viewer: crate::watch::Viewer,
+        viewer: crate::ids::UserId,
         parents: &[RatingKey],
     ) -> Result<Vec<(RatingKey, u64)>, crate::watch::WatchError> {
         let stored = Self::lock(&self.states);
@@ -2309,7 +2369,7 @@ impl crate::watch::WatchRepository for InMemoryWatch {
 
     async fn recent(
         &self,
-        viewer: crate::watch::Viewer,
+        viewer: crate::ids::UserId,
         since: i64,
         limit: u32,
     ) -> Result<Vec<(String, crate::watch::WatchState)>, crate::watch::WatchError> {
@@ -2327,7 +2387,7 @@ impl crate::watch::WatchRepository for InMemoryWatch {
 
     async fn viewing(
         &self,
-        viewer: crate::watch::Viewer,
+        viewer: crate::ids::UserId,
         playback: &str,
         now: i64,
     ) -> Result<Option<crate::watch::Viewing>, crate::watch::WatchError> {
@@ -2339,7 +2399,7 @@ impl crate::watch::WatchRepository for InMemoryWatch {
 
     async fn remember(
         &self,
-        viewer: crate::watch::Viewer,
+        viewer: crate::ids::UserId,
         playback: &str,
         viewing: crate::watch::Viewing,
         now: i64,
@@ -2359,7 +2419,7 @@ impl crate::watch::WatchRepository for InMemoryWatch {
 
     async fn track_choices(
         &self,
-        viewer: crate::watch::Viewer,
+        viewer: crate::ids::UserId,
         files: &[PartId],
     ) -> Result<Vec<(PartId, crate::tracks::TrackChoice)>, crate::watch::WatchError> {
         Ok(Self::lock(&self.choices)
@@ -2371,7 +2431,7 @@ impl crate::watch::WatchRepository for InMemoryWatch {
 
     async fn choose_tracks(
         &self,
-        viewer: crate::watch::Viewer,
+        viewer: crate::ids::UserId,
         file: PartId,
         choice: crate::tracks::TrackChoice,
     ) -> Result<(), crate::watch::WatchError> {
@@ -3159,5 +3219,18 @@ impl CollectionRepository for InMemoryCollections {
         store.find(collection)?;
         store.entries.retain(|entry| entry.collection != collection);
         Ok(())
+    }
+}
+
+/// An owner of the server, as the transport attaches one: every library, everyone's sessions.
+/// Its id is past any a test's [`InMemoryAccess`] hands out, so that it is nobody else.
+#[must_use]
+pub fn owner() -> crate::Principal {
+    crate::Principal {
+        user: crate::ids::UserId::new(1_000),
+        name: "owner".to_owned(),
+        role: crate::access::ServerRole::Owner,
+        libraries: crate::access::LibraryAccess::All,
+        server_identifier: None,
     }
 }

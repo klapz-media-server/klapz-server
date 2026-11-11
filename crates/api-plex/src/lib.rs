@@ -61,7 +61,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use open_plex_api::ApiSchema;
-use open_plex_core::{Accounts, ServerIdentity};
+use open_plex_core::ServerIdentity;
 use open_plex_transcoder::Transcoder;
 
 /// What the adapter needs from the rest of the application.
@@ -73,7 +73,6 @@ use open_plex_transcoder::Transcoder;
 pub struct PlexState {
     pub identity: Arc<ServerIdentity>,
     pub schema: ApiSchema,
-    pub accounts: Arc<Accounts>,
     pub transcoder: Arc<Transcoder>,
 }
 
@@ -84,18 +83,16 @@ impl std::fmt::Debug for PlexState {
         f.debug_struct("PlexState")
             .field("identity", &self.identity)
             .field("schema", &"<graphql schema>")
-            .field("accounts", &self.accounts)
             .field("transcoder", &self.transcoder)
             .finish()
     }
 }
 
 impl PlexState {
-    pub fn new(identity: ServerIdentity, schema: ApiSchema, accounts: Accounts) -> Self {
+    pub fn new(identity: ServerIdentity, schema: ApiSchema) -> Self {
         Self {
             identity: Arc::new(identity),
             schema,
-            accounts: Arc::new(accounts),
             transcoder: Arc::default(),
         }
     }

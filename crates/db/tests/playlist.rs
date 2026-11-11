@@ -9,7 +9,6 @@ use open_plex_core::playlist::{
     Destination, NewPlaylist, PlaylistEdit, PlaylistError, PlaylistField, PlaylistFilter,
     PlaylistKind, PlaylistQuery, PlaylistRepository, PlaylistSort, SmartRule,
 };
-use open_plex_core::watch::Viewer;
 use open_plex_core::{PlaylistEntryId, RatingKey, SectionId, UserId};
 use open_plex_db::entity::{library_section, media, metadata_item};
 use open_plex_db::{write, SqlPlaylistRepository};
@@ -90,7 +89,7 @@ fn keys(ids: &[i64]) -> Vec<RatingKey> {
     ids.iter().copied().map(RatingKey::new).collect()
 }
 
-fn plain(owner: Viewer, title: &str, items: &[i64]) -> NewPlaylist {
+fn plain(owner: UserId, title: &str, items: &[i64]) -> NewPlaylist {
     NewPlaylist {
         owner,
         title: title.to_owned(),
@@ -120,7 +119,7 @@ async fn order(
         .collect()
 }
 
-fn query(owner: Viewer, sort: PlaylistSort, direction: Direction) -> PlaylistQuery {
+fn query(owner: UserId, sort: PlaylistSort, direction: Direction) -> PlaylistQuery {
     PlaylistQuery {
         owner,
         filter: PlaylistFilter::default(),
@@ -134,7 +133,7 @@ async fn a_new_playlist_keeps_its_items_once_in_order_and_counts_its_creation() 
     let repository = repository().await;
     let created = repository
         .create(
-            plain(Viewer::Operator, "OP Dup", &[FILM, FILM, EPISODE_1]),
+            plain(UserId::new(1), "OP Dup", &[FILM, FILM, EPISODE_1]),
             NOW,
         )
         .await
@@ -152,7 +151,7 @@ async fn a_new_playlist_keeps_its_items_once_in_order_and_counts_its_creation() 
 async fn appending_skips_what_the_playlist_holds_already() {
     let repository = repository().await;
     let created = repository
-        .create(plain(Viewer::Operator, "OP", &[FILM, EPISODE_1]), NOW)
+        .create(plain(UserId::new(1), "OP", &[FILM, EPISODE_1]), NOW)
         .await
         .unwrap();
     let added = repository
@@ -173,7 +172,7 @@ async fn an_entry_moves_after_another_or_to_the_start() {
     let repository = repository().await;
     let created = repository
         .create(
-            plain(Viewer::Operator, "OP", &[FILM, EPISODE_1, EPISODE_2]),
+            plain(UserId::new(1), "OP", &[FILM, EPISODE_1, EPISODE_2]),
             NOW,
         )
         .await
@@ -225,7 +224,7 @@ async fn moves_keep_working_once_neighbours_leave_no_room() {
     let repository = repository().await;
     let created = repository
         .create(
-            plain(Viewer::Operator, "OP", &[FILM, EPISODE_1, EPISODE_2]),
+            plain(UserId::new(1), "OP", &[FILM, EPISODE_1, EPISODE_2]),
             NOW,
         )
         .await
@@ -255,7 +254,7 @@ async fn a_reader_sees_only_the_entries_of_its_libraries() {
     let repository = repository().await;
     let created = repository
         .create(
-            plain(Viewer::Operator, "OP", &[FILM, EPISODE_1, EPISODE_2]),
+            plain(UserId::new(1), "OP", &[FILM, EPISODE_1, EPISODE_2]),
             NOW,
         )
         .await
@@ -288,7 +287,7 @@ async fn entries_page_from_a_cursor() {
     let repository = repository().await;
     let created = repository
         .create(
-            plain(Viewer::Operator, "OP", &[FILM, EPISODE_1, EPISODE_2]),
+            plain(UserId::new(1), "OP", &[FILM, EPISODE_1, EPISODE_2]),
             NOW,
         )
         .await
@@ -312,10 +311,10 @@ async fn entries_page_from_a_cursor() {
 #[tokio::test]
 async fn a_listing_shows_its_owner_only_smart_playlists_first() {
     let repository = repository().await;
-    let user = Viewer::User(UserId::new(7));
+    let user = UserId::new(7);
     for title in ["OP Renamed", "AA Nothing", "OP Lib"] {
         repository
-            .create(plain(Viewer::Operator, title, &[]), NOW)
+            .create(plain(UserId::new(1), title, &[]), NOW)
             .await
             .unwrap();
     }
@@ -323,7 +322,7 @@ async fn a_listing_shows_its_owner_only_smart_playlists_first() {
         .create(plain(user, "Someone else's", &[FILM]), NOW)
         .await
         .unwrap();
-    let mut smart = plain(Viewer::Operator, "ZZ Smart", &[]);
+    let mut smart = plain(UserId::new(1), "ZZ Smart", &[]);
     smart.rule = Some(SmartRule {
         section: SectionId::new(28),
         listing: "{}".to_owned(),
@@ -345,7 +344,7 @@ async fn a_listing_shows_its_owner_only_smart_playlists_first() {
     };
     assert_eq!(
         titles(query(
-            Viewer::Operator,
+            UserId::new(1),
             PlaylistSort::Title,
             Direction::Ascending
         ))
@@ -354,7 +353,7 @@ async fn a_listing_shows_its_owner_only_smart_playlists_first() {
     );
     assert_eq!(
         titles(query(
-            Viewer::Operator,
+            UserId::new(1),
             PlaylistSort::Title,
             Direction::Descending
         ))
@@ -366,7 +365,7 @@ async fn a_listing_shows_its_owner_only_smart_playlists_first() {
         ["Someone else's"]
     );
 
-    let mut films = query(Viewer::Operator, PlaylistSort::Title, Direction::Ascending);
+    let mut films = query(UserId::new(1), PlaylistSort::Title, Direction::Ascending);
     films.filter.library = Some(SectionId::new(27));
     assert_eq!(
         repository.count(&films).await.unwrap(),
@@ -380,15 +379,11 @@ async fn a_listing_pages_from_a_cursor_in_both_directions() {
     let repository = repository().await;
     for (title, at) in [("B", NOW), ("A", NOW + 5), ("C", NOW)] {
         repository
-            .create(plain(Viewer::Operator, title, &[]), at)
+            .create(plain(UserId::new(1), title, &[]), at)
             .await
             .unwrap();
     }
-    let sorted = query(
-        Viewer::Operator,
-        PlaylistSort::AddedAt,
-        Direction::Descending,
-    );
+    let sorted = query(UserId::new(1), PlaylistSort::AddedAt, Direction::Descending);
     let first = repository.playlists(&sorted, page(2)).await.unwrap();
     let titles: Vec<_> = first.items.iter().map(|p| p.title.as_str()).collect();
     assert_eq!(titles, ["A", "B"]);
@@ -415,7 +410,7 @@ async fn a_listing_pages_from_a_cursor_in_both_directions() {
 async fn an_edit_renames_locks_and_unlocks() {
     let repository = repository().await;
     let created = repository
-        .create(plain(Viewer::Operator, "OP Dumb", &[]), NOW)
+        .create(plain(UserId::new(1), "OP Dumb", &[]), NOW)
         .await
         .unwrap();
     let edited = repository
@@ -455,7 +450,7 @@ async fn an_edit_renames_locks_and_unlocks() {
 async fn clearing_removing_and_deleting() {
     let repository = repository().await;
     let created = repository
-        .create(plain(Viewer::Operator, "OP", &[FILM, EPISODE_1]), NOW)
+        .create(plain(UserId::new(1), "OP", &[FILM, EPISODE_1]), NOW)
         .await
         .unwrap();
     let entries = repository
@@ -521,7 +516,7 @@ async fn a_duration_is_the_first_versions_before_the_items_own() {
     .unwrap();
     let repository = SqlPlaylistRepository::new(connection);
     let created = repository
-        .create(plain(Viewer::Operator, "OP", &[FILM, EPISODE_1]), NOW)
+        .create(plain(UserId::new(1), "OP", &[FILM, EPISODE_1]), NOW)
         .await
         .unwrap();
     let totals = repository.totals(&[created.id], None).await.unwrap();

@@ -14,7 +14,7 @@ use open_plex_core::access::{LibraryAccess, LibraryRole};
 use open_plex_core::edit::CalendarDate;
 use open_plex_core::metadata::{ItemKind, MetadataItem};
 use open_plex_core::testing::{InMemoryCollections, InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{LibrarySection, Principal, RatingKey, Scope, SectionId, SectionKind, UserId};
+use open_plex_core::{LibrarySection, Principal, RatingKey, SectionId, SectionKind, UserId};
 use serde_json::{json, Value};
 
 const FILM: i64 = 577_986;
@@ -110,17 +110,17 @@ fn schema() -> ApiSchema {
     })
 }
 
-fn operator() -> Principal {
-    Principal::operator("owner")
+fn owner() -> Principal {
+    open_plex_core::testing::owner()
 }
 
 /// A user given the series library in this role, and nothing else.
 fn user(role: LibraryRole) -> Principal {
     Principal {
         name: "user 7".to_owned(),
-        scope: Scope::User,
+        role: open_plex_core::ServerRole::User,
         libraries: LibraryAccess::Only(HashMap::from([(SectionId::new(28), role)])),
-        user: Some(UserId::new(7)),
+        user: UserId::new(7),
         server_identifier: None,
     }
 }
@@ -208,7 +208,7 @@ async fn a_new_collection_keeps_the_items_of_its_kind_and_library_once() {
     // are left out of an episode collection without a refusal.
     let created = create(
         &schema,
-        operator(),
+        owner(),
         "OP Coll D",
         "EPISODE",
         &[EPISODE_1, EPISODE_2, EPISODE_1, SHOW, FILM],
@@ -235,7 +235,7 @@ async fn its_items_come_by_release_date_then_by_title_or_as_arranged() {
     let schema = schema();
     let created = create(
         &schema,
-        operator(),
+        owner(),
         "OP Coll D",
         "EPISODE",
         &[EPISODE_1, EPISODE_2],
@@ -243,7 +243,7 @@ async fn its_items_come_by_release_date_then_by_title_or_as_arranged() {
     .await;
     let id = created["collection"]["id"].as_str().unwrap().to_owned();
     // Released first, the episode with no date leading: what the reference answered.
-    let read = run(&schema, operator(), READ, json!({ "id": id })).await;
+    let read = run(&schema, owner(), READ, json!({ "id": id })).await;
     assert_eq!(item_ids(&read), [item_id(EPISODE_2), item_id(EPISODE_1)]);
 
     let set_order = r"
@@ -252,24 +252,24 @@ mutation Order($input: UpdateCollectionInput!) {
 }";
     run(
         &schema,
-        operator(),
+        owner(),
         set_order,
         json!({ "input": { "id": id, "order": "TITLE" } }),
     )
     .await;
-    let read = run(&schema, operator(), READ, json!({ "id": id })).await;
+    let read = run(&schema, owner(), READ, json!({ "id": id })).await;
     assert_eq!(item_ids(&read), [item_id(EPISODE_1), item_id(EPISODE_2)]);
 
     run(
         &schema,
-        operator(),
+        owner(),
         set_order,
         json!({ "input": { "id": id, "order": "CUSTOM" } }),
     )
     .await;
     let moved = run(
         &schema,
-        operator(),
+        owner(),
         r"
 mutation Move($input: MoveCollectionItemInput!) {
   moveCollectionItem(input: $input) { collection { order } userErrors { field code } }
@@ -282,7 +282,7 @@ mutation Move($input: MoveCollectionItemInput!) {
     )
     .await;
     assert_eq!(moved["moveCollectionItem"]["userErrors"], json!([]));
-    let read = run(&schema, operator(), READ, json!({ "id": id })).await;
+    let read = run(&schema, owner(), READ, json!({ "id": id })).await;
     assert_eq!(read["node"]["order"], "CUSTOM");
     assert_eq!(item_ids(&read), [item_id(EPISODE_2), item_id(EPISODE_1)]);
 }
@@ -290,7 +290,7 @@ mutation Move($input: MoveCollectionItemInput!) {
 #[tokio::test]
 async fn adding_refuses_only_what_none_of_can_join() {
     let schema = schema();
-    let created = create(&schema, operator(), "OP Coll C", "SHOW", &[]).await;
+    let created = create(&schema, owner(), "OP Coll C", "SHOW", &[]).await;
     let id = created["collection"]["id"].as_str().unwrap().to_owned();
     let add = r"
 mutation Add($input: AddToCollectionInput!) {
@@ -298,7 +298,7 @@ mutation Add($input: AddToCollectionInput!) {
 }";
     let refused = run(
         &schema,
-        operator(),
+        owner(),
         add,
         json!({ "input": { "collectionId": id, "itemIds": [item_id(EPISODE_1)] } }),
     )
@@ -309,7 +309,7 @@ mutation Add($input: AddToCollectionInput!) {
     );
     let added = run(
         &schema,
-        operator(),
+        owner(),
         add,
         json!({ "input": { "collectionId": id, "itemIds": [item_id(EPISODE_1), item_id(SHOW)] } }),
     )
@@ -317,7 +317,7 @@ mutation Add($input: AddToCollectionInput!) {
     assert_eq!(added["addToCollection"]["addedCount"], 1);
     let again = run(
         &schema,
-        operator(),
+        owner(),
         add,
         json!({ "input": { "collectionId": id, "itemIds": [item_id(SHOW)] } }),
     )
@@ -329,14 +329,14 @@ mutation Add($input: AddToCollectionInput!) {
 #[tokio::test]
 async fn an_item_names_its_collections_and_a_listing_filters_on_them() {
     let schema = schema();
-    let created = create(&schema, operator(), "OP Coll C", "SHOW", &[SHOW]).await;
+    let created = create(&schema, owner(), "OP Coll C", "SHOW", &[SHOW]).await;
     let number = created["collection"]["tagNumber"]
         .as_str()
         .unwrap()
         .to_owned();
     let data = run(
         &schema,
-        operator(),
+        owner(),
         r#"
 query Items($show: ID!, $library: ID!, $number: String!) {
   node(id: $show) { ... on Show { collections(first: 5) { edges { node { title } } } } }
@@ -370,7 +370,7 @@ async fn a_smart_collection_lists_its_rule_and_takes_no_item() {
     let schema = schema();
     let data = run(
         &schema,
-        operator(),
+        owner(),
         r"
 mutation Smart($input: CreateCollectionInput!) {
   createCollection(input: $input) {
@@ -398,7 +398,7 @@ mutation Smart($input: CreateCollectionInput!) {
     let id = collection["id"].as_str().unwrap();
     let add = run(
         &schema,
-        operator(),
+        owner(),
         r"
 mutation Add($input: AddToCollectionInput!) {
   addToCollection(input: $input) { userErrors { code } }
@@ -415,7 +415,7 @@ mutation Add($input: AddToCollectionInput!) {
 #[tokio::test]
 async fn a_viewer_reads_but_changes_nothing_and_an_outsider_sees_nothing() {
     let schema = schema();
-    let created = create(&schema, operator(), "OP Coll D", "EPISODE", &[EPISODE_1]).await;
+    let created = create(&schema, owner(), "OP Coll D", "EPISODE", &[EPISODE_1]).await;
     let id = created["collection"]["id"].as_str().unwrap().to_owned();
 
     let read = run(
@@ -443,7 +443,7 @@ mutation Rename($input: UpdateCollectionInput!) {
         json!([{ "code": "COLLECTION_NOT_FOUND" }])
     );
 
-    // An admin of the library changes it as the operator does.
+    // An admin of the library changes it as an owner does.
     let admin = create(
         &schema,
         user(LibraryRole::Admin),
@@ -474,12 +474,12 @@ mutation Rename($input: UpdateCollectionInput!) {
 #[tokio::test]
 async fn edits_lock_fields_and_leave_the_date_and_removing_dates_it() {
     let schema = schema();
-    let created = create(&schema, operator(), "OP Coll D", "EPISODE", &[EPISODE_1]).await;
+    let created = create(&schema, owner(), "OP Coll D", "EPISODE", &[EPISODE_1]).await;
     let id = created["collection"]["id"].as_str().unwrap().to_owned();
-    let before = run(&schema, operator(), READ, json!({ "id": id })).await;
+    let before = run(&schema, owner(), READ, json!({ "id": id })).await;
     let edited = run(
         &schema,
-        operator(),
+        owner(),
         r"
 mutation Edit($input: UpdateCollectionInput!) {
   updateCollection(input: $input) {
@@ -504,7 +504,7 @@ mutation Edit($input: UpdateCollectionInput!) {
 
     let removed = run(
         &schema,
-        operator(),
+        owner(),
         r"
 mutation Remove($input: RemoveFromCollectionInput!) {
   removeFromCollection(input: $input) { removed collection { itemCount } userErrors { code } }
@@ -520,7 +520,7 @@ mutation Remove($input: RemoveFromCollectionInput!) {
 
     let deleted = run(
         &schema,
-        operator(),
+        owner(),
         r"
 mutation Delete($input: DeleteCollectionInput!) {
   deleteCollection(input: $input) { deletedCollectionId userErrors { code } }
@@ -529,6 +529,6 @@ mutation Delete($input: DeleteCollectionInput!) {
     )
     .await;
     assert_eq!(deleted["deleteCollection"]["deletedCollectionId"], id);
-    let read = run(&schema, operator(), READ, json!({ "id": id })).await;
+    let read = run(&schema, owner(), READ, json!({ "id": id })).await;
     assert_eq!(read["node"], Value::Null);
 }

@@ -204,7 +204,7 @@ pub enum StreamErrorCode {
     SubtitleNotDeliverable,
     /// Too many streams are running.
     TooManyStreams,
-    /// The key names a session the operator terminated: its player has to stop first.
+    /// The key names a session an owner terminated: its player has to stop first.
     SessionTerminated,
 }
 

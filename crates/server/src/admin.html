@@ -100,21 +100,30 @@
   dialog .error { min-height: 20px; margin: 10px 0 0; font-size: 14px; color: var(--danger); }
   a { color: var(--accent); }
   [hidden] { display: none !important; }
+  .badge { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; font-size: 12px; color: var(--muted); }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  .bar h1 { margin: 0; }
+  form.stack { display: grid; gap: 8px; max-width: 360px; margin-bottom: 20px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>open-plex <span>users</span></h1>
+  <div class="bar">
+    <h1>open-plex <span>users</span></h1>
+    <span id="session" hidden><span id="whoami" class="note"></span> <button id="signout" type="button">Sign out</button></span>
+  </div>
   <p id="message" role="status"></p>
 
-  <form id="signin" class="line" hidden>
-    <input id="operator-token" type="password" placeholder="Operator token" autocomplete="off" aria-label="Operator token" required>
+  <form id="signin" class="stack" hidden>
+    <input id="signin-login" type="text" placeholder="Username or e-mail address" autocomplete="username" aria-label="Username or e-mail address" required>
+    <input id="signin-password" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password" required>
     <button class="primary">Sign in</button>
   </form>
 
   <section id="content" hidden>
     <form id="add" class="line">
-      <input id="email" type="email" placeholder="name@example.org" aria-label="E-mail address of the new user" required>
+      <input id="username" type="text" placeholder="username" autocomplete="off" aria-label="Username of the new user" required>
+      <input id="email" type="email" placeholder="name@example.org (optional)" autocomplete="off" aria-label="E-mail address of the new user">
       <button class="primary">Add user</button>
     </form>
     <div id="users"></div>
@@ -122,7 +131,7 @@
 </main>
 
 <dialog id="credentials">
-  <h2>Plex token for <span id="credentials-email"></span></h2>
+  <h2>Plex token for <span id="credentials-name"></span></h2>
   <p class="note">Copy it now: it is shown only once, and only a digest is kept.</p>
   <label for="credentials-token">Token</label>
   <div class="copy">
@@ -136,7 +145,7 @@
 
 <dialog id="pair">
   <form id="pair-form">
-    <h2>Pair <span id="pair-email"></span> with Plex</h2>
+    <h2>Pair <span id="pair-name"></span> with Plex</h2>
     <p class="note">While signed in to this user's Plex account, open <a href="https://plex.tv/claim" target="_blank" rel="noreferrer">plex.tv/claim</a> and paste the code here. It works once and lasts four minutes.</p>
     <label for="pair-code">Claim code</label>
     <input id="pair-code" type="text" placeholder="claim-" autocomplete="off" required>
@@ -153,18 +162,25 @@
 <script>
 "use strict";
 
+const VIEWER_QUERY = `{ viewer { role user { id username } } }`;
 const LIST_QUERY = `{
   users(first: 500) {
     edges { node {
-      id email createdAt
+      id username email role builtIn active createdAt
       libraryPermissions { edges { node { role library { id } } } }
       extensions { edges { node { extension externalId enabled account { accountName connectionUri publishedAt } } } }
     } }
   }
   libraries(first: 500) { edges { node { id title } } }
 }`;
-const CREATE_USER = `mutation($email: String!) { createUser(email: $email) { id } }`;
-const DELETE_USER = `mutation($id: ID!) { deleteUser(id: $id) }`;
+const USER_ERRORS = `userErrors { message }`;
+const SIGN_IN = `mutation($input: SignInInput!) { signIn(input: $input) { user { id } ${USER_ERRORS} } }`;
+const SIGN_OUT = `mutation { signOut }`;
+const CREATE_USER = `mutation($input: CreateUserInput!) { createUser(input: $input) { user { id } ${USER_ERRORS} } }`;
+const DELETE_USER = `mutation($input: UserInput!) { deleteUser(input: $input) { deleted ${USER_ERRORS} } }`;
+const ACTIVATE_USER = `mutation($input: UserInput!) { activateUser(input: $input) { user { id } ${USER_ERRORS} } }`;
+const DEACTIVATE_USER = `mutation($input: UserInput!) { deactivateUser(input: $input) { user { id } ${USER_ERRORS} } }`;
+const SET_ROLE = `mutation($input: SetUserRoleInput!) { setUserRole(input: $input) { user { id } ${USER_ERRORS} } }`;
 const SET_PERMISSION = `mutation($input: SetLibraryPermissionInput!) { setLibraryPermission(input: $input) }`;
 const REMOVE_PERMISSION = `mutation($userId: ID!, $libraryId: ID!) { removeLibraryPermission(userId: $userId, libraryId: $libraryId) }`;
 const CONNECT_PLEX = `mutation($userId: ID!) { connectExtension(userId: $userId, extension: PLEX) { token userExtension { externalId } } }`;
@@ -174,39 +190,37 @@ const PAIR_PLEX = `mutation($input: PairExtensionInput!) { pairExtension(input: 
 const UNPAIR_PLEX = `mutation($userId: ID!) { unpairExtension(userId: $userId, extension: PLEX) }`;
 const MOVE_PLEX = `mutation($input: MoveExtensionInput!) { moveExtension(input: $input) { publishedAt } }`;
 
-const TOKEN_KEY = "open-plex-operator-token";
 const byId = (id) => document.getElementById(id);
 const expanded = new Set();
 let pairing = null;
 let libraries = [];
 
-function storedToken() {
-  try { return sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
-}
-function storeToken(token) {
-  try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* it lasts for this page only */ }
-}
-let token = storedToken();
-
 class SignInNeeded extends Error {}
 
+/** The session travels in its `HttpOnly` cookie, which the browser sends to this origin. */
 async function graphql(query, variables) {
-  const headers = { "Content-Type": "application/json" };
-  if (token) headers["X-Plex-Token"] = token;
   const response = await fetch("/graphql", {
     method: "POST",
-    headers,
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, variables }),
   });
-  if (response.status === 401) throw new SignInNeeded("This token is not accepted.");
+  if (response.status === 401) throw new SignInNeeded("Sign in again.");
   const body = await response.json();
   if (body.errors && body.errors.length) throw new Error(body.errors[0].message);
   return body.data;
 }
 
+/** A Relay payload's first user error, as an exception. */
+async function mutate(query, input, field) {
+  const payload = (await graphql(query, { input }))[field];
+  if (payload.userErrors.length) throw new Error(payload.userErrors[0].message);
+  return payload;
+}
+
 function say(text) { byId("message").textContent = text || ""; }
 
-/** Text only ever goes through `textContent`: an e-mail address is someone else's input. */
+/** Text only ever goes through `textContent`: a username or an address is someone else's input. */
 function el(tag, properties, ...children) {
   const node = document.createElement(tag);
   for (const [name, value] of Object.entries(properties || {})) {
@@ -233,12 +247,14 @@ async function act(work) {
 
 function showSignIn(text) {
   byId("content").hidden = true;
+  byId("session").hidden = true;
   byId("signin").hidden = false;
   say(text);
+  byId("signin-login").focus();
 }
 
-function showCredentials(email, connected) {
-  byId("credentials-email").textContent = email;
+function showCredentials(user, connected) {
+  byId("credentials-name").textContent = user.username;
   byId("credentials-token").value = connected.token;
   byId("credentials-server").textContent = connected.userExtension.externalId;
   byId("credentials-copy").textContent = "Copy";
@@ -248,12 +264,12 @@ function showCredentials(email, connected) {
 
 async function connectPlex(user) {
   const data = await graphql(CONNECT_PLEX, { userId: user.id });
-  showCredentials(user.email, data.connectExtension);
+  showCredentials(user, data.connectExtension);
 }
 
 function showPairing(user) {
   pairing = user;
-  byId("pair-email").textContent = user.email;
+  byId("pair-name").textContent = user.username;
   byId("pair-code").value = "";
   byId("pair-error").textContent = "";
   byId("pair").showModal();
@@ -290,7 +306,7 @@ function pairingRow(user, plex) {
       type: "button",
       textContent: "Unpair",
       on: { click: () => {
-        if (confirm(`Unpair ${user.email} from its Plex account? Clients that found this server through plex.tv stop getting in.`)) {
+        if (confirm(`Unpair ${user.username} from its Plex account? Clients that found this server through plex.tv stop getting in.`)) {
           act(() => graphql(UNPAIR_PLEX, { userId: user.id }));
         }
       } },
@@ -322,6 +338,40 @@ function libraryRow(user, library, role) {
   return el("label", { className: "library" }, el("span", { textContent: library.title }), select);
 }
 
+/** What an owner can change about a user's standing; the built-in account has nothing to change. */
+function standing(user) {
+  if (user.builtIn) return el("span", { className: "note", textContent: "Built-in owner" });
+  const role = el("select", {
+    ariaLabel: `Role of ${user.username}`,
+    on: { change: () => act(() => mutate(SET_ROLE, { userId: user.id, role: role.value }, "setUserRole")) },
+  },
+    el("option", { value: "USER", textContent: "User" }),
+    el("option", { value: "OWNER", textContent: "Owner" }),
+  );
+  role.value = user.role;
+  const active = el("input", {
+    type: "checkbox",
+    checked: user.active,
+    on: { change: () => act(() => active.checked
+      ? mutate(ACTIVATE_USER, { userId: user.id }, "activateUser")
+      : mutate(DEACTIVATE_USER, { userId: user.id }, "deactivateUser")) },
+  });
+  return el("span", { className: "head" },
+    role,
+    el("label", { className: "switch" }, active, el("span", { textContent: "Active" })),
+    el("button", {
+      type: "button",
+      className: "danger",
+      textContent: "Delete",
+      on: { click: () => {
+        if (confirm(`Delete ${user.username}, its permissions and its Plex connection?`)) {
+          act(() => mutate(DELETE_USER, { userId: user.id }, "deleteUser"));
+        }
+      } },
+    }),
+  );
+}
+
 function userCard(user) {
   const plex = plexOf(user);
   const enabled = Boolean(plex && plex.enabled);
@@ -335,40 +385,35 @@ function userCard(user) {
     on: { change: () => act(async () => {
       if (toggle.checked) {
         await connectPlex(user);
-      } else if (confirm(`Disable Plex for ${user.email}? Its token stops working, and enabling it again issues a new one.`)) {
+      } else if (confirm(`Disable Plex for ${user.username}? Its token stops working, and enabling it again issues a new one.`)) {
         await graphql(DISABLE_PLEX, { userId: user.id });
       }
     }) },
   });
 
   const added = new Date(user.createdAt).toLocaleDateString();
-  const details = el("details", {
-    open: expanded.has(user.id),
-    on: { toggle: () => {
-      if (details.open) expanded.add(user.id); else expanded.delete(user.id);
-    } },
-  },
-    el("summary", { textContent: `Libraries: ${roles.size} of ${libraries.length}` }),
-    el("div", { className: "libraries" }, ...libraries.map((library) => libraryRow(user, library, roles.get(library.id)))),
-  );
+  const details = user.role === "OWNER"
+    ? el("p", { className: "note", textContent: "An owner reaches every library." })
+    : el("details", {
+      open: expanded.has(user.id),
+      on: { toggle: () => {
+        if (details.open) expanded.add(user.id); else expanded.delete(user.id);
+      } },
+    },
+      el("summary", { textContent: `Libraries: ${roles.size} of ${libraries.length}` }),
+      el("div", { className: "libraries" }, ...libraries.map((library) => libraryRow(user, library, roles.get(library.id)))),
+    );
 
   return el("article", { className: "user" },
     el("div", { className: "head" },
       el("div", { className: "who" },
-        el("strong", { textContent: user.email }),
-        el("div", { className: "note", textContent: `Added ${added}` }),
+        el("strong", { textContent: user.username }),
+        user.role === "OWNER" ? el("span", { className: "badge", textContent: "owner" }) : null,
+        user.active ? null : el("span", { className: "badge", textContent: "inactive" }),
+        el("div", { className: "note", textContent: `${user.email ? `${user.email} · ` : ""}Added ${added}` }),
       ),
       el("label", { className: "switch" }, toggle, el("span", { textContent: "Plex" })),
-      el("button", {
-        type: "button",
-        className: "danger",
-        textContent: "Delete",
-        on: { click: () => {
-          if (confirm(`Delete ${user.email}, its permissions and its Plex connection?`)) {
-            act(() => graphql(DELETE_USER, { id: user.id }));
-          }
-        } },
-      }),
+      standing(user),
     ),
     enabled ? el("div", { className: "plex" },
       el("span", { className: "note" }, "Server ", el("code", { textContent: plex.externalId })),
@@ -376,7 +421,7 @@ function userCard(user) {
         type: "button",
         textContent: "New token",
         on: { click: () => {
-          if (confirm(`Replace the Plex token of ${user.email}? The current one stops working.`)) {
+          if (confirm(`Replace the Plex token of ${user.username}? The current one stops working.`)) {
             act(() => connectPlex(user));
           }
         } },
@@ -396,33 +441,52 @@ async function load() {
     : [el("p", { className: "empty", textContent: "No users yet." })]));
   byId("signin").hidden = true;
   byId("content").hidden = false;
+  byId("session").hidden = false;
 }
 
 async function start() {
   try {
+    const { viewer } = await graphql(VIEWER_QUERY);
+    if (!viewer.user) { showSignIn("Sign in with an owner's account."); return; }
+    byId("whoami").textContent = `Signed in as ${viewer.user.username}`;
+    if (viewer.role !== "OWNER") {
+      showSignIn(`${viewer.user.username} is not an owner of this server.`);
+      byId("session").hidden = false;
+      return;
+    }
     await load();
   } catch (error) {
-    // A valid token that is not the operator's reads as "not found" on `users`.
-    showSignIn(error instanceof SignInNeeded || error.message === "not found"
-      ? (token ? "This token is not the operator's." : "Sign in with the operator token.")
-      : error.message);
+    showSignIn(error.message);
   }
 }
 
-byId("signin").addEventListener("submit", (event) => {
+byId("signin").addEventListener("submit", async (event) => {
   event.preventDefault();
-  token = byId("operator-token").value;
-  storeToken(token);
-  byId("operator-token").value = "";
   say("");
-  start();
+  try {
+    await mutate(SIGN_IN, {
+      login: byId("signin-login").value.trim(),
+      password: byId("signin-password").value,
+    }, "signIn");
+    byId("signin-password").value = "";
+    await start();
+  } catch (error) {
+    say(error.message);
+  }
+});
+
+byId("signout").addEventListener("click", async () => {
+  await graphql(SIGN_OUT).catch(() => {});
+  showSignIn("Signed out.");
 });
 
 byId("add").addEventListener("submit", (event) => {
   event.preventDefault();
+  const username = byId("username").value.trim();
   const email = byId("email").value.trim();
   act(async () => {
-    await graphql(CREATE_USER, { email });
+    await mutate(CREATE_USER, { username, email: email || null }, "createUser");
+    byId("username").value = "";
     byId("email").value = "";
   });
 });

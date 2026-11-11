@@ -75,7 +75,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         if let Self::Internal(source) = &self {
             // The only place internal detail is allowed to surface, and it goes to the
-            // operator rather than the client.
+            // server's log rather than the client.
             tracing::error!(error = %source, "request failed");
         }
 

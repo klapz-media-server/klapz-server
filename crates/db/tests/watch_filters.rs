@@ -4,7 +4,6 @@
 
 use open_plex_core::metadata::{ItemFilter, ItemKind, ItemQuery, MetadataRepository};
 use open_plex_core::page::Window;
-use open_plex_core::watch::Viewer;
 use open_plex_core::{SectionId, UserId};
 use open_plex_db::entity::{library_section, metadata_item, watch_state};
 use open_plex_db::write;
@@ -99,17 +98,17 @@ async fn seed(connection: &DatabaseConnection) {
     .expect("items");
     watch_state::Entity::insert_many([
         // Coco watched, Luca in progress, Onward watched then restarted; Soul untouched.
-        state(0, "plex://movie/2", 1, None),
-        state(0, "plex://movie/3", 0, Some(600_000)),
-        state(0, "plex://movie/4", 1, Some(900_000)),
-        state(0, "plex://show/10", 2, None),
-        state(0, "plex://episode/12", 1, None),
-        state(0, "plex://episode/13", 1, None),
-        state(0, "plex://show/20", 1, None),
-        state(0, "plex://episode/22", 0, None),
-        state(0, "plex://show/30", 1, None),
-        state(0, "plex://episode/32", 1, None),
-        // Another viewer's state is not the operator's.
+        state(1, "plex://movie/2", 1, None),
+        state(1, "plex://movie/3", 0, Some(600_000)),
+        state(1, "plex://movie/4", 1, Some(900_000)),
+        state(1, "plex://show/10", 2, None),
+        state(1, "plex://episode/12", 1, None),
+        state(1, "plex://episode/13", 1, None),
+        state(1, "plex://show/20", 1, None),
+        state(1, "plex://episode/22", 0, None),
+        state(1, "plex://show/30", 1, None),
+        state(1, "plex://episode/32", 1, None),
+        // Another viewer's state is not user 1's.
         state(7, "plex://movie/1", 1, None),
     ])
     .exec(connection)
@@ -138,7 +137,7 @@ async fn titles(filter: ItemFilter) -> Vec<String> {
     titles
 }
 
-fn films(viewer: Option<Viewer>) -> ItemFilter {
+fn films(viewer: Option<UserId>) -> ItemFilter {
     ItemFilter {
         kind: Some(ItemKind::Movie),
         viewer,
@@ -149,23 +148,23 @@ fn films(viewer: Option<Viewer>) -> ItemFilter {
 fn shows() -> ItemFilter {
     ItemFilter {
         kind: Some(ItemKind::Show),
-        viewer: Some(Viewer::Operator),
+        viewer: Some(UserId::new(1)),
         ..ItemFilter::default()
     }
 }
 
-const OPERATOR: Option<Viewer> = Some(Viewer::Operator);
+const VIEWER: Option<UserId> = Some(UserId::new(1));
 
 #[tokio::test]
 async fn a_film_in_progress_is_unwatched_and_a_restarted_one_watched() {
     let unwatched = ItemFilter {
         watched: Some(false),
-        ..films(OPERATOR)
+        ..films(VIEWER)
     };
     assert_eq!(titles(unwatched).await, ["Luca", "Soul"]);
     let watched = ItemFilter {
         watched: Some(true),
-        ..films(OPERATOR)
+        ..films(VIEWER)
     };
     assert_eq!(titles(watched).await, ["Coco", "Onward"]);
 }
@@ -174,18 +173,18 @@ async fn a_film_in_progress_is_unwatched_and_a_restarted_one_watched() {
 async fn in_progress_is_a_kept_position_whatever_the_viewings() {
     let started = ItemFilter {
         in_progress: Some(true),
-        ..films(OPERATOR)
+        ..films(VIEWER)
     };
     assert_eq!(titles(started).await, ["Luca", "Onward"]);
     let not_started = ItemFilter {
         in_progress: Some(false),
-        ..films(OPERATOR)
+        ..films(VIEWER)
     };
     assert_eq!(titles(not_started).await, ["Coco", "Soul"]);
     let both = ItemFilter {
         in_progress: Some(true),
         watched: Some(false),
-        ..films(OPERATOR)
+        ..films(VIEWER)
     };
     assert_eq!(titles(both).await, ["Luca"]);
 }
@@ -194,7 +193,7 @@ async fn in_progress_is_a_kept_position_whatever_the_viewings() {
 async fn each_viewer_filters_on_its_own_state() {
     let watched = ItemFilter {
         watched: Some(true),
-        ..films(Some(Viewer::User(UserId::new(7))))
+        ..films(Some(UserId::new(7)))
     };
     assert_eq!(titles(watched).await, ["Soul"]);
     // A caller with no watch state has watched nothing.
@@ -240,17 +239,17 @@ async fn a_last_viewed_range_keeps_what_was_played_within_it() {
     let within = ItemFilter {
         last_viewed_from: Some(0),
         last_viewed_to: Some(5),
-        ..films(OPERATOR)
+        ..films(VIEWER)
     };
     assert_eq!(titles(within).await, ["Coco", "Luca", "Onward"]);
     let later = ItemFilter {
         last_viewed_from: Some(2),
-        ..films(OPERATOR)
+        ..films(VIEWER)
     };
     assert!(titles(later).await.is_empty());
     let earlier = ItemFilter {
         last_viewed_to: Some(0),
-        ..films(OPERATOR)
+        ..films(VIEWER)
     };
     assert!(titles(earlier).await.is_empty());
 }

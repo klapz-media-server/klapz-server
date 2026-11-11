@@ -5,7 +5,6 @@
 //! agree on the encoding.
 
 use open_plex_core::marker::{Marker, MarkerKind, NewMarker};
-use open_plex_core::watch::Viewer;
 use open_plex_core::{MarkerId, RatingKey, UserId};
 use sea_orm::{
     ActiveValue, ColumnTrait, Condition, ConnectionTrait, DbErr, EntityTrait, QueryFilter,
@@ -13,7 +12,6 @@ use sea_orm::{
 };
 
 use crate::entity::item_marker;
-use crate::watch_repository::viewer_id;
 
 /// How a kind is stored.
 pub const fn kind_name(kind: MarkerKind) -> &'static str {
@@ -35,14 +33,6 @@ fn parse_kind(name: &str) -> Option<MarkerKind> {
     }
 }
 
-fn owner_of(stored: i64) -> Viewer {
-    if stored == 0 {
-        Viewer::Operator
-    } else {
-        Viewer::User(UserId::new(stored))
-    }
-}
-
 fn to_domain(row: item_marker::Model) -> Option<Marker> {
     let Some(kind) = parse_kind(&row.kind) else {
         tracing::warn!(
@@ -56,7 +46,7 @@ fn to_domain(row: item_marker::Model) -> Option<Marker> {
         id: MarkerId::new(row.id),
         item: RatingKey::new(row.item_id),
         kind,
-        owner: row.owner.map(owner_of),
+        owner: row.owner.map(UserId::new),
         start_ms: row.start_ms,
         end_ms: row.end_ms,
         is_final: row.is_final,
@@ -101,14 +91,14 @@ pub(crate) async fn delete_work_markers<C: ConnectionTrait>(connection: &C) -> R
 pub(crate) async fn markers<C: ConnectionTrait>(
     connection: &C,
     items: &[RatingKey],
-    viewer: Option<Viewer>,
+    viewer: Option<UserId>,
 ) -> Result<Vec<Marker>, DbErr> {
     if items.is_empty() {
         return Ok(Vec::new());
     }
     let mut owners = Condition::any().add(item_marker::Column::Owner.is_null());
     if let Some(viewer) = viewer {
-        owners = owners.add(item_marker::Column::Owner.eq(viewer_id(viewer)));
+        owners = owners.add(item_marker::Column::Owner.eq(viewer.get()));
     }
     let rows = item_marker::Entity::find()
         .filter(item_marker::Column::ItemId.is_in(items.iter().map(|item| item.get())))
@@ -146,7 +136,7 @@ pub(crate) async fn add<C: ConnectionTrait + TransactionTrait>(
     let id = item_marker::Entity::insert(item_marker::ActiveModel {
         id: ActiveValue::NotSet,
         item_id: ActiveValue::Set(marker.item().get()),
-        owner: ActiveValue::Set(marker.owner().map(viewer_id)),
+        owner: ActiveValue::Set(marker.owner().map(UserId::get)),
         kind: ActiveValue::Set(kind_name(marker.kind()).to_owned()),
         start_ms: ActiveValue::Set(values.start_ms),
         end_ms: ActiveValue::Set(values.end_ms),

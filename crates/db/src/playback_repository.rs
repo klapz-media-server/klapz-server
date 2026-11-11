@@ -65,7 +65,7 @@ fn to_domain(row: playback_session::Model) -> PlaybackSession {
     PlaybackSession {
         id: row.id,
         key: row.session_key,
-        user: row.user_id.map(UserId::new),
+        user: UserId::new(row.user_id),
         playback_id: row.playback_id,
         item: RatingKey::new(row.item_id),
         part: PartId::new(row.part_id),
@@ -108,7 +108,7 @@ impl PlaybackRepository for SqlPlaybackRepository {
         let row = playback_session::ActiveModel {
             id: ActiveValue::NotSet,
             session_key: ActiveValue::Set(session.key.clone()),
-            user_id: ActiveValue::Set(session.user.map(UserId::get)),
+            user_id: ActiveValue::Set(session.user.get()),
             playback_id: ActiveValue::Set(session.playback_id),
             item_id: ActiveValue::Set(session.item.get()),
             part_id: ActiveValue::Set(session.part.get()),
