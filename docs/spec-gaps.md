@@ -1039,6 +1039,24 @@ The reference keeps `lockedFields=` once an item has had a lock, where it held a
 `user_fields` before; that and a few internal counters (`changed_at`, an `extra_data` key) are
 what the test items kept from being measured.
 
+`PUT /library/metadata/{ids}`, the spec's own edit, reads the same fields with the same rules
+and answers otherwise, measured on the same items, every value and lock restored:
+
+- **A field comes bare too**, `title=…`, the form the spec's example writes (`args`), as well as
+  `title.value=…`; given both, `.value` wins, in either order. `title.locked` locks as above.
+- **`type` is ignored**, even a wrong one, and so is the library: every id named is edited as
+  what it is, a film and a series of two libraries in one request (`577986,577987`).
+- **A lock other than `0` or `1` is ignored** with a `200`, where the section's route answers
+  `400`. A name it does not know is a `400` bare or as `.value`; `includeExternalMedia` and the
+  `X-Plex-*` parameters pass.
+- **No parameter at all is a `400`**; `type` alone is an empty `200`.
+- **An id that names nothing is a `404`**, a non-numeric one too, unless another id of the
+  request is edited: `577986,999999999` is a `200`.
+
+Ours differs as the section's route does: an item the caller is not a library admin of counts
+as absent, seasons, tags, artwork and music are `501`, and a year that is not a number is a
+`400` where the reference fails with a `500`.
+
 ### A library's settings
 
 `GET /library/sections/{id}/prefs` lists 17 settings for a film library and 18 for a series, nearly

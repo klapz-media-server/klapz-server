@@ -1,8 +1,9 @@
-//! `PUT /library/sections/{sectionId}/all`: editing items, and locking their fields.
+//! Editing items, and locking their fields: `PUT /library/sections/{sectionId}/all`, which
+//! Plex Web's metadata editor sends, and `PUT /library/metadata/{ids}`, the spec's.
 //!
-//! Plex Web's metadata editor sends `type`, `id` and, per changed field, `{field}.value` and
-//! `{field}.locked`; it locks a field itself when the user types into it. Measured on the
-//! reference's test libraries:
+//! The editor sends `type`, `id` and, per changed field, `{field}.value` and `{field}.locked`;
+//! it locks a field itself when the user types into it. Measured on the reference's test
+//! libraries:
 //!
 //! - a value does not lock its field; `.locked=1` locks, `.locked=0` unlocks, anything else
 //!   is a `400`, as is a field name the reference does not know, and a missing `type`;
@@ -10,6 +11,12 @@
 //!   `year.locked` does nothing; on an episode the two lock apart;
 //! - an id of another type or another library, or one that names nothing, is ignored;
 //! - the answer is an empty `200`.
+//!
+//! `/library/metadata/{ids}` reads the same fields, and also takes a field bare, `title=…`, as
+//! the spec writes it, `.value` winning when both come. It edits every item it names whatever
+//! its type or library, `type` ignored, and differs again in three answers: a lock other than
+//! `0` and `1` is ignored, a request with no parameter is a `400`, and one naming no item a
+//! `404`.
 //!
 //! Each item is edited through the official API's `updateMovie`, `updateShow` or
 //! `updateEpisode`. What the reference does and we cannot is refused with `501`: an edit with
@@ -110,6 +117,19 @@ const EDITABLE: [(&str, &str, ValueKind); 11] = [
     ("audienceRating", "audienceRating", ValueKind::Score),
 ];
 
+/// The parameters a client sends `/library/metadata/{ids}` beside the fields, which it ignores:
+/// any other bare name is a field, and one it does not know a `400`.
+const CLIENT_PARAMETERS: [&str; 3] = ["type", "id", "includeExternalMedia"];
+
+/// Where the fields of an edit come from, which reads them a little differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Route {
+    /// `/library/sections/{sectionId}/all`.
+    Section,
+    /// `/library/metadata/{ids}`.
+    Item,
+}
+
 /// The three types that can be edited, by Plex's `type` number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EditedType {
@@ -126,6 +146,16 @@ impl EditedType {
             Ok(4) => Ok(Self::Episode),
             Ok(_) => Err(ApiError::NotImplemented),
             Err(_) => Err(ApiError::BadRequest),
+        }
+    }
+
+    /// By the official API's type name; another kind of item cannot be edited here.
+    fn named(typename: &str) -> Result<Self, ApiError> {
+        match typename {
+            "Movie" => Ok(Self::Movie),
+            "Show" => Ok(Self::Show),
+            "Episode" => Ok(Self::Episode),
+            _ => Err(ApiError::NotImplemented),
         }
     }
 
@@ -173,13 +203,32 @@ struct Changes {
 }
 
 impl Changes {
-    fn read(params: &[(String, String)], edited: EditedType) -> Result<Self, ApiError> {
+    fn read(
+        params: &[(String, String)],
+        edited: EditedType,
+        route: Route,
+    ) -> Result<Self, ApiError> {
         let mut changes = Self::default();
+        // Bare fields first, so that a `.value` of the same field wins whatever the order.
+        if route == Route::Item {
+            for (key, value) in params {
+                let client =
+                    key.starts_with("X-Plex-") || CLIENT_PARAMETERS.contains(&key.as_str());
+                if !key.contains(['.', '[']) && !client {
+                    changes.set(key, value)?;
+                }
+            }
+        }
         for (key, value) in params {
             if let Some(name) = key.strip_suffix(".value") {
                 changes.set(name, value)?;
             } else if let Some(name) = key.strip_suffix(".locked") {
-                changes.set_lock(name, value, edited)?;
+                match changes.set_lock(name, value, edited) {
+                    // `/library/metadata` lets such a lock pass, where the section refuses it.
+                    Err(InvalidLock) if route == Route::Item => {}
+                    Err(InvalidLock) => return Err(ApiError::BadRequest),
+                    Ok(result) => result?,
+                }
             } else if key.contains('[') || key.starts_with("artist.") || key.starts_with("album.") {
                 // Tags added and removed, and music reparented.
                 return Err(ApiError::NotImplemented);
@@ -207,21 +256,28 @@ impl Changes {
         Ok(())
     }
 
-    fn set_lock(&mut self, name: &str, value: &str, edited: EditedType) -> Result<(), ApiError> {
+    /// A lock or an unlock, or [`InvalidLock`] for a value that is neither: the two routes
+    /// answer it differently.
+    fn set_lock(
+        &mut self,
+        name: &str,
+        value: &str,
+        edited: EditedType,
+    ) -> Result<Result<(), ApiError>, InvalidLock> {
         let locks = match value {
             "1" => &mut self.lock,
             "0" => &mut self.unlock,
-            _ => return Err(ApiError::BadRequest),
+            _ => return Err(InvalidLock),
         };
         let Some((_, field)) = LOCKABLE.iter().find(|(plex, _)| *plex == name) else {
-            return Err(unhandled(name));
+            return Ok(Err(unhandled(name)));
         };
         match *field {
             "YEAR" if edited.year_follows_date() => {}
             "RELEASED_ON" if edited.year_follows_date() => locks.extend(["RELEASED_ON", "YEAR"]),
             field => locks.push(field),
         }
-        Ok(())
+        Ok(Ok(()))
     }
 
     fn input(&self, item: i64) -> Json {
@@ -232,6 +288,10 @@ impl Changes {
         Json::Object(input)
     }
 }
+
+/// A `.locked` value other than `0` or `1`.
+#[derive(Debug)]
+struct InvalidLock;
 
 /// A field the reference knows and we do not model is `501`; one it does not know, `400`.
 fn unhandled(name: &str) -> ApiError {
@@ -310,7 +370,7 @@ pub async fn edit_items(
     if value_of(&params, "filters").is_some() {
         return Err(ApiError::NotImplemented);
     }
-    let changes = Changes::read(&params, edited)?;
+    let changes = Changes::read(&params, edited, Route::Section)?;
     // An id that is not a number names nothing, which the reference ignores.
     let ids: Vec<i64> = ids.split(',').filter_map(|id| id.parse().ok()).collect();
     if ids.len() > MAX_ITEMS as usize {
@@ -335,16 +395,87 @@ pub async fn edit_items(
         (here && item.typename == edited.typename()).then_some(*id)
     });
     for item in in_scope {
-        let variables = Variables::from_json(json!({ "input": changes.input(item) }));
-        let data: EditData = gql::execute(&state.schema, edited.mutation(), variables).await?;
-        if let Some(error) = data.result.user_errors.first() {
-            tracing::info!(code = error.code, item, "refused an edit");
-            return Err(match error.code.as_str() {
-                "NOT_APPLICABLE" => ApiError::NotImplemented,
-                "ITEM_NOT_FOUND" => ApiError::NotFound,
-                _ => ApiError::BadRequest,
-            });
+        apply(&state, &changes, edited, item).await?;
+    }
+    Ok((StatusCode::OK, [(header::CONTENT_TYPE, "text/html")]))
+}
+
+/// Edits one item through the official API, its refusal turned into the status Plex answers.
+async fn apply(
+    state: &PlexState,
+    changes: &Changes,
+    edited: EditedType,
+    item: i64,
+) -> Result<(), ApiError> {
+    let variables = Variables::from_json(json!({ "input": changes.input(item) }));
+    let data: EditData = gql::execute(&state.schema, edited.mutation(), variables).await?;
+    if let Some(error) = data.result.user_errors.first() {
+        tracing::info!(code = error.code, item, "refused an edit");
+        return Err(match error.code.as_str() {
+            "NOT_APPLICABLE" => ApiError::NotImplemented,
+            "ITEM_NOT_FOUND" => ApiError::NotFound,
+            _ => ApiError::BadRequest,
+        });
+    }
+    Ok(())
+}
+
+const ITEMS_QUERY: &str = r"
+query PlexEditItems($ids: [ID!]!) {
+  items: nodes(ids: $ids) { __typename ... on Item { library { viewerRole } } }
+}";
+
+#[derive(Debug, Deserialize)]
+struct ItemsData {
+    items: Vec<Option<EditableItem>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EditableItem {
+    #[serde(rename = "__typename")]
+    typename: String,
+    library: Option<TargetLibrary>,
+}
+
+/// `PUT /library/metadata/{ids}`: every item named, each edited as what it is. One the caller
+/// may not edit counts as one that does not exist, as a library the caller is not an admin of
+/// answers on the section's route.
+pub async fn edit_metadata(
+    _caller: Caller,
+    State(state): State<PlexState>,
+    Path(ids): Path<String>,
+    Query(params): Query<Vec<(String, String)>>,
+) -> Result<impl IntoResponse, ApiError> {
+    if params.is_empty() {
+        return Err(ApiError::BadRequest);
+    }
+    let ids: Vec<i64> = ids.split(',').filter_map(|id| id.parse().ok()).collect();
+    if ids.len() > MAX_ITEMS as usize {
+        return Err(ApiError::BadRequest);
+    }
+    let variables = Variables::from_json(json!({
+        "ids": ids.iter().map(|id| GlobalId::encode(ITEM_TYPE, *id)).collect::<Vec<_>>(),
+    }));
+    let found: ItemsData = gql::execute(&state.schema, ITEMS_QUERY, variables).await?;
+    let mut edited_any = false;
+    for (id, item) in ids.iter().zip(&found.items) {
+        let Some(item) = item else {
+            continue;
+        };
+        let role = item
+            .library
+            .as_ref()
+            .and_then(|library| library.viewer_role.as_deref());
+        if role != Some("ADMIN") {
+            continue;
         }
+        let edited = EditedType::named(&item.typename)?;
+        let changes = Changes::read(&params, edited, Route::Item)?;
+        apply(&state, &changes, edited, *id).await?;
+        edited_any = true;
+    }
+    if !edited_any {
+        return Err(ApiError::NotFound);
     }
     Ok((StatusCode::OK, [(header::CONTENT_TYPE, "text/html")]))
 }
@@ -396,10 +527,16 @@ mod tests {
         let film = Changes::read(
             &params(&[("originallyAvailableAt.locked", "1"), ("year.locked", "1")]),
             EditedType::Movie,
+            Route::Section,
         )
         .unwrap();
         assert_eq!(film.lock, ["RELEASED_ON", "YEAR"]);
-        let episode = Changes::read(&params(&[("year.locked", "1")]), EditedType::Episode).unwrap();
+        let episode = Changes::read(
+            &params(&[("year.locked", "1")]),
+            EditedType::Episode,
+            Route::Section,
+        )
+        .unwrap();
         assert_eq!(episode.lock, ["YEAR"]);
     }
 
@@ -414,6 +551,7 @@ mod tests {
                 ("includeExternalMedia", "1"),
             ]),
             EditedType::Movie,
+            Route::Section,
         )
         .unwrap();
         assert_eq!(
@@ -425,7 +563,7 @@ mod tests {
     #[test]
     fn refuses_what_it_cannot_do_apart_from_what_makes_no_sense() {
         let read = |pairs: &[(&str, &str)]| {
-            Changes::read(&params(pairs), EditedType::Movie)
+            Changes::read(&params(pairs), EditedType::Movie, Route::Section)
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         };
@@ -438,5 +576,36 @@ mod tests {
         assert_eq!(read(&[("bogus.locked", "1")]), bad);
         assert_eq!(read(&[("summary.locked", "2")]), bad);
         assert_eq!(read(&[("year.value", "abc")]), bad);
+    }
+
+    #[test]
+    fn the_items_route_takes_bare_fields_and_lets_a_strange_lock_pass() {
+        let read = |pairs: &[(&str, &str)]| {
+            Changes::read(&params(pairs), EditedType::Movie, Route::Item).map_err(|e| e.to_string())
+        };
+        // As measured: the bare form of the spec, `.value` winning in either order.
+        let changes = read(&[
+            ("title.value", "Value"),
+            ("title", "Bare"),
+            ("tagline", "A tagline"),
+            ("type", "2"),
+            ("includeExternalMedia", "1"),
+            ("X-Plex-Product", "Plex Web"),
+            ("summary.locked", "2"),
+        ])
+        .unwrap();
+        assert_eq!(
+            Json::Object(changes.values),
+            json!({ "title": "Value", "tagline": "A tagline" })
+        );
+        assert!(changes.lock.is_empty() && changes.unlock.is_empty());
+        assert_eq!(
+            read(&[("nonsense", "x")]).err(),
+            Some("bad request".to_owned())
+        );
+        assert_eq!(
+            read(&[("thumb", "x")]).err(),
+            Some("not implemented".to_owned())
+        );
     }
 }

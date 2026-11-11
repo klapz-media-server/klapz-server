@@ -18,9 +18,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 10 | 3.8 % |
+| `todo` | 9 | 3.5 % |
 | `stub` | 130 | 50.0 % |
-| `partial` | 19 | 7.3 % |
+| `partial` | 20 | 7.7 % |
 | `done` | 64 | 24.6 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 2 | 7 | 45 | 7 | 24 |
+| [Library](#library) | 85 | 2 | 8 | 45 | 6 | 24 |
 | [Hubs](#hubs) | 15 | 1 | 1 | 13 | 0 | 0 |
 | [Content](#content) | 13 | 1 | 2 | 10 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
@@ -93,7 +93,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `GET` | `/library/media/{mediaId}/chapterImages/{chapter}` | user | Get a chapter image |  |
 | `stub` | `GET` | `/library/metadata/augmentations/{augmentationId}` | user | Get augmentation status |  |
 | `todo` | `DELETE` | `/library/metadata/{ids}` | admin | Delete a metadata item |  |
-| `todo` | `PUT` | `/library/metadata/{ids}` | admin | Edit a metadata item |  |
+| `partial` | `PUT` | `/library/metadata/{ids}` | admin | Edit a metadata item | Films, series and episodes, any library, each through `updateMovie`/`updateShow`/`updateEpisode`: the fields of `PUT /library/sections/{sectionId}/all`, as `{field}.value` or bare as the spec writes them, and `{field}.locked`; `type` ignored. Measured on the reference: `.value` wins over the bare form, a lock other than `0`/`1` is ignored, no parameter is `400`, no item named `404`. Library admins only; seasons, tags, artwork and music `501`. See spec-gaps.md. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/addetect` | admin | Ad-detect an item | scanner/analysis, separate binary |
 | `partial` | `GET` | `/library/metadata/{ids}/allLeaves` | user | Get the leaves of an item | A series' episodes with its studio on each, what `/children`'s `All episodes` entry opens; a season, a film or an episode is an empty container naming it, as on the reference (seven seasons of six series measured). Containers identical to the reference on five nodes; the items' gaps are those of `/grandchildren` (artwork, slug, `audienceRatingImage`, `chapterSource`). One id, not a list. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/analyze` | admin | Analyze an item | scanner/analysis, separate binary |

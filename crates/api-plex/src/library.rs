@@ -40,7 +40,10 @@ pub fn router() -> Router<PlexState> {
             "/library/sections/{sectionId}/all",
             get(section_items).put(crate::edit::edit_items),
         )
-        .route("/library/metadata/{ids}", get(items_by_id))
+        .route(
+            "/library/metadata/{ids}",
+            get(items_by_id).put(crate::edit::edit_metadata),
+        )
         // Neither is in the spec; both are how a client opens a series.
         .route("/library/metadata/{id}/children", get(children::children))
         .route(

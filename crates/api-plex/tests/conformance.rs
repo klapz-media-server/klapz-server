@@ -3205,7 +3205,9 @@ fn editing_app(principal: Principal) -> axum::Router {
         ItemField::Writers,
     ]
     .map(|field| (RatingKey::new(577_987), field));
-    let metadata = InMemoryMetadata::new(vec![film, show]).with_locked_fields(locks.to_vec());
+    let season = item(577_988, 28, ItemKind::Season, Some(577_987), "Season 1");
+    let metadata =
+        InMemoryMetadata::new(vec![film, show, season]).with_locked_fields(locks.to_vec());
     let library = InMemoryLibrary::new(vec![
         section(27, SectionKind::Movie, "open-plex tests", false),
         section(28, SectionKind::Show, "open-plex tests series", false),
@@ -3436,6 +3438,124 @@ async fn only_a_librarys_admin_edits_it() {
     };
     let app = editing_app(admin);
     assert_eq!(put_on(&app, uri).await.0, StatusCode::OK);
+    assert_eq!(film_after(&app).await["summary"], "x");
+}
+
+async fn show_after(app: &axum::Router) -> Value {
+    let (status, body) = get_from(
+        app.clone(),
+        "/library/metadata/577987",
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    body["MediaContainer"]["Metadata"][0].clone()
+}
+
+#[tokio::test]
+async fn an_item_edit_takes_the_specs_bare_fields_and_every_item_named() {
+    let app = editing_app(Principal::operator("owner"));
+    // As on the reference: `type` ignored, the bare form of the spec, `.value` winning over it,
+    // and a lock that is neither `0` nor `1` let pass.
+    let (status, content_type, body) = put_on(
+        &app,
+        "/library/metadata/577986,577987?type=2&title=Bare&title.value=The%20Soul&tagline=A%20tagline&summary.locked=1&studio.locked=yes&X-Plex-Product=Plex%20Web",
+    )
+    .await;
+    assert_eq!(
+        (status, content_type.as_str(), body.as_str()),
+        (StatusCode::OK, "text/html", "")
+    );
+    let film = film_after(&app).await;
+    assert_eq!(film["title"], "The Soul");
+    assert_eq!(film["titleSort"], "Soul");
+    assert_eq!(film["tagline"], "A tagline");
+    assert_eq!(
+        film["Field"],
+        serde_json::json!([{ "locked": true, "name": "summary" }])
+    );
+    // The series, in another library and of another type, edited alike: its title is locked,
+    // and a value is written whatever the lock, as the official API writes it.
+    let show = show_after(&app).await;
+    assert_eq!(show["title"], "The Soul");
+    assert_eq!(show["tagline"], "A tagline");
+}
+
+#[tokio::test]
+async fn an_item_edit_answers_as_the_reference_does_when_it_edits_nothing() {
+    let app = editing_app(Principal::operator("owner"));
+    for (uri, expected) in [
+        // Measured on the reference: no parameter, and a field name it does not know.
+        ("/library/metadata/577986", StatusCode::BAD_REQUEST),
+        (
+            "/library/metadata/577986?nonsense=x",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/library/metadata/577986?nonsense.value=x",
+            StatusCode::BAD_REQUEST,
+        ),
+        // No item named, or nothing a number; one known among unknown ones is edited.
+        ("/library/metadata/999999?title=x", StatusCode::NOT_FOUND),
+        ("/library/metadata/abc?title=x", StatusCode::NOT_FOUND),
+        (
+            "/library/metadata/577986,999999?summary=Known",
+            StatusCode::OK,
+        ),
+        // `type` alone changes nothing, and answers as an edit.
+        ("/library/metadata/577986?type=1", StatusCode::OK),
+        // What we cannot do: a season, artwork, tags.
+        (
+            "/library/metadata/577988?title=x",
+            StatusCode::NOT_IMPLEMENTED,
+        ),
+        (
+            "/library/metadata/577986?thumb=x",
+            StatusCode::NOT_IMPLEMENTED,
+        ),
+        (
+            "/library/metadata/577986?genre%5B0%5D.tag.tag=Drama",
+            StatusCode::NOT_IMPLEMENTED,
+        ),
+        ("/library/metadata/577986?year=abc", StatusCode::BAD_REQUEST),
+    ] {
+        assert_eq!(put_on(&app, uri).await.0, expected, "{uri}");
+    }
+    assert_eq!(film_after(&app).await["summary"], "Known");
+}
+
+#[tokio::test]
+async fn only_a_librarys_admin_edits_its_items() {
+    let viewer = Principal {
+        libraries: LibraryAccess::Only(
+            [(SectionId::new(27), LibraryRole::Viewer)]
+                .into_iter()
+                .collect(),
+        ),
+        ..user_principal(1, LibraryRole::Viewer)
+    };
+    let uri = "/library/metadata/577986?summary=x";
+    assert_eq!(
+        put_on(&editing_app(viewer), uri).await.0,
+        StatusCode::NOT_FOUND
+    );
+    let admin = Principal {
+        libraries: LibraryAccess::Only(
+            [(SectionId::new(27), LibraryRole::Admin)]
+                .into_iter()
+                .collect(),
+        ),
+        ..user_principal(1, LibraryRole::Admin)
+    };
+    let app = editing_app(admin);
+    // The series is in a library this user was not given: as if it did not exist.
+    assert_eq!(
+        put_on(&app, "/library/metadata/577986,577987?summary=x")
+            .await
+            .0,
+        StatusCode::OK
+    );
     assert_eq!(film_after(&app).await["summary"], "x");
 }
 

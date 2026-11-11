@@ -490,8 +490,9 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `unlock`, `lockedFields`) kept in `item_field_lock` and imported from Plex's `user_fields`;
   a title edit rewrites the sort title, its key and the title-word index through
   `db::write::update_item`, the one write path. On the Plex surface, `PUT
-  /library/sections/{id}/all` with `.value`/`.locked` and `Field` elements on lookups, by the
-  rules measured on the reference's test libraries (`docs/spec-gaps.md`);
+  /library/sections/{id}/all` with `.value`/`.locked`, the spec's `PUT /library/metadata/{ids}`
+  with bare fields as well, and `Field` elements on lookups, by the rules measured on the
+  reference's test libraries (`docs/spec-gaps.md`);
 - ✅ **Live TV, DVR and music answer empty**: the 52 Live TV, DVR, guide and recording
   operations as the reference answers them without a DVR (`api-plex::livetv`), and music as
   held nowhere — `ARTIST`, `ALBUM` and `TRACK` on the official API keep nothing, so music
