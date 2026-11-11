@@ -366,7 +366,7 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
 | `OPENPLEX_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
-| `OPENPLEX_TRANSCODER` | `ffmpeg` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases, kept locally under `.work/ffmpeg-plex/<version>/`. A stream whose player chooses its rung needs a build with `align_audio_cuts`, which cuts its audio where each key frame is shown (branch `audio-cuts-at-key-frames`, `.work/ffmpeg-plex/v8.1.3-5-audio-cuts/`). `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
+| `OPENPLEX_TRANSCODER` | `ffmpeg` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases, kept locally under `.work/ffmpeg-plex/<version>/`. A stream whose player chooses its rung needs a build with `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown (branch `audio-cuts-at-key-frames`, `.work/ffmpeg-plex/v8.1.3-5-absolute/`). `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `OPENPLEX_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
 | `OPENPLEX_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which Plex's own binary needs. The rebuilt one has them built in and needs none. |
 
@@ -498,9 +498,10 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   not found yet.
 - ✅ **adaptive bitrate, chosen by the server or by the player**, over HLS and DASH: `quality`
   on `startStream` (`FIXED`, `SERVER_ADAPTIVE`, `CLIENT_ADAPTIVE`). The player's choice lists
-  the copy first and encodes cut on the same key frames, served from pieces so that every rung
-  and every restart agree on where a segment starts; the server's moves bitrates under one
-  representation whose codec headers never change (`transcoder::adapt` holds both rules).
+  the copy first and encodes cut on the same key frames, on a grid of segments ffmpeg-plex lays
+  on the media's timeline so that every rung and every restart agree on where a segment starts;
+  the server's moves bitrates under one representation whose codec headers never change
+  (`transcoder::adapt` holds both rules).
   Played across rung changes by shaka-player and hls.js without a stop.
 
 ## Reference server

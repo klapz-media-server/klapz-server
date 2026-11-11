@@ -8,26 +8,23 @@
 //! change of rung starts another, and what earlier runs wrote stays and is served. An adaptive
 //! stream is a ladder of rungs. When the server moves between them they share one
 //! representation, and the newest run started at or before a segment is the one that answers
-//! for it. When the player chooses, each rung is a representation of its own, written as one
-//! piece per group of pictures and served as the pieces starting within each segment's time:
-//! the transcoder cuts its segments relative to where its run started, so two runs started at
-//! different points would not otherwise agree on where a segment begins.
+//! for it. When the player chooses, each rung is a representation of its own, and ffmpeg-plex
+//! cuts and numbers its segments on the media's timeline (`absolute_segments`), its audio
+//! where each key frame is shown: segment N is the same in every run, whatever rung and
+//! wherever it started, and any run of the rung that wrote it may answer for it.
 
 use std::collections::{BTreeMap, HashMap};
-use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use tokio::io::AsyncReadExt as _;
 use tokio::process::Command;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
 use crate::adapt::{self, Delivery, ServerAdaptation};
-use crate::fragment::{self, TrackTiming};
 use crate::plan::{
     audio_decoder, language_tag, Adaptation, AudioAction, KeyFrames, Ladder, StreamPlan, Track,
     VideoAction, VideoEncode,
@@ -59,12 +56,9 @@ const SEGMENTS_BEFORE_PLAYLIST: usize = 3;
 /// beyond this is a seek: a moment for a remux, a few seconds for an encode.
 const SEEK_MARGIN_SECONDS: u32 = 30;
 
-/// A piece's start is read in its track's timescale: one starting on a segment's boundary
-/// must not fall before it by a rounding.
-const BOUNDARY_TOLERANCE: f64 = 0.000_5;
-
-/// How much of a piece is read to find where it starts: its `moof` comes first.
-const PIECE_HEAD_BYTES: u64 = 4096;
+/// How many segments in a row the source may leave without a key frame. None of them can start
+/// a file, and each is answered with the one it is shown in, once a later one proves it.
+const SEGMENTS_WITHOUT_KEY_FRAME: u32 = 4;
 
 /// How the result reaches the player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -293,25 +287,40 @@ struct Run {
     directory: PathBuf,
     /// HLS files, as the process announced them.
     segments: BTreeMap<u32, Announced>,
-    /// Where each DASH piece starts, by track, in the order of their files: when a player shows
-    /// it, its edit list applied.
-    pieces: [Vec<f64>; 2],
-    timings: [Option<TrackTiming>; 2],
-    /// Writes nothing more, for whatever reason.
     ended: bool,
-    /// Ended by reaching the end of the media, so its last piece ends a segment. A run stopped
-    /// for another leaves its last segment unfinished.
-    finished: bool,
 }
 
 impl Run {
-    /// HLS pieces as `(start, file number)`, the finished ones.
-    fn finished_pieces(&self) -> Vec<(f64, u32)> {
-        self.segments
-            .iter()
-            .filter(|(_, piece)| piece.finished)
-            .map(|(number, piece)| (piece.start, *number))
-            .collect()
+    /// The file holding segment `number`, `stream` for DASH, once whole: a DASH file is renamed
+    /// from its temporary name when complete, an HLS one announced finished. When the source has
+    /// no key frame within the segment, none starts there and the file it is shown in answers,
+    /// once a file after it proves that none will.
+    fn written(&self, protocol: Protocol, stream: u32, number: u32) -> Option<PathBuf> {
+        let path = |number: u32| match protocol {
+            Protocol::Dash => self.directory.join(chunk_name(stream, number + 1)),
+            Protocol::Hls => self.directory.join(hls_name(number)),
+        };
+        let whole = |number: u32| match protocol {
+            Protocol::Dash => path(number).exists(),
+            Protocol::Hls => self
+                .segments
+                .get(&number)
+                .is_some_and(|segment| segment.finished),
+        };
+        if number < self.start_chunk {
+            return None;
+        }
+        if whole(number) {
+            return Some(path(number));
+        }
+        let skipped = (number + 1..=number.saturating_add(SEGMENTS_WITHOUT_KEY_FRAME)).any(whole);
+        if !skipped {
+            return None;
+        }
+        (self.start_chunk..number)
+            .rev()
+            .find(|n| whole(*n))
+            .map(path)
     }
 
     fn latest_finished(&self) -> Option<u32> {
@@ -321,15 +330,6 @@ impl Run {
             .find(|(_, segment)| segment.finished)
             .map(|(number, _)| *number)
     }
-}
-
-/// A run's pieces as far as they were read, to read the ones written since.
-struct ReadPieces {
-    generation: u64,
-    directory: PathBuf,
-    first: u32,
-    known: [usize; 2],
-    timings: [Option<TrackTiming>; 2],
 }
 
 #[derive(Debug, Default)]
@@ -397,42 +397,6 @@ impl Drop for Session {
             tracing::warn!(%error, "could not remove a transcode session's directory");
         }
     }
-}
-
-/// Which pieces of a run make up the segment `[from, to)`: those starting within it or, when the
-/// source's key frames are further apart than a segment, the one it falls in. `None` until all
-/// of them are written. The run must have started at or before the segment, so that none of
-/// its pieces can be missing before the first one found.
-fn chunk_pieces(starts: &[f64], ended: bool, from: f64, to: f64) -> Option<Range<usize>> {
-    let begin = starts.partition_point(|start| *start < from - BOUNDARY_TOLERANCE);
-    let end = starts.partition_point(|start| *start < to - BOUNDARY_TOLERANCE);
-    let range = if begin < end {
-        begin..end
-    } else if begin > 0 && begin < starts.len() {
-        begin - 1..begin
-    } else {
-        // Past what the run wrote: not reached yet, or past the end of the media.
-        return None;
-    };
-    (range.end < starts.len() || ended).then_some(range)
-}
-
-/// Each audio piece counted at the start of the video piece it goes with. The process cuts its
-/// audio on the first frame shown at or after each video key frame (`align_audio_cuts`), so
-/// a piece starts within a frame after its video's: it goes with the last cut at or before it.
-/// A run's first piece holds the audio from where its seek landed, before its first key frame.
-fn audio_starts(audio: &[f64], video: &[f64]) -> Vec<f64> {
-    audio
-        .iter()
-        .map(|&start| {
-            let at = video.partition_point(|cut| *cut <= start + BOUNDARY_TOLERANCE);
-            at.checked_sub(1)
-                .or_else(|| (!video.is_empty()).then_some(0))
-                .and_then(|index| video.get(index))
-                .copied()
-                .unwrap_or(start)
-        })
-        .collect()
 }
 
 impl Session {
@@ -600,137 +564,41 @@ impl Session {
         })
     }
 
-    /// Reads where the DASH pieces written since the last look start.
-    async fn refresh_pieces(&self) {
-        let pending: Vec<ReadPieces> = self.with_progress(|progress| {
-            progress
-                .runs
-                .iter()
-                .map(|run| ReadPieces {
-                    generation: run.generation,
-                    directory: run.directory.clone(),
-                    first: first_file(Protocol::Dash, run.start_chunk),
-                    known: [run.pieces[0].len(), run.pieces[1].len()],
-                    timings: run.timings,
-                })
-                .collect()
-        });
-        for ReadPieces {
-            generation,
-            directory,
-            first,
-            known,
-            timings,
-        } in pending
-        {
-            for (index, stream) in [(0, 0), (1, 1)] {
-                let Some(timing) = (match timings[index] {
-                    Some(timing) => Some(timing),
-                    None => tokio::fs::read(directory.join(init_name(stream)))
-                        .await
-                        .ok()
-                        .and_then(|init| fragment::track_timing(&init))
-                        .filter(|timing| timing.timescale > 0),
-                }) else {
-                    continue;
-                };
-                let mut found = Vec::new();
-                loop {
-                    let Some(file) = u32::try_from(known[index] + found.len())
-                        .ok()
-                        .and_then(|index| first.checked_add(index))
-                    else {
-                        break;
-                    };
-                    let path = directory.join(chunk_name(stream, file));
-                    let Some(shown) = read_head(&path)
-                        .await
-                        .and_then(|head| fragment::first_presentation_time(&head))
-                    else {
-                        break;
-                    };
-                    #[allow(
-                        clippy::cast_precision_loss,
-                        reason = "a presentation time far below 2^52 ticks"
-                    )]
-                    found.push((shown - timing.shift) as f64 / f64::from(timing.timescale));
-                }
-                self.with_progress(|progress| {
-                    if let Some(run) = progress
-                        .runs
-                        .iter_mut()
-                        .find(|run| run.generation == generation)
-                    {
-                        run.timings[index] = Some(timing);
-                        if run.pieces[index].len() == known[index] {
-                            run.pieces[index].extend(found);
-                        }
-                    }
-                });
-            }
-        }
-    }
-
-    /// The files of segment `number` of a rendition the player chose, `None` for audio, when
-    /// some run has written all of them.
-    fn assembled(
+    /// Segment `number` of a rendition the player chose, `track` `None` for HLS, from the newest
+    /// run of that rendition started at or before it that wrote it. The audio is the same on
+    /// every rung, so any run's will do.
+    fn chosen_file(
         &self,
         track: Option<DashTrack>,
         rendition: usize,
         number: u32,
-    ) -> Option<Vec<PathBuf>> {
-        let seconds = self.seconds();
-        let (from, to) = (f64::from(number) * seconds, f64::from(number + 1) * seconds);
+    ) -> Option<PathBuf> {
+        let protocol = self.request.protocol;
         self.with_progress(|progress| {
             progress
                 .runs
                 .iter()
                 .rev()
                 .filter(|run| run.start_chunk <= number)
-                .find_map(|run| match track {
-                    None if run.rendition == rendition => {
-                        let pieces = run.finished_pieces();
-                        let starts: Vec<f64> = pieces.iter().map(|(start, _)| *start).collect();
-                        let range = chunk_pieces(&starts, run.finished, from, to)?;
-                        Some(
-                            pieces[range]
-                                .iter()
-                                .map(|(_, file)| run.directory.join(hls_name(*file)))
-                                .collect(),
-                        )
-                    }
-                    Some(DashTrack::Video(wanted)) if run.rendition == wanted => {
-                        let range = chunk_pieces(&run.pieces[0], run.finished, from, to)?;
-                        Some(piece_paths(run, 0, range))
-                    }
-                    Some(DashTrack::Audio) => {
-                        let starts = audio_starts(&run.pieces[1], &run.pieces[0]);
-                        let range = chunk_pieces(&starts, run.finished, from, to)?;
-                        Some(piece_paths(run, 1, range))
-                    }
-                    _ => None,
+                .filter(|run| match track {
+                    Some(DashTrack::Audio) => true,
+                    Some(DashTrack::Video(wanted)) => run.rendition == wanted,
+                    None => run.rendition == rendition,
                 })
+                .find_map(|run| run.written(protocol, track.map_or(0, DashTrack::stream), number))
         })
     }
 
-    /// Whether the running process, of this rendition, will write segment `number` soon.
-    fn pieces_will_reach(&self, rendition: usize, number: u32) -> bool {
-        let seconds = self.seconds();
-        let from = f64::from(number) * seconds;
-        let margin = f64::from(SEEK_MARGIN_SECONDS);
-        self.with_progress(|progress| {
-            progress.current().is_some_and(|run| {
-                let frontier = match self.request.protocol {
-                    Protocol::Dash => run.pieces[0].last().copied(),
-                    Protocol::Hls => run.finished_pieces().last().map(|(start, _)| *start),
-                }
-                .unwrap_or(f64::from(run.start_chunk) * seconds);
-                run.rendition == rendition
-                    && !run.ended
-                    && run.start_chunk <= number
-                    && frontier >= from - margin
-            })
-        })
+    /// Whether the running process, at this rendition, will write segment `number` soon.
+    fn chosen_will_reach(&self, track: Option<DashTrack>, rendition: usize, number: u32) -> bool {
+        let running = self
+            .current()
+            .is_some_and(|(running, _, _)| running == rendition);
+        running
+            && match track {
+                Some(track) => self.will_reach(track.stream(), number),
+                None => self.hls_will_reach(number),
+            }
     }
 
     fn output(&self, rendition: usize) -> Output {
@@ -740,10 +608,7 @@ impl Session {
             // Every segment some run of the rendition completed, at its nominal length.
             let mut segments = Vec::new();
             let mut number = 0;
-            while let Some(files) = self.assembled(None, rendition, number) {
-                if files.is_empty() {
-                    break;
-                }
+            while self.chosen_file(None, rendition, number).is_some() {
                 segments.push(Segment {
                     number,
                     seconds: f64::from(segment_seconds),
@@ -810,25 +675,6 @@ fn hls_name(number: u32) -> String {
     format!("media-{number:05}.ts")
 }
 
-fn piece_paths(run: &Run, stream: u32, range: Range<usize>) -> Vec<PathBuf> {
-    let first = first_file(Protocol::Dash, run.start_chunk);
-    range
-        .filter_map(|index| u32::try_from(index).ok())
-        .map(|index| run.directory.join(chunk_name(stream, first + index)))
-        .collect()
-}
-
-/// The start of a finished piece, or `None` while it does not exist under its final name.
-async fn read_head(path: &Path) -> Option<Vec<u8>> {
-    let file = tokio::fs::File::open(path).await.ok()?;
-    let mut head = Vec::new();
-    file.take(PIECE_HEAD_BYTES)
-        .read_to_end(&mut head)
-        .await
-        .ok()?;
-    Some(head)
-}
-
 /// Reads the transcoder's announcement, which restates the latest segments each time:
 /// `media-00000.ts,0.000000,8.000000,7.914667,8.000000`, with a leading `#` while unfinished.
 fn parse_announcement(body: &str) -> Vec<(u32, Announced)> {
@@ -858,16 +704,10 @@ fn parse_announcement(body: &str) -> Vec<(u32, Announced)> {
         .collect()
 }
 
-/// A process's outputs cut in pieces at every key frame, for a rung the player chooses: no
-/// cut can then fall anywhere but on one.
-const PIECE_SECONDS: &str = "0.001";
-
-fn hls_output(callback: &str, seconds: u32, first_file: u32, pieces: bool) -> Vec<String> {
-    let segment_time = if pieces {
-        PIECE_SECONDS.to_owned()
-    } else {
-        seconds.to_string()
-    };
+/// `absolute`: on the media's grid, for a rung the player chooses, which ffmpeg-plex alone
+/// can do; a build without the option refuses it.
+fn hls_output(callback: &str, seconds: u32, first_file: u32, absolute: bool) -> Vec<String> {
+    let segment_time = seconds.to_string();
     [
         "-segment_format",
         "mpegts",
@@ -896,9 +736,8 @@ fn hls_output(callback: &str, seconds: u32, first_file: u32, pieces: bool) -> Ve
         "1",
     ]
     .iter()
-    .chain(if pieces {
-        // ffmpeg-plex's: the audio cut where the key frame is shown, the same in every run.
-        ["-segment_align_audio_cuts", "1"].iter()
+    .chain(if absolute {
+        ["-segment_absolute", "1"].iter()
     } else {
         [].iter()
     })
@@ -919,17 +758,11 @@ fn hls_output(callback: &str, seconds: u32, first_file: u32, pieces: bool) -> Ve
 
 /// This build keeps the chunks on a grid of `seconds` even when copying video, so their number
 /// says where they are in time: 494 chunks of 5 seconds for 2467 seconds. The grid starts where
-/// the run does, though. Cut in pieces, the audio is cut where each video piece starts.
-fn dash_output(callback: &str, seconds: u32, first_file: u32, pieces: bool) -> Vec<String> {
+/// the run does, though, unless `absolute` puts it on the media's, as for [`hls_output`].
+fn dash_output(callback: &str, seconds: u32, first_file: u32, absolute: bool) -> Vec<String> {
     let mut args = strings(&["-f", "dash", "-seg_duration", &seconds.to_string()]);
-    if pieces {
-        args.extend(strings(&[
-            "-adaptation_sets",
-            &format!("id=0,seg_duration={PIECE_SECONDS},streams=0 id=1,streams=1"),
-            // ffmpeg-plex's: the audio cut where the key frame is shown, the same in every run.
-            "-align_audio_cuts",
-            "1",
-        ]));
+    if absolute {
+        args.extend(strings(&["-absolute_segments", "1"]));
     }
     args.extend(strings(&[
         "-dash_segment_type",
@@ -1207,7 +1040,7 @@ fn stream_arguments(
     fonts: Option<&Path>,
 ) -> Vec<String> {
     let seconds = request.segment_seconds();
-    let pieces = request.client_adapted();
+    let client = request.client_adapted();
     let burn = match (&request.subtitle, fonts) {
         (Some(SubtitleDelivery::Burn { track, scale }), Some(fonts)) => {
             Some((track, *scale, fonts))
@@ -1220,11 +1053,11 @@ fn stream_arguments(
         &request.audio,
         run.plan,
         burn.is_some(),
-        pieces,
+        client,
     ));
     args.extend(match request.protocol {
-        Protocol::Hls => hls_output(run.callback, seconds, run.first_file, pieces),
-        Protocol::Dash => dash_output(run.callback, seconds, run.first_file, pieces),
+        Protocol::Hls => hls_output(run.callback, seconds, run.first_file, client),
+        Protocol::Dash => dash_output(run.callback, seconds, run.first_file, client),
     });
     if let Some((subtitle, _, _)) = burn {
         // The filter draws only what this output decodes alongside: without it, nothing.
@@ -1308,9 +1141,9 @@ fn align_to_chunk(request: &mut StreamRequest) -> u32 {
 }
 
 /// The number the file of a run's first segment carries: DASH numbers its chunks from one,
-/// HLS its segments from zero. A run cut in pieces numbers them from there too, though its
-/// numbers no longer say where a piece is: this build writes an encode's timestamps from zero
-/// when told its first DASH segment is the first, wherever it starts.
+/// HLS its segments from zero. A run on the media's grid numbers its files from where they are
+/// shown, but is told its first segment all the same: this build writes an encode's timestamps
+/// from zero when told its first DASH segment is the first, wherever it starts.
 const fn first_file(protocol: Protocol, chunk: u32) -> u32 {
     match protocol {
         Protocol::Dash => chunk + 1,
@@ -1350,21 +1183,18 @@ fn supervise(session: &Arc<Session>, mut child: tokio::process::Child, generatio
 
     let supervised = Arc::clone(session);
     let task = tokio::spawn(async move {
-        let finished = tokio::select! {
-            result = child.wait() => match result {
-                Ok(status) => status.success(),
-                Err(error) => {
+        tokio::select! {
+            result = child.wait() => {
+                if let Err(error) = result {
                     tracing::warn!(%error, "lost track of a transcoder process");
-                    false
                 }
-            },
+            }
             () = stop.notified() => {
                 if let Err(error) = child.kill().await {
                     tracing::warn!(%error, "could not kill a transcoder process");
                 }
-                false
             }
-        };
+        }
         supervised.with_progress(|progress| {
             if let Some(run) = progress
                 .runs
@@ -1372,7 +1202,6 @@ fn supervise(session: &Arc<Session>, mut child: tokio::process::Child, generatio
                 .find(|run| run.generation == generation)
             {
                 run.ended = true;
-                run.finished = finished;
             }
         });
         supervised.changed.notify_waiters();
@@ -1611,10 +1440,7 @@ impl Transcoder {
                 start_chunk: chunk,
                 directory,
                 segments: BTreeMap::new(),
-                pieces: [Vec::new(), Vec::new()],
-                timings: [None, None],
                 ended: false,
-                finished: false,
             });
         });
         supervise(session, child, generation);
@@ -1843,9 +1669,6 @@ impl Transcoder {
             let run = progress.current();
             let frontier = run.map_or(0.0, |run| {
                 let written = match request.protocol {
-                    Protocol::Dash if request.client_adapted() => {
-                        run.pieces[0].last().copied().unwrap_or(0.0)
-                    }
                     Protocol::Hls => run
                         .segments
                         .values()
@@ -1912,8 +1735,7 @@ impl Transcoder {
         })
     }
 
-    /// A finished HLS segment's files, waiting for them if they are still being written: one,
-    /// or the pieces of a rung the player chose.
+    /// A finished HLS segment's file, waiting for it if it is still being written.
     ///
     /// # Errors
     ///
@@ -1927,7 +1749,10 @@ impl Transcoder {
     ) -> Result<Vec<PathBuf>, TranscodeError> {
         let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
         if session.request.client_adapted() {
-            return self.chosen_chunk(&session, None, rendition, number).await;
+            return self
+                .chosen_chunk(&session, None, rendition, number)
+                .await
+                .map(|file| vec![file]);
         }
         if rendition != 0 {
             return Err(TranscodeError::UnknownSegment);
@@ -1994,11 +1819,18 @@ impl Transcoder {
                     })
                     .find(|run| {
                         let first = first_file(Protocol::Dash, run.start_chunk);
-                        let finished = run.directory.join(chunk_name(stream, first));
-                        let begun = run
-                            .directory
-                            .join(format!("{}.tmp", chunk_name(stream, first)));
-                        finished.exists() || begun.exists()
+                        // On the media's grid, a run started on the key frame before its first
+                        // segment writes the end of the one before under its number first.
+                        let earliest = if session.request.client_adapted() {
+                            first.saturating_sub(1)
+                        } else {
+                            first
+                        };
+                        (earliest..=first).any(|file| {
+                            let name = chunk_name(stream, file);
+                            run.directory.join(&name).exists()
+                                || run.directory.join(format!("{name}.tmp")).exists()
+                        })
                     })
                     .map(|run| run.directory.join(init_name(stream)))
             })
@@ -2096,9 +1928,9 @@ impl Transcoder {
         })
     }
 
-    /// A finished DASH chunk's files: one, or the pieces of a rung the player chose. `number`
-    /// counts from zero, as the manifest given to the player does. One the running process will
-    /// not get to soon is a seek, and restarts it there.
+    /// A finished DASH chunk's file. `number` counts from zero, as the manifest given to the
+    /// player does. One the running process will not get to soon is a seek, and restarts it
+    /// there.
     ///
     /// # Errors
     ///
@@ -2117,7 +1949,8 @@ impl Transcoder {
             };
             return self
                 .chosen_chunk(&session, Some(track), rendition, number)
-                .await;
+                .await
+                .map(|file| vec![file]);
         }
         if matches!(track, DashTrack::Video(rendition) if rendition != 0) {
             return Err(TranscodeError::UnknownSegment);
@@ -2152,7 +1985,7 @@ impl Transcoder {
         track: Option<DashTrack>,
         rendition: usize,
         number: u32,
-    ) -> Result<Vec<PathBuf>, TranscodeError> {
+    ) -> Result<PathBuf, TranscodeError> {
         if rendition >= session.request.ladder.rungs.len() {
             return Err(TranscodeError::UnknownSegment);
         }
@@ -2163,14 +1996,11 @@ impl Transcoder {
             if session.closed.load(Ordering::Acquire) {
                 return Err(TranscodeError::UnknownSegment);
             }
-            if session.request.protocol == Protocol::Dash {
-                session.refresh_pieces().await;
-            }
-            if let Some(files) = session.assembled(track, rendition, number) {
+            if let Some(file) = session.chosen_file(track, rendition, number) {
                 if video {
                     session.served(rendition, number);
                 }
-                return Ok(files);
+                return Ok(file);
             }
             let seen = session.current_generation();
             let Some((running, _, start)) = session.current() else {
@@ -2183,7 +2013,7 @@ impl Transcoder {
                 // A run that started at or before the segment and ended without it has reached
                 // the end of the media, or failed: restarting it would only fail again.
                 let exhausted = ended && start <= number;
-                if !exhausted && !session.pieces_will_reach(rendition, number) {
+                if !exhausted && !session.chosen_will_reach(track, rendition, number) {
                     self.restart(session, seen, rendition, number, Restart::Seek)
                         .await?;
                     continue;
@@ -2615,9 +2445,7 @@ mod tests {
                 "{run}"
             );
             assert!(
-                run.contains(
-                    "-adaptation_sets id=0,seg_duration=0.001,streams=0 id=1,streams=1 -align_audio_cuts 1 "
-                ),
+                run.contains("-f dash -seg_duration 5 -absolute_segments 1 "),
                 "{run}"
             );
             // Not 1, which would make this build write an encode's timestamps from zero.
@@ -2628,13 +2456,13 @@ mod tests {
         assert!(encode.contains(":scenecut=0:keyint=infinite -force_key_frames:0 source "));
         let hls = run_of(&chosen(Protocol::Hls), 1, 35.0);
         assert!(
-            hls.contains("-segment_time 0.001 -segment_start_number 7 "),
+            hls.contains("-segment_time 5 -segment_start_number 7 "),
             "{hls}"
         );
-        assert!(hls.contains("-segment_align_audio_cuts 1 "), "{hls}");
-        // Asked of rungs cut in pieces only: a build without the option refuses it.
+        assert!(hls.contains("-segment_absolute 1 "), "{hls}");
+        // Asked of rungs the player chooses only: a build without the option refuses it.
         let fixed = arguments(&request(AudioAction::Copy), 0, None).join(" ");
-        assert!(!fixed.contains("align_audio_cuts"), "{fixed}");
+        assert!(!fixed.contains("absolute"), "{fixed}");
     }
 
     #[test]
@@ -2677,85 +2505,76 @@ mod tests {
         assert!(parse_announcement("other-00000.ts,0,1").is_empty());
     }
 
-    /// Where the transcoder started the pieces of a test episode, run from 27 seconds: a key
-    /// frame every 3 seconds.
-    const PIECES: [f64; 6] = [27.0, 30.0, 33.0, 36.0, 39.0, 42.0];
+    /// Writes DASH segment files into a run's directory, as the process names them once whole.
+    fn write_chunks(run: &Run, stream: u32, numbers: &[u32]) {
+        for number in numbers {
+            std::fs::write(run.directory.join(chunk_name(stream, number + 1)), b"").unwrap();
+        }
+    }
 
     #[test]
-    fn a_segment_is_the_pieces_starting_within_it() {
-        // [30, 35): the pieces at 30 and 33, complete since the one at 36 exists.
-        assert_eq!(chunk_pieces(&PIECES, false, 30.0, 35.0), Some(1..3));
-        // [35, 40): 36 and 39, whose end only the piece at 42 proves.
-        assert_eq!(chunk_pieces(&PIECES, false, 35.0, 40.0), Some(3..5));
-        assert_eq!(chunk_pieces(&PIECES, false, 40.0, 45.0), None);
-        assert_eq!(chunk_pieces(&PIECES, true, 40.0, 45.0), Some(5..6));
-        // A rounding below a boundary does not move a piece to the segment before.
-        assert_eq!(
-            chunk_pieces(&[29.9999, 35.0], false, 30.0, 35.0),
-            Some(0..1)
+    fn a_segment_comes_from_the_newest_run_of_its_rendition_that_wrote_it() {
+        let directory = scratch_directory();
+        let from_start = run_in(directory.join("run-0"), 0, 0, 0);
+        write_chunks(&from_start, 0, &[0, 1, 2, 3]);
+        // Moved to rung 1 at segment 2, then back to rung 0 at segment 3.
+        let mut lower = run_in(directory.join("run-1"), 1, 1, 2);
+        lower.rendition = 1;
+        write_chunks(&lower, 0, &[1, 2]);
+        write_chunks(&lower, 1, &[1, 2]);
+        let back = run_in(directory.join("run-2"), 2, 0, 3);
+        write_chunks(&back, 0, &[2, 3]);
+        let session = session_with(
+            chosen(Protocol::Dash),
+            directory.clone(),
+            vec![from_start, lower, back],
         );
+        let video = |rendition, number| {
+            session.chosen_file(Some(DashTrack::Video(rendition)), rendition, number)
+        };
+        assert!(video(0, 3).unwrap().starts_with(directory.join("run-2")));
+        // The end of segment 2 the last run opened with is not segment 2: it started at 3.
+        assert!(video(0, 2).unwrap().starts_with(directory.join("run-0")));
+        assert!(video(1, 2).unwrap().starts_with(directory.join("run-1")));
+        assert_eq!(video(1, 1), None);
+        // The audio of any rung.
+        let audio = session.chosen_file(Some(DashTrack::Audio), 0, 2).unwrap();
+        assert!(audio.ends_with(Path::new("run-1").join(chunk_name(1, 3))));
     }
 
     #[test]
-    fn a_segment_before_every_piece_is_not_there() {
-        assert_eq!(chunk_pieces(&[40.0, 45.0], true, 25.0, 30.0), None);
-        assert_eq!(chunk_pieces(&[], true, 0.0, 5.0), None);
-    }
-
-    #[test]
-    fn a_segment_comes_from_a_run_started_at_or_before_it() {
+    fn a_segment_without_a_key_frame_is_the_one_it_is_shown_in() {
         let directory = scratch_directory();
-        let mut from_start = run_in(directory.join("run-0"), 0, 0, 0);
-        from_start.pieces[0] = vec![0.08, 3.9, 7.8, 11.8];
-        // Started at segment 2 on the key frame before it, so holding a piece of segment 1.
-        let mut later = run_in(directory.join("run-1"), 1, 0, 2);
-        later.pieces[0] = vec![7.8, 11.8, 15.7];
-        let session = session_with(chosen(Protocol::Dash), directory, vec![from_start, later]);
-        let video = Some(DashTrack::Video(0));
-        // The first piece is shown a little after the start, and still opens segment 0.
-        let first = session.assembled(video, 0, 0).unwrap();
-        assert_eq!(first.len(), 2);
-        assert!(first[0].ends_with(Path::new("run-0").join(chunk_name(0, 1))));
-        // Segment 1 only from the run that covers all of it.
-        let second = session.assembled(video, 0, 1).unwrap();
-        assert!(second[0].starts_with(session.directory.join("run-0")));
-        let third = session.assembled(video, 0, 2).unwrap();
-        assert!(third[0].ends_with(Path::new("run-1").join(chunk_name(0, 4))));
+        // Key frames ten seconds apart: no file starts segments 1 and 3.
+        let run = run_in(directory.join("run-0"), 0, 0, 0);
+        write_chunks(&run, 0, &[0, 2]);
+        let session = session_with(chosen(Protocol::Dash), directory, vec![run]);
+        let video = |number| session.chosen_file(Some(DashTrack::Video(0)), 0, number);
+        assert!(video(1).unwrap().ends_with(chunk_name(0, 1)));
+        // Not until a later file proves that segment 3 has none of its own.
+        assert_eq!(video(3), None);
     }
 
     #[test]
-    fn a_segment_between_two_far_key_frames_is_the_piece_it_falls_in() {
-        // Ten seconds between key frames, five-second segments.
-        let sparse = [0.0, 10.0, 20.0];
-        assert_eq!(chunk_pieces(&sparse, false, 5.0, 10.0), Some(0..1));
-        assert_eq!(chunk_pieces(&sparse, false, 10.0, 15.0), Some(1..2));
-        assert_eq!(chunk_pieces(&sparse, false, 15.0, 20.0), Some(1..2));
-        assert_eq!(chunk_pieces(&sparse, true, 25.0, 30.0), None);
-    }
-
-    #[test]
-    fn audio_pieces_count_from_the_video_cut_they_follow() {
-        // Measured on Soul converted to AAC: each audio piece starting on the first frame shown
-        // at or after its key frame, the run's first one where its seek landed.
-        let video = [20.103, 24.107, 28.111];
-        let audio = [19.957, 24.107, 28.117];
-        assert_eq!(audio_starts(&audio, &video), [20.103, 24.107, 28.111]);
-        // Key frames closer than an audio frame share one audio piece.
-        assert_eq!(audio_starts(&[4.053], &[4.045, 4.086, 8.049]), [4.045]);
-        assert_eq!(audio_starts(&[3.0], &[]), [3.0]);
-    }
-
-    #[test]
-    fn a_stopped_run_does_not_end_a_segment_with_its_last_piece() {
+    fn an_hls_segment_is_there_once_announced_finished() {
         let directory = scratch_directory();
-        let mut stopped = run_in(directory.join("run-0"), 0, 0, 0);
-        stopped.pieces[0] = vec![0.08, 3.9, 7.8];
-        stopped.ended = true;
-        let session = session_with(chosen(Protocol::Dash), directory, vec![stopped]);
-        // Killed during segment 1: the piece at 7.8 may have had others after it.
-        assert_eq!(session.assembled(Some(DashTrack::Video(0)), 0, 1), None);
-        session.with_progress(|progress| progress.runs[0].finished = true);
-        assert!(session.assembled(Some(DashTrack::Video(0)), 0, 1).is_some());
+        let mut run = run_in(directory.join("run-0"), 0, 0, 0);
+        for (number, finished) in [(0, true), (1, false)] {
+            run.segments.insert(
+                number,
+                Announced {
+                    start: f64::from(number) * 5.0,
+                    seconds: 5.0,
+                    finished,
+                },
+            );
+        }
+        let session = session_with(chosen(Protocol::Hls), directory, vec![run]);
+        assert!(session
+            .chosen_file(None, 0, 0)
+            .unwrap()
+            .ends_with(hls_name(0)));
+        assert_eq!(session.chosen_file(None, 0, 1), None);
     }
 
     fn run_in(directory: PathBuf, generation: u64, rung: usize, start_chunk: u32) -> Run {
@@ -2767,10 +2586,7 @@ mod tests {
             start_chunk,
             directory,
             segments: BTreeMap::new(),
-            pieces: [Vec::new(), Vec::new()],
-            timings: [None, None],
             ended: false,
-            finished: false,
         }
     }
 
@@ -2803,7 +2619,6 @@ mod tests {
     fn session_writing_to(directory: PathBuf, ended: bool) -> Arc<Session> {
         let mut run = run_in(directory.clone(), 0, 0, 0);
         run.ended = ended;
-        run.finished = ended;
         session_with(request(AudioAction::Copy), directory, vec![run])
     }
 

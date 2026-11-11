@@ -842,50 +842,53 @@ are 5 seconds on every rung and both protocols. Addresses: `/streams/{id}/{rung}
 `…/{rung}/00012.ts`; `/streams/{id}/{rung}/header` and `…/{rung}/12.m4s` for DASH video, and
 `/streams/{id}/audio/…` for the audio every rung shares.
 
-Copied video can only be cut on the source's key frames, and the transcoder cuts its segments on
-a grid that starts where *its run* starts: measured on a test episode, a copy restarted at 30 s
+Copied video can only be cut on the source's key frames, and Plex's muxers cut their segments on
+a grid that starts where *their run* starts: measured on a test episode, a copy restarted at 30 s
 began on the key frame at 27 and then numbered every chunk 3 seconds early. Two runs of the same
 rung started at different points therefore disagree on where a segment begins, and a player
-moving between them meets gaps. So these streams are written in pieces, one per group of pictures
-(`-seg_duration 0.001` on the video's adaptation set; `-segment_time 0.001` for HLS, whose audio
-travels in the same pieces), and a segment is served as the pieces whose key frame is *shown*
-within its five seconds: decode times are no use, a copy taking the source container's and an
-encode the encoder's, up to half a second apart on Soul for the same frame. Encodes put their key
-frames where the source has them (`-force_key_frames source`, `scenecut=0:keyint=infinite`) and
-every run starts on the key frame before its segment (`-noaccurate_seek`), so all rungs cut at the
-same frames: measured on Soul, chunk 402 starts at 2010.090 s on the copy and 2010.091 s at
-1280×720, with its pieces at 2012.968/2012.969 and 2014.094/2014.095. Without a copy (a burned
-subtitle, a cap below the file) the encodes are keyed on the 5-second grid instead.
+moving between them meets gaps. ffmpeg-plex puts the grid on the media's timeline instead
+(`-absolute_segments` for DASH, `-segment_absolute` for HLS, asked of these streams only, which a
+build without them refuses): segment N starts at the first key frame shown at or after N × 5 s and
+carries the number N whatever the run's start, so every run writes the same segment N and any run
+of the rung that wrote it answers for it, one file served as it is. Encodes put their key frames
+where the source has them (`-force_key_frames source`, `scenecut=0:keyint=infinite`) and every
+run starts on the key frame before its segment (`-noaccurate_seek`), so all rungs cut at the same
+frames; the end of the segment before, which a run starts with, carries that segment's number
+and is never served from it. When the source leaves a segment without a key frame, no file has
+its number and the one it is shown in answers. Without a copy (a burned subtitle, a cap below the
+file) the encodes are keyed on the 5-second grid instead.
 
-The audio has to be cut where the video is, the same way in every run. A muxer cutting at a key
-frame ends the audio it has received so far, and the interleaving runs the audio behind the
-video by a distance that depends on the encoder and the seek: 0.48 s on a copy of Soul, 0.15 s on
-an encode. A segment from one run followed by the next from another left the audio between their
-cuts unheard (0.33 s and 0.21 s at two restarts, about 0.25 s in HLS), a hole a browser buffers,
-since it plays only where audio and video both are: the 0.66 s gap shaka stepped over below.
-ffmpeg-plex therefore cuts the audio on its first packet shown at or after the key frame
-(`-align_audio_cuts` for DASH, `-segment_align_audio_cuts` for HLS, asked of pieces only). A DASH
-audio piece then starts within one frame after its video's in the time a player shows it, that is
-with each track's edit list taken off: 83 ms for the video, 21 ms for the AAC priming, which read
-without it put every audio cut 62 ms early. Probed over twenty segments and five restarts, each
-segment's audio is continuous with the next's to the sample within a run, and within one AAC
-frame across runs (+11 ms to −32 ms in DASH, −94 ms to +11 ms in HLS): converted audio is framed
-from where each run's encoder starts, a residue a player covers.
+The audio has to be cut where the video is. A muxer cutting at a key frame ends the audio it has
+received so far, and the interleaving runs the audio behind the video by a distance that depends
+on the encoder and the seek: 0.48 s on a copy of Soul, 0.15 s on an encode. Two runs then cut the
+same audio at different places, and a segment from one followed by the next from another left
+the audio between their cuts unheard (0.33 s and 0.21 s at two restarts, about 0.25 s in HLS), a
+hole a browser buffers since it plays only where audio and video both are: the 0.66 s gap shaka
+stepped over below. With the grid, ffmpeg-plex cuts the audio on its first packet shown at or
+after the key frame: in DASH by keeping each cut until the audio reaches it, an audio segment
+taking its video segment's number when closed; in HLS, whose muxer writes one file at a time, by
+holding the key frame and what follows until the audio gets there. Its MPEG-TS muxer is also
+handed `-avoid_negative_ts disabled`: left to its own, it shifted every timestamp of a run from
+the start by the B-frames' delay, 83 ms on Soul, and of no other run.
 
-A run stopped for another rung writes nothing more, but its last piece did not end a segment:
-only a run that reached the end of the media (`finished`) closes one with its last piece.
+Probed on Soul over twenty segments and five restarts, then after seeks to 3000 s and 1500 s:
+every segment's video starts where the one before ended, whatever the run, and its audio within
+one AAC frame of it (+11 ms to −32 ms in DASH, ±11 ms in HLS, the times a player shows, edit lists
+applied): converted audio is framed from where each run's encoder starts, a residue a player
+covers. Within a run the audio is continuous to the sample.
 
-Two quirks of this build, found doing it: `-skip_to_segment 1` makes it write an encode's
-timestamps from zero wherever the input starts (from 2 on they stay the source's), so a run's
-pieces are numbered from its segment; and `-fps_mode cfr` after a seek fills the time before the
-first frame with copies of it, each a key frame.
+`-skip_to_segment 1` makes this build write an encode's timestamps from zero wherever the input
+starts (from 2 on they stay the source's), so a run is still told its first segment; and
+`-fps_mode cfr` after a seek fills the time before the first frame with copies of it, each a key
+frame, so a run started further on encodes without it.
 
 Played by shaka-player 4.7 and hls.js 1.5 in a browser, on Soul, forcing a rung every 9 seconds
 in both directions between the copy and the encodes: the picture changed size each time
 (1920×1080, 1280×720, 720×405, 480×270, 320×180), playback never stopped, no frame was dropped
 (2,847 and 1,951). DASH buffered one gap of 0.66 s at 39.3 s, which shaka stepped over in 0.07 s:
 the audio cut described above, since aligned; hls.js had none, filling such holes with silence,
-and retried three segment requests that timed out while a restart waited.
+and retried three segment requests that timed out while a restart waited. That play predates the
+media's grid, when each rung was written in pieces of a group of pictures and assembled here.
 
 **Chosen by the server.** One representation at one picture size, the top rung's, and lower
 bitrates under it (Soul: 20, 7.4, 3.4, 1.3, 0.3 and 0.2 Mbps, all 1920×1080), in 3-second
