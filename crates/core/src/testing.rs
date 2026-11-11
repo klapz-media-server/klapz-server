@@ -9,9 +9,15 @@
 
 use std::collections::BTreeMap;
 
+use crate::collection::{
+    Collection, CollectionCondition, CollectionEdit, CollectionEntry, CollectionError,
+    CollectionQuery, CollectionRef, CollectionRepository, CollectionSort, CollectionTotals,
+    Membership, NewCollection,
+};
 use crate::edit::{ItemEdit, ItemField};
 use crate::ids::{
-    MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey, SectionId, StreamId, TagId,
+    CollectionId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey, SectionId,
+    StreamId, TagId,
 };
 use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use crate::metadata::{
@@ -115,6 +121,8 @@ pub struct InMemoryMetadata {
     tags: Vec<ItemTag>,
     external_ids: Vec<ExternalId>,
     ratings: Vec<Rating>,
+    /// What a collection filter reads, shared with the collections' own store.
+    collections: Option<std::sync::Arc<std::sync::Mutex<CollectionStore>>>,
 }
 
 impl InMemoryMetadata {
@@ -128,7 +136,37 @@ impl InMemoryMetadata {
             tags: Vec::new(),
             external_ids: Vec::new(),
             ratings: Vec::new(),
+            collections: None,
         }
+    }
+
+    /// Reads collection filters from these collections, as storage reads its own tables.
+    #[must_use]
+    pub fn with_collections(mut self, collections: &InMemoryCollections) -> Self {
+        self.collections = Some(std::sync::Arc::clone(&collections.state));
+        self
+    }
+
+    /// Whether an item satisfies one collection condition, by the rule storage applies.
+    fn in_collection(&self, item: RatingKey, condition: &CollectionCondition) -> bool {
+        let Some(store) = &self.collections else {
+            return false;
+        };
+        let store = locked(store);
+        store
+            .entries
+            .iter()
+            .filter(|entry| entry.item == item)
+            .filter_map(|entry| store.collection(entry.collection))
+            .any(|collection| {
+                condition.any_of.iter().any(|wanted| match wanted {
+                    CollectionRef::Id(id) => collection.id == *id,
+                    CollectionRef::TagNumber(number) => collection.tag_number == *number,
+                    CollectionRef::Title(title) => {
+                        title.to_lowercase() == collection.title.to_lowercase()
+                    }
+                })
+            })
     }
 
     /// Attaches external identifiers and ratings, kept in the order given.
@@ -308,6 +346,12 @@ impl InMemoryMetadata {
                     .credited
                     .is_none_or(|credited| self.credits(&items, item.id, credited))
             })
+            .filter(|item| {
+                filter
+                    .collections
+                    .iter()
+                    .all(|condition| self.in_collection(item.id, condition))
+            })
             .cloned()
             .collect();
 
@@ -316,13 +360,20 @@ impl InMemoryMetadata {
     }
 }
 
-/// Orders by title, date added or filmography only: the other orderings read versions or
-/// watch state, and storage's tests are where they are checked.
+/// Orders by title, date added, release date or filmography only: the other orderings read
+/// versions or watch state, and storage's tests are where they are checked.
 fn sort_matched(query: &ItemQuery, matched: &mut [MetadataItem]) {
     match query.sort {
         ItemSort::AddedAt | ItemSort::Arrival => matched.sort_by(|left, right| {
             left.added_at
                 .cmp(&right.added_at)
+                .then(left.id.get().cmp(&right.id.get()))
+        }),
+        // Absent first, ties by title, as storage orders it.
+        ItemSort::ReleasedOn => matched.sort_by(|left, right| {
+            left.released_on
+                .cmp(&right.released_on)
+                .then_with(|| sort_key(left).cmp(&sort_key(right)))
                 .then(left.id.get().cmp(&right.id.get()))
         }),
         ItemSort::Filmography => matched.sort_by_key(|item| {
@@ -2577,6 +2628,364 @@ impl PlaylistRepository for InMemoryPlaylists {
         let found = store.find(playlist)?;
         found.view_count += 1;
         found.last_viewed_at = now;
+        Ok(())
+    }
+}
+
+/// Collections held in memory, over the items whose years they read.
+///
+/// Its store is shared with an [`InMemoryMetadata`] built `with_collections`, so a listing
+/// filtered on a collection sees the same entries.
+#[derive(Debug, Default)]
+pub struct InMemoryCollections {
+    items: Vec<MetadataItem>,
+    state: std::sync::Arc<std::sync::Mutex<CollectionStore>>,
+}
+
+#[derive(Debug, Default)]
+pub struct CollectionStore {
+    collections: Vec<Collection>,
+    /// In the order items joined, which is what an item's list of collections follows.
+    entries: Vec<CollectionEntry>,
+    next_id: i64,
+}
+
+impl CollectionStore {
+    fn collection(&self, id: CollectionId) -> Option<&Collection> {
+        self.collections
+            .iter()
+            .find(|collection| collection.id == id)
+    }
+
+    fn find(&mut self, id: CollectionId) -> Result<&mut Collection, CollectionError> {
+        self.collections
+            .iter_mut()
+            .find(|collection| collection.id == id)
+            .ok_or(CollectionError::NotFound(id))
+    }
+
+    fn ordered(&self, collection: CollectionId) -> Vec<CollectionEntry> {
+        let mut entries: Vec<_> = self
+            .entries
+            .iter()
+            .filter(|entry| entry.collection == collection)
+            .copied()
+            .collect();
+        entries.sort_by_key(|entry| (entry.position, entry.item));
+        entries
+    }
+
+    fn append(&mut self, collection: CollectionId, items: &[RatingKey]) -> u64 {
+        let ordered = self.ordered(collection);
+        let present: Vec<RatingKey> = ordered.iter().map(|entry| entry.item).collect();
+        let mut last = ordered.iter().map(|entry| entry.position).max();
+        let added = crate::playlist::new_entries(items, &present);
+        for item in &added {
+            let position = crate::playlist::position_between(last, None).unwrap_or(0);
+            self.entries.push(CollectionEntry {
+                collection,
+                item: *item,
+                position,
+            });
+            last = Some(position);
+        }
+        u64::try_from(added.len()).unwrap_or(u64::MAX)
+    }
+}
+
+impl InMemoryCollections {
+    /// Ids are drawn past the items', as storage draws them from the same numbering.
+    pub fn new(items: Vec<MetadataItem>) -> Self {
+        let next_id = items.iter().map(|item| item.id.get()).max().unwrap_or(0);
+        Self {
+            items,
+            state: std::sync::Arc::new(std::sync::Mutex::new(CollectionStore {
+                next_id,
+                ..CollectionStore::default()
+            })),
+        }
+    }
+
+    /// Adds a collection as an import would, with its entries in the order given.
+    #[must_use]
+    pub fn with(self, collection: Collection, items: &[RatingKey]) -> Self {
+        {
+            let mut store = locked(&self.state);
+            store.next_id = store.next_id.max(collection.id.get());
+            let id = collection.id;
+            store.collections.push(collection);
+            store.append(id, items);
+        }
+        self
+    }
+
+    fn item(&self, id: RatingKey) -> Option<&MetadataItem> {
+        self.items.iter().find(|item| item.id == id)
+    }
+}
+
+fn collection_matches(
+    store: &CollectionStore,
+    collection: &Collection,
+    query: &CollectionQuery,
+) -> bool {
+    query.sections.contains(&collection.section)
+        && (!query.with_entries
+            || store
+                .entries
+                .iter()
+                .any(|entry| entry.collection == collection.id))
+        && query.kind.is_none_or(|kind| collection.kind == kind)
+        && query
+            .smart
+            .is_none_or(|smart| collection.is_smart() == smart)
+        && query
+            .tag_number
+            .is_none_or(|number| collection.tag_number == number)
+        && query.title_word_prefix.as_ref().is_none_or(|term| {
+            let words = crate::search::title_words(
+                Some(&collection.title),
+                collection.title_sort.as_deref(),
+                None,
+            );
+            words_match(&words, term)
+        })
+}
+
+/// The leading value in the query's direction, then the sort title and id ascending; by
+/// title alone, the title and id in the query's direction.
+fn collection_order(query: &CollectionQuery, a: &Collection, b: &Collection) -> std::cmp::Ordering {
+    let by_title = a.sort_key().cmp(&b.sort_key()).then(a.id.cmp(&b.id));
+    let directed = |ordering: std::cmp::Ordering| {
+        if query.direction.is_descending() {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    };
+    match query.sort {
+        CollectionSort::Title => directed(by_title),
+        CollectionSort::AddedAt => directed(a.added_at.cmp(&b.added_at)).then(by_title),
+        CollectionSort::UpdatedAt => directed(a.updated_at.cmp(&b.updated_at)).then(by_title),
+    }
+}
+
+#[async_trait::async_trait]
+impl CollectionRepository for InMemoryCollections {
+    async fn create(&self, new: NewCollection, now: i64) -> Result<Collection, CollectionError> {
+        let mut store = locked(&self.state);
+        store.next_id += 1;
+        let id = CollectionId::new(store.next_id);
+        let tag_number = store
+            .collections
+            .iter()
+            .map(|collection| collection.tag_number)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let collection = Collection {
+            id,
+            section: new.section,
+            kind: new.kind,
+            guid: format!("collection://{id}"),
+            tag_number,
+            title_sort: crate::edit::derived_title_sort(&new.title),
+            title: new.title,
+            summary: String::new(),
+            content_rating: None,
+            rule: new.rule,
+            source_uri: new.source_uri,
+            mode: crate::collection::CollectionMode::LibraryDefault,
+            order: crate::collection::CollectionOrder::ReleaseDate,
+            locked: Vec::new(),
+            thumb_url: None,
+            art_url: None,
+            added_at: now,
+            updated_at: now,
+        };
+        store.collections.push(collection.clone());
+        store.append(id, &new.items);
+        Ok(collection)
+    }
+
+    async fn collection(&self, id: CollectionId) -> Result<Option<Collection>, CollectionError> {
+        Ok(locked(&self.state).collection(id).cloned())
+    }
+
+    async fn collections(
+        &self,
+        query: &CollectionQuery,
+        window: Window,
+    ) -> Result<Page<Collection>, CollectionError> {
+        let store = locked(&self.state);
+        let mut found: Vec<_> = store
+            .collections
+            .iter()
+            .filter(|collection| collection_matches(&store, collection, query))
+            .cloned()
+            .collect();
+        drop(store);
+        found.sort_by(|a, b| collection_order(query, a, b));
+        Ok(windowed(found, &window, |collection| {
+            query.cursor(collection)
+        }))
+    }
+
+    async fn count(&self, query: &CollectionQuery) -> Result<u64, CollectionError> {
+        let store = locked(&self.state);
+        let count = store
+            .collections
+            .iter()
+            .filter(|collection| collection_matches(&store, collection, query))
+            .count();
+        Ok(u64::try_from(count).unwrap_or(u64::MAX))
+    }
+
+    async fn edit(
+        &self,
+        id: CollectionId,
+        edit: &CollectionEdit,
+    ) -> Result<Collection, CollectionError> {
+        let mut store = locked(&self.state);
+        let collection = store.find(id)?;
+        edit.apply(collection);
+        Ok(collection.clone())
+    }
+
+    async fn delete(&self, id: CollectionId) -> Result<bool, CollectionError> {
+        let mut store = locked(&self.state);
+        let before = store.collections.len();
+        store.collections.retain(|collection| collection.id != id);
+        store.entries.retain(|entry| entry.collection != id);
+        Ok(store.collections.len() != before)
+    }
+
+    async fn entries(
+        &self,
+        collection: CollectionId,
+        window: Window,
+    ) -> Result<Page<CollectionEntry>, CollectionError> {
+        let ordered = locked(&self.state).ordered(collection);
+        Ok(windowed(ordered, &window, CollectionEntry::cursor))
+    }
+
+    async fn totals(
+        &self,
+        collections: &[CollectionId],
+    ) -> Result<Vec<(CollectionId, CollectionTotals)>, CollectionError> {
+        let store = locked(&self.state);
+        let mut totals = Vec::new();
+        for collection in collections {
+            let mut total = CollectionTotals::default();
+            for entry in store.entries.iter().filter(|e| e.collection == *collection) {
+                total.items += 1;
+                if let Some(year) = self.item(entry.item).and_then(|item| item.year) {
+                    total.min_year = Some(total.min_year.map_or(year, |min| min.min(year)));
+                    total.max_year = Some(total.max_year.map_or(year, |max| max.max(year)));
+                }
+            }
+            if total.items > 0 {
+                totals.push((*collection, total));
+            }
+        }
+        Ok(totals)
+    }
+
+    async fn memberships(&self, items: &[RatingKey]) -> Result<Vec<Membership>, CollectionError> {
+        let store = locked(&self.state);
+        Ok(store
+            .entries
+            .iter()
+            .filter(|entry| items.contains(&entry.item))
+            .filter_map(|entry| {
+                store
+                    .collection(entry.collection)
+                    .map(|collection| Membership {
+                        item: entry.item,
+                        collection: collection.clone(),
+                    })
+            })
+            .collect())
+    }
+
+    async fn add(
+        &self,
+        collection: CollectionId,
+        items: &[RatingKey],
+        now: i64,
+    ) -> Result<u64, CollectionError> {
+        let mut store = locked(&self.state);
+        store.find(collection)?;
+        let added = store.append(collection, items);
+        if added > 0 {
+            store.find(collection)?.updated_at = now;
+        }
+        Ok(added)
+    }
+
+    async fn remove(
+        &self,
+        collection: CollectionId,
+        item: RatingKey,
+        now: i64,
+    ) -> Result<bool, CollectionError> {
+        let mut store = locked(&self.state);
+        store.find(collection)?;
+        let before = store.entries.len();
+        store
+            .entries
+            .retain(|entry| !(entry.collection == collection && entry.item == item));
+        let removed = store.entries.len() != before;
+        if removed {
+            store.find(collection)?.updated_at = now;
+        }
+        Ok(removed)
+    }
+
+    async fn move_item(
+        &self,
+        collection: CollectionId,
+        item: RatingKey,
+        destination: crate::collection::Destination,
+    ) -> Result<(), CollectionError> {
+        let mut store = locked(&self.state);
+        store.find(collection)?;
+        let mut order: Vec<RatingKey> = store
+            .ordered(collection)
+            .into_iter()
+            .map(|entry| entry.item)
+            .collect();
+        if !order.contains(&item) {
+            return Err(CollectionError::NotInCollection(item));
+        }
+        order.retain(|candidate| *candidate != item);
+        let at = match destination {
+            crate::collection::Destination::First => 0,
+            crate::collection::Destination::After(after) => {
+                order
+                    .iter()
+                    .position(|candidate| *candidate == after)
+                    .ok_or(CollectionError::NotInCollection(after))?
+                    + 1
+            }
+        };
+        order.insert(at, item);
+        for (moved, rank) in order.iter().zip(1_i64..) {
+            if let Some(entry) = store
+                .entries
+                .iter_mut()
+                .find(|entry| entry.collection == collection && entry.item == *moved)
+            {
+                entry.position = rank * crate::playlist::POSITION_GAP;
+            }
+        }
+        Ok(())
+    }
+
+    async fn clear(&self, collection: CollectionId) -> Result<(), CollectionError> {
+        let mut store = locked(&self.state);
+        store.find(collection)?;
+        store.entries.retain(|entry| entry.collection != collection);
         Ok(())
     }
 }

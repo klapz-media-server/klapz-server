@@ -833,6 +833,82 @@ impl Mutation {
         crate::playlist::clear(context, input).await
     }
 
+    /// Creates a collection in a library: of chosen items, or smart with a rule. For the
+    /// library's admins and the operator.
+    async fn create_collection(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The collection to create.")]
+        input: crate::collection::CreateCollectionInput,
+    ) -> Result<crate::collection::CollectionPayload> {
+        crate::collection::create(context, input).await
+    }
+
+    /// Renames, describes, sets, locks or unlocks a collection. For its library's admins and
+    /// the operator.
+    async fn update_collection(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The changes.")] input: crate::collection::UpdateCollectionInput,
+    ) -> Result<crate::collection::CollectionPayload> {
+        crate::collection::update(context, input).await
+    }
+
+    /// Deletes a collection; its items stay in the library. For its library's admins and the
+    /// operator.
+    async fn delete_collection(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The collection to delete.")]
+        input: crate::collection::DeleteCollectionInput,
+    ) -> Result<crate::collection::DeleteCollectionPayload> {
+        crate::collection::delete(context, input).await
+    }
+
+    /// Adds items to a collection of chosen items, skipping those it holds. For its library's
+    /// admins and the operator.
+    async fn add_to_collection(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The collection and the items.")]
+        input: crate::collection::AddToCollectionInput,
+    ) -> Result<crate::collection::AddToCollectionPayload> {
+        crate::collection::add(context, input).await
+    }
+
+    /// Takes an item out of a collection of chosen items. For its library's admins and the
+    /// operator.
+    async fn remove_from_collection(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The collection and the item.")]
+        input: crate::collection::RemoveFromCollectionInput,
+    ) -> Result<crate::collection::RemoveFromCollectionPayload> {
+        crate::collection::remove(context, input).await
+    }
+
+    /// Moves an item of a collection after another, or first, in its custom order. For its
+    /// library's admins and the operator.
+    async fn move_collection_item(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The item and where it goes.")]
+        input: crate::collection::MoveCollectionItemInput,
+    ) -> Result<crate::collection::CollectionPayload> {
+        crate::collection::move_item(context, input).await
+    }
+
+    /// Takes every item out of a collection of chosen items, keeping the collection. For its
+    /// library's admins and the operator.
+    async fn clear_collection(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The collection to empty.")]
+        input: crate::collection::ClearCollectionInput,
+    ) -> Result<crate::collection::CollectionPayload> {
+        crate::collection::clear(context, input).await
+    }
+
     /// Replaces the rule of one of the caller's smart playlists.
     async fn replace_playlist_rule(
         &self,

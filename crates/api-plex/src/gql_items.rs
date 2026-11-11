@@ -259,6 +259,7 @@ fragment ListedMovieTags on Movie {
     writers(first: 2) { edges { node { name } } }
     cast(first: 3) { edges { node { name } } }
   }
+  collections(first: 1) { edges { node { title } } }
 }
 
 fragment ListedShowTags on Show {
@@ -267,6 +268,7 @@ fragment ListedShowTags on Show {
     countries(first: 2) { edges { node { name } } }
     cast(first: 3) { edges { node { name } } }
   }
+  collections(first: 1) { edges { node { title } } }
 }
 
 fragment ListedEpisodeTags on Episode {
@@ -275,6 +277,7 @@ fragment ListedEpisodeTags on Episode {
     writers(first: 2) { edges { node { name } } }
     cast(first: 3) { edges { node { name } } }
   }
+  collections(first: 1) { edges { node { title } } }
 }
 
 fragment TagFields on Tag {
@@ -311,6 +314,7 @@ fragment MovieTags on Movie {
     cast(first: 500) { edges { character node { ...TagFields } } }
     producers(first: 500) { edges { node { ...TagFields } } }
   }
+  collections(first: 500) { edges { node { tagNumber title guid summary } } }
 }
 
 fragment ShowTags on Show {
@@ -319,6 +323,7 @@ fragment ShowTags on Show {
     countries(first: 500) { edges { node { ...TagFields } } }
     cast(first: 500) { edges { character node { ...TagFields } } }
   }
+  collections(first: 500) { edges { node { tagNumber title guid summary } } }
 }
 
 fragment EpisodeTags on Episode {
@@ -328,6 +333,7 @@ fragment EpisodeTags on Episode {
     cast(first: 500) { edges { character node { ...TagFields } } }
     producers(first: 500) { edges { node { ...TagFields } } }
   }
+  collections(first: 500) { edges { node { tagNumber title guid summary } } }
 }
 ";
 
@@ -785,6 +791,9 @@ pub struct GqlItem {
     pub watch_state: Option<GqlWatchState>,
     pub versions: Vec<GqlVersion>,
     pub tags: GqlItemTags,
+    /// The collections it is in: the first one's title in a listing, all of them in a
+    /// lookup.
+    pub collections: GqlConnection<GqlCollectionTag>,
     pub external_ids: GqlConnection<GqlExternalId>,
     pub ratings: GqlConnection<GqlRating>,
     /// `ItemField` names. A lookup asks for them, a listing does not.
@@ -970,6 +979,16 @@ pub struct GqlTag {
 pub struct GqlPerson {
     pub provider_key: Option<String>,
     pub thumb_url: Option<String>,
+}
+
+/// A collection as an item names it, as much of it as the query selected.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlCollectionTag {
+    pub tag_number: Option<String>,
+    pub title: String,
+    pub guid: Option<String>,
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -10,6 +10,7 @@
 
 pub mod access;
 pub mod account;
+pub mod collection;
 pub mod cursor;
 pub mod edit;
 pub mod filter;

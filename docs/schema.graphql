@@ -64,6 +64,47 @@ type AccountUserError {
 }
 
 """
+Items to add to a collection of chosen items.
+"""
+input AddToCollectionInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The collection, as returned in `Collection.id`.
+	"""
+	collectionId: ID!
+	"""
+	The items, in order, as returned in `Item.id`. One it holds already is not added
+	again, and one of another kind or library is left out; refused when that leaves none.
+	"""
+	itemIds: [ID!]!
+}
+
+"""
+A collection after items were added.
+"""
+type AddToCollectionPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The collection as it now stands. Null when the request was refused.
+	"""
+	collection: Collection
+	"""
+	How many of the items were added: those it did not hold already, each once.
+	"""
+	addedCount: Int!
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [CollectionUserError!]!
+}
+
+"""
 Items to append to a playlist of chosen items.
 """
 input AddToPlaylistInput {
@@ -120,6 +161,20 @@ type AudioAnalysis {
 }
 
 """
+A collection of chosen items to empty.
+"""
+input ClearCollectionInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The collection, as returned in `Collection.id`.
+	"""
+	id: ID!
+}
+
+"""
 A playlist of chosen items to empty.
 """
 input ClearPlaylistInput {
@@ -131,6 +186,386 @@ input ClearPlaylistInput {
 	The playlist, as returned in `Playlist.id`.
 	"""
 	id: ID!
+}
+
+type Collection implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this collection.
+	"""
+	id: ID!
+	"""
+	The server-local number, shared with the items' numbering, which the Plex surface
+	publishes as `ratingKey`.
+	"""
+	databaseId: String!
+	"""
+	An identifier unique across servers.
+	"""
+	guid: String!
+	"""
+	The number its items carry it under, which the Plex surface filters on
+	(`collection=…`). Shared by collections of one name in different libraries, as the
+	reference numbers them; unique within a library.
+	"""
+	tagNumber: String!
+	"""
+	Its name.
+	"""
+	title: String!
+	"""
+	The title to sort by. Null when none is stored.
+	"""
+	titleSort: String
+	"""
+	Its description. Empty when it has none.
+	"""
+	summary: String!
+	"""
+	An age-rating label, such as `fr/12`, as the metadata source gave it.
+	"""
+	contentRating: String
+	"""
+	The kind of item it holds: every item in it is of this kind.
+	"""
+	kind: ItemType!
+	"""
+	Whether it lists what a rule finds rather than items chosen one by one.
+	"""
+	isSmart: Boolean!
+	"""
+	The rule of a smart collection. Null for one of chosen items.
+	"""
+	rule: SmartCollectionRule
+	"""
+	Where a smart collection's content came from, as the client that created it named
+	it. Null when it named none.
+	"""
+	sourceUri: String
+	"""
+	How a library page treats it and its items. Kept for clients; nothing on the server
+	lists differently for it.
+	"""
+	mode: CollectionMode!
+	"""
+	How its chosen items are ordered in `items`. A smart collection follows its rule.
+	"""
+	order: CollectionOrder!
+	"""
+	The fields an editor locked.
+	"""
+	lockedFields: [CollectionField!]!
+	"""
+	A poster, hosted by the metadata provider. Null when it has none there.
+	"""
+	thumbUrl: String
+	"""
+	A background, hosted by the metadata provider. Null when it has none there.
+	"""
+	artUrl: String
+	"""
+	When it was created, in seconds since the Unix epoch.
+	"""
+	addedAt: Int!
+	"""
+	When an item last joined or left it, in seconds since the Unix epoch. An edit of its
+	fields leaves it.
+	"""
+	updatedAt: Int!
+	"""
+	The library it belongs to.
+	"""
+	library: Library
+	"""
+	How many items it holds: the chosen ones, or what the rule finds now.
+	"""
+	itemCount: Int!
+	"""
+	The earliest release year among its chosen items. Null for a smart collection, or
+	when no item has a year.
+	"""
+	minYear: Int
+	"""
+	The latest release year among its chosen items. Null for a smart collection, or when
+	no item has a year.
+	"""
+	maxYear: Int
+	"""
+	Its items: the chosen ones in its `order`, or what the rule finds now.
+	"""
+	items(
+		"""
+		Return items after this cursor.
+		"""
+		after: String,
+		"""
+		Return items before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many items from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many items from the end of the range.
+		"""
+		last: Int,
+		"""
+		Skip this many items first, to land in the middle of the collection.
+		"""
+		offset: Int
+	): ItemConnection!
+}
+
+type CollectionConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CollectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Collection!]!
+	"""
+	How many collections the listing holds, every page together.
+	"""
+	totalCount: Int!
+}
+
+"""
+An edge in a connection.
+"""
+type CollectionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Collection!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+Why a collection mutation did nothing.
+"""
+enum CollectionErrorCode {
+	"""
+	No collection the caller may change carries this id.
+	"""
+	COLLECTION_NOT_FOUND
+	"""
+	No library the caller may change carries this id.
+	"""
+	LIBRARY_NOT_FOUND
+	"""
+	No item the caller can read carries this id.
+	"""
+	ITEM_NOT_FOUND
+	"""
+	None of the items can join: a collection holds items of its kind, from its library.
+	"""
+	NOT_ADDABLE
+	"""
+	The item is not in the collection.
+	"""
+	NOT_IN_COLLECTION
+	"""
+	The collection is smart: its items come from its rule, and cannot be changed one by
+	one.
+	"""
+	SMART_COLLECTION
+	"""
+	The collection holds chosen items, and has no rule.
+	"""
+	NOT_SMART
+	"""
+	The rule names a filter this server cannot honor.
+	"""
+	INVALID_RULE
+	"""
+	A collection cannot hold items of this kind: music is held nowhere here.
+	"""
+	UNSUPPORTED_KIND
+	"""
+	A title cannot be empty.
+	"""
+	BLANK_TITLE
+}
+
+"""
+A collection field an editor can lock.
+"""
+enum CollectionField {
+	"""
+	`title`.
+	"""
+	TITLE
+	"""
+	`titleSort`.
+	"""
+	TITLE_SORT
+	"""
+	`summary`.
+	"""
+	SUMMARY
+	"""
+	`contentRating`.
+	"""
+	CONTENT_RATING
+	"""
+	The poster.
+	"""
+	POSTER
+	"""
+	The background.
+	"""
+	BACKGROUND
+}
+
+"""
+Keeps items in at least one of the collections named. Name them by id, by the number
+their items carry them under, or by title; at least one, and at most 50 in all.
+"""
+input CollectionFilterInput {
+	"""
+	Collections, as returned in `Collection.id`.
+	"""
+	ids: [ID!]
+	"""
+	Collections by `Collection.tagNumber`.
+	"""
+	tagNumbers: [String!]
+	"""
+	Collections by title, matched exactly, ignoring case.
+	"""
+	titles: [String!]
+}
+
+"""
+How a list of collections is ordered. Equal values follow by sort title, ascending.
+"""
+enum CollectionListOrder {
+	"""
+	By sort title, case-insensitively.
+	"""
+	TITLE
+	"""
+	By when the collection was created.
+	"""
+	ADDED_AT
+	"""
+	By when an item last joined or left it.
+	"""
+	UPDATED_AT
+}
+
+type CollectionMembershipConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CollectionMembershipEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Collection!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CollectionMembershipEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Collection!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+How a library page treats a collection and its items.
+"""
+enum CollectionMode {
+	"""
+	As the library's own setting says.
+	"""
+	LIBRARY_DEFAULT
+	"""
+	The collection is not shown; its items are.
+	"""
+	HIDDEN
+	"""
+	The collection is shown in place of its items.
+	"""
+	INSTEAD_OF_ITEMS
+	"""
+	The collection is shown, and its items too.
+	"""
+	WITH_ITEMS
+}
+
+"""
+How a collection of chosen items orders them.
+"""
+enum CollectionOrder {
+	"""
+	By release date, items without one first.
+	"""
+	RELEASE_DATE
+	"""
+	By sort title.
+	"""
+	TITLE
+	"""
+	As an editor arranged them with `moveCollectionItem`.
+	"""
+	CUSTOM
+}
+
+"""
+A collection after a change.
+"""
+type CollectionPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The collection as it now stands. Null when the request was refused.
+	"""
+	collection: Collection
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [CollectionUserError!]!
+}
+
+"""
+A request a collection mutation refused, and where in the input the reason lies.
+"""
+type CollectionUserError {
+	"""
+	The path to the input field at fault.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person to read.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program to branch on.
+	"""
+	code: CollectionErrorCode!
 }
 
 type ColorDescription {
@@ -203,6 +638,41 @@ type ContinueWatchingEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+"""
+A collection to create: of chosen items, or smart with a rule.
+"""
+input CreateCollectionInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	Its library, as returned in `Library.id`. The caller must be allowed to change it.
+	"""
+	libraryId: ID!
+	"""
+	Its name. Not empty.
+	"""
+	title: String!
+	"""
+	The kind of item it holds.
+	"""
+	kind: ItemType!
+	"""
+	Its first items, in order, as returned in `Item.id`. A repeat is kept once, and an
+	item of another kind or library is left out. Not with `rule`.
+	"""
+	itemIds: [ID!]! = []
+	"""
+	Makes it smart: it lists what this rule finds in its library.
+	"""
+	rule: SmartCollectionRuleInput
+	"""
+	Where the content came from, as the client names it; kept and returned as given.
+	"""
+	sourceUri: String
 }
 
 """
@@ -283,6 +753,38 @@ type CreatePlaylistPayload {
 	Why the request was refused. Empty on success.
 	"""
 	userErrors: [PlaylistUserError!]!
+}
+
+"""
+A collection to delete.
+"""
+input DeleteCollectionInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The collection, as returned in `Collection.id`.
+	"""
+	id: ID!
+}
+
+"""
+What a deletion removed.
+"""
+type DeleteCollectionPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The collection deleted, as it was returned in `Collection.id`. Null when refused.
+	"""
+	deletedCollectionId: ID
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [CollectionUserError!]!
 }
 
 """
@@ -496,6 +998,27 @@ type Episode implements Item & Node {
 	Genres and countries, which are the series', and the episode's own credits.
 	"""
 	tags: ItemTags!
+	"""
+	The collections it is in, in the order it joined them.
+	"""
+	collections(
+		"""
+		Return collections after this cursor.
+		"""
+		after: String,
+		"""
+		Return collections before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many collections from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many collections from the end of the range.
+		"""
+		last: Int
+	): CollectionMembershipConnection!
 	"""
 	Identifiers this item has at external metadata providers.
 	"""
@@ -1218,6 +1741,10 @@ input ItemFilterInput {
 	"""
 	tags: [TagFilterInput!]
 	"""
+	Keep only items in the named collections. Every condition must hold.
+	"""
+	collections: [CollectionFilterInput!]
+	"""
 	Leave out this item, as returned in `id`: "the rest of this director's films".
 	"""
 	excludedId: ID
@@ -1556,6 +2083,59 @@ type Library implements Node {
 		"""
 		offset: Int
 	): RecentlyAddedConnection!
+	"""
+	This library's collections.
+	"""
+	collections(
+		"""
+		Only collections having a word that starts with each word of this text, in their title or sort title, accents folded.
+		"""
+		matching: String,
+		"""
+		Only collections holding items of this kind.
+		"""
+		kind: ItemType,
+		"""
+		Only smart collections (`true`), or only those of chosen items (`false`).
+		"""
+		smart: Boolean,
+		"""
+		Only collections holding a chosen item (`true`): those a filter on collections can find.
+		"""
+		withEntries: Boolean,
+		"""
+		Only the collection carried under this `Collection.tagNumber`.
+		"""
+		tagNumber: String,
+		"""
+		How to order them.
+		"""
+		orderBy: CollectionListOrder,
+		"""
+		Which direction to order in.
+		"""
+		direction: SortDirection,
+		"""
+		Return collections after this cursor.
+		"""
+		after: String,
+		"""
+		Return collections before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many collections from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many collections from the end of the range.
+		"""
+		last: Int,
+		"""
+		Skip this many collections first.
+		"""
+		offset: Int
+	): CollectionConnection!
 	"""
 	What the caller may do in this library.
 	"""
@@ -2167,6 +2747,28 @@ type MediaVersion implements Node {
 }
 
 """
+An item to move within a collection's custom order.
+"""
+input MoveCollectionItemInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The collection, as returned in `Collection.id`.
+	"""
+	collectionId: ID!
+	"""
+	The item to move, as returned in `Item.id`.
+	"""
+	itemId: ID!
+	"""
+	The item to put it after, of the same collection. Omitted, it goes first.
+	"""
+	afterItemId: ID
+}
+
+"""
 A new address for a paired server.
 """
 input MoveExtensionInput {
@@ -2334,6 +2936,27 @@ type Movie implements Item & Node {
 		"""
 		last: Int
 	): ItemConnection!
+	"""
+	The collections it is in, in the order it joined them.
+	"""
+	collections(
+		"""
+		Return collections after this cursor.
+		"""
+		after: String,
+		"""
+		Return collections before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many collections from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many collections from the end of the range.
+		"""
+		last: Int
+	): CollectionMembershipConnection!
 	"""
 	Identifiers this item has at external metadata providers.
 	"""
@@ -2778,6 +3401,76 @@ type Mutation {
 		"""
 		input: ClearPlaylistInput!
 	): PlaylistPayload!
+	"""
+	Creates a collection in a library: of chosen items, or smart with a rule. For the
+	library's admins and the operator.
+	"""
+	createCollection(
+		"""
+		The collection to create.
+		"""
+		input: CreateCollectionInput!
+	): CollectionPayload!
+	"""
+	Renames, describes, sets, locks or unlocks a collection. For its library's admins and
+	the operator.
+	"""
+	updateCollection(
+		"""
+		The changes.
+		"""
+		input: UpdateCollectionInput!
+	): CollectionPayload!
+	"""
+	Deletes a collection; its items stay in the library. For its library's admins and the
+	operator.
+	"""
+	deleteCollection(
+		"""
+		The collection to delete.
+		"""
+		input: DeleteCollectionInput!
+	): DeleteCollectionPayload!
+	"""
+	Adds items to a collection of chosen items, skipping those it holds. For its library's
+	admins and the operator.
+	"""
+	addToCollection(
+		"""
+		The collection and the items.
+		"""
+		input: AddToCollectionInput!
+	): AddToCollectionPayload!
+	"""
+	Takes an item out of a collection of chosen items. For its library's admins and the
+	operator.
+	"""
+	removeFromCollection(
+		"""
+		The collection and the item.
+		"""
+		input: RemoveFromCollectionInput!
+	): RemoveFromCollectionPayload!
+	"""
+	Moves an item of a collection after another, or first, in its custom order. For its
+	library's admins and the operator.
+	"""
+	moveCollectionItem(
+		"""
+		The item and where it goes.
+		"""
+		input: MoveCollectionItemInput!
+	): CollectionPayload!
+	"""
+	Takes every item out of a collection of chosen items, keeping the collection. For its
+	library's admins and the operator.
+	"""
+	clearCollection(
+		"""
+		The collection to empty.
+		"""
+		input: ClearCollectionInput!
+	): CollectionPayload!
 	"""
 	Replaces the rule of one of the caller's smart playlists.
 	"""
@@ -3802,6 +4495,56 @@ type Query {
 		offset: Int
 	): PlaylistConnection!
 	"""
+	Collections across every library the caller reads; `Library.collections` lists one
+	library's.
+	"""
+	collections(
+		"""
+		Only collections having a word that starts with each word of this text, in their title or sort title, accents folded.
+		"""
+		matching: String,
+		"""
+		Only collections holding items of this kind.
+		"""
+		kind: ItemType,
+		"""
+		Only smart collections (`true`), or only those of chosen items (`false`).
+		"""
+		smart: Boolean,
+		"""
+		Only the collections carried under this `Collection.tagNumber`: one per library at most.
+		"""
+		tagNumber: String,
+		"""
+		How to order them.
+		"""
+		orderBy: CollectionListOrder,
+		"""
+		Which direction to order in.
+		"""
+		direction: SortDirection,
+		"""
+		Return collections after this cursor.
+		"""
+		after: String,
+		"""
+		Return collections before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many collections from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many collections from the end of the range.
+		"""
+		last: Int,
+		"""
+		Skip this many collections first.
+		"""
+		offset: Int
+	): CollectionConnection!
+	"""
 	Who is asking: the operator, a user, or no one.
 	"""
 	viewer: Viewer!
@@ -3988,6 +4731,46 @@ type RecentlyAddedEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+"""
+An item to take out of a collection of chosen items.
+"""
+input RemoveFromCollectionInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The collection, as returned in `Collection.id`.
+	"""
+	collectionId: ID!
+	"""
+	The item, as returned in `Item.id`. One that is not in it changes nothing.
+	"""
+	itemId: ID!
+}
+
+"""
+A collection after an item was taken out.
+"""
+type RemoveFromCollectionPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The collection as it now stands. Null when the request was refused.
+	"""
+	collection: Collection
+	"""
+	Whether the item was in it.
+	"""
+	removed: Boolean!
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [CollectionUserError!]!
 }
 
 """
@@ -4224,6 +5007,27 @@ type Season implements Item & Node {
 		"""
 		includeEpisodes: Boolean! = true
 	): ItemTags!
+	"""
+	The collections it is in, in the order it joined them.
+	"""
+	collections(
+		"""
+		Return collections after this cursor.
+		"""
+		after: String,
+		"""
+		Return collections before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many collections from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many collections from the end of the range.
+		"""
+		last: Int
+	): CollectionMembershipConnection!
 	"""
 	Identifiers this item has at external metadata providers.
 	"""
@@ -4568,6 +5372,27 @@ type Show implements Item & Node {
 		includeEpisodes: Boolean! = true
 	): ItemTags!
 	"""
+	The collections it is in, in the order it joined them.
+	"""
+	collections(
+		"""
+		Return collections after this cursor.
+		"""
+		after: String,
+		"""
+		Return collections before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many collections from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many collections from the end of the range.
+		"""
+		last: Int
+	): CollectionMembershipConnection!
+	"""
 	Identifiers this item has at external metadata providers.
 	"""
 	externalIds(
@@ -4701,6 +5526,35 @@ type SignUpPayload {
 	Why it was not. Empty when it was.
 	"""
 	userErrors: [AccountUserError!]!
+}
+
+type SmartCollectionRule {
+	"""
+	How the listing is ordered.
+	"""
+	orderBy: ItemOrder!
+	"""
+	Which direction it is ordered in.
+	"""
+	direction: SortDirection!
+}
+
+"""
+What a smart collection lists: its library's items, as `Library.items` lists them.
+"""
+input SmartCollectionRuleInput {
+	"""
+	Narrows the listing, as `Library.items` takes it.
+	"""
+	filter: ItemFilterInput
+	"""
+	How to order it. Omitted, by title.
+	"""
+	orderBy: ItemOrder
+	"""
+	Which direction to order in. Omitted, ascending.
+	"""
+	direction: SortDirection
 }
 
 type SmartPlaylistRule {
@@ -5499,6 +6353,53 @@ type Transcoder {
 	How many video transcodes are running right now.
 	"""
 	activeVideoSessions: Int!
+}
+
+"""
+Changes to a collection's own fields. An absent field is left alone.
+"""
+input UpdateCollectionInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The collection, as returned in `Collection.id`.
+	"""
+	id: ID!
+	"""
+	Its new name. Not empty. A new one gives a new `titleSort`, the title less a leading
+	article, unless `titleSort` is locked or given too.
+	"""
+	title: String
+	"""
+	The title to sort by; null clears it.
+	"""
+	titleSort: String
+	"""
+	Its new description; empty or null clears it.
+	"""
+	summary: String
+	"""
+	The age-rating label; null clears it.
+	"""
+	contentRating: String
+	"""
+	How a library page treats it.
+	"""
+	mode: CollectionMode
+	"""
+	How its chosen items are ordered.
+	"""
+	order: CollectionOrder
+	"""
+	Fields to lock.
+	"""
+	lock: [CollectionField!]! = []
+	"""
+	Fields to unlock.
+	"""
+	unlock: [CollectionField!]! = []
 }
 
 """

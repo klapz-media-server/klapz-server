@@ -8,6 +8,7 @@
 //! ever read, so the real names and e-mail addresses it holds are never copied.
 
 mod analysis;
+pub mod collections;
 pub mod library;
 pub mod metadata;
 pub mod tags;
@@ -16,6 +17,7 @@ use std::path::Path;
 
 use sea_orm::{Database, DatabaseConnection, DbErr, QueryResult, TryGetable};
 
+pub use collections::CollectionSummary;
 pub use library::LibrarySummary;
 pub use metadata::MetadataSummary;
 pub use tags::TagSummary;
@@ -58,6 +60,7 @@ pub struct ImportSummary {
     pub files: usize,
     pub streams: usize,
     pub tags: TagSummary,
+    pub collections: CollectionSummary,
     /// Rows skipped because the parent they reference does not exist.
     pub orphans: usize,
 }
@@ -89,6 +92,7 @@ pub async fn import_library(
         files: contents.files,
         streams: contents.streams,
         tags: contents.tags,
+        collections: contents.collections,
         orphans: contents.orphans,
     })
 }

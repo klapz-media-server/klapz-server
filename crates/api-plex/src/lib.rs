@@ -11,6 +11,7 @@ pub mod auth;
 pub mod capabilities;
 pub mod children;
 pub mod client;
+mod collections;
 pub mod container;
 mod edit;
 pub mod error;
@@ -118,6 +119,7 @@ pub fn router(state: PlexState) -> Router {
         .merge(hub_search::router())
         .merge(play_queues::router())
         .merge(playlists::router())
+        .merge(collections::router())
         .merge(related::router())
         .merge(user_state::router())
         .merge(tracks::router())

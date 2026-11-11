@@ -4,6 +4,7 @@
 //! binding would mean the layering has broken down.
 
 pub mod access_repository;
+pub mod collection_repository;
 pub mod entity;
 pub mod import;
 mod item_order;
@@ -21,6 +22,7 @@ use sea_orm::{ConnectOptions, Database, DbErr};
 use sea_orm_migration::MigratorTrait;
 
 pub use access_repository::SqlAccessRepository;
+pub use collection_repository::SqlCollectionRepository;
 pub use metadata_repository::SqlMetadataRepository;
 pub use play_queue_repository::SqlPlayQueueRepository;
 pub use playback_repository::SqlPlaybackRepository;

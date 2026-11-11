@@ -1,12 +1,13 @@
 //! Listing arguments: what to keep, and in what order.
 
 use async_graphql::{Enum, InputObject};
+use open_plex_core::collection::{CollectionCondition, CollectionRef};
 use open_plex_core::metadata::{
     FrameRange, FrameSize, ItemDepth, ItemFilter, ItemKind, ItemSort, TagCondition,
 };
 use open_plex_core::page::Direction;
 use open_plex_core::watch::Viewer;
-use open_plex_core::RatingKey;
+use open_plex_core::{CollectionId, RatingKey};
 
 use crate::tag::{TagFilterError, TagFilterInput};
 
@@ -192,6 +193,8 @@ pub struct ItemFilterInput {
     pub frame: Option<FrameRangeInput>,
     /// Keep only items carrying the named tags. Every condition must hold.
     pub tags: Option<Vec<TagFilterInput>>,
+    /// Keep only items in the named collections. Every condition must hold.
+    pub collections: Option<Vec<CollectionFilterInput>>,
     /// Leave out this item, as returned in `id`: "the rest of this director's films".
     pub excluded_id: Option<async_graphql::ID>,
     /// Keep only items the caller watched to the end at least once, or never. A series counts
@@ -213,11 +216,60 @@ pub struct ItemFilterInput {
     pub last_viewed_to: Option<String>,
 }
 
+/// Keeps items in at least one of the collections named. Name them by id, by the number
+/// their items carry them under, or by title; at least one, and at most 50 in all.
+#[derive(Debug, Clone, Default, InputObject)]
+pub struct CollectionFilterInput {
+    /// Collections, as returned in `Collection.id`.
+    pub ids: Option<Vec<async_graphql::ID>>,
+    /// Collections by `Collection.tagNumber`.
+    pub tag_numbers: Option<Vec<String>>,
+    /// Collections by title, matched exactly, ignoring case.
+    pub titles: Option<Vec<String>>,
+}
+
+impl TryFrom<CollectionFilterInput> for CollectionCondition {
+    type Error = FilterError;
+
+    fn try_from(input: CollectionFilterInput) -> Result<Self, Self::Error> {
+        let mut any_of = Vec::new();
+        for id in input.ids.unwrap_or_default() {
+            let decoded = crate::GlobalId::decode(&id)
+                .ok()
+                .filter(|decoded| decoded.type_name == crate::collection::COLLECTION_TYPE)
+                .ok_or(FilterError::NotACollection)?;
+            any_of.push(CollectionRef::Id(CollectionId::new(decoded.key)));
+        }
+        for number in input.tag_numbers.unwrap_or_default() {
+            let parsed = number.parse().map_err(|_| FilterError::NotACollection)?;
+            any_of.push(CollectionRef::TagNumber(parsed));
+        }
+        any_of.extend(
+            input
+                .titles
+                .unwrap_or_default()
+                .into_iter()
+                .map(CollectionRef::Title),
+        );
+        if any_of.is_empty() || any_of.len() > TagCondition::MAX_VALUES {
+            return Err(FilterError::CollectionCount);
+        }
+        Ok(Self { any_of })
+    }
+}
+
 /// Why a filter cannot be honored.
 #[derive(Debug, thiserror::Error)]
 pub enum FilterError {
     #[error(transparent)]
     Tag(#[from] TagFilterError),
+    #[error("not a collection id or tag number")]
+    NotACollection,
+    #[error(
+        "a collection filter names between one and {} collections",
+        TagCondition::MAX_VALUES
+    )]
+    CollectionCount,
     #[error("`{0}` is not a date written YYYY-MM-DD")]
     NotADate(String),
     #[error("`{0}` is not a time in seconds since the Unix epoch")]
@@ -297,6 +349,12 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
             .into_iter()
             .map(TagCondition::try_from)
             .collect::<Result<_, _>>()?;
+        let collections = input
+            .collections
+            .unwrap_or_default()
+            .into_iter()
+            .map(CollectionCondition::try_from)
+            .collect::<Result<_, _>>()?;
         Ok(Self {
             kind: input.kind.and_then(ItemType::held),
             kind_not_held: input.kind.is_some_and(|kind| kind.held().is_none()),
@@ -314,6 +372,7 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
                 .filter(|text| !text.trim().is_empty()),
             frame: input.frame.map(Into::into),
             tags,
+            collections,
             // Set by the resolver listing a tag's or a person's works, never by a client.
             credited: None,
             excluded: input
@@ -394,6 +453,10 @@ mod tests {
                 ids: None,
                 names: Some(vec!["Drama".to_owned()]),
             }]),
+            collections: Some(vec![CollectionFilterInput {
+                tag_numbers: Some(vec!["187346".to_owned()]),
+                ..CollectionFilterInput::default()
+            }]),
             watched: Some(false),
             in_progress: Some(true),
             all_episodes_watched: Some(false),
@@ -416,6 +479,12 @@ mod tests {
         assert_eq!(filter.depth, ItemDepth::All);
         assert!(filter.needs_media());
         assert_eq!(filter.tags.len(), 1);
+        assert_eq!(
+            filter.collections,
+            vec![CollectionCondition {
+                any_of: vec![CollectionRef::TagNumber(187_346)]
+            }]
+        );
         assert_eq!(filter.watched, Some(false));
         assert_eq!(filter.in_progress, Some(true));
         assert_eq!(filter.episodes_watched, Some(false));

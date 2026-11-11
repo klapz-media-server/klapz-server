@@ -57,7 +57,7 @@ fn stub(methods: u8) -> MethodRouter<PlexState> {
     router
 }
 
-/// The 109 stub operations, across 94 paths.
+/// The 100 stub operations, across 86 paths.
 const STUBS: &[(&str, u8)] = &[
     ("/:/eventsource/notifications", verb::GET),
     ("/:/prefs/get", verb::GET),
@@ -98,23 +98,6 @@ const STUBS: &[(&str, u8)] = &[
         verb::PUT | verb::DELETE,
     ),
     ("/library/all", verb::GET),
-    ("/library/collections", verb::POST),
-    (
-        "/library/collections/{collectionId}/composite/{updatedAt}",
-        verb::GET,
-    ),
-    (
-        "/library/collections/{collectionId}/items",
-        verb::GET | verb::PUT,
-    ),
-    (
-        "/library/collections/{collectionId}/items/{itemId}",
-        verb::PUT,
-    ),
-    (
-        "/library/collections/{collectionId}/items/{itemId}/move",
-        verb::PUT,
-    ),
     ("/library/file", verb::POST),
     (
         "/library/media/{mediaId}/chapterImages/{chapter}",
@@ -136,7 +119,6 @@ const STUBS: &[(&str, u8)] = &[
     ),
     ("/library/metadata/{ids}/media/{mediaItem}", verb::DELETE),
     ("/library/metadata/{ids}/nearest", verb::GET),
-    ("/library/metadata/{ids}/prefs", verb::PUT),
     ("/library/metadata/{ids}/subtitles", verb::GET),
     ("/library/metadata/{ids}/tree", verb::GET),
     ("/library/metadata/{ids}/users/top", verb::GET),
@@ -158,11 +140,6 @@ const STUBS: &[(&str, u8)] = &[
     ("/library/sections/{sectionId}/autocomplete", verb::GET),
     ("/library/sections/{sectionId}/categories", verb::GET),
     ("/library/sections/{sectionId}/cluster", verb::GET),
-    (
-        "/library/sections/{sectionId}/collection/{collectionId}",
-        verb::DELETE,
-    ),
-    ("/library/sections/{sectionId}/collections", verb::GET),
     ("/library/sections/{sectionId}/common", verb::GET),
     (
         "/library/sections/{sectionId}/composite/{updatedAt}",
@@ -212,7 +189,7 @@ const STUBS: &[(&str, u8)] = &[
     ),
 ];
 
-/// Adds 109 stub operations across 94 paths.
+/// Adds 100 stub operations across 86 paths.
 pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
     STUBS.iter().fold(router, |router, (path, methods)| {
         router.route(path, stub(*methods))

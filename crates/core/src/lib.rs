@@ -6,6 +6,7 @@
 pub mod access;
 pub mod account;
 pub mod auth;
+pub mod collection;
 pub mod edit;
 pub mod history;
 pub mod identity;
@@ -33,8 +34,8 @@ pub use identity::{
     now_epoch, ServerCapabilities, ServerFeatures, ServerIdentity, TranscoderCapabilities,
 };
 pub use ids::{
-    HistoryId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey, SectionId,
-    StreamId, TagId, UserId,
+    CollectionId, HistoryId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey,
+    SectionId, StreamId, TagId, UserId,
 };
 pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot};
 pub use metadata::{

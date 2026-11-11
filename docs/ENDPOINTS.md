@@ -18,10 +18,10 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 9 | 3.5 % |
-| `stub` | 106 | 40.8 % |
-| `partial` | 25 | 9.6 % |
-| `done` | 83 | 31.9 % |
+| `todo` | 8 | 3.1 % |
+| `stub` | 97 | 37.3 % |
+| `partial` | 28 | 10.8 % |
+| `done` | 90 | 34.6 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -29,9 +29,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 3 | 9 | 43 | 6 | 24 |
+| [Library](#library) | 85 | 5 | 11 | 40 | 5 | 24 |
 | [Hubs](#hubs) | 15 | 1 | 1 | 13 | 0 | 0 |
-| [Content](#content) | 13 | 1 | 2 | 10 | 0 | 0 |
+| [Content](#content) | 13 | 2 | 3 | 8 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
 | [EPG](#epg) | 13 | 13 | 0 | 0 | 0 | 0 |
 | [Library Playlists](#library-playlists) | 13 | 12 | 1 | 0 | 0 | 0 |
@@ -46,7 +46,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [General](#general) | 4 | 2 | 0 | 2 | 0 | 0 |
 | [Live TV](#live-tv) | 4 | 4 | 0 | 0 | 0 | 0 |
 | [Provider](#provider) | 4 | 1 | 0 | 1 | 1 | 1 |
-| [Library Collections](#library-collections) | 3 | 0 | 0 | 3 | 0 | 0 |
+| [Library Collections](#library-collections) | 3 | 3 | 0 | 0 | 0 | 0 |
 | [Log](#log) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Playlist](#playlist) | 3 | 2 | 1 | 0 | 0 | 0 |
 | [Preferences](#preferences) | 3 | 0 | 1 | 1 | 1 | 0 |
@@ -56,7 +56,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Events](#events) | 2 | 0 | 0 | 2 | 0 | 0 |
 | [Search](#search) | 2 | 0 | 1 | 1 | 0 | 0 |
 | [UltraBlur](#ultrablur) | 2 | 0 | 0 | 2 | 0 | 0 |
-| [Collections](#collections) | 1 | 0 | 0 | 1 | 0 | 0 |
+| [Collections](#collections) | 1 | 1 | 0 | 0 | 0 | 0 |
 | [Rate](#rate) | 1 | 0 | 0 | 1 | 0 | 0 |
 
 ## Outside the spec
@@ -67,6 +67,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | --- | --- | --- | --- | --- | --- |
 | `partial` | `GET` | `/video/:/transcode/universal/ping` | user | Keep a transcode session alive | `200` for a session it knows, `404` otherwise, as the reference. No test yet. |
 | `partial` | `GET` | `/video/:/transcode/universal/stop` | user | Stop a transcode session | Stops the process and closes the playback session; `404` for one it does not know, as the reference. No test yet. |
+| `done` | `GET` | `/library/collections/{collectionId}` | user | A collection | As `/library/metadata/{collectionId}` shows it: in the lookup form, with its library and its locks. See spec-gaps.md. |
+| `done` | `GET` | `/library/collections/{collectionId}/children` | user | Items in a collection | The same answer as `/items`, which the spec declares: what Plex Web calls. See spec-gaps.md. |
 | `done` | `GET` | `/playlists/all` | user | The caller's playlists | `/playlists` under the key a library's shelf of playlists links to. |
 | `done` | `GET` | `/hubs/home/recentlyAdded` | user | What a library, or every library of a kind, added lately | `type=1` films by date added, ties by arrival; `type=2` a series library's grouped entries, at most 50; anything else empty. The spec names it only in examples. See spec-gaps.md. |
 | `done` | `GET` | `/hubs/continueWatching/items` | user | Every item of the home Continue Watching shelf | Films in progress and next episodes, newest first, with `includedAt`. See spec-gaps.md. |
@@ -93,7 +95,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `deferred` | `GET` | `/library/matches` | user | Get library matches | scanner/analysis, separate binary |
 | `stub` | `GET` | `/library/media/{mediaId}/chapterImages/{chapter}` | user | Get a chapter image |  |
 | `stub` | `GET` | `/library/metadata/augmentations/{augmentationId}` | user | Get augmentation status |  |
-| `todo` | `DELETE` | `/library/metadata/{ids}` | admin | Delete a metadata item |  |
+| `partial` | `DELETE` | `/library/metadata/{ids}` | admin | Delete a metadata item | A collection, as Plex Web deletes one (`deleteCollection`); an item stays `501`, deleting it being the scanner's business. |
 | `partial` | `PUT` | `/library/metadata/{ids}` | admin | Edit a metadata item | Films, series and episodes, any library, each through `updateMovie`/`updateShow`/`updateEpisode`: the fields of `PUT /library/sections/{sectionId}/all`, as `{field}.value` or bare as the spec writes them, and `{field}.locked`; `type` ignored. Measured on the reference: `.value` wins over the bare form, a lock other than `0`/`1` is ignored, no parameter is `400`, no item named `404`. Library admins only; seasons, tags, artwork and music `501`. See spec-gaps.md. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/addetect` | admin | Ad-detect an item | scanner/analysis, separate binary |
 | `partial` | `GET` | `/library/metadata/{ids}/allLeaves` | user | Get the leaves of an item | A series' episodes with its studio on each, what `/children`'s `All episodes` entry opens; a season, a film or an episode is an empty container naming it, as on the reference (seven seasons of six series measured). Containers identical to the reference on five nodes; the items' gaps are those of `/grandchildren` (artwork, slug, `audienceRatingImage`, `chapterSource`). One id, not a list. |
@@ -114,7 +116,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `DELETE` | `/library/metadata/{ids}/media/{mediaItem}` | admin | Delete a media item |  |
 | `deferred` | `PUT` | `/library/metadata/{ids}/merge` | admin | Merge a metadata item | scanner/analysis, separate binary |
 | `stub` | `GET` | `/library/metadata/{ids}/nearest` | user | Get nearest tracks to metadata item |  |
-| `stub` | `PUT` | `/library/metadata/{ids}/prefs` | admin | Set metadata preferences |  |
+| `partial` | `PUT` | `/library/metadata/{ids}/prefs` | admin | Set metadata preferences | A collection's `collectionMode` (`-1`–`2`) and `collectionSort` (`0`–`2`), any other name or value `400`; an item's preferences `501`. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/refresh` | admin | Refresh a metadata item | scanner/analysis, separate binary |
 | `partial` | `GET` | `/library/metadata/{ids}/related` | user | Get related items | A film: similar films (approximate ranking), its director and two first-billed actors, the last two matching the reference on 59 of 60 films. A series: similar series only. Not served: collection and `external.*` shelves, a series' network and cast shelves. |
 | `partial` | `GET` | `/library/metadata/{ids}/similar` | user | Get similar items | Same container as the reference; the ranking is an approximation. |
@@ -149,8 +151,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `GET` | `/library/sections/{sectionId}/audioCodec` | user | Get audio codecs in a section |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/audioLayout` | user | Get audio layouts in a section |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/autocomplete` | user | Get autocompletions for search |  |
-| `stub` | `DELETE` | `/library/sections/{sectionId}/collection/{collectionId}` | admin | Delete a collection |  |
-| `stub` | `GET` | `/library/sections/{sectionId}/collections` | user | Get collections in a section |  |
+| `done` | `DELETE` | `/library/sections/{sectionId}/collection/{collectionId}` | admin | Delete a collection | As measured, `collectionId` is the collection's tag number (`index`), and the collection is emptied, not deleted: every item of that library leaves it. Another library's number answers `200` and changes nothing, one no library carries `404`. Through `clearCollection`. See spec-gaps.md. |
+| `done` | `GET` | `/library/sections/{sectionId}/collections` | user | Get collections in a section | In `/all`'s container, as `/all?type=18` answers too; by sort title (byte order, the reference's is numeric), `addedAt` or `updatedAt`, other sorts `501`. Always windowed, 500 at most without container parameters. Imported collections identical to the reference field for field, less artwork. See spec-gaps.md. |
 | `stub` | `GET` | `/library/sections/{sectionId}/common` | user | Get common fields for items |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/composite/{updatedAt}` | admin | Get a section composite image |  |
 | `stub` | `PUT` | `/library/sections/{sectionId}/emptyTrash` | admin | Empty section trash |  |
@@ -196,11 +198,11 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/library/collections/{collectionId}/composite/{updatedAt}` | user | Get a collection's image |  |
-| `stub` | `GET` | `/library/collections/{collectionId}/items` | user | Get items in a collection |  |
+| `partial` | `GET` | `/library/collections/{collectionId}/composite/{updatedAt}` | user | Get a collection's image | Always `404`: no image is drawn, artwork not being served, and the reference answered `404` for every composite asked of it (test libraries and an imported collection). The address is published as the reference publishes it. |
+| `done` | `GET` | `/library/collections/{collectionId}/items` | user | Get items in a collection | The items in a listing form naming their library, as `/children` answers; in the collection's order (release date, title or custom) or its rule's. Paged by both container parameters. Item gaps as on `/all`. See spec-gaps.md. |
 | `partial` | `GET` | `/library/metadata/{ids}` | user | Get a metadata item | Items, media and files, served through the GraphQL schema. Zero field differences against the reference on shared items. Seasons are named at read time (`Season N`, `Specials`) and carry their series' guid, studio and year; episodes carry their season's and series' guids and titles. Genres, countries and credits with ids, filters, provider keys and portraits; `Guid` and `Rating`. 355 of 420 sampled items identical: 44 live metadata newer than the snapshot, 21 a credit's portrait (one per person here, one per credit on the reference). Gaps: artwork, view state, `Part.key`, audio/videoProfile (and the `audioCodec` composition that needs them), slug, chapterSource, extras, `Stream.language` as a name rather than a tag. Sort collation differs — see spec-gaps.md. Carries `Stream`, which a listing omits, with the audio track that plays marked `selected`; no subtitle is, as no choice is recorded. |
 | `done` | `GET` | `/library/sections/{sectionId}/albums` | user | Set section albums | Empty: no music is held. The official API is asked for albums and has none; container captured on the reference's film and series libraries. Always windowed, like `/all`. |
-| `partial` | `GET` | `/library/sections/{sectionId}/all` | user | Get items in the section | Items, media and files through the GraphQL schema; zero field differences against the reference on shared items. `includeMeta=1` publishes the filters and sorts it honors. Filters: `title` (word prefix), `year`, `decade`, `contentRating`, `studio`, `resolution` — exact totals on 11 of 12 probes; `genre`, `country`, `director`, `writer`, `actor`, `producer` by id or name, comma for OR, repeat for AND — exact totals on 16 probes. Any other advertised filter (`collection`, `label`, …) answers 501 rather than being dropped. Tags in the listing form: first 2 or 3 names per kind, derived from the tags rather than from the reference's stale cache. Gaps: artwork, view state, audio/videoProfile. Sort collation and range operators — see spec-gaps.md. |
+| `partial` | `GET` | `/library/sections/{sectionId}/all` | user | Get items in the section | Items, media and files through the GraphQL schema; zero field differences against the reference on shared items. `includeMeta=1` publishes the filters and sorts it honors. Filters: `title` (word prefix), `year`, `decade`, `contentRating`, `studio`, `resolution` — exact totals on 11 of 12 probes; `genre`, `country`, `director`, `writer`, `actor`, `producer` by id or name, comma for OR, repeat for AND — exact totals on 16 probes. `collection` by tag number or title, as `genre`. Any other advertised filter (`label`, …) answers 501 rather than being dropped. `type=18` lists the library's collections. Tags in the listing form: first 2 or 3 names per kind, derived from the tags rather than from the reference's stale cache. Gaps: artwork, view state, audio/videoProfile. Sort collation and range operators — see spec-gaps.md. |
 | `stub` | `GET` | `/library/sections/{sectionId}/allLeaves` | user | Set section leaves |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/arts` | user | Set section artwork |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/categories` | user | Set section categories |  |
@@ -403,9 +405,9 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `PUT` | `/library/collections/{collectionId}/items` | admin | Add items to a collection |  |
-| `stub` | `PUT` | `/library/collections/{collectionId}/items/{itemId}` | admin | Delete an item from a collection |  |
-| `stub` | `PUT` | `/library/collections/{collectionId}/items/{itemId}/move` | admin | Reorder an item in the collection |  |
+| `done` | `PUT` | `/library/collections/{collectionId}/items` | admin | Add items to a collection | `uri` of items or of a listing; those of the collection's kind and library join, a repeat is skipped, none that can join is `400`, a smart collection `400`, an unknown one `404`. Answers the collection with its library. Through `addToCollection`. |
+| `done` | `PUT` | `/library/collections/{collectionId}/items/{itemId}` | admin | Delete an item from a collection | `404`, as on the reference: it removes with `DELETE` on the same path, which Plex Web sends and which is served (`removeFromCollection`); an item not in it changes nothing. See spec-gaps.md. |
+| `done` | `PUT` | `/library/collections/{collectionId}/items/{itemId}/move` | admin | Reorder an item in the collection | In the custom order, which `collectionSort=2` lists. After itself, an item not in it or a non-numeric `after` `400`; an `after` not in it moves first; a smart collection `400`. Through `moveCollectionItem`. |
 
 ## Log
 
@@ -465,7 +467,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `partial` | `GET` | `/hubs/search` | user | Search Hub | The reference's seventeen shelves; films, series, episodes, actors, directors and genres filled through `search` and `searchTags`, ranked on the reference's score ladder and cut to `limit` (3 by default). Word-prefix matching rather than the reference's fuzzy one, no collections, and no films found through a person's name. `sectionId` must name a library and narrows nothing, as on the reference. See `docs/spec-gaps.md`. |
+| `partial` | `GET` | `/hubs/search` | user | Search Hub | The reference's seventeen shelves; films, series, episodes, actors, directors and genres filled through `search` and `searchTags`, ranked on the reference's score ladder and cut to `limit` (3 by default); collections through `collections(matching:)`, each in its library. Word-prefix matching rather than the reference's fuzzy one, and no films found through a person's name. `sectionId` must name a library and narrows nothing, as on the reference. See `docs/spec-gaps.md`. |
 | `stub` | `GET` | `/hubs/search/voice` | user | Voice Search Hub | Not derived from `/hubs/search`: the reference ranks every title by edit distance to the whole term (`dune` finds `Cube` at distance 2), one shelf per kind with `distance` and `hubKey`, a different search altogether. |
 
 ## UltraBlur
@@ -479,7 +481,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `POST` | `/library/collections` | user | Create a collection |  |
+| `done` | `POST` | `/library/collections` | user | Create a collection | By `uri` (items, or a listing for `smart=1`), `type`, `title`, `sectionId`, as measured: items of another kind or library left out, no `type` the library's own, an unknown `type` `400` where the reference makes an `unknown` one. A smart rule is the official API's listing input; a filter it cannot honor `501`. Library admins and the operator. Through `createCollection`. |
 
 ## Rate
 

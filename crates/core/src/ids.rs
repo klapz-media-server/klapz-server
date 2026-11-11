@@ -83,6 +83,12 @@ numeric_id! {
     PlaylistEntryId
 }
 
+numeric_id! {
+    /// Identifies a collection. Numbered with the items, as on the reference, where a
+    /// collection is looked up at `/library/metadata/{id}` like any item.
+    CollectionId
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

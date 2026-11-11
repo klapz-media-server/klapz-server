@@ -87,6 +87,7 @@ fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
@@ -806,6 +807,7 @@ fn items_app() -> axum::Router {
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(watch),
@@ -1339,7 +1341,7 @@ async fn search_matches_a_prefix_of_any_word() {
 async fn an_unsupported_filter_is_refused_rather_than_ignored() {
     // Honoring the window and dropping the filter would answer with the whole library and
     // let the client present it as the filtered result.
-    let (status, _) = get_from(items_app(), "/library/sections/4/all?collection=4058", None).await;
+    let (status, _) = get_from(items_app(), "/library/sections/4/all?label=4058", None).await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
 
     // A parameter that is not a filter at all stays tolerated, as a real server tolerates it.
@@ -1703,6 +1705,7 @@ fn app_as_user(user: i64, role: LibraryRole) -> axum::Router {
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
@@ -1753,6 +1756,7 @@ async fn app_as_paired_user() -> axum::Router {
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         access: std::sync::Arc::new(access),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
@@ -2075,6 +2079,7 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
         playback: playback.clone(),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
@@ -3229,6 +3234,7 @@ fn editing_app(principal: Principal) -> axum::Router {
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
@@ -4238,7 +4244,7 @@ async fn a_persons_media_honors_filters_and_ignores_sort_and_type() {
 
     let (status, _) = get_from(
         items_app(),
-        "/library/people/472942/media?collection=1",
+        "/library/people/472942/media?label=1",
         Some("application/json"),
     )
     .await;
@@ -4463,6 +4469,7 @@ async fn playing(
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: streams.clone(),
         playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
     });
     playback

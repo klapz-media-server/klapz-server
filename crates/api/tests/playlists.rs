@@ -86,6 +86,7 @@ fn schema() -> ApiSchema {
         playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         playlists: Arc::new(InMemoryPlaylists::new(items)),
+        collections: Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         access: Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),

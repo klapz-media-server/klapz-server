@@ -108,17 +108,17 @@ fn to_entry(row: playlist_entry::Model) -> PlaylistEntry {
 
 /// One ordering term, read against a cursor's value: the rows after it in the listing's
 /// order, the rows before it, and the rows level with it.
-struct Term {
+pub(crate) struct Term {
     ahead: Condition,
     behind: Condition,
     level: Condition,
 }
 
-fn never() -> Condition {
+pub(crate) fn never() -> Condition {
     Condition::all().add(Expr::val(1).eq(0))
 }
 
-fn compared(expr: &SimpleExpr, value: SimpleExpr, descending: bool) -> Term {
+pub(crate) fn compared(expr: &SimpleExpr, value: SimpleExpr, descending: bool) -> Term {
     let greater = Condition::all().add(Expr::expr(expr.clone()).gt(value.clone()));
     let less = Condition::all().add(Expr::expr(expr.clone()).lt(value.clone()));
     let (ahead, behind) = if descending {
@@ -135,7 +135,7 @@ fn compared(expr: &SimpleExpr, value: SimpleExpr, descending: bool) -> Term {
 
 /// Rows strictly past the cursor in reading order: ahead on the first term, or level on it
 /// and past on the rest.
-fn past(terms: &[Term], forward: bool) -> Condition {
+pub(crate) fn past(terms: &[Term], forward: bool) -> Condition {
     match terms.split_first() {
         None => never(),
         Some((term, rest)) => {
@@ -149,14 +149,14 @@ fn past(terms: &[Term], forward: bool) -> Condition {
     }
 }
 
-fn int_key(cursor: &Cursor, at: usize) -> i64 {
+pub(crate) fn int_key(cursor: &Cursor, at: usize) -> i64 {
     match cursor.keys.get(at) {
         Some(CursorKey::Int(value)) => *value,
         _ => 0,
     }
 }
 
-fn text_key(cursor: &Cursor, at: usize) -> String {
+pub(crate) fn text_key(cursor: &Cursor, at: usize) -> String {
     match cursor.keys.get(at) {
         Some(CursorKey::Text(value)) => value.clone(),
         _ => String::new(),

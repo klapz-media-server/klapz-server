@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use open_plex_core::collection::{CollectionCondition, CollectionRef};
 use open_plex_core::edit::{ItemEdit, ItemField};
 use open_plex_core::metadata::{
     first_character_bucket, AudioAnalysis, ColorDescription, CreditRef, DolbyVision, Edited,
@@ -31,9 +32,9 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    item_external_id, item_field_lock, item_rating, item_tag, item_title_word, media, media_part,
-    media_stream, metadata_item, person, stream_dolby_vision, stream_loudness, tag, tag_word,
-    watch_state,
+    collection, collection_entry, item_external_id, item_field_lock, item_rating, item_tag,
+    item_title_word, media, media_part, media_stream, metadata_item, person, stream_dolby_vision,
+    stream_loudness, tag, tag_word, watch_state,
 };
 use crate::item_order::ItemOrder;
 use crate::watch_repository::viewer_id;
@@ -120,6 +121,9 @@ impl SqlMetadataRepository {
         }
         if let Some(credited) = filter.credited {
             select = select.filter(credits(credited));
+        }
+        for condition in &filter.collections {
+            select = select.filter(in_collection(condition));
         }
         select = select.filter(watch_conditions(filter));
         if let Some(from) = &filter.released_from {
@@ -289,6 +293,49 @@ fn carries_tag(condition: &TagCondition) -> Condition {
             .and_where(Expr::col((item_tag::Entity, item_tag::Column::TagId)).in_subquery(wanted))
             .to_owned(),
     ))
+}
+
+/// Whether the item is in one of the condition's collections.
+///
+/// The collections are resolved in their own, uncorrelated subquery, as wanted tags are: a
+/// few rows, from which the entries are reached by `idx_collection_entry_item`.
+fn in_collection(condition: &CollectionCondition) -> Condition {
+    if condition.any_of.is_empty() {
+        // An empty `OR` would constrain nothing, as in `carries_tag`.
+        return Condition::all().add(Expr::val(1).eq(0));
+    }
+    let column = |column: collection::Column| Expr::col((collection::Entity, column));
+    let mut which = Condition::any();
+    for wanted in &condition.any_of {
+        which = which.add(match wanted {
+            CollectionRef::Id(id) => column(collection::Column::Id).eq(id.get()),
+            CollectionRef::TagNumber(number) => column(collection::Column::TagNumber).eq(*number),
+            CollectionRef::Title(title) => {
+                Expr::expr(Func::lower(column(collection::Column::Title)))
+                    .eq(Func::lower(Expr::val(title.clone())))
+            }
+        });
+    }
+    let wanted = Query::select()
+        .column((collection::Entity, collection::Column::Id))
+        .from(collection::Entity)
+        .cond_where(which)
+        .to_owned();
+    Condition::all().add(
+        Expr::col((metadata_item::Entity, metadata_item::Column::Id)).in_subquery(
+            Query::select()
+                .column((collection_entry::Entity, collection_entry::Column::ItemId))
+                .from(collection_entry::Entity)
+                .and_where(
+                    Expr::col((
+                        collection_entry::Entity,
+                        collection_entry::Column::CollectionId,
+                    ))
+                    .in_subquery(wanted),
+                )
+                .to_owned(),
+        ),
+    )
 }
 
 /// Whether the item, or an item below it, carries the credit.
@@ -1803,7 +1850,7 @@ fn keyset(
 ///
 /// The upper bound is the prefix with its last character incremented: everything starting
 /// with `jura` sorts before `jurb`.
-fn prefix_condition<T: Into<SimpleExpr>>(column: T, prefix: &str) -> Condition {
+pub(crate) fn prefix_condition<T: Into<SimpleExpr>>(column: T, prefix: &str) -> Condition {
     let column: SimpleExpr = column.into();
     let Some((lower, upper)) = search::prefix_range(prefix) else {
         // An empty prefix constrains nothing, and expressing that as a range would exclude
@@ -1836,7 +1883,7 @@ pub(crate) const fn kind_name(kind: ItemKind) -> &'static str {
     }
 }
 
-fn parse_kind(stored: &str) -> ItemKind {
+pub(crate) fn parse_kind(stored: &str) -> ItemKind {
     match stored {
         "show" => ItemKind::Show,
         "season" => ItemKind::Season,

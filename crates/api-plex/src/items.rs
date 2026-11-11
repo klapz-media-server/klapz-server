@@ -16,8 +16,8 @@ use serde::Serialize;
 use crate::language::Language;
 
 use crate::gql_items::{
-    GqlConnection, GqlEdge, GqlItem, GqlLibraryRef, GqlPart, GqlProfiled, GqlRating, GqlStream,
-    GqlTag, GqlVersion, GqlWatchState,
+    GqlCollectionTag, GqlConnection, GqlEdge, GqlItem, GqlLibraryRef, GqlPart, GqlProfiled,
+    GqlRating, GqlStream, GqlTag, GqlVersion, GqlWatchState,
 };
 use crate::stream_labels;
 
@@ -219,6 +219,8 @@ pub struct MetadataEntry {
     pub guids: Vec<GuidEntry>,
     #[serde(rename = "Rating", skip_serializing_if = "Vec::is_empty")]
     pub ratings: Vec<RatingEntry>,
+    #[serde(rename = "Collection", skip_serializing_if = "Vec::is_empty")]
+    pub collection: Vec<CollectionTagEntry>,
     #[serde(rename = "Director", skip_serializing_if = "Vec::is_empty")]
     pub director: Vec<TagEntry>,
     #[serde(rename = "Writer", skip_serializing_if = "Vec::is_empty")]
@@ -277,6 +279,43 @@ impl RatingEntry {
             } else {
                 "audience"
             },
+        }
+    }
+}
+
+/// A collection the item is in, as the item names it: by title alone in a listing; with its
+/// number, filter, guid and summary in a lookup.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectionTagEntry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    pub tag: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guid: Option<String>,
+    /// Absent when empty, as the reference leaves it out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+
+impl CollectionTagEntry {
+    fn all(collections: &GqlConnection<GqlCollectionTag>) -> Vec<Self> {
+        collections.nodes().map(Self::from_graphql).collect()
+    }
+
+    fn from_graphql(collection: &GqlCollectionTag) -> Self {
+        let id = collection
+            .tag_number
+            .as_deref()
+            .and_then(|number| number.parse::<i64>().ok());
+        Self {
+            id,
+            filter: id.map(|id| format!("collection={id}")),
+            tag: collection.title.clone(),
+            guid: collection.guid.clone(),
+            summary: collection.summary.clone().filter(|text| !text.is_empty()),
         }
     }
 }
@@ -860,6 +899,7 @@ impl MetadataEntry {
                 .nodes()
                 .map(RatingEntry::from_graphql)
                 .collect(),
+            collection: CollectionTagEntry::all(&item.collections),
             director: TagEntry::all(&item.tags.directors, "director"),
             writer: TagEntry::all(&item.tags.writers, "writer"),
             role: item
