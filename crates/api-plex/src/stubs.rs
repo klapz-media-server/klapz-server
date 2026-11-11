@@ -57,7 +57,7 @@ fn stub(methods: u8) -> MethodRouter<PlexState> {
     router
 }
 
-/// The 125 stub operations, across 103 paths.
+/// The 109 stub operations, across 94 paths.
 const STUBS: &[(&str, u8)] = &[
     ("/:/eventsource/notifications", verb::GET),
     ("/:/prefs/get", verb::GET),
@@ -196,33 +196,6 @@ const STUBS: &[(&str, u8)] = &[
     ("/playQueues/{playQueueId}/reset", verb::PUT),
     ("/playQueues/{playQueueId}/shuffle", verb::PUT),
     ("/playQueues/{playQueueId}/unshuffle", verb::PUT),
-    ("/playlists", verb::GET | verb::POST),
-    ("/playlists/upload", verb::POST),
-    (
-        "/playlists/{playlistId}",
-        verb::GET | verb::PUT | verb::DELETE,
-    ),
-    ("/playlists/{playlistId}/generators", verb::GET),
-    (
-        "/playlists/{playlistId}/items",
-        verb::GET | verb::PUT | verb::DELETE,
-    ),
-    (
-        "/playlists/{playlistId}/items/{generatorId}",
-        verb::GET | verb::PUT | verb::DELETE,
-    ),
-    (
-        "/playlists/{playlistId}/items/{generatorId}/items",
-        verb::GET,
-    ),
-    (
-        "/playlists/{playlistId}/items/{generatorId}/{metadataId}/{action}",
-        verb::PUT,
-    ),
-    (
-        "/playlists/{playlistId}/items/{playlistItemId}/move",
-        verb::PUT,
-    ),
     ("/security/resources", verb::GET),
     ("/security/token", verb::POST),
     ("/services/ultrablur/colors", verb::GET),
@@ -239,7 +212,7 @@ const STUBS: &[(&str, u8)] = &[
     ),
 ];
 
-/// Adds 125 stub operations across 103 paths.
+/// Adds 109 stub operations across 94 paths.
 pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
     STUBS.iter().fold(router, |router, (path, methods)| {
         router.route(path, stub(*methods))

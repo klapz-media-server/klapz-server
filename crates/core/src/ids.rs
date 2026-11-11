@@ -73,6 +73,16 @@ numeric_id! {
     HistoryId
 }
 
+numeric_id! {
+    /// Identifies a playlist.
+    PlaylistId
+}
+
+numeric_id! {
+    /// Identifies one entry of a playlist: an item at a place in it.
+    PlaylistEntryId
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -38,7 +38,7 @@ pub fn to_plex_xml<T: Serialize>(value: &T, root: &str) -> Result<String, XmlErr
     Ok(out)
 }
 
-fn write_element(out: &mut String, name: &str, fields: &Map<String, Value>, is_root: bool) {
+fn write_element(out: &mut String, name: &str, fields: &Map<String, Value>, long_form: bool) {
     out.push('<');
     out.push_str(name);
     for (key, value) in fields {
@@ -56,7 +56,7 @@ fn write_element(out: &mut String, name: &str, fields: &Map<String, Value>, is_r
         .filter(|(_, value)| scalar(value).is_none())
         .collect();
 
-    if children.is_empty() && !is_root {
+    if children.is_empty() && !long_form {
         out.push_str(" />\n");
         return;
     }
@@ -76,7 +76,9 @@ fn write_child(out: &mut String, key: &str, value: &Value) {
         Value::Array(items) => {
             for item in items {
                 if let Value::Object(fields) = item {
-                    write_element(out, element_name(key, fields), fields, false);
+                    // An item keeps the long form even with no children, as the root does:
+                    // measured on a series and a playlist with nothing inside.
+                    write_element(out, element_name(key, fields), fields, key == "Metadata");
                 }
             }
         }
@@ -101,6 +103,7 @@ fn element_name<'a>(key: &'a str, fields: &Map<String, Value>) -> &'a str {
         Some("movie" | "episode" | "clip") => "Video",
         Some("track") => "Track",
         Some("photo") => "Photo",
+        Some("playlist") => "Playlist",
         _ => "Directory",
     }
 }
@@ -315,12 +318,19 @@ mod tests {
         )
         .expect("serializes");
 
+        // Never self-closed, even with nothing inside: captured on a series with no tags.
         assert!(
-            rendered.contains("<Video ratingKey=\"1\" type=\"movie\" />"),
+            rendered.contains(
+                "<Video ratingKey=\"1\" type=\"movie\">
+</Video>"
+            ),
             "{rendered}"
         );
         assert!(
-            rendered.contains("<Directory ratingKey=\"2\" type=\"show\" />"),
+            rendered.contains(
+                "<Directory ratingKey=\"2\" type=\"show\">
+</Directory>"
+            ),
             "{rendered}"
         );
         assert!(!rendered.contains("<Metadata"), "{rendered}");

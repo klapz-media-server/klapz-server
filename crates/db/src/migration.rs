@@ -23,6 +23,7 @@ mod m0017_guid_index;
 mod m0018_track_choice;
 mod m0019_field_lock;
 mod m0020_sign_in;
+mod m0021_playlist;
 mod m0022_viewing_history;
 mod m0023_session_termination;
 mod m0025_tag_word;
@@ -56,6 +57,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0018_track_choice::Migration),
             Box::new(m0019_field_lock::Migration),
             Box::new(m0020_sign_in::Migration),
+            Box::new(m0021_playlist::Migration),
             Box::new(m0022_viewing_history::Migration),
             Box::new(m0023_session_termination::Migration),
             Box::new(m0025_tag_word::Migration),

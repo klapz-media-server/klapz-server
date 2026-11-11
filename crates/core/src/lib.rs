@@ -16,6 +16,7 @@ pub mod metadata;
 pub mod page;
 pub mod play_queue;
 pub mod playback;
+pub mod playlist;
 pub mod recent;
 pub mod search;
 pub mod similar;
@@ -32,7 +33,8 @@ pub use identity::{
     now_epoch, ServerCapabilities, ServerFeatures, ServerIdentity, TranscoderCapabilities,
 };
 pub use ids::{
-    HistoryId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
+    HistoryId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey, SectionId,
+    StreamId, TagId, UserId,
 };
 pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot};
 pub use metadata::{

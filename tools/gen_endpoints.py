@@ -118,6 +118,16 @@ IMPLEMENTED = frozenset(
         # A tag and what carries it (`people.rs`).
         "/library/people/{personId}",
         "/library/people/{personId}/media",
+        # Playlists (`playlists.rs`), the optimizer's generator routes included.
+        "/playlists",
+        "/playlists/upload",
+        "/playlists/{playlistId}",
+        "/playlists/{playlistId}/generators",
+        "/playlists/{playlistId}/items",
+        "/playlists/{playlistId}/items/{generatorId}",
+        "/playlists/{playlistId}/items/{generatorId}/items",
+        "/playlists/{playlistId}/items/{generatorId}/{metadataId}/{action}",
+        "/playlists/{playlistId}/items/{playlistItemId}/move",
     }
 )
 
@@ -141,6 +151,14 @@ OFF_SPEC = (
         "Stop a transcode session",
         "Stops the process and closes the playback session; `404` for one it does not know, as "
         "the reference. No test yet.",
+    ),
+    (
+        "done",
+        "GET",
+        "/playlists/all",
+        "user",
+        "The caller's playlists",
+        "`/playlists` under the key a library's shelf of playlists links to.",
     ),
     (
         "done",

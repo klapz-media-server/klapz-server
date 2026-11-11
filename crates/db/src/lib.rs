@@ -11,6 +11,7 @@ pub mod metadata_repository;
 pub mod migration;
 pub mod play_queue_repository;
 pub mod playback_repository;
+pub mod playlist_repository;
 pub mod repository;
 pub mod watch_repository;
 pub mod write;
@@ -23,6 +24,7 @@ pub use access_repository::SqlAccessRepository;
 pub use metadata_repository::SqlMetadataRepository;
 pub use play_queue_repository::SqlPlayQueueRepository;
 pub use playback_repository::SqlPlaybackRepository;
+pub use playlist_repository::SqlPlaylistRepository;
 pub use repository::SqlLibraryRepository;
 pub use watch_repository::SqlWatchRepository;
 

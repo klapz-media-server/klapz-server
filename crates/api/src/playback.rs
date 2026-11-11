@@ -768,4 +768,78 @@ impl Mutation {
     ) -> Result<crate::edit::UpdateEpisodePayload> {
         crate::edit::update_episode(context, input).await
     }
+
+    /// Creates a playlist of the caller's: of chosen items, or smart with a rule.
+    async fn create_playlist(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The playlist to create.")] input: crate::playlist::CreatePlaylistInput,
+    ) -> Result<crate::playlist::CreatePlaylistPayload> {
+        crate::playlist::create(context, input).await
+    }
+
+    /// Renames, describes, locks or unlocks one of the caller's playlists.
+    async fn update_playlist(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The changes.")] input: crate::playlist::UpdatePlaylistInput,
+    ) -> Result<crate::playlist::PlaylistPayload> {
+        crate::playlist::update(context, input).await
+    }
+
+    /// Deletes one of the caller's playlists, and its entries with it.
+    async fn delete_playlist(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The playlist to delete.")] input: crate::playlist::DeletePlaylistInput,
+    ) -> Result<crate::playlist::DeletePlaylistPayload> {
+        crate::playlist::delete(context, input).await
+    }
+
+    /// Appends items to one of the caller's playlists of chosen items, skipping those it holds.
+    async fn add_to_playlist(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The playlist and the items.")] input: crate::playlist::AddToPlaylistInput,
+    ) -> Result<crate::playlist::AddToPlaylistPayload> {
+        crate::playlist::add(context, input).await
+    }
+
+    /// Takes one entry out of one of the caller's playlists.
+    async fn remove_from_playlist(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The entry.")] input: crate::playlist::RemoveFromPlaylistInput,
+    ) -> Result<crate::playlist::PlaylistPayload> {
+        crate::playlist::remove(context, input).await
+    }
+
+    /// Moves one entry of one of the caller's playlists after another, or first.
+    async fn move_playlist_entry(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The entry and where it goes.")]
+        input: crate::playlist::MovePlaylistEntryInput,
+    ) -> Result<crate::playlist::PlaylistPayload> {
+        crate::playlist::move_entry(context, input).await
+    }
+
+    /// Empties one of the caller's playlists of chosen items.
+    async fn clear_playlist(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The playlist to empty.")] input: crate::playlist::ClearPlaylistInput,
+    ) -> Result<crate::playlist::PlaylistPayload> {
+        crate::playlist::clear(context, input).await
+    }
+
+    /// Replaces the rule of one of the caller's smart playlists.
+    async fn replace_playlist_rule(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The playlist and its new rule.")]
+        input: crate::playlist::ReplacePlaylistRuleInput,
+    ) -> Result<crate::playlist::PlaylistPayload> {
+        crate::playlist::replace_rule(context, input).await
+    }
 }

@@ -125,6 +125,7 @@ fn app() -> axum::Router {
         metadata: std::sync::Arc::new(metadata),
         playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
         access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),

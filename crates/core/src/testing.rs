@@ -10,7 +10,9 @@
 use std::collections::BTreeMap;
 
 use crate::edit::{ItemEdit, ItemField};
-use crate::ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
+use crate::ids::{
+    MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey, SectionId, StreamId, TagId,
+};
 use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use crate::metadata::{
     self, CreditRef, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind, ItemQuery,
@@ -19,6 +21,10 @@ use crate::metadata::{
     TagRef, TagScope, TagSearch, TagUse, ValueField,
 };
 use crate::page::{Cursor, Page, Window};
+use crate::playlist::{
+    Destination, NewPlaylist, Playlist, PlaylistEdit, PlaylistEntry, PlaylistError, PlaylistQuery,
+    PlaylistRepository, PlaylistSort, PlaylistTotals, SmartRule,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryLibrary {
@@ -1812,6 +1818,7 @@ impl crate::play_queue::PlayQueueRepository for InMemoryPlayQueues {
             version: 1,
             total: u64::try_from(entries.len()).unwrap_or(u64::MAX),
             selected: entries.get(queue.selected).copied(),
+            playlist: queue.playlist,
         };
         queues.push((stored.clone(), entries, now));
         Ok(stored)
@@ -2225,4 +2232,351 @@ impl crate::stream::StreamEngine for StubStreams {
     }
 
     async fn stop_all(&self) {}
+}
+
+/// Playlists held in memory, over the items whose libraries and durations they read.
+#[derive(Debug, Default)]
+pub struct InMemoryPlaylists {
+    items: Vec<MetadataItem>,
+    state: std::sync::Mutex<PlaylistStore>,
+}
+
+#[derive(Debug, Default)]
+struct PlaylistStore {
+    playlists: Vec<Playlist>,
+    entries: Vec<PlaylistEntry>,
+    next_id: i64,
+}
+
+impl PlaylistStore {
+    fn next(&mut self) -> i64 {
+        self.next_id += 1;
+        self.next_id
+    }
+
+    fn find(&mut self, id: PlaylistId) -> Result<&mut Playlist, PlaylistError> {
+        self.playlists
+            .iter_mut()
+            .find(|playlist| playlist.id == id)
+            .ok_or(PlaylistError::NotFound(id))
+    }
+
+    fn ordered(&self, playlist: PlaylistId) -> Vec<PlaylistEntry> {
+        let mut entries: Vec<_> = self
+            .entries
+            .iter()
+            .filter(|entry| entry.playlist == playlist)
+            .copied()
+            .collect();
+        entries.sort_by_key(|entry| (entry.position, entry.id));
+        entries
+    }
+
+    fn entry(&self, id: PlaylistEntryId) -> Result<PlaylistEntry, PlaylistError> {
+        self.entries
+            .iter()
+            .find(|entry| entry.id == id)
+            .copied()
+            .ok_or(PlaylistError::EntryNotFound(id))
+    }
+
+    fn append(&mut self, playlist: PlaylistId, items: &[RatingKey], now: i64) -> u64 {
+        let ordered = self.ordered(playlist);
+        let present: Vec<RatingKey> = ordered.iter().map(|entry| entry.item).collect();
+        let mut last = ordered.last().map(|entry| entry.position);
+        let added = crate::playlist::new_entries(items, &present);
+        for item in &added {
+            let position = crate::playlist::position_between(last, None).unwrap_or(0);
+            let id = PlaylistEntryId::new(self.next());
+            self.entries.push(PlaylistEntry {
+                id,
+                playlist,
+                item: *item,
+                position,
+                added_at: now,
+            });
+            last = Some(position);
+        }
+        u64::try_from(added.len()).unwrap_or(u64::MAX)
+    }
+}
+
+impl InMemoryPlaylists {
+    pub fn new(items: Vec<MetadataItem>) -> Self {
+        Self {
+            items,
+            state: std::sync::Mutex::default(),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, PlaylistStore> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn visible(&self, item: RatingKey, sections: Option<&[SectionId]>) -> Option<&MetadataItem> {
+        self.items
+            .iter()
+            .find(|candidate| candidate.id == item)
+            .filter(|found| sections.is_none_or(|sections| sections.contains(&found.section_id)))
+    }
+}
+
+fn playlist_matches(playlist: &Playlist, query: &PlaylistQuery) -> bool {
+    let filter = &query.filter;
+    playlist.owner == query.owner
+        && filter.kind.is_none_or(|kind| playlist.kind == kind)
+        && filter
+            .smart
+            .is_none_or(|smart| playlist.is_smart() == smart)
+        && filter.library.is_none_or(|library| {
+            playlist
+                .rule
+                .as_ref()
+                .is_none_or(|rule| rule.section == library)
+        })
+}
+
+fn playlist_order(query: &PlaylistQuery, a: &Playlist, b: &Playlist) -> std::cmp::Ordering {
+    let by_title = a.sort_key().cmp(&b.sort_key()).then(a.id.cmp(&b.id));
+    let descending = query.direction.is_descending();
+    let value = |playlist: &Playlist| match query.sort {
+        PlaylistSort::Title => 0,
+        PlaylistSort::AddedAt => playlist.added_at,
+        PlaylistSort::UpdatedAt => playlist.updated_at,
+        PlaylistSort::LastViewedAt => playlist.last_viewed_at,
+    };
+    if query.sort == PlaylistSort::Title {
+        let title = if descending {
+            by_title.reverse()
+        } else {
+            by_title
+        };
+        b.is_smart().cmp(&a.is_smart()).then(title)
+    } else {
+        let leading = value(a).cmp(&value(b));
+        let leading = if descending {
+            leading.reverse()
+        } else {
+            leading
+        };
+        leading.then(by_title)
+    }
+}
+
+#[async_trait::async_trait]
+impl PlaylistRepository for InMemoryPlaylists {
+    async fn create(&self, new: NewPlaylist, now: i64) -> Result<Playlist, PlaylistError> {
+        let mut store = self.lock();
+        let id = PlaylistId::new(store.next());
+        let playlist = Playlist {
+            id,
+            owner: new.owner,
+            guid: format!("guid-{id}"),
+            title: new.title,
+            summary: new.summary,
+            kind: new.kind,
+            rule: new.rule,
+            source_uri: new.source_uri,
+            locked: Vec::new(),
+            view_count: 1,
+            last_viewed_at: now,
+            added_at: now,
+            updated_at: now,
+        };
+        store.playlists.push(playlist.clone());
+        store.append(id, &new.items, now);
+        Ok(playlist)
+    }
+
+    async fn playlist(&self, id: PlaylistId) -> Result<Option<Playlist>, PlaylistError> {
+        Ok(self
+            .lock()
+            .playlists
+            .iter()
+            .find(|playlist| playlist.id == id)
+            .cloned())
+    }
+
+    async fn playlists(
+        &self,
+        query: &PlaylistQuery,
+        window: Window,
+    ) -> Result<Page<Playlist>, PlaylistError> {
+        let mut found: Vec<_> = self
+            .lock()
+            .playlists
+            .iter()
+            .filter(|playlist| playlist_matches(playlist, query))
+            .cloned()
+            .collect();
+        found.sort_by(|a, b| playlist_order(query, a, b));
+        Ok(windowed(found, &window, |playlist| query.cursor(playlist)))
+    }
+
+    async fn count(&self, query: &PlaylistQuery) -> Result<u64, PlaylistError> {
+        let count = self
+            .lock()
+            .playlists
+            .iter()
+            .filter(|playlist| playlist_matches(playlist, query))
+            .count();
+        Ok(u64::try_from(count).unwrap_or(u64::MAX))
+    }
+
+    async fn edit(
+        &self,
+        id: PlaylistId,
+        edit: &PlaylistEdit,
+        now: i64,
+    ) -> Result<Playlist, PlaylistError> {
+        let mut store = self.lock();
+        let playlist = store.find(id)?;
+        if let Some(title) = &edit.title {
+            playlist.title.clone_from(title);
+        }
+        if let Some(summary) = &edit.summary {
+            playlist.summary.clone_from(summary);
+        }
+        playlist.locked.retain(|field| !edit.unlock.contains(field));
+        playlist.locked.extend(edit.lock.iter().copied());
+        playlist.locked.sort();
+        playlist.locked.dedup();
+        playlist.updated_at = now;
+        Ok(playlist.clone())
+    }
+
+    async fn delete(&self, id: PlaylistId) -> Result<bool, PlaylistError> {
+        let mut store = self.lock();
+        let before = store.playlists.len();
+        store.playlists.retain(|playlist| playlist.id != id);
+        store.entries.retain(|entry| entry.playlist != id);
+        Ok(store.playlists.len() != before)
+    }
+
+    async fn entry(&self, id: PlaylistEntryId) -> Result<Option<PlaylistEntry>, PlaylistError> {
+        Ok(self.lock().entry(id).ok())
+    }
+
+    async fn entries(
+        &self,
+        playlist: PlaylistId,
+        sections: Option<&[SectionId]>,
+        window: Window,
+    ) -> Result<Page<PlaylistEntry>, PlaylistError> {
+        let ordered = self.lock().ordered(playlist);
+        let visible: Vec<PlaylistEntry> = ordered
+            .into_iter()
+            .filter(|entry| self.visible(entry.item, sections).is_some())
+            .collect();
+        Ok(windowed(visible, &window, PlaylistEntry::cursor))
+    }
+
+    async fn totals(
+        &self,
+        playlists: &[PlaylistId],
+        sections: Option<&[SectionId]>,
+    ) -> Result<Vec<(PlaylistId, PlaylistTotals)>, PlaylistError> {
+        let store = self.lock();
+        let mut totals = Vec::new();
+        for playlist in playlists {
+            let mut total = PlaylistTotals::default();
+            let entries = store
+                .entries
+                .iter()
+                .filter(|entry| entry.playlist == *playlist);
+            for item in entries.filter_map(|entry| self.visible(entry.item, sections)) {
+                total.entries += 1;
+                total.duration_ms += item.duration_ms.unwrap_or(0);
+            }
+            if total.entries > 0 {
+                totals.push((*playlist, total));
+            }
+        }
+        Ok(totals)
+    }
+
+    async fn append(
+        &self,
+        playlist: PlaylistId,
+        items: &[RatingKey],
+        now: i64,
+    ) -> Result<u64, PlaylistError> {
+        let mut store = self.lock();
+        store.find(playlist)?.updated_at = now;
+        Ok(store.append(playlist, items, now))
+    }
+
+    async fn remove(&self, entry: PlaylistEntryId, now: i64) -> Result<(), PlaylistError> {
+        let mut store = self.lock();
+        let found = store.entry(entry)?;
+        store.entries.retain(|candidate| candidate.id != entry);
+        store.find(found.playlist)?.updated_at = now;
+        Ok(())
+    }
+
+    async fn move_entry(
+        &self,
+        entry: PlaylistEntryId,
+        destination: Destination,
+        now: i64,
+    ) -> Result<(), PlaylistError> {
+        let mut store = self.lock();
+        let moved = store.entry(entry)?;
+        let mut order: Vec<PlaylistEntryId> = store
+            .ordered(moved.playlist)
+            .into_iter()
+            .map(|candidate| candidate.id)
+            .filter(|candidate| *candidate != entry)
+            .collect();
+        let at = match destination {
+            Destination::First => 0,
+            Destination::After(after) => {
+                order
+                    .iter()
+                    .position(|candidate| *candidate == after)
+                    .ok_or(PlaylistError::EntryNotFound(after))?
+                    + 1
+            }
+        };
+        order.insert(at, entry);
+        for (id, rank) in order.iter().zip(1_i64..) {
+            if let Some(stored) = store.entries.iter_mut().find(|stored| stored.id == *id) {
+                stored.position = rank * crate::playlist::POSITION_GAP;
+            }
+        }
+        store.find(moved.playlist)?.updated_at = now;
+        Ok(())
+    }
+
+    async fn clear(&self, playlist: PlaylistId, now: i64) -> Result<(), PlaylistError> {
+        let mut store = self.lock();
+        store.find(playlist)?.updated_at = now;
+        store.entries.retain(|entry| entry.playlist != playlist);
+        Ok(())
+    }
+
+    async fn replace_rule(
+        &self,
+        playlist: PlaylistId,
+        rule: SmartRule,
+        source_uri: Option<String>,
+        now: i64,
+    ) -> Result<Playlist, PlaylistError> {
+        let mut store = self.lock();
+        let found = store.find(playlist)?;
+        found.rule = Some(rule);
+        found.source_uri = source_uri;
+        found.updated_at = now;
+        Ok(found.clone())
+    }
+
+    async fn record_play(&self, playlist: PlaylistId, now: i64) -> Result<(), PlaylistError> {
+        let mut store = self.lock();
+        let found = store.find(playlist)?;
+        found.view_count += 1;
+        found.last_viewed_at = now;
+        Ok(())
+    }
 }

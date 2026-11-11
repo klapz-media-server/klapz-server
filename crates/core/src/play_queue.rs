@@ -6,7 +6,7 @@
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;
 
-use crate::ids::{RatingKey, UserId};
+use crate::ids::{PlaylistId, RatingKey, UserId};
 use crate::page::{Page, Window};
 
 /// How long a queue is kept. Nothing says when a player is done with one.
@@ -22,6 +22,8 @@ pub struct NewPlayQueue {
     /// The position of the entry to play first. Ignored by an empty queue.
     pub selected: usize,
     pub shuffled: bool,
+    /// The playlist it plays, when it plays one.
+    pub playlist: Option<PlaylistId>,
 }
 
 impl NewPlayQueue {
@@ -56,6 +58,7 @@ pub struct PlayQueue {
     pub total: u64,
     /// `None` for an empty queue.
     pub selected: Option<PlayQueueEntry>,
+    pub playlist: Option<PlaylistId>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -96,6 +99,7 @@ mod tests {
             items: items.clone(),
             selected: 7,
             shuffled: false,
+            playlist: None,
         }
         .shuffle();
         assert!(queue.shuffled);

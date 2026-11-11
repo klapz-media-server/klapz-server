@@ -334,6 +334,12 @@ Places where we knowingly answer differently, each decided rather than overlooke
   from: Plex Web refuses a server older than 1.18.3, and `0.1.0` reads as one. Clients that
   enable features by version then expect exactly the behavior we copied. The official API keeps
   open-plex's own version (`api-plex::general::PLEX_VERSION`).
+- **A playlist is its viewer's, and its ids are its own.** The operator's or one user's, as
+  watch state is; another's answers `404`, and an entry whose library its owner may no longer
+  read is hidden. Ids start at 1 rather than sharing the items' numbering, so a film's id is not a
+  playlist and `PUT /playlists/{a film's id}` renames nothing, where the reference renames the
+  film. `POST /playlists/upload` imports `.m3u` files from a path the client names and stays
+  refused (`403`): no endpoint accepts a path from a client.
 - **Live TV answers as a server with nothing set up.** There is no grabber, tuner or guide
   provider, so every Live TV, DVR, guide and recording list is empty and every one of them by
   id a `404`, as on the reference without a DVR. Where the reference lists what it has — the
@@ -559,6 +565,14 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   library carrying the tag, over a word index of tag names (`tag_word`, written by
   `db::write::insert_tags` only); identical to the reference entry for entry on the people
   shelves of six terms (`docs/spec-gaps.md`).
+- ✅ **playlists**: the viewer's own, of chosen items or smart, kept in tables of our own
+  (`playlist`, `playlist_entry`) with positions a move halves; on the official API (`Playlist`,
+  `PlaylistEntry`, `playlists`, `createPlaylist`, `addToPlaylist`, `movePlaylistEntry`,
+  `removeFromPlaylist`, `clearPlaylist`, `updatePlaylist`, `replacePlaylistRule`,
+  `deletePlaylist`), a smart playlist keeping `Library.items`' own input as its rule; on the Plex
+  surface the 16 `/playlists` operations as measured on the reference's test libraries, and
+  `POST /playQueues?playlistID=` to play one. Upload stays refused, the optimizer's generators
+  answer `404`, and `composite` names an image not served yet (`docs/spec-gaps.md`).
 - ✅ **adaptive bitrate, chosen by the server or by the player**, over HLS and DASH: `quality`
   on `startStream` (`FIXED`, `SERVER_ADAPTIVE`, `CLIENT_ADAPTIVE`). The player's choice lists
   the copy first and encodes cut on the same key frames, on a grid of segments ffmpeg-plex lays

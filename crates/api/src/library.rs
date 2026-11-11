@@ -703,13 +703,25 @@ impl Library {
         sort: ItemSort,
         direction: Option<SortDirection>,
     ) -> Result<ItemQuery> {
-        let mut filter: ItemFilter = filter.unwrap_or_default().try_into()?;
-        // Watch filters read the caller's own state.
-        filter.viewer = crate::access::caller(context).and_then(Viewer::of);
-        Ok(ItemQuery::new(self.section.id)
-            .filtered(filter)
-            .sorted_by(sort, direction.unwrap_or_default().into()))
+        listing_query(context, self.section.id, filter, sort, direction)
     }
+}
+
+/// One library's listing as the caller reads it: `Library.items` and a smart playlist both
+/// list through here.
+pub(crate) fn listing_query(
+    context: &Context<'_>,
+    section: SectionId,
+    filter: Option<ItemFilterInput>,
+    sort: ItemSort,
+    direction: Option<SortDirection>,
+) -> Result<ItemQuery> {
+    let mut filter: ItemFilter = filter.unwrap_or_default().try_into()?;
+    // Watch filters read the caller's own state.
+    filter.viewer = crate::access::caller(context).and_then(Viewer::of);
+    Ok(ItemQuery::new(section)
+        .filtered(filter)
+        .sorted_by(sort, direction.unwrap_or_default().into()))
 }
 
 /// One letter of a library's A–Z jump bar.
