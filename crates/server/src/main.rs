@@ -90,6 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metadata,
         playback: Arc::clone(&playback),
         play_queues: Arc::clone(&play_queues),
+        playlists: Arc::new(open_plex_db::SqlPlaylistRepository::new(connection.clone())),
         access: Arc::clone(&users),
         directory: Arc::clone(&directory),
         watch: Arc::new(SqlWatchRepository::new(connection)),

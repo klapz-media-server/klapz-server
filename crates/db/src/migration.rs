@@ -23,6 +23,7 @@ mod m0017_guid_index;
 mod m0018_track_choice;
 mod m0019_field_lock;
 mod m0020_sign_in;
+mod m0021_playlist;
 
 use sea_orm_migration::prelude::*;
 
@@ -53,6 +54,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0018_track_choice::Migration),
             Box::new(m0019_field_lock::Migration),
             Box::new(m0020_sign_in::Migration),
+            Box::new(m0021_playlist::Migration),
         ]
     }
 }

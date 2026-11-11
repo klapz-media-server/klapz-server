@@ -14,6 +14,7 @@ pub mod metadata;
 pub mod page;
 pub mod play_queue;
 pub mod playback;
+pub mod playlist;
 pub mod recent;
 pub mod search;
 pub mod similar;
@@ -29,7 +30,10 @@ pub use auth::{Accounts, Credential, Principal, Scope};
 pub use identity::{
     now_epoch, ServerCapabilities, ServerFeatures, ServerIdentity, TranscoderCapabilities,
 };
-pub use ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId};
+pub use ids::{
+    MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey, SectionId, StreamId, TagId,
+    UserId,
+};
 pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot};
 pub use metadata::{
     Credit, EpisodeCredit, ExternalId, FieldValue, ItemFilter, ItemKind, ItemQuery, ItemSort,

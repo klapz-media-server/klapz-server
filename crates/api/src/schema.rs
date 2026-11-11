@@ -38,6 +38,7 @@ pub struct ApiContext {
     pub metadata: Arc<dyn MetadataRepository>,
     pub playback: Arc<dyn open_plex_core::playback::PlaybackRepository>,
     pub play_queues: Arc<dyn open_plex_core::play_queue::PlayQueueRepository>,
+    pub playlists: Arc<dyn open_plex_core::playlist::PlaylistRepository>,
     pub access: Arc<dyn open_plex_core::access::AccessRepository>,
     pub directory: Arc<dyn open_plex_core::access::AccountDirectory>,
     pub watch: Arc<dyn open_plex_core::watch::WatchRepository>,
@@ -57,6 +58,10 @@ pub enum Node {
     PlaybackSession(crate::playback::PlaybackSessionObject),
     PlayQueue(crate::play_queue::PlayQueueObject),
     PlayQueueEntry(crate::play_queue::PlayQueueEntryObject),
+    /// A list of what to play, kept by its owner.
+    Playlist(crate::playlist::PlaylistObject),
+    /// One chosen item at its place in a playlist.
+    PlaylistEntry(crate::playlist::PlaylistEntryObject),
     /// This server.
     Server(Server),
     /// A media library.
@@ -179,6 +184,16 @@ impl Query {
                 Ok(owned.then_some(Node::PlayQueueEntry(
                     crate::play_queue::PlayQueueEntryObject(entry),
                 )))
+            }
+            crate::playlist::PLAYLIST_TYPE => {
+                Ok(crate::playlist::playlist_node(context, global.key)
+                    .await?
+                    .map(Node::Playlist))
+            }
+            crate::playlist::PLAYLIST_ENTRY_TYPE => {
+                Ok(crate::playlist::entry_node(context, global.key)
+                    .await?
+                    .map(Node::PlaylistEntry))
             }
             crate::playback::PLAYBACK_TYPE => {
                 let caller = crate::access::require_caller(context)?;
@@ -323,6 +338,46 @@ impl Query {
         last: Option<i32>,
     ) -> Result<crate::playback::PlaybackConnection> {
         crate::playback::sessions(context, after, before, first, last).await
+    }
+
+    /// The caller's own playlists. Empty for a caller who is neither the operator nor a user.
+    #[allow(clippy::too_many_arguments)]
+    async fn playlists(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Only playlists of this kind.")] kind: Option<
+            crate::playlist::PlaylistKindType,
+        >,
+        #[graphql(
+            desc = "Only smart playlists (`true`), or only those of chosen items (`false`)."
+        )]
+        smart: Option<bool>,
+        #[graphql(
+            desc = "Only the playlists a library's page shows, as returned in `Library.id`: those of the kind it plays, a smart one only if its rule lists that library."
+        )]
+        library: Option<ID>,
+        #[graphql(desc = "How to order them.")] order_by: Option<crate::playlist::PlaylistOrder>,
+        #[graphql(desc = "Which direction to order in.")] direction: Option<
+            crate::filter::SortDirection,
+        >,
+        #[graphql(desc = "Return playlists after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return playlists before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many playlists from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many playlists from the end of the range.")]
+        last: Option<i32>,
+        #[graphql(desc = "Skip this many playlists first.")] offset: Option<u32>,
+    ) -> Result<crate::playlist::PlaylistConnection> {
+        crate::playlist::list(
+            context,
+            kind,
+            smart,
+            library,
+            order_by,
+            direction,
+            (after, before, first, last, offset),
+        )
+        .await
     }
 
     /// Who is asking: the operator, a user, or no one.
@@ -580,6 +635,7 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
     let library = Arc::clone(&context.library);
     let metadata = Arc::clone(&context.metadata);
     let watch = Arc::clone(&context.watch);
+    let playlists = Arc::clone(&context.playlists);
 
     Schema::build(Query, crate::playback::Mutation, EmptySubscription)
         .data(context)
@@ -639,6 +695,10 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
         ))
         .data(DataLoader::new(
             crate::watch::WatchedLeavesLoader::new(watch),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            crate::playlist::PlaylistTotalsLoader::new(playlists),
             tokio::spawn,
         ))
         .finish()
