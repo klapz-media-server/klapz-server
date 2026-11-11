@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 9 | 3.5 % |
-| `stub` | 130 | 50.0 % |
-| `partial` | 20 | 7.7 % |
-| `done` | 64 | 24.6 % |
+| `stub` | 128 | 49.2 % |
+| `partial` | 21 | 8.1 % |
+| `done` | 65 | 25.0 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 2 | 8 | 45 | 6 | 24 |
+| [Library](#library) | 85 | 3 | 9 | 43 | 6 | 24 |
 | [Hubs](#hubs) | 15 | 1 | 1 | 13 | 0 | 0 |
 | [Content](#content) | 13 | 1 | 2 | 10 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
@@ -132,8 +132,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `deferred` | `GET` | `/library/parts/{partId}/indexes/{index}` | user | Get BIF index for a part | scanner/analysis, separate binary |
 | `deferred` | `GET` | `/library/parts/{partId}/indexes/{index}/{offset}` | user | Get an image from part BIF | scanner/analysis, separate binary |
 | `partial` | `GET` | `/library/parts/{partId}/{changestamp}/{filename}` | user | Get a media part | Direct Play: the file, by part id, with `Range`. The change stamp and the name are ignored. |
-| `stub` | `GET` | `/library/people/{personId}` | user | Get person details |  |
-| `stub` | `GET` | `/library/people/{personId}/media` | user | Get media for a person |  |
+| `done` | `GET` | `/library/people/{personId}` | user | Get person details | `personId` is a tag id, any kind: one `Directory` with `tagType`. The spec's `tagKey` form is a `404`, as on the reference. See spec-gaps.md. |
+| `partial` | `GET` | `/library/people/{personId}/media` | user | Get media for a person | What carries the tag, episodes rolled up to their series, hidden libraries left out, by library title then films by title and series by id; listing filters honored, `sort` and `type` ignored. Capped at 500 where the reference lists everything, and titles in byte order rather than Unicode collation. See spec-gaps.md. |
 | `stub` | `GET` | `/library/randomArtwork` | user | Get random artwork |  |
 | `done` | `GET` | `/library/sections/all` | user | Get library sections (main Media Provider Only) | Alias of `/library/sections` (not in spec). Byte-identical to reference apart from `contentChangedAt`, whose value differs only because the imported snapshot predates the live server |
 | `todo` | `POST` | `/library/sections/all` | admin | Add a library section |  |

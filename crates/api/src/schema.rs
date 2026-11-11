@@ -150,14 +150,14 @@ impl Query {
             STREAM_TYPE => Ok(load_track(context, StreamId::new(global.key))
                 .await?
                 .map(Node::MediaStream)),
-            TAG_TYPE => Ok(metadata(context)?
-                .tag(TagId::new(global.key))
+            TAG_TYPE => Ok(crate::tag::readable_tag(context, TagId::new(global.key))
                 .await?
                 .map(|tag| Node::Tag(TagObject(tag)))),
-            PERSON_TYPE => Ok(metadata(context)?
-                .person(PersonId::new(global.key))
-                .await?
-                .map(|person| Node::Person(PersonObject(person)))),
+            PERSON_TYPE => Ok(
+                crate::tag::readable_person(context, PersonId::new(global.key))
+                    .await?
+                    .map(|person| Node::Person(PersonObject(person))),
+            ),
             crate::play_queue::PLAY_QUEUE_TYPE => {
                 let caller = crate::access::require_caller(context)?;
                 Ok(crate::play_queue::queues(context)?
@@ -622,6 +622,10 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
         ))
         .data(DataLoader::new(
             CreditsBelowLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            crate::loader::PersonCreditsLoader::new(Arc::clone(&metadata)),
             tokio::spawn,
         ))
         .data(DataLoader::new(

@@ -6,21 +6,30 @@
 //! carries its own window; the lists are bounded — 200 credits at most on one item in the
 //! reference library — so the trade is the right one.
 
-use async_graphql::connection::{query, Connection, Edge, EmptyFields};
+use async_graphql::connection::{
+    query, Connection, ConnectionNameType, Edge, EdgeNameType, EmptyFields,
+};
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{
     Context, Enum, InputObject, Object, ObjectType, OutputType, Result, SimpleObject, ID,
 };
+use open_plex_core::library::LibrarySection;
 use open_plex_core::metadata::{
-    credits_with_episodes, Credit, ExternalId, Person, Rating, RatingKind, Tag, TagCondition,
-    TagKind, TagRef,
+    credits_with_episodes, Credit, CreditRef, ExternalId, ItemDepth, ItemFilter, ItemQuery,
+    ItemSort, Person, Rating, RatingKind, Tag, TagCondition, TagKind, TagRef,
 };
-use open_plex_core::page::{Cursor, MAX_ITEMS};
-use open_plex_core::{RatingKey, TagId};
+use open_plex_core::page::{Cursor, Direction, Window, MAX_ITEMS};
+use open_plex_core::watch::Viewer;
+use open_plex_core::{PersonId, RatingKey, SectionId, TagId};
 
 use crate::cursor::OpaqueCursor;
-use crate::loader::{CreditsBelowLoader, ExternalIdsLoader, RatingsLoader, TagsLoader};
+use crate::filter::ItemFilterInput;
+use crate::item::{Item, ItemConnection};
+use crate::loader::{
+    CreditsBelowLoader, ExternalIdsLoader, PersonCreditsLoader, RatingsLoader, TagsLoader,
+};
 use crate::node::GlobalId;
+use crate::schema;
 
 pub const TAG_TYPE: &str = "Tag";
 pub const PERSON_TYPE: &str = "Person";
@@ -97,9 +106,57 @@ impl TagObject {
         &self.0.name
     }
 
+    /// The server-local number: what the Plex surface publishes as a tag's `id`.
+    async fn database_id(&self) -> String {
+        self.0.id.to_string()
+    }
+
     /// Who a credit names. Null for a genre or a country.
     async fn person(&self) -> Option<PersonObject> {
         self.0.person.clone().map(PersonObject)
+    }
+
+    /// What carries this tag, across the caller's libraries, hidden ones left out.
+    ///
+    /// A series is listed for a tag on it or on any of its episodes, once: an actor's guest
+    /// appearances name the series, not each episode. The filter narrows that list further,
+    /// and naming a `kind` reaches below the top level as it does on `Library.items`.
+    ///
+    /// Library by library, by the library's title; within one, films by title and series in
+    /// the order they arrived.
+    #[allow(clippy::too_many_arguments)]
+    async fn items(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return items after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return items before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many items from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many items from the end of the range.")] last: Option<
+            i32,
+        >,
+        #[graphql(desc = "Narrows the list. Every field is combined with `AND`.")] filter: Option<
+            ItemFilterInput,
+        >,
+        #[graphql(
+            desc = "Discard this many items before the page begins. Prefer cursors: an offset costs a traversal of every discarded row."
+        )]
+        offset: Option<u32>,
+    ) -> Result<ItemConnection> {
+        let works = works(context, CreditRef::Tag(self.0.id), filter).await?;
+        page_of_works(context, works, (after, before, first, last), offset).await
+    }
+
+    /// How many items `items` lists under the same filter, without paging through them.
+    async fn item_count(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Count only the items this filter keeps.")] filter: Option<
+            ItemFilterInput,
+        >,
+    ) -> Result<u64> {
+        let works = works(context, CreditRef::Tag(self.0.id), filter).await?;
+        Ok(schema::metadata(context)?.item_count(&works).await?)
     }
 }
 
@@ -130,6 +187,230 @@ impl PersonObject {
     async fn thumb_url(&self) -> Option<&str> {
         self.0.thumb_url.as_deref()
     }
+
+    /// The server-local number.
+    async fn database_id(&self) -> String {
+        self.0.id.to_string()
+    }
+
+    /// The person's tags, one per role, in the order they were created: what to filter a
+    /// library by to find the films they directed, or those they played in. Only the tags
+    /// carried in a library the caller can see.
+    async fn credits(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return tags after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return tags before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many tags from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many tags from the end of the range.")] last: Option<
+            i32,
+        >,
+    ) -> Result<PersonCreditConnection> {
+        let rows = credits_in_view(context, self.0.id)
+            .await?
+            .into_iter()
+            .map(|tag| (TagObject(tag), EmptyFields))
+            .collect();
+        page_in_memory(rows, after, before, first, last).await
+    }
+
+    /// What credits this person in any role, across the caller's libraries, hidden ones left
+    /// out: the items of all their `credits`, each item once, in the order of `Tag.items`.
+    #[allow(clippy::too_many_arguments)]
+    async fn items(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return items after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return items before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many items from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many items from the end of the range.")] last: Option<
+            i32,
+        >,
+        #[graphql(desc = "Narrows the list. Every field is combined with `AND`.")] filter: Option<
+            ItemFilterInput,
+        >,
+        #[graphql(
+            desc = "Discard this many items before the page begins. Prefer cursors: an offset costs a traversal of every discarded row."
+        )]
+        offset: Option<u32>,
+    ) -> Result<ItemConnection> {
+        let works = works(context, CreditRef::Person(self.0.id), filter).await?;
+        page_of_works(context, works, (after, before, first, last), offset).await
+    }
+
+    /// How many items `items` lists under the same filter, without paging through them.
+    async fn item_count(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Count only the items this filter keeps.")] filter: Option<
+            ItemFilterInput,
+        >,
+    ) -> Result<u64> {
+        let works = works(context, CreditRef::Person(self.0.id), filter).await?;
+        Ok(schema::metadata(context)?.item_count(&works).await?)
+    }
+}
+
+/// Names the connection apart from `TagConnection`, whose edges describe an attachment to
+/// an item: a person's list of credits has none.
+#[derive(Debug)]
+pub struct PersonCreditConnectionName;
+
+impl ConnectionNameType for PersonCreditConnectionName {
+    fn type_name<T: OutputType>() -> String {
+        "PersonCreditConnection".to_owned()
+    }
+}
+
+#[derive(Debug)]
+pub struct PersonCreditEdgeName;
+
+impl EdgeNameType for PersonCreditEdgeName {
+    fn type_name<T: OutputType>() -> String {
+        "PersonCreditEdge".to_owned()
+    }
+}
+
+/// A page of a person's tags.
+pub type PersonCreditConnection = Connection<
+    OpaqueCursor,
+    TagObject,
+    EmptyFields,
+    EmptyFields,
+    PersonCreditConnectionName,
+    PersonCreditEdgeName,
+>;
+
+/// The libraries the caller can see, hidden ones included.
+async fn libraries_in_view(context: &Context<'_>) -> Result<Vec<LibrarySection>> {
+    let visible = crate::access::visible_sections(context);
+    // Libraries are a handful; one window holds them all.
+    let window = Window::new(None, None, Some(MAX_ITEMS), None)?;
+    Ok(schema::library_repository(context)?
+        .sections(visible.as_deref(), window)
+        .await?
+        .items)
+}
+
+/// The query listing what credits a tag or a person, as `Tag.items` and `Person.items`
+/// serve it.
+///
+/// Hidden libraries are left out, as the reference leaves them out of a person's page: what
+/// Plex calls hiding a library is keeping it off the lists that span libraries.
+async fn works(
+    context: &Context<'_>,
+    credited: CreditRef,
+    filter: Option<ItemFilterInput>,
+) -> Result<ItemQuery> {
+    let mut libraries = libraries_in_view(context).await?;
+    libraries.retain(|library| !library.hidden);
+    libraries.sort_by(|left, right| {
+        left.title
+            .cmp(&right.title)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+
+    let mut filter: ItemFilter = filter.unwrap_or_default().try_into()?;
+    filter.viewer = crate::access::caller(context).and_then(Viewer::of);
+    filter.credited = Some(credited);
+    Ok(
+        ItemQuery::across(libraries.into_iter().map(|library| library.id).collect())
+            .filtered(filter)
+            .sorted_by(ItemSort::Filmography, Direction::Ascending),
+    )
+}
+
+async fn page_of_works(
+    context: &Context<'_>,
+    works: ItemQuery,
+    (after, before, first, last): (Option<String>, Option<String>, Option<i32>, Option<i32>),
+    offset: Option<u32>,
+) -> Result<ItemConnection> {
+    let skip = u64::from(offset.unwrap_or(0));
+    query(
+        after,
+        before,
+        first,
+        last,
+        |after, before, first, last| async move {
+            let window = schema::window_for(after, before, first, last, schema::DEFAULT_PAGE_SIZE)?
+                .skipping(skip);
+            let page = schema::metadata(context)?.items(&works, window).await?;
+
+            let mut connection = Connection::new(page.has_previous, page.has_next);
+            connection
+                .edges
+                .extend(page.items.into_iter().map(|listed| {
+                    Edge::new(OpaqueCursor(listed.cursor), Item::from_domain(listed.item))
+                }));
+            Ok::<_, async_graphql::Error>(connection)
+        },
+    )
+    .await
+}
+
+/// Whether an item in a library the caller can see credits this, hidden libraries included.
+///
+/// What makes a tag or a person exist for a caller: one that a user's libraries do not
+/// credit answers as if it did not exist, and so does a tag nothing carries any more, which
+/// the reference answers `404`.
+async fn credited_in_view(context: &Context<'_>, credited: CreditRef) -> Result<bool> {
+    let sections: Vec<SectionId> = libraries_in_view(context)
+        .await?
+        .into_iter()
+        .map(|library| library.id)
+        .collect();
+    let query = ItemQuery::across(sections).filtered(ItemFilter {
+        credited: Some(credited),
+        depth: ItemDepth::All,
+        ..ItemFilter::default()
+    });
+    let window = Window::new(None, None, Some(1), None)?;
+    Ok(!schema::metadata(context)?
+        .items(&query, window)
+        .await?
+        .items
+        .is_empty())
+}
+
+/// A tag, if an item the caller can see carries it.
+pub(crate) async fn readable_tag(context: &Context<'_>, id: TagId) -> Result<Option<Tag>> {
+    let Some(tag) = schema::metadata(context)?.tag(id).await? else {
+        return Ok(None);
+    };
+    Ok(credited_in_view(context, CreditRef::Tag(id))
+        .await?
+        .then_some(tag))
+}
+
+/// A person, if an item the caller can see credits them.
+pub(crate) async fn readable_person(context: &Context<'_>, id: PersonId) -> Result<Option<Person>> {
+    let Some(person) = schema::metadata(context)?.person(id).await? else {
+        return Ok(None);
+    };
+    Ok(credited_in_view(context, CreditRef::Person(id))
+        .await?
+        .then_some(person))
+}
+
+/// A person's tags carried in a library the caller can see.
+async fn credits_in_view(context: &Context<'_>, person: PersonId) -> Result<Vec<Tag>> {
+    Ok(context
+        .data::<DataLoader<PersonCreditsLoader>>()?
+        .load_one(person)
+        .await?
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|credit| {
+            credit
+                .sections
+                .iter()
+                .any(|section| crate::access::can_read(context, *section))
+        })
+        .map(|credit| credit.tag)
+        .collect())
 }
 
 /// What a tag's attachment to one item says beyond the tag itself.
@@ -455,16 +736,18 @@ pub(crate) async fn ratings_of(
 ///
 /// The same rules as a storage window: at most [`MAX_ITEMS`] per page, [`DEFAULT_PAGE_SIZE`]
 /// when neither end is asked for.
-pub(crate) async fn page_in_memory<T, E>(
+pub(crate) async fn page_in_memory<T, E, C, N>(
     rows: Vec<(T, E)>,
     after: Option<String>,
     before: Option<String>,
     first: Option<i32>,
     last: Option<i32>,
-) -> Result<Connection<OpaqueCursor, T, EmptyFields, E>>
+) -> Result<Connection<OpaqueCursor, T, EmptyFields, E, C, N>>
 where
     T: OutputType,
     E: ObjectType,
+    C: ConnectionNameType,
+    N: EdgeNameType,
 {
     query(
         after,
@@ -633,12 +916,14 @@ mod tests {
         }
     }
 
+    type InMemoryPage = Connection<OpaqueCursor, String, EmptyFields, EmptyFields>;
+
     #[tokio::test]
     async fn pages_a_list_in_memory_by_position() {
         let rows: Vec<(String, EmptyFields)> =
             (0..5).map(|n| (format!("tag {n}"), EmptyFields)).collect();
 
-        let first_two = page_in_memory(rows.clone(), None, None, Some(2), None)
+        let first_two: InMemoryPage = page_in_memory(rows.clone(), None, None, Some(2), None)
             .await
             .unwrap();
         assert_eq!(first_two.edges.len(), 2);
@@ -646,14 +931,14 @@ mod tests {
         assert!(!first_two.has_previous_page);
 
         let after = first_two.edges[1].cursor.encode_cursor();
-        let rest = page_in_memory(rows.clone(), Some(after), None, Some(10), None)
+        let rest: InMemoryPage = page_in_memory(rows.clone(), Some(after), None, Some(10), None)
             .await
             .unwrap();
         let nodes: Vec<&str> = rest.edges.iter().map(|edge| edge.node.as_str()).collect();
         assert_eq!(nodes, ["tag 2", "tag 3", "tag 4"]);
         assert!(!rest.has_next_page);
 
-        let last_one = page_in_memory(rows, None, None, None, Some(1))
+        let last_one: InMemoryPage = page_in_memory(rows, None, None, None, Some(1))
             .await
             .unwrap();
         assert_eq!(last_one.edges[0].node, "tag 4");

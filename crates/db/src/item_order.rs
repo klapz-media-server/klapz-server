@@ -10,12 +10,13 @@
 //! the largest, so the position is stated in every `ORDER BY` and spelt out in every keyset
 //! comparison rather than left to the engine.
 
-use open_plex_core::metadata::{ItemSort, MetadataError};
+use open_plex_core::metadata::{ItemKind, ItemQuery, ItemSort, MetadataError};
 use open_plex_core::page::{Cursor, CursorKey, Direction};
-use sea_orm::sea_query::{Alias, Expr, Func, NullOrdering, Query, SimpleExpr};
+use sea_orm::sea_query::{Alias, CaseStatement, Expr, Func, NullOrdering, Query, SimpleExpr};
 use sea_orm::{Condition, Order, QueryFilter, QueryOrder, QueryResult, QuerySelect, Select};
 
 use crate::entity::{media, metadata_item, watch_state};
+use crate::metadata_repository::kind_name;
 use crate::watch_repository::viewer_id;
 
 /// The column the leading value is read back from.
@@ -46,18 +47,28 @@ struct Term {
     nullable: bool,
 }
 
+/// What ties on the leading value follow before the id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ties {
+    Title,
+    /// The id alone: the order items arrived in.
+    Arrival,
+    /// The title, except for series, which follow their ids.
+    TitleExceptSeries,
+}
+
 /// How a listing is ordered.
 #[derive(Debug, Clone)]
 pub(crate) struct ItemOrder {
     /// The ordering's own value; `None` orders by title.
     leading: Option<Leading>,
-    /// Whether ties on the leading value follow the title before the id.
-    ties_by_title: bool,
+    ties: Ties,
     direction: Direction,
 }
 
 impl ItemOrder {
-    pub(crate) fn new(sort: ItemSort, direction: Direction) -> Self {
+    pub(crate) fn new(query: &ItemQuery) -> Self {
+        let (sort, direction) = (query.sort, query.direction);
         let column = |column: metadata_item::Column, key_type, nullable| Leading {
             expr: Expr::col((metadata_item::Entity, column)).into(),
             key_type,
@@ -117,10 +128,20 @@ impl ItemOrder {
                 key_type: KeyType::Int,
                 nullable: false,
             }),
+            ItemSort::Filmography => Some(Leading {
+                expr: library_rank(&query.sections),
+                key_type: KeyType::Int,
+                nullable: false,
+            }),
+        };
+        let ties = match sort {
+            ItemSort::Arrival => Ties::Arrival,
+            ItemSort::Filmography => Ties::TitleExceptSeries,
+            _ => Ties::Title,
         };
         Self {
             leading,
-            ties_by_title: sort != ItemSort::Arrival,
+            ties,
             direction,
         }
     }
@@ -143,8 +164,14 @@ impl ItemOrder {
                     descending,
                     nullable: leading.nullable,
                 }];
-                if self.ties_by_title {
-                    terms.push(column(metadata_item::Column::SortKey, false));
+                match self.ties {
+                    Ties::Title => terms.push(column(metadata_item::Column::SortKey, false)),
+                    Ties::TitleExceptSeries => terms.push(Term {
+                        expr: title_except_series(),
+                        descending: false,
+                        nullable: false,
+                    }),
+                    Ties::Arrival => {}
                 }
                 terms.push(column(metadata_item::Column::Id, false));
                 terms
@@ -230,8 +257,12 @@ impl ItemOrder {
                 .map(CursorKey::Real),
         };
         let mut keys = vec![value.unwrap_or(CursorKey::Absent)];
-        if self.ties_by_title {
-            keys.push(sort_key);
+        match self.ties {
+            Ties::TitleExceptSeries if item.kind == kind_name(ItemKind::Show) => {
+                keys.push(CursorKey::Text(String::new()));
+            }
+            Ties::Title | Ties::TitleExceptSeries => keys.push(sort_key),
+            Ties::Arrival => {}
         }
         Ok(Cursor { keys, id: item.id })
     }
@@ -291,6 +322,42 @@ fn episode_added_at(direction: Direction) -> SimpleExpr {
             .and_where(Expr::col((episode, metadata_item::Column::ParentId)).in_subquery(seasons))
             .to_owned(),
     )
+}
+
+/// The position of the row's library in `sections`.
+///
+/// A `CASE` over the list the caller gave rather than a join on the library's title: which
+/// order libraries come in is the caller's choice, and a list of a dozen libraries makes a
+/// short expression.
+fn library_rank(sections: &[open_plex_core::SectionId]) -> SimpleExpr {
+    let mut rank = CaseStatement::new();
+    for (position, section) in (0_i64..).zip(sections) {
+        rank = rank.case(
+            Expr::col((
+                metadata_item::Entity,
+                metadata_item::Column::LibrarySectionId,
+            ))
+            .eq(section.get()),
+            Expr::val(position),
+        );
+    }
+    rank.finally(Expr::val(i64::try_from(sections.len()).unwrap_or(i64::MAX)))
+        .into()
+}
+
+/// The sort key, or an empty one for a series, so that series tie and fall to their ids.
+fn title_except_series() -> SimpleExpr {
+    CaseStatement::new()
+        .case(
+            Expr::col((metadata_item::Entity, metadata_item::Column::Kind))
+                .eq(kind_name(ItemKind::Show)),
+            Expr::val(""),
+        )
+        .finally(Expr::col((
+            metadata_item::Entity,
+            metadata_item::Column::SortKey,
+        )))
+        .into()
 }
 
 /// A pseudo-random rank for each id, fixed by the seed.

@@ -1860,3 +1860,159 @@ async fn nobody_reads_nothing_from_any_entry_point() {
         assert!(!response.errors.is_empty(), "{denied}");
     }
 }
+
+/// One person credited across four libraries, one of them hidden: as an actor on films, a
+/// series and a series' episode, and as a writer on one film.
+fn filmography() -> ApiSchema {
+    let hidden = LibrarySection {
+        hidden: true,
+        ..section(9, SectionKind::Movie, "VF - Films 3D")
+    };
+    let sections = vec![
+        section(6, SectionKind::Movie, "VO - Movies"),
+        section(4, SectionKind::Movie, "VF - Films"),
+        section(5, SectionKind::Show, "VF - Series"),
+        hidden,
+    ];
+    let child = |id: i64, kind: ItemKind, parent: i64| MetadataItem {
+        parent_id: Some(RatingKey::new(parent)),
+        ..item(id, 5, kind, "", None)
+    };
+    let items = vec![
+        item(300, 4, ItemKind::Movie, "Zodiac", None),
+        item(301, 4, ItemKind::Movie, "Alien", None),
+        item(302, 6, ItemKind::Movie, "Inception", None),
+        item(303, 9, ItemKind::Movie, "Alice", None),
+        // Series follow their ids: Zed was added before Apple.
+        item(400, 5, ItemKind::Show, "Zed", None),
+        item(401, 5, ItemKind::Show, "Apple", None),
+        child(402, ItemKind::Season, 401),
+        child(403, ItemKind::Episode, 402),
+    ];
+    let person = Person {
+        id: PersonId::new(70),
+        name: "Leonardo DiCaprio".to_owned(),
+        provider_key: Some("5d77682685719b001f3a0b79".to_owned()),
+        thumb_url: None,
+    };
+    let credit = |id: i64, kind: TagKind| Tag {
+        id: TagId::new(id),
+        kind,
+        name: "Leonardo DiCaprio".to_owned(),
+        person: Some(person.clone()),
+    };
+    let on = |item: i64, tag: &Tag| ItemTag {
+        item_id: RatingKey::new(item),
+        tag: tag.clone(),
+        role: None,
+    };
+    let actor = credit(531_575, TagKind::Actor);
+    let writer = credit(531_576, TagKind::Writer);
+    let tags = [300, 301, 302, 303, 400, 403]
+        .into_iter()
+        .map(|item| on(item, &actor))
+        .chain([on(302, &writer)])
+        .collect();
+
+    build_schema(ApiContext {
+        capabilities: open_plex_core::ServerCapabilities::new(
+            open_plex_core::ServerIdentity::new(
+                "0000000000000000000000000000000000000000",
+                "0.1.0",
+            ),
+            0,
+        ),
+        library: Arc::new(InMemoryLibrary::new(sections)),
+        metadata: Arc::new(InMemoryMetadata::new(items).with_tags(tags)),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+    })
+}
+
+fn titles(connection: &Value) -> Vec<&str> {
+    connection["edges"]
+        .as_array()
+        .expect("edges")
+        .iter()
+        .map(|edge| edge["node"]["title"].as_str().expect("a title"))
+        .collect()
+}
+
+const WORKS: &str = r"
+fragment Works on Node {
+  ... on Tag { databaseId itemCount items(first: 10) { edges { node { ... on Movie { title } ... on Show { title } } } } }
+  ... on Person { databaseId itemCount credits { edges { node { databaseId kind } } } items(first: 10) { edges { node { ... on Movie { title } ... on Show { title } } } } }
+}";
+
+fn works_of(type_name: &str, key: i64) -> String {
+    format!(
+        r#"{{ node(id: "{}") {{ ...Works }} }} {WORKS}"#,
+        GlobalId::encode(type_name, key)
+    )
+}
+
+#[tokio::test]
+async fn a_tags_works_run_library_by_title_films_by_title_series_by_arrival() {
+    let data = run_on(&filmography(), &works_of("Tag", 531_575)).await;
+    let tag = &data["node"];
+    assert_eq!(tag["databaseId"], "531575");
+    // The hidden library's Alice is left out; Apple comes in through its episode.
+    assert_eq!(
+        titles(&tag["items"]),
+        ["Alien", "Zodiac", "Zed", "Apple", "Inception"]
+    );
+    assert_eq!(tag["itemCount"], 5);
+}
+
+#[tokio::test]
+async fn a_persons_works_join_every_role_once() {
+    let data = run_on(&filmography(), &works_of("Person", 70)).await;
+    let person = &data["node"];
+    assert_eq!(person["databaseId"], "70");
+    let credits: Vec<&Value> = person["credits"]["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|edge| &edge["node"]["kind"])
+        .collect();
+    assert_eq!(credits, ["ACTOR", "WRITER"]);
+    // Inception, carrying both tags, once.
+    assert_eq!(
+        titles(&person["items"]),
+        ["Alien", "Zodiac", "Zed", "Apple", "Inception"]
+    );
+}
+
+#[tokio::test]
+async fn a_user_sees_a_persons_works_and_credits_in_its_libraries_only() {
+    let schema = filmography();
+    let response = schema.execute(as_user(&works_of("Person", 70))).await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    let data = response.data.into_json().unwrap();
+    // Library 4 only: the writer's credit is on a film of library 6.
+    assert_eq!(titles(&data["node"]["items"]), ["Alien", "Zodiac"]);
+    assert_eq!(
+        data["node"]["credits"]["edges"].as_array().unwrap().len(),
+        1
+    );
+
+    let writer = schema.execute(as_user(&works_of("Tag", 531_576))).await;
+    assert_eq!(writer.data.into_json().unwrap()["node"], Value::Null);
+}
+
+#[tokio::test]
+async fn nobody_reads_a_tag_or_a_person() {
+    let schema = filmography();
+    for query in [works_of("Tag", 531_575), works_of("Person", 70)] {
+        let response = schema.execute(query.as_str()).await;
+        assert_eq!(
+            response.data.into_json().unwrap()["node"],
+            Value::Null,
+            "{query}"
+        );
+    }
+}

@@ -441,6 +441,65 @@ whose live tags no longer match the snapshot's, and the other 21 differ by a cre
 alone. `Guid` identical on 419 and `Rating` on 414, every difference being an item the live
 server refreshed after the snapshot.
 
+### Person pages
+
+`GET /library/people/{personId}` and `/media`. **`personId` is a tag id** — the `id` a lookup
+publishes on its `Role`, `Director`, `Writer` or `Producer`, and that `/hubs/search` publishes
+on its person entries — not a person: Christopher Nolan the director (`553828`) and the writer
+(`553829`) are two pages, listing different films (*Insomnia* on one, *Man of Steel* on the
+other). The spec's alternative, the provider's `tagKey`, answers `404`; Plex Web only builds
+that form for the plex.tv metadata provider. Any tag answers, a genre (`38`, Action) or a
+country as well as a credit; a tag nothing carries any more is a `404`, as is a non-number.
+
+The person is one `Directory` in a container of `size`, `identifier`, `mediaTagPrefix` and
+`mediaTagVersion`: `id`, `filter` (`actor=531575`, `director=553828`, `genre=38`), `tag`,
+`tagType` (1 genre, 4 director, 5 writer, 6 actor, 7 producer, 8 country), and `tagKey` and
+`thumb` when the provider knows the person. Nothing else — no biography, birth or death:
+**the reference database holds none.** `tags` has no column for them — of its 292,378 credits,
+12,143 carry an `extra_data`, always `{"url":""}`, and none a `tag_value` or `user_art_url` — and Plex Web reads a person's biography from plex.tv's metadata
+provider, not from the server. So there is nothing to import, and the official API's `Person`
+carries only what the library does: name, provider key, portrait.
+
+`/media` lists what carries the tag, in the listing form, each item naming its library
+(`librarySectionTitle`, `librarySectionID`, `librarySectionKey`, after `titleSort`). Measured on
+fourteen tags of seven kinds:
+
+| Rule | Measured |
+| --- | --- |
+| A series is listed for a credit on it **or on one of its episodes**, once | Sammi Hanratty, credited on three episodes of *Pushing Daisies*, lists the series alone; `actor=64685` on `/all` finds nothing, since a tag filter reads an item's own tags |
+| **Hidden libraries are left out** | Mia Wasikowska's *Alice* films in the two hidden 3D libraries do not appear; her 17 items come from two libraries |
+| Libraries in **title order**, films and series interleaved | `VF - Films`, `VF - Films UHD`, `VF - Series`, `VF - Series UHD`, `VO - Movies`, … on Jason Momoa and Tim Burton |
+| Within a film library, by title | DiCaprio's 18 films in `VF - Films` |
+| Within a series library, **by id**, whatever the titles | four people, 59 series: *Plus belle la vie, encore plus belle* (457329) before *Plus belle la vie* (491172), *The Night Of* (23161) before *Master of None* (263788), added earlier |
+| An actor's page carries `viewGroup="movie"` and `viewMode="65592"`, no other kind's | seven actors, against directors, writers, a producer, a genre, a country and a collection |
+| Listing filters apply: `year`, `genre`, `actor`, `title`, `resolution`, `unwatched` | `year=2010` keeps DiCaprio's two *Inception* |
+| `sort` and `type` are ignored, as is any unknown parameter | the same order and count under `sort=year:desc`, `type=2`, `type=4` |
+| Paging takes both container parameters, adding `totalSize`, `offset` and the two headers | `Start=5&Size=3`: items 5–7 of 41; `Size` alone is ignored |
+| Unpaged, everything | 4,699 items for Action, no `totalSize` |
+
+**Implemented** on the official API as `Tag.items` and `Person.items` (every tag of the person),
+with `itemCount` beside each, ordered by `ItemSort::Filmography`: libraries in the order the
+query lists them, then films by title and series by id. The tag and the person are refetchable
+only when an item in a library the caller can see credits them, which is what makes an unknown
+tag, a stale one and one a user was not given the same `404`.
+
+Deviations of ours. The list is **capped at 500** (`page::MAX_ITEMS`) where the reference lists
+everything: an unpaged answer cut by the cap carries `totalSize` and `offset` so that `size`
+never claims more than the body holds, and one that is whole is the reference's attribute for
+attribute. Titles compare **byte-wise**, as every listing here does. Two libraries with the
+same title would interleave their films, where the reference's order is not known. And as on
+`/all`, the container parameters are read from the query only, not from headers.
+
+Against the live reference on eighteen tags — actors with many films, directors, a writer, a
+producer, a country, a guest of three episodes, a name with an accent, a stale tag and an
+unknown id: the `Directory` identical on all sixteen that exist, both `404`s the same, and the
+same order on all sixteen `/media` pages. Of the reference's 350 items we list 313; the 37
+others carry the tag on the live server and not in the snapshot imported here, every one
+checked. The items themselves are `/all`'s, attribute for attribute and in the same order, with
+the three library attributes after `titleSort`; what differs is what differs on `/all` (no
+artwork, `Image` or `UltraBlurColors`, the part `key` without its timestamp) and the watch
+state of another account.
+
 ### A library's shelves
 
 `GET /hubs/sections/{id}` answers up to eight shelves on the reference. Measured on a film

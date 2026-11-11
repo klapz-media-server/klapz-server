@@ -531,6 +531,23 @@ impl TagCondition {
     pub const MAX_VALUES: usize = 50;
 }
 
+/// Whose credits a [`ItemFilter::credited`] filter follows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreditRef {
+    /// One tag: a genre, or a person in one role.
+    Tag(TagId),
+    /// Every tag naming one person, whatever the role.
+    Person(PersonId),
+}
+
+/// One of a person's credits, with the libraries holding an item that carries it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PersonCredit {
+    pub tag: Tag,
+    /// Each library once, in no particular order. Empty for a tag nothing carries any more.
+    pub sections: Vec<SectionId>,
+}
+
 /// How a listing is ordered.
 ///
 /// An item with no value sorts before every item with one — first ascending, last
@@ -568,6 +585,11 @@ pub enum ItemSort {
     EpisodeAddedAt,
     /// A shuffle: the same seed gives the same order, which lets pages agree.
     Shuffled(u32),
+    /// Library by library, in the order [`ItemQuery::sections`] lists them; within one, films
+    /// by title and series in the order they arrived, by id. The order of a person's works on
+    /// the reference, measured over six people and eight libraries: its series follow their
+    /// ids whatever their titles.
+    Filmography,
 }
 
 /// Narrows a listing to a subset of a library.
@@ -620,6 +642,10 @@ pub struct ItemFilter {
     pub frame: Option<FrameRange>,
     /// Keeps only items carrying the named tags. Each condition must hold.
     pub tags: Vec<TagCondition>,
+    /// Keeps only items crediting this tag or person themselves or on an item below them: a
+    /// series counts for an actor who played in one of its episodes, as on the reference's
+    /// person pages, where a tag filter (`tags`) reads only the item's own.
+    pub credited: Option<CreditRef>,
     /// Leaves this one item out: "the rest of this director's films".
     pub excluded: Option<RatingKey>,
     /// Keeps only items the viewer watched to the end at least once (`true`), or never
@@ -1006,6 +1032,12 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
     /// One person by id, for a Relay refetch.
     async fn person(&self, id: PersonId) -> Result<Option<Person>, MetadataError>;
 
+    /// Every tag naming several people, by tag id, with the libraries where each is carried.
+    ///
+    /// The libraries come with the tags so that a caller can keep the credits its viewer may
+    /// see without a query per tag: a person has a handful of tags, each in a few libraries.
+    async fn credits_of(&self, people: &[PersonId]) -> Result<Vec<PersonCredit>, MetadataError>;
+
     /// Up to `limit` episodes of a library by when they were added, newest first, starting
     /// strictly after `after` — the `(added_at, episode)` of the last one already read.
     ///
@@ -1226,6 +1258,10 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
 
     async fn person(&self, id: PersonId) -> Result<Option<Person>, MetadataError> {
         (**self).person(id).await
+    }
+
+    async fn credits_of(&self, people: &[PersonId]) -> Result<Vec<PersonCredit>, MetadataError> {
+        (**self).credits_of(people).await
     }
 
     async fn episode_additions(
