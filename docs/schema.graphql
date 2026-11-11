@@ -172,6 +172,38 @@ input CreatePlayQueueInput {
 	shuffle: Boolean!
 }
 
+"""
+An entry to delete.
+"""
+input DeleteHistoryEntryInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The entry, as returned in `HistoryEntry.id`.
+	"""
+	entry: ID!
+}
+
+"""
+What `deleteHistoryEntry` did.
+"""
+type DeleteHistoryEntryPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The entry deleted, as it was given. Null when nothing was.
+	"""
+	deletedEntryId: ID
+	"""
+	Why nothing was deleted. Empty when the entry was.
+	"""
+	userErrors: [HistoryUserError!]!
+}
+
 type DolbyVision {
 	"""
 	The record's version, as written: `1.0`.
@@ -600,6 +632,152 @@ input FrameSizeInput {
 	Height in pixels.
 	"""
 	height: Int!
+}
+
+type HistoryEntry implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this entry.
+	"""
+	id: ID!
+	"""
+	The server-local number.
+	"""
+	databaseId: String!
+	"""
+	The item watched: the copy, in the library it was watched in.
+	"""
+	item: Item
+	"""
+	The library the item is in, as returned in `Library.id`.
+	"""
+	libraryId: ID!
+	"""
+	Who watched. Null when the operator did.
+	"""
+	user: User
+	"""
+	How the viewing came about.
+	"""
+	kind: ViewingKindType!
+	"""
+	When the item was watched, in seconds since the Unix epoch.
+	"""
+	viewedAt: Int!
+}
+
+type HistoryEntryConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [HistoryEntryEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [HistoryEntry!]!
+	"""
+	How many entries the history holds in all, across every page.
+	"""
+	totalCount: Int!
+}
+
+"""
+An edge in a connection.
+"""
+type HistoryEntryEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: HistoryEntry!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+Why an entry could not be deleted.
+"""
+enum HistoryErrorCode {
+	"""
+	No such entry, or not one the caller can see.
+	"""
+	ENTRY_NOT_FOUND
+}
+
+"""
+Narrows a history. Every field is combined with `AND`.
+"""
+input HistoryFilterInput {
+	"""
+	Only the caller's own viewings. The operator's are those it made itself.
+	"""
+	mine: Boolean
+	"""
+	Only this user's viewings, as returned in `User.id`. A user naming another sees
+	nothing.
+	"""
+	user: ID
+	"""
+	Only this item's viewings, as returned in `id`; for a series or a season, its
+	episodes'.
+	"""
+	item: ID
+	"""
+	Only viewings of items in these libraries, as returned in `Library.id`.
+	"""
+	libraries: [ID!]
+	"""
+	Only viewings of this kind.
+	"""
+	kind: ViewingKindType
+	"""
+	Only viewings at or after this time, in seconds since the Unix epoch.
+	"""
+	viewedSince: Int
+	"""
+	Only viewings at or before this time, in seconds since the Unix epoch.
+	"""
+	viewedUntil: Int
+}
+
+"""
+How a history is ordered. Ties go to the order the viewings were recorded in.
+"""
+enum HistoryOrderType {
+	"""
+	The order the viewings were recorded in.
+	"""
+	RECORDED
+	"""
+	By when the viewing happened.
+	"""
+	VIEWED_AT
+	"""
+	By the library the item is in, in the order of the libraries' identifiers.
+	"""
+	LIBRARY
+}
+
+"""
+A problem with what was asked, as opposed to a failure of the server.
+"""
+type HistoryUserError {
+	"""
+	The input field at fault, as a path from the input's root.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program.
+	"""
+	code: HistoryErrorCode!
 }
 
 """
@@ -2157,6 +2335,16 @@ type Mutation {
 		positionMs: Int!
 	): WatchState!
 	"""
+	Deletes one viewing from a history: the caller's own, or anyone's for the operator.
+	What was watched stays as it is, as on the reference.
+	"""
+	deleteHistoryEntry(
+		"""
+		The entry to delete.
+		"""
+		input: DeleteHistoryEntryInput!
+	): DeleteHistoryEntryPayload!
+	"""
 	Creates a play queue from a list of items.
 	"""
 	createPlayQueue(
@@ -2774,6 +2962,48 @@ type Query {
 		"""
 		last: Int
 	): PlaybackSessionConnection!
+	"""
+	What was watched, one entry per viewing: each playback that reached 90% of the
+	runtime, and each film or episode marked watched. A position kept is no viewing, and
+	marking an item unwatched leaves its history as it is.
+	
+	A user reads its own; the operator reads everyone's, its own with `mine`. Empty for a
+	caller with no watch state. In the order recorded unless asked otherwise.
+	"""
+	viewingHistory(
+		"""
+		Narrows the history. Every field is combined with `AND`.
+		"""
+		filter: HistoryFilterInput,
+		"""
+		How to order the history.
+		"""
+		orderBy: HistoryOrderType,
+		"""
+		Which direction to order in.
+		"""
+		direction: SortDirection,
+		"""
+		Return entries after this cursor.
+		"""
+		after: String,
+		"""
+		Return entries before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many entries from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many entries from the end of the range.
+		"""
+		last: Int,
+		"""
+		Discard this many entries before the page begins, for a client that pages by position. It costs the entries it discards.
+		"""
+		offset: Int
+	): HistoryEntryConnection!
 	"""
 	Who is asking: the operator, a user, or no one.
 	"""
@@ -4689,6 +4919,21 @@ type Viewer {
 	with no caller.
 	"""
 	user: User
+}
+
+"""
+How a viewing came about.
+"""
+enum ViewingKindType {
+	"""
+	A playback reached 90% of the runtime.
+	"""
+	PLAYED
+	"""
+	The item was marked watched without being played: each episode of a season or a
+	series marked at once is one.
+	"""
+	MARKED
 }
 
 """

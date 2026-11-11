@@ -2,18 +2,23 @@
 
 use std::collections::HashMap;
 
+use open_plex_core::history::{
+    HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, NewViewing, ViewingKind,
+};
+use open_plex_core::page::{Cursor, CursorKey, Page, Window};
 use open_plex_core::tracks::{SubtitleChoice, TrackChoice};
 use open_plex_core::watch::{
     Viewer, Viewing, WatchError, WatchRepository, WatchState, VIEWING_LIFETIME_SECONDS,
 };
-use open_plex_core::{PartId, RatingKey, StreamId};
-use sea_orm::sea_query::{Alias, Expr, OnConflict};
+use open_plex_core::{HistoryId, PartId, RatingKey, SectionId, StreamId, UserId};
+use sea_orm::sea_query::{Alias, Expr, OnConflict, Query, SimpleExpr};
 use sea_orm::{
-    ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromQueryResult,
-    JoinType, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    ActiveValue, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait,
+    FromQueryResult, JoinType, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select,
+    TransactionTrait,
 };
 
-use crate::entity::{metadata_item, track_choice, viewing, watch_state};
+use crate::entity::{metadata_item, track_choice, viewing, viewing_history, watch_state};
 
 #[derive(Debug, Clone)]
 pub struct SqlWatchRepository {
@@ -58,43 +63,100 @@ impl WatchRepository for SqlWatchRepository {
         viewer: Viewer,
         states: &[(String, WatchState)],
     ) -> Result<(), WatchError> {
+        let transaction = self.connection.begin().await.map_err(storage)?;
+        save_states(&transaction, viewer_id(viewer), states).await?;
+        transaction.commit().await.map_err(storage)
+    }
+
+    async fn record_viewings(
+        &self,
+        viewer: Viewer,
+        states: &[(String, WatchState)],
+        viewings: &[NewViewing],
+    ) -> Result<(), WatchError> {
         let viewer = viewer_id(viewer);
         let transaction = self.connection.begin().await.map_err(storage)?;
-        let (empty, kept): (Vec<_>, Vec<_>) =
-            states.iter().partition(|(_, state)| state.is_empty());
-        if !empty.is_empty() {
-            watch_state::Entity::delete_many()
-                .filter(watch_state::Column::Viewer.eq(viewer))
-                .filter(watch_state::Column::Guid.is_in(empty.iter().map(|(guid, _)| guid.clone())))
-                .exec(&transaction)
-                .await
-                .map_err(storage)?;
-        }
-        if !kept.is_empty() {
-            let rows = kept.iter().map(|(guid, state)| watch_state::ActiveModel {
-                viewer: sea_orm::ActiveValue::Set(viewer),
-                guid: sea_orm::ActiveValue::Set(guid.clone()),
-                view_count: sea_orm::ActiveValue::Set(
-                    i32::try_from(state.view_count).unwrap_or(i32::MAX),
-                ),
-                offset_ms: sea_orm::ActiveValue::Set(state.offset_ms),
-                last_viewed_at: sea_orm::ActiveValue::Set(state.last_viewed_at),
+        save_states(&transaction, viewer, states).await?;
+        if !viewings.is_empty() {
+            let rows = viewings.iter().map(|viewing| viewing_history::ActiveModel {
+                id: ActiveValue::NotSet,
+                viewer: ActiveValue::Set(viewer),
+                item_id: ActiveValue::Set(viewing.item.get()),
+                kind: ActiveValue::Set(kind_name(viewing.kind).to_owned()),
+                viewed_at: ActiveValue::Set(viewing.viewed_at),
             });
-            watch_state::Entity::insert_many(rows)
-                .on_conflict(
-                    OnConflict::columns([watch_state::Column::Viewer, watch_state::Column::Guid])
-                        .update_columns([
-                            watch_state::Column::ViewCount,
-                            watch_state::Column::OffsetMs,
-                            watch_state::Column::LastViewedAt,
-                        ])
-                        .to_owned(),
-                )
+            viewing_history::Entity::insert_many(rows)
                 .exec(&transaction)
                 .await
                 .map_err(storage)?;
         }
         transaction.commit().await.map_err(storage)
+    }
+
+    async fn history(
+        &self,
+        query: &HistoryQuery,
+        window: Window,
+    ) -> Result<Page<HistoryEntry>, WatchError> {
+        let key = order_key(query.order);
+        let upward = !query.direction.is_descending();
+        let mut select = history_select(query);
+        if let Some(after) = &window.after {
+            select = select.filter(beyond(key.as_ref(), after, upward));
+        }
+        if let Some(before) = &window.before {
+            select = select.filter(beyond(key.as_ref(), before, !upward));
+        }
+        // A window taken from the end is read backwards, then put back in order.
+        let order = if upward == window.is_reversed() {
+            Order::Desc
+        } else {
+            Order::Asc
+        };
+        if let Some(key) = key {
+            select = select.order_by(key, order.clone());
+        }
+        let rows: Vec<HistoryRow> = select
+            .order_by(
+                Expr::col((viewing_history::Entity, viewing_history::Column::Id)),
+                order,
+            )
+            .offset(window.skip)
+            .limit(window.fetch_limit())
+            .into_model()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        let mut page = Page::from_overfetch(rows, &window).map(HistoryRow::into_entry);
+        if window.is_reversed() {
+            page.items.reverse();
+        }
+        Ok(page)
+    }
+
+    async fn history_count(&self, query: &HistoryQuery) -> Result<u64, WatchError> {
+        history_select(query)
+            .count(&self.connection)
+            .await
+            .map_err(storage)
+    }
+
+    async fn history_entry(&self, id: HistoryId) -> Result<Option<HistoryEntry>, WatchError> {
+        let row: Option<HistoryRow> = joined_history()
+            .filter(Expr::col((viewing_history::Entity, viewing_history::Column::Id)).eq(id.get()))
+            .into_model()
+            .one(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(row.map(HistoryRow::into_entry))
+    }
+
+    async fn delete_history_entry(&self, id: HistoryId) -> Result<bool, WatchError> {
+        let deleted = viewing_history::Entity::delete_by_id(id.get())
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(deleted.rows_affected > 0)
     }
 
     async fn watched_leaves(
@@ -330,6 +392,195 @@ impl WatchRepository for SqlWatchRepository {
         .await
         .map_err(storage)?;
         Ok(())
+    }
+}
+
+/// Writes states within the caller's transaction, an empty one deleting the row.
+async fn save_states(
+    connection: &impl ConnectionTrait,
+    viewer: i64,
+    states: &[(String, WatchState)],
+) -> Result<(), WatchError> {
+    let (empty, kept): (Vec<_>, Vec<_>) = states.iter().partition(|(_, state)| state.is_empty());
+    if !empty.is_empty() {
+        watch_state::Entity::delete_many()
+            .filter(watch_state::Column::Viewer.eq(viewer))
+            .filter(watch_state::Column::Guid.is_in(empty.iter().map(|(guid, _)| guid.clone())))
+            .exec(connection)
+            .await
+            .map_err(storage)?;
+    }
+    if !kept.is_empty() {
+        let rows = kept.iter().map(|(guid, state)| watch_state::ActiveModel {
+            viewer: ActiveValue::Set(viewer),
+            guid: ActiveValue::Set(guid.clone()),
+            view_count: ActiveValue::Set(i32::try_from(state.view_count).unwrap_or(i32::MAX)),
+            offset_ms: ActiveValue::Set(state.offset_ms),
+            last_viewed_at: ActiveValue::Set(state.last_viewed_at),
+        });
+        watch_state::Entity::insert_many(rows)
+            .on_conflict(
+                OnConflict::columns([watch_state::Column::Viewer, watch_state::Column::Guid])
+                    .update_columns([
+                        watch_state::Column::ViewCount,
+                        watch_state::Column::OffsetMs,
+                        watch_state::Column::LastViewedAt,
+                    ])
+                    .to_owned(),
+            )
+            .exec(connection)
+            .await
+            .map_err(storage)?;
+    }
+    Ok(())
+}
+
+const fn kind_name(kind: ViewingKind) -> &'static str {
+    match kind {
+        ViewingKind::Played => "played",
+        ViewingKind::Marked => "marked",
+    }
+}
+
+/// An entry with its item's library, which the history is filtered and ordered by.
+#[derive(Debug, FromQueryResult)]
+struct HistoryRow {
+    id: i64,
+    viewer: i64,
+    item_id: i64,
+    kind: String,
+    viewed_at: i64,
+    section_id: i64,
+}
+
+impl HistoryRow {
+    fn into_entry(self) -> HistoryEntry {
+        HistoryEntry {
+            id: HistoryId::new(self.id),
+            viewer: match self.viewer {
+                0 => Viewer::Operator,
+                user => Viewer::User(UserId::new(user)),
+            },
+            item: RatingKey::new(self.item_id),
+            section: SectionId::new(self.section_id),
+            kind: if self.kind == kind_name(ViewingKind::Marked) {
+                ViewingKind::Marked
+            } else {
+                ViewingKind::Played
+            },
+            viewed_at: self.viewed_at,
+        }
+    }
+}
+
+/// Entries joined to their items, whose library they are read with.
+fn joined_history() -> Select<viewing_history::Entity> {
+    viewing_history::Entity::find()
+        .select_only()
+        .columns([
+            viewing_history::Column::Id,
+            viewing_history::Column::Viewer,
+            viewing_history::Column::ItemId,
+            viewing_history::Column::Kind,
+            viewing_history::Column::ViewedAt,
+        ])
+        .column_as(
+            Expr::col((
+                metadata_item::Entity,
+                metadata_item::Column::LibrarySectionId,
+            )),
+            "section_id",
+        )
+        .join(
+            JoinType::InnerJoin,
+            viewing_history::Entity::belongs_to(metadata_item::Entity)
+                .from(viewing_history::Column::ItemId)
+                .to(metadata_item::Column::Id)
+                .into(),
+        )
+}
+
+fn history_select(query: &HistoryQuery) -> Select<viewing_history::Entity> {
+    let mut select = joined_history();
+    if let HistoryScope::Viewer(viewer) = query.scope {
+        select = select.filter(viewing_history::Column::Viewer.eq(viewer_id(viewer)));
+    }
+    if let Some(item) = query.item.map(RatingKey::get) {
+        let parent = || Expr::col((metadata_item::Entity, metadata_item::Column::ParentId));
+        // A season's episodes are its children, a series' its grandchildren.
+        let seasons = Query::select()
+            .column(metadata_item::Column::Id)
+            .from(metadata_item::Entity)
+            .and_where(metadata_item::Column::ParentId.eq(item))
+            .to_owned();
+        select = select.filter(
+            Condition::any()
+                .add(viewing_history::Column::ItemId.eq(item))
+                .add(parent().eq(item))
+                .add(parent().in_subquery(seasons)),
+        );
+    }
+    if let Some(sections) = &query.sections {
+        select = select.filter(
+            Expr::col((
+                metadata_item::Entity,
+                metadata_item::Column::LibrarySectionId,
+            ))
+            .is_in(sections.iter().map(|section| section.get())),
+        );
+    }
+    if let Some(kind) = query.kind {
+        select = select.filter(viewing_history::Column::Kind.eq(kind_name(kind)));
+    }
+    if let Some(since) = query.viewed_since {
+        select = select.filter(viewing_history::Column::ViewedAt.gte(since));
+    }
+    if let Some(until) = query.viewed_until {
+        select = select.filter(viewing_history::Column::ViewedAt.lte(until));
+    }
+    select
+}
+
+/// The value an order compares before the id; none for the order entries were written in.
+fn order_key(order: HistoryOrder) -> Option<SimpleExpr> {
+    match order {
+        HistoryOrder::Recorded => None,
+        HistoryOrder::ViewedAt => {
+            Some(Expr::col((viewing_history::Entity, viewing_history::Column::ViewedAt)).into())
+        }
+        HistoryOrder::Library => Some(
+            Expr::col((
+                metadata_item::Entity,
+                metadata_item::Column::LibrarySectionId,
+            ))
+            .into(),
+        ),
+    }
+}
+
+/// The entries past a cursor: after it in ascending order when `upward`, before it
+/// otherwise. Neither the key nor the id is ever absent, so no `NULL` needs placing.
+fn beyond(key: Option<&SimpleExpr>, cursor: &Cursor, upward: bool) -> Condition {
+    let past = |expr: SimpleExpr, value: i64| {
+        if upward {
+            Expr::expr(expr).gt(value)
+        } else {
+            Expr::expr(expr).lt(value)
+        }
+    };
+    let past_id = past(
+        Expr::col((viewing_history::Entity, viewing_history::Column::Id)).into(),
+        cursor.id,
+    );
+    match (key, cursor.keys.first()) {
+        (Some(key), Some(CursorKey::Int(value))) => {
+            Condition::any().add(past(key.clone(), *value)).add(
+                Condition::all()
+                    .add(Expr::expr(key.clone()).eq(*value))
+                    .add(past_id),
+            )
+        }
+        _ => Condition::all().add(past_id),
     }
 }
 

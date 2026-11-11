@@ -435,6 +435,16 @@ impl Mutation {
         crate::watch::keep_watch_position(context, &id, position_ms).await
     }
 
+    /// Deletes one viewing from a history: the caller's own, or anyone's for the operator.
+    /// What was watched stays as it is, as on the reference.
+    async fn delete_history_entry(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The entry to delete.")] input: crate::history::DeleteHistoryEntryInput,
+    ) -> Result<crate::history::DeleteHistoryEntryPayload> {
+        crate::history::delete_history_entry(context, input).await
+    }
+
     /// Creates a play queue from a list of items.
     async fn create_play_queue(
         &self,

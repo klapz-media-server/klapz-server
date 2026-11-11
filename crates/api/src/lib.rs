@@ -13,6 +13,7 @@ pub mod account;
 pub mod cursor;
 pub mod edit;
 pub mod filter;
+pub mod history;
 pub mod item;
 pub mod library;
 pub mod loader;

@@ -53,6 +53,8 @@ IMPLEMENTED = frozenset(
         "/search",
         "/media/providers",
         "/status/sessions",
+        "/status/sessions/history/all",
+        "/status/sessions/history/{historyId}",
         "/:/prefs",
         "/updater/status",
         "/updater/check",

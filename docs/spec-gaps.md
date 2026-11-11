@@ -199,6 +199,59 @@ Where ours differ:
 - **History is not imported.** The reference keeps 458,724 watch rows for 283 accounts, and
   the importer copies no account, so nothing ties them to a user here.
 
+### Viewing history
+
+`/status/sessions/history/all`, `/status/sessions/history/{historyId}` and its `DELETE`,
+measured on the reference's test libraries 27 and 28 by playing, marking and deleting, each
+step read back (its rows in `metadata_item_views`, with a `view_type` column
+`docs/plex-db-schema.md` predates):
+
+- **An entry is a viewing counted, and nothing else.** A timeline crossing 90% writes one
+  (`viewType` 0), and the reports after it in the same playback none; `/:/scrobble` writes one
+  on every call (`viewType` 1), and marking a season writes one per episode, none for the
+  season. A playback stopped at 30%, a position kept by `/:/progress`, or a report under the
+  minute write nothing. `/:/unscrobble` deletes no entry, and deleting an entry leaves
+  `viewCount` as it was.
+- **The listing holds what was played**: `viewType` 0 only, unless `type=1` asks for what was
+  marked; `type` is that number, not a metadata type (`type=movie` is a `400`, any other
+  number an empty list). `viewType` is published only when it is 1.
+- **Entries come in the order written** (`historyKey` ascending) unless `sort` says otherwise.
+  `sort` takes `viewedAt`, `accountID`, `librarySectionID` and `type`, comma-separated, each
+  with `:asc` or `:desc` — `:DESC`, `title`, `metadataItemID` and anything else is a `400`.
+- **Filters**: `metadataItemID` takes a film or an episode, or a season or series for its
+  episodes, and is a `404` for an item it does not have; `librarySectionID` and `accountID`
+  take lists; `viewedAt=`, `viewedAt>=`, `viewedAt<=` and `viewedAt!=` bound the date, in
+  seconds — `-1d` is a `400`, `viewedAt>>=` is ignored. A number that is not one is a `400`.
+  `deviceID`, `ratingKey` and other names are ignored.
+- **Paging**: without both container parameters the whole history comes back with `size`
+  alone; with them, `totalSize`, `offset` and the two headers.
+- **An entry** carries, in this order: `historyKey`, `key`, `ratingKey`, `librarySectionID` (a
+  string), `parentKey`, `grandparentKey`, `title`, `grandparentTitle`, `type`, `thumb`,
+  `parentThumb`, `grandparentThumb`, `grandparentArt`, `index`, `parentIndex`,
+  `originallyAvailableAt`, `viewedAt`, `accountID`, `deviceID`, `viewType`. The keys and the
+  artwork are the item's, read live: an entry whose item is gone has none of them, and a lookup
+  by `historyKey` has none of them either. The rest is a copy kept in the row. XML elements are
+  `<Video>`.
+- **A lookup** is `size="1"` and the entry; one it does not have, or a key that is no number,
+  is a `404`. **`DELETE`** answers the empty container `size="0"`, then `404` for the same key.
+
+Where ours differ:
+
+- **Each user's server holds its own history.** The spec has the administrator read every
+  account's; here a token reads the history of its own viewer, published as `accountID` 1, the
+  account a server's owner has on the reference. `accountID` naming any other answers an empty
+  list. The operator's view of everyone's history is on the official API (`viewingHistory`),
+  as is the operator's own (`mine: true`), which is what the operator's token reads here. The
+  lookup and the `DELETE`, admin-only in the spec, are open to a user for its own entries.
+- **The listing always windows**, at most 500 an answer, and always states `totalSize` and
+  `offset`, as a library listing does.
+- **No `deviceID`**: no device is recorded. **No artwork**, as on items.
+- **An entry goes with its item.** Nothing about the item is copied into the row, so the
+  title, numbers and date are the item's as it is now, and deleting an item deletes its entries.
+- **`viewedAt!=` and one more order after the first** (`librarySectionID,viewedAt:desc`) answer
+  `501`; an account or a `type` in `sort` orders nothing here, every entry having the same.
+- **History is not imported** from the reference, for the same reason as watch state.
+
 ### Continue Watching
 
 Measured on the reference's test series, given for the purpose five episodes over two seasons

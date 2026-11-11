@@ -12,8 +12,10 @@
 
 use std::collections::HashMap;
 
-use crate::ids::{PartId, RatingKey, SectionId, UserId};
+use crate::history::{HistoryEntry, HistoryQuery, NewViewing, ViewingKind};
+use crate::ids::{HistoryId, PartId, RatingKey, SectionId, UserId};
 use crate::metadata::{ItemKind, MetadataError, MetadataItem, MetadataRepository};
+use crate::page::{Page, Window};
 use crate::tracks::TrackChoice;
 use crate::{Principal, Scope};
 
@@ -137,6 +139,31 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
     async fn save(&self, viewer: Viewer, states: &[(String, WatchState)])
         -> Result<(), WatchError>;
 
+    /// Writes these states and adds these viewings to the viewer's history, at once. The one
+    /// way an entry is written: a viewing in the history is one the state counted.
+    async fn record_viewings(
+        &self,
+        viewer: Viewer,
+        states: &[(String, WatchState)],
+        viewings: &[NewViewing],
+    ) -> Result<(), WatchError>;
+
+    /// A window of the history a query reads. An entry whose item is gone is not read.
+    async fn history(
+        &self,
+        query: &HistoryQuery,
+        window: Window,
+    ) -> Result<Page<HistoryEntry>, WatchError>;
+
+    /// How many entries a query reads in all.
+    async fn history_count(&self, query: &HistoryQuery) -> Result<u64, WatchError>;
+
+    /// One entry of anyone's history.
+    async fn history_entry(&self, id: HistoryId) -> Result<Option<HistoryEntry>, WatchError>;
+
+    /// Deletes one entry, leaving the watch state as it is. Whether there was one.
+    async fn delete_history_entry(&self, id: HistoryId) -> Result<bool, WatchError>;
+
     /// How many episodes below each series or season a viewer has watched to the end.
     async fn watched_leaves(
         &self,
@@ -235,7 +262,7 @@ impl Watching<'_> {
                 Some(viewing) if viewing.completed => ReportOutcome::Completed,
                 // The crossing is seen: the last report of this playback fell short of the end.
                 Some(viewing) if !past_the_end(viewing.position_ms, duration) => {
-                    self.watched(item, now).await?;
+                    self.watched(item, ViewingKind::Played, now).await?;
                     ReportOutcome::Completed
                 }
                 _ => ReportOutcome::Ignored,
@@ -280,28 +307,39 @@ impl Watching<'_> {
 
     /// Marks an item watched: a film or an episode once more, a season or a series by each
     /// of its episodes once more. The containers themselves are left as they are, as on the
-    /// reference: their own count is of episodes watched one by one.
+    /// reference: their own count is of episodes watched one by one. Each film or episode
+    /// marked is an entry in the history.
     ///
     /// # Errors
     ///
     /// Fails when storage does.
     pub async fn mark_watched(&self, item: &MetadataItem, now: i64) -> Result<(), WatchError> {
         if is_leaf(item.kind) {
-            return self.watched(item, now).await;
+            return self.watched(item, ViewingKind::Marked, now).await;
         }
-        let leaves: Vec<String> = self
+        let leaves: Vec<MetadataItem> = self
             .metadata
             .descendants(item.id)
             .await?
             .into_iter()
             .filter(|below| is_leaf(below.kind))
-            .map(|below| below.guid)
             .collect();
-        let mut states = self.current(&leaves).await?;
+        let guids: Vec<String> = leaves.iter().map(|leaf| leaf.guid.clone()).collect();
+        let mut states = self.current(&guids).await?;
         for (_, state) in &mut states {
             *state = finished(*state, now);
         }
-        self.watch.save(self.viewer, &states).await
+        let viewings: Vec<NewViewing> = leaves
+            .iter()
+            .map(|leaf| NewViewing {
+                item: leaf.id,
+                kind: ViewingKind::Marked,
+                viewed_at: now,
+            })
+            .collect();
+        self.watch
+            .record_viewings(self.viewer, &states, &viewings)
+            .await
     }
 
     /// Forgets what was watched of an item: an episode alone, a season with its episodes, a
@@ -460,13 +498,26 @@ impl Watching<'_> {
         Ok((next < episodes.len()).then(|| (episodes.swap_remove(next), DeckReason::UpNext)))
     }
 
-    /// One more viewing of a film or an episode, counted on its season and series too.
-    async fn watched(&self, item: &MetadataItem, now: i64) -> Result<(), WatchError> {
+    /// One more viewing of a film or an episode, counted on its season and series too, and
+    /// one entry in the history.
+    async fn watched(
+        &self,
+        item: &MetadataItem,
+        kind: ViewingKind,
+        now: i64,
+    ) -> Result<(), WatchError> {
         let mut states = self.current(&self.lineage(item).await?).await?;
         for (_, state) in &mut states {
             *state = finished(*state, now);
         }
-        self.watch.save(self.viewer, &states).await
+        let viewing = NewViewing {
+            item: item.id,
+            kind,
+            viewed_at: now,
+        };
+        self.watch
+            .record_viewings(self.viewer, &states, &[viewing])
+            .await
     }
 
     /// A position kept on the item, and the date of it on its season and series.
@@ -554,6 +605,7 @@ mod tests {
         assert!(past_the_end(5_428_410, 6_031_567));
     }
 
+    use crate::history::HistoryScope;
     use crate::ids::SectionId;
     use crate::testing::{InMemoryMetadata, InMemoryWatch};
 
@@ -761,6 +813,61 @@ mod tests {
         assert_eq!(fixture.state(577_987).await.view_count, 2);
         watching.mark_unwatched(&items[1]).await.unwrap();
         assert!(fixture.state(577_987).await.is_empty());
+    }
+
+    async fn history(watch: &InMemoryWatch) -> Vec<(i64, ViewingKind)> {
+        let query = HistoryQuery::of(HistoryScope::Viewer(Viewer::Operator));
+        let window = Window::by_id(None, None, Some(50), None).unwrap();
+        watch
+            .history(&query, window)
+            .await
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|entry| (entry.item.get(), entry.kind))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn only_a_viewing_counted_is_an_entry_in_the_history() {
+        // Measured: crossing the end writes one entry, later reports of the same playback
+        // none, and a playback stopped short or a position kept none either.
+        let fixture = Fixture::new();
+        fixture.report("a", percent(30)).await;
+        fixture.report("a", percent(50)).await;
+        let soul = library().remove(0);
+        fixture
+            .watching()
+            .keep_position(&soul, percent(60), NOW)
+            .await
+            .unwrap();
+        assert!(history(&fixture.watch).await.is_empty());
+        fixture.report("b", percent(50)).await;
+        fixture.report("b", percent(91)).await;
+        fixture.report("b", percent(95)).await;
+        assert_eq!(
+            history(&fixture.watch).await,
+            vec![(577_986, ViewingKind::Played)]
+        );
+    }
+
+    #[tokio::test]
+    async fn marking_a_season_writes_one_entry_per_episode_and_forgetting_none() {
+        let fixture = Fixture::new();
+        let items = library();
+        let watching = fixture.watching();
+        watching.mark_watched(&items[0], NOW).await.unwrap();
+        watching.mark_watched(&items[2], NOW).await.unwrap();
+        let marked = vec![
+            (577_986, ViewingKind::Marked),
+            (577_989, ViewingKind::Marked),
+            (577_990, ViewingKind::Marked),
+        ];
+        assert_eq!(history(&fixture.watch).await, marked);
+        // Measured: `/:/unscrobble` leaves the history as it is.
+        watching.mark_unwatched(&items[1]).await.unwrap();
+        watching.mark_unwatched(&items[0]).await.unwrap();
+        assert_eq!(history(&fixture.watch).await, marked);
     }
 
     #[tokio::test]

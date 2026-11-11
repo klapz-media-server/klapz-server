@@ -114,6 +114,9 @@ without them saying so.
   the account's token, because a player hands those URLs to components that never see the
   account. Direct play gets a file address the same way. The stream is identified by the
   playback session it records, which `stopStream` names.
+- **A viewing counted is written once, with the state it explains.** The history has no write
+  path of its own: `WatchRepository::record_viewings` writes the watch state and the entries in
+  one transaction, and `core::watch` is its only caller.
 - **HTTP token authentication lives in `server`**, because both surfaces share it. It attaches a
   `Principal`; each surface then enforces scope in its own idiom (`Caller`/`AdminCaller`
   extractors on the Plex side, request data on the GraphQL side).
@@ -184,7 +187,8 @@ without them saying so.
 - **Watch state is the viewer's and the work's.** A user watches as itself, the operator as
   viewer 0 — it has no user row, and a NULL in a key would not be unique — and a caller that is
   neither, a visitor at a published address, has no watch state at all. Rows are keyed by `guid`,
-  because the reference keeps one state for every copy of a work.
+  because the reference keeps one state for every copy of a work. History is per viewer too,
+  but by item, the copy watched: a user reads and deletes its own, the operator everyone's.
 - **Each Plex user has its own server.** A token resolves to a user, and the Plex surface
   answers with that user's machine identifier, on `/identity` too when a token comes with the
   request. One process and one address: the separation is in what each token sees. Session
@@ -258,6 +262,11 @@ Places where we knowingly answer differently, each decided rather than overlooke
   answered `404` within 0.1 s when its process had died; a running process could not be measured
   there. A running process keeps its full 20 seconds, and a session that is unknown or stopped
   answers `404` at once, as on the reference.
+- **Each user's server holds its own history.** The reference's administrator reads every
+  account's viewing history; on the Plex surface a token reads its own viewer's, published as
+  `accountID` 1, the owner of the server it sees. The operator reads everyone's on the official
+  API (`viewingHistory`). An entry names the item watched and copies nothing of it, so it goes
+  with its item; no device is recorded.
 - **Playback sessions are stored, with automatic expiry.** The reference keeps them in memory.
   Ours are rows in `playback_session`, exposed on the official API; every sign of life pushes
   `expires_at` forward 300 seconds, reads skip what has expired, a sweep deletes it, and startup
@@ -480,6 +489,12 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   (`continueWatching`, each entry with its reason) and on the Plex surface
   (`/hubs/continueWatching`, `/hubs/home/continueWatching`, `/hubs/home/onDeck`, and every
   library's shelf);
+- ✅ **viewing history**: one entry per viewing counted — a playback crossing 90%, a film or
+  episode marked watched — written with the watch state by `record_viewings`, its one write
+  path, and left alone by unwatching; on the official API (`viewingHistory`, a user's own and
+  the operator's everyone's, `deleteHistoryEntry` with `userErrors`) and on the Plex surface
+  (`/status/sessions/history/all`, its lookup and `DELETE`), with the filters, sorts and
+  refusals measured on the reference's test libraries;
 - ✅ the drawn shelves — top of a genre, of a person — drawn as measured on 150 of the
   reference's draws, and rediscover;
 - ✅ **native streams**: `startStream` and `stopStream` on the official API — direct play,
