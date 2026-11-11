@@ -61,6 +61,11 @@ impl SqlMetadataRepository {
                 .is_in(query.sections.iter().map(|section| section.get())),
         );
 
+        if filter.kind_not_held {
+            // A predicate no row satisfies, so every query built on this selection — counts,
+            // tags, values — answers empty without a branch of its own.
+            select = select.filter(Expr::val(1).eq(0));
+        }
         if let Some(kind) = filter.kind {
             select = select.filter(metadata_item::Column::Kind.eq(kind_name(kind)));
         }

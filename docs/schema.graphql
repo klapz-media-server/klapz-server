@@ -1089,6 +1089,19 @@ enum ItemType {
 	An episode of a series.
 	"""
 	EPISODE
+	"""
+	A musician or a band. This server holds no music yet: a filter naming a music kind
+	keeps nothing.
+	"""
+	ARTIST
+	"""
+	An album of an artist.
+	"""
+	ALBUM
+	"""
+	A track of an album.
+	"""
+	TRACK
 }
 
 type Library implements Node {

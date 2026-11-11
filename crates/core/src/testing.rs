@@ -190,6 +190,7 @@ impl InMemoryMetadata {
         let mut matched: Vec<MetadataItem> = items
             .iter()
             .filter(|item| query.sections.contains(&item.section_id))
+            .filter(|_| !filter.kind_not_held)
             .filter(|item| filter.kind.is_none_or(|kind| item.kind == kind))
             .filter(|item| !filter.top_level_only() || item.parent_id.is_none())
             .filter(|item| {

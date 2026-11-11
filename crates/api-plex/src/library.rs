@@ -235,9 +235,10 @@ pub(crate) async fn libraries(state: &PlexState) -> Result<Vec<GqlLibrary>, ApiE
 
 /// Item type as Plex numbers it on the wire.
 ///
-/// A client sends `type=1`; the official API takes an enum. An unknown number places no
-/// filter rather than failing: Plex numbers kinds this server does not hold — artists,
-/// albums, photos — and a listing of everything is a better answer than a 400 to a client
+/// A client sends `type=1`; the official API takes an enum. The music kinds go through
+/// too, and the official API answers them with nothing, as the reference answers a library
+/// that holds none: an empty container, not every item. Any other number places no filter
+/// rather than failing: a listing of everything is a better answer than a 400 to a client
 /// probing what a library contains.
 pub(crate) fn item_type(kind: Option<i32>) -> Option<&'static str> {
     match kind {
@@ -245,6 +246,9 @@ pub(crate) fn item_type(kind: Option<i32>) -> Option<&'static str> {
         Some(2) => Some("SHOW"),
         Some(3) => Some("SEASON"),
         Some(4) => Some("EPISODE"),
+        Some(8) => Some("ARTIST"),
+        Some(9) => Some("ALBUM"),
+        Some(10) => Some("TRACK"),
         _ => None,
     }
 }
@@ -382,8 +386,9 @@ mod tests {
         assert_eq!(item_type(Some(2)), Some("SHOW"));
         assert_eq!(item_type(Some(3)), Some("SEASON"));
         assert_eq!(item_type(Some(4)), Some("EPISODE"));
-        // 8 is an artist, which this server does not hold: no filter rather than an error.
-        assert_eq!(item_type(Some(8)), None);
+        assert_eq!(item_type(Some(10)), Some("TRACK"));
+        // 13 is a photo, which the official API has no kind for: no filter, not an error.
+        assert_eq!(item_type(Some(13)), None);
         assert_eq!(item_type(None), None);
     }
 }
@@ -479,8 +484,8 @@ async fn first_character(
 
 /// Everything `GET /search` needs from the official API.
 const SEARCH_QUERY: &str = r"
-query PlexSearch($query: String!, $first: Int!) {
-  search(query: $query, first: $first) {
+query PlexSearch($query: String!, $kinds: [ItemType!], $first: Int!) {
+  search(query: $query, kinds: $kinds, first: $first) {
     edges {
       node {
         ...Shared
@@ -545,6 +550,8 @@ struct SearchConnection {
 #[derive(Debug, Default, Deserialize)]
 pub struct SearchParams {
     query: Option<String>,
+    #[serde(rename = "type")]
+    kind: Option<String>,
 }
 
 /// `GET /search` — one search box across every library.
@@ -565,6 +572,20 @@ async fn search(
 
     let mut variables = Variables::default();
     variables.insert(Name::new("query"), Value::String(term));
+    if let Some(kind) = &params.kind {
+        // A type the official API has no kind for finds nothing, as on the reference
+        // (`type=99`); a music type finds nothing there too, since none is held.
+        let Some(kind) = item_type(kind.parse().ok()) else {
+            return Ok(PlexResponse::new(
+                SearchContainer::of_one_kind(Vec::new()),
+                format,
+            ));
+        };
+        variables.insert(
+            Name::new("kinds"),
+            Value::List(vec![Value::Enum(Name::new(kind))]),
+        );
+    }
     variables.insert(
         Name::new("first"),
         Value::Number(SEARCH_RESULTS.min(MAX_ITEMS).into()),
@@ -581,5 +602,10 @@ async fn search(
         })
         .collect();
 
-    Ok(PlexResponse::new(SearchContainer::new(items), format))
+    let body = if params.kind.is_some() {
+        SearchContainer::of_one_kind(items)
+    } else {
+        SearchContainer::new(items)
+    };
+    Ok(PlexResponse::new(body, format))
 }

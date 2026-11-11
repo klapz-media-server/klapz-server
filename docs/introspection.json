@@ -3086,6 +3086,24 @@
               "description": "An episode of a series.",
               "isDeprecated": false,
               "deprecationReason": null
+            },
+            {
+              "name": "ARTIST",
+              "description": "A musician or a band. This server holds no music yet: a filter naming a music kind\nkeeps nothing.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ALBUM",
+              "description": "An album of an artist.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TRACK",
+              "description": "A track of an album.",
+              "isDeprecated": false,
+              "deprecationReason": null
             }
           ],
           "possibleTypes": null

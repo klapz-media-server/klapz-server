@@ -209,6 +209,31 @@ fn spec_operations() -> Vec<(Method, String)> {
     operations
 }
 
+async fn status(app: &axum::Router, method: &Method, uri: &str) -> StatusCode {
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method(method.clone())
+                .uri(uri)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds")
+        .status()
+}
+
+/// Whether a path that answered `404` has a route all the same.
+///
+/// Some routes answer `404` for any id, because nothing they could name can exist here: no
+/// DVR, tuner, recording or live session. Seeding cannot help them, so they are told apart
+/// from an unrouted path by a method the spec never uses: a registered path refuses it with
+/// `405`, an unregistered one does not know it with `404`. The original method is then
+/// registered too, since an undeclared one would have answered `405` itself.
+async fn is_routed(app: &axum::Router, uri: &str) -> bool {
+    status(app, &Method::PATCH, uri).await == StatusCode::METHOD_NOT_ALLOWED
+}
+
 #[tokio::test]
 async fn every_spec_operation_resolves_to_a_route() {
     let app = app();
@@ -225,19 +250,8 @@ async fn every_spec_operation_resolves_to_a_route() {
 
     for (method, path) in &operations {
         let uri = concretize(path);
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method(method.clone())
-                    .uri(&uri)
-                    .body(Body::empty())
-                    .expect("request builds"),
-            )
-            .await
-            .expect("router responds");
-
-        if response.status() == StatusCode::NOT_FOUND {
+        if status(&app, method, &uri).await == StatusCode::NOT_FOUND && !is_routed(&app, &uri).await
+        {
             unrouted.insert(format!("{method} {path}  (tried {uri})"));
         }
     }

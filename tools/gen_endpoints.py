@@ -71,6 +71,45 @@ IMPLEMENTED = frozenset(
         "/:/unscrobble",
         "/hubs/continueWatching",
         "/library/parts/{partId}",
+        # Live TV and DVR, answered as a server with none configured (`livetv.rs`).
+        "/livetv/dvrs",
+        "/livetv/dvrs/{dvrId}",
+        "/livetv/dvrs/{dvrId}/channels/{channel}/tune",
+        "/livetv/dvrs/{dvrId}/devices/{deviceId}",
+        "/livetv/dvrs/{dvrId}/lineups",
+        "/livetv/dvrs/{dvrId}/prefs",
+        "/livetv/dvrs/{dvrId}/reloadGuide",
+        "/livetv/epg/channelmap",
+        "/livetv/epg/channels",
+        "/livetv/epg/countries",
+        "/livetv/epg/countries/{country}/{epgId}/lineups",
+        "/livetv/epg/countries/{country}/{epgId}/regions",
+        "/livetv/epg/countries/{country}/{epgId}/regions/{region}/lineups",
+        "/livetv/epg/languages",
+        "/livetv/epg/lineup",
+        "/livetv/epg/lineupchannels",
+        "/livetv/sessions",
+        "/livetv/sessions/{sessionId}",
+        "/livetv/sessions/{sessionId}/{consumerId}/index.m3u8",
+        "/livetv/sessions/{sessionId}/{consumerId}/{segmentId}",
+        "/media/grabbers",
+        "/media/grabbers/devices",
+        "/media/grabbers/devices/discover",
+        "/media/grabbers/devices/{deviceId}",
+        "/media/grabbers/devices/{deviceId}/channelmap",
+        "/media/grabbers/devices/{deviceId}/channels",
+        "/media/grabbers/devices/{deviceId}/prefs",
+        "/media/grabbers/devices/{deviceId}/scan",
+        "/media/grabbers/devices/{deviceId}/thumb/{version}",
+        "/media/grabbers/operations/{operationId}",
+        "/media/subscriptions",
+        "/media/subscriptions/process",
+        "/media/subscriptions/scheduled",
+        "/media/subscriptions/template",
+        "/media/subscriptions/{subscriptionId}",
+        "/media/subscriptions/{subscriptionId}/move",
+        # A music library's albums, of which there are none (`music.rs`).
+        "/library/sections/{sectionId}/albums",
     }
 )
 
@@ -205,8 +244,9 @@ OFF_SPEC = (
         "user",
         "Global search across libraries",
         "Matches exactly as the reference (word prefix over title, sort title, original "
-        "title) but returns matches in title order, unranked and uncut. The spec declares "
-        "only `/hubs/search`.",
+        "title) but returns matches in title order, unranked and uncut. `type=` narrows to one "
+        "kind without the `Provider` list, as the reference; a music or unknown type finds "
+        "nothing. The spec declares only `/hubs/search`.",
     ),
 )
 

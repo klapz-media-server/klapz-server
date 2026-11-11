@@ -57,7 +57,7 @@ fn stub(methods: u8) -> MethodRouter<PlexState> {
     router
 }
 
-/// The 182 stub operations, across 147 paths.
+/// The 133 stub operations, across 110 paths.
 const STUBS: &[(&str, u8)] = &[
     ("/:/eventsource/notifications", verb::GET),
     ("/:/prefs/get", verb::GET),
@@ -154,7 +154,6 @@ const STUBS: &[(&str, u8)] = &[
         "/library/sections/{sectionId}",
         verb::GET | verb::PUT | verb::DELETE,
     ),
-    ("/library/sections/{sectionId}/albums", verb::GET),
     ("/library/sections/{sectionId}/allLeaves", verb::GET),
     ("/library/sections/{sectionId}/arts", verb::GET),
     ("/library/sections/{sectionId}/audioCodec", verb::GET),
@@ -185,72 +184,9 @@ const STUBS: &[(&str, u8)] = &[
     ("/library/streams/{streamId}/levels", verb::GET),
     ("/library/streams/{streamId}/loudness", verb::GET),
     ("/library/tags", verb::GET),
-    ("/livetv/dvrs", verb::GET | verb::POST),
-    ("/livetv/dvrs/{dvrId}", verb::GET | verb::DELETE),
-    ("/livetv/dvrs/{dvrId}/channels/{channel}/tune", verb::POST),
-    (
-        "/livetv/dvrs/{dvrId}/devices/{deviceId}",
-        verb::PUT | verb::DELETE,
-    ),
-    ("/livetv/dvrs/{dvrId}/lineups", verb::PUT | verb::DELETE),
-    ("/livetv/dvrs/{dvrId}/prefs", verb::PUT),
-    (
-        "/livetv/dvrs/{dvrId}/reloadGuide",
-        verb::POST | verb::DELETE,
-    ),
-    ("/livetv/epg/channelmap", verb::GET),
-    ("/livetv/epg/channels", verb::GET),
-    ("/livetv/epg/countries", verb::GET),
-    ("/livetv/epg/countries/{country}/{epgId}/lineups", verb::GET),
-    ("/livetv/epg/countries/{country}/{epgId}/regions", verb::GET),
-    (
-        "/livetv/epg/countries/{country}/{epgId}/regions/{region}/lineups",
-        verb::GET,
-    ),
-    ("/livetv/epg/languages", verb::GET),
-    ("/livetv/epg/lineup", verb::GET),
-    ("/livetv/epg/lineupchannels", verb::GET),
-    ("/livetv/sessions", verb::GET),
-    ("/livetv/sessions/{sessionId}", verb::GET),
-    (
-        "/livetv/sessions/{sessionId}/{consumerId}/index.m3u8",
-        verb::GET,
-    ),
-    (
-        "/livetv/sessions/{sessionId}/{consumerId}/{segmentId}",
-        verb::GET,
-    ),
     ("/log", verb::POST | verb::PUT),
     ("/log/networked", verb::POST),
-    ("/media/grabbers", verb::GET),
-    ("/media/grabbers/devices", verb::GET | verb::POST),
-    ("/media/grabbers/devices/discover", verb::POST),
-    (
-        "/media/grabbers/devices/{deviceId}",
-        verb::GET | verb::PUT | verb::DELETE,
-    ),
-    ("/media/grabbers/devices/{deviceId}/channelmap", verb::PUT),
-    ("/media/grabbers/devices/{deviceId}/channels", verb::GET),
-    ("/media/grabbers/devices/{deviceId}/prefs", verb::PUT),
-    (
-        "/media/grabbers/devices/{deviceId}/scan",
-        verb::POST | verb::DELETE,
-    ),
-    (
-        "/media/grabbers/devices/{deviceId}/thumb/{version}",
-        verb::GET,
-    ),
-    ("/media/grabbers/operations/{operationId}", verb::DELETE),
     ("/media/providers/{provider}", verb::DELETE),
-    ("/media/subscriptions", verb::GET | verb::POST),
-    ("/media/subscriptions/process", verb::POST),
-    ("/media/subscriptions/scheduled", verb::GET),
-    ("/media/subscriptions/template", verb::GET),
-    (
-        "/media/subscriptions/{subscriptionId}",
-        verb::GET | verb::PUT | verb::DELETE,
-    ),
-    ("/media/subscriptions/{subscriptionId}/move", verb::PUT),
     ("/playQueues/{playQueueId}/items", verb::DELETE),
     (
         "/playQueues/{playQueueId}/items/{playQueueItemId}",
@@ -313,7 +249,7 @@ const STUBS: &[(&str, u8)] = &[
     ),
 ];
 
-/// Adds 182 stub operations across 147 paths.
+/// Adds 133 stub operations across 110 paths.
 pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
     STUBS.iter().fold(router, |router, (path, methods)| {
         router.route(path, stub(*methods))

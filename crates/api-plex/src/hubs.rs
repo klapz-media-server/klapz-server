@@ -160,6 +160,23 @@ async fn section_hubs(
     let language = Language::of(&client);
     let library = recently_added(&state, section, count).await?;
     let is_film_library = library.kind == "MOVIE";
+    // The shelves below are a film or a series library's. A music library's would be its
+    // own, of which this server, holding no music, has nothing to fill: none rather than a
+    // series library's set, empty and named for television.
+    if !is_film_library && library.kind != "SHOW" {
+        return Ok(PlexResponse::new(
+            HubsContainer {
+                size: 0,
+                allow_sync: true,
+                identifier: LIBRARY_IDENTIFIER,
+                library_section_id: section,
+                library_section_title: library.title.clone(),
+                library_section_uuid: library.uuid.clone(),
+                hub: Vec::new(),
+            },
+            format,
+        ));
+    }
 
     let mut items: Vec<MetadataEntry> = library
         .recently_added

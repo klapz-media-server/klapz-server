@@ -710,6 +710,27 @@ async fn filters_by_year_range() {
 }
 
 #[tokio::test]
+async fn a_kind_not_held_matches_nothing_in_any_view() {
+    let repository = repository().await;
+    let query = ItemQuery::new(SectionId::new(SECTION)).filtered(ItemFilter {
+        kind_not_held: true,
+        ..ItemFilter::default()
+    });
+    assert!(repository
+        .items(&query, page(10))
+        .await
+        .expect("page")
+        .items
+        .is_empty());
+    assert_eq!(repository.item_count(&query).await.expect("count"), 0);
+    assert!(repository
+        .first_characters(&query)
+        .await
+        .expect("characters")
+        .is_empty());
+}
+
+#[tokio::test]
 async fn filters_combine_as_conjunctions() {
     let repository = repository().await;
     let query = ItemQuery::new(SectionId::new(SECTION)).filtered(ItemFilter {

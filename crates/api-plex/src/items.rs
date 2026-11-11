@@ -1334,7 +1334,7 @@ pub struct SearchContainer {
     pub media_tag_version: i64,
     #[serde(rename = "Metadata", skip_serializing_if = "Vec::is_empty")]
     pub metadata: Vec<SearchEntry>,
-    #[serde(rename = "Provider")]
+    #[serde(rename = "Provider", skip_serializing_if = "Vec::is_empty")]
     pub provider: Vec<SearchProvider>,
 }
 
@@ -1398,8 +1398,9 @@ const SEARCH_PROVIDERS: &[SearchProvider] = &[
 ];
 
 impl SearchContainer {
+    /// A search of every kind, which advertises the other sources too.
     pub fn new(items: Vec<SearchEntry>) -> Self {
-        let providers: Vec<SearchProvider> = SEARCH_PROVIDERS
+        let providers = SEARCH_PROVIDERS
             .iter()
             .map(|provider| SearchProvider {
                 key: provider.key,
@@ -1407,6 +1408,15 @@ impl SearchContainer {
                 kind: provider.kind,
             })
             .collect();
+        Self::with_providers(items, providers)
+    }
+
+    /// A search narrowed to one `type`, which the reference answers without the sources.
+    pub fn of_one_kind(items: Vec<SearchEntry>) -> Self {
+        Self::with_providers(items, Vec::new())
+    }
+
+    fn with_providers(items: Vec<SearchEntry>, providers: Vec<SearchProvider>) -> Self {
         Self {
             // Items *and* providers, as the reference counts them.
             size: u32::try_from(items.len() + providers.len()).unwrap_or(u32::MAX),

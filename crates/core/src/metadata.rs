@@ -579,6 +579,10 @@ pub enum ItemSort {
 pub struct ItemFilter {
     /// Restricts to one kind. `None` lists every kind the library holds.
     pub kind: Option<ItemKind>,
+    /// Set when the caller asked for a kind of item this server holds none of, music: then
+    /// nothing matches, whatever the other fields say. A flag beside `kind` rather than more
+    /// kinds, because an item of a kind that cannot be stored must not be representable.
+    pub kind_not_held: bool,
     /// How deep into the library's hierarchy to look.
     pub depth: ItemDepth,
     /// Earliest release year, inclusive.
