@@ -283,12 +283,6 @@ impl CollectionObject {
         ID(GlobalId::encode(COLLECTION_TYPE, self.0.id.get()))
     }
 
-    /// The server-local number, shared with the items' numbering, which the Plex surface
-    /// publishes as `ratingKey`.
-    async fn database_id(&self) -> String {
-        self.0.id.get().to_string()
-    }
-
     /// An identifier unique across servers.
     async fn guid(&self) -> &str {
         &self.0.guid

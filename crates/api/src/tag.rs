@@ -106,11 +106,6 @@ impl TagObject {
         &self.0.name
     }
 
-    /// The server-local number: what the Plex surface publishes as a tag's `id`.
-    async fn database_id(&self) -> String {
-        self.0.id.to_string()
-    }
-
     /// Who a credit names. Null for a genre or a country.
     async fn person(&self) -> Option<PersonObject> {
         self.0.person.clone().map(PersonObject)
@@ -186,11 +181,6 @@ impl PersonObject {
     /// A portrait, hosted by the metadata provider.
     async fn thumb_url(&self) -> Option<&str> {
         self.0.thumb_url.as_deref()
-    }
-
-    /// The server-local number.
-    async fn database_id(&self) -> String {
-        self.0.id.to_string()
     }
 
     /// The person's tags, one per role, in the order they were created: what to filter a

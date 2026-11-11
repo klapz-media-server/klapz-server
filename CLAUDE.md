@@ -133,7 +133,9 @@ without them saying so.
 
 - **Relay-compliant.** Every identifiable type implements `Node` and carries an opaque,
   type-qualified global `id` (base64 of `Type:key`), refetchable through a single `node(id:)`
-  field. The server-local number stays available as `databaseId` for the compatibility layer.
+  field. The schema publishes no other identifier: the compatibility layer reads the number
+  Plex publishes by decoding `id` with the same codec (`open_plex_api::GlobalId`), and builds
+  the global id from an incoming Plex number to query with.
 - **Lists are cursor connections** (`edges`/`node`/`cursor`, `pageInfo`), never bare arrays.
 - **Every field, argument and enum value carries a description.** Enforced by a test that walks
   introspection, not by review.
@@ -582,8 +584,8 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   and empty, and `/library/sections/{id}/albums` is its empty view;
 - ✅ **person pages**: `/library/people/{id}` and `/media`, where `id` is a tag id (one
   person in one role, or any genre or country), as the reference keys them. On the official
-  API, `Tag.items` and `Person.items` with `itemCount`, `Person.credits`, and `databaseId` on
-  both: a series counts for a credit on one of its episodes, hidden libraries are left out,
+  API, `Tag.items` and `Person.items` with `itemCount`, and `Person.credits`:
+  a series counts for a credit on one of its episodes, hidden libraries are left out,
   libraries come by title with films by title and series by id, and a tag or a person exists
   for a caller only when its libraries credit it. Same order as the reference on sixteen
   pages; the library holds no biography to import (`docs/spec-gaps.md`);

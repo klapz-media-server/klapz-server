@@ -110,11 +110,6 @@ impl HistoryEntryObject {
         ID(GlobalId::encode(HISTORY_ENTRY_TYPE, self.0.id.get()))
     }
 
-    /// The server-local number.
-    async fn database_id(&self) -> String {
-        self.0.id.to_string()
-    }
-
     /// The item watched: the copy, in the library it was watched in.
     async fn item(&self, context: &Context<'_>) -> Result<Option<Item>> {
         Ok(crate::schema::readable_item(context, self.0.item)

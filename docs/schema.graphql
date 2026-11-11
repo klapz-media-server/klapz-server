@@ -282,11 +282,6 @@ type Collection implements Node {
 	"""
 	id: ID!
 	"""
-	The server-local number, shared with the items' numbering, which the Plex surface
-	publishes as `ratingKey`.
-	"""
-	databaseId: String!
-	"""
 	An identifier unique across servers.
 	"""
 	guid: String!
@@ -1465,10 +1460,6 @@ type HistoryEntry implements Node {
 	Globally unique, opaque identifier. Pass it to `node` to refetch this entry.
 	"""
 	id: ID!
-	"""
-	The server-local number.
-	"""
-	databaseId: String!
 	"""
 	The item watched: the copy, in the library it was watched in.
 	"""
@@ -2676,10 +2667,6 @@ type Marker implements Node {
 	Globally unique, opaque identifier. Pass it to `node` to refetch this marker.
 	"""
 	id: ID!
-	"""
-	The server-local number, which the compatibility layer publishes.
-	"""
-	databaseId: String!
 	"""
 	The film or episode it marks.
 	"""
@@ -4014,10 +4001,6 @@ type Person implements Node {
 	"""
 	thumbUrl: String
 	"""
-	The server-local number.
-	"""
-	databaseId: String!
-	"""
 	The person's tags, one per role, in the order they were created: what to filter a
 	library by to find the films they directed, or those they played in. Only the tags
 	carried in a library the caller can see.
@@ -4335,10 +4318,6 @@ type PlaybackSession implements Node {
 	Globally unique, opaque identifier. Pass it to `node` to refetch this session.
 	"""
 	id: ID!
-	"""
-	The server-local number of this session.
-	"""
-	databaseId: String!
 	"""
 	Set once the operator has terminated the session: its stream is stopped, and the
 	session stays until its player stops or it expires, so that the player can learn why.
@@ -6593,10 +6572,6 @@ type Tag implements Node {
 	"""
 	name: String!
 	"""
-	The server-local number: what the Plex surface publishes as a tag's `id`.
-	"""
-	databaseId: String!
-	"""
 	Who a credit names. Null for a genre or a country.
 	"""
 	person: Person
@@ -7315,10 +7290,6 @@ type User implements Node {
 	Globally unique, opaque identifier. Pass it to `node` to refetch this user.
 	"""
 	id: ID!
-	"""
-	The server-local number.
-	"""
-	databaseId: String!
 	"""
 	The user's e-mail address.
 	"""

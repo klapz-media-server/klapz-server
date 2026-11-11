@@ -123,11 +123,6 @@ impl PlaybackSessionObject {
         ID(GlobalId::encode(PLAYBACK_TYPE, self.0.id))
     }
 
-    /// The server-local number of this session.
-    async fn database_id(&self) -> String {
-        self.0.id.to_string()
-    }
-
     /// Set once the operator has terminated the session: its stream is stopped, and the
     /// session stays until its player stops or it expires, so that the player can learn why.
     async fn termination(&self) -> Option<PlaybackTerminationObject> {

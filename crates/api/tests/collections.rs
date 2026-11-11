@@ -146,7 +146,7 @@ const CREATE: &str = r"
 mutation Create($input: CreateCollectionInput!) {
   createCollection(input: $input) {
     clientMutationId
-    collection { id databaseId tagNumber title titleSort kind isSmart itemCount minYear maxYear }
+    collection { id tagNumber title titleSort kind isSmart itemCount minYear maxYear }
     userErrors { field code }
   }
 }
@@ -222,11 +222,9 @@ async fn a_new_collection_keeps_the_items_of_its_kind_and_library_once() {
     assert_eq!(collection["minYear"], 2021);
     assert_eq!(collection["maxYear"], 2021);
     assert_eq!(
-        collection["databaseId"]
-            .as_str()
+        GlobalId::decode(collection["id"].as_str().unwrap())
             .unwrap()
-            .parse::<i64>()
-            .unwrap(),
+            .key,
         EPISODE_1 + 1,
         "numbered past the items"
     );

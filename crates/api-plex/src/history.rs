@@ -37,7 +37,7 @@ pub fn router() -> Router<PlexState> {
 
 const ENTRY_FIELDS: &str = r"
 fragment PlexHistoryEntry on HistoryEntry {
-  databaseId
+  id
   kind
   viewedAt
   libraryId
@@ -120,7 +120,7 @@ struct EntryData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GqlEntry {
-    database_id: String,
+    id: String,
     kind: String,
     #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     viewed_at: i64,
@@ -222,7 +222,7 @@ impl HistoryEntry {
         let season = item.season.as_ref().filter(|_| episode);
         let show = item.show.as_ref().filter(|_| episode);
         Some(Self {
-            history_key: format!("/status/sessions/history/{}", entry.database_id),
+            history_key: format!("/status/sessions/history/{}", database_id(&entry.id)?),
             key: with_keys.then(|| format!("/library/metadata/{rating_key}")),
             rating_key: with_keys.then(|| rating_key.to_string()),
             library_section_id: database_id(&entry.library_id)?.to_string(),

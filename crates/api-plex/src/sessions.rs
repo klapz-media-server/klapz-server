@@ -38,7 +38,7 @@ query PlexSessions {
   playbackSessions(first: 500) {
     edges {
       node {
-        databaseId
+        id
         key
         playbackId
         state
@@ -75,7 +75,7 @@ struct GqlSessionEdge {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GqlSession {
-    database_id: String,
+    id: String,
     key: String,
     playback_id: Option<String>,
     state: String,
@@ -98,7 +98,8 @@ fn entry(session: &GqlSession, item: &GqlItem) -> Option<Json> {
     let mut metadata = serde_json::to_value(metadata).ok()?;
     let fields = metadata.as_object_mut()?;
     // A number of the server's on the reference, as a string.
-    fields.insert("sessionKey".into(), json!(session.database_id));
+    let session_key = open_plex_api::GlobalId::decode(&session.id).ok()?.key;
+    fields.insert("sessionKey".into(), json!(session_key.to_string()));
     fields.insert("viewOffset".into(), json!(session.position_ms));
     fields.insert(
         "Session".into(),

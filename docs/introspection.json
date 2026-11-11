@@ -840,22 +840,6 @@
               "deprecationReason": null
             },
             {
-              "name": "databaseId",
-              "description": "The server-local number, shared with the items' numbering, which the Plex surface\npublishes as `ratingKey`.",
-              "args": [],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "SCALAR",
-                  "name": "String",
-                  "ofType": null
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
               "name": "guid",
               "description": "An identifier unique across servers.",
               "args": [],
@@ -4432,22 +4416,6 @@
               "deprecationReason": null
             },
             {
-              "name": "databaseId",
-              "description": "The server-local number.",
-              "args": [],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "SCALAR",
-                  "name": "String",
-                  "ofType": null
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
               "name": "item",
               "description": "The item watched: the copy, in the library it was watched in.",
               "args": [],
@@ -7671,22 +7639,6 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "ID",
-                  "ofType": null
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
-              "name": "databaseId",
-              "description": "The server-local number, which the compatibility layer publishes.",
-              "args": [],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "SCALAR",
-                  "name": "String",
                   "ofType": null
                 }
               },
@@ -11801,22 +11753,6 @@
               "deprecationReason": null
             },
             {
-              "name": "databaseId",
-              "description": "The server-local number.",
-              "args": [],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "SCALAR",
-                  "name": "String",
-                  "ofType": null
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
               "name": "credits",
               "description": "The person's tags, one per role, in the order they were created: what to filter a\nlibrary by to find the films they directed, or those they played in. Only the tags\ncarried in a library the caller can see.",
               "args": [
@@ -12788,22 +12724,6 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "ID",
-                  "ofType": null
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
-              "name": "databaseId",
-              "description": "The server-local number of this session.",
-              "args": [],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "SCALAR",
-                  "name": "String",
                   "ofType": null
                 }
               },
@@ -19202,22 +19122,6 @@
               "deprecationReason": null
             },
             {
-              "name": "databaseId",
-              "description": "The server-local number: what the Plex surface publishes as a tag's `id`.",
-              "args": [],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "SCALAR",
-                  "name": "String",
-                  "ofType": null
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
               "name": "person",
               "description": "Who a credit names. Null for a genre or a country.",
               "args": [],
@@ -21323,22 +21227,6 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "ID",
-                  "ofType": null
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
-              "name": "databaseId",
-              "description": "The server-local number.",
-              "args": [],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "SCALAR",
-                  "name": "String",
                   "ofType": null
                 }
               },

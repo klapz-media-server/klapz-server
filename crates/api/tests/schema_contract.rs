@@ -1117,7 +1117,7 @@ async fn a_caller_without_a_viewer_has_no_watch_state() {
 const HISTORY: &str = r"query($filter: HistoryFilterInput) {
     viewingHistory(first: 10, filter: $filter) {
         totalCount
-        edges { node { id databaseId kind viewedAt user { databaseId } item { id } } }
+        edges { node { id kind viewedAt user { id } item { id } } }
     }
 }";
 
@@ -2288,8 +2288,8 @@ fn titles(connection: &Value) -> Vec<&str> {
 
 const WORKS: &str = r"
 fragment Works on Node {
-  ... on Tag { databaseId itemCount items(first: 10) { edges { node { ... on Movie { title } ... on Show { title } } } } }
-  ... on Person { databaseId itemCount credits { edges { node { databaseId kind } } } items(first: 10) { edges { node { ... on Movie { title } ... on Show { title } } } } }
+  ... on Tag { id itemCount items(first: 10) { edges { node { ... on Movie { title } ... on Show { title } } } } }
+  ... on Person { id itemCount credits { edges { node { id kind } } } items(first: 10) { edges { node { ... on Movie { title } ... on Show { title } } } } }
 }";
 
 fn works_of(type_name: &str, key: i64) -> String {
@@ -2303,7 +2303,7 @@ fn works_of(type_name: &str, key: i64) -> String {
 async fn a_tags_works_run_library_by_title_films_by_title_series_by_arrival() {
     let data = run_on(&filmography(), &works_of("Tag", 531_575)).await;
     let tag = &data["node"];
-    assert_eq!(tag["databaseId"], "531575");
+    assert_eq!(tag["id"], GlobalId::encode("Tag", 531_575));
     // The hidden library's Alice is left out; Apple comes in through its episode.
     assert_eq!(
         titles(&tag["items"]),
@@ -2316,7 +2316,7 @@ async fn a_tags_works_run_library_by_title_films_by_title_series_by_arrival() {
 async fn a_persons_works_join_every_role_once() {
     let data = run_on(&filmography(), &works_of("Person", 70)).await;
     let person = &data["node"];
-    assert_eq!(person["databaseId"], "70");
+    assert_eq!(person["id"], GlobalId::encode("Person", 70));
     let credits: Vec<&Value> = person["credits"]["edges"]
         .as_array()
         .unwrap()
@@ -2518,15 +2518,13 @@ async fn an_episode_lists_the_markers_its_detection_found_in_order() {
 async fn a_marker_is_refetched_by_node_and_hidden_from_who_cannot_read_its_item() {
     let schema = markable();
     let marker = GlobalId::encode("Marker", 2);
-    let query = format!(
-        r#"{{ node(id: "{marker}") {{ id ... on Marker {{ databaseId kind item {{ id }} }} }} }}"#
-    );
+    let query =
+        format!(r#"{{ node(id: "{marker}") {{ id ... on Marker {{ kind item {{ id }} }} }} }}"#);
     let data = run_on(&schema, &query).await;
     assert_eq!(
         data["node"],
         serde_json::json!({
             "id": marker,
-            "databaseId": "2",
             "kind": "INTRO",
             "item": { "id": GlobalId::encode("Item", 578_173) },
         })

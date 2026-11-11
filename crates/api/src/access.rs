@@ -148,11 +148,6 @@ impl UserObject {
         ID(GlobalId::encode(USER_TYPE, self.0.id.get()))
     }
 
-    /// The server-local number.
-    async fn database_id(&self) -> String {
-        self.0.id.to_string()
-    }
-
     /// The user's e-mail address.
     async fn email(&self) -> &str {
         &self.0.email

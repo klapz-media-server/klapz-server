@@ -294,7 +294,7 @@ fragment Markers on Item {
 }
 
 fragment MarkerFields on Marker {
-  databaseId
+  id
   kind
   startMs
   endMs
@@ -841,7 +841,7 @@ pub struct GqlItem {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GqlMarker {
-    pub database_id: String,
+    pub id: String,
     /// `INTRO`, `CREDITS`, `COMMERCIAL` or `BOOKMARK`.
     pub kind: String,
     pub start_ms: i64,

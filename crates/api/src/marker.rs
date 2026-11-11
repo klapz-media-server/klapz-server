@@ -76,11 +76,6 @@ impl MarkerObject {
         ID(GlobalId::encode(MARKER_TYPE, self.0.id.get()))
     }
 
-    /// The server-local number, which the compatibility layer publishes.
-    async fn database_id(&self) -> String {
-        self.0.id.to_string()
-    }
-
     /// The film or episode it marks.
     async fn item(&self, context: &Context<'_>) -> Result<Option<Item>> {
         Ok(crate::schema::readable_item(context, self.0.item)

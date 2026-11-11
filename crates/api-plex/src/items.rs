@@ -279,7 +279,7 @@ pub struct MarkerAttributes {
 
 impl MarkerEntry {
     pub fn from_graphql(marker: &GqlMarker) -> Option<Self> {
-        let id = marker.database_id.parse().ok()?;
+        let id = open_plex_api::GlobalId::decode(&marker.id).ok()?.key;
         let kind = match marker.kind.as_str() {
             "INTRO" => "intro",
             "CREDITS" => "credits",
