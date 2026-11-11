@@ -2619,6 +2619,101 @@ type Person implements Node {
 	A portrait, hosted by the metadata provider.
 	"""
 	thumbUrl: String
+	"""
+	The server-local number.
+	"""
+	databaseId: String!
+	"""
+	The person's tags, one per role, in the order they were created: what to filter a
+	library by to find the films they directed, or those they played in. Only the tags
+	carried in a library the caller can see.
+	"""
+	credits(
+		"""
+		Return tags after this cursor.
+		"""
+		after: String,
+		"""
+		Return tags before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many tags from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many tags from the end of the range.
+		"""
+		last: Int
+	): PersonCreditConnection!
+	"""
+	What credits this person in any role, across the caller's libraries, hidden ones left
+	out: the items of all their `credits`, each item once, in the order of `Tag.items`.
+	"""
+	items(
+		"""
+		Return items after this cursor.
+		"""
+		after: String,
+		"""
+		Return items before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many items from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many items from the end of the range.
+		"""
+		last: Int,
+		"""
+		Narrows the list. Every field is combined with `AND`.
+		"""
+		filter: ItemFilterInput,
+		"""
+		Discard this many items before the page begins. Prefer cursors: an offset costs a traversal of every discarded row.
+		"""
+		offset: Int
+	): ItemConnection!
+	"""
+	How many items `items` lists under the same filter, without paging through them.
+	"""
+	itemCount(
+		"""
+		Count only the items this filter keeps.
+		"""
+		filter: ItemFilterInput
+	): Int!
+}
+
+type PersonCreditConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [PersonCreditEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Tag!]!
+}
+
+"""
+An edge in a connection.
+"""
+type PersonCreditEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Tag!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type PlayQueue implements Node {
@@ -4281,9 +4376,58 @@ type Tag implements Node {
 	"""
 	name: String!
 	"""
+	The server-local number: what the Plex surface publishes as a tag's `id`.
+	"""
+	databaseId: String!
+	"""
 	Who a credit names. Null for a genre or a country.
 	"""
 	person: Person
+	"""
+	What carries this tag, across the caller's libraries, hidden ones left out.
+	
+	A series is listed for a tag on it or on any of its episodes, once: an actor's guest
+	appearances name the series, not each episode. The filter narrows that list further,
+	and naming a `kind` reaches below the top level as it does on `Library.items`.
+	
+	Library by library, by the library's title; within one, films by title and series in
+	the order they arrived.
+	"""
+	items(
+		"""
+		Return items after this cursor.
+		"""
+		after: String,
+		"""
+		Return items before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many items from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many items from the end of the range.
+		"""
+		last: Int,
+		"""
+		Narrows the list. Every field is combined with `AND`.
+		"""
+		filter: ItemFilterInput,
+		"""
+		Discard this many items before the page begins. Prefer cursors: an offset costs a traversal of every discarded row.
+		"""
+		offset: Int
+	): ItemConnection!
+	"""
+	How many items `items` lists under the same filter, without paging through them.
+	"""
+	itemCount(
+		"""
+		Count only the items this filter keeps.
+		"""
+		filter: ItemFilterInput
+	): Int!
 }
 
 type TagConnection {

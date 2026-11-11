@@ -9,12 +9,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use open_plex_core::edit::{ItemEdit, ItemField};
 use open_plex_core::metadata::{
-    first_character_bucket, AudioAnalysis, ColorDescription, DolbyVision, Edited, EpisodeCredit,
-    ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemFilter, ItemKind,
-    ItemQuery, ItemTag, Listed, Loudness, MediaFile, MediaStream, MediaVersion, MetadataError,
-    MetadataItem, MetadataRepository, Person, Rating, ScanType, SearchQuery, StreamKind,
-    SubtitleAnalysis, Tag, TagCondition, TagKind, TagRef, TagScope, TrackTraits, ValueField,
-    VideoAnalysis,
+    first_character_bucket, AudioAnalysis, ColorDescription, CreditRef, DolbyVision, Edited,
+    EpisodeCredit, ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemFilter,
+    ItemKind, ItemQuery, ItemTag, Listed, Loudness, MediaFile, MediaStream, MediaVersion,
+    MetadataError, MetadataItem, MetadataRepository, Person, PersonCredit, Rating, ScanType,
+    SearchQuery, StreamKind, SubtitleAnalysis, Tag, TagCondition, TagKind, TagRef, TagScope,
+    TrackTraits, ValueField, VideoAnalysis,
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
@@ -116,6 +116,9 @@ impl SqlMetadataRepository {
         }
         for condition in &filter.tags {
             select = select.filter(carries_tag(condition));
+        }
+        if let Some(credited) = filter.credited {
+            select = select.filter(credits(credited));
         }
         select = select.filter(watch_conditions(filter));
         if let Some(from) = &filter.released_from {
@@ -285,6 +288,51 @@ fn carries_tag(condition: &TagCondition) -> Condition {
             .and_where(Expr::col((item_tag::Entity, item_tag::Column::TagId)).in_subquery(wanted))
             .to_owned(),
     ))
+}
+
+/// Whether the item, or an item below it, carries the credit.
+///
+/// Walked upwards from the attachments rather than down from each item: a person's credits
+/// are a few hundred rows reached through `idx_item_tag_tag`, and climbing two parents from
+/// there costs two primary-key lookups each, where probing the descendants of every item a
+/// library holds would cost a scan.
+fn credits(credited: CreditRef) -> Condition {
+    let attached = Query::select()
+        .column((item_tag::Entity, item_tag::Column::ItemId))
+        .from(item_tag::Entity)
+        .and_where(match credited {
+            CreditRef::Tag(id) => {
+                Expr::col((item_tag::Entity, item_tag::Column::TagId)).eq(id.get())
+            }
+            CreditRef::Person(id) => Expr::col((item_tag::Entity, item_tag::Column::TagId))
+                .in_subquery(
+                    Query::select()
+                        .column((tag::Entity, tag::Column::Id))
+                        .from(tag::Entity)
+                        .and_where(Expr::col((tag::Entity, tag::Column::PersonId)).eq(id.get()))
+                        .to_owned(),
+                ),
+        })
+        .to_owned();
+    let parents_of = |children: sea_orm::sea_query::SelectStatement| {
+        Query::select()
+            .column((metadata_item::Entity, metadata_item::Column::ParentId))
+            .from(metadata_item::Entity)
+            .and_where(
+                Expr::col((metadata_item::Entity, metadata_item::Column::Id)).in_subquery(children),
+            )
+            .and_where(
+                Expr::col((metadata_item::Entity, metadata_item::Column::ParentId)).is_not_null(),
+            )
+            .to_owned()
+    };
+    let parents = parents_of(attached.clone());
+    let grandparents = parents_of(parents.clone());
+    let id = || Expr::col((metadata_item::Entity, metadata_item::Column::Id));
+    Condition::any()
+        .add(id().in_subquery(attached))
+        .add(id().in_subquery(parents))
+        .add(id().in_subquery(grandparents))
 }
 
 /// Whether the item has an indexed title word beginning with `prefix`.
@@ -462,7 +510,7 @@ impl MetadataRepository for SqlMetadataRepository {
         query: &ItemQuery,
         window: Window,
     ) -> Result<Page<Listed>, MetadataError> {
-        let order = ItemOrder::new(query.sort, query.direction);
+        let order = ItemOrder::new(query);
         let mut select = Self::selection(query);
         if let Some(after) = window.after.as_ref() {
             select = order.resume(select, after, true)?;
@@ -1189,6 +1237,43 @@ impl MetadataRepository for SqlMetadataRepository {
             }))
     }
 
+    async fn credits_of(&self, people: &[PersonId]) -> Result<Vec<PersonCredit>, MetadataError> {
+        if people.is_empty() {
+            return Ok(Vec::new());
+        }
+        // One row per tag and library; a left join so that a tag nothing carries still comes
+        // back, with no library.
+        let rows = with_tag_columns(tag::Entity::find().select_only())
+            .column_as(metadata_item::Column::LibrarySectionId, "section")
+            .distinct()
+            .join(JoinType::InnerJoin, tag::Relation::Person.def())
+            .join(JoinType::LeftJoin, tag::Relation::ItemTag.def())
+            .join(JoinType::LeftJoin, item_tag::Relation::MetadataItem.def())
+            .filter(tag::Column::PersonId.is_in(people.iter().map(|id| id.get())))
+            .order_by_asc(tag::Column::Id)
+            .into_model::<CarriedRow>()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+
+        let mut credits: Vec<PersonCredit> = Vec::new();
+        for row in rows {
+            let section = row.section.map(SectionId::new);
+            match credits.last_mut() {
+                Some(last) if last.tag.id.get() == row.tag.id => last.sections.extend(section),
+                _ => {
+                    if let Some(tag) = row.tag.into_tag() {
+                        credits.push(PersonCredit {
+                            tag,
+                            sections: section.into_iter().collect(),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(credits)
+    }
+
     async fn locked_fields(
         &self,
         items: &[RatingKey],
@@ -1312,6 +1397,14 @@ struct AdditionRow {
 struct AttachedRow {
     item_id: i64,
     role: Option<String>,
+    #[sea_orm(nested)]
+    tag: TagRow,
+}
+
+/// A tag with one library where it is carried, or none.
+#[derive(Debug, FromQueryResult)]
+struct CarriedRow {
+    section: Option<i64>,
     #[sea_orm(nested)]
     tag: TagRow,
 }
@@ -1564,7 +1657,7 @@ struct OverlapRow {
     shared: i64,
 }
 
-const fn kind_name(kind: ItemKind) -> &'static str {
+pub(crate) const fn kind_name(kind: ItemKind) -> &'static str {
     match kind {
         ItemKind::Movie => "movie",
         ItemKind::Show => "show",

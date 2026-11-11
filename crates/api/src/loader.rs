@@ -13,9 +13,9 @@ use open_plex_core::edit::ItemField;
 use open_plex_core::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use open_plex_core::metadata::{
     EpisodeCredit, ExternalId, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError,
-    MetadataItem, MetadataRepository, Rating,
+    MetadataItem, MetadataRepository, PersonCredit, Rating,
 };
-use open_plex_core::{MediaId, PartId, RatingKey, SectionId};
+use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId};
 
 /// `Arc` because a `DataLoader` hands the same error to every caller that shared the batch,
 /// so it has to be cloneable.
@@ -310,6 +310,35 @@ impl Loader<RatingKey> for TagsLoader {
         let mut grouped: HashMap<RatingKey, Self::Value> = HashMap::new();
         for tag in tags {
             grouped.entry(tag.item_id).or_default().push(tag);
+        }
+        Ok(grouped)
+    }
+}
+
+/// Loads the tags of several people in one call, each with the libraries carrying it.
+#[derive(Debug, Clone)]
+pub struct PersonCreditsLoader {
+    repository: Arc<dyn MetadataRepository>,
+}
+
+impl PersonCreditsLoader {
+    pub const fn new(repository: Arc<dyn MetadataRepository>) -> Self {
+        Self { repository }
+    }
+}
+
+impl Loader<PersonId> for PersonCreditsLoader {
+    type Value = Vec<PersonCredit>;
+    type Error = Shared<MetadataError>;
+
+    async fn load(&self, keys: &[PersonId]) -> Result<HashMap<PersonId, Self::Value>, Self::Error> {
+        let credits = self.repository.credits_of(keys).await.map_err(Arc::new)?;
+
+        let mut grouped: HashMap<PersonId, Self::Value> = HashMap::new();
+        for credit in credits {
+            if let Some(person) = credit.tag.person.as_ref() {
+                grouped.entry(person.id).or_default().push(credit);
+            }
         }
         Ok(grouped)
     }

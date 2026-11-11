@@ -13,10 +13,10 @@ use crate::edit::{ItemEdit, ItemField};
 use crate::ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use crate::metadata::{
-    self, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind, ItemQuery, ItemSort,
-    ItemTag, Listed, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
-    MetadataRepository, Person, Rating, SearchQuery, Tag, TagCondition, TagKind, TagRef, TagScope,
-    ValueField,
+    self, CreditRef, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind, ItemQuery,
+    ItemSort, ItemTag, Listed, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
+    MetadataRepository, Person, PersonCredit, Rating, SearchQuery, Tag, TagCondition, TagKind,
+    TagRef, TagScope, ValueField,
 };
 use crate::page::{Cursor, Page, Window};
 
@@ -170,6 +170,29 @@ impl InMemoryMetadata {
             })
     }
 
+    /// Whether an item, or an item below it, carries the credit, by the rule storage applies.
+    fn credits(&self, items: &[MetadataItem], item: RatingKey, credited: CreditRef) -> bool {
+        let names = |attached: &ItemTag| match credited {
+            CreditRef::Tag(id) => attached.tag.id == id,
+            CreditRef::Person(id) => attached.tag.person.as_ref().is_some_and(|p| p.id == id),
+        };
+        let parent_of = |id: RatingKey| {
+            items
+                .iter()
+                .find(|row| row.id == id)
+                .and_then(|row| row.parent_id)
+        };
+        self.tags
+            .iter()
+            .filter(|attached| names(attached))
+            .any(|attached| {
+                let parent = parent_of(attached.item_id);
+                attached.item_id == item
+                    || parent == Some(item)
+                    || parent.and_then(parent_of) == Some(item)
+            })
+    }
+
     #[must_use]
     pub fn with_media(
         mut self,
@@ -274,27 +297,45 @@ impl InMemoryMetadata {
                     .iter()
                     .all(|condition| self.carries(item.id, condition))
             })
+            .filter(|item| {
+                filter
+                    .credited
+                    .is_none_or(|credited| self.credits(&items, item.id, credited))
+            })
             .cloned()
             .collect();
 
-        // Title and date added only: the other orderings read versions or watch state, and
-        // storage's tests are where they are checked.
-        match query.sort {
-            ItemSort::AddedAt | ItemSort::Arrival => matched.sort_by(|left, right| {
-                left.added_at
-                    .cmp(&right.added_at)
-                    .then(left.id.get().cmp(&right.id.get()))
-            }),
-            _ => matched.sort_by(|left, right| {
-                sort_key(left)
-                    .cmp(&sort_key(right))
-                    .then(left.id.get().cmp(&right.id.get()))
-            }),
-        }
-        if query.direction.is_descending() {
-            matched.reverse();
-        }
+        sort_matched(query, &mut matched);
         matched
+    }
+}
+
+/// Orders by title, date added or filmography only: the other orderings read versions or
+/// watch state, and storage's tests are where they are checked.
+fn sort_matched(query: &ItemQuery, matched: &mut [MetadataItem]) {
+    match query.sort {
+        ItemSort::AddedAt | ItemSort::Arrival => matched.sort_by(|left, right| {
+            left.added_at
+                .cmp(&right.added_at)
+                .then(left.id.get().cmp(&right.id.get()))
+        }),
+        ItemSort::Filmography => matched.sort_by_key(|item| {
+            let library = query.sections.iter().position(|id| *id == item.section_id);
+            let title = if item.kind == ItemKind::Show {
+                String::new()
+            } else {
+                sort_key(item)
+            };
+            (library, title, item.id.get())
+        }),
+        _ => matched.sort_by(|left, right| {
+            sort_key(left)
+                .cmp(&sort_key(right))
+                .then(left.id.get().cmp(&right.id.get()))
+        }),
+    }
+    if query.direction.is_descending() {
+        matched.reverse();
     }
 }
 
@@ -693,6 +734,41 @@ impl MetadataRepository for InMemoryMetadata {
             .filter_map(|attached| attached.tag.person.as_ref())
             .find(|person| person.id == id)
             .cloned())
+    }
+
+    async fn credits_of(&self, people: &[PersonId]) -> Result<Vec<PersonCredit>, MetadataError> {
+        let items = self.rows();
+        let mut credits: Vec<PersonCredit> = Vec::new();
+        for attached in &self.tags {
+            if !attached
+                .tag
+                .person
+                .as_ref()
+                .is_some_and(|person| people.contains(&person.id))
+            {
+                continue;
+            }
+            let section = items
+                .iter()
+                .find(|item| item.id == attached.item_id)
+                .map(|item| item.section_id);
+            if !credits.iter().any(|known| known.tag.id == attached.tag.id) {
+                credits.push(PersonCredit {
+                    tag: attached.tag.clone(),
+                    sections: Vec::new(),
+                });
+            }
+            let credit = credits
+                .iter_mut()
+                .find(|known| known.tag.id == attached.tag.id);
+            if let (Some(credit), Some(section)) = (credit, section) {
+                if !credit.sections.contains(&section) {
+                    credit.sections.push(section);
+                }
+            }
+        }
+        credits.sort_by_key(|credit| credit.tag.id);
+        Ok(credits)
     }
 
     async fn episode_additions(

@@ -314,6 +314,8 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
                 .filter(|text| !text.trim().is_empty()),
             frame: input.frame.map(Into::into),
             tags,
+            // Set by the resolver listing a tag's or a person's works, never by a client.
+            credited: None,
             excluded: input
                 .excluded_id
                 .and_then(|id| crate::GlobalId::decode(&id).ok())

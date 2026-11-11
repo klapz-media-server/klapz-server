@@ -4087,3 +4087,157 @@ async fn a_history_entry_is_read_without_its_keys_and_deleted_without_the_state(
     let film = json_from(&app, "/library/metadata/100").await;
     assert_eq!(film["MediaContainer"]["Metadata"][0]["viewCount"], 1);
 }
+
+/// Jason Statham's page as the reference writes it, but for the generation of the flags.
+const STATHAM: &str = r#"{"MediaContainer":{"size":1,"identifier":"com.plexapp.plugins.library","mediaTagPrefix":"/system/bundle/media/flags/","mediaTagVersion":0,"Directory":[{"id":472942,"filter":"actor=472942","tag":"Jason Statham","tagType":6,"tagKey":"5d776826e6d55c002040af58","thumb":"https://metadata-static.plex.tv/c/people/c540bdd39873ee8e8612b0af06fc0d4c.jpg"}]}}"#;
+
+#[tokio::test]
+async fn a_person_page_is_the_tag_with_its_kind_number() {
+    let (status, body) = get_from(
+        items_app(),
+        "/library/people/472942",
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, STATHAM);
+
+    // Any tag answers; what the provider does not know is absent.
+    let genre = listing("/library/people/38").await;
+    assert_eq!(
+        genre["MediaContainer"]["Directory"][0],
+        serde_json::json!({"id": 38, "filter": "genre=38", "tag": "Action", "tagType": 1})
+    );
+    let director = listing("/library/people/705517").await;
+    let director = &director["MediaContainer"]["Directory"][0];
+    assert_eq!(director["filter"], "director=705517");
+    assert_eq!(director["tagType"], 4);
+    assert!(director.get("thumb").is_none());
+}
+
+#[tokio::test]
+async fn a_person_page_is_a_directory_in_xml() {
+    let (status, body) = get_from(items_app(), "/library/people/473529", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains(r#"<Directory id="473529" filter="writer=473529" tag="Luc Besson" tagType="5" tagKey="5d776824103a2d001f563ac4""#),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn a_person_is_addressed_by_tag_id_only() {
+    for uri in [
+        "/library/people/999999",
+        // The spec's other form, the provider's key, which the reference refuses too.
+        "/library/people/5d776826e6d55c002040af58",
+        "/library/people/abc",
+        "/library/people/999999/media",
+        "/library/people/abc/media",
+    ] {
+        let (status, _) = get_from(items_app(), uri, Some("application/json")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn a_persons_media_lists_a_series_for_a_credit_on_its_episode() {
+    let media = listing("/library/people/705517/media").await;
+    let container = &media["MediaContainer"];
+    assert_eq!(container["size"], 1);
+    // Whole and unpaged, as the reference answers: no window to state.
+    assert!(container.get("totalSize").is_none());
+    assert!(container.get("offset").is_none());
+    // Only an actor's page carries a view.
+    assert!(container.get("viewGroup").is_none());
+    let show = &container["Metadata"][0];
+    assert_eq!(show["ratingKey"], "200");
+    assert_eq!(show["type"], "show");
+    assert_eq!(show["librarySectionTitle"], "VF - Series");
+    assert_eq!(show["librarySectionID"], 5);
+    assert_eq!(show["librarySectionKey"], "/library/sections/5");
+}
+
+#[tokio::test]
+async fn an_actors_media_carries_the_grid_view_and_names_each_library() {
+    let media = listing("/library/people/472942/media").await;
+    let container = &media["MediaContainer"];
+    assert_eq!(container["viewGroup"], "movie");
+    assert_eq!(container["viewMode"], 65_592);
+    let film = &container["Metadata"][0];
+    assert_eq!(film["ratingKey"], "100");
+    // After the title, as on the reference; the sort title equal to it is omitted.
+    let keys: Vec<&str> = film
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let at = |name: &str| keys.iter().position(|key| *key == name).unwrap();
+    assert!(film.get("titleSort").is_none());
+    assert_eq!(at("librarySectionTitle"), at("title") + 1);
+    assert_eq!(at("librarySectionKey"), at("librarySectionID") + 1);
+
+    let (_, xml) = get_from(items_app(), "/library/people/472942/media", None).await;
+    assert!(
+        xml.contains(r#"viewGroup="movie" viewMode="65592""#),
+        "{xml}"
+    );
+    assert!(xml.contains(r#"<Video ratingKey="100""#), "{xml}");
+}
+
+#[tokio::test]
+async fn a_persons_media_pages_with_both_container_parameters() {
+    let response = items_app()
+        .oneshot(
+            Request::builder()
+                .uri(
+                    "/library/people/472942/media?X-Plex-Container-Start=0&X-Plex-Container-Size=0",
+                )
+                .header("X-Plex-Token", TOKEN)
+                .header(header::ACCEPT, "application/json")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.headers()["X-Plex-Container-Start"], "0");
+    assert_eq!(response.headers()["X-Plex-Container-Total-Size"], "1");
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["MediaContainer"]["size"], 0);
+    assert_eq!(body["MediaContainer"]["totalSize"], 1);
+    assert_eq!(body["MediaContainer"]["offset"], 0);
+
+    // One parameter alone is ignored, as on the reference.
+    let alone = listing("/library/people/472942/media?X-Plex-Container-Size=0").await;
+    assert_eq!(alone["MediaContainer"]["size"], 1);
+}
+
+#[tokio::test]
+async fn a_persons_media_honors_filters_and_ignores_sort_and_type() {
+    let none = listing("/library/people/472942/media?year=1990").await;
+    assert_eq!(none["MediaContainer"]["size"], 0);
+    let kept = listing("/library/people/472942/media?genre=38").await;
+    assert_eq!(kept["MediaContainer"]["size"], 1);
+    // A sort `/all` refuses, and a type naming episodes: neither changes the list here.
+    let ignored = listing("/library/people/472942/media?sort=bogus:desc&type=4").await;
+    assert_eq!(ignored["MediaContainer"]["Metadata"][0]["ratingKey"], "100");
+
+    let (status, _) = get_from(
+        items_app(),
+        "/library/people/472942/media?collection=1",
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+}
+
+#[tokio::test]
+async fn a_person_a_user_was_not_given_does_not_exist() {
+    assert_eq!(user_get("/library/people/472942").await.0, StatusCode::OK);
+    for uri in ["/library/people/705517", "/library/people/705517/media"] {
+        let (status, body) = user_get(uri).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{uri}: {body}");
+    }
+}

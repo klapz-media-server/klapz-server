@@ -7,10 +7,10 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use open_plex_core::metadata::{
-    FieldValue, ItemFilter, ItemKind, ItemQuery, MetadataRepository, RatingKind, TagCondition,
-    TagKind, TagRef, TagScope, ValueField,
+    CreditRef, FieldValue, ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataRepository,
+    RatingKind, TagCondition, TagKind, TagRef, TagScope, ValueField,
 };
-use open_plex_core::page::Window;
+use open_plex_core::page::{Direction, Window};
 use open_plex_core::{PersonId, RatingKey, SectionId, TagId};
 use open_plex_db::entity::{
     item_external_id, item_rating, item_tag, library_section, metadata_item, person, tag,
@@ -707,5 +707,120 @@ async fn lists_distinct_years_newest_first_and_text_values_ascending() {
             .await
             .unwrap(),
         0
+    );
+}
+
+fn works(credited: CreditRef, sections: &[i64]) -> ItemQuery {
+    ItemQuery::across(sections.iter().copied().map(SectionId::new).collect())
+        .filtered(ItemFilter {
+            credited: Some(credited),
+            ..ItemFilter::default()
+        })
+        .sorted_by(ItemSort::Filmography, Direction::Ascending)
+}
+
+async fn listed(repository: &SqlMetadataRepository, query: &ItemQuery, window: Window) -> Vec<i64> {
+    repository
+        .items(query, window)
+        .await
+        .expect("items")
+        .items
+        .iter()
+        .map(|listed| listed.item.id.get())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_credit_on_an_episode_lists_its_series_once() {
+    let repository = repository().await;
+    for credited in [
+        CreditRef::Tag(TagId::new(SILVERMAN)),
+        // On the series and on both episodes, still once.
+        CreditRef::Tag(TagId::new(CASTELLANETA)),
+    ] {
+        let query = works(credited, &[FILMS, SERIES]);
+        assert_eq!(listed(&repository, &query, first(10)).await, [SIMPSONS]);
+        assert_eq!(repository.item_count(&query).await.unwrap(), 1);
+    }
+}
+
+#[tokio::test]
+async fn a_person_lists_what_any_of_their_tags_credits_once() {
+    let repository = repository().await;
+    let query = works(CreditRef::Person(PersonId::new(BESSON)), &[FILMS, SERIES]);
+    assert_eq!(listed(&repository, &query, first(10)).await, [TRANSPORTER]);
+}
+
+#[tokio::test]
+async fn a_filmography_runs_library_by_library_films_by_title_series_by_id() {
+    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    seed(&connection).await;
+    // A series titled before The Simpsons but added after it.
+    write::insert_items(
+        &connection,
+        vec![item(500_000, SERIES, "show", None, "Archer")],
+    )
+    .await
+    .unwrap();
+    item_tag::Entity::insert(attach(500_000, ACTION, 0, None))
+        .exec(&connection)
+        .await
+        .unwrap();
+    item_tag::Entity::insert(attach(SIMPSONS, ACTION, 0, None))
+        .exec(&connection)
+        .await
+        .unwrap();
+    let repository = SqlMetadataRepository::new(connection);
+
+    // The libraries in the order given, not by id.
+    let query = works(CreditRef::Tag(TagId::new(ACTION)), &[SERIES, FILMS]);
+    let expected = [SIMPSONS, 500_000, TRANSPORTER, TRANSPORTER_2];
+    assert_eq!(listed(&repository, &query, first(10)).await, expected);
+
+    // Cursors resume across a library boundary and inside each ordering.
+    let mut walked = Vec::new();
+    let mut after = None;
+    loop {
+        let page = repository
+            .items(&query, Window::new(after, None, Some(1), None).unwrap())
+            .await
+            .unwrap();
+        walked.extend(page.items.iter().map(|listed| listed.item.id.get()));
+        let Some(last) = page.items.last() else { break };
+        after = Some(last.cursor.clone());
+        if !page.has_next {
+            break;
+        }
+    }
+    assert_eq!(walked, expected);
+}
+
+#[tokio::test]
+async fn a_persons_credits_come_with_the_libraries_carrying_them() {
+    let repository = repository().await;
+    let credits = repository
+        .credits_of(&[PersonId::new(BESSON), PersonId::new(DAVID_SILVERMAN)])
+        .await
+        .unwrap();
+    let summary: Vec<(i64, Vec<i64>)> = credits
+        .iter()
+        .map(|credit| {
+            (
+                credit.tag.id.get(),
+                credit
+                    .sections
+                    .iter()
+                    .map(|section| section.get())
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            (BESSON_WRITER, vec![FILMS]),
+            (BESSON_PRODUCER, vec![FILMS]),
+            (SILVERMAN, vec![SERIES]),
+        ]
     );
 }

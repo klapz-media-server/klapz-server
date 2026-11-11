@@ -221,6 +221,9 @@ Places where we knowingly answer differently, each decided rather than overlooke
   which films are alike, so `core::similar` ranks by shared genres, actors and directors: a close list,
   not the same one (101 of 180 shown items on 30 films). The director and actor shelves around
   it follow the measured rule and match on 59 of 60 films.
+- **A person's page lists at most 500 items.** The reference lists everything a tag carries
+  unpaged — 4,699 films for Action. Cut by `page::MAX_ITEMS`, the answer states `totalSize`
+  and `offset`; whole, it is the reference's attribute for attribute.
 - **The search field finds no people yet.** `GET /library/search`, what Plex Web's search field
   calls, answers films, series and episodes; the people and collections the reference mixes in
   are absent, and `searchTypes=people` is tolerated rather than refused, since Plex Web sends it
@@ -513,6 +516,13 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   held nowhere — `ARTIST`, `ALBUM` and `TRACK` on the official API keep nothing, so music
   `type`s on listings, filter choices and `/search` answer empty, a music library is listed
   and empty, and `/library/sections/{id}/albums` is its empty view;
+- ✅ **person pages**: `/library/people/{id}` and `/media`, where `id` is a tag id (one
+  person in one role, or any genre or country), as the reference keys them. On the official
+  API, `Tag.items` and `Person.items` with `itemCount`, `Person.credits`, and `databaseId` on
+  both: a series counts for a credit on one of its episodes, hidden libraries are left out,
+  libraries come by title with films by title and series by id, and a tag or a person exists
+  for a caller only when its libraries credit it. Same order as the reference on sixteen
+  pages; the library holds no biography to import (`docs/spec-gaps.md`);
 - ⬜ a series library's "more in" a genre, whose genre follows the viewer's history by a rule
   not found yet.
 - ✅ **adaptive bitrate, chosen by the server or by the player**, over HLS and DASH: `quality`

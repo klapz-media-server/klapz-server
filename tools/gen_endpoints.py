@@ -112,6 +112,9 @@ IMPLEMENTED = frozenset(
         "/media/subscriptions/{subscriptionId}/move",
         # A music library's albums, of which there are none (`music.rs`).
         "/library/sections/{sectionId}/albums",
+        # A tag and what carries it (`people.rs`).
+        "/library/people/{personId}",
+        "/library/people/{personId}/media",
     }
 )
 
