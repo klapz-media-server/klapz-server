@@ -9,7 +9,7 @@ license.workspace = true
 image.workspace = true
 reqwest.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["process", "sync", "time"] }
+tokio = { workspace = true, features = ["io-util", "process", "sync", "time"] }
 tracing.workspace = true
 uuid = { version = "1", features = ["v4"] }
 

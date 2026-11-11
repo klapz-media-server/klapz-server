@@ -70,15 +70,27 @@ pub enum SubtitleOutput {
     Text { track: StreamTrack },
 }
 
+/// How a converted stream's quality follows the link.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StreamQuality {
+    /// One quality for the whole stream.
+    #[default]
+    Fixed,
+    /// One quality announced, which the server changes by measuring how fast the player
+    /// receives it.
+    ServerAdaptive,
+    /// Every quality announced, and the player chooses.
+    ClientAdaptive,
+}
+
 /// What the player asks for beyond being able to read the result.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StreamLimits {
-    /// Bits per second.
+    /// Bits per second: for an adaptive stream, a ceiling on every quality.
     pub max_video_bitrate: Option<u32>,
     /// Convert audio even when it could be copied.
     pub convert_audio: bool,
-    /// Automatic quality.
-    pub adaptive: bool,
+    pub quality: StreamQuality,
 }
 
 #[derive(Debug, Clone)]

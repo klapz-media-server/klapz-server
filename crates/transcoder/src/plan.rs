@@ -5,13 +5,30 @@
 //! H.264 video is copied unless the client caps the bitrate below the file's, and AAC or MP3 audio
 //! is copied unless the client refuses that. Other audio is converted to AAC. Other video needs
 //! a conversion this server does not do yet.
+//!
+//! An adaptive stream has several rungs, best first: [`plan_ladder`].
 
+use crate::session::Protocol;
 use crate::TranscodeError;
 
 /// The bitrate the reference converts audio to when no quality limit applies.
 pub const AUDIO_BITRATE_KBPS: u32 = 256;
 
-const ADAPTIVE_SEGMENT_SECONDS: u32 = 3;
+/// The reference cuts a server-adapted stream in 3 seconds at every picture size.
+const SERVER_ADAPTIVE_SEGMENT_SECONDS: u32 = 3;
+
+/// A rung the player chooses is cut where the copied video is, on the source's key frames, and
+/// those are a few seconds apart: 3 on the test episodes, 3.9 on the test film. Five seconds
+/// holds at least one of them almost always, and is the copy's own length in DASH.
+pub const CLIENT_ADAPTIVE_SEGMENT_SECONDS: u32 = 5;
+
+/// The length of a segment of copied video, as the reference asks for it.
+const COPIED_DASH_SEGMENT_SECONDS: u32 = 5;
+const COPIED_HLS_SEGMENT_SECONDS: u32 = 10;
+
+/// The bitrates of Plex Web's quality menu an adaptive stream steps down through, one per
+/// picture size of the measured ladder: more rungs would only lengthen a climb back up.
+const ADAPTIVE_RUNG_LIMITS: [u32; 5] = [8000, 4000, 2000, 720, 320];
 
 /// One track, as a conversion has to know it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,6 +46,16 @@ pub enum AudioAction {
     ConvertToAac,
 }
 
+/// Where an encode puts its key frames, which is where its segments can be cut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyFrames {
+    /// Every this many seconds, the length of a segment.
+    Every(u32),
+    /// Where the source has them, and nowhere else: segments are then cut where those of the
+    /// copied video are, and a player can move between the two.
+    AsSource,
+}
+
 /// The video a quality limit asks the process to produce.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VideoEncode {
@@ -39,18 +66,25 @@ pub struct VideoEncode {
     pub crf: u32,
     /// The source's: the reference never changes it. Absent when the file was not measured.
     pub frame_rate: Option<f64>,
-    /// Automatic quality, which cuts every picture size alike.
-    pub adaptive: bool,
+    pub key_frames: KeyFrames,
+    /// The codec's headers stay the same whatever the bitrate, so that the initialization
+    /// segment of one rung decodes the segments of another: the server moves between rungs
+    /// under one representation.
+    pub shared_headers: bool,
 }
 
 impl VideoEncode {
-    /// Larger pictures cost more to encode, and the reference cuts them finer to compensate.
     #[must_use]
     pub const fn segment_seconds(&self) -> u32 {
-        if self.adaptive {
-            return ADAPTIVE_SEGMENT_SECONDS;
+        match self.key_frames {
+            KeyFrames::Every(seconds) => seconds,
+            KeyFrames::AsSource => CLIENT_ADAPTIVE_SEGMENT_SECONDS,
         }
-        match self.width {
+    }
+
+    /// Larger pictures cost more to encode, and the reference cuts them finer to compensate.
+    const fn fixed_segment_seconds(width: u32) -> u32 {
+        match width {
             0..=720 => 8,
             721..=1280 => 5,
             _ => 1,
@@ -102,17 +136,70 @@ pub struct StreamSource<'a> {
     pub frame_rate: Option<f64>,
 }
 
+/// How a stream's quality follows the link.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Adaptation {
+    /// One rung for the whole stream.
+    #[default]
+    Fixed,
+    /// One representation, whose rung the server changes by measuring its deliveries. Always an
+    /// encode, as the reference's automatic quality is.
+    Server,
+    /// Every rung announced, and the player chooses.
+    Client,
+}
+
 /// What a client asks for beyond being able to play the file.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Limits {
-    /// In kilobits per second.
+    /// In kilobits per second. For an adaptive stream, a ceiling on every rung.
     pub max_video_kbps: Option<u32>,
     /// Convert audio even when it could be copied.
     pub convert_audio: bool,
-    /// Automatic quality: always an encode, even when the file would fit the limit.
-    pub adaptive: bool,
+    pub adaptation: Adaptation,
     /// A subtitle drawn into the picture, which only an encode can do.
     pub burn_subtitle: bool,
+}
+
+/// The rungs a stream may be sent at, best first: one for a fixed quality.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ladder {
+    pub adaptation: Adaptation,
+    /// Never empty. Every rung converts the audio the same way: a player moving between rungs
+    /// keeps the audio it has.
+    pub rungs: Vec<StreamPlan>,
+}
+
+impl Ladder {
+    /// The best rung, where a stream starts.
+    #[must_use]
+    pub fn top(&self) -> &StreamPlan {
+        &self.rungs[0]
+    }
+
+    /// Every rung of an adaptive stream shares its segment length, so that a segment's number
+    /// says the same time on all of them.
+    #[must_use]
+    pub fn segment_seconds(&self, protocol: Protocol) -> u32 {
+        let encoded = self.rungs.iter().find_map(|rung| match rung.video {
+            VideoAction::Encode(encode) => Some(encode.segment_seconds()),
+            VideoAction::Copy => None,
+        });
+        match (encoded, self.adaptation, protocol) {
+            (Some(seconds), _, _) => seconds,
+            (None, Adaptation::Client, _) => CLIENT_ADAPTIVE_SEGMENT_SECONDS,
+            (None, _, Protocol::Dash) => COPIED_DASH_SEGMENT_SECONDS,
+            (None, _, Protocol::Hls) => COPIED_HLS_SEGMENT_SECONDS,
+        }
+    }
+
+    /// Whether a rung copies the video, which ties every rung to the source's key frames.
+    #[must_use]
+    pub fn copies(&self) -> bool {
+        self.rungs
+            .iter()
+            .any(|rung| rung.video == VideoAction::Copy)
+    }
 }
 
 struct Rung {
@@ -163,7 +250,7 @@ const NARROW_SOURCE_RUNGS: [Rung; 3] = [
     rung(10_000, 1280, 9000, 256, 16),
 ];
 
-/// The highest rung within the limit, or the lowest there is.
+/// The highest measured rung within the limit, or the lowest there is.
 fn rung_for(limit_kbps: u32, source_width: u32) -> &'static Rung {
     let upper: &[Rung] = if source_width > 1280 {
         &WIDE_SOURCE_RUNGS
@@ -183,7 +270,7 @@ fn rung_for(limit_kbps: u32, source_width: u32) -> &'static Rung {
 fn encode_within(
     limit_kbps: u32,
     source: &StreamSource<'_>,
-    adaptive: bool,
+    key_frames: Option<KeyFrames>,
 ) -> Result<VideoEncode, TranscodeError> {
     let side = |value: Option<i32>| value.and_then(|value| u32::try_from(value).ok());
     let (Some(source_width), Some(source_height)) = (side(source.width), side(source.height))
@@ -204,7 +291,9 @@ fn encode_within(
         audio_kbps: rung.audio_kbps,
         crf: rung.crf,
         frame_rate: source.frame_rate,
-        adaptive,
+        key_frames: key_frames
+            .unwrap_or(KeyFrames::Every(VideoEncode::fixed_segment_seconds(width))),
+        shared_headers: false,
     })
 }
 
@@ -217,41 +306,150 @@ fn fits(limit_kbps: u32, source: &StreamSource<'_>) -> bool {
         .is_some_and(|bits| i64::from(limit_kbps) * 1000 >= i64::from(bits))
 }
 
+/// The rung a stream starts on: its only one at a fixed quality.
+///
 /// # Errors
 ///
-/// [`TranscodeError::VideoNeedsTranscoding`] when the video cannot be copied and this server
-/// cannot convert it.
+/// As [`plan_ladder`].
 pub fn plan_stream(
     source: &StreamSource<'_>,
     limits: Limits,
 ) -> Result<StreamPlan, TranscodeError> {
+    Ok(*plan_ladder(source, limits)?.top())
+}
+
+/// # Errors
+///
+/// [`TranscodeError::VideoNeedsTranscoding`] when the video cannot be copied and this server
+/// cannot convert it.
+pub fn plan_ladder(source: &StreamSource<'_>, limits: Limits) -> Result<Ladder, TranscodeError> {
     if source.video_codec != "h264" {
         return Err(TranscodeError::VideoNeedsTranscoding);
     }
-    let video = match limits.max_video_kbps {
-        _ if limits.adaptive => VideoAction::Encode(encode_within(
-            limits.max_video_kbps.unwrap_or(u32::MAX),
-            source,
-            true,
-        )?),
-        Some(limit) if !fits(limit, source) => {
-            VideoAction::Encode(encode_within(limit, source, false)?)
-        }
-        // Measured: 1920 wide, 20 Mbps, CRF 16 for Soul burned at no limit — the top rung.
-        limit if limits.burn_subtitle => {
-            VideoAction::Encode(encode_within(limit.unwrap_or(u32::MAX), source, false)?)
-        }
-        _ => VideoAction::Copy,
+    let videos = match limits.adaptation {
+        Adaptation::Fixed => vec![fixed_video(source, limits)?],
+        Adaptation::Server => server_rungs(source, limits.max_video_kbps.unwrap_or(u32::MAX))?,
+        Adaptation::Client => client_rungs(source, limits)?,
     };
+    let top = videos[0];
     let audio = if matches!(source.audio_codec, "aac" | "mp3")
         && !limits.convert_audio
-        && video == VideoAction::Copy
+        && top == VideoAction::Copy
     {
         AudioAction::Copy
     } else {
         AudioAction::ConvertToAac
     };
-    Ok(StreamPlan { video, audio })
+    let audio_kbps = StreamPlan { video: top, audio }.audio_kbps();
+    let rungs = videos
+        .into_iter()
+        .map(|video| StreamPlan {
+            video: match video {
+                VideoAction::Encode(encode) => VideoAction::Encode(VideoEncode {
+                    audio_kbps,
+                    ..encode
+                }),
+                VideoAction::Copy => VideoAction::Copy,
+            },
+            audio,
+        })
+        .collect();
+    Ok(Ladder {
+        adaptation: limits.adaptation,
+        rungs,
+    })
+}
+
+fn fixed_video(source: &StreamSource<'_>, limits: Limits) -> Result<VideoAction, TranscodeError> {
+    Ok(match limits.max_video_kbps {
+        Some(limit) if !fits(limit, source) => {
+            VideoAction::Encode(encode_within(limit, source, None)?)
+        }
+        // Measured: 1920 wide, 20 Mbps, CRF 16 for Soul burned at no limit — the top rung.
+        limit if limits.burn_subtitle => {
+            VideoAction::Encode(encode_within(limit.unwrap_or(u32::MAX), source, None)?)
+        }
+        _ => VideoAction::Copy,
+    })
+}
+
+/// The reference's automatic quality, then lower bitrates at its picture size: a player reading
+/// one representation keeps its initialization segment, which another picture size would not
+/// decode, and the codec's headers are kept identical for the same reason.
+fn server_rungs(source: &StreamSource<'_>, limit: u32) -> Result<Vec<VideoAction>, TranscodeError> {
+    let shared = |encode: VideoEncode| VideoEncode {
+        key_frames: KeyFrames::Every(SERVER_ADAPTIVE_SEGMENT_SECONDS),
+        shared_headers: true,
+        ..encode
+    };
+    let top = shared(encode_within(limit, source, None)?);
+    let mut rungs = vec![VideoAction::Encode(top)];
+    for step in ADAPTIVE_RUNG_LIMITS {
+        let lower = encode_within(step.min(limit), source, None)?;
+        if lower.video_kbps < lowest_kbps(&rungs) {
+            rungs.push(VideoAction::Encode(VideoEncode {
+                width: top.width,
+                height: top.height,
+                ..shared(lower)
+            }));
+        }
+    }
+    Ok(rungs)
+}
+
+/// The copy when the source allows it, the best stream there is, then encodes cut where the
+/// copy is. Without a copy, encodes cut on a grid.
+fn client_rungs(
+    source: &StreamSource<'_>,
+    limits: Limits,
+) -> Result<Vec<VideoAction>, TranscodeError> {
+    let limit = limits.max_video_kbps.unwrap_or(u32::MAX);
+    let copies = !limits.burn_subtitle
+        && limits
+            .max_video_kbps
+            .is_none_or(|limit| fits(limit, source));
+    let key_frames = if copies {
+        KeyFrames::AsSource
+    } else {
+        KeyFrames::Every(CLIENT_ADAPTIVE_SEGMENT_SECONDS)
+    };
+    let mut rungs = if copies {
+        vec![VideoAction::Copy]
+    } else {
+        vec![VideoAction::Encode(encode_within(
+            limit,
+            source,
+            Some(key_frames),
+        )?)]
+    };
+    // An encode close to the copy's bitrate would cost a process and give the player nothing.
+    let source_kbps = source
+        .bits_per_second
+        .and_then(|bits| u32::try_from(bits / 1000).ok());
+    for step in ADAPTIVE_RUNG_LIMITS
+        .into_iter()
+        .filter(|step| *step <= limit)
+    {
+        let encode = encode_within(step, source, Some(key_frames))?;
+        let worth = !copies
+            || source_kbps
+                .is_some_and(|kbps| u64::from(encode.video_kbps) * 4 <= u64::from(kbps) * 3);
+        if worth && encode.video_kbps < lowest_kbps(&rungs) {
+            rungs.push(VideoAction::Encode(encode));
+        }
+    }
+    Ok(rungs)
+}
+
+fn lowest_kbps(rungs: &[VideoAction]) -> u32 {
+    rungs
+        .iter()
+        .filter_map(|rung| match rung {
+            VideoAction::Encode(encode) => Some(encode.video_kbps),
+            VideoAction::Copy => None,
+        })
+        .min()
+        .unwrap_or(u32::MAX)
 }
 
 /// The transcoder's name for the decoder of a codec, where it differs from the codec's. Plex's
@@ -300,9 +498,7 @@ mod tests {
     fn limited(kbps: u32) -> Limits {
         Limits {
             max_video_kbps: Some(kbps),
-            convert_audio: false,
-            adaptive: false,
-            burn_subtitle: false,
+            ..Limits::default()
         }
     }
 
@@ -358,10 +554,8 @@ mod tests {
     #[test]
     fn a_client_can_refuse_copied_audio() {
         let limits = Limits {
-            max_video_kbps: None,
             convert_audio: true,
-            adaptive: false,
-            burn_subtitle: false,
+            ..Limits::default()
         };
         assert_eq!(
             plan_stream(&source("h264", "aac"), limits).unwrap().audio,
@@ -454,9 +648,8 @@ mod tests {
     fn adaptive(limit: Option<u32>) -> Limits {
         Limits {
             max_video_kbps: limit,
-            convert_audio: false,
-            adaptive: true,
-            burn_subtitle: false,
+            adaptation: Adaptation::Server,
+            ..Limits::default()
         }
     }
 
@@ -561,5 +754,125 @@ mod tests {
         assert_eq!(encode(2000).segment_seconds(), 8);
         assert_eq!(encode(4000).segment_seconds(), 5);
         assert_eq!(encode(8000).segment_seconds(), 1);
+    }
+
+    fn chosen(limits: Limits) -> Limits {
+        Limits {
+            adaptation: Adaptation::Client,
+            ..limits
+        }
+    }
+
+    /// Each rung's video as (width, height, kbps), `None` for the copy.
+    fn sizes(ladder: &Ladder) -> Vec<Option<(u32, u32, u32)>> {
+        ladder
+            .rungs
+            .iter()
+            .map(|rung| match rung.video {
+                VideoAction::Copy => None,
+                VideoAction::Encode(encode) => {
+                    Some((encode.width, encode.height, encode.video_kbps))
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_player_chooses_between_the_copy_and_encodes_well_below_it() {
+        // Soul averages 7.7 Mbps: an encode at 7.4 would be no lighter than the copy.
+        let ladder = plan_ladder(&soul(), chosen(Limits::default())).unwrap();
+        assert_eq!(
+            sizes(&ladder),
+            [
+                None,
+                Some((1280, 720, 3419)),
+                Some((720, 404, 1297)),
+                Some((480, 268, 300)),
+                Some((320, 180, 196)),
+            ]
+        );
+        for rung in &ladder.rungs {
+            assert_eq!(rung.audio, AudioAction::ConvertToAac);
+            assert_eq!(rung.audio_kbps(), AUDIO_BITRATE_KBPS);
+            if let VideoAction::Encode(encode) = rung.video {
+                assert_eq!(encode.key_frames, KeyFrames::AsSource);
+                assert!(!encode.shared_headers);
+            }
+        }
+        assert_eq!(ladder.segment_seconds(Protocol::Hls), 5);
+        assert_eq!(ladder.segment_seconds(Protocol::Dash), 5);
+
+        // Bull's AAC is copied on every rung, since the copy keeps it.
+        let ladder = plan_ladder(&bull(), chosen(Limits::default())).unwrap();
+        assert_eq!(
+            sizes(&ladder),
+            [
+                None,
+                Some((720, 404, 1297)),
+                Some((480, 268, 300)),
+                Some((320, 180, 196))
+            ]
+        );
+        assert!(ladder
+            .rungs
+            .iter()
+            .all(|rung| rung.audio == AudioAction::Copy));
+    }
+
+    #[test]
+    fn without_a_copy_a_player_chooses_between_encodes_on_a_grid() {
+        let burn = chosen(Limits {
+            burn_subtitle: true,
+            ..Limits::default()
+        });
+        let ladder = plan_ladder(&soul(), burn).unwrap();
+        assert_eq!(ladder.rungs.len(), 6);
+        assert_eq!(sizes(&ladder)[0], Some((1920, 1080, 20_000)));
+        assert!(!ladder.copies());
+        for rung in &ladder.rungs {
+            assert_eq!(encode_of(*rung).key_frames, KeyFrames::Every(5));
+        }
+        // A limit the file does not fit leaves no copy, and caps every rung.
+        let capped = plan_ladder(&soul(), chosen(limited(2000))).unwrap();
+        assert_eq!(
+            sizes(&capped),
+            [
+                Some((720, 404, 1297)),
+                Some((480, 268, 300)),
+                Some((320, 180, 196))
+            ]
+        );
+    }
+
+    #[test]
+    fn the_server_lowers_the_bitrate_at_one_picture_size() {
+        let ladder = plan_ladder(&soul(), adaptive(None)).unwrap();
+        let kbps: Vec<u32> = sizes(&ladder)
+            .into_iter()
+            .map(|size| {
+                let (width, height, kbps) = size.unwrap();
+                assert_eq!((width, height), (1920, 1080));
+                kbps
+            })
+            .collect();
+        assert_eq!(kbps, [20_000, 7393, 3419, 1297, 300, 196]);
+        for rung in &ladder.rungs {
+            let encode = encode_of(*rung);
+            assert!(encode.shared_headers);
+            assert_eq!(encode.segment_seconds(), 3);
+            // The audio stays as it started, so that its headers do too.
+            assert_eq!(rung.audio_kbps(), 256);
+        }
+        // Under a limit, it starts on the limit's rung and keeps its size.
+        let capped = plan_ladder(&bull(), adaptive(Some(4000))).unwrap();
+        assert_eq!(
+            sizes(&capped),
+            [
+                Some((1280, 720, 3419)),
+                Some((1280, 720, 1297)),
+                Some((1280, 720, 300)),
+                Some((1280, 720, 196))
+            ]
+        );
     }
 }

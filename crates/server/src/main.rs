@@ -153,7 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
 
     let bind = std::env::var("OPENPLEX_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
-    let listener = tokio::net::TcpListener::bind(&bind).await?;
+    let listener = listen(&bind).await?;
     tracing::info!(address = %bind, "open-plex listening");
     // With the peer's address attached, which is what a trusted network is checked against.
     axum::serve(
@@ -162,6 +162,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     Ok(())
+}
+
+/// The kernel grows a connection's send buffer to megabytes on a fast path, and a segment that
+/// fits in it seems sent at once: a stream the server adapts is judged by how long its segments
+/// take to send. Inherited by every accepted connection. 256 KiB still carries 20 Mbps at
+/// 100 ms of round trip.
+const SEND_BUFFER_BYTES: u32 = 256 * 1024;
+
+async fn listen(bind: &str) -> std::io::Result<tokio::net::TcpListener> {
+    let address = tokio::net::lookup_host(bind).await?.next().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "no address to listen on")
+    })?;
+    let socket = if address.is_ipv4() {
+        tokio::net::TcpSocket::new_v4()?
+    } else {
+        tokio::net::TcpSocket::new_v6()?
+    };
+    // As `TcpListener::bind` does. Not on Windows, where it would let two servers share a port.
+    #[cfg(unix)]
+    socket.set_reuseaddr(true)?;
+    socket.set_send_buffer_size(SEND_BUFFER_BYTES)?;
+    socket.bind(address)?;
+    socket.listen(1024)
 }
 
 /// No process from before this one is still running, so no session from before is either.
