@@ -64,6 +64,30 @@ type AccountUserError {
 }
 
 """
+Items to queue by hand.
+"""
+input AddToPlayQueueInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The queue, as returned in `PlayQueue.id`.
+	"""
+	playQueueId: ID!
+	"""
+	The items, in order, as returned in `Item.id`. A queue may hold an item several
+	times; what would take it past 500 entries is left out.
+	"""
+	itemIds: [ID!]!
+	"""
+	Play them right after the entry playing. Otherwise they go after the last entry
+	queued by hand, or right after the entry playing when there is none.
+	"""
+	next: Boolean! = false
+}
+
+"""
 Items to append to a playlist of chosen items.
 """
 input AddToPlaylistInput {
@@ -214,7 +238,8 @@ input CreatePlayQueueInput {
 	"""
 	sourceUri: String!
 	"""
-	What to play, in order, as returned in `Item.id`. May be empty.
+	What to play, in natural order, as returned in `Item.id`. May be empty. Shuffling
+	rebuilds the queue from these; at most 500 are kept.
 	"""
 	itemIds: [ID!]!
 	"""
@@ -222,7 +247,7 @@ input CreatePlayQueueInput {
 	"""
 	selectedPosition: Int!
 	"""
-	Put the entries in random order, playing whichever lands first.
+	Put the entries in random order, the selected one first.
 	"""
 	shuffle: Boolean!
 	"""
@@ -230,6 +255,15 @@ input CreatePlayQueueInput {
 	names it, and it counts one more play.
 	"""
 	playlistId: ID
+	"""
+	The player the queue is for, as it identifies itself. Its previous queue of the same
+	kind is deleted. Omitted, the queue replaces nothing.
+	"""
+	clientIdentifier: String
+	"""
+	What the queue plays.
+	"""
+	kind: PlayQueueKind! = VIDEO
 }
 
 """
@@ -2185,6 +2219,25 @@ input MoveExtensionInput {
 }
 
 """
+An entry to move within its queue.
+"""
+input MovePlayQueueEntryInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The entry, as returned in `PlayQueueEntry.id`.
+	"""
+	entryId: ID!
+	"""
+	The entry to put it after, of the same queue. Omitted, it goes first. Put right after
+	the last entry queued by hand, it becomes that last entry.
+	"""
+	afterEntryId: ID
+}
+
+"""
 An entry to move within its playlist.
 """
 input MovePlaylistEntryInput {
@@ -2521,7 +2574,8 @@ type Mutation {
 		input: DeleteHistoryEntryInput!
 	): DeleteHistoryEntryPayload!
 	"""
-	Creates a play queue from a list of items.
+	Creates a play queue from a list of items, replacing the player's previous queue of
+	the same kind.
 	"""
 	createPlayQueue(
 		"""
@@ -2529,6 +2583,75 @@ type Mutation {
 		"""
 		input: CreatePlayQueueInput!
 	): PlayQueue!
+	"""
+	Queues items by hand in one of the caller's play queues.
+	"""
+	addToPlayQueue(
+		"""
+		The queue, the items and where they go.
+		"""
+		input: AddToPlayQueueInput!
+	): PlayQueuePayload!
+	"""
+	Moves one entry of one of the caller's play queues after another, or first.
+	"""
+	movePlayQueueEntry(
+		"""
+		The entry and where it goes.
+		"""
+		input: MovePlayQueueEntryInput!
+	): PlayQueuePayload!
+	"""
+	Takes one entry out of one of the caller's play queues.
+	"""
+	removeFromPlayQueue(
+		"""
+		The entry.
+		"""
+		input: RemoveFromPlayQueueInput!
+	): PlayQueuePayload!
+	"""
+	Removes every entry of one of the caller's play queues but the one playing, which ends
+	what was queued by hand.
+	"""
+	clearPlayQueue(
+		"""
+		The queue.
+		"""
+		input: PlayQueueInput!
+	): PlayQueuePayload!
+	"""
+	Makes the first entry of one of the caller's play queues the one playing. Leaves the
+	version as it is, as the reference does.
+	"""
+	resetPlayQueue(
+		"""
+		The queue.
+		"""
+		input: PlayQueueInput!
+	): PlayQueuePayload!
+	"""
+	Rebuilds one of the caller's play queues from its source in random order, the entry
+	playing kept and first; every other entry is new. Refused while an entry queued by
+	hand remains.
+	"""
+	shufflePlayQueue(
+		"""
+		The queue.
+		"""
+		input: PlayQueueInput!
+	): PlayQueuePayload!
+	"""
+	Rebuilds one of the caller's play queues from its source in natural order, the entry
+	playing kept where its item falls; every other entry is new. Refused while an entry
+	queued by hand remains.
+	"""
+	unshufflePlayQueue(
+		"""
+		The queue.
+		"""
+		input: PlayQueueInput!
+	): PlayQueuePayload!
 	"""
 	Closes a session and stops its stream. Whether there was either.
 	"""
@@ -2974,11 +3097,19 @@ type PlayQueue implements Node {
 	"""
 	sourceUri: String!
 	"""
+	What it plays.
+	"""
+	kind: PlayQueueKind!
+	"""
+	The player it was made for, as it identifies itself. Null for none in particular.
+	"""
+	clientIdentifier: String
+	"""
 	Whether the entries are in random order.
 	"""
 	shuffled: Boolean!
 	"""
-	Raised each time the queue changes.
+	Raised each time the queue changes, except by a reset.
 	"""
 	version: Int!
 	"""
@@ -2990,9 +3121,14 @@ type PlayQueue implements Node {
 	"""
 	playlist: Playlist
 	"""
-	The entry to play first. Null for an empty queue.
+	The entry playing. Null for an empty queue.
 	"""
 	selectedEntry: PlayQueueEntry
+	"""
+	The last entry queued by hand, after which the next addition goes. Null when there is
+	none: only then can the queue be shuffled.
+	"""
+	lastAddedEntry: PlayQueueEntry
 	"""
 	The entries, in play order.
 	"""
@@ -3066,6 +3202,109 @@ type PlayQueueEntryEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+"""
+Why a play queue edit did nothing.
+"""
+enum PlayQueueErrorCode {
+	"""
+	No queue of the caller's carries this id.
+	"""
+	PLAY_QUEUE_NOT_FOUND
+	"""
+	No entry of a queue of the caller's carries this id.
+	"""
+	ENTRY_NOT_FOUND
+	"""
+	No item the caller can read carries this id.
+	"""
+	ITEM_NOT_FOUND
+	"""
+	The entry to move after is not in the same queue.
+	"""
+	AFTER_NOT_FOUND
+	"""
+	An entry cannot be moved after itself.
+	"""
+	ONTO_ITSELF
+	"""
+	Entries were queued by hand (`PlayQueue.lastAddedEntry`): such a queue keeps its
+	order, and cannot be shuffled or unshuffled.
+	"""
+	UP_NEXT
+	"""
+	The queue is empty: there is nothing to reorder.
+	"""
+	EMPTY
+}
+
+"""
+A whole queue to act on.
+"""
+input PlayQueueInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The queue, as returned in `PlayQueue.id`.
+	"""
+	playQueueId: ID!
+}
+
+"""
+What a queue plays. A player keeps one queue of each kind.
+"""
+enum PlayQueueKind {
+	"""
+	Films and episodes.
+	"""
+	VIDEO
+	"""
+	Music. Nothing here holds any.
+	"""
+	AUDIO
+	"""
+	Photographs. Nothing here holds any.
+	"""
+	PHOTO
+}
+
+"""
+A play queue after an edit.
+"""
+type PlayQueuePayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The queue as it now stands. Null when the request was refused.
+	"""
+	playQueue: PlayQueue
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [PlayQueueUserError!]!
+}
+
+"""
+A request a play queue edit refused, and where in the input the reason lies.
+"""
+type PlayQueueUserError {
+	"""
+	The path to the input field at fault.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person to read.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program to branch on.
+	"""
+	code: PlayQueueErrorCode!
 }
 
 type PlaybackSession implements Node {
@@ -3988,6 +4227,21 @@ type RecentlyAddedEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+"""
+An entry to take out of its queue.
+"""
+input RemoveFromPlayQueueInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The entry, as returned in `PlayQueueEntry.id`. Removing the entry playing makes the
+	one after it play, or the one before when it was the last.
+	"""
+	entryId: ID!
 }
 
 """

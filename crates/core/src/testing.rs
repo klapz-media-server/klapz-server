@@ -1775,16 +1775,86 @@ impl crate::access::AccessRepository for InMemoryAccess {
     }
 }
 
-/// Play queues held in memory.
+/// Play queues held in memory, edited by the same rules as stored ones.
 #[derive(Debug, Default)]
 pub struct InMemoryPlayQueues {
-    queues: std::sync::Mutex<
-        Vec<(
-            crate::play_queue::PlayQueue,
-            Vec<crate::play_queue::PlayQueueEntry>,
-            i64,
-        )>,
-    >,
+    state: std::sync::Mutex<InMemoryQueueState>,
+}
+
+#[derive(Debug, Default)]
+struct InMemoryQueueState {
+    queues: Vec<InMemoryQueue>,
+    next_entry: i64,
+    next_queue: i64,
+}
+
+#[derive(Debug)]
+struct InMemoryQueue {
+    queue: crate::play_queue::PlayQueue,
+    contents: crate::play_queue::PlayQueueContents,
+    source: Vec<RatingKey>,
+    created: i64,
+}
+
+impl InMemoryQueueState {
+    /// Gives the new entries an id, and restates the queue from its contents.
+    fn settle(&mut self, index: usize) -> crate::play_queue::PlayQueue {
+        let next = &mut self.next_entry;
+        let stored = &mut self.queues[index];
+        for slot in &mut stored.contents.slots {
+            if slot.entry.is_none() {
+                *next += 1;
+                slot.entry = Some(*next);
+            }
+        }
+        let id = stored.queue.id;
+        let entry_at = |at: Option<usize>| {
+            at.and_then(|at| {
+                let slot = stored.contents.slots.get(at)?;
+                Some(crate::play_queue::PlayQueueEntry {
+                    id: slot.entry?,
+                    queue: id,
+                    position: i64::try_from(at).ok()?,
+                    item: slot.item,
+                })
+            })
+        };
+        stored.queue.selected = entry_at(stored.contents.selected);
+        stored.queue.last_added = entry_at(stored.contents.last_added);
+        stored.queue.shuffled = stored.contents.shuffled;
+        stored.queue.total = u64::try_from(stored.contents.slots.len()).unwrap_or(u64::MAX);
+        stored.queue.clone()
+    }
+
+    fn entries(&self, queue: i64) -> Vec<crate::play_queue::PlayQueueEntry> {
+        self.queues
+            .iter()
+            .filter(|stored| stored.queue.id == queue)
+            .flat_map(|stored| {
+                stored
+                    .contents
+                    .slots
+                    .iter()
+                    .zip(0_i64..)
+                    .filter_map(move |(slot, position)| {
+                        Some(crate::play_queue::PlayQueueEntry {
+                            id: slot.entry?,
+                            queue,
+                            position,
+                            item: slot.item,
+                        })
+                    })
+            })
+            .collect()
+    }
+}
+
+impl InMemoryPlayQueues {
+    fn state(&self) -> std::sync::MutexGuard<'_, InMemoryQueueState> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 #[async_trait::async_trait]
@@ -1794,63 +1864,60 @@ impl crate::play_queue::PlayQueueRepository for InMemoryPlayQueues {
         queue: crate::play_queue::NewPlayQueue,
         now: i64,
     ) -> Result<crate::play_queue::PlayQueue, crate::play_queue::PlayQueueError> {
-        let mut queues = self
-            .queues
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let id = i64::try_from(queues.len()).unwrap_or(i64::MAX - 1) + 1;
-        let entries: Vec<_> = queue
-            .items
-            .iter()
-            .zip(0_i64..)
-            .map(|(item, position)| crate::play_queue::PlayQueueEntry {
-                id: id * 1000 + position,
-                queue: id,
-                position,
-                item: *item,
-            })
-            .collect();
-        let stored = crate::play_queue::PlayQueue {
-            id,
-            user: queue.user,
-            source_uri: queue.source_uri,
-            shuffled: queue.shuffled,
-            version: 1,
-            total: u64::try_from(entries.len()).unwrap_or(u64::MAX),
-            selected: entries.get(queue.selected).copied(),
-            playlist: queue.playlist,
+        let mut state = self.state();
+        if queue.client.is_some() {
+            state.queues.retain(|stored| {
+                (stored.queue.user, &stored.queue.client, stored.queue.kind)
+                    != (queue.user, &queue.client, queue.kind)
+            });
+        }
+        state.next_queue += 1;
+        let contents = queue.initial_contents();
+        let stored = InMemoryQueue {
+            queue: crate::play_queue::PlayQueue {
+                id: state.next_queue,
+                user: queue.user,
+                client: queue.client,
+                kind: queue.kind,
+                source_uri: queue.source_uri,
+                shuffled: contents.shuffled,
+                version: 1,
+                total: 0,
+                selected: None,
+                last_added: None,
+                playlist: queue.playlist,
+            },
+            contents,
+            source: queue.source,
+            created: now,
         };
-        queues.push((stored.clone(), entries, now));
-        Ok(stored)
+        state.queues.push(stored);
+        let index = state.queues.len() - 1;
+        Ok(state.settle(index))
     }
 
     async fn queue(
         &self,
         id: i64,
     ) -> Result<Option<crate::play_queue::PlayQueue>, crate::play_queue::PlayQueueError> {
-        let queues = self
+        Ok(self
+            .state()
             .queues
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        Ok(queues
             .iter()
-            .find(|(queue, _, _)| queue.id == id)
-            .map(|(queue, _, _)| queue.clone()))
+            .find(|stored| stored.queue.id == id)
+            .map(|stored| stored.queue.clone()))
     }
 
     async fn entry(
         &self,
         id: i64,
     ) -> Result<Option<crate::play_queue::PlayQueueEntry>, crate::play_queue::PlayQueueError> {
-        let queues = self
+        let state = self.state();
+        Ok(state
             .queues
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        Ok(queues
             .iter()
-            .flat_map(|(_, entries, _)| entries)
-            .find(|entry| entry.id == id)
-            .copied())
+            .flat_map(|stored| state.entries(stored.queue.id))
+            .find(|entry| entry.id == id))
     }
 
     async fn entries(
@@ -1858,35 +1925,63 @@ impl crate::play_queue::PlayQueueRepository for InMemoryPlayQueues {
         queue: i64,
         window: Window,
     ) -> Result<Page<crate::play_queue::PlayQueueEntry>, crate::play_queue::PlayQueueError> {
-        let queues = self
-            .queues
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let items: Vec<_> = queues
-            .iter()
-            .filter(|(stored, _, _)| stored.id == queue)
-            .flat_map(|(_, entries, _)| entries)
+        let items: Vec<_> = self
+            .state()
+            .entries(queue)
+            .into_iter()
+            .filter(|entry| {
+                window
+                    .after
+                    .as_ref()
+                    .is_none_or(|after| entry.position > after.id)
+            })
+            .filter(|entry| {
+                window
+                    .before
+                    .as_ref()
+                    .is_none_or(|before| entry.position < before.id)
+            })
             .skip(usize::try_from(window.skip).unwrap_or(0))
-            .copied()
+            .take(usize::try_from(window.fetch_limit()).unwrap_or(usize::MAX))
             .collect();
-        Ok(Page {
-            items,
-            has_previous: false,
-            has_next: false,
-        })
+        Ok(Page::from_overfetch(items, &window))
+    }
+
+    async fn change(
+        &self,
+        queue: i64,
+        change: &crate::play_queue::PlayQueueChange,
+    ) -> Result<crate::play_queue::ChangeOutcome, crate::play_queue::PlayQueueError> {
+        let mut state = self.state();
+        let Some(index) = state
+            .queues
+            .iter()
+            .position(|stored| stored.queue.id == queue)
+        else {
+            return Ok(None);
+        };
+        let stored = &mut state.queues[index];
+        let mut contents = stored.contents.clone();
+        match change.apply(&mut contents, &stored.source) {
+            Ok(raised) => {
+                stored.contents = contents;
+                if raised {
+                    stored.queue.version += 1;
+                }
+                Ok(Some(Ok(state.settle(index))))
+            }
+            Err(refusal) => Ok(Some(Err(refusal))),
+        }
     }
 
     async fn delete_created_before(
         &self,
         before: i64,
     ) -> Result<u64, crate::play_queue::PlayQueueError> {
-        let mut queues = self
-            .queues
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let count = queues.len();
-        queues.retain(|(_, _, created)| *created >= before);
-        Ok(u64::try_from(count - queues.len()).unwrap_or(u64::MAX))
+        let mut state = self.state();
+        let count = state.queues.len();
+        state.queues.retain(|stored| stored.created >= before);
+        Ok(u64::try_from(count - state.queues.len()).unwrap_or(u64::MAX))
     }
 }
 

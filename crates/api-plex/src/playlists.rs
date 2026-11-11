@@ -548,7 +548,7 @@ async fn content(
             return Ok(Content::Rule(rule_of(path)?, source_uri(path)));
         }
         return Ok(Content::Items(
-            expand(state, path).await?,
+            expand(state, path, false).await?,
             Some(source_uri(path)),
         ));
     }

@@ -256,7 +256,10 @@ Places where we knowingly answer differently, each decided rather than overlooke
   period, and the official API takes the seed as an argument. A sort we cannot honor
   (`unviewedLeafCount`, the series order of episodes, a list of fields) answers `501`.
 - **A play queue holds at most 500 entries.** The reference copies a whole library into one;
-  every window here is capped by `page::MAX_ITEMS`. Queues are deleted after 7 days.
+  every window here is capped by `page::MAX_ITEMS`, and so is what an addition may bring. Queues
+  are deleted after 7 days, besides being replaced by their player's next one of the same type
+  as on the reference; a queue created without `X-Plex-Client-Identifier`, which the reference
+  refuses `400`, is made and replaces nothing. `onDeck=1` is not honored.
 - **Quality follows a fixed ladder.** Under `maxVideoBitrate` we re-encode along the sizes and
   bitrates measured on the reference, whose own values vary per film. It copies the video only
   when the limit covers a peak its analysis stored; we have no analysis and compare with the
@@ -573,6 +576,16 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   surface the 16 `/playlists` operations as measured on the reference's test libraries, and
   `POST /playQueues?playlistID=` to play one. Upload stays refused, the optimizer's generators
   answer `404`, and `composite` names an image not served yet (`docs/spec-gaps.md`).
+- ✅ **play queues, edited**: one queue per player and type, built from a source the queue keeps
+  (`play_queue_source`) and edited by the reference's rules in `core::play_queue` — the "up
+  next" area that `playQueueLastAddedItemID` ends, `next=1`, moves with the reference's reading
+  of `after`, removal, clearing, reset, and shuffling that rebuilds from the source and renews
+  every entry but the one playing; `continuous` on an episode and `repeat` on the window. On the
+  official API (`addToPlayQueue`, `movePlayQueueEntry`, `removeFromPlayQueue`,
+  `clearPlayQueue`, `resetPlayQueue`, `shufflePlayQueue`, `unshufflePlayQueue`,
+  `PlayQueue.lastAddedEntry`, `kind`, `clientIdentifier`) and on the Plex surface (the nine
+  `/playQueues` operations), replayed against the reference with the same trace
+  (`docs/spec-gaps.md`).
 - ✅ **adaptive bitrate, chosen by the server or by the player**, over HLS and DASH: `quality`
   on `startStream` (`FIXED`, `SERVER_ADAPTIVE`, `CLIENT_ADAPTIVE`). The player's choice lists
   the copy first and encodes cut on the same key frames, on a grid of segments ffmpeg-plex lays

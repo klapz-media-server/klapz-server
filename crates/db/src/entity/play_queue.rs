@@ -8,11 +8,17 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(column_type = "Text")]
     pub user_id: Option<i64>,
+    /// The player it was made for, as it identifies itself.
+    pub client: Option<String>,
+    /// `video`, `audio` or `photo`: a player keeps one queue of each.
+    pub kind: String,
     pub source_uri: String,
     pub shuffled: bool,
     pub version: i32,
     /// `None` for an empty queue.
     pub selected_position: Option<i64>,
+    /// The last entry queued by hand, where the next addition goes.
+    pub last_added_position: Option<i64>,
     pub created_at: i64,
     /// The playlist it plays, when it plays one.
     pub playlist_id: Option<i64>,

@@ -1,15 +1,19 @@
-//! `POST /playQueues` and `GET /playQueues/{id}`: what a player will play next.
+//! `/playQueues`: what a player will play next.
 //!
 //! What the client names is expanded here, through the official API, into the list of items
-//! a queue holds; storing it and reading it back is the official API's too. A playlist, named
-//! by `playlistID` or by its items' path, is played as it lists its items, and the queue
-//! names it. Editing a queue is not served yet.
+//! a queue holds; storing it, editing it and reading it back is the official API's too. A
+//! playlist, named by `playlistID` or by its items' path, is played as it lists its items, and
+//! the queue names it.
+//!
+//! Two answers are copied as the reference gives them although they look stale: removing an
+//! entry answers with the container as it was before, and the entries around the entry that
+//! was playing; a reset answers with the container as it was, and no entries.
 
 use std::collections::HashMap;
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, RawQuery, State};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use open_plex_api::item::ITEM_TYPE;
 use open_plex_api::library::LIBRARY_TYPE;
@@ -37,7 +41,19 @@ use crate::PlexState;
 pub fn router() -> Router<PlexState> {
     Router::new()
         .route("/playQueues", post(create))
-        .route("/playQueues/{playQueueId}", get(read).put(refuse_change))
+        .route("/playQueues/{playQueueId}", get(read).put(add))
+        .route("/playQueues/{playQueueId}/items", delete(clear))
+        .route(
+            "/playQueues/{playQueueId}/items/{playQueueItemId}",
+            delete(remove),
+        )
+        .route(
+            "/playQueues/{playQueueId}/items/{playQueueItemId}/move",
+            put(move_entry),
+        )
+        .route("/playQueues/{playQueueId}/reset", put(reset))
+        .route("/playQueues/{playQueueId}/shuffle", put(shuffle))
+        .route("/playQueues/{playQueueId}/unshuffle", put(unshuffle))
 }
 
 /// What the reference shows on each side of the centre when not told otherwise.
@@ -52,6 +68,7 @@ query PlexExpand($id: ID!, $first: Int!) {
     ... on Item { id }
     ... on Show { episodes(first: $first) { edges { node { id } } } }
     ... on Season { episodes(first: $first) { edges { node { id } } } }
+    ... on Episode { show { episodes(first: $first) { edges { node { id } } } } }
   }
 }
 ";
@@ -67,11 +84,23 @@ struct GqlExpanded {
     typename: String,
     id: Option<String>,
     episodes: Option<GqlEpisodes>,
+    show: Option<GqlShowEpisodes>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlShowEpisodes {
+    episodes: GqlEpisodes,
 }
 
 #[derive(Debug, Deserialize)]
 struct GqlEpisodes {
     edges: Vec<GqlEpisodeEdge>,
+}
+
+impl GqlEpisodes {
+    fn ids(self) -> Vec<String> {
+        self.edges.into_iter().map(|edge| edge.node.id).collect()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,12 +136,17 @@ pub(crate) fn source_uri(path: &str) -> String {
 }
 
 /// The global ids of what a path names, in play order. Empty for anything that names nothing,
-/// which is a valid, empty queue on the reference.
-pub(crate) async fn expand(state: &PlexState, path: &str) -> Result<Vec<String>, ApiError> {
+/// which is a valid, empty queue on the reference. `continuous` plays an episode on to the end
+/// of its series, as the reference does; on anything else it changes nothing.
+pub(crate) async fn expand(
+    state: &PlexState,
+    path: &str,
+    continuous: bool,
+) -> Result<Vec<String>, ApiError> {
     if let Some(keys) = path.strip_prefix("/library/metadata/") {
         let keys: Vec<i64> = keys.split(',').filter_map(|key| key.parse().ok()).collect();
         if let [key] = keys[..] {
-            return expand_item(state, key).await;
+            return expand_item(state, key, continuous).await;
         }
         return existing(state, keys).await;
     }
@@ -122,7 +156,11 @@ pub(crate) async fn expand(state: &PlexState, path: &str) -> Result<Vec<String>,
     Ok(Vec::new())
 }
 
-async fn expand_item(state: &PlexState, key: i64) -> Result<Vec<String>, ApiError> {
+async fn expand_item(
+    state: &PlexState,
+    key: i64,
+    continuous: bool,
+) -> Result<Vec<String>, ApiError> {
     let mut variables = Variables::default();
     variables.insert(
         Name::new("id"),
@@ -134,16 +172,18 @@ async fn expand_item(state: &PlexState, key: i64) -> Result<Vec<String>, ApiErro
         return Ok(Vec::new());
     };
     Ok(match node.typename.as_str() {
-        "Show" | "Season" => node
-            .episodes
-            .map(|episodes| {
-                episodes
-                    .edges
-                    .into_iter()
-                    .map(|edge| edge.node.id)
-                    .collect()
-            })
-            .unwrap_or_default(),
+        "Show" | "Season" => node.episodes.map(GqlEpisodes::ids).unwrap_or_default(),
+        "Episode" if continuous => {
+            let own = node.id.unwrap_or_default();
+            let series = node
+                .show
+                .map(|show| show.episodes.ids())
+                .unwrap_or_default();
+            match series.iter().position(|id| *id == own) {
+                Some(start) => series[start..].to_vec(),
+                None => vec![own],
+            }
+        }
         _ => node.id.into_iter().collect(),
     })
 }
@@ -235,8 +275,8 @@ struct GqlPlaylistItems {
     items: GqlEpisodes,
 }
 
-/// What a playlist of the caller's lists, in order, or `404` for any other.
-async fn playlist_items(state: &PlexState, key: i64) -> Result<Vec<String>, ApiError> {
+/// What a playlist of the caller's lists, in order, or `None` for any other.
+async fn playlist_items(state: &PlexState, key: i64) -> Result<Option<Vec<String>>, ApiError> {
     let mut variables = Variables::default();
     variables.insert(
         Name::new("id"),
@@ -245,13 +285,40 @@ async fn playlist_items(state: &PlexState, key: i64) -> Result<Vec<String>, ApiE
     variables.insert(Name::new("first"), Value::Number(MAX_ITEMS.into()));
     let data: PlaylistItemsData =
         gql::execute(&state.schema, PLAYLIST_ITEMS_QUERY, variables).await?;
-    let playlist = data.node.ok_or(ApiError::NotFound)?;
-    Ok(playlist
-        .items
-        .edges
-        .into_iter()
-        .map(|edge| edge.node.id)
-        .collect())
+    Ok(data.node.map(|playlist| playlist.items.ids()))
+}
+
+fn parameters(query: Option<&str>) -> HashMap<String, String> {
+    form_urlencoded::parse(query.unwrap_or_default().as_bytes())
+        .into_owned()
+        .collect()
+}
+
+fn flag(params: &HashMap<String, String>, name: &str) -> bool {
+    params.get(name).is_some_and(|value| value == "1")
+}
+
+/// What a request names to play: a playlist by `playlistID` or by its path, or a `uri`.
+enum Content<'a> {
+    Playlist(i64),
+    Library(Option<&'a str>),
+}
+
+fn content<'a>(
+    params: &'a HashMap<String, String>,
+    machine: &str,
+) -> Result<Content<'a>, ApiError> {
+    if let Some(key) = params.get("playlistID") {
+        return Ok(Content::Playlist(
+            key.parse().map_err(|_| ApiError::BadRequest)?,
+        ));
+    }
+    let uri = params.get("uri").ok_or(ApiError::BadRequest)?;
+    let path = library_path(uri, machine);
+    Ok(match path.and_then(playlist_of) {
+        Some(key) => Content::Playlist(key),
+        None => Content::Library(path),
+    })
 }
 
 const CREATE_MUTATION: &str = r"
@@ -266,6 +333,20 @@ struct CreatedData {
     create_play_queue: GqlIdentified,
 }
 
+fn input_variables(fields: Vec<(&str, Value)>) -> Variables {
+    let input = fields
+        .into_iter()
+        .map(|(name, value)| (Name::new(name), value))
+        .collect();
+    let mut variables = Variables::default();
+    variables.insert(Name::new("input"), Value::Object(input));
+    variables
+}
+
+fn id_list(ids: Vec<String>) -> Value {
+    Value::List(ids.into_iter().map(Value::String).collect())
+}
+
 async fn create(
     _caller: Caller,
     client: ClientIdentity,
@@ -273,37 +354,34 @@ async fn create(
     RawQuery(query): RawQuery,
     format: ResponseFormat,
 ) -> Result<PlexResponse<Json>, ApiError> {
-    let params: HashMap<String, String> =
-        form_urlencoded::parse(query.as_deref().unwrap_or_default().as_bytes())
-            .into_owned()
-            .collect();
-    params.get("type").ok_or(ApiError::BadRequest)?;
-    let machine = crate::gql::machine_identifier(&state.identity.machine_identifier);
-    let playlist = match params.get("playlistID") {
-        Some(key) => Some(key.parse::<i64>().map_err(|_| ApiError::BadRequest)?),
-        None => params
-            .get("uri")
-            .and_then(|uri| library_path(uri, &machine))
-            .and_then(playlist_of),
+    let params = parameters(query.as_deref());
+    // Any `type` is a video queue on the reference; it still keeps one queue per type named.
+    let kind = match params.get("type").ok_or(ApiError::BadRequest)?.as_str() {
+        "audio" => "AUDIO",
+        "photo" => "PHOTO",
+        _ => "VIDEO",
     };
-    let (items, source, playlist) = if let Some(key) = playlist {
-        (
-            playlist_items(&state, key).await?,
+    let range = Range::parse(query.as_deref().unwrap_or_default())?;
+    let machine = crate::gql::machine_identifier(&state.identity.machine_identifier);
+    let (items, source, playlist) = match content(&params, &machine)? {
+        Content::Playlist(key) => (
+            playlist_items(&state, key)
+                .await?
+                .ok_or(ApiError::NotFound)?,
             String::new(),
             Value::String(GlobalId::encode(PLAYLIST_TYPE, key)),
-        )
-    } else {
-        let uri = params.get("uri").ok_or(ApiError::BadRequest)?;
-        let path = library_path(uri, &machine);
-        let items = match path {
-            Some(path) => expand(&state, path).await?,
-            None => Vec::new(),
-        };
-        (
-            items,
-            path.map_or_else(|| uri.clone(), source_uri),
-            Value::Null,
-        )
+        ),
+        Content::Library(path) => {
+            let items = match path {
+                Some(path) => expand(&state, path, flag(&params, "continuous")).await?,
+                None => Vec::new(),
+            };
+            let source = match path {
+                Some(path) => source_uri(path),
+                None => params.get("uri").cloned().unwrap_or_default(),
+            };
+            (items, source, Value::Null)
+        }
     };
     let selected = params
         .get("key")
@@ -311,43 +389,27 @@ async fn create(
         .and_then(|key| key.parse::<i64>().ok())
         .and_then(|key| items.iter().position(|id| database_id(id) == key))
         .unwrap_or(0);
+    let client_identifier = client
+        .identifier
+        .as_ref()
+        .map_or(Value::Null, |id| Value::String(id.as_str().to_owned()));
 
-    let fields = [
+    let variables = input_variables(vec![
         ("sourceUri", Value::String(source)),
         ("playlistId", playlist),
-        (
-            "itemIds",
-            Value::List(items.into_iter().map(Value::String).collect()),
-        ),
+        ("itemIds", id_list(items)),
         (
             "selectedPosition",
             Value::Number(u32::try_from(selected).unwrap_or(0).into()),
         ),
-        (
-            "shuffle",
-            Value::Boolean(params.get("shuffle").is_some_and(|value| value == "1")),
-        ),
-    ];
-    let input = fields
-        .into_iter()
-        .map(|(name, value)| (Name::new(name), value))
-        .collect();
-    let mut variables = Variables::default();
-    variables.insert(Name::new("input"), Value::Object(input));
+        ("shuffle", Value::Boolean(flag(&params, "shuffle"))),
+        ("clientIdentifier", client_identifier),
+        ("kind", Value::Enum(Name::new(kind))),
+    ]);
     let data: CreatedData = gql::execute(&state.schema, CREATE_MUTATION, variables).await?;
-
-    let body = respond(
-        &state,
-        &data.create_play_queue.id,
-        Range::default(),
-        Language::of(&client),
-    )
-    .await?;
+    let queue = load(&state, &data.create_play_queue.id).await?;
+    let body = render(&state, &queue, &queue, &range, Language::of(&client)).await?;
     Ok(PlexResponse::new(body, format))
-}
-
-async fn refuse_change(_caller: Caller) -> ApiError {
-    ApiError::NotImplemented
 }
 
 /// Which entries to show, around which one.
@@ -358,6 +420,8 @@ struct Range {
     window: i64,
     before: bool,
     after: bool,
+    /// Wraps around the queue's ends to fill the window, when the queue is long enough.
+    repeat: bool,
 }
 
 impl Default for Range {
@@ -367,6 +431,7 @@ impl Default for Range {
             window: DEFAULT_WINDOW,
             before: true,
             after: true,
+            repeat: false,
         }
     }
 }
@@ -385,6 +450,7 @@ impl Range {
             window: number("window")?.unwrap_or(DEFAULT_WINDOW),
             before: number("includeBefore")? != Some(0),
             after: number("includeAfter")? != Some(0),
+            repeat: number("repeat")? == Some(1),
         };
         if !range.before && !range.after {
             return Err(ApiError::BadRequest);
@@ -392,11 +458,16 @@ impl Range {
         Ok(range)
     }
 
-    /// `(first position, how many)`. The centre itself is shown only when both sides are: with
-    /// either refused, the reference returns just the other side.
-    fn span(&self, center: i64, total: i64) -> (i64, i64) {
-        if self.window <= 0 {
-            return (0, 0);
+    /// The runs of positions to show, as `(first position, how many)`, in display order. The
+    /// centre itself is shown only when both sides are: with either refused, the reference
+    /// returns just the other side, and wraps nothing.
+    ///
+    /// With `repeat`, a window clipped by one end of the queue takes what it lacks from the
+    /// other end, never showing an entry twice: on a queue of 5, a window of 1 around the last
+    /// entry shows the fourth, the fifth and the first.
+    fn segments(&self, center: i64, total: i64) -> Vec<(i64, i64)> {
+        if self.window <= 0 || total <= 0 {
+            return Vec::new();
         }
         let start = if self.before {
             (center - self.window).max(0)
@@ -408,7 +479,19 @@ impl Range {
         } else {
             center - 1
         };
-        (start, (end - start + 1).max(0))
+        let shown = (end - start + 1).max(0);
+        let mut segments = vec![(start, shown)];
+        if self.repeat && self.before && self.after {
+            let wanted = (2 * self.window + 1).min(total);
+            let missing = wanted - shown;
+            if missing > 0 && center - self.window < 0 {
+                segments.insert(0, (total - missing, missing));
+            } else if missing > 0 {
+                segments.push((0, missing));
+            }
+        }
+        segments.retain(|(_, count)| *count > 0);
+        segments
     }
 }
 
@@ -416,11 +499,13 @@ const QUEUE_QUERY: &str = r"
 query PlexPlayQueue($id: ID!) {
   node(id: $id) {
     ... on PlayQueue {
+      id
       sourceUri
       shuffled
       version
       totalCount
       selectedEntry { id position item { id } }
+      lastAddedEntry { id }
       playlist { id title }
     }
   }
@@ -453,11 +538,13 @@ struct QueueData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GqlQueue {
+    id: String,
     source_uri: String,
     shuffled: bool,
     version: i32,
     total_count: i64,
     selected_entry: Option<GqlEntry>,
+    last_added_entry: Option<GqlIdentified>,
     playlist: Option<GqlQueuePlaylist>,
 }
 
@@ -513,18 +600,20 @@ fn id_variable(id: String) -> Variables {
     variables
 }
 
-/// The position to centre on. `None` when the entry named is not in this queue, for which the
-/// reference answers an empty window rather than an error.
-async fn center_position(
+/// One of the caller's queues, or `404`.
+async fn load(state: &PlexState, queue_id: &str) -> Result<GqlQueue, ApiError> {
+    let data: QueueData =
+        gql::execute(&state.schema, QUEUE_QUERY, id_variable(queue_id.to_owned())).await?;
+    data.node.ok_or(ApiError::NotFound)
+}
+
+/// Where an entry stands in a queue. `None` when it is not in this one.
+async fn entry_position(
     state: &PlexState,
     queue_id: &str,
-    queue: &GqlQueue,
-    range: &Range,
+    entry: i64,
 ) -> Result<Option<i64>, ApiError> {
-    let Some(center) = range.center else {
-        return Ok(queue.selected_entry.as_ref().map(|entry| entry.position));
-    };
-    let variables = id_variable(GlobalId::encode(PLAY_QUEUE_ENTRY_TYPE, center));
+    let variables = id_variable(GlobalId::encode(PLAY_QUEUE_ENTRY_TYPE, entry));
     let data: CenterData = gql::execute(&state.schema, CENTER_QUERY, variables).await?;
     Ok(data
         .node
@@ -580,24 +669,21 @@ fn queue_item(entry_id: i64, item: &GqlItem, language: Language) -> Option<Json>
     Some(Json::Object(ordered))
 }
 
-async fn respond(
+/// The entries `range` shows of `current`, as the reference lists them.
+async fn metadata(
     state: &PlexState,
-    queue_id: &str,
-    range: Range,
+    current: &GqlQueue,
+    center: Option<i64>,
+    range: &Range,
     language: Language,
-) -> Result<Json, ApiError> {
-    let data: QueueData =
-        gql::execute(&state.schema, QUEUE_QUERY, id_variable(queue_id.to_owned())).await?;
-    let queue = data.node.ok_or(ApiError::NotFound)?;
-
-    let center = center_position(state, queue_id, &queue, &range).await?;
-    let entries = match center {
-        Some(center) => {
-            let (start, count) = range.span(center, queue.total_count);
-            window_entries(state, queue_id, start, count).await?
-        }
-        None => Vec::new(),
+) -> Result<Vec<Json>, ApiError> {
+    let Some(center) = center else {
+        return Ok(Vec::new());
     };
+    let mut entries = Vec::new();
+    for (start, count) in range.segments(center, current.total_count) {
+        entries.extend(window_entries(state, &current.id, start, count).await?);
+    }
     let keys: Vec<i64> = entries
         .iter()
         .filter_map(|entry| entry.item.as_ref().map(|item| database_id(&item.id)))
@@ -608,25 +694,34 @@ async fn respond(
         fetch_items(state, &keys).await?
     };
     let shown = entries.iter().filter(|entry| entry.item.is_some());
-    let metadata: Vec<Json> = shown
+    Ok(shown
         .zip(items.iter())
         .filter_map(|(entry, item)| queue_item(database_id(&entry.id), item.as_ref()?, language))
-        .collect();
+        .collect())
+}
 
+/// The container's own attributes, from `header`, around `metadata`.
+fn container(header: &GqlQueue, metadata: Vec<Json>) -> Json {
     let mut body = Map::new();
     body.insert("size".into(), json!(metadata.len()));
     body.insert("identifier".into(), json!(LIBRARY_IDENTIFIER));
     body.insert("mediaTagPrefix".into(), json!(MEDIA_TAG_PREFIX));
     body.insert("mediaTagVersion".into(), json!(MEDIA_TAG_VERSION));
-    body.insert("playQueueID".into(), json!(database_id(queue_id)));
-    if let Some(playlist) = &queue.playlist {
+    body.insert("playQueueID".into(), json!(database_id(&header.id)));
+    if let Some(added) = &header.last_added_entry {
+        body.insert(
+            "playQueueLastAddedItemID".into(),
+            json!(database_id(&added.id)),
+        );
+    }
+    if let Some(playlist) = &header.playlist {
         body.insert(
             "playQueuePlaylistID".into(),
             json!(database_id(&playlist.id)),
         );
         body.insert("playQueuePlaylistTitle".into(), json!(playlist.title));
     }
-    if let Some(selected) = &queue.selected_entry {
+    if let Some(selected) = &header.selected_entry {
         body.insert(
             "playQueueSelectedItemID".into(),
             json!(database_id(&selected.id)),
@@ -642,19 +737,35 @@ async fn respond(
             );
         }
     }
-    body.insert("playQueueShuffled".into(), json!(queue.shuffled));
+    body.insert("playQueueShuffled".into(), json!(header.shuffled));
     // A playlist's queue names the playlist instead.
-    if queue.playlist.is_none() {
-        body.insert("playQueueSourceURI".into(), json!(queue.source_uri));
+    if header.playlist.is_none() {
+        body.insert("playQueueSourceURI".into(), json!(header.source_uri));
     }
-    if queue.total_count > 0 {
-        body.insert("playQueueTotalCount".into(), json!(queue.total_count));
+    if header.total_count > 0 {
+        body.insert("playQueueTotalCount".into(), json!(header.total_count));
     }
-    body.insert("playQueueVersion".into(), json!(queue.version));
+    body.insert("playQueueVersion".into(), json!(header.version));
     if !metadata.is_empty() {
         body.insert("Metadata".into(), Json::Array(metadata));
     }
-    Ok(Json::Object(body))
+    Json::Object(body)
+}
+
+/// The container of `header`, around the entries of `current` that `range` shows.
+async fn render(
+    state: &PlexState,
+    header: &GqlQueue,
+    current: &GqlQueue,
+    range: &Range,
+    language: Language,
+) -> Result<Json, ApiError> {
+    let center = match range.center {
+        Some(entry) => entry_position(state, &current.id, entry).await?,
+        None => current.selected_entry.as_ref().map(|entry| entry.position),
+    };
+    let metadata = metadata(state, current, center, range, language).await?;
+    Ok(container(header, metadata))
 }
 
 async fn read(
@@ -666,8 +777,303 @@ async fn read(
     format: ResponseFormat,
 ) -> Result<PlexResponse<Json>, ApiError> {
     let range = Range::parse(query.as_deref().unwrap_or_default())?;
-    let id = GlobalId::encode(PLAY_QUEUE_TYPE, queue);
-    let body = respond(&state, &id, range, Language::of(&client)).await?;
+    let queue = load(&state, &GlobalId::encode(PLAY_QUEUE_TYPE, queue)).await?;
+    let body = render(&state, &queue, &queue, &range, Language::of(&client)).await?;
+    Ok(PlexResponse::new(body, format))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlEditPayload {
+    user_errors: Vec<GqlUserError>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlUserError {
+    code: String,
+}
+
+/// Runs one of the official API's queue edits. A refusal is `404`, as each one is on the
+/// reference: the queue, the entry or the reordering does not exist for this caller.
+async fn edit(state: &PlexState, mutation: &str, variables: Variables) -> Result<(), ApiError> {
+    let data: HashMap<String, GqlEditPayload> =
+        gql::execute(&state.schema, mutation, variables).await?;
+    let refused = data
+        .values()
+        .flat_map(|payload| &payload.user_errors)
+        .next();
+    match refused {
+        Some(error) => {
+            tracing::debug!(code = %error.code, "a play queue edit was refused");
+            Err(ApiError::NotFound)
+        }
+        None => Ok(()),
+    }
+}
+
+const ADD_MUTATION: &str = r"
+mutation PlexAddToPlayQueue($input: AddToPlayQueueInput!) {
+  addToPlayQueue(input: $input) { userErrors { code } }
+}
+";
+
+async fn add(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Path(queue): Path<i64>,
+    RawQuery(query): RawQuery,
+    format: ResponseFormat,
+) -> Result<PlexResponse<Json>, ApiError> {
+    let params = parameters(query.as_deref());
+    let queue_id = GlobalId::encode(PLAY_QUEUE_TYPE, queue);
+    let machine = crate::gql::machine_identifier(&state.identity.machine_identifier);
+    let content = content(&params, &machine)?;
+    load(&state, &queue_id).await?;
+    // What names nothing — an unknown playlist included — adds nothing, with a `200`.
+    let items = match content {
+        Content::Playlist(key) => playlist_items(&state, key).await?.unwrap_or_default(),
+        Content::Library(Some(path)) => expand(&state, path, flag(&params, "continuous")).await?,
+        Content::Library(None) => Vec::new(),
+    };
+    let variables = input_variables(vec![
+        ("playQueueId", Value::String(queue_id.clone())),
+        ("itemIds", id_list(items)),
+        ("next", Value::Boolean(flag(&params, "next"))),
+    ]);
+    edit(&state, ADD_MUTATION, variables).await?;
+    let queue = load(&state, &queue_id).await?;
+    let body = render(
+        &state,
+        &queue,
+        &queue,
+        &Range::default(),
+        Language::of(&client),
+    )
+    .await?;
+    Ok(PlexResponse::new(body, format))
+}
+
+const CLEAR_MUTATION: &str = r"
+mutation PlexClearPlayQueue($input: PlayQueueInput!) {
+  clearPlayQueue(input: $input) { userErrors { code } }
+}
+";
+
+const RESET_MUTATION: &str = r"
+mutation PlexResetPlayQueue($input: PlayQueueInput!) {
+  resetPlayQueue(input: $input) { userErrors { code } }
+}
+";
+
+const SHUFFLE_MUTATION: &str = r"
+mutation PlexShufflePlayQueue($input: PlayQueueInput!) {
+  shufflePlayQueue(input: $input) { userErrors { code } }
+}
+";
+
+const UNSHUFFLE_MUTATION: &str = r"
+mutation PlexUnshufflePlayQueue($input: PlayQueueInput!) {
+  unshufflePlayQueue(input: $input) { userErrors { code } }
+}
+";
+
+/// Edits a whole queue, and answers with it as it now stands.
+async fn edit_whole(
+    state: &PlexState,
+    client: &ClientIdentity,
+    queue: i64,
+    mutation: &str,
+    format: ResponseFormat,
+) -> Result<PlexResponse<Json>, ApiError> {
+    let queue_id = GlobalId::encode(PLAY_QUEUE_TYPE, queue);
+    let variables = input_variables(vec![("playQueueId", Value::String(queue_id.clone()))]);
+    edit(state, mutation, variables).await?;
+    let queue = load(state, &queue_id).await?;
+    let body = render(
+        state,
+        &queue,
+        &queue,
+        &Range::default(),
+        Language::of(client),
+    )
+    .await?;
+    Ok(PlexResponse::new(body, format))
+}
+
+async fn clear(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Path(queue): Path<i64>,
+    format: ResponseFormat,
+) -> Result<PlexResponse<Json>, ApiError> {
+    edit_whole(&state, &client, queue, CLEAR_MUTATION, format).await
+}
+
+async fn shuffle(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Path(queue): Path<i64>,
+    format: ResponseFormat,
+) -> Result<PlexResponse<Json>, ApiError> {
+    edit_whole(&state, &client, queue, SHUFFLE_MUTATION, format).await
+}
+
+async fn unshuffle(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Path(queue): Path<i64>,
+    format: ResponseFormat,
+) -> Result<PlexResponse<Json>, ApiError> {
+    edit_whole(&state, &client, queue, UNSHUFFLE_MUTATION, format).await
+}
+
+async fn reset(
+    _caller: Caller,
+    State(state): State<PlexState>,
+    Path(queue): Path<i64>,
+    format: ResponseFormat,
+) -> Result<PlexResponse<Json>, ApiError> {
+    let queue_id = GlobalId::encode(PLAY_QUEUE_TYPE, queue);
+    let before = load(&state, &queue_id).await?;
+    let variables = input_variables(vec![("playQueueId", Value::String(queue_id))]);
+    edit(&state, RESET_MUTATION, variables).await?;
+    Ok(PlexResponse::new(container(&before, Vec::new()), format))
+}
+
+const REMOVE_MUTATION: &str = r"
+mutation PlexRemoveFromPlayQueue($input: RemoveFromPlayQueueInput!) {
+  removeFromPlayQueue(input: $input) { userErrors { code } }
+}
+";
+
+async fn remove(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Path((queue, entry)): Path<(i64, i64)>,
+    format: ResponseFormat,
+) -> Result<PlexResponse<Json>, ApiError> {
+    let queue_id = GlobalId::encode(PLAY_QUEUE_TYPE, queue);
+    let before = load(&state, &queue_id).await?;
+    entry_position(&state, &queue_id, entry)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let entry_id = GlobalId::encode(PLAY_QUEUE_ENTRY_TYPE, entry);
+    let variables = input_variables(vec![("entryId", Value::String(entry_id))]);
+    edit(&state, REMOVE_MUTATION, variables).await?;
+    let after = load(&state, &queue_id).await?;
+    let mut header = before;
+    let center = header
+        .selected_entry
+        .as_ref()
+        .map(|selected| database_id(&selected.id));
+    // The entry that was playing is looked up again: gone, it stands at 0 with no item.
+    if let (Some(selected), Some(id)) = (header.selected_entry.as_mut(), center) {
+        let position = entry_position(&state, &queue_id, id).await?;
+        selected.position = position.unwrap_or(0);
+        if position.is_none() {
+            selected.item = None;
+        }
+    }
+    let range = Range {
+        center,
+        ..Range::default()
+    };
+    let body = render(&state, &header, &after, &range, Language::of(&client)).await?;
+    Ok(PlexResponse::new(body, format))
+}
+
+const MOVE_MUTATION: &str = r"
+mutation PlexMovePlayQueueEntry($input: MovePlayQueueEntryInput!) {
+  movePlayQueueEntry(input: $input) { userErrors { code } }
+}
+";
+
+const FIRST_ENTRIES_QUERY: &str = r"
+query PlexPlayQueueHead($id: ID!) {
+  node(id: $id) { ... on PlayQueue { entries(first: 2) { edges { node { id } } } } }
+}
+";
+
+#[derive(Debug, Deserialize)]
+struct HeadData {
+    node: Option<GqlHead>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlHead {
+    entries: GqlEpisodes,
+}
+
+/// The entry to move after, as the reference reads `after`: absent or `-1` is first, an entry
+/// of this queue is that entry, and anything else is the first entry other than the one moved.
+async fn move_anchor(
+    state: &PlexState,
+    queue_id: &str,
+    entry: i64,
+    after: Option<i64>,
+) -> Result<Option<String>, ApiError> {
+    let Some(after) = after.filter(|after| *after != -1) else {
+        return Ok(None);
+    };
+    if after == entry || entry_position(state, queue_id, after).await?.is_some() {
+        return Ok(Some(GlobalId::encode(PLAY_QUEUE_ENTRY_TYPE, after)));
+    }
+    let data: HeadData = gql::execute(
+        &state.schema,
+        FIRST_ENTRIES_QUERY,
+        id_variable(queue_id.to_owned()),
+    )
+    .await?;
+    let moved = GlobalId::encode(PLAY_QUEUE_ENTRY_TYPE, entry);
+    Ok(data
+        .node
+        .map(|head| head.entries.ids())
+        .unwrap_or_default()
+        .into_iter()
+        .find(|id| *id != moved))
+}
+
+async fn move_entry(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Path((queue, entry)): Path<(i64, i64)>,
+    RawQuery(query): RawQuery,
+    format: ResponseFormat,
+) -> Result<PlexResponse<Json>, ApiError> {
+    let params = parameters(query.as_deref());
+    let after = params
+        .get("after")
+        .map(|after| after.parse::<i64>().map_err(|_| ApiError::BadRequest))
+        .transpose()?;
+    let queue_id = GlobalId::encode(PLAY_QUEUE_TYPE, queue);
+    load(&state, &queue_id).await?;
+    entry_position(&state, &queue_id, entry)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let anchor = move_anchor(&state, &queue_id, entry, after).await?;
+    let variables = input_variables(vec![
+        (
+            "entryId",
+            Value::String(GlobalId::encode(PLAY_QUEUE_ENTRY_TYPE, entry)),
+        ),
+        ("afterEntryId", anchor.map_or(Value::Null, Value::String)),
+    ]);
+    edit(&state, MOVE_MUTATION, variables).await?;
+    let queue = load(&state, &queue_id).await?;
+    let body = render(
+        &state,
+        &queue,
+        &queue,
+        &Range::default(),
+        Language::of(&client),
+    )
+    .await?;
     Ok(PlexResponse::new(body, format))
 }
 
@@ -732,26 +1138,52 @@ mod tests {
     // Each span below is what the reference answered, on a queue of 22 centred on position 4.
     #[test]
     fn shows_the_window_on_both_sides() {
-        assert_eq!(Range::default().span(4, 22), (0, 22));
-        assert_eq!(range("window=4").span(4, 22), (0, 9));
-        assert_eq!(range("window=5").span(4, 22), (0, 10));
-        assert_eq!(range("window=4").span(10, 22), (6, 9));
+        assert_eq!(Range::default().segments(4, 22), [(0, 22)]);
+        assert_eq!(range("window=4").segments(4, 22), [(0, 9)]);
+        assert_eq!(range("window=5").segments(4, 22), [(0, 10)]);
+        assert_eq!(range("window=4").segments(10, 22), [(6, 9)]);
     }
 
     #[test]
     fn a_new_queue_starting_at_its_first_entry_shows_twenty_one() {
-        assert_eq!(Range::default().span(0, 261), (0, 21));
+        assert_eq!(Range::default().segments(0, 261), [(0, 21)]);
     }
 
     #[test]
     fn refusing_a_side_also_drops_the_centre() {
-        assert_eq!(range("includeBefore=0").span(4, 22), (5, 17));
-        assert_eq!(range("includeAfter=0").span(4, 22), (0, 4));
+        assert_eq!(range("includeBefore=0").segments(4, 22), [(5, 17)]);
+        assert_eq!(range("includeAfter=0").segments(4, 22), [(0, 4)]);
     }
 
     #[test]
     fn a_window_of_zero_shows_nothing() {
-        assert_eq!(range("window=0").span(4, 22), (0, 0));
+        assert!(range("window=0").segments(4, 22).is_empty());
+    }
+
+    // Measured on a queue of 5 entries, positions 0 to 4.
+    #[test]
+    fn repeat_wraps_a_clipped_window_around_the_other_end() {
+        let flatten = |query: &str, center: i64| -> Vec<i64> {
+            range(query)
+                .segments(center, 5)
+                .into_iter()
+                .flat_map(|(start, count)| start..start + count)
+                .collect()
+        };
+        assert_eq!(flatten("repeat=1&window=1", 0), [4, 0, 1]);
+        assert_eq!(flatten("repeat=1&window=1", 4), [3, 4, 0]);
+        assert_eq!(flatten("repeat=1&window=2", 4), [2, 3, 4, 0, 1]);
+        assert_eq!(flatten("repeat=1&window=3", 4), [1, 2, 3, 4, 0]);
+        assert_eq!(flatten("repeat=1&window=2", 0), [3, 4, 0, 1, 2]);
+        assert_eq!(flatten("repeat=1&window=4", 2), [0, 1, 2, 3, 4]);
+        assert_eq!(flatten("repeat=1&window=2", 3), [1, 2, 3, 4, 0]);
+        assert_eq!(flatten("repeat=1&window=1&includeBefore=0", 4), [0; 0]);
+        assert_eq!(flatten("repeat=0&window=1", 4), [3, 4]);
+    }
+
+    #[test]
+    fn a_queue_shorter_than_the_window_does_not_repeat() {
+        assert_eq!(range("repeat=1&window=1").segments(1, 2), [(0, 2)]);
     }
 
     #[test]
