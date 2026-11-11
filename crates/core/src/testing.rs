@@ -16,7 +16,7 @@ use crate::metadata::{
     self, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind, ItemQuery, ItemSort,
     ItemTag, Listed, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
     MetadataRepository, Person, Rating, SearchQuery, Tag, TagCondition, TagKind, TagRef, TagScope,
-    ValueField,
+    TagSearch, TagUse, ValueField,
 };
 use crate::page::{Cursor, Page, Window};
 
@@ -305,6 +305,11 @@ fn title_matches(item: &MetadataItem, term: &str) -> bool {
         item.title_sort.as_deref(),
         item.original_title.as_deref(),
     );
+    words_match(&words, term)
+}
+
+/// Whether every word of the term begins one of the words, as storage matches a search.
+fn words_match(words: &[String], term: &str) -> bool {
     crate::search::words(term).all(|prefix| {
         crate::search::prefix_range(&prefix).is_some_and(|(lower, upper)| {
             words
@@ -417,6 +422,69 @@ impl MetadataRepository for InMemoryMetadata {
             page.items.reverse();
         }
         Ok(page)
+    }
+
+    async fn search_tags(
+        &self,
+        query: &TagSearch,
+        window: Window,
+    ) -> Result<Page<TagUse>, MetadataError> {
+        if query.is_blank() {
+            return Ok(Page {
+                items: Vec::new(),
+                has_previous: false,
+                has_next: false,
+            });
+        }
+        let items = self.rows();
+        let mut carried: BTreeMap<(TagId, SectionId), (Tag, Vec<RatingKey>)> = BTreeMap::new();
+        for attachment in &self.tags {
+            let tag = &attachment.tag;
+            if !(query.kinds.is_empty() || query.kinds.contains(&tag.kind))
+                || !words_match(&crate::search::name_words(&tag.name), &query.word_prefix)
+            {
+                continue;
+            }
+            let Some(item) = items.iter().find(|item| item.id == attachment.item_id) else {
+                continue;
+            };
+            if query
+                .sections
+                .as_ref()
+                .is_some_and(|sections| !sections.contains(&item.section_id))
+            {
+                continue;
+            }
+            let (_, holders) = carried
+                .entry((tag.id, item.section_id))
+                .or_insert_with(|| (tag.clone(), Vec::new()));
+            if !holders.contains(&item.id) {
+                holders.push(item.id);
+            }
+        }
+        let mut uses: Vec<TagUse> = carried
+            .into_iter()
+            .filter(|(_, (_, holders))| {
+                holders.iter().any(|holder| {
+                    items
+                        .iter()
+                        .any(|item| item.id == *holder && item.parent_id.is_none())
+                })
+            })
+            .map(|((_, section), (tag, holders))| TagUse {
+                tag,
+                section,
+                item_count: holders.len() as u64,
+            })
+            .collect();
+        uses.sort_by(|left, right| {
+            right
+                .item_count
+                .cmp(&left.item_count)
+                .then_with(|| left.tag.id.get().cmp(&right.tag.id.get()))
+                .then_with(|| left.section.get().cmp(&right.section.get()))
+        });
+        Ok(windowed(uses, &window, TagUse::cursor))
     }
 
     async fn first_characters(

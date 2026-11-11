@@ -7,7 +7,8 @@
 //! easy way, by inserting items directly and then matching nothing.
 //!
 //! So the words are derived here, from the values being written, and there is no path that
-//! inserts or edits an item without them. An edit rewrites the sort key the same way.
+//! inserts or edits an item without them. An edit rewrites the sort key the same way. Tags
+//! carry the same kind of index over their names, written the same way.
 
 use std::collections::BTreeSet;
 
@@ -16,7 +17,7 @@ use open_plex_core::metadata::{self, MetadataItem};
 use open_plex_core::search;
 use sea_orm::{ActiveValue, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter};
 
-use crate::entity::{item_field_lock, item_title_word, metadata_item};
+use crate::entity::{item_field_lock, item_title_word, metadata_item, tag, tag_word};
 
 /// Rows per statement.
 ///
@@ -50,6 +51,41 @@ pub async fn insert_items<C: ConnectionTrait>(
     }
 
     Ok(words.len())
+}
+
+/// Inserts tags and their name-word index.
+///
+/// # Errors
+///
+/// Fails if any insert fails, as [`insert_items`] does and for the same reasons.
+pub async fn insert_tags<C: ConnectionTrait>(
+    connection: &C,
+    tags: Vec<tag::ActiveModel>,
+) -> Result<(), DbErr> {
+    let words: Vec<tag_word::ActiveModel> = tags
+        .iter()
+        .filter_map(|tag| Some((*tag.id.try_as_ref()?, tag.name.try_as_ref()?)))
+        .flat_map(|(id, name)| {
+            search::name_words(name)
+                .into_iter()
+                .map(move |word| tag_word::ActiveModel {
+                    tag_id: ActiveValue::Set(id),
+                    word: ActiveValue::Set(word),
+                })
+        })
+        .collect();
+
+    for chunk in tags.chunks(WRITE_CHUNK) {
+        tag::Entity::insert_many(chunk.to_vec())
+            .exec(connection)
+            .await?;
+    }
+    for chunk in words.chunks(WRITE_CHUNK) {
+        tag_word::Entity::insert_many(chunk.to_vec())
+            .exec(connection)
+            .await?;
+    }
+    Ok(())
 }
 
 /// Writes an edited item's values, sort key, title words and locks.

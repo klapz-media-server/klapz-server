@@ -13,7 +13,7 @@ use async_graphql::{
 };
 use open_plex_core::metadata::{
     credits_with_episodes, Credit, ExternalId, Person, Rating, RatingKind, Tag, TagCondition,
-    TagKind, TagRef,
+    TagKind, TagRef, TagSearch, TagUse,
 };
 use open_plex_core::page::{Cursor, MAX_ITEMS};
 use open_plex_core::{RatingKey, TagId};
@@ -130,6 +130,80 @@ impl PersonObject {
     async fn thumb_url(&self) -> Option<&str> {
         self.0.thumb_url.as_deref()
     }
+}
+
+/// A tag as one library's items carry it: what a search box offers as "Tom Hanks in the
+/// films", leading to that library's items filtered on him.
+#[derive(Debug, Clone)]
+pub struct TagUseObject(pub TagUse);
+
+#[Object(name = "TagUse")]
+impl TagUseObject {
+    /// The tag.
+    async fn tag(&self) -> TagObject {
+        TagObject(self.0.tag.clone())
+    }
+
+    /// The library whose items carry it.
+    async fn library(&self, context: &Context<'_>) -> Result<Option<crate::library::Library>> {
+        crate::schema::load_library(context, self.0.section).await
+    }
+
+    /// How many of the library's items carry the tag, whatever their kind: in a series
+    /// library, the series and the episodes crediting someone.
+    async fn item_count(&self) -> u64 {
+        self.0.item_count
+    }
+}
+
+/// A page of tags as libraries carry them.
+pub type TagUseConnection = Connection<OpaqueCursor, TagUseObject>;
+
+/// The tags whose name matches a search, among the libraries the caller can see.
+pub(crate) async fn search_tags(
+    context: &Context<'_>,
+    term: String,
+    kinds: Option<Vec<TagType>>,
+    after: Option<String>,
+    before: Option<String>,
+    first: Option<i32>,
+    last: Option<i32>,
+) -> Result<TagUseConnection> {
+    let search = TagSearch {
+        word_prefix: term,
+        kinds: kinds
+            .unwrap_or_default()
+            .into_iter()
+            .map(TagKind::from)
+            .collect(),
+        sections: crate::access::visible_sections(context),
+    };
+    query(
+        after,
+        before,
+        first,
+        last,
+        |after, before, first, last| async move {
+            let window = crate::schema::window_for(
+                after,
+                before,
+                first,
+                last,
+                crate::schema::DEFAULT_PAGE_SIZE,
+            )?;
+            let page = crate::schema::metadata(context)?
+                .search_tags(&search, window)
+                .await?;
+            let mut connection = Connection::new(page.has_previous, page.has_next);
+            connection.edges.extend(
+                page.items
+                    .into_iter()
+                    .map(|found| Edge::new(OpaqueCursor(found.cursor()), TagUseObject(found))),
+            );
+            Ok::<_, async_graphql::Error>(connection)
+        },
+    )
+    .await
 }
 
 /// What a tag's attachment to one item says beyond the tag itself.

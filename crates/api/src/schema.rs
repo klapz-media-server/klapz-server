@@ -234,8 +234,6 @@ impl Query {
         Ok(Server(context.data::<ApiContext>()?.capabilities.clone()))
     }
 
-    /// Items whose title matches a search term, across every library.
-    ///
     /// What the caller has started and what comes next, newest first: every film in
     /// progress, and for every series the episode in progress or the one after the last
     /// watched. Played within the last sixteen weeks; every copy of a work is listed.
@@ -253,6 +251,8 @@ impl Query {
         crate::watch::continue_watching(context, library, after, first).await
     }
 
+    /// Items whose title matches a search term, across every library.
+    ///
     /// Matches a *word prefix*: `hell` finds "Good News About Hell", and accents are folded so
     /// `soiree` finds "# Pire Soirée". A term inside a word does not match — the index is a
     /// range scan, not a substring scan.
@@ -308,6 +308,36 @@ impl Query {
             },
         )
         .await
+    }
+
+    /// Genres and people whose name matches a search term, once per library carrying them.
+    ///
+    /// Matches as `search` does: every word of the term begins a word of the name, accents
+    /// folded, so `hanks` and `tom han` both find Tom Hanks. A person credited in two roles
+    /// is found twice, as an actor and as a director, and each in every library whose films
+    /// or series credit them: one crediting them on episodes alone is left out, since its
+    /// listing filtered on them would be empty.
+    ///
+    /// Ordered by how many items carry the tag, most first: a common first name matches
+    /// thousands of people, and the ones a library is full of are the ones a search box
+    /// should offer. A blank term matches nothing.
+    #[allow(clippy::too_many_arguments)]
+    async fn search_tags(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Term to match a prefix of any word of the name against.")] query: String,
+        #[graphql(desc = "Restrict to these kinds. Omit to search every kind.")] kinds: Option<
+            Vec<crate::tag::TagType>,
+        >,
+        #[graphql(desc = "Return tags after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return tags before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many tags from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many tags from the end of the range.")] last: Option<
+            i32,
+        >,
+    ) -> Result<crate::tag::TagUseConnection> {
+        crate::tag::search_tags(context, query, kinds, after, before, first, last).await
     }
 
     /// What is being played right now, oldest first. A session a player has stopped keeping

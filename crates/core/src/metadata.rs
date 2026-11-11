@@ -855,6 +855,56 @@ impl SearchQuery {
     }
 }
 
+/// A search over tags by name, across every library: the people and genres a search box
+/// offers beside the items.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagSearch {
+    /// Matches tags having a word beginning with each word of this text, as [`SearchQuery`]
+    /// matches titles.
+    pub word_prefix: String,
+    /// Restricts to these kinds. Empty searches every kind.
+    pub kinds: Vec<TagKind>,
+    /// Restricts to the items of these sections, the ones a caller may see. `None` counts
+    /// them all.
+    pub sections: Option<Vec<crate::ids::SectionId>>,
+}
+
+impl TagSearch {
+    /// Whether the search has anything to match, by the rule of [`SearchQuery::is_blank`].
+    pub fn is_blank(&self) -> bool {
+        crate::search::fold(&self.word_prefix).trim().is_empty()
+    }
+}
+
+/// A tag as one library's items carry it.
+///
+/// One per library rather than per tag: what a client offers is "Tom Hanks in the films",
+/// which opens that library's listing filtered on him. So a library is listed only when one
+/// of its films or series carries the tag: a guest credited on episodes alone would lead to
+/// an empty listing, and the reference leaves such a library out too.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TagUse {
+    pub tag: Tag,
+    pub section: crate::ids::SectionId,
+    /// How many of the library's items carry the tag, whatever their kind: a series library
+    /// counts the series and the episodes crediting someone.
+    pub item_count: u64,
+}
+
+impl TagUse {
+    /// The position of this use in a search, which orders by item count, most first, then
+    /// by tag and library.
+    pub fn cursor(&self) -> Cursor {
+        Cursor {
+            keys: vec![
+                CursorKey::Int(i64::try_from(self.item_count).unwrap_or(i64::MAX)),
+                CursorKey::Int(self.tag.id.get()),
+            ],
+            id: self.section.get(),
+        }
+    }
+}
+
 /// Storage port for library contents.
 ///
 /// Split from `LibraryRepository` because they are different aggregates: one is a handful of
@@ -876,6 +926,16 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
         query: &SearchQuery,
         window: Window,
     ) -> Result<Page<MetadataItem>, MetadataError>;
+
+    /// One page of the tags whose name matches a search, each with the libraries carrying it.
+    ///
+    /// Ordered by item count, most first, then by tag and library: a common name matches
+    /// thousands of people, and the ones a library is full of are the ones searched for.
+    async fn search_tags(
+        &self,
+        query: &TagSearch,
+        window: Window,
+    ) -> Result<Page<TagUse>, MetadataError>;
 
     /// The first-letter buckets of a query's items, with their counts.
     ///
@@ -1085,6 +1145,14 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         window: Window,
     ) -> Result<Page<MetadataItem>, MetadataError> {
         (**self).search(query, window).await
+    }
+
+    async fn search_tags(
+        &self,
+        query: &TagSearch,
+        window: Window,
+    ) -> Result<Page<TagUse>, MetadataError> {
+        (**self).search_tags(query, window).await
     }
 
     async fn first_characters(

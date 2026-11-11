@@ -256,11 +256,7 @@ async fn import_tags(
                 .exec(destination)
                 .await?;
         }
-        for chunk in tags.chunks(WRITE_CHUNK) {
-            tag::Entity::insert_many(chunk.to_vec())
-                .exec(destination)
-                .await?;
-        }
+        crate::write::insert_tags(destination, tags).await?;
     }
 
     Ok(written)
