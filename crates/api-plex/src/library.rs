@@ -36,7 +36,10 @@ pub fn router() -> Router<PlexState> {
         // The spec declares only `/all`, while the web client calls the bare path. A real
         // server answers both with byte-identical responses, so they share a handler.
         .route("/library/sections/all", get(sections))
-        .route("/library/sections/{sectionId}/all", get(section_items))
+        .route(
+            "/library/sections/{sectionId}/all",
+            get(section_items).put(crate::edit::edit_items),
+        )
         .route("/library/metadata/{ids}", get(items_by_id))
         // Neither is in the spec; both are how a client opens a series.
         .route("/library/metadata/{id}/children", get(children::children))

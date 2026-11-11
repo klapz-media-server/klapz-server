@@ -1,5 +1,6 @@
 //! Library contents: items, their media, and the queries bindings run against them.
 
+use crate::edit::{ItemEdit, ItemField};
 use crate::ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use crate::page::{Cursor, CursorKey, Direction, Page, Window};
 use crate::watch::Viewer;
@@ -729,6 +730,14 @@ pub fn first_character_bucket(sort_key: &str) -> String {
     }
 }
 
+/// What a title-ordered listing sorts an item by: its sort title, else its title, lowercased.
+///
+/// Stored beside the titles so one index serves ordering and prefix search; every write of a
+/// title goes through this so the column cannot disagree with them.
+pub fn sort_key(title_sort: Option<&str>, title: Option<&str>) -> String {
+    title_sort.or(title).unwrap_or_default().to_lowercase()
+}
+
 /// Which items a listing covers, and in what order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ItemQuery {
@@ -1030,6 +1039,24 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
         kind: ItemKind,
         tags: &[TagId],
     ) -> Result<Vec<crate::similar::TagOverlap>, MetadataError>;
+
+    /// The fields locked on these items, in no particular order.
+    async fn locked_fields(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<(RatingKey, ItemField)>, MetadataError>;
+
+    /// Applies an edit to an item, with everything it derives, in one transaction.
+    ///
+    /// `ItemNotFound` for an item that is not of the kind the edit was checked against.
+    async fn edit_item(&self, id: RatingKey, edit: &ItemEdit) -> Result<Edited, MetadataError>;
+}
+
+/// An item after an edit, with its locks.
+#[derive(Debug, Clone)]
+pub struct Edited {
+    pub item: MetadataItem,
+    pub locked: Vec<ItemField>,
 }
 
 /// Lets an `Arc<dyn MetadataRepository>` be used wherever a repository is expected, so the
@@ -1213,6 +1240,17 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         tags: &[TagId],
     ) -> Result<Vec<crate::similar::TagOverlap>, MetadataError> {
         (**self).items_sharing_tags(section, kind, tags).await
+    }
+
+    async fn locked_fields(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<(RatingKey, ItemField)>, MetadataError> {
+        (**self).locked_fields(items).await
+    }
+
+    async fn edit_item(&self, id: RatingKey, edit: &ItemEdit) -> Result<Edited, MetadataError> {
+        (**self).edit_item(id, edit).await
     }
 }
 

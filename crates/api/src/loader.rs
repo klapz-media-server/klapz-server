@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_graphql::dataloader::Loader;
+use open_plex_core::edit::ItemField;
 use open_plex_core::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use open_plex_core::metadata::{
     EpisodeCredit, ExternalId, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError,
@@ -111,6 +112,42 @@ impl Loader<RatingKey> for ItemLoader {
     ) -> Result<HashMap<RatingKey, Self::Value>, Self::Error> {
         let items = self.repository.items_by_id(keys).await.map_err(Arc::new)?;
         Ok(items.into_iter().map(|item| (item.id, item)).collect())
+    }
+}
+
+/// Loads the locked fields of several items in one call, each item's in field order.
+#[derive(Debug, Clone)]
+pub struct LockedFieldsLoader {
+    repository: Arc<dyn MetadataRepository>,
+}
+
+impl LockedFieldsLoader {
+    pub const fn new(repository: Arc<dyn MetadataRepository>) -> Self {
+        Self { repository }
+    }
+}
+
+impl Loader<RatingKey> for LockedFieldsLoader {
+    type Value = Vec<ItemField>;
+    type Error = Shared<MetadataError>;
+
+    async fn load(
+        &self,
+        keys: &[RatingKey],
+    ) -> Result<HashMap<RatingKey, Self::Value>, Self::Error> {
+        let mut locked: HashMap<RatingKey, Vec<ItemField>> = HashMap::new();
+        for (item, field) in self
+            .repository
+            .locked_fields(keys)
+            .await
+            .map_err(Arc::new)?
+        {
+            locked.entry(item).or_default().push(field);
+        }
+        for fields in locked.values_mut() {
+            fields.sort();
+        }
+        Ok(locked)
     }
 }
 

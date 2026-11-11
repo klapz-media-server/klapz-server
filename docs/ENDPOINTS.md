@@ -18,9 +18,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 15 | 5.8 % |
+| `todo` | 14 | 5.4 % |
 | `stub` | 179 | 68.8 % |
-| `partial` | 18 | 6.9 % |
+| `partial` | 19 | 7.3 % |
 | `done` | 11 | 4.2 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 2 | 6 | 45 | 8 | 24 |
+| [Library](#library) | 85 | 2 | 7 | 45 | 7 | 24 |
 | [Hubs](#hubs) | 15 | 1 | 1 | 13 | 0 | 0 |
 | [Content](#content) | 13 | 0 | 2 | 11 | 0 | 0 |
 | [Devices](#devices) | 13 | 0 | 0 | 13 | 0 | 0 |
@@ -143,7 +143,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `DELETE` | `/library/sections/{sectionId}` | admin | Delete a library section |  |
 | `stub` | `GET` | `/library/sections/{sectionId}` | user | Get a library section by id |  |
 | `stub` | `PUT` | `/library/sections/{sectionId}` | admin | Edit a library section |  |
-| `todo` | `PUT` | `/library/sections/{sectionId}/all` | user | Set the fields of the filtered items |  |
+| `partial` | `PUT` | `/library/sections/{sectionId}/all` | user | Set the fields of the filtered items | Films, series and episodes by `id`: `{field}.value` for titles, summary, tagline, studio, content rating, year, date and ratings, `{field}.locked` for the 20 fields we model, through `updateMovie`/`updateShow`/`updateEpisode`; library admins only. No `id`, tags, artwork, seasons and music answer `501`. Locks published as `Field` on lookups. See spec-gaps.md. |
 | `deferred` | `PUT` | `/library/sections/{sectionId}/analyze` | admin | Analyze a section | scanner/analysis, separate binary |
 | `stub` | `GET` | `/library/sections/{sectionId}/audioCodec` | user | Get audio codecs in a section |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/audioLayout` | user | Get audio layouts in a section |  |

@@ -9,6 +9,7 @@
 
 pub mod extension_account;
 pub mod item_external_id;
+pub mod item_field_lock;
 pub mod item_rating;
 pub mod item_tag;
 pub mod item_title_word;

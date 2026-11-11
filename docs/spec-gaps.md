@@ -868,6 +868,56 @@ therefore stores both: a report applies to every unexpired session of the playba
 closes them. Stopping the transcoder stays with `/video/:/transcode/universal/stop` and the idle
 limit.
 
+### Editing an item, and locking its fields
+
+`PUT /library/sections/{id}/all?type=&id=` with `{field}.value` and `{field}.locked`, as the spec
+says. Measured on the reference's two test libraries, every value and lock restored afterwards:
+
+- **A value does not lock its field.** `summary.value=…` alone leaves `user_fields` empty. Plex
+  Web locks a field client-side, adding `{field}.locked=1` once the user types into it
+  (`onLockableFieldChange`). The official API does the same: `lock` and `unlock` are separate
+  from the values.
+- **Locks are stored as Plex numbers** in `metadata_items.user_fields`, `lockedFields=1|2|9`,
+  each found by locking one name alone on a test film: `title` 1, `titleSort` 2,
+  `originalTitle` 3, `studio` 4, `rating` 5, `tagline` 6, `summary` 7, `contentRating` 8,
+  `thumb` 9, `art` 10, `banner` 11, `theme` 12, `originallyAvailableAt` 13, `year` 14, `genre`
+  15, `collection` 16, `director` 17, `writer` 18, `actor` 19, `producer` 23, `country` 24,
+  `index` 25, `absoluteIndex` 27, `label` 29, `audienceRating` 30, `guid` 32, `editionTitle`
+  33, `clearLogo` 36, `contentRatingAge` 37, `squareArt` 39, `mood` 300, `style` 301,
+  `similar` 305, `network` 319, `userRating` 1002, `parentIndex` 1054. The real library holds
+  locks 1–4, 6, 7, 9, 10, 13–18 and 24 on its films, series, seasons and episodes, nothing else
+  in `user_fields`; the importer keeps the 20 we model, in a table of their own.
+- **A film's or a series' year follows its date.** `originallyAvailableAt.locked=1` stores
+  13 and 14 and unlocking it removes both; `year.locked` is accepted and does nothing. On an
+  episode the two lock apart.
+- **A lookup publishes the locks** as `<Field locked="1" name="title"/>`, after every other
+  child element, in number order; JSON `"Field":[{"locked":true,"name":"title"}]`. Nothing for
+  an unlocked field, and nothing in a listing.
+- **A new title derives the sort title**, unless the sort title is locked — and even when the
+  same request gives one, which we do not reproduce: a sort title given with the title is kept.
+  The rule, on twenty titles: spaces trimmed, one leading article from the hidden
+  `ArticleStrings` preference (`the,das,der,a,an,el,la`) dropped when another word follows it
+  after a space, then accents folded with case kept (`Les Misérables` → `Les Miserables`,
+  `The The Band` → `The Band`, `the\tTab` unchanged). An emptied title keeps its sort title.
+- **A date sets the year**, and clearing it clears the year, unless the same request sets the
+  year. A locked year does not stop it.
+- **Empty clears**, to `NULL` for a number; a title can be emptied. `updatedAt` does not
+  change.
+- **Out of scope is ignored with a `200`**: an id of another `type` or library, a non-numeric
+  id. A missing `type` is a `400`, as are a field name it does not know and `.locked` other than
+  `0`/`1`. Without `id` the reference edits **every** item of the library.
+
+Where we answer differently: no `id` (or `filters`) is a `501` rather than an edit of the whole
+library; tags (`genre[0].tag.tag`), artwork values, seasons, music and the fields we do not model
+(`banner`, `index`, `network`…) are `501`; a value the field cannot hold — a year that is not a
+number, a date that is not `YYYY-MM-DD`, a rating outside 0–10 — is a `400` where the reference
+stores it (`rating=42`, `year=-5`) or fails with a `500` (`year=abc`). A library's viewer gets
+`404`, as for its settings.
+
+The reference keeps `lockedFields=` once an item has had a lock, where it held an empty
+`user_fields` before; that and a few internal counters (`changed_at`, an `extra_data` key) are
+what the test items kept from being measured.
+
 ### A library's settings
 
 `GET /library/sections/{id}/prefs` lists 17 settings for a film library and 18 for a series, nearly

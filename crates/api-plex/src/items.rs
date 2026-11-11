@@ -228,6 +228,25 @@ pub struct MetadataEntry {
     pub role: Vec<TagEntry>,
     #[serde(rename = "Producer", skip_serializing_if = "Vec::is_empty")]
     pub producer: Vec<TagEntry>,
+    /// The locked fields, last of all, and on a lookup only: a listing carries none.
+    #[serde(rename = "Field", skip_serializing_if = "Vec::is_empty")]
+    pub field: Vec<FieldEntry>,
+}
+
+/// A locked field. The reference sends no `Field` for an unlocked one, so `locked` is always
+/// true: `locked="1"` in XML, `true` in JSON.
+#[derive(Debug, Serialize)]
+pub struct FieldEntry {
+    pub locked: bool,
+    pub name: &'static str,
+}
+
+impl FieldEntry {
+    fn all(locked: &[String]) -> Vec<Self> {
+        crate::edit::plex_locked_fields(locked)
+            .map(|name| Self { locked: true, name })
+            .collect()
+    }
 }
 
 /// An external identifier, as one `source://value` string.
@@ -851,6 +870,7 @@ impl MetadataEntry {
                 .map(TagEntry::from_cast_member)
                 .collect(),
             producer: TagEntry::all(&item.tags.producers, "producer"),
+            field: FieldEntry::all(&item.locked_fields),
         })
     }
 }

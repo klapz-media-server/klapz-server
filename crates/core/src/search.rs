@@ -25,6 +25,18 @@ pub fn fold(text: &str) -> String {
         .to_lowercase()
 }
 
+/// The text with its accents removed and its case kept: what the reference stores as a sort
+/// title it derives.
+///
+/// Recomposed afterwards, unlike [`fold`]: this is stored text a client displays, and a
+/// Hangul syllable left as its decomposed letters would not read as one.
+pub fn without_accents(text: &str) -> String {
+    text.nfd()
+        .filter(|character| !unicode_normalization::char::is_combining_mark(*character))
+        .nfc()
+        .collect()
+}
+
 /// The searchable words of a title.
 ///
 /// Splits on **whitespace only**, keeping punctuation inside the word. That is not a

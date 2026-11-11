@@ -1,3 +1,34 @@
+"""
+Why an account operation was refused.
+"""
+enum AccountErrorCode {
+	"""
+	Not an e-mail address.
+	"""
+	INVALID_EMAIL
+	"""
+	Shorter than 8 characters, or longer than 256.
+	"""
+	WEAK_PASSWORD
+	"""
+	The address already has a user.
+	"""
+	EMAIL_TAKEN
+	"""
+	No user with this address and this password. Worded the same for both, so a stranger
+	cannot learn which addresses have an account.
+	"""
+	INVALID_CREDENTIALS
+	"""
+	The password is right, but the operator has not let this user in yet, or shut it out.
+	"""
+	INACTIVE
+	"""
+	Too many failed attempts on this address: wait fifteen minutes.
+	"""
+	TOO_MANY_ATTEMPTS
+}
+
 type AccountLink {
 	"""
 	The account's name on that service.
@@ -12,6 +43,24 @@ type AccountLink {
 	has; the server keeps trying.
 	"""
 	publishedAt: Int
+}
+
+"""
+A problem with what was asked, as opposed to a failure of the server.
+"""
+type AccountUserError {
+	"""
+	The input field at fault, as a path from the input's root.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program.
+	"""
+	code: AccountErrorCode!
 }
 
 type AudioAnalysis {
@@ -167,6 +216,12 @@ type Episode implements Item & Node {
 	"""
 	title: String
 	"""
+	The item's name for a URL: its series' title then its own,
+	`bull-good-news-about-hell`. An episode without a title is named by its numbers,
+	`bull-s01e02`, and one with neither is `unknown`.
+	"""
+	slug: String!
+	"""
 	Title to sort by when it differs from `title`. Null when `title` already sorts
 	correctly.
 	"""
@@ -193,6 +248,10 @@ type Episode implements Item & Node {
 	caller.
 	"""
 	watchState: WatchState
+	"""
+	The fields an editor locked, which a metadata refresh leaves as they are.
+	"""
+	lockedFields: [ItemField!]!
 	"""
 	When the item's metadata last changed, in seconds since the Unix epoch.
 	"""
@@ -564,6 +623,10 @@ interface Item {
 	"""
 	guid: String!
 	"""
+	The item's name for a URL: lowercase, accents folded, words joined by hyphens. A film or a series by its title, a season by its series and its number (`bull-s01`), an episode by its series and its own title (`bull-good-news-about-hell`). A name, not an identity: two items can share one. `unknown` when nothing in its name survives.
+	"""
+	slug: String!
+	"""
 	Synopsis, in the library's metadata language.
 	"""
 	summary: String
@@ -583,6 +646,10 @@ interface Item {
 	What the caller has watched of the work, shared by every copy of it. Null without a caller.
 	"""
 	watchState: WatchState
+	"""
+	The fields an editor locked, which a metadata refresh leaves as they are.
+	"""
+	lockedFields: [ItemField!]!
 }
 
 type ItemConnection {
@@ -631,6 +698,133 @@ type ItemEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+"""
+Why an edit was refused.
+"""
+enum ItemEditErrorCode {
+	"""
+	No such item of this type, or not one the caller may edit.
+	"""
+	ITEM_NOT_FOUND
+	"""
+	A value the field cannot hold: a date that is not `YYYY-MM-DD`, a rating outside 0 to
+	10, a year outside 1 to 9999.
+	"""
+	INVALID_VALUE
+	"""
+	A field locked or unlocked that this type of item does not hold.
+	"""
+	NOT_APPLICABLE
+	"""
+	A field both locked and unlocked.
+	"""
+	LOCKED_AND_UNLOCKED
+}
+
+"""
+A problem with what was asked, as opposed to a failure of the server.
+"""
+type ItemEditUserError {
+	"""
+	The input field at fault, as a path from the input's root.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program.
+	"""
+	code: ItemEditErrorCode!
+}
+
+"""
+A field of an item an editor can lock, so that a metadata refresh leaves it as it is.
+"""
+enum ItemField {
+	"""
+	`title`.
+	"""
+	TITLE
+	"""
+	`titleSort`.
+	"""
+	TITLE_SORT
+	"""
+	`originalTitle`.
+	"""
+	ORIGINAL_TITLE
+	"""
+	`studio`.
+	"""
+	STUDIO
+	"""
+	`rating`, the critics' rating.
+	"""
+	RATING
+	"""
+	`tagline`.
+	"""
+	TAGLINE
+	"""
+	`summary`.
+	"""
+	SUMMARY
+	"""
+	`contentRating`.
+	"""
+	CONTENT_RATING
+	"""
+	The poster.
+	"""
+	POSTER
+	"""
+	The background art.
+	"""
+	BACKGROUND
+	"""
+	`releasedOn`.
+	"""
+	RELEASED_ON
+	"""
+	`year`.
+	"""
+	YEAR
+	"""
+	The genres among `tags`.
+	"""
+	GENRES
+	"""
+	The collections the item belongs to.
+	"""
+	COLLECTIONS
+	"""
+	The directors among `tags`.
+	"""
+	DIRECTORS
+	"""
+	The writers among `tags`.
+	"""
+	WRITERS
+	"""
+	The cast among `tags`.
+	"""
+	CAST
+	"""
+	The producers among `tags`.
+	"""
+	PRODUCERS
+	"""
+	The countries among `tags`.
+	"""
+	COUNTRIES
+	"""
+	`audienceRating`.
+	"""
+	AUDIENCE_RATING
 }
 
 """
@@ -1665,6 +1859,11 @@ type Movie implements Item & Node {
 	"""
 	title: String
 	"""
+	The item's name for a URL: its title, lowercase, accents folded, words joined by
+	hyphens. `unknown` when it has no title.
+	"""
+	slug: String!
+	"""
 	Title to sort by when it differs from `title`. Null when `title` already sorts
 	correctly.
 	"""
@@ -1691,6 +1890,10 @@ type Movie implements Item & Node {
 	caller.
 	"""
 	watchState: WatchState
+	"""
+	The fields an editor locked, which a metadata refresh leaves as they are.
+	"""
+	lockedFields: [ItemField!]!
 	"""
 	When the item's metadata last changed, in seconds since the Unix epoch.
 	"""
@@ -1831,6 +2034,27 @@ type Mutation {
 		"""
 		input: StartPlaybackInput!
 	): PlaybackSession!
+	"""
+	Starts sending a file to a player: as it is when the player reads it, its tracks
+	repackaged when they fit, the video re-encoded when they do not or a limit asks for it.
+	Records the playback session. A start under a key already streaming the same thing
+	keeps it running.
+	"""
+	startStream(
+		"""
+		The stream to start.
+		"""
+		input: StartStreamInput!
+	): StartStreamPayload!
+	"""
+	Stops a stream and closes its session.
+	"""
+	stopStream(
+		"""
+		The stream to stop.
+		"""
+		input: StopStreamInput!
+	): StopStreamPayload!
 	"""
 	Records a sign of life, pushing the session's expiry forward. Whether it is still
 	running.
@@ -2009,7 +2233,8 @@ type Mutation {
 	): ExtensionCredentials!
 	"""
 	Ties a user's connection to its account on the extension's own service, and tells that
-	service where the server can be reached. For the server's operator only.
+	service where the server can be reached. For the server's operator, and for the user
+	itself.
 	"""
 	pairExtension(
 		"""
@@ -2019,8 +2244,8 @@ type Mutation {
 	): AccountLink!
 	"""
 	Changes where a paired server is reached, and tells the extension's service at once:
-	what a tunnel or a new domain needs, without pairing again. For the server's operator
-	only.
+	what a tunnel or a new domain needs, without pairing again. For the server's operator,
+	and for the user itself.
 	"""
 	moveExtension(
 		"""
@@ -2030,7 +2255,7 @@ type Mutation {
 	): AccountLink!
 	"""
 	Forgets the account tied to a user's connection. Whether there was one. For the server's
-	operator only.
+	operator, and for the user itself.
 	"""
 	unpairExtension(
 		"""
@@ -2042,6 +2267,77 @@ type Mutation {
 		"""
 		extension: ExtensionType!
 	): Boolean!
+	"""
+	Creates an account that signs in with a password. It waits, inactive, until the
+	operator lets it in. Open to anyone.
+	"""
+	signUp(
+		"""
+		The address and password of the new account.
+		"""
+		input: SignUpInput!
+	): SignUpPayload!
+	"""
+	Checks an address and its password and, when they match an active user, opens a
+	session for it: a cookie the server reads on every request. Open to anyone; failed
+	attempts on one address are limited.
+	"""
+	signIn(
+		"""
+		The address and password to sign in with.
+		"""
+		input: SignInInput!
+	): SignInPayload!
+	"""
+	Clears the session cookie.
+	"""
+	signOut: Boolean!
+	"""
+	Lets in a user who signed up, or one that was shut out. For the server's operator only.
+	"""
+	activateUser(
+		"""
+		The user, as returned in `User.id`.
+		"""
+		id: ID!
+	): User!
+	"""
+	Shuts a user out: its sessions and its tokens stop opening anything at once, and it
+	keeps its libraries for when it is let in again. For the server's operator only.
+	"""
+	deactivateUser(
+		"""
+		The user, as returned in `User.id`.
+		"""
+		id: ID!
+	): User!
+	"""
+	Changes a film's metadata and locks. For a library's admins and the operator.
+	"""
+	updateMovie(
+		"""
+		The changes.
+		"""
+		input: UpdateMovieInput!
+	): UpdateMoviePayload!
+	"""
+	Changes a series' metadata and locks. For a library's admins and the operator.
+	"""
+	updateShow(
+		"""
+		The changes.
+		"""
+		input: UpdateShowInput!
+	): UpdateShowPayload!
+	"""
+	Changes an episode's metadata and locks. For a library's admins and the operator.
+	"""
+	updateEpisode(
+		"""
+		The changes.
+		"""
+		input: UpdateEpisodeInput!
+	): UpdateEpisodePayload!
 }
 
 """
@@ -2466,6 +2762,10 @@ type Query {
 		last: Int
 	): PlaybackSessionConnection!
 	"""
+	Who is asking: the operator, a user, or no one.
+	"""
+	viewer: Viewer!
+	"""
 	The account the caller's connection is paired with on the extension's own service.
 	Null for the operator, who connects through no extension.
 	"""
@@ -2755,6 +3055,10 @@ type Season implements Item & Node {
 	"""
 	title: String
 	"""
+	The item's name for a URL: its series' title and its number, `bull-s01`.
+	"""
+	slug: String!
+	"""
 	Title to sort by when it differs from `title`. Null when `title` already sorts
 	correctly.
 	"""
@@ -2781,6 +3085,10 @@ type Season implements Item & Node {
 	caller.
 	"""
 	watchState: WatchState
+	"""
+	The fields an editor locked, which a metadata refresh leaves as they are.
+	"""
+	lockedFields: [ItemField!]!
 	"""
 	When the item's metadata last changed, in seconds since the Unix epoch.
 	"""
@@ -3004,6 +3312,11 @@ type Show implements Item & Node {
 	"""
 	title: String
 	"""
+	The item's name for a URL: its title, lowercase, accents folded, words joined by
+	hyphens. `unknown` when it has no title.
+	"""
+	slug: String!
+	"""
 	Title to sort by when it differs from `title`. Null when `title` already sorts
 	correctly.
 	"""
@@ -3030,6 +3343,10 @@ type Show implements Item & Node {
 	caller.
 	"""
 	watchState: WatchState
+	"""
+	The fields an editor locked, which a metadata refresh leaves as they are.
+	"""
+	lockedFields: [ItemField!]!
 	"""
 	When the item's metadata last changed, in seconds since the Unix epoch.
 	"""
@@ -3238,6 +3555,79 @@ type ShowStats {
 }
 
 """
+A user signing in.
+"""
+input SignInInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The address the account was created with.
+	"""
+	email: String!
+	"""
+	Its password.
+	"""
+	password: String!
+}
+
+"""
+What `signIn` did. On success the session is in a cookie, out of reach of scripts: there is
+no token here to keep.
+"""
+type SignInPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	Who signed in. Null when nobody did.
+	"""
+	user: User
+	"""
+	Why nobody did. Empty when someone did.
+	"""
+	userErrors: [AccountUserError!]!
+}
+
+"""
+An account to create.
+"""
+input SignUpInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The address to sign in with. Compared without regard to case.
+	"""
+	email: String!
+	"""
+	Between 8 and 256 characters.
+	"""
+	password: String!
+}
+
+"""
+What `signUp` did.
+"""
+type SignUpPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	Whether the account was created. It waits for the operator to let it in.
+	"""
+	created: Boolean!
+	"""
+	Why it was not. Empty when it was.
+	"""
+	userErrors: [AccountUserError!]!
+}
+
+"""
 Sort direction.
 """
 enum SortDirection {
@@ -3310,6 +3700,127 @@ input StartPlaybackInput {
 }
 
 """
+A stream to start.
+"""
+input StartStreamInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The file to play, as returned in `MediaFile.id`.
+	"""
+	file: ID!
+	"""
+	The player reads the file as it is: it is sent untouched.
+	"""
+	directPlay: Boolean! = false
+	"""
+	How a conversion is cut up.
+	"""
+	protocol: StreamProtocolType! = DASH
+	"""
+	The audio track, as returned in `MediaStream.id`. Left out, the caller's choice.
+	"""
+	audioTrack: ID
+	"""
+	The subtitle, as returned in `MediaStream.id`. Left out, the caller's choice.
+	"""
+	subtitleTrack: ID
+	"""
+	How the subtitle reaches the player.
+	"""
+	subtitles: SubtitleDeliveryType! = NONE
+	"""
+	The size burned subtitles are drawn at, 1.0 being the normal size.
+	"""
+	subtitleScale: Float! = 1.0
+	"""
+	The most the video may weigh, in bits per second.
+	"""
+	maxVideoBitrate: Int
+	"""
+	Convert the audio even when the player could take it as it is.
+	"""
+	convertAudio: Boolean! = false
+	"""
+	Automatic quality: always a re-encode.
+	"""
+	adaptive: Boolean! = false
+	"""
+	Where to start, in milliseconds.
+	"""
+	positionMs: Int! = 0
+	"""
+	The client's own name for this stream: a later start under it replaces this one. A
+	fresh name when left out.
+	"""
+	key: String
+	"""
+	The player's identifier for the whole playback, across changes of quality.
+	"""
+	playbackId: String
+	"""
+	The client's stable identifier for itself.
+	"""
+	clientIdentifier: String
+	"""
+	The application playing.
+	"""
+	clientProduct: String
+}
+
+"""
+What `startStream` did.
+"""
+type StartStreamPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The stream, unless it could not be started.
+	"""
+	stream: StreamObject
+	"""
+	The playback session recording it, which `stopStream` names.
+	"""
+	session: PlaybackSession
+	"""
+	Why it could not be started. Empty when it was.
+	"""
+	userErrors: [StreamUserError!]!
+}
+
+"""
+A stream to stop.
+"""
+input StopStreamInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The stream's session, as returned in `StartStreamPayload.session.id`.
+	"""
+	session: ID!
+}
+
+"""
+What `stopStream` did.
+"""
+type StopStreamPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	Whether there was a stream to stop.
+	"""
+	stopped: Boolean!
+}
+
+"""
 What the server does to a track on its way to the player.
 """
 enum StreamDecisionType {
@@ -3323,6 +3834,134 @@ enum StreamDecisionType {
 	TRANSCODE
 }
 
+"""
+How the file reaches the player.
+"""
+enum StreamDeliveryType {
+	"""
+	The file as it is.
+	"""
+	DIRECT_PLAY
+	"""
+	The tracks repackaged, the video untouched.
+	"""
+	DIRECT_STREAM
+	"""
+	The video re-encoded.
+	"""
+	TRANSCODE
+}
+
+"""
+Why a stream could not be started.
+"""
+enum StreamErrorCode {
+	"""
+	No such file, or not one the caller can see.
+	"""
+	FILE_NOT_FOUND
+	"""
+	The file is known but not on this machine.
+	"""
+	FILE_MISSING
+	"""
+	The track named is not one of the file's, of that kind; or the file has none.
+	"""
+	TRACK_NOT_FOUND
+	"""
+	The video would need a conversion this server does not do.
+	"""
+	VIDEO_NOT_CONVERTIBLE
+	"""
+	The subtitle cannot be delivered the way asked: an image subtitle, text over HLS, or no
+	fonts to burn with.
+	"""
+	SUBTITLE_NOT_DELIVERABLE
+	"""
+	Too many streams are running.
+	"""
+	TOO_MANY_STREAMS
+}
+
+"""
+A stream that was started.
+"""
+type StreamObject {
+	"""
+	How the file reaches the player.
+	"""
+	delivery: StreamDeliveryType!
+	"""
+	How it is cut up. Null for direct play.
+	"""
+	protocol: StreamProtocolType
+	"""
+	What happens to the video track.
+	"""
+	videoDecision: StreamDecisionType!
+	"""
+	What happens to the audio track.
+	"""
+	audioDecision: StreamDecisionType!
+	"""
+	Where the player reads it, a path on this server: the manifest of a conversion, the file
+	itself for direct play. It carries its own secret and needs no token.
+	"""
+	url: String!
+	"""
+	Where the player reads text subtitles, when they were asked for.
+	"""
+	subtitlesUrl: String
+	"""
+	The bitrate of the video sent, in bits per second, when known.
+	"""
+	videoBitrate: Int
+	"""
+	The bitrate of the audio sent, in bits per second, when known.
+	"""
+	audioBitrate: Int
+	"""
+	The width of the picture sent, when known.
+	"""
+	width: Int
+	"""
+	The height of the picture sent, when known.
+	"""
+	height: Int
+}
+
+"""
+How a converted stream is cut up for the player.
+"""
+enum StreamProtocolType {
+	"""
+	MPEG-DASH, fragmented MP4.
+	"""
+	DASH
+	"""
+	HTTP Live Streaming, MPEG-TS segments.
+	"""
+	HLS
+}
+
+"""
+A problem with what was asked, as opposed to a failure of the server.
+"""
+type StreamUserError {
+	"""
+	The input field at fault, as a path from the input's root.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program.
+	"""
+	code: StreamErrorCode!
+}
+
 type SubtitleAnalysis {
 	"""
 	The format of a sidecar subtitle file: `srt`, `ssa`. Null for an embedded track,
@@ -3334,6 +3973,24 @@ type SubtitleAnalysis {
 	track of their own.
 	"""
 	isEmbeddedInVideo: Boolean!
+}
+
+"""
+How a subtitle reaches the player of a conversion.
+"""
+enum SubtitleDeliveryType {
+	"""
+	No subtitle, whatever was chosen.
+	"""
+	NONE
+	"""
+	Drawn into the picture, which re-encodes the video.
+	"""
+	BURN
+	"""
+	As ASS text beside the stream, for the player to draw. DASH only.
+	"""
+	TEXT
 }
 
 type Tag implements Node {
@@ -3542,6 +4199,248 @@ type Transcoder {
 	activeVideoSessions: Int!
 }
 
+"""
+Changes to an episode.
+"""
+input UpdateEpisodeInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The episode, as returned in `Episode.id`.
+	"""
+	id: ID!
+	"""
+	The title. A new one gives a new `titleSort`, the title less a leading article,
+	unless `titleSort` is locked or given too.
+	"""
+	title: String
+	"""
+	The title to sort by.
+	"""
+	titleSort: String
+	"""
+	The original-language title.
+	"""
+	originalTitle: String
+	"""
+	The synopsis.
+	"""
+	summary: String
+	"""
+	The episode's own age-rating label. Cleared, the episode is rated as its series.
+	"""
+	contentRating: String
+	"""
+	The year the episode first aired, from 1 to 9999.
+	"""
+	year: Int
+	"""
+	The original air date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given
+	too; clearing it clears the year.
+	"""
+	releasedOn: String
+	"""
+	The audience rating, from 0 to 10.
+	"""
+	audienceRating: Float
+	"""
+	Fields to lock, before the values are written.
+	"""
+	lock: [ItemField!]! = []
+	"""
+	Fields to unlock, before the values are written.
+	"""
+	unlock: [ItemField!]! = []
+}
+
+"""
+What `updateEpisode` did.
+"""
+type UpdateEpisodePayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The episode as it now is, unless the edit was refused.
+	"""
+	episode: Episode
+	"""
+	Why the edit was refused. Empty when it was applied.
+	"""
+	userErrors: [ItemEditUserError!]!
+}
+
+"""
+Changes to a film.
+"""
+input UpdateMovieInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The film, as returned in `Movie.id`.
+	"""
+	id: ID!
+	"""
+	The title. A new one gives a new `titleSort`, the title less a leading article,
+	unless `titleSort` is locked or given too.
+	"""
+	title: String
+	"""
+	The title to sort by.
+	"""
+	titleSort: String
+	"""
+	The original-language title.
+	"""
+	originalTitle: String
+	"""
+	The synopsis.
+	"""
+	summary: String
+	"""
+	The tagline.
+	"""
+	tagline: String
+	"""
+	The production studio.
+	"""
+	studio: String
+	"""
+	The age-rating label, such as `fr/12`.
+	"""
+	contentRating: String
+	"""
+	The release year, from 1 to 9999.
+	"""
+	year: Int
+	"""
+	The release date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given too;
+	clearing it clears the year.
+	"""
+	releasedOn: String
+	"""
+	The critics' rating, from 0 to 10.
+	"""
+	rating: Float
+	"""
+	The audience rating, from 0 to 10.
+	"""
+	audienceRating: Float
+	"""
+	Fields to lock, before the values are written.
+	"""
+	lock: [ItemField!]! = []
+	"""
+	Fields to unlock, before the values are written.
+	"""
+	unlock: [ItemField!]! = []
+}
+
+"""
+What `updateMovie` did.
+"""
+type UpdateMoviePayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The film as it now is, unless the edit was refused.
+	"""
+	movie: Movie
+	"""
+	Why the edit was refused. Empty when it was applied.
+	"""
+	userErrors: [ItemEditUserError!]!
+}
+
+"""
+Changes to a series.
+"""
+input UpdateShowInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The series, as returned in `Show.id`.
+	"""
+	id: ID!
+	"""
+	The title. A new one gives a new `titleSort`, the title less a leading article,
+	unless `titleSort` is locked or given too.
+	"""
+	title: String
+	"""
+	The title to sort by.
+	"""
+	titleSort: String
+	"""
+	The original-language title.
+	"""
+	originalTitle: String
+	"""
+	The synopsis.
+	"""
+	summary: String
+	"""
+	The tagline.
+	"""
+	tagline: String
+	"""
+	The production studio or network.
+	"""
+	studio: String
+	"""
+	The age-rating label, such as `fr/12`.
+	"""
+	contentRating: String
+	"""
+	The year the series first aired, from 1 to 9999.
+	"""
+	year: Int
+	"""
+	The first-air date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given too;
+	clearing it clears the year.
+	"""
+	releasedOn: String
+	"""
+	The audience rating, from 0 to 10.
+	"""
+	audienceRating: Float
+	"""
+	Fields to lock, before the values are written.
+	"""
+	lock: [ItemField!]! = []
+	"""
+	Fields to unlock, before the values are written.
+	"""
+	unlock: [ItemField!]! = []
+}
+
+"""
+What `updateShow` did.
+"""
+type UpdateShowPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The series as it now is, unless the edit was refused.
+	"""
+	show: Show
+	"""
+	Why the edit was refused. Empty when it was applied.
+	"""
+	userErrors: [ItemEditUserError!]!
+}
+
 type User implements Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this user.
@@ -3555,6 +4454,15 @@ type User implements Node {
 	The user's e-mail address.
 	"""
 	email: String!
+	"""
+	Whether the user may use the server. A user who signs up waits inactive until the
+	operator lets them in; inactive, nothing it presents opens anything.
+	"""
+	active: Boolean!
+	"""
+	Whether the user can sign in with a password: a user the operator created has none.
+	"""
+	hasPassword: Boolean!
 	"""
 	When the user was created, in seconds since the epoch.
 	"""
@@ -3730,6 +4638,18 @@ type VideoAnalysis {
 	The Dolby Vision configuration. Null on a track without Dolby Vision.
 	"""
 	dolbyVision: DolbyVision
+}
+
+type Viewer {
+	"""
+	Whether the caller is the server's operator, who manages users and sees every library.
+	"""
+	isOperator: Boolean!
+	"""
+	The caller as a user. Null for the operator, who is nobody's user, and for a request
+	with no caller.
+	"""
+	user: User
 }
 
 """

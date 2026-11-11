@@ -796,7 +796,7 @@ fn items_app() -> axum::Router {
     let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
     let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
     let (library, metadata) = catalog();
-    let watch = open_plex_core::testing::InMemoryWatch::over(metadata.items().to_vec());
+    let watch = open_plex_core::testing::InMemoryWatch::over(metadata.items());
     let schema = build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity.clone(), 0),
         library: std::sync::Arc::new(library),
@@ -3175,4 +3175,266 @@ async fn a_lookup_marks_the_audio_the_caller_plays() {
     let stream = &body["MediaContainer"]["Metadata"][0]["Media"][0]["Part"][0]["Stream"][0];
     assert_eq!(stream["id"], 920);
     assert_eq!(stream["selected"], true);
+}
+
+/// The reference's test libraries: a film named after its file in 27, a series in 28. The
+/// series carries the eight locks item 429849 of the reference carries, whatever a series holds
+/// of them.
+fn editing_app(principal: Principal) -> axum::Router {
+    use open_plex_core::edit::ItemField;
+    let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
+    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
+    let file_name = "Soul.2020.MULTi.TRUEFRENCH.1080p.WEB.H264-EXTREME_wWw.Extreme-Down.Video";
+    let film = MetadataItem {
+        title_sort: Some(file_name.to_owned()),
+        summary: None,
+        ..item(577_986, 27, ItemKind::Movie, None, file_name)
+    };
+    let show = MetadataItem {
+        summary: None,
+        ..item(577_987, 28, ItemKind::Show, None, "Bull")
+    };
+    let locks = [
+        ItemField::Title,
+        ItemField::TitleSort,
+        ItemField::OriginalTitle,
+        ItemField::Studio,
+        ItemField::Poster,
+        ItemField::ReleasedOn,
+        ItemField::Year,
+        ItemField::Writers,
+    ]
+    .map(|field| (RatingKey::new(577_987), field));
+    let metadata = InMemoryMetadata::new(vec![film, show]).with_locked_fields(locks.to_vec());
+    let library = InMemoryLibrary::new(vec![
+        section(27, SectionKind::Movie, "open-plex tests", false),
+        section(28, SectionKind::Show, "open-plex tests series", false),
+    ]);
+    let schema = build_schema(ApiContext {
+        capabilities: ServerCapabilities::new(identity.clone(), 0),
+        library: std::sync::Arc::new(library),
+        metadata: std::sync::Arc::new(metadata),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+    });
+    router(PlexState::new(identity, schema, accounts)).layer(axum::Extension(principal))
+}
+
+async fn put_on(app: &axum::Router, uri: &str) -> (StatusCode, String, String) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    (
+        status,
+        content_type,
+        String::from_utf8_lossy(&body).into_owned(),
+    )
+}
+
+async fn film_after(app: &axum::Router) -> Value {
+    let (status, body) = get_from(
+        app.clone(),
+        "/library/metadata/577986",
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    body["MediaContainer"]["Metadata"][0].clone()
+}
+
+#[tokio::test]
+async fn a_lookup_lists_its_locked_fields_last_as_the_reference_does() {
+    let app = editing_app(Principal::operator("owner"));
+    let (status, xml) = get_from(app.clone(), "/library/metadata/577987", None).await;
+    assert_eq!(status, StatusCode::OK);
+    // As the reference lists item 429849's, but for `writer`: a series holds no writer.
+    let captured = "<Field locked=\"1\" name=\"title\" />\
+<Field locked=\"1\" name=\"titleSort\" />\
+<Field locked=\"1\" name=\"originalTitle\" />\
+<Field locked=\"1\" name=\"studio\" />\
+<Field locked=\"1\" name=\"thumb\" />\
+<Field locked=\"1\" name=\"originallyAvailableAt\" />\
+<Field locked=\"1\" name=\"year\" />\
+<Field locked=\"1\" name=\"writer\" />";
+    let fields: String = xml
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("<Field"))
+        .collect();
+    assert_eq!(fields, captured);
+    assert!(
+        xml.contains("<Field locked=\"1\" name=\"writer\" />\n</Directory>"),
+        "{xml}"
+    );
+
+    let (_, json) = get_from(
+        app.clone(),
+        "/library/metadata/577987",
+        Some("application/json"),
+    )
+    .await;
+    let json: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        json["MediaContainer"]["Metadata"][0]["Field"][0],
+        serde_json::json!({ "locked": true, "name": "title" })
+    );
+
+    let (_, listing) = get_from(app, "/library/sections/28/all", None).await;
+    assert!(!listing.contains("<Field"), "{listing}");
+}
+
+#[tokio::test]
+async fn an_edit_answers_an_empty_200_and_locks_only_what_it_says() {
+    let app = editing_app(Principal::operator("owner"));
+    let (status, content_type, body) = put_on(
+        &app,
+        "/library/sections/27/all?type=1&id=577986&includeExternalMedia=1\
+         &title.value=The%20Soul&summary.value=Probe%20summary&summary.locked=1",
+    )
+    .await;
+    assert_eq!(
+        (status, content_type.as_str(), body.as_str()),
+        (StatusCode::OK, "text/html", "")
+    );
+    let film = film_after(&app).await;
+    assert_eq!(film["title"], "The Soul");
+    assert_eq!(film["titleSort"], "Soul");
+    assert_eq!(film["summary"], "Probe summary");
+    assert_eq!(
+        film["Field"],
+        serde_json::json!([{ "locked": true, "name": "summary" }])
+    );
+
+    // A film's year follows its date: locking the date locks both, the year alone nothing.
+    put_on(
+        &app,
+        "/library/sections/27/all?type=1&id=577986&year.locked=1",
+    )
+    .await;
+    assert_eq!(film_after(&app).await["Field"].as_array().unwrap().len(), 1);
+    put_on(
+        &app,
+        "/library/sections/27/all?type=1&id=577986&originallyAvailableAt.value=2019-05-01\
+         &originallyAvailableAt.locked=1&summary.locked=0",
+    )
+    .await;
+    let film = film_after(&app).await;
+    assert_eq!(film["year"], 2019);
+    assert_eq!(film["originallyAvailableAt"], "2019-05-01");
+    assert_eq!(
+        film["Field"],
+        serde_json::json!([
+            { "locked": true, "name": "originallyAvailableAt" },
+            { "locked": true, "name": "year" },
+        ])
+    );
+}
+
+#[tokio::test]
+async fn an_edit_ignores_items_of_another_type_or_library_as_the_reference_does() {
+    let app = editing_app(Principal::operator("owner"));
+    for uri in [
+        "/library/sections/27/all?type=2&id=577986&summary.value=wrong%20type",
+        "/library/sections/28/all?type=1&id=577986&summary.value=wrong%20section",
+        "/library/sections/27/all?type=1&id=abc&summary.value=no%20item",
+    ] {
+        assert_eq!(put_on(&app, uri).await.0, StatusCode::OK, "{uri}");
+    }
+    assert_eq!(film_after(&app).await.get("summary"), None);
+}
+
+#[tokio::test]
+async fn an_edit_refuses_what_it_cannot_honor_and_what_makes_no_sense() {
+    let app = editing_app(Principal::operator("owner"));
+    for (uri, expected) in [
+        (
+            "/library/sections/27/all?id=577986&summary.value=x",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/library/sections/27/all?type=1&id=577986&bogus.locked=1",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/library/sections/27/all?type=1&id=577986&summary.locked=2",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/library/sections/27/all?type=1&id=577986&year.value=abc",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/library/sections/27/all?type=1&id=577986&originallyAvailableAt.value=garbage",
+            StatusCode::BAD_REQUEST,
+        ),
+        // The reference would edit every film of the library.
+        (
+            "/library/sections/27/all?type=1&summary.value=x",
+            StatusCode::NOT_IMPLEMENTED,
+        ),
+        (
+            "/library/sections/27/all?type=1&id=577986&thumb.value=x",
+            StatusCode::NOT_IMPLEMENTED,
+        ),
+        (
+            "/library/sections/27/all?type=1&id=577986&genre%5B0%5D.tag.tag=Drama",
+            StatusCode::NOT_IMPLEMENTED,
+        ),
+        (
+            "/library/sections/28/all?type=3&id=577988&title.value=x",
+            StatusCode::NOT_IMPLEMENTED,
+        ),
+    ] {
+        assert_eq!(put_on(&app, uri).await.0, expected, "{uri}");
+    }
+    assert_eq!(film_after(&app).await.get("summary"), None);
+}
+
+#[tokio::test]
+async fn only_a_librarys_admin_edits_it() {
+    let viewer = Principal {
+        libraries: LibraryAccess::Only(
+            [(SectionId::new(27), LibraryRole::Viewer)]
+                .into_iter()
+                .collect(),
+        ),
+        ..user_principal(1, LibraryRole::Viewer)
+    };
+    let uri = "/library/sections/27/all?type=1&id=577986&summary.value=x";
+    assert_eq!(
+        put_on(&editing_app(viewer), uri).await.0,
+        StatusCode::NOT_FOUND
+    );
+    let admin = Principal {
+        libraries: LibraryAccess::Only(
+            [(SectionId::new(27), LibraryRole::Admin)]
+                .into_iter()
+                .collect(),
+        ),
+        ..user_principal(1, LibraryRole::Admin)
+    };
+    let app = editing_app(admin);
+    assert_eq!(put_on(&app, uri).await.0, StatusCode::OK);
+    assert_eq!(film_after(&app).await["summary"], "x");
 }

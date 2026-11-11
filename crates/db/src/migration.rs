@@ -21,6 +21,7 @@ mod m0015_stream_analysis;
 mod m0016_watch_state;
 mod m0017_guid_index;
 mod m0018_track_choice;
+mod m0019_field_lock;
 mod m0020_sign_in;
 
 use sea_orm_migration::prelude::*;
@@ -50,6 +51,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0016_watch_state::Migration),
             Box::new(m0017_guid_index::Migration),
             Box::new(m0018_track_choice::Migration),
+            Box::new(m0019_field_lock::Migration),
             Box::new(m0020_sign_in::Migration),
         ]
     }

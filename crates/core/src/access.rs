@@ -140,6 +140,13 @@ impl LibraryAccess {
         }
     }
 
+    /// Whether the caller may change what a library holds: its items' metadata, its settings.
+    /// A library's admins may, and the operator, who administers every library.
+    #[must_use]
+    pub fn may_edit(&self, section: SectionId) -> bool {
+        self.role(section) == Some(LibraryRole::Admin)
+    }
+
     /// The sections a query may be narrowed to, or `None` for no restriction.
     #[must_use]
     pub fn sections(&self) -> Option<Vec<SectionId>> {

@@ -591,6 +591,10 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
             tokio::spawn,
         ))
         .data(DataLoader::new(
+            crate::loader::LockedFieldsLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
             VersionsLoader::new(Arc::clone(&metadata)),
             tokio::spawn,
         ))

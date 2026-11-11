@@ -42,6 +42,10 @@ pub(crate) fn can_read(context: &Context<'_>, section: SectionId) -> bool {
     role(context, section).is_some()
 }
 
+pub(crate) fn can_edit(context: &Context<'_>, section: SectionId) -> bool {
+    caller(context).is_some_and(|caller| caller.libraries.may_edit(section))
+}
+
 fn role(context: &Context<'_>, section: SectionId) -> Option<LibraryRole> {
     caller(context)?.libraries.role(section)
 }

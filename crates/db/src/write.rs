@@ -1,4 +1,4 @@
-//! The one way to insert items.
+//! The one way to write items.
 //!
 //! An item carries a derived index — its searchable title words — and that index is only
 //! correct if *every* write maintains it. Leaving that to each caller is how a search quietly
@@ -6,13 +6,17 @@
 //! fails until a user cannot find a film that is plainly there. The test suite found this the
 //! easy way, by inserting items directly and then matching nothing.
 //!
-//! So the words are derived here, from the models themselves, and there is no path that
-//! inserts an item without them.
+//! So the words are derived here, from the values being written, and there is no path that
+//! inserts or edits an item without them. An edit rewrites the sort key the same way.
 
+use std::collections::BTreeSet;
+
+use open_plex_core::edit::ItemField;
+use open_plex_core::metadata::{self, MetadataItem};
 use open_plex_core::search;
-use sea_orm::{ActiveValue, ConnectionTrait, DbErr, EntityTrait};
+use sea_orm::{ActiveValue, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter};
 
-use crate::entity::{item_title_word, metadata_item};
+use crate::entity::{item_field_lock, item_title_word, metadata_item};
 
 /// Rows per statement.
 ///
@@ -31,7 +35,7 @@ pub async fn insert_items<C: ConnectionTrait>(
     connection: &C,
     items: Vec<metadata_item::ActiveModel>,
 ) -> Result<usize, DbErr> {
-    let words: Vec<item_title_word::ActiveModel> = items.iter().flat_map(title_words).collect();
+    let words: Vec<item_title_word::ActiveModel> = items.iter().flat_map(model_words).collect();
 
     for chunk in items.chunks(WRITE_CHUNK) {
         metadata_item::Entity::insert_many(chunk.to_vec())
@@ -48,25 +52,164 @@ pub async fn insert_items<C: ConnectionTrait>(
     Ok(words.len())
 }
 
+/// Writes an edited item's values, sort key, title words and locks.
+///
+/// Every column an edit can reach is written, whether or not it changed: the edit has already
+/// been applied to `item`, and writing its whole editable state is what keeps this function
+/// ignorant of which fields an edit touches. Run it inside a transaction.
+///
+/// # Errors
+///
+/// Fails if any statement fails.
+pub async fn update_item<C: ConnectionTrait>(
+    connection: &C,
+    item: &MetadataItem,
+    locked: &BTreeSet<ItemField>,
+) -> Result<(), DbErr> {
+    let id = item.id.get();
+    metadata_item::Entity::update(metadata_item::ActiveModel {
+        id: ActiveValue::Unchanged(id),
+        title: ActiveValue::Set(item.title.clone()),
+        title_sort: ActiveValue::Set(item.title_sort.clone()),
+        sort_key: ActiveValue::Set(metadata::sort_key(
+            item.title_sort.as_deref(),
+            item.title.as_deref(),
+        )),
+        original_title: ActiveValue::Set(item.original_title.clone()),
+        summary: ActiveValue::Set(item.summary.clone()),
+        tagline: ActiveValue::Set(item.tagline.clone()),
+        studio: ActiveValue::Set(item.studio.clone()),
+        content_rating: ActiveValue::Set(item.content_rating.clone()),
+        year: ActiveValue::Set(item.year),
+        released_on: ActiveValue::Set(item.released_on.clone()),
+        rating: ActiveValue::Set(item.rating),
+        audience_rating: ActiveValue::Set(item.audience_rating),
+        ..Default::default()
+    })
+    .exec(connection)
+    .await?;
+
+    item_title_word::Entity::delete_many()
+        .filter(item_title_word::Column::ItemId.eq(id))
+        .exec(connection)
+        .await?;
+    let words = title_words(
+        id,
+        item.title.as_deref(),
+        item.title_sort.as_deref(),
+        item.original_title.as_deref(),
+    );
+    if !words.is_empty() {
+        item_title_word::Entity::insert_many(words)
+            .exec(connection)
+            .await?;
+    }
+
+    item_field_lock::Entity::delete_many()
+        .filter(item_field_lock::Column::ItemId.eq(id))
+        .exec(connection)
+        .await?;
+    insert_locks(connection, locked.iter().map(|field| (id, *field))).await
+}
+
+/// Inserts locks on items that have none of these yet.
+///
+/// # Errors
+///
+/// Fails if an insert fails, an already present lock included.
+pub async fn insert_locks<C: ConnectionTrait>(
+    connection: &C,
+    locks: impl IntoIterator<Item = (i64, ItemField)>,
+) -> Result<(), DbErr> {
+    let rows: Vec<item_field_lock::ActiveModel> = locks
+        .into_iter()
+        .map(|(item_id, field)| item_field_lock::ActiveModel {
+            item_id: ActiveValue::Set(item_id),
+            field: ActiveValue::Set(field_name(field).to_owned()),
+        })
+        .collect();
+    for chunk in rows.chunks(WRITE_CHUNK) {
+        item_field_lock::Entity::insert_many(chunk.to_vec())
+            .exec(connection)
+            .await?;
+    }
+    Ok(())
+}
+
+/// How a locked field is stored.
+pub const fn field_name(field: ItemField) -> &'static str {
+    match field {
+        ItemField::Title => "title",
+        ItemField::TitleSort => "title_sort",
+        ItemField::OriginalTitle => "original_title",
+        ItemField::Studio => "studio",
+        ItemField::Rating => "rating",
+        ItemField::Tagline => "tagline",
+        ItemField::Summary => "summary",
+        ItemField::ContentRating => "content_rating",
+        ItemField::Poster => "poster",
+        ItemField::Background => "background",
+        ItemField::ReleasedOn => "released_on",
+        ItemField::Year => "year",
+        ItemField::Genres => "genres",
+        ItemField::Collections => "collections",
+        ItemField::Directors => "directors",
+        ItemField::Writers => "writers",
+        ItemField::Cast => "cast",
+        ItemField::Producers => "producers",
+        ItemField::Countries => "countries",
+        ItemField::AudienceRating => "audience_rating",
+    }
+}
+
+/// The field a stored name stands for. `None` for a name no version of this schema wrote.
+pub fn parse_field_name(stored: &str) -> Option<ItemField> {
+    ItemField::ALL
+        .into_iter()
+        .find(|field| field_name(*field) == stored)
+}
+
 /// The word rows for one item, read back off the model being written.
 ///
 /// Derived from the model rather than taken as a second argument, so the two cannot disagree.
-fn title_words(item: &metadata_item::ActiveModel) -> Vec<item_title_word::ActiveModel> {
+fn model_words(item: &metadata_item::ActiveModel) -> Vec<item_title_word::ActiveModel> {
     let Some(&id) = item.id.try_as_ref() else {
         // An item with no id cannot be referenced; the insert itself will reject it.
         return Vec::new();
     };
     let text = |value: &ActiveValue<Option<String>>| value.try_as_ref().cloned().flatten();
-
-    search::title_words(
+    title_words(
+        id,
         text(&item.title).as_deref(),
         text(&item.title_sort).as_deref(),
         text(&item.original_title).as_deref(),
     )
-    .into_iter()
-    .map(|word| item_title_word::ActiveModel {
-        item_id: ActiveValue::Set(id),
-        word: ActiveValue::Set(word),
-    })
-    .collect()
+}
+
+fn title_words(
+    id: i64,
+    title: Option<&str>,
+    title_sort: Option<&str>,
+    original_title: Option<&str>,
+) -> Vec<item_title_word::ActiveModel> {
+    search::title_words(title, title_sort, original_title)
+        .into_iter()
+        .map(|word| item_title_word::ActiveModel {
+            item_id: ActiveValue::Set(id),
+            word: ActiveValue::Set(word),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_field_reads_back_from_its_stored_name() {
+        for field in ItemField::ALL {
+            assert_eq!(parse_field_name(field_name(field)), Some(field));
+        }
+        assert_eq!(parse_field_name("thumb"), None);
+    }
 }

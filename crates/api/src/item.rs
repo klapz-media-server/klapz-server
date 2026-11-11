@@ -17,6 +17,7 @@ use open_plex_core::page::{Cursor, MAX_ITEMS};
 use open_plex_core::RatingKey;
 
 use crate::cursor::OpaqueCursor;
+use crate::edit::ItemFieldType;
 use crate::library::Library;
 use crate::loader::{ChildCountLoader, ItemLoader, LeafCountLoader, LibraryLoader, VersionsLoader};
 use crate::media::Version;
@@ -88,6 +89,11 @@ const DEFAULT_PAGE_SIZE: u32 = 50;
         name = "watch_state",
         ty = "Option<WatchStateObject>",
         desc = "What the caller has watched of the work, shared by every copy of it. Null without a caller."
+    ),
+    field(
+        name = "locked_fields",
+        ty = "Vec<ItemFieldType>",
+        desc = "The fields an editor locked, which a metadata refresh leaves as they are."
     )
 )]
 pub enum Item {
@@ -185,6 +191,11 @@ impl Movie {
     /// caller.
     pub async fn watch_state(&self, context: &Context<'_>) -> Result<Option<WatchStateObject>> {
         crate::watch::state_of(context, &self.0.guid).await
+    }
+
+    /// The fields an editor locked, which a metadata refresh leaves as they are.
+    pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
+        crate::edit::locked_fields_of(context, self.0.id).await
     }
 
     /// When the item's metadata last changed, in seconds since the Unix epoch.
@@ -369,6 +380,11 @@ impl Show {
     /// caller.
     pub async fn watch_state(&self, context: &Context<'_>) -> Result<Option<WatchStateObject>> {
         crate::watch::state_of(context, &self.0.guid).await
+    }
+
+    /// The fields an editor locked, which a metadata refresh leaves as they are.
+    pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
+        crate::edit::locked_fields_of(context, self.0.id).await
     }
 
     /// When the item's metadata last changed, in seconds since the Unix epoch.
@@ -639,6 +655,11 @@ impl Season {
         crate::watch::state_of(context, &self.0.guid).await
     }
 
+    /// The fields an editor locked, which a metadata refresh leaves as they are.
+    pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
+        crate::edit::locked_fields_of(context, self.0.id).await
+    }
+
     /// When the item's metadata last changed, in seconds since the Unix epoch.
     pub async fn updated_at(&self, _context: &Context<'_>) -> Result<i64> {
         Ok(self.0.updated_at)
@@ -827,6 +848,11 @@ impl Episode {
     /// caller.
     pub async fn watch_state(&self, context: &Context<'_>) -> Result<Option<WatchStateObject>> {
         crate::watch::state_of(context, &self.0.guid).await
+    }
+
+    /// The fields an editor locked, which a metadata refresh leaves as they are.
+    pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
+        crate::edit::locked_fields_of(context, self.0.id).await
     }
 
     /// When the item's metadata last changed, in seconds since the Unix epoch.
