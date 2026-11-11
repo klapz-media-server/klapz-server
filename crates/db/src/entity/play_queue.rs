@@ -14,6 +14,8 @@ pub struct Model {
     /// `None` for an empty queue.
     pub selected_position: Option<i64>,
     pub created_at: i64,
+    /// The playlist it plays, when it plays one.
+    pub playlist_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -324,7 +324,6 @@ impl PlaylistObject {
 
     /// Its items in order, of those its owner may read: the chosen ones, or what the rule
     /// finds now.
-    #[allow(clippy::too_many_arguments)]
     async fn items(
         &self,
         context: &Context<'_>,
@@ -379,7 +378,6 @@ impl PlaylistObject {
 
     /// Its entries in order, of those its owner may read: one per chosen item. Empty for a
     /// smart playlist, which holds none.
-    #[allow(clippy::too_many_arguments)]
     async fn entries(
         &self,
         context: &Context<'_>,
@@ -429,6 +427,17 @@ impl PlaylistEntryObject {
     /// Globally unique, opaque identifier. Pass it to `node` to refetch this entry.
     pub async fn id(&self) -> ID {
         ID(GlobalId::encode(PLAYLIST_ENTRY_TYPE, self.0.id.get()))
+    }
+
+    /// Orders the entries of its playlist, ascending. Neither consecutive nor kept across a
+    /// move: compare it, do not count with it.
+    async fn position(&self) -> i64 {
+        self.0.position
+    }
+
+    /// When it was added, in seconds since the Unix epoch.
+    async fn added_at(&self) -> i64 {
+        self.0.added_at
     }
 
     /// The playlist it belongs to, as returned in `Playlist.id`.
@@ -578,23 +587,30 @@ pub(crate) async fn entry_node(
         .map(|(_, entry)| PlaylistEntryObject(entry)))
 }
 
+/// What `Query.playlists` lists: which playlists, in what order.
+#[derive(Debug)]
+pub(crate) struct ListRequest {
+    pub kind: Option<PlaylistKindType>,
+    pub smart: Option<bool>,
+    pub library: Option<ID>,
+    pub order_by: Option<PlaylistOrder>,
+    pub direction: Option<SortDirection>,
+}
+
 /// `Query.playlists`.
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn list(
     context: &Context<'_>,
-    kind: Option<PlaylistKindType>,
-    smart: Option<bool>,
-    library: Option<ID>,
-    order_by: Option<PlaylistOrder>,
-    direction: Option<SortDirection>,
-    (after, before, first, last, offset): (
-        Option<String>,
-        Option<String>,
-        Option<i32>,
-        Option<i32>,
-        Option<u32>,
-    ),
+    request: ListRequest,
+    (after, before, first, last): (Option<String>, Option<String>, Option<i32>, Option<i32>),
+    offset: Option<u32>,
 ) -> Result<PlaylistConnection> {
+    let ListRequest {
+        kind,
+        smart,
+        library,
+        order_by,
+        direction,
+    } = request;
     let mut filter = PlaylistFilter {
         kind: kind.map(Into::into),
         smart,
@@ -1275,10 +1291,12 @@ pub(crate) async fn clear(
     Ok(PlaylistPayload::of(input.client_mutation_id, outcome))
 }
 
-/// Counts a play of the caller's playlist, when one is named: a play queue made from it.
-pub(crate) async fn record_play(context: &Context<'_>, id: PlaylistId) -> Result<()> {
-    if owned(context, id).await?.is_some() {
-        playlists(context)?.record_play(id, now_epoch()).await?;
+/// Counts a play of the caller's playlist, a play queue made from it. Says whether the caller
+/// has that playlist.
+pub(crate) async fn record_play(context: &Context<'_>, id: PlaylistId) -> Result<bool> {
+    if owned(context, id).await?.is_none() {
+        return Ok(false);
     }
-    Ok(())
+    playlists(context)?.record_play(id, now_epoch()).await?;
+    Ok(true)
 }

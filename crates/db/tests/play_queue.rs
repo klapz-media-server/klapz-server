@@ -15,6 +15,7 @@ async fn repository() -> SqlPlayQueueRepository {
 
 fn queue(count: i64, selected: usize) -> NewPlayQueue {
     NewPlayQueue {
+        playlist: None,
         user: None,
         source_uri: "library://x/item/1".to_owned(),
         items: (1..=count).map(RatingKey::new).collect(),

@@ -1,8 +1,9 @@
 //! `POST /playQueues` and `GET /playQueues/{id}`: what a player will play next.
 //!
 //! What the client names is expanded here, through the official API, into the list of items
-//! a queue holds; storing it and reading it back is the official API's too. Editing a queue is
-//! not served yet.
+//! a queue holds; storing it and reading it back is the official API's too. A playlist, named
+//! by `playlistID` or by its items' path, is played as it lists its items, and the queue
+//! names it. Editing a queue is not served yet.
 
 use std::collections::HashMap;
 
@@ -13,6 +14,7 @@ use axum::Router;
 use open_plex_api::item::ITEM_TYPE;
 use open_plex_api::library::LIBRARY_TYPE;
 use open_plex_api::play_queue::{PLAY_QUEUE_ENTRY_TYPE, PLAY_QUEUE_TYPE};
+use open_plex_api::playlist::PLAYLIST_TYPE;
 use open_plex_api::GlobalId;
 use open_plex_core::page::MAX_ITEMS;
 use serde::Deserialize;
@@ -84,7 +86,7 @@ struct GqlIdentified {
 
 /// The path inside `server://{machine}/com.plexapp.plugins.library{path}`, or `None` when it
 /// names another server or is not such a URI at all.
-fn library_path<'a>(uri: &'a str, machine: &str) -> Option<&'a str> {
+pub(crate) fn library_path<'a>(uri: &'a str, machine: &str) -> Option<&'a str> {
     let rest = uri.strip_prefix("server://")?;
     let (host, rest) = rest.split_once('/')?;
     if host != machine {
@@ -95,7 +97,7 @@ fn library_path<'a>(uri: &'a str, machine: &str) -> Option<&'a str> {
 
 /// The reference restates what the queue was built from in a form of its own: one item, or a
 /// directory of them.
-fn source_uri(path: &str) -> String {
+pub(crate) fn source_uri(path: &str) -> String {
     let single = path
         .strip_prefix("/library/metadata/")
         .is_some_and(|key| key.bytes().all(|byte| byte.is_ascii_digit()));
@@ -106,7 +108,7 @@ fn source_uri(path: &str) -> String {
 
 /// The global ids of what a path names, in play order. Empty for anything that names nothing,
 /// which is a valid, empty queue on the reference.
-async fn expand(state: &PlexState, path: &str) -> Result<Vec<String>, ApiError> {
+pub(crate) async fn expand(state: &PlexState, path: &str) -> Result<Vec<String>, ApiError> {
     if let Some(keys) = path.strip_prefix("/library/metadata/") {
         let keys: Vec<i64> = keys.split(',').filter_map(|key| key.parse().ok()).collect();
         if let [key] = keys[..] {
@@ -209,6 +211,49 @@ async fn fetch_items(state: &PlexState, keys: &[i64]) -> Result<Vec<Option<GqlIt
     Ok(data.items)
 }
 
+/// The playlist a library path names: `/playlists/{id}/items`.
+fn playlist_of(path: &str) -> Option<i64> {
+    path.strip_prefix("/playlists/")?
+        .strip_suffix("/items")?
+        .parse()
+        .ok()
+}
+
+const PLAYLIST_ITEMS_QUERY: &str = r"
+query PlexPlaylistQueue($id: ID!, $first: Int!) {
+  node(id: $id) { ... on Playlist { items(first: $first) { edges { node { id } } } } }
+}
+";
+
+#[derive(Debug, Deserialize)]
+struct PlaylistItemsData {
+    node: Option<GqlPlaylistItems>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlPlaylistItems {
+    items: GqlEpisodes,
+}
+
+/// What a playlist of the caller's lists, in order, or `404` for any other.
+async fn playlist_items(state: &PlexState, key: i64) -> Result<Vec<String>, ApiError> {
+    let mut variables = Variables::default();
+    variables.insert(
+        Name::new("id"),
+        Value::String(GlobalId::encode(PLAYLIST_TYPE, key)),
+    );
+    variables.insert(Name::new("first"), Value::Number(MAX_ITEMS.into()));
+    let data: PlaylistItemsData =
+        gql::execute(&state.schema, PLAYLIST_ITEMS_QUERY, variables).await?;
+    let playlist = data.node.ok_or(ApiError::NotFound)?;
+    Ok(playlist
+        .items
+        .edges
+        .into_iter()
+        .map(|edge| edge.node.id)
+        .collect())
+}
+
 const CREATE_MUTATION: &str = r"
 mutation PlexCreatePlayQueue($input: CreatePlayQueueInput!) {
   createPlayQueue(input: $input) { id }
@@ -233,15 +278,32 @@ async fn create(
             .into_owned()
             .collect();
     params.get("type").ok_or(ApiError::BadRequest)?;
-    let uri = params.get("uri").ok_or(ApiError::BadRequest)?;
-
-    let path = library_path(
-        uri,
-        &crate::gql::machine_identifier(&state.identity.machine_identifier),
-    );
-    let items = match path {
-        Some(path) => expand(&state, path).await?,
-        None => Vec::new(),
+    let machine = crate::gql::machine_identifier(&state.identity.machine_identifier);
+    let playlist = match params.get("playlistID") {
+        Some(key) => Some(key.parse::<i64>().map_err(|_| ApiError::BadRequest)?),
+        None => params
+            .get("uri")
+            .and_then(|uri| library_path(uri, &machine))
+            .and_then(playlist_of),
+    };
+    let (items, source, playlist) = if let Some(key) = playlist {
+        (
+            playlist_items(&state, key).await?,
+            String::new(),
+            Value::String(GlobalId::encode(PLAYLIST_TYPE, key)),
+        )
+    } else {
+        let uri = params.get("uri").ok_or(ApiError::BadRequest)?;
+        let path = library_path(uri, &machine);
+        let items = match path {
+            Some(path) => expand(&state, path).await?,
+            None => Vec::new(),
+        };
+        (
+            items,
+            path.map_or_else(|| uri.clone(), source_uri),
+            Value::Null,
+        )
     };
     let selected = params
         .get("key")
@@ -251,10 +313,8 @@ async fn create(
         .unwrap_or(0);
 
     let fields = [
-        (
-            "sourceUri",
-            Value::String(path.map_or_else(|| uri.clone(), source_uri)),
-        ),
+        ("sourceUri", Value::String(source)),
+        ("playlistId", playlist),
         (
             "itemIds",
             Value::List(items.into_iter().map(Value::String).collect()),
@@ -361,6 +421,7 @@ query PlexPlayQueue($id: ID!) {
       version
       totalCount
       selectedEntry { id position item { id } }
+      playlist { id title }
     }
   }
 }
@@ -397,6 +458,13 @@ struct GqlQueue {
     version: i32,
     total_count: i64,
     selected_entry: Option<GqlEntry>,
+    playlist: Option<GqlQueuePlaylist>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlQueuePlaylist {
+    id: String,
+    title: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -551,6 +619,13 @@ async fn respond(
     body.insert("mediaTagPrefix".into(), json!(MEDIA_TAG_PREFIX));
     body.insert("mediaTagVersion".into(), json!(MEDIA_TAG_VERSION));
     body.insert("playQueueID".into(), json!(database_id(queue_id)));
+    if let Some(playlist) = &queue.playlist {
+        body.insert(
+            "playQueuePlaylistID".into(),
+            json!(database_id(&playlist.id)),
+        );
+        body.insert("playQueuePlaylistTitle".into(), json!(playlist.title));
+    }
     if let Some(selected) = &queue.selected_entry {
         body.insert(
             "playQueueSelectedItemID".into(),
@@ -568,7 +643,10 @@ async fn respond(
         }
     }
     body.insert("playQueueShuffled".into(), json!(queue.shuffled));
-    body.insert("playQueueSourceURI".into(), json!(queue.source_uri));
+    // A playlist's queue names the playlist instead.
+    if queue.playlist.is_none() {
+        body.insert("playQueueSourceURI".into(), json!(queue.source_uri));
+    }
     if queue.total_count > 0 {
         body.insert("playQueueTotalCount".into(), json!(queue.total_count));
     }
@@ -622,6 +700,13 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn reads_the_playlist_a_path_names() {
+        assert_eq!(playlist_of("/playlists/578387/items"), Some(578_387));
+        assert_eq!(playlist_of("/playlists/578387"), None);
+        assert_eq!(playlist_of("/library/metadata/1"), None);
     }
 
     #[test]

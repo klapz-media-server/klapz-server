@@ -1,4 +1,5 @@
-//! Playlists, each owned by one viewer, and their entries in order.
+//! Playlists, each owned by one viewer, and their entries in order; and the playlist a play
+//! queue plays, which it names as the reference names it.
 //!
 //! An entry names its item without a foreign key: an item that leaves the library and comes
 //! back under its id, as a re-import brings it back, finds its place in the playlist again.
@@ -106,10 +107,26 @@ impl MigrationTrait for Migration {
                     .col(PlaylistEntry::Position)
                     .to_owned(),
             )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(PlayQueue::Table)
+                    .add_column(ColumnDef::new(PlayQueue::PlaylistId).big_integer())
+                    .to_owned(),
+            )
             .await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(PlayQueue::Table)
+                    .drop_column(PlayQueue::PlaylistId)
+                    .to_owned(),
+            )
+            .await?;
         manager
             .drop_table(Table::drop().table(PlaylistEntry::Table).to_owned())
             .await?;
@@ -148,4 +165,10 @@ enum PlaylistEntry {
     ItemId,
     Position,
     AddedAt,
+}
+
+#[derive(DeriveIden)]
+enum PlayQueue {
+    Table,
+    PlaylistId,
 }

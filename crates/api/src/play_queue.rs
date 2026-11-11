@@ -59,6 +59,17 @@ impl PlayQueueObject {
         self.0.total
     }
 
+    /// The playlist it plays. Null when it plays none, or one deleted since.
+    async fn playlist(
+        &self,
+        context: &Context<'_>,
+    ) -> Result<Option<crate::playlist::PlaylistObject>> {
+        match self.0.playlist {
+            Some(playlist) => crate::playlist::playlist_node(context, playlist.get()).await,
+            None => Ok(None),
+        }
+    }
+
     /// The entry to play first. Null for an empty queue.
     async fn selected_entry(&self) -> Option<PlayQueueEntryObject> {
         self.0.selected.map(PlayQueueEntryObject)
@@ -145,6 +156,9 @@ pub struct CreatePlayQueueInput {
     pub selected_position: u32,
     /// Put the entries in random order, playing whichever lands first.
     pub shuffle: bool,
+    /// The caller's playlist these items come from, as returned in `Playlist.id`: the queue
+    /// names it, and it counts one more play.
+    pub playlist_id: Option<ID>,
 }
 
 pub(crate) async fn create(
@@ -165,7 +179,22 @@ pub(crate) async fn create(
             return Err(crate::access::denied());
         }
     }
+    let playlist = match &input.playlist_id {
+        Some(id) => {
+            let playlist = GlobalId::decode(id)
+                .ok()
+                .filter(|decoded| decoded.type_name == crate::playlist::PLAYLIST_TYPE)
+                .map(|decoded| open_plex_core::PlaylistId::new(decoded.key))
+                .ok_or_else(crate::access::denied)?;
+            if !crate::playlist::record_play(context, playlist).await? {
+                return Err(crate::access::denied());
+            }
+            Some(playlist)
+        }
+        None => None,
+    };
     let queue = NewPlayQueue {
+        playlist,
         user: caller.user,
         source_uri: input.source_uri,
         selected: usize::try_from(input.selected_position).unwrap_or(0),

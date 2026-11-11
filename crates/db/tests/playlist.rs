@@ -11,7 +11,7 @@ use open_plex_core::playlist::{
 };
 use open_plex_core::watch::Viewer;
 use open_plex_core::{PlaylistEntryId, RatingKey, SectionId, UserId};
-use open_plex_db::entity::{library_section, metadata_item};
+use open_plex_db::entity::{library_section, media, metadata_item};
 use open_plex_db::{write, SqlPlaylistRepository};
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
@@ -484,4 +484,46 @@ async fn clearing_removing_and_deleting() {
     assert!(repository.delete(created.id).await.unwrap());
     assert!(!repository.delete(created.id).await.unwrap());
     assert!(repository.playlist(created.id).await.unwrap().is_none());
+}
+
+fn version(id: i64, item: i64, duration_ms: i64) -> media::ActiveModel {
+    media::ActiveModel {
+        id: ActiveValue::Set(id),
+        metadata_item_id: ActiveValue::Set(item),
+        width: ActiveValue::Set(Some(1280)),
+        height: ActiveValue::Set(Some(720)),
+        aspect_ratio: ActiveValue::Set(Some(1.78)),
+        duration_ms: ActiveValue::Set(Some(duration_ms)),
+        bitrate: ActiveValue::Set(None),
+        container: ActiveValue::Set(Some("mkv".to_owned())),
+        video_codec: ActiveValue::Set(None),
+        audio_codec: ActiveValue::Set(None),
+        audio_channels: ActiveValue::Set(None),
+        frame_rate: ActiveValue::Set(None),
+        interlaced: ActiveValue::Set(false),
+        optimized_for_streaming: ActiveValue::Set(false),
+        created_at: ActiveValue::Set(0),
+        updated_at: ActiveValue::Set(0),
+    }
+}
+
+#[tokio::test]
+async fn a_duration_is_the_first_versions_before_the_items_own() {
+    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    seed(&connection).await;
+    // The second version is ignored; an item with a version reads its version.
+    media::Entity::insert_many([
+        version(10, EPISODE_1, 2_467_000),
+        version(11, EPISODE_1, 9_999_999),
+    ])
+    .exec(&connection)
+    .await
+    .unwrap();
+    let repository = SqlPlaylistRepository::new(connection);
+    let created = repository
+        .create(plain(Viewer::Operator, "OP", &[FILM, EPISODE_1]), NOW)
+        .await
+        .unwrap();
+    let totals = repository.totals(&[created.id], None).await.unwrap();
+    assert_eq!(totals[0].1.duration_ms, 6_031_568 + 2_467_000);
 }

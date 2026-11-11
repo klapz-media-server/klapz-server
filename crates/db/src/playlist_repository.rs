@@ -11,14 +11,14 @@ use open_plex_core::playlist::{
 };
 use open_plex_core::watch::Viewer;
 use open_plex_core::{PlaylistEntryId, PlaylistId, RatingKey, SectionId, UserId};
-use sea_orm::sea_query::{Alias, Expr, Func, SimpleExpr};
+use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection,
     DbErr, EntityTrait, JoinType, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
     RelationTrait, Select, TransactionTrait,
 };
 
-use crate::entity::{metadata_item, playlist, playlist_entry};
+use crate::entity::{media, metadata_item, playlist, playlist_entry};
 use crate::watch_repository::viewer_id;
 
 /// `SQLite` refuses a statement with too many bound values.
@@ -102,6 +102,7 @@ fn to_entry(row: playlist_entry::Model) -> PlaylistEntry {
         playlist: PlaylistId::new(row.playlist_id),
         item: RatingKey::new(row.item_id),
         position: row.position,
+        added_at: row.added_at,
     }
 }
 
@@ -275,6 +276,26 @@ fn visible_entries(
         );
     }
     select
+}
+
+/// An item's running time as the official API publishes it: its first version's, else its
+/// own. Most episodes carry theirs on the version alone.
+fn runtime() -> SimpleExpr {
+    let first_version = Query::select()
+        .column((media::Entity, media::Column::DurationMs))
+        .from(media::Entity)
+        .and_where(
+            Expr::col((media::Entity, media::Column::MetadataItemId))
+                .equals((metadata_item::Entity, metadata_item::Column::Id)),
+        )
+        .order_by((media::Entity, media::Column::Id), Order::Asc)
+        .limit(1)
+        .to_owned();
+    Func::coalesce([
+        SimpleExpr::SubQuery(None, Box::new(first_version.into_sub_query_statement())),
+        Expr::col((metadata_item::Entity, metadata_item::Column::DurationMs)).into(),
+    ])
+    .into()
 }
 
 async fn find_entry<C: ConnectionTrait>(
@@ -569,13 +590,7 @@ impl PlaylistRepository for SqlPlaylistRepository {
                 )
                 // A sum is wider than its column on some engines; cast back to what we read.
                 .column_as(
-                    Expr::expr(Func::cast_as(
-                        Func::sum(Expr::col((
-                            metadata_item::Entity,
-                            metadata_item::Column::DurationMs,
-                        ))),
-                        Alias::new("BIGINT"),
-                    )),
+                    Expr::expr(Func::cast_as(Func::sum(runtime()), Alias::new("BIGINT"))),
                     "duration_ms",
                 )
                 .filter(playlist_entry::Column::PlaylistId.is_in(batch.iter().map(|id| id.get())))
@@ -669,16 +684,15 @@ impl PlaylistRepository for SqlPlaylistRepository {
             )
         };
         let (previous, next) = around(&order);
-        let position = match position_between(previous, next) {
-            Some(position) => position,
-            None => {
-                for ((id, position), rank) in order.iter_mut().zip(1_i64..) {
-                    *position = rank * POSITION_GAP;
-                    set_position(&transaction, *id, *position).await?;
-                }
-                let (previous, next) = around(&order);
-                position_between(previous, next).unwrap_or_default()
+        let position = if let Some(position) = position_between(previous, next) {
+            position
+        } else {
+            for ((id, position), rank) in order.iter_mut().zip(1_i64..) {
+                *position = rank * POSITION_GAP;
+                set_position(&transaction, *id, *position).await?;
             }
+            let (previous, next) = around(&order);
+            position_between(previous, next).unwrap_or_default()
         };
         set_position(&transaction, moved.id, position).await?;
         touch(&transaction, PlaylistId::new(moved.playlist_id), now).await?;

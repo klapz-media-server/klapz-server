@@ -762,6 +762,102 @@ A queue holds at most 500 entries, where the reference took all 9,667 films of a
 window here is capped. Queues are deleted after 7 days, a figure of ours. `PUT` answers `501`, and
 editing a queue is not served.
 
+### Playlists
+
+Measured on the reference with playlists of its test libraries 27 (Soul) and 28 (Bull's two
+episodes), every one deleted afterwards.
+
+**Creating.** `POST /playlists` needs `type` and `title`, and `uri` or `playQueueID` (`400`
+otherwise). The `uri` is a play queue's (`server://{machine}/com.plexapp.plugins.library{path}`):
+a list of keys, a series or a season as its episodes, a library listing. Repeats are dropped,
+within the request and against what the playlist holds: a video playlist holds an item once. A
+URI of another server, or of an unknown item, makes an empty playlist with a `200`.
+`playQueueID` copies a queue's items; a queue the caller does not have copies nothing, and so does
+the reference's queue of a playlist, which holds the playlist rather than its items.
+`smart=1` with a library listing saves the listing as the playlist's rule; its items are the
+listing run anew on every read, in the listing's order, without `playlistItemID`. Here `smart=1`
+with anything but a listing of this server's libraries is `400`, and a filter the listing cannot
+honor is `501`, so that no rule is saved that lists less than it says.
+
+**What a playlist shows.** `ratingKey`, `key` (`/playlists/{id}/items`), `guid`
+(`com.plexapp.agents.none://{uuid}`), `type="playlist"`, `title`, `summary`, `smart`,
+`playlistType`, `composite` (`/playlists/{id}/composite/{updatedAt}`, absent when the playlist is
+empty), `icon="playlist://image.smart"` on a smart one, `duration` in milliseconds (absent when
+empty), `leafCount`, `addedAt`, `updatedAt`, then `Field` for its locks. Three places differ:
+
+| Where | Adds |
+| --- | --- |
+| `GET /playlists` | `viewCount` and `lastViewedAt`, after `icon` |
+| `GET /playlists/{id}` | `content` first on a smart playlist: its listing, restated `library://x/directory/{path}` |
+| `POST`, `PUT …/items` and every change | Neither; `PUT …/items` adds `leafCountAdded` and `leafCountRequested` to the container, on a playlist of chosen items only |
+
+`viewCount` starts at 1 and `lastViewedAt` at the creation: the reference counts the creation as a
+play, then each play queue made from the playlist (`POST /playQueues?playlistID=`, or a `uri` of
+`/playlists/{id}/items`). That queue names `playQueuePlaylistID` and `playQueuePlaylistTitle`
+after `playQueueID`, and has no `playQueueSourceURI`. XML names the element `<Playlist>` and, like
+every item, writes it in the long form even with nothing inside.
+
+The duration is whole seconds per item, summed: 6,031,568 ms and 2,467,160 ms make
+`duration="8498000"`. Ours sums the items' running times (a version's, else the item's) and
+drops the milliseconds of the total, so a playlist of n items can read up to n − 1 seconds more
+than the reference's. A smart playlist has no duration here; the reference computes one.
+
+**Its items.** `GET /playlists/{id}/items` lists the items in a listing's form with their library
+(`librarySectionTitle`, `librarySectionID`, `librarySectionKey`), and `playlistItemID` just before
+`duration`. The container carries `composite` (even empty), `duration` in **seconds**,
+`leafCount`, `playlistType`, `ratingKey`, `smart` and `title`, and pages with the container
+parameters like a listing. `type=4` keeps the episodes; values past the first serve a background
+list the reference keeps and we do not.
+
+**Order.** `/playlists` puts smart playlists first, then the rest by title — with
+`sort=titleSort:desc` too, smart still first. Any other sort (`addedAt`, `lastViewedAt`,
+`duration`…) orders by its value alone, ties by title. We serve the title, `addedAt`,
+`updatedAt` and `lastViewedAt` orders and answer `501` for `duration` and the counts, which a
+smart playlist knows only by listing. `playlistType`, `smart` and `type=15` filter;
+`sectionID` keeps the playlists of the library's kind, a smart one only if it lists that library.
+
+Entries move to fractional orders on the reference (1000, then 1500 between 1000 and 2000, 500
+before the first). Ours are integers 1,024 apart that a move halves, and a playlist renumbers
+when two neighbours touch. `PUT …/items/{id}/move` without `after` moves the entry first; an
+`after` naming no entry of the playlist moves it first on the reference too, where we answer
+`400`, and `after` naming the entry itself leaves it in place.
+
+**Statuses.**
+
+| Request | Reference | Here |
+| --- | --- | --- |
+| `GET`, `DELETE`, `PUT /playlists/{unknown}` and its `items`, `generators` | `404` | Same |
+| `GET /playlists/{a film's id}` | The film, as `/library/metadata` shows it | `404`: playlists have ids of their own, so a film's id is no playlist's |
+| `PUT /playlists/{a film's id}?title=` | `200`, and **the film is renamed** | `404` |
+| `GET /playlists/{a film's id}/items` | `500` | `404` |
+| `DELETE /playlists/{id}` | `204`, then `404` | Same |
+| `PUT /playlists/{id}?title=&summary=` | `200`, empty `text/html` body; `.value` and `.locked` also work | Same; artwork fields answer `501` |
+| `DELETE …/items`, `…/move`, `DELETE …/items/{id}`, `PUT …/items` with an item, on a smart playlist | `400` | Same |
+| `DELETE …/items/{entry}` twice, or an unknown entry | `404` | Same |
+| `GET …/items/{generator}`, `…/items/{generator}/items`, `PUT …/{metadataId}/reprocess` | `404`, on a chosen item's entry and on a smart playlist's rule alike | `404`: these are the optimizer's, and nothing here optimizes |
+| `PUT …/items/{generator}?Item[title]=` | `400` | Same on the caller's playlist |
+| `POST /playlists?type=audio` with a film | `400`, **and the playlist is created** | `400`, nothing created |
+| `POST /playlists/upload` without `path` | `400` | Same; with a `path`, `403` |
+
+**Generators.** `GET /playlists/{id}/generators` lists a `PlayQueueGenerator` per entry
+(`id` = `playlistItemID`, `playlistID`, `metadataItemID`, `order`, `createdAt`, `updatedAt`,
+`changedAt`, `type=-1`), or one carrying the `uri` for a smart playlist. Ours has no `changedAt`
+(an internal counter), gives an entry's position as its `order`, its addition time as both dates,
+and the playlist's id as a smart playlist's generator id.
+
+**Ownership, which is ours.** A playlist is its owner's: the operator's (viewer 0, as for watch
+state) or one user's. Another viewer's playlist answers `404` everywhere; a visitor at a published
+address has none. An entry whose item lies in a library its owner may no longer read is hidden and
+not counted, and comes back with the library; an item deleted from the library is hidden the same
+way and returns if it is imported again under its id.
+
+**Not served.** `POST /playlists/upload` imports `.m3u` files from a path the client names on the
+server, and no endpoint here accepts a path from a client (`security.md`): it stays refused, by
+design rather than for want of time. `composite` points at an image of the items' art, and
+`/playlists/{id}/composite/{updatedAt}` is not served, since this server serves no artwork yet.
+A playlist's ids are its own, from 1, where the reference draws them from its items' ids: a
+client reading `/library/metadata/{ratingKey}` for a playlist finds the item of that id instead.
+
 ### Playback sessions are stored
 
 None of the reference's 71 tables holds a session in progress: only what outlives one, the play

@@ -1626,6 +1626,7 @@ impl crate::play_queue::PlayQueueRepository for InMemoryPlayQueues {
             version: 1,
             total: u64::try_from(entries.len()).unwrap_or(u64::MAX),
             selected: entries.get(queue.selected).copied(),
+            playlist: queue.playlist,
         };
         queues.push((stored.clone(), entries, now));
         Ok(stored)
@@ -1955,7 +1956,7 @@ impl PlaylistStore {
             .ok_or(PlaylistError::EntryNotFound(id))
     }
 
-    fn append(&mut self, playlist: PlaylistId, items: &[RatingKey]) -> u64 {
+    fn append(&mut self, playlist: PlaylistId, items: &[RatingKey], now: i64) -> u64 {
         let ordered = self.ordered(playlist);
         let present: Vec<RatingKey> = ordered.iter().map(|entry| entry.item).collect();
         let mut last = ordered.last().map(|entry| entry.position);
@@ -1968,6 +1969,7 @@ impl PlaylistStore {
                 playlist,
                 item: *item,
                 position,
+                added_at: now,
             });
             last = Some(position);
         }
@@ -2060,7 +2062,7 @@ impl PlaylistRepository for InMemoryPlaylists {
             updated_at: now,
         };
         store.playlists.push(playlist.clone());
-        store.append(id, &new.items);
+        store.append(id, &new.items, now);
         Ok(playlist)
     }
 
@@ -2179,7 +2181,7 @@ impl PlaylistRepository for InMemoryPlaylists {
     ) -> Result<u64, PlaylistError> {
         let mut store = self.lock();
         store.find(playlist)?.updated_at = now;
-        Ok(store.append(playlist, items))
+        Ok(store.append(playlist, items, now))
     }
 
     async fn remove(&self, entry: PlaylistEntryId, now: i64) -> Result<(), PlaylistError> {

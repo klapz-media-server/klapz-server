@@ -103,6 +103,7 @@ pub struct PlaylistEntry {
     pub item: RatingKey,
     /// Orders the entries; neither dense nor stable across moves.
     pub position: i64,
+    pub added_at: i64,
 }
 
 impl PlaylistEntry {

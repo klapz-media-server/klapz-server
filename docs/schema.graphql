@@ -63,6 +63,47 @@ type AccountUserError {
 	code: AccountErrorCode!
 }
 
+"""
+Items to append to a playlist of chosen items.
+"""
+input AddToPlaylistInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The playlist, as returned in `Playlist.id`.
+	"""
+	playlistId: ID!
+	"""
+	The items, in order, as returned in `Item.id`: films and episodes. One the playlist
+	holds already is not added again.
+	"""
+	itemIds: [ID!]!
+}
+
+"""
+A playlist after items were appended.
+"""
+type AddToPlaylistPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The playlist as it now stands. Null when the request was refused.
+	"""
+	playlist: Playlist
+	"""
+	How many of the items were added: those it did not hold already, each once.
+	"""
+	addedCount: Int!
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [PlaylistUserError!]!
+}
+
 type AudioAnalysis {
 	"""
 	Samples per second, in hertz.
@@ -76,6 +117,20 @@ type AudioAnalysis {
 	The track's EBU R128 loudness. Null when it was never measured.
 	"""
 	loudness: Loudness
+}
+
+"""
+A playlist of chosen items to empty.
+"""
+input ClearPlaylistInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The playlist, as returned in `Playlist.id`.
+	"""
+	id: ID!
 }
 
 type ColorDescription {
@@ -170,6 +225,96 @@ input CreatePlayQueueInput {
 	Put the entries in random order, playing whichever lands first.
 	"""
 	shuffle: Boolean!
+	"""
+	The caller's playlist these items come from, as returned in `Playlist.id`: the queue
+	names it, and it counts one more play.
+	"""
+	playlistId: ID
+}
+
+"""
+A playlist to create: of chosen items, or smart with a rule.
+"""
+input CreatePlaylistInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	Its name. Not empty.
+	"""
+	title: String!
+	"""
+	Its description.
+	"""
+	summary: String! = ""
+	"""
+	What it plays.
+	"""
+	kind: PlaylistKind!
+	"""
+	Its first items, in order, as returned in `Item.id`: films and episodes. A repeat is
+	kept once. Not with `rule`.
+	"""
+	itemIds: [ID!]! = []
+	"""
+	Makes it smart: it lists what this rule finds.
+	"""
+	rule: SmartPlaylistRuleInput
+	"""
+	Where the content came from, as the client names it; kept and returned as given.
+	"""
+	sourceUri: String
+}
+
+"""
+The playlist created.
+"""
+type CreatePlaylistPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	Null when the request was refused.
+	"""
+	playlist: Playlist
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [PlaylistUserError!]!
+}
+
+"""
+A playlist to delete.
+"""
+input DeletePlaylistInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The playlist, as returned in `Playlist.id`.
+	"""
+	id: ID!
+}
+
+"""
+What a deletion removed.
+"""
+type DeletePlaylistPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The playlist deleted, as it was returned in `Playlist.id`. Null when refused.
+	"""
+	deletedPlaylistId: ID
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [PlaylistUserError!]!
 }
 
 type DolbyVision {
@@ -1861,6 +2006,24 @@ input MoveExtensionInput {
 	connectionUri: String!
 }
 
+"""
+An entry to move within its playlist.
+"""
+input MovePlaylistEntryInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The entry, as returned in `PlaylistEntry.id`.
+	"""
+	entryId: ID!
+	"""
+	The entry to put it after, of the same playlist. Omitted, it goes first.
+	"""
+	afterEntryId: ID
+}
+
 type Movie implements Item & Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this item.
@@ -2351,6 +2514,78 @@ type Mutation {
 		"""
 		input: UpdateEpisodeInput!
 	): UpdateEpisodePayload!
+	"""
+	Creates a playlist of the caller's: of chosen items, or smart with a rule.
+	"""
+	createPlaylist(
+		"""
+		The playlist to create.
+		"""
+		input: CreatePlaylistInput!
+	): CreatePlaylistPayload!
+	"""
+	Renames, describes, locks or unlocks one of the caller's playlists.
+	"""
+	updatePlaylist(
+		"""
+		The changes.
+		"""
+		input: UpdatePlaylistInput!
+	): PlaylistPayload!
+	"""
+	Deletes one of the caller's playlists, and its entries with it.
+	"""
+	deletePlaylist(
+		"""
+		The playlist to delete.
+		"""
+		input: DeletePlaylistInput!
+	): DeletePlaylistPayload!
+	"""
+	Appends items to one of the caller's playlists of chosen items, skipping those it holds.
+	"""
+	addToPlaylist(
+		"""
+		The playlist and the items.
+		"""
+		input: AddToPlaylistInput!
+	): AddToPlaylistPayload!
+	"""
+	Takes one entry out of one of the caller's playlists.
+	"""
+	removeFromPlaylist(
+		"""
+		The entry.
+		"""
+		input: RemoveFromPlaylistInput!
+	): PlaylistPayload!
+	"""
+	Moves one entry of one of the caller's playlists after another, or first.
+	"""
+	movePlaylistEntry(
+		"""
+		The entry and where it goes.
+		"""
+		input: MovePlaylistEntryInput!
+	): PlaylistPayload!
+	"""
+	Empties one of the caller's playlists of chosen items.
+	"""
+	clearPlaylist(
+		"""
+		The playlist to empty.
+		"""
+		input: ClearPlaylistInput!
+	): PlaylistPayload!
+	"""
+	Replaces the rule of one of the caller's smart playlists.
+	"""
+	replacePlaylistRule(
+		"""
+		The playlist and its new rule.
+		"""
+		input: ReplacePlaylistRuleInput!
+	): PlaylistPayload!
 }
 
 """
@@ -2454,6 +2689,10 @@ type PlayQueue implements Node {
 	How many entries the queue holds.
 	"""
 	totalCount: Int!
+	"""
+	The playlist it plays. Null when it plays none, or one deleted since.
+	"""
+	playlist: Playlist
 	"""
 	The entry to play first. Null for an empty queue.
 	"""
@@ -2652,6 +2891,339 @@ enum PlaybackStateType {
 	BUFFERING
 }
 
+type Playlist implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this playlist.
+	"""
+	id: ID!
+	"""
+	An identifier unique across servers: a UUID, drawn when the playlist was created.
+	"""
+	guid: String!
+	"""
+	Its name.
+	"""
+	title: String!
+	"""
+	Its description. Empty when it has none.
+	"""
+	summary: String!
+	"""
+	What it plays.
+	"""
+	kind: PlaylistKind!
+	"""
+	Whether it lists what a rule finds rather than items chosen one by one.
+	"""
+	isSmart: Boolean!
+	"""
+	The rule of a smart playlist. Null for one of chosen items.
+	"""
+	rule: SmartPlaylistRule
+	"""
+	Where its content came from, as the client that created it named it. Null when it
+	named none.
+	"""
+	sourceUri: String
+	"""
+	The fields an editor locked.
+	"""
+	lockedFields: [PlaylistField!]!
+	"""
+	How many times it was played, its creation counting as the first.
+	"""
+	viewCount: Int!
+	"""
+	When it was last played or, never played, created; in seconds since the Unix epoch.
+	"""
+	lastViewedAt: Int!
+	"""
+	When it was created, in seconds since the Unix epoch.
+	"""
+	addedAt: Int!
+	"""
+	When it or its entries last changed, in seconds since the Unix epoch.
+	"""
+	updatedAt: Int!
+	"""
+	How many items it lists, of those its owner may read.
+	"""
+	itemCount: Int!
+	"""
+	Its items' durations summed, in milliseconds, of those its owner may read. Null for a
+	smart playlist, whose duration is not computed.
+	"""
+	durationMs: Int
+	"""
+	Its items in order, of those its owner may read: the chosen ones, or what the rule
+	finds now.
+	"""
+	items(
+		"""
+		Return items after this cursor.
+		"""
+		after: String,
+		"""
+		Return items before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many items from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many items from the end of the range.
+		"""
+		last: Int,
+		"""
+		Skip this many items first, to land in the middle of the playlist.
+		"""
+		offset: Int
+	): ItemConnection!
+	"""
+	Its entries in order, of those its owner may read: one per chosen item. Empty for a
+	smart playlist, which holds none.
+	"""
+	entries(
+		"""
+		Return entries after this cursor.
+		"""
+		after: String,
+		"""
+		Return entries before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many entries from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many entries from the end of the range.
+		"""
+		last: Int,
+		"""
+		Skip this many entries first, to land in the middle of the playlist.
+		"""
+		offset: Int
+	): PlaylistEntryConnection!
+}
+
+type PlaylistConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [PlaylistEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Playlist!]!
+	"""
+	How many playlists the listing holds, every page together.
+	"""
+	totalCount: Int!
+}
+
+"""
+An edge in a connection.
+"""
+type PlaylistEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Playlist!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type PlaylistEntry implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this entry.
+	"""
+	id: ID!
+	"""
+	Orders the entries of its playlist, ascending. Neither consecutive nor kept across a
+	move: compare it, do not count with it.
+	"""
+	position: Int!
+	"""
+	When it was added, in seconds since the Unix epoch.
+	"""
+	addedAt: Int!
+	"""
+	The playlist it belongs to, as returned in `Playlist.id`.
+	"""
+	playlistId: ID!
+	"""
+	What it plays. Null if the owner may no longer read it.
+	"""
+	item: Item
+}
+
+type PlaylistEntryConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [PlaylistEntryEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [PlaylistEntry!]!
+}
+
+"""
+An edge in a connection.
+"""
+type PlaylistEntryEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: PlaylistEntry!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+Why a playlist mutation did nothing.
+"""
+enum PlaylistErrorCode {
+	"""
+	No playlist of the caller's carries this id.
+	"""
+	PLAYLIST_NOT_FOUND
+	"""
+	No entry of the caller's playlist carries this id.
+	"""
+	ENTRY_NOT_FOUND
+	"""
+	No item the caller can read carries this id.
+	"""
+	ITEM_NOT_FOUND
+	"""
+	The playlist cannot hold an item of this kind: a video playlist holds films and
+	episodes, and the others hold nothing this server has.
+	"""
+	NOT_PLAYABLE
+	"""
+	The playlist is smart: its items come from its rule, and cannot be changed one by one.
+	"""
+	SMART_PLAYLIST
+	"""
+	The playlist holds chosen items, and has no rule to change.
+	"""
+	NOT_SMART
+	"""
+	The rule names no library the caller can read, a library of the wrong kind, or a
+	filter it cannot honor.
+	"""
+	INVALID_RULE
+	"""
+	A title cannot be empty.
+	"""
+	BLANK_TITLE
+}
+
+"""
+A playlist field an editor can lock.
+"""
+enum PlaylistField {
+	"""
+	`title`.
+	"""
+	TITLE
+	"""
+	`summary`.
+	"""
+	SUMMARY
+}
+
+"""
+What a playlist plays.
+"""
+enum PlaylistKind {
+	"""
+	Films and episodes.
+	"""
+	VIDEO
+	"""
+	Music. Nothing here holds any, so such a playlist stays empty.
+	"""
+	AUDIO
+	"""
+	Photographs. Nothing here holds any, so such a playlist stays empty.
+	"""
+	PHOTO
+}
+
+"""
+How the caller's playlists are ordered. Equal values follow in title order, ascending.
+"""
+enum PlaylistOrder {
+	"""
+	Smart playlists first, whichever the direction, then by title, case-insensitively.
+	"""
+	TITLE
+	"""
+	By when the playlist was created.
+	"""
+	ADDED_AT
+	"""
+	By when the playlist or its entries last changed.
+	"""
+	UPDATED_AT
+	"""
+	By when the playlist was last played, its creation counting as a play.
+	"""
+	LAST_VIEWED_AT
+}
+
+"""
+A playlist after a change.
+"""
+type PlaylistPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The playlist as it now stands. Null when the request was refused.
+	"""
+	playlist: Playlist
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [PlaylistUserError!]!
+}
+
+"""
+A request a playlist mutation refused, and where in the input the reason lies.
+"""
+type PlaylistUserError {
+	"""
+	The path to the input field at fault.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person to read.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program to branch on.
+	"""
+	code: PlaylistErrorCode!
+}
+
 type Query {
 	"""
 	Refetches any object by its global identifier.
@@ -2774,6 +3346,51 @@ type Query {
 		"""
 		last: Int
 	): PlaybackSessionConnection!
+	"""
+	The caller's own playlists. Empty for a caller who is neither the operator nor a user.
+	"""
+	playlists(
+		"""
+		Only playlists of this kind.
+		"""
+		kind: PlaylistKind,
+		"""
+		Only smart playlists (`true`), or only those of chosen items (`false`).
+		"""
+		smart: Boolean,
+		"""
+		Only the playlists a library's page shows, as returned in `Library.id`: those of the kind it plays, a smart one only if its rule lists that library.
+		"""
+		library: ID,
+		"""
+		How to order them.
+		"""
+		orderBy: PlaylistOrder,
+		"""
+		Which direction to order in.
+		"""
+		direction: SortDirection,
+		"""
+		Return playlists after this cursor.
+		"""
+		after: String,
+		"""
+		Return playlists before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many playlists from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many playlists from the end of the range.
+		"""
+		last: Int,
+		"""
+		Skip this many playlists first.
+		"""
+		offset: Int
+	): PlaylistConnection!
 	"""
 	Who is asking: the operator, a user, or no one.
 	"""
@@ -2961,6 +3578,42 @@ type RecentlyAddedEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+"""
+An entry to take out of its playlist.
+"""
+input RemoveFromPlaylistInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The entry, as returned in `PlaylistEntry.id`.
+	"""
+	entryId: ID!
+}
+
+"""
+A new rule for a smart playlist.
+"""
+input ReplacePlaylistRuleInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The playlist, as returned in `Playlist.id`.
+	"""
+	playlistId: ID!
+	"""
+	What it lists from now on.
+	"""
+	rule: SmartPlaylistRuleInput!
+	"""
+	Where the content came from, as the client names it; kept and returned as given.
+	"""
+	sourceUri: String
 }
 
 """
@@ -3638,6 +4291,44 @@ type SignUpPayload {
 	Why it was not. Empty when it was.
 	"""
 	userErrors: [AccountUserError!]!
+}
+
+type SmartPlaylistRule {
+	"""
+	The library it lists. Null once the owner may no longer read it, and then the
+	playlist lists nothing.
+	"""
+	library: Library
+	"""
+	How the listing is ordered.
+	"""
+	orderBy: ItemOrder!
+	"""
+	Which direction it is ordered in.
+	"""
+	direction: SortDirection!
+}
+
+"""
+What a smart playlist lists: one library's items, as `Library.items` lists them.
+"""
+input SmartPlaylistRuleInput {
+	"""
+	The library, as returned in `Library.id`. It must hold films or series.
+	"""
+	libraryId: ID!
+	"""
+	Narrows the listing, as `Library.items` takes it.
+	"""
+	filter: ItemFilterInput
+	"""
+	How to order it. Omitted, by title.
+	"""
+	orderBy: ItemOrder
+	"""
+	Which direction to order in. Omitted, ascending.
+	"""
+	direction: SortDirection
 }
 
 """
@@ -4396,6 +5087,36 @@ type UpdateMoviePayload {
 	Why the edit was refused. Empty when it was applied.
 	"""
 	userErrors: [ItemEditUserError!]!
+}
+
+"""
+Changes to a playlist's own fields. An absent field is left alone.
+"""
+input UpdatePlaylistInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The playlist, as returned in `Playlist.id`.
+	"""
+	id: ID!
+	"""
+	Its new name. Not empty.
+	"""
+	title: String
+	"""
+	Its new description; empty clears it.
+	"""
+	summary: String
+	"""
+	Fields to lock.
+	"""
+	lock: [PlaylistField!]! = []
+	"""
+	Fields to unlock.
+	"""
+	unlock: [PlaylistField!]! = []
 }
 
 """

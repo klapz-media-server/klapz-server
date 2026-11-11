@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 9 | 3.5 % |
-| `stub` | 130 | 50.0 % |
-| `partial` | 20 | 7.7 % |
-| `done` | 64 | 24.6 % |
+| `stub` | 114 | 43.8 % |
+| `partial` | 22 | 8.5 % |
+| `done` | 78 | 30.0 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -34,7 +34,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Content](#content) | 13 | 1 | 2 | 10 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
 | [EPG](#epg) | 13 | 13 | 0 | 0 | 0 | 0 |
-| [Library Playlists](#library-playlists) | 13 | 0 | 0 | 13 | 0 | 0 |
+| [Library Playlists](#library-playlists) | 13 | 12 | 1 | 0 | 0 | 0 |
 | [DVRs](#dvrs) | 12 | 12 | 0 | 0 | 0 | 0 |
 | [Metadata Agents](#metadata-agents) | 12 | 0 | 0 | 0 | 0 | 12 |
 | [Subscriptions](#subscriptions) | 10 | 10 | 0 | 0 | 0 | 0 |
@@ -48,7 +48,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Provider](#provider) | 4 | 1 | 0 | 1 | 1 | 1 |
 | [Library Collections](#library-collections) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Log](#log) | 3 | 0 | 0 | 3 | 0 | 0 |
-| [Playlist](#playlist) | 3 | 0 | 0 | 3 | 0 | 0 |
+| [Playlist](#playlist) | 3 | 2 | 1 | 0 | 0 | 0 |
 | [Preferences](#preferences) | 3 | 0 | 1 | 1 | 1 | 0 |
 | [Timeline](#timeline) | 3 | 2 | 1 | 0 | 0 | 0 |
 | [Updater](#updater) | 3 | 2 | 0 | 1 | 0 | 0 |
@@ -67,6 +67,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | --- | --- | --- | --- | --- | --- |
 | `partial` | `GET` | `/video/:/transcode/universal/ping` | user | Keep a transcode session alive | `200` for a session it knows, `404` otherwise, as the reference. No test yet. |
 | `partial` | `GET` | `/video/:/transcode/universal/stop` | user | Stop a transcode session | Stops the process and closes the playback session; `404` for one it does not know, as the reference. No test yet. |
+| `done` | `GET` | `/playlists/all` | user | The caller's playlists | `/playlists` under the key a library's shelf of playlists links to. |
 | `done` | `GET` | `/hubs/home/recentlyAdded` | user | What a library, or every library of a kind, added lately | `type=1` films by date added, ties by arrival; `type=2` a series library's grouped entries, at most 50; anything else empty. The spec names it only in examples. See spec-gaps.md. |
 | `done` | `GET` | `/hubs/continueWatching/items` | user | Every item of the home Continue Watching shelf | Films in progress and next episodes, newest first, with `includedAt`. See spec-gaps.md. |
 | `done` | `GET` | `/hubs/home/continueWatching` | user | What was started | Films and episodes in progress, without the next episodes. |
@@ -249,19 +250,19 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `POST` | `/playlists` | user | Create a Playlist |  |
-| `stub` | `POST` | `/playlists/upload` | admin | Upload |  |
-| `stub` | `DELETE` | `/playlists/{playlistId}` | user | Delete a Playlist |  |
-| `stub` | `PUT` | `/playlists/{playlistId}` | user | Editing a Playlist |  |
-| `stub` | `GET` | `/playlists/{playlistId}/generators` | user | Get a playlist's generators |  |
-| `stub` | `DELETE` | `/playlists/{playlistId}/items` | user | Clearing a playlist |  |
-| `stub` | `PUT` | `/playlists/{playlistId}/items` | user | Adding to a Playlist |  |
-| `stub` | `DELETE` | `/playlists/{playlistId}/items/{generatorId}` | user | Delete a Generator |  |
-| `stub` | `GET` | `/playlists/{playlistId}/items/{generatorId}` | user | Get a playlist generator |  |
-| `stub` | `PUT` | `/playlists/{playlistId}/items/{generatorId}` | user | Modify a Generator |  |
-| `stub` | `GET` | `/playlists/{playlistId}/items/{generatorId}/items` | user | Get a playlist generator's items |  |
-| `stub` | `PUT` | `/playlists/{playlistId}/items/{generatorId}/{metadataId}/{action}` | user | Reprocess a generator |  |
-| `stub` | `PUT` | `/playlists/{playlistId}/items/{playlistItemId}/move` | user | Moving items in a playlist |  |
+| `done` | `POST` | `/playlists` | user | Create a Playlist | From `uri` (items, a series or season as its episodes, a library listing) or `playQueueID`; `smart=1` saves the listing as a rule, `501` for a filter it cannot honor. Repeats dropped. `400` without `type`, `title` or content, and for a video item in an audio playlist (the reference answers `400` and creates it anyway). Another server's URI makes an empty playlist, as captured. |
+| `done` | `POST` | `/playlists/upload` | admin | Upload | Refused by design: it imports `.m3u` files from a path the client names, and no endpoint accepts a path from a client. `403` with a `path`, `400` without, as the reference without one. See spec-gaps.md. |
+| `done` | `DELETE` | `/playlists/{playlistId}` | user | Delete a Playlist | `204`, then `404`, as captured. |
+| `done` | `PUT` | `/playlists/{playlistId}` | user | Editing a Playlist | `title` and `summary`, bare or `.value`, and `.locked`; `200` with an empty HTML body, as captured. Artwork fields answer `501`. Edits playlists only, where the reference edits any item by this route. |
+| `partial` | `GET` | `/playlists/{playlistId}/generators` | user | Get a playlist's generators | One `PlayQueueGenerator` per entry, or a smart playlist's rule with its `uri`. Our `order` is the entry's position; no `changedAt`, and `updatedAt` is when the entry was added. |
+| `done` | `DELETE` | `/playlists/{playlistId}/items` | user | Clearing a playlist | Empties a playlist of chosen items and answers it; `400` on a smart one, as captured. |
+| `done` | `PUT` | `/playlists/{playlistId}/items` | user | Adding to a Playlist | Appends, dropping what it holds, with `leafCountAdded`/`leafCountRequested`; on a smart playlist a library listing replaces the rule and anything else is `400`, as captured. |
+| `done` | `DELETE` | `/playlists/{playlistId}/items/{generatorId}` | user | Delete a Generator | Removes an entry by `playlistItemID`; `404` for one not in this playlist, `400` on a smart playlist, as captured. |
+| `done` | `GET` | `/playlists/{playlistId}/items/{generatorId}` | user | Get a playlist generator | `404`: generators by id are the optimizer's, and nothing here optimizes. The reference answers `404` for a chosen item's and a smart playlist's too. |
+| `done` | `PUT` | `/playlists/{playlistId}/items/{generatorId}` | user | Modify a Generator | `400` on the caller's playlist, `404` otherwise, as the reference answers on a playlist of chosen items: the optimizer's alone. |
+| `done` | `GET` | `/playlists/{playlistId}/items/{generatorId}/items` | user | Get a playlist generator's items | `404`, as captured: the optimizer's alone. |
+| `done` | `PUT` | `/playlists/{playlistId}/items/{generatorId}/{metadataId}/{action}` | user | Reprocess a generator | `404`, as captured: the optimizer's alone. |
+| `done` | `PUT` | `/playlists/{playlistId}/items/{playlistItemId}/move` | user | Moving items in a playlist | After `after`, or first without it; `404` for an entry not in the playlist, `400` on a smart one, as captured. An `after` naming no entry is `400`, where the reference moves the entry first. See spec-gaps.md. |
 
 ## DVRs
 
@@ -418,9 +419,9 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/playlists` | user | Retrieve Playlists |  |
-| `stub` | `GET` | `/playlists/{playlistId}` | user | Retrieve Playlist |  |
-| `stub` | `GET` | `/playlists/{playlistId}/items` | user | Retrieve Playlist Contents |  |
+| `partial` | `GET` | `/playlists` | user | Retrieve Playlists | The caller's own playlists, smart ones first then by title, as captured; `playlistType`, `smart`, `sectionID` (a library's kind, its own smart ones) and `type=15`; `sort` by title, `addedAt`, `updatedAt`, `lastViewedAt`, `501` for `duration` and the counts. Windowed; `viewCount`/`lastViewedAt` only here, as captured. Gap: a smart playlist's `duration`. Also served at `/playlists/all`. See spec-gaps.md. |
+| `done` | `GET` | `/playlists/{playlistId}` | user | Retrieve Playlist | The playlist in the captured order, a smart one's `content` first; `404` for an unknown id, a non-number, or another viewer's. A film's id is not a playlist here, where the reference shows the film. `composite` points at an image not served yet. |
+| `done` | `GET` | `/playlists/{playlistId}/items` | user | Retrieve Playlist Contents | Listing form with the item's library and `playlistItemID` before `duration`, as captured; container `duration` in seconds and `composite` even empty. A smart playlist lists its rule anew, without entries. Items of libraries the caller may not read are hidden. `type` keeps one kind. |
 
 ## Preferences
 

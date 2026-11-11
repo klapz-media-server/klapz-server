@@ -30,6 +30,7 @@ mod music;
 pub mod photo;
 mod play_queues;
 mod playback;
+mod playlists;
 pub mod plex_tv;
 pub mod prefs;
 pub mod providers;
@@ -111,6 +112,7 @@ pub fn router(state: PlexState) -> Router {
         .merge(activities::router())
         .merge(search::router())
         .merge(play_queues::router())
+        .merge(playlists::router())
         .merge(related::router())
         .merge(user_state::router())
         .merge(tracks::router())

@@ -55,6 +55,7 @@ impl SqlPlayQueueRepository {
             version: row.version,
             total,
             selected,
+            playlist: row.playlist_id.map(open_plex_core::PlaylistId::new),
         })
     }
 }
@@ -89,6 +90,7 @@ impl PlayQueueRepository for SqlPlayQueueRepository {
             version: ActiveValue::Set(1),
             selected_position: ActiveValue::Set(selected_position),
             created_at: ActiveValue::Set(now),
+            playlist_id: ActiveValue::Set(queue.playlist.map(open_plex_core::PlaylistId::get)),
         }
         .insert(&transaction)
         .await

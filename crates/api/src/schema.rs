@@ -341,6 +341,7 @@ impl Query {
     }
 
     /// The caller's own playlists. Empty for a caller who is neither the operator nor a user.
+    // One Rust parameter per field argument; see the note on `Library.items`.
     #[allow(clippy::too_many_arguments)]
     async fn playlists(
         &self,
@@ -368,16 +369,14 @@ impl Query {
         last: Option<i32>,
         #[graphql(desc = "Skip this many playlists first.")] offset: Option<u32>,
     ) -> Result<crate::playlist::PlaylistConnection> {
-        crate::playlist::list(
-            context,
+        let request = crate::playlist::ListRequest {
             kind,
             smart,
             library,
             order_by,
             direction,
-            (after, before, first, last, offset),
-        )
-        .await
+        };
+        crate::playlist::list(context, request, (after, before, first, last), offset).await
     }
 
     /// Who is asking: the operator, a user, or no one.
