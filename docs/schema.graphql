@@ -3749,7 +3749,8 @@ input StartStreamInput {
 	"""
 	subtitleScale: Float! = 1.0
 	"""
-	The most the video may weigh, in bits per second.
+	The most the video may weigh, in bits per second: for an adaptive stream, a ceiling on
+	every quality.
 	"""
 	maxVideoBitrate: Int
 	"""
@@ -3757,9 +3758,9 @@ input StartStreamInput {
 	"""
 	convertAudio: Boolean! = false
 	"""
-	Automatic quality: always a re-encode.
+	How the quality follows the link.
 	"""
-	adaptive: Boolean! = false
+	quality: StreamQualityType! = FIXED
 	"""
 	Where to start, in milliseconds.
 	"""
@@ -3909,6 +3910,10 @@ type StreamObject {
 	"""
 	protocol: StreamProtocolType
 	"""
+	How its quality follows the link, as asked.
+	"""
+	quality: StreamQualityType!
+	"""
 	What happens to the video track.
 	"""
 	videoDecision: StreamDecisionType!
@@ -3926,7 +3931,8 @@ type StreamObject {
 	"""
 	subtitlesUrl: String
 	"""
-	The bitrate of the video sent, in bits per second, when known.
+	The bitrate of the video sent, in bits per second, when known: at the start, for an
+	adaptive stream.
 	"""
 	videoBitrate: Int
 	"""
@@ -3955,6 +3961,26 @@ enum StreamProtocolType {
 	HTTP Live Streaming, MPEG-TS segments.
 	"""
 	HLS
+}
+
+"""
+How a conversion's quality follows the link.
+"""
+enum StreamQualityType {
+	"""
+	One quality for the whole stream, the best within `maxVideoBitrate`.
+	"""
+	FIXED
+	"""
+	One quality announced, which the server lowers and raises by measuring how fast the
+	player receives it. Always a re-encode, at one picture size.
+	"""
+	SERVER_ADAPTIVE
+	"""
+	Every quality announced, the video copied first when the file allows it, and the player
+	chooses among them as it goes.
+	"""
+	CLIENT_ADAPTIVE
 }
 
 """

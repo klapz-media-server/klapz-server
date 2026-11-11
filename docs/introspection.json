@@ -11137,7 +11137,7 @@
             },
             {
               "name": "maxVideoBitrate",
-              "description": "The most the video may weigh, in bits per second.",
+              "description": "The most the video may weigh, in bits per second: for an adaptive stream, a ceiling on\nevery quality.",
               "type": {
                 "kind": "SCALAR",
                 "name": "Int",
@@ -11160,18 +11160,18 @@
               "defaultValue": "false"
             },
             {
-              "name": "adaptive",
-              "description": "Automatic quality: always a re-encode.",
+              "name": "quality",
+              "description": "How the quality follows the link.",
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "SCALAR",
-                  "name": "Boolean",
+                  "kind": "ENUM",
+                  "name": "StreamQualityType",
                   "ofType": null
                 }
               },
-              "defaultValue": "false"
+              "defaultValue": "FIXED"
             },
             {
               "name": "positionMs",
@@ -11510,6 +11510,22 @@
               "deprecationReason": null
             },
             {
+              "name": "quality",
+              "description": "How its quality follows the link, as asked.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "StreamQualityType",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "videoDecision",
               "description": "What happens to the video track.",
               "args": [],
@@ -11571,7 +11587,7 @@
             },
             {
               "name": "videoBitrate",
-              "description": "The bitrate of the video sent, in bits per second, when known.",
+              "description": "The bitrate of the video sent, in bits per second, when known: at the start, for an\nadaptive stream.",
               "args": [],
               "type": {
                 "kind": "SCALAR",
@@ -11640,6 +11656,35 @@
             {
               "name": "HLS",
               "description": "HTTP Live Streaming, MPEG-TS segments.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "StreamQualityType",
+          "description": "How a conversion's quality follows the link.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "FIXED",
+              "description": "One quality for the whole stream, the best within `maxVideoBitrate`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SERVER_ADAPTIVE",
+              "description": "One quality announced, which the server lowers and raises by measuring how fast the\nplayer receives it. Always a re-encode, at one picture size.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CLIENT_ADAPTIVE",
+              "description": "Every quality announced, the video copied first when the file allows it, and the player\nchooses among them as it goes.",
               "isDeprecated": false,
               "deprecationReason": null
             }
