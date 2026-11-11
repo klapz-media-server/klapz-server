@@ -19,17 +19,17 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 8 | 3.1 % |
-| `stub` | 100 | 38.5 % |
-| `partial` | 24 | 9.2 % |
-| `done` | 91 | 35.0 % |
-| `deferred` | 37 | 14.2 % |
+| `stub` | 95 | 36.5 % |
+| `partial` | 25 | 9.6 % |
+| `done` | 93 | 35.8 % |
+| `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
 ## By domain
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 3 | 9 | 43 | 6 | 24 |
+| [Library](#library) | 85 | 5 | 10 | 38 | 6 | 26 |
 | [Hubs](#hubs) | 15 | 1 | 1 | 13 | 0 | 0 |
 | [Content](#content) | 13 | 1 | 2 | 10 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
@@ -100,15 +100,15 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `deferred` | `PUT` | `/library/metadata/{ids}/analyze` | admin | Analyze an item | scanner/analysis, separate binary |
 | `deferred` | `PUT` | `/library/metadata/{ids}/analyzeLoudness` | admin | Detect loudness of audio streams | scanner/analysis, separate binary |
 | `deferred` | `PUT` | `/library/metadata/{ids}/chapterThumbs` | admin | Generate thumbs of chapters for an item | scanner/analysis, separate binary |
-| `stub` | `PUT` | `/library/metadata/{ids}/credits` | admin | Credit detect a metadata item |  |
+| `deferred` | `PUT` | `/library/metadata/{ids}/credits` | admin | Credit detect a metadata item | scanner/analysis, separate binary |
 | `stub` | `GET` | `/library/metadata/{ids}/extras` | user | Get an item's extras |  |
 | `stub` | `POST` | `/library/metadata/{ids}/extras` | user | Add to an item's extras |  |
 | `stub` | `GET` | `/library/metadata/{ids}/file` | user | Get a file from a metadata or media bundle |  |
 | `stub` | `PUT` | `/library/metadata/{ids}/index` | admin | Start BIF generation of an item |  |
-| `stub` | `PUT` | `/library/metadata/{ids}/intro` | admin | Intro detect an item |  |
-| `stub` | `POST` | `/library/metadata/{ids}/marker` | user | Create a marker |  |
-| `stub` | `DELETE` | `/library/metadata/{ids}/marker/{marker}` | user | Delete a marker |  |
-| `stub` | `PUT` | `/library/metadata/{ids}/marker/{marker}` | user | Edit a marker |  |
+| `deferred` | `PUT` | `/library/metadata/{ids}/intro` | admin | Intro detect an item | scanner/analysis, separate binary |
+| `partial` | `POST` | `/library/metadata/{ids}/marker` | user | Create a marker | The caller's bookmark, through `addMarker`, with the rules measured on the reference's test libraries: `type=bookmark` by name, a required `startTimeOffset`, an optional end after it, `attributes[title]` and `[color]` kept; an identical span answers the bookmark already there. Gaps: any other `type` is a `400` (the work's intro and credits are written on the official API by the library's editors; the reference was not measured there), and a series or a season is a `400` where the reference keeps a bookmark. See spec-gaps.md. |
+| `done` | `DELETE` | `/library/metadata/{ids}/marker/{marker}` | user | Delete a marker | The caller's bookmark, through `deleteMarker`: an empty `200`, `400` for another item's marker or one that is not a bookmark, `404` for one that does not exist, as measured. |
+| `done` | `PUT` | `/library/metadata/{ids}/marker/{marker}` | user | Edit a marker | The caller's bookmark, through `updateMarker`: `type` ignored, the end and the title kept when not given, `400` for another item's marker or a span ending before it starts, `404` for one that does not exist, as measured. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/match` | admin | Match a metadata item | scanner/analysis, separate binary |
 | `deferred` | `PUT` | `/library/metadata/{ids}/matches` | admin | Get metadata matches for an item | scanner/analysis, separate binary |
 | `stub` | `DELETE` | `/library/metadata/{ids}/media/{mediaItem}` | admin | Delete a media item |  |

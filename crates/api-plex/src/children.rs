@@ -49,7 +49,7 @@ const SEASON_VIEW_MODE: u32 = 65_593;
 static CHILDREN_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     with_shared_fragments(
         r"
-query PlexChildren($id: ID!, $first: Int!, $offset: Int!) {
+query PlexChildren($id: ID!, $first: Int!, $offset: Int!, $markers: Boolean = false) {
   node(id: $id) {
     __typename
     ... on Show {
@@ -80,6 +80,7 @@ query PlexChildren($id: ID!, $first: Int!, $offset: Int!) {
               ...EpisodeFields
               versions { ...VersionFields files { id path sizeBytes durationMs } }
               ...ListedEpisodeTags
+              ...Markers
             }
           }
         }
@@ -99,7 +100,7 @@ query PlexChildren($id: ID!, $first: Int!, $offset: Int!) {
 static GRANDCHILDREN_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     with_shared_fragments(
         r"
-query PlexGrandchildren($id: ID!, $first: Int!, $offset: Int!) {
+query PlexGrandchildren($id: ID!, $first: Int!, $offset: Int!, $markers: Boolean = false) {
   node(id: $id) {
     __typename
     ... on Show {
@@ -113,6 +114,7 @@ query PlexGrandchildren($id: ID!, $first: Int!, $offset: Int!) {
               ...EpisodeFields
               versions { ...VersionFields files { id path sizeBytes durationMs } }
               ...ListedEpisodeTags
+              ...Markers
             }
           }
         }
@@ -129,6 +131,7 @@ query PlexGrandchildren($id: ID!, $first: Int!, $offset: Int!) {
               ...EpisodeFields
               versions { ...VersionFields files { id path sizeBytes durationMs } }
               ...ListedEpisodeTags
+              ...Markers
             }
           }
         }
@@ -148,7 +151,7 @@ query PlexGrandchildren($id: ID!, $first: Int!, $offset: Int!) {
 static ALL_LEAVES_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     with_shared_fragments(
         r"
-query PlexAllLeaves($id: ID!, $first: Int!, $offset: Int!) {
+query PlexAllLeaves($id: ID!, $first: Int!, $offset: Int!, $markers: Boolean = false) {
   node(id: $id) {
     __typename
     ... on Show {
@@ -167,6 +170,7 @@ query PlexAllLeaves($id: ID!, $first: Int!, $offset: Int!) {
               ...EpisodeFields
               versions { ...VersionFields files { id path sizeBytes durationMs } }
               ...ListedEpisodeTags
+              ...Markers
             }
           }
         }
@@ -419,6 +423,10 @@ async fn open(
     );
     variables.insert(Name::new("first"), Value::Number(first.into()));
     variables.insert(Name::new("offset"), Value::Number(request.start.into()));
+    variables.insert(
+        Name::new("markers"),
+        Value::Boolean(crate::markers::requested(pairs)),
+    );
 
     let data: ParentData = gql::execute(&state.schema, query, variables).await?;
     let parent = data.node.ok_or(ApiError::NotFound)?;

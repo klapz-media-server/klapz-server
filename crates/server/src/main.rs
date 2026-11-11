@@ -261,6 +261,7 @@ async fn run_import(
         item_tags = summary.tags.item_tags,
         external_ids = summary.tags.external_ids,
         ratings = summary.tags.ratings,
+        markers = summary.markers.markers,
         orphans = summary.orphans,
         "import complete"
     );

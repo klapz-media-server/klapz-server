@@ -189,7 +189,7 @@ async fn expand_item(
 }
 
 async fn existing(state: &PlexState, keys: Vec<i64>) -> Result<Vec<String>, ApiError> {
-    let found = fetch_items(state, &keys).await?;
+    let found = fetch_items(state, &keys, false).await?;
     Ok(found.into_iter().flatten().map(|item| item.id).collect())
 }
 
@@ -237,8 +237,13 @@ async fn expand_section(state: &PlexState, rest: &str) -> Result<Vec<String>, Ap
         .unwrap_or_default())
 }
 
-async fn fetch_items(state: &PlexState, keys: &[i64]) -> Result<Vec<Option<GqlItem>>, ApiError> {
+async fn fetch_items(
+    state: &PlexState,
+    keys: &[i64],
+    markers: bool,
+) -> Result<Vec<Option<GqlItem>>, ApiError> {
     let mut variables = Variables::default();
+    variables.insert(Name::new("markers"), Value::Boolean(markers));
     variables.insert(
         Name::new("ids"),
         Value::List(
@@ -408,7 +413,18 @@ async fn create(
     ]);
     let data: CreatedData = gql::execute(&state.schema, CREATE_MUTATION, variables).await?;
     let queue = load(&state, &data.create_play_queue.id).await?;
-    let body = render(&state, &queue, &queue, &range, Language::of(&client)).await?;
+    let markers = params
+        .get("includeMarkers")
+        .is_some_and(|value| value == "1");
+    let body = render(
+        &state,
+        &queue,
+        &queue,
+        &range,
+        Language::of(&client),
+        markers,
+    )
+    .await?;
     Ok(PlexResponse::new(body, format))
 }
 
@@ -676,6 +692,7 @@ async fn metadata(
     center: Option<i64>,
     range: &Range,
     language: Language,
+    markers: bool,
 ) -> Result<Vec<Json>, ApiError> {
     let Some(center) = center else {
         return Ok(Vec::new());
@@ -691,7 +708,7 @@ async fn metadata(
     let items = if keys.is_empty() {
         Vec::new()
     } else {
-        fetch_items(state, &keys).await?
+        fetch_items(state, &keys, markers).await?
     };
     let shown = entries.iter().filter(|entry| entry.item.is_some());
     Ok(shown
@@ -759,12 +776,14 @@ async fn render(
     current: &GqlQueue,
     range: &Range,
     language: Language,
+    // Each item carries its markers, as `includeMarkers=1` asks.
+    markers: bool,
 ) -> Result<Json, ApiError> {
     let center = match range.center {
         Some(entry) => entry_position(state, &current.id, entry).await?,
         None => current.selected_entry.as_ref().map(|entry| entry.position),
     };
-    let metadata = metadata(state, current, center, range, language).await?;
+    let metadata = metadata(state, current, center, range, language, markers).await?;
     Ok(container(header, metadata))
 }
 
@@ -777,8 +796,19 @@ async fn read(
     format: ResponseFormat,
 ) -> Result<PlexResponse<Json>, ApiError> {
     let range = Range::parse(query.as_deref().unwrap_or_default())?;
+    let markers = parameters(query.as_deref())
+        .get("includeMarkers")
+        .is_some_and(|value| value == "1");
     let queue = load(&state, &GlobalId::encode(PLAY_QUEUE_TYPE, queue)).await?;
-    let body = render(&state, &queue, &queue, &range, Language::of(&client)).await?;
+    let body = render(
+        &state,
+        &queue,
+        &queue,
+        &range,
+        Language::of(&client),
+        markers,
+    )
+    .await?;
     Ok(PlexResponse::new(body, format))
 }
 
@@ -849,6 +879,7 @@ async fn add(
         &queue,
         &Range::default(),
         Language::of(&client),
+        false,
     )
     .await?;
     Ok(PlexResponse::new(body, format))
@@ -896,6 +927,7 @@ async fn edit_whole(
         &queue,
         &Range::default(),
         Language::of(client),
+        false,
     )
     .await?;
     Ok(PlexResponse::new(body, format))
@@ -983,7 +1015,15 @@ async fn remove(
         center,
         ..Range::default()
     };
-    let body = render(&state, &header, &after, &range, Language::of(&client)).await?;
+    let body = render(
+        &state,
+        &header,
+        &after,
+        &range,
+        Language::of(&client),
+        false,
+    )
+    .await?;
     Ok(PlexResponse::new(body, format))
 }
 
@@ -1072,6 +1112,7 @@ async fn move_entry(
         &queue,
         &Range::default(),
         Language::of(&client),
+        false,
     )
     .await?;
     Ok(PlexResponse::new(body, format))

@@ -46,6 +46,8 @@ IMPLEMENTED = frozenset(
         "/library/sections/all",
         "/library/sections/{sectionId}/all",
         "/library/metadata/{ids}",
+        "/library/metadata/{ids}/marker",
+        "/library/metadata/{ids}/marker/{marker}",
         # Singular. The spec declares only the plural form, which a real server 404s;
         # listed so the stub generator does not register a second route on this path.
         "/library/sections/{sectionId}/firstCharacter",
@@ -302,6 +304,9 @@ DEFERRED_PATHS = (
     "/library/caches",
     "/indexes",
     "/intros",
+    # Intro and credits detection, run on one item; the markers it would write are imported.
+    "/metadata/{ids}/intro",
+    "/metadata/{ids}/credits",
 )
 
 ROW_RE = re.compile(

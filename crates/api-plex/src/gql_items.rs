@@ -43,6 +43,10 @@ use crate::language::Language;
 /// metadata refresh rewrites, and on 0.5% of items those columns are stale — a renamed
 /// person, a dropped country. We derive from the tags themselves and differ on those.
 ///
+/// `Markers` is selected only when a request carries `includeMarkers=1`, through the
+/// `$markers` variable each query spreading it declares, false by default: the reference
+/// publishes them on request alone.
+///
 /// `VersionFields` stops short of `files` so each query can select its own depth: a listing
 /// takes the files, a lookup takes the tracks inside them. The alternative — one fragment per
 /// depth — duplicates the twelve scalars above and lets them drift. `SeasonFields` and
@@ -277,6 +281,26 @@ fragment ListedEpisodeTags on Episode {
   }
 }
 
+fragment Markers on Item {
+  ... on Movie {
+    markers(first: 500) @include(if: $markers) { edges { node { ...MarkerFields } } }
+  }
+  ... on Episode {
+    markers(first: 500) @include(if: $markers) { edges { node { ...MarkerFields } } }
+  }
+}
+
+fragment MarkerFields on Marker {
+  databaseId
+  kind
+  startMs
+  endMs
+  final
+  version
+  title
+  color
+}
+
 fragment TagFields on Tag {
   id
   name
@@ -345,6 +369,7 @@ pub static SECTION_ITEMS_QUERY: LazyLock<String> = LazyLock::new(|| {
     with_shared_fragments(
         r"
 query PlexSectionItems(
+  $markers: Boolean = false
   $id: ID!
   $first: Int!
   $offset: Int!
@@ -371,6 +396,7 @@ query PlexSectionItems(
         edges {
           node {
             ...ListedItem
+            ...Markers
           }
         }
       }
@@ -613,10 +639,11 @@ pub struct GqlForwardPageInfo {
 pub static ITEMS_BY_ID_QUERY: LazyLock<String> = LazyLock::new(|| {
     with_shared_fragments(
         r"
-query PlexItems($ids: [ID!]!) {
+query PlexItems($ids: [ID!]!, $markers: Boolean = false) {
   items: nodes(ids: $ids) {
     ...Shared
     ...References
+    ...Markers
     ... on Item { lockedFields }
     ... on Movie {
       originalTitle
@@ -789,6 +816,24 @@ pub struct GqlItem {
     pub ratings: GqlConnection<GqlRating>,
     /// `ItemField` names. A lookup asks for them, a listing does not.
     pub locked_fields: Vec<String>,
+    /// Asked for on `includeMarkers=1` only.
+    pub markers: GqlConnection<GqlMarker>,
+}
+
+/// A marker, as `MarkerFields` selects it.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlMarker {
+    pub database_id: String,
+    /// `INTRO`, `CREDITS`, `COMMERCIAL` or `BOOKMARK`.
+    pub kind: String,
+    pub start_ms: i64,
+    pub end_ms: Option<i64>,
+    #[serde(rename = "final")]
+    pub is_final: bool,
+    pub version: Option<i32>,
+    pub title: Option<String>,
+    pub color: Option<String>,
 }
 
 impl GqlItem {

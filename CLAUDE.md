@@ -349,6 +349,13 @@ Places where we knowingly answer differently, each decided rather than overlooke
   grabbers it ships, plex.tv's guide countries and languages — we list nothing, since none of
   it can be used here; where it refuses recordings `401` for want of a subscription, we answer
   the empty list (`docs/spec-gaps.md`).
+- **Intro and credits markers are everyone's, and their shape is inferred.** The reference
+  publishes the markers its analysis found only to a subscriber, so their element follows the
+  spec's example and the bookmarks it does publish (`docs/spec-gaps.md`); we publish them to
+  every caller who reads the item, and detect none: they are imported, or set on the official
+  API by a library's editors. The Plex marker routes write the caller's bookmarks only — a
+  `type` other than `bookmark` is a `400`, as is a bookmark on a series, which the reference
+  keeps.
 
 ### Data model
 
@@ -593,6 +600,14 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   the server's moves bitrates under one representation whose codec headers never change
   (`transcoder::adapt` holds both rules).
   Played across rung changes by shaka-player and hls.js without a stop.
+- ✅ **intro and credits markers, and bookmarks**: the 217,863 markers the reference's analysis
+  stored imported into a table of our own (`item_marker`), the work's and each viewer's
+  bookmarks apart by owner; on the official API (`Movie.markers`, `Episode.markers`, `Marker`
+  with `node`, `addMarker`, `updateMarker`, `deleteMarker`: the work's for a library's admins
+  and the operator, a bookmark for its keeper alone) and on the Plex surface (`Marker` on
+  lookups, listings, `/children`, `/grandchildren`, `/allLeaves` and play queues with
+  `includeMarkers=1`; the bookmark routes `POST`, `PUT` and `DELETE …/marker` as measured on the
+  reference's test libraries). Detection (`…/intro`, `…/credits`) stays deferred.
 
 ## Reference server
 

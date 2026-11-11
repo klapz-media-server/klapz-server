@@ -1011,6 +1011,98 @@ design rather than for want of time. `composite` points at an image of the items
 A playlist's ids are its own, from 1, where the reference draws them from its items' ids: a
 client reading `/library/metadata/{ratingKey}` for a playlist finds the item of that id instead.
 
+### Markers: intro, credits, bookmarks
+
+What "Skip intro" and "Skip credits" read. Plex keeps two kinds of marker in two places, and
+publishes them in one element:
+
+- **the work's**, found by its analysis: one `taggings` row per marker, attached to the one tag
+  of `tag_type` 12 (189893 here), the kind in `text` (`intro`, `credits`; `commercial` from the
+  advertisement detection, none here), the span in `time_offset` and `end_time_offset`, and
+  `extra_data` packing `pv:final=1` on the credits that run to the end and `pv:version` for the
+  detection (`4` for credits, `5` for intros). 217,863 in the reference library: 80,228 intros and
+  137,635 credits, 124,636 of them final, on 20,713 films and 197,150 episodes. `index` numbers
+  an item's markers in the order they were found, which is `id` order on every row;
+- **an account's**, `metadata_item_setting_markers` under the account's `metadata_item_settings`
+  row: `marker_type` (3 for a bookmark), the span, `title`, and `extra_data` packing
+  `at:color`. Empty in both databases; this is what `POST`/`PUT`/`DELETE …/marker` write.
+
+**The reference publishes the work's markers only with a subscription.** Its account has none
+(`myPlexSubscription="0"`), and no route shows them: not `/library/metadata/{id}?includeMarkers=1`,
+`/children`, `/grandchildren`, `/library/sections/{id}/all` nor the `includeElements` forms its
+binary carries, on an episode whose two markers its live database holds. An account's
+bookmarks it publishes regardless. So the element's shape is measured on bookmarks, and on the
+work's markers it is the spec's example plus what the analysis stores:
+
+| | Bookmark (measured) | The work's (spec and storage) |
+| --- | --- | --- |
+| `id` | absent | the marker's |
+| `type` | `bookmark` | `intro`, `credits`, `commercial` |
+| `startTimeOffset`, `endTimeOffset` | ms; the end absent for a point | ms |
+| `final` | absent | `1` / `true` on final credits only |
+| `<Attributes>` | `color`, `id`, `title`, in that order, an absent one omitted | `id`, `version` |
+
+`Attributes` is an object in JSON (`"Attributes":{"id":1}`), not an array, and `id` a number.
+`version` is published as a number; the reference was not seen publishing it. Markers come in the
+order they were added, after the tags and before `Field` (measured on a listing, after a
+`Collection`, and on a lookup), and only with `includeMarkers=1`: `0` or nothing omits them. On
+`/children`, `/grandchildren`, `/allLeaves`, `/library/sections/{id}/all` and play queues as on a
+lookup — the reference's binary asks its own `/children` and `/grandchildren` for them, and
+Plex Web sends `includeMarkers=1` on every lookup and play queue.
+
+**Writing bookmarks**, measured on Soul (27) and Bull's first episode (28), every bookmark deleted
+afterwards:
+
+| Request | Reference | Here |
+| --- | --- | --- |
+| `POST …/marker?type=bookmark&startTimeOffset=10000&endTimeOffset=20000` | `200`, the container with `<Marker type="bookmark" …><Attributes /></Marker>`: no id yet | Same |
+| `type=0`…`3`, `type=foo` | `400` (`Could not convert "type"`) | Same |
+| `type=intro`, `credits`, `commercial` | Not measured: a marker made this way could not be removed, `DELETE` refusing what is not a bookmark | `400`: the work's markers are written on the official API |
+| No `startTimeOffset`, `-5`, `x`; an end at or before the start | `400` | Same |
+| An end left out | A point: no `endTimeOffset` | Same |
+| `attributes[title]`, `attributes[color]`, `attributes[foo]` | Title and colour kept, the rest ignored | Same |
+| The same span again | `200` with the bookmark already there (`<Attributes id="4" />`), its title unchanged; a start alone and the same start with an end are two | Same |
+| Overlapping another bookmark | Allowed | Same |
+| An item that does not exist | `404` | Same |
+| A series | `200`, a bookmark on it | `400`: nothing plays a series |
+| `PUT …/marker/{id}?startTimeOffset=` | `200`, the bookmark with its attributes; `type` ignored, the end and the title kept when not given | Same |
+| `PUT`/`DELETE` a marker of another item | `400` | Same |
+| `PUT`/`DELETE` an unknown marker | `404` | Same |
+| `DELETE …/marker/{id}` | `200`, empty `text/html` | Same |
+| `DELETE` of a marker that is not a bookmark | `400` (the spec) | Same; `PUT` likewise |
+
+Bookmarks are the caller's: another user and the operator do not see them, and a `PUT` or
+`DELETE` of someone else's answers `404`. `mediaTagVersion` is `0` here, as everywhere.
+
+**The official API** holds both kinds: `Movie.markers` and `Episode.markers`, the work's for
+whoever reads the item and the caller's own bookmarks; `addMarker`, `updateMarker`,
+`deleteMarker`, for a library's admins and the operator on the work's markers, for its keeper on
+a bookmark. A marker of the work edited by hand loses its `version`. Ours, not measured: the
+credits alone are final, every marker but a bookmark has an end, and a title or colour is a
+bookmark's.
+
+**Imported, not detected.** `PUT /library/metadata/{ids}/intro` and `/credits`, which start the
+detection on an item, and `DELETE /library/sections/{id}/intros` are `deferred` with the rest of
+the analysis. A re-import replaces the work's markers, edits included, and leaves the viewers'
+bookmarks: they are keyed by item without a foreign key, as playlist entries are. 51 credits of the
+reference library end before they start — at 50 to 72% of it, all written within three hours of
+one day by detection version 4; they are imported and published as stored.
+
+Every populated column of a marker's `taggings` row, and where it goes:
+
+| Column | Populated | Here |
+| --- | --: | --- |
+| `metadata_item_id` | 217,863 | `item_marker.item_id` |
+| `tag_id` | 217,863 | the marker tag: what makes the row a marker |
+| `text` | 217,863 | `kind` |
+| `time_offset`, `end_time_offset` | 217,863 | `start_ms`, `end_ms` |
+| `index` | 217,863 | the order of our ids, which `index` matches on every row |
+| `extra_data` `pv:final`, `pv:version` | 124,636, 217,863 | `is_final`, `version` |
+| `extra_data` `url` | 217,863 | not kept: the same pairs, URL-encoded |
+| `created_at` | 217,863 | not kept: published nowhere |
+| `id` | 217,863 | not kept: our ids are our own |
+| `thumb_url` | 0 | — |
+
 ### Playback sessions are stored
 
 None of the reference's 71 tables holds a session in progress: only what outlives one, the play

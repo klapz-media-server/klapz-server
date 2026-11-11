@@ -7,6 +7,7 @@ pub mod access_repository;
 pub mod entity;
 pub mod import;
 mod item_order;
+mod marker_store;
 pub mod metadata_repository;
 pub mod migration;
 pub mod play_queue_repository;

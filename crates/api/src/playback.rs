@@ -842,6 +842,36 @@ impl Mutation {
         crate::edit::update_episode(context, input).await
     }
 
+    /// Adds a marker to a film or an episode: an intro, credits or a commercial, for its
+    /// library's admins and the operator, or a bookmark of the caller's own.
+    async fn add_marker(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The marker to add.")] input: crate::marker::AddMarkerInput,
+    ) -> Result<crate::marker::AddMarkerPayload> {
+        crate::marker::add(context, input).await
+    }
+
+    /// Moves a marker or changes what it says. The work's markers for its library's admins
+    /// and the operator, a bookmark for its owner.
+    async fn update_marker(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The changes.")] input: crate::marker::UpdateMarkerInput,
+    ) -> Result<crate::marker::UpdateMarkerPayload> {
+        crate::marker::update(context, input).await
+    }
+
+    /// Removes a marker. The work's markers for its library's admins and the operator, a
+    /// bookmark for its owner.
+    async fn delete_marker(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The marker to remove.")] input: crate::marker::DeleteMarkerInput,
+    ) -> Result<crate::marker::DeleteMarkerPayload> {
+        crate::marker::delete(context, input).await
+    }
+
     /// Creates a playlist of the caller's: of chosen items, or smart with a rule.
     async fn create_playlist(
         &self,

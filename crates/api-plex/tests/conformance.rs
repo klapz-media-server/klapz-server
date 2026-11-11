@@ -4630,3 +4630,481 @@ async fn background_tasks_answer_the_empty_container_the_reference_sends_when_id
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer size=\"0\">\n</MediaContainer>\n"
     );
 }
+
+/// The reference's test libraries for markers: Soul in 27 with its summary locked, as it was
+/// when its bookmarks were measured, and Bull's first episode in 28 carrying the credits and
+/// intro the reference found on an episode of *The Farewell*.
+fn markers_store() -> std::sync::Arc<InMemoryMetadata> {
+    use open_plex_core::edit::ItemField;
+    use open_plex_core::marker::{Marker, MarkerKind};
+    let marker = |id: i64, kind, start_ms, end_ms, is_final, version| Marker {
+        id: open_plex_core::MarkerId::new(id),
+        item: RatingKey::new(578_173),
+        kind,
+        owner: None,
+        start_ms,
+        end_ms: Some(end_ms),
+        is_final,
+        version: Some(version),
+        title: None,
+        color: None,
+    };
+    let metadata = InMemoryMetadata::new(vec![
+        item(577_986, 27, ItemKind::Movie, None, "Soul"),
+        item(577_987, 28, ItemKind::Show, None, "Bull"),
+        item(577_988, 28, ItemKind::Season, Some(577_987), "Season 1"),
+        item(578_173, 28, ItemKind::Episode, Some(577_988), "Episode 1"),
+    ])
+    .with_locked_fields(vec![(RatingKey::new(577_986), ItemField::Summary)])
+    .with_markers(vec![
+        marker(1, MarkerKind::Credits, 2_233_609, 2_397_344, true, 4),
+        marker(2, MarkerKind::Intro, 136_180, 176_381, false, 5),
+    ]);
+    std::sync::Arc::new(metadata)
+}
+
+fn markers_app(principal: Principal) -> axum::Router {
+    markers_app_over(markers_store(), principal)
+}
+
+/// The test libraries over a given store, for several callers to share one.
+fn markers_app_over(store: std::sync::Arc<InMemoryMetadata>, principal: Principal) -> axum::Router {
+    let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
+    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
+    let library = InMemoryLibrary::new(vec![
+        section(27, SectionKind::Movie, "open-plex tests", false),
+        section(28, SectionKind::Show, "open-plex tests series", false),
+    ]);
+    let schema = build_schema(ApiContext {
+        capabilities: ServerCapabilities::new(identity.clone(), 0),
+        library: std::sync::Arc::new(library),
+        metadata: store,
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
+    });
+    router(PlexState::new(identity, schema, accounts)).layer(axum::Extension(principal))
+}
+
+/// A user given the test libraries as a viewer.
+fn test_libraries_viewer(user: i64) -> Principal {
+    Principal {
+        name: format!("user{user}"),
+        scope: Scope::User,
+        libraries: LibraryAccess::Only(
+            [27, 28]
+                .into_iter()
+                .map(|section| (SectionId::new(section), LibraryRole::Viewer))
+                .collect(),
+        ),
+        user: Some(UserId::new(user)),
+        server_identifier: None,
+    }
+}
+
+async fn marker_request(
+    app: &axum::Router,
+    method: &str,
+    uri: &str,
+    accept: Option<&str>,
+) -> (StatusCode, String, String) {
+    let mut request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("X-Plex-Token", TOKEN);
+    if let Some(accept) = accept {
+        request = request.header(header::ACCEPT, accept);
+    }
+    let response = app
+        .clone()
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    (
+        status,
+        content_type,
+        String::from_utf8_lossy(&body).into_owned(),
+    )
+}
+
+/// The `Marker` elements of a body, each with its children, one line per element.
+fn marker_lines(xml: &str) -> Vec<&str> {
+    let mut inside = false;
+    xml.lines()
+        .filter(|line| {
+            if line.starts_with("<Marker") {
+                inside = true;
+            }
+            let keep = inside;
+            if line.starts_with("</Marker>") {
+                inside = false;
+            }
+            keep
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn markers_are_published_on_request_only() {
+    let app = markers_app(Principal::operator("owner"));
+    let (_, _, plain) = marker_request(&app, "GET", "/library/metadata/578173", None).await;
+    assert!(!plain.contains("<Marker"), "{plain}");
+    let (_, _, zero) = marker_request(
+        &app,
+        "GET",
+        "/library/metadata/578173?includeMarkers=0",
+        None,
+    )
+    .await;
+    assert!(!zero.contains("<Marker"), "{zero}");
+
+    let (status, _, xml) = marker_request(
+        &app,
+        "GET",
+        "/library/metadata/578173?includeMarkers=1",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        marker_lines(&xml),
+        [
+            "<Marker id=\"1\" type=\"credits\" startTimeOffset=\"2233609\" endTimeOffset=\"2397344\" final=\"1\">",
+            "<Attributes id=\"1\" version=\"4\" />",
+            "</Marker>",
+            "<Marker id=\"2\" type=\"intro\" startTimeOffset=\"136180\" endTimeOffset=\"176381\">",
+            "<Attributes id=\"2\" version=\"5\" />",
+            "</Marker>",
+        ]
+    );
+
+    let (_, _, json) = marker_request(
+        &app,
+        "GET",
+        "/library/metadata/578173?includeMarkers=1",
+        Some("application/json"),
+    )
+    .await;
+    let json: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        json["MediaContainer"]["Metadata"][0]["Marker"],
+        serde_json::json!([
+            { "id": 1, "type": "credits", "startTimeOffset": 2_233_609,
+              "endTimeOffset": 2_397_344, "final": true,
+              "Attributes": { "id": 1, "version": 4 } },
+            { "id": 2, "type": "intro", "startTimeOffset": 136_180,
+              "endTimeOffset": 176_381, "Attributes": { "id": 2, "version": 5 } },
+        ])
+    );
+}
+
+#[tokio::test]
+async fn an_episodes_markers_come_with_it_where_it_is_listed() {
+    let app = markers_app(Principal::operator("owner"));
+    for uri in [
+        "/library/metadata/577988/children?includeMarkers=1",
+        "/library/metadata/577987/grandchildren?includeMarkers=1",
+        "/library/metadata/577987/allLeaves?includeMarkers=1",
+        "/library/sections/28/all?type=4&includeMarkers=1",
+    ] {
+        let (status, _, xml) = marker_request(&app, "GET", uri, None).await;
+        assert_eq!(status, StatusCode::OK, "{uri}");
+        assert_eq!(marker_lines(&xml).len(), 6, "{uri}: {xml}");
+        let without = uri.replace("includeMarkers=1", "includeMarkers=0");
+        let (_, _, xml) = marker_request(&app, "GET", &without, None).await;
+        assert!(!xml.contains("<Marker"), "{without}");
+    }
+}
+
+#[tokio::test]
+async fn a_bookmark_is_added_read_moved_and_removed_as_the_reference_answers() {
+    let app = markers_app(Principal::operator("owner"));
+    // Captured on Soul: a new bookmark comes back before it has an id.
+    let (status, content_type, xml) = marker_request(
+        &app,
+        "POST",
+        "/library/metadata/577986/marker?type=bookmark&startTimeOffset=10000&endTimeOffset=20000",
+        None,
+    )
+    .await;
+    assert_eq!(
+        (status, content_type.as_str()),
+        (StatusCode::OK, "text/xml;charset=utf-8")
+    );
+    assert_eq!(
+        xml,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+<MediaContainer size=\"1\" identifier=\"com.plexapp.plugins.library\" mediaTagPrefix=\"/system/bundle/media/flags/\" mediaTagVersion=\"0\">\n\
+<Marker type=\"bookmark\" startTimeOffset=\"10000\" endTimeOffset=\"20000\">\n\
+<Attributes />\n\
+</Marker>\n\
+</MediaContainer>\n"
+    );
+
+    // Read back after the tags and before the locked fields, with its id.
+    let (_, _, lookup) = marker_request(
+        &app,
+        "GET",
+        "/library/metadata/577986?includeMarkers=1",
+        None,
+    )
+    .await;
+    assert!(
+        lookup.contains(
+            "<Marker type=\"bookmark\" startTimeOffset=\"10000\" endTimeOffset=\"20000\">\n\
+<Attributes id=\"3\" />\n\
+</Marker>\n\
+<Field locked=\"1\" name=\"summary\" />\n\
+</Video>"
+        ),
+        "{lookup}"
+    );
+
+    // The same span again is that bookmark, with its id.
+    let (_, _, again) = marker_request(
+        &app,
+        "POST",
+        "/library/metadata/577986/marker?type=bookmark&startTimeOffset=10000&endTimeOffset=20000&attributes%5Btitle%5D=Y",
+        None,
+    )
+    .await;
+    assert!(again.contains("<Attributes id=\"3\" />"), "{again}");
+
+    // Captured: `PUT` ignores `type`, keeps the end, and answers every attribute.
+    let (status, _, json) = marker_request(
+        &app,
+        "PUT",
+        "/library/metadata/577986/marker/3?type=intro&startTimeOffset=12000&attributes%5Btitle%5D=Edited",
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({ "MediaContainer": {
+            "size": 1,
+            "identifier": "com.plexapp.plugins.library",
+            "mediaTagPrefix": "/system/bundle/media/flags/",
+            "mediaTagVersion": 0,
+            "Marker": [{ "type": "bookmark", "startTimeOffset": 12000, "endTimeOffset": 20000,
+                         "Attributes": { "id": 3, "title": "Edited" } }],
+        } })
+    );
+
+    let (status, content_type, body) =
+        marker_request(&app, "DELETE", "/library/metadata/577986/marker/3", None).await;
+    assert_eq!(
+        (status, content_type.as_str(), body.as_str()),
+        (StatusCode::OK, "text/html", "")
+    );
+    let (status, _, _) =
+        marker_request(&app, "DELETE", "/library/metadata/577986/marker/3", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_bookmarks_attributes_come_in_alphabetical_order() {
+    let app = markers_app(Principal::operator("owner"));
+    // As captured on Bull's first episode: a point, named and coloured.
+    let (status, _, _) = marker_request(
+        &app,
+        "POST",
+        "/library/metadata/578173/marker?type=bookmark&startTimeOffset=5000&attributes%5Btitle%5D=Spot&attributes%5Bcolor%5D=ff0000&attributes%5Bfoo%5D=bar",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, _, xml) = marker_request(
+        &app,
+        "GET",
+        "/library/metadata/578173?includeMarkers=1",
+        None,
+    )
+    .await;
+    assert_eq!(
+        marker_lines(&xml)[6..],
+        [
+            "<Marker type=\"bookmark\" startTimeOffset=\"5000\">",
+            "<Attributes color=\"ff0000\" id=\"3\" title=\"Spot\" />",
+            "</Marker>",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_marker_route_refuses_what_the_reference_refuses() {
+    let app = markers_app(Principal::operator("owner"));
+    for (method, uri, expected) in [
+        // A type by number, an unknown name, no start, a negative one, an empty span.
+        (
+            "POST",
+            "/library/metadata/577986/marker?type=3&startTimeOffset=1",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "POST",
+            "/library/metadata/577986/marker?type=foo&startTimeOffset=1",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "POST",
+            "/library/metadata/577986/marker?type=bookmark",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "POST",
+            "/library/metadata/577986/marker?type=bookmark&startTimeOffset=x",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "POST",
+            "/library/metadata/577986/marker?type=bookmark&startTimeOffset=-5",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "POST",
+            "/library/metadata/577986/marker?type=bookmark&startTimeOffset=50&endTimeOffset=50",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "POST",
+            "/library/metadata/99999999/marker?type=bookmark&startTimeOffset=1000",
+            StatusCode::NOT_FOUND,
+        ),
+        // The work's markers are not written here.
+        (
+            "POST",
+            "/library/metadata/578173/marker?type=intro&startTimeOffset=0&endTimeOffset=10",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "PUT",
+            "/library/metadata/578173/marker/1?startTimeOffset=0",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "DELETE",
+            "/library/metadata/578173/marker/2",
+            StatusCode::BAD_REQUEST,
+        ),
+        // A marker named under another item, and one that does not exist.
+        (
+            "PUT",
+            "/library/metadata/577986/marker/1?startTimeOffset=0",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "DELETE",
+            "/library/metadata/577986/marker/2",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "PUT",
+            "/library/metadata/577986/marker/999?type=bookmark&startTimeOffset=1",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "DELETE",
+            "/library/metadata/577986/marker/999",
+            StatusCode::NOT_FOUND,
+        ),
+    ] {
+        let (status, content_type, _) = marker_request(&app, method, uri, None).await;
+        assert_eq!(
+            (status, content_type.as_str()),
+            (expected, "text/html"),
+            "{method} {uri}"
+        );
+    }
+    // Nothing above was written.
+    let (_, _, xml) = marker_request(
+        &app,
+        "GET",
+        "/library/metadata/578173?includeMarkers=1",
+        None,
+    )
+    .await;
+    assert_eq!(marker_lines(&xml).len(), 6);
+}
+
+#[tokio::test]
+async fn a_bookmark_is_its_keepers_and_nobody_elses() {
+    let store = markers_store();
+    let first = markers_app_over(std::sync::Arc::clone(&store), test_libraries_viewer(3));
+    let (status, _, _) = marker_request(
+        &first,
+        "POST",
+        "/library/metadata/577986/marker?type=bookmark&startTimeOffset=10000",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, _, mine) = marker_request(
+        &first,
+        "GET",
+        "/library/metadata/577986?includeMarkers=1",
+        None,
+    )
+    .await;
+    assert!(mine.contains("<Attributes id=\"3\" />"), "{mine}");
+
+    for other in [test_libraries_viewer(4), Principal::operator("owner")] {
+        let app = markers_app_over(std::sync::Arc::clone(&store), other);
+        let (_, _, theirs) = marker_request(
+            &app,
+            "GET",
+            "/library/metadata/577986?includeMarkers=1",
+            None,
+        )
+        .await;
+        assert!(!theirs.contains("<Marker"), "{theirs}");
+        let (status, _, _) =
+            marker_request(&app, "DELETE", "/library/metadata/577986/marker/3", None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+}
+
+#[tokio::test]
+async fn a_play_queue_carries_the_markers_a_player_skips_by() {
+    let app = markers_app(Principal::operator("owner"));
+    let uri = "server%3A%2F%2Fdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef%2Fcom.plexapp.plugins.library%2Flibrary%2Fmetadata%2F578173";
+    // What Plex Web sends to start playing an episode, and to read the queue back.
+    let (status, _, created) = marker_request(
+        &app,
+        "POST",
+        &format!("/playQueues?type=video&uri={uri}&includeChapters=1&includeMarkers=1"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(marker_lines(&created).len(), 6, "{created}");
+    let queue = created
+        .split("playQueueID=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .unwrap();
+    let (_, _, read) = marker_request(
+        &app,
+        "GET",
+        &format!("/playQueues/{queue}?own=1&includeChapters=1&includeMarkers=1"),
+        None,
+    )
+    .await;
+    assert_eq!(marker_lines(&read).len(), 6, "{read}");
+    let (_, _, plain) = marker_request(&app, "GET", &format!("/playQueues/{queue}"), None).await;
+    assert!(!plain.contains("<Marker"), "{plain}");
+}

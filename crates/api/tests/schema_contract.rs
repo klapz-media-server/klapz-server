@@ -2319,3 +2319,370 @@ async fn nobody_reads_a_tag_or_a_person() {
         );
     }
 }
+
+/// The test libraries, with an episode carrying the credits and intro the reference found on
+/// an episode of *The Farewell*, in the order it found them.
+fn markable() -> ApiSchema {
+    use open_plex_core::marker::{Marker, MarkerKind};
+    let marker = |id: i64, kind, start_ms, end_ms, is_final, version| Marker {
+        id: open_plex_core::MarkerId::new(id),
+        item: RatingKey::new(578_173),
+        kind,
+        owner: None,
+        start_ms,
+        end_ms: Some(end_ms),
+        is_final,
+        version: Some(version),
+        title: None,
+        color: None,
+    };
+    let child = |id: i64, kind: ItemKind, parent: i64| MetadataItem {
+        parent_id: Some(RatingKey::new(parent)),
+        ..item(id, 28, kind, "Episode 1", None)
+    };
+    let metadata = InMemoryMetadata::new(vec![
+        item(577_986, 27, ItemKind::Movie, "Soul", None),
+        item(577_987, 28, ItemKind::Show, "Bull", None),
+        child(577_988, ItemKind::Season, 577_987),
+        child(578_173, ItemKind::Episode, 577_988),
+    ])
+    .with_markers(vec![
+        marker(1, MarkerKind::Credits, 2_233_609, 2_397_344, true, 4),
+        marker(2, MarkerKind::Intro, 136_180, 176_381, false, 5),
+    ]);
+    build_schema(ApiContext {
+        capabilities: open_plex_core::ServerCapabilities::new(
+            open_plex_core::ServerIdentity::new(
+                "0000000000000000000000000000000000000000",
+                "0.1.0",
+            ),
+            0,
+        ),
+        library: Arc::new(InMemoryLibrary::new(vec![
+            section(27, SectionKind::Movie, "open-plex tests"),
+            section(28, SectionKind::Show, "open-plex tests series"),
+        ])),
+        metadata: Arc::new(metadata),
+        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
+    })
+}
+
+/// A user given the test libraries in one role.
+fn user_in(
+    user: i64,
+    role: open_plex_core::access::LibraryRole,
+    query: &str,
+) -> async_graphql::Request {
+    use open_plex_core::access::LibraryAccess;
+    use open_plex_core::{Principal, Scope, UserId};
+    let libraries = [27, 28]
+        .into_iter()
+        .map(|section| (SectionId::new(section), role))
+        .collect();
+    async_graphql::Request::new(query).data(Principal {
+        name: format!("user {user}"),
+        scope: Scope::User,
+        libraries: LibraryAccess::Only(libraries),
+        user: Some(UserId::new(user)),
+        server_identifier: None,
+    })
+}
+
+const MARKER_FIELDS: &str = "kind startMs endMs final version title color";
+
+async fn markers_seen(schema: &ApiSchema, request: async_graphql::Request) -> Value {
+    let response = schema.execute(request).await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    let data = serde_json::to_value(response.data).unwrap();
+    Value::Array(
+        data["node"]["markers"]["edges"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|edge| edge["node"].clone())
+            .collect(),
+    )
+}
+
+fn markers_query(key: i64, typename: &str) -> String {
+    format!(
+        r#"{{ node(id: "{}") {{ ... on {typename} {{ markers {{ edges {{ node {{ {MARKER_FIELDS} }} }} }} }} }} }}"#,
+        GlobalId::encode("Item", key)
+    )
+}
+
+const ADD_MARKER: &str = r"
+mutation Add($input: AddMarkerInput!) {
+  addMarker(input: $input) {
+    clientMutationId
+    added
+    marker { id kind startMs endMs final version title color item { id } }
+    userErrors { field message code }
+  }
+}";
+
+const UPDATE_MARKER: &str = r"
+mutation Update($input: UpdateMarkerInput!) {
+  updateMarker(input: $input) {
+    marker { kind startMs endMs final version title color }
+    userErrors { field code }
+  }
+}";
+
+const DELETE_MARKER: &str = r"
+mutation Delete($input: DeleteMarkerInput!) {
+  deleteMarker(input: $input) { clientMutationId deletedMarkerId userErrors { field code } }
+}";
+
+/// Runs a mutation and returns its one payload.
+async fn mutate(schema: &ApiSchema, request: async_graphql::Request, input: Value) -> Value {
+    let variables = async_graphql::Variables::from_json(serde_json::json!({ "input": input }));
+    let response = schema.execute(request.variables(variables)).await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    let data = serde_json::to_value(response.data).unwrap();
+    data.as_object().unwrap().values().next().unwrap().clone()
+}
+
+#[tokio::test]
+async fn an_episode_lists_the_markers_its_detection_found_in_order() {
+    use open_plex_core::access::LibraryRole;
+    let schema = markable();
+    let expected = serde_json::json!([
+        { "kind": "CREDITS", "startMs": 2_233_609, "endMs": 2_397_344, "final": true,
+          "version": 4, "title": null, "color": null },
+        { "kind": "INTRO", "startMs": 136_180, "endMs": 176_381, "final": false,
+          "version": 5, "title": null, "color": null },
+    ]);
+    let query = markers_query(578_173, "Episode");
+    assert_eq!(
+        markers_seen(&schema, as_operator(query.as_str())).await,
+        expected
+    );
+    assert_eq!(
+        markers_seen(&schema, user_in(3, LibraryRole::Viewer, &query)).await,
+        expected
+    );
+}
+
+#[tokio::test]
+async fn a_marker_is_refetched_by_node_and_hidden_from_who_cannot_read_its_item() {
+    let schema = markable();
+    let marker = GlobalId::encode("Marker", 2);
+    let query = format!(
+        r#"{{ node(id: "{marker}") {{ id ... on Marker {{ databaseId kind item {{ id }} }} }} }}"#
+    );
+    let data = run_on(&schema, &query).await;
+    assert_eq!(
+        data["node"],
+        serde_json::json!({
+            "id": marker,
+            "databaseId": "2",
+            "kind": "INTRO",
+            "item": { "id": GlobalId::encode("Item", 578_173) },
+        })
+    );
+    let response = schema.execute(query.as_str()).await;
+    assert_eq!(
+        serde_json::to_value(response.data).unwrap()["node"],
+        Value::Null
+    );
+}
+
+#[tokio::test]
+async fn the_works_markers_are_written_by_a_librarys_admins_only() {
+    use open_plex_core::access::LibraryRole;
+    let schema = markable();
+    let episode = GlobalId::encode("Item", 578_173);
+    let intro = serde_json::json!({
+        "clientMutationId": "m1",
+        "itemId": episode,
+        "kind": "INTRO",
+        "startMs": 1_000,
+        "endMs": 30_000,
+    });
+
+    let refused = mutate(
+        &schema,
+        user_in(3, LibraryRole::Viewer, ADD_MARKER),
+        intro.clone(),
+    )
+    .await;
+    assert_eq!(
+        refused,
+        serde_json::json!({
+            "clientMutationId": "m1",
+            "added": false,
+            "marker": null,
+            "userErrors": [{ "field": ["input", "itemId"], "message": "no such item",
+                             "code": "ITEM_NOT_FOUND" }],
+        })
+    );
+
+    let added = mutate(&schema, user_in(3, LibraryRole::Admin, ADD_MARKER), intro).await;
+    assert_eq!(added["added"], true);
+    assert_eq!(
+        added["marker"]["item"]["id"].as_str(),
+        Some(episode.as_str())
+    );
+    let id = added["marker"]["id"].clone();
+
+    // A viewer cannot move it either; the operator can, and the detection's version goes.
+    let refused = mutate(
+        &schema,
+        user_in(3, LibraryRole::Viewer, UPDATE_MARKER),
+        serde_json::json!({ "id": id, "startMs": 2_000 }),
+    )
+    .await;
+    assert_eq!(refused["userErrors"][0]["code"], "MARKER_NOT_FOUND");
+    let updated = mutate(
+        &schema,
+        as_operator(UPDATE_MARKER),
+        serde_json::json!({ "id": GlobalId::encode("Marker", 1), "startMs": 2_200_000 }),
+    )
+    .await;
+    assert_eq!(
+        updated["marker"],
+        serde_json::json!({ "kind": "CREDITS", "startMs": 2_200_000, "endMs": 2_397_344,
+                            "final": true, "version": null, "title": null, "color": null })
+    );
+
+    let deleted = mutate(
+        &schema,
+        user_in(3, LibraryRole::Admin, DELETE_MARKER),
+        serde_json::json!({ "clientMutationId": "d", "id": id }),
+    )
+    .await;
+    assert_eq!(
+        deleted,
+        serde_json::json!({ "clientMutationId": "d", "deletedMarkerId": id, "userErrors": [] })
+    );
+    let left = markers_seen(&schema, as_operator(markers_query(578_173, "Episode"))).await;
+    assert_eq!(left.as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn a_bookmark_is_its_keepers_alone() {
+    use open_plex_core::access::LibraryRole;
+    let schema = markable();
+    let film = markers_query(577_986, "Movie");
+    let mut bookmark = serde_json::json!({
+        "itemId": GlobalId::encode("Item", 577_986),
+        "kind": "BOOKMARK",
+        "startMs": 5_000,
+        "title": "Spot",
+        "color": "ff0000",
+    });
+    let added = mutate(
+        &schema,
+        user_in(3, LibraryRole::Viewer, ADD_MARKER),
+        bookmark.clone(),
+    )
+    .await;
+    assert_eq!(added["added"], true, "{added}");
+    let id = added["marker"]["id"].clone();
+
+    let mine = markers_seen(&schema, user_in(3, LibraryRole::Viewer, &film)).await;
+    assert_eq!(
+        mine,
+        serde_json::json!([{ "kind": "BOOKMARK", "startMs": 5_000, "endMs": null,
+                             "final": false, "version": null, "title": "Spot",
+                             "color": "ff0000" }])
+    );
+    for other in [
+        user_in(4, LibraryRole::Admin, &film),
+        as_operator(film.as_str()),
+    ] {
+        assert_eq!(markers_seen(&schema, other).await, serde_json::json!([]));
+    }
+
+    // The same span again is the same bookmark, its title as it was.
+    bookmark["title"] = Value::from("Other");
+    let again = mutate(
+        &schema,
+        user_in(3, LibraryRole::Viewer, ADD_MARKER),
+        bookmark,
+    )
+    .await;
+    assert_eq!(again["added"], false);
+    assert_eq!(again["marker"]["id"], id);
+    assert_eq!(again["marker"]["title"], "Spot");
+
+    let theirs = mutate(
+        &schema,
+        user_in(4, LibraryRole::Admin, DELETE_MARKER),
+        serde_json::json!({ "id": id }),
+    )
+    .await;
+    assert_eq!(theirs["userErrors"][0]["code"], "MARKER_NOT_FOUND");
+    let renamed = mutate(
+        &schema,
+        user_in(3, LibraryRole::Viewer, UPDATE_MARKER),
+        serde_json::json!({ "id": id, "title": null, "endMs": 9_000 }),
+    )
+    .await;
+    assert_eq!(renamed["marker"]["title"], Value::Null);
+    assert_eq!(renamed["marker"]["endMs"], 9_000);
+    assert_eq!(renamed["marker"]["color"], "ff0000");
+}
+
+#[tokio::test]
+async fn an_add_refuses_what_a_marker_cannot_be() {
+    let schema = markable();
+    let episode = GlobalId::encode("Item", 578_173);
+    let cases = [
+        (
+            serde_json::json!({ "kind": "INTRO", "startMs": 50, "endMs": 50 }),
+            "endMs",
+            "EMPTY_SPAN",
+        ),
+        (
+            serde_json::json!({ "kind": "INTRO", "startMs": -1, "endMs": 50 }),
+            "startMs",
+            "NEGATIVE_START",
+        ),
+        (
+            serde_json::json!({ "kind": "CREDITS", "startMs": 50 }),
+            "endMs",
+            "MISSING_END",
+        ),
+        (
+            serde_json::json!({ "kind": "INTRO", "startMs": 0, "endMs": 9, "final": true }),
+            "final",
+            "FINAL_NOT_CREDITS",
+        ),
+        (
+            serde_json::json!({ "kind": "COMMERCIAL", "startMs": 0, "endMs": 9, "title": "Ad" }),
+            "title",
+            "NOT_BOOKMARK",
+        ),
+    ];
+    for (mut input, field, code) in cases {
+        input["itemId"] = Value::from(episode.as_str());
+        let refused = mutate(&schema, as_operator(ADD_MARKER), input).await;
+        assert_eq!(
+            refused["userErrors"][0]["field"],
+            serde_json::json!(["input", field]),
+            "{code}"
+        );
+        assert_eq!(refused["userErrors"][0]["code"], code);
+    }
+    let on_a_series = mutate(
+        &schema,
+        as_operator(ADD_MARKER),
+        serde_json::json!({
+            "itemId": GlobalId::encode("Item", 577_987),
+            "kind": "BOOKMARK",
+            "startMs": 0,
+        }),
+    )
+    .await;
+    assert_eq!(on_a_series["userErrors"][0]["code"], "NOT_PLAYABLE");
+}

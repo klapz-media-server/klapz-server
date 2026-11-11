@@ -63,6 +63,8 @@ const DEFERRED_FRAGMENTS: &[&str] = &[
     "/library/caches",
     "/indexes",
     "/intros",
+    "/metadata/{ids}/intro",
+    "/metadata/{ids}/credits",
 ];
 
 const DEFERRED_TAGS: &[&str] = &["Metadata Agents"];
