@@ -1042,6 +1042,134 @@ async fn a_caller_without_a_viewer_has_no_watch_state() {
     );
 }
 
+const HISTORY: &str = r"query($filter: HistoryFilterInput) {
+    viewingHistory(first: 10, filter: $filter) {
+        totalCount
+        edges { node { id databaseId kind viewedAt user { databaseId } item { id } } }
+    }
+}";
+
+async fn history_of(
+    schema: &ApiSchema,
+    request: async_graphql::Request,
+    filter: Value,
+) -> (u64, Vec<Value>) {
+    let request = request.variables(async_graphql::Variables::from_json(
+        serde_json::json!({ "filter": filter }),
+    ));
+    let response = schema.execute(request).await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    let data = response.data.into_json().unwrap();
+    let history = &data["viewingHistory"];
+    let nodes = history["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|edge| edge["node"].clone())
+        .collect();
+    (history["totalCount"].as_u64().unwrap(), nodes)
+}
+
+#[tokio::test]
+async fn a_user_reads_its_own_history_and_the_operator_everyones() {
+    let schema = watchable();
+    let soul = item_id(577_986);
+    run_on(
+        &schema,
+        &format!(
+            r#"mutation {{ markWatched(id: "{}") {{ viewCount }} }}"#,
+            item_id(577_988)
+        ),
+    )
+    .await;
+    let marked = schema
+        .execute(as_user(&format!(
+            r#"mutation {{ markWatched(id: "{soul}") {{ viewCount }} }}"#
+        )))
+        .await;
+    assert!(marked.errors.is_empty(), "{:?}", marked.errors);
+
+    let (total, theirs) = history_of(&schema, as_user(HISTORY), Value::Null).await;
+    assert_eq!(total, 1);
+    assert_eq!(theirs[0]["item"]["id"], soul);
+    assert_eq!(theirs[0]["kind"], "MARKED");
+
+    // The season marked is one entry per episode, the operator's own, with no user.
+    let (total, mine) = history_of(
+        &schema,
+        as_operator(HISTORY),
+        serde_json::json!({ "mine": true }),
+    )
+    .await;
+    assert_eq!(total, 2);
+    assert!(mine.iter().all(|entry| entry["user"].is_null()));
+    let (total, _) = history_of(&schema, as_operator(HISTORY), Value::Null).await;
+    assert_eq!(total, 3);
+    let series = serde_json::json!({ "item": item_id(577_987) });
+    assert_eq!(history_of(&schema, as_operator(HISTORY), series).await.0, 2);
+
+    // A user naming another reads nothing, and refetches nothing of the operator's.
+    let other = serde_json::json!({ "user": GlobalId::encode("User", 2) });
+    assert_eq!(history_of(&schema, as_user(HISTORY), other).await.0, 0);
+    let refetch = format!(
+        r#"{{ node(id: "{}") {{ id }} }}"#,
+        mine[0]["id"].as_str().unwrap()
+    );
+    let response = schema.execute(as_user(&refetch)).await;
+    assert_eq!(response.data.into_json().unwrap()["node"], Value::Null);
+    assert_eq!(run_on(&schema, &refetch).await["node"]["id"], mine[0]["id"]);
+
+    let visitor = open_plex_core::Principal::visitor_of("server".to_owned());
+    let request = async_graphql::Request::new(HISTORY).data(visitor);
+    assert_eq!(history_of(&schema, request, Value::Null).await, (0, vec![]));
+}
+
+#[tokio::test]
+async fn deleting_a_history_entry_is_for_its_viewer_and_the_operator() {
+    let schema = watchable();
+    let soul = item_id(577_986);
+    run_on(
+        &schema,
+        &format!(r#"mutation {{ markWatched(id: "{soul}") {{ viewCount }} }}"#),
+    )
+    .await;
+    let (_, entries) = history_of(&schema, as_operator(HISTORY), Value::Null).await;
+    let entry = entries[0]["id"].as_str().unwrap().to_owned();
+    let delete = format!(
+        r#"mutation {{ deleteHistoryEntry(input: {{ clientMutationId: "c", entry: "{entry}" }}) {{
+            clientMutationId deletedEntryId userErrors {{ field code message }} }} }}"#
+    );
+
+    let refused = schema.execute(as_user(&delete)).await;
+    let refused = refused.data.into_json().unwrap();
+    assert_eq!(refused["deleteHistoryEntry"]["deletedEntryId"], Value::Null);
+    assert_eq!(
+        refused["deleteHistoryEntry"]["userErrors"][0]["code"],
+        "ENTRY_NOT_FOUND"
+    );
+    assert_eq!(
+        refused["deleteHistoryEntry"]["userErrors"][0]["field"],
+        serde_json::json!(["input", "entry"])
+    );
+
+    let deleted = run_on(&schema, &delete).await;
+    assert_eq!(deleted["deleteHistoryEntry"]["clientMutationId"], "c");
+    assert_eq!(deleted["deleteHistoryEntry"]["deletedEntryId"], entry);
+    assert_eq!(
+        history_of(&schema, as_operator(HISTORY), Value::Null)
+            .await
+            .0,
+        0
+    );
+    // What was watched stays.
+    let state = run_on(
+        &schema,
+        &format!(r#"{{ node(id: "{soul}") {{ ... on Movie {{ watchState {{ viewCount }} }} }} }}"#),
+    )
+    .await;
+    assert_eq!(state["node"]["watchState"]["viewCount"], 1);
+}
+
 fn track(
     id: i64,
     kind: open_plex_core::StreamKind,

@@ -3876,3 +3876,214 @@ async fn a_search_of_one_type_finds_that_kind_only_and_no_track() {
         );
     }
 }
+
+/// The attribute names of a JSON element, in order.
+fn keys_of(element: &Value) -> Vec<&str> {
+    element
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect()
+}
+
+/// Avatar played past the end, and the first episode of Severance marked watched.
+async fn watched_app() -> axum::Router {
+    let app = watching_app();
+    timeline_report(&app, 100, 4_945_024, 9_890_048).await;
+    timeline_report(&app, 100, 9_000_000, 9_890_048).await;
+    let (status, _) = get_from(
+        app.clone(),
+        "/:/scrobble?identifier=com.plexapp.plugins.library&key=202",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    app
+}
+
+#[tokio::test]
+async fn history_lists_what_was_played_with_the_captured_attributes() {
+    let app = watched_app().await;
+    let (status, content_type, paging, body) = call(
+        &app,
+        "GET",
+        "/status/sessions/history/all",
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(content_type, "application/json");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    let container = &body["MediaContainer"];
+    // What was marked is not in the default listing, as on the reference.
+    assert_eq!(container["size"], 1);
+    assert_eq!(container["totalSize"], 1);
+    assert_eq!(container["offset"], 0);
+    assert!(paging.contains(&("x-plex-container-total-size".to_owned(), "1".to_owned())));
+
+    let entry = &container["Metadata"][0];
+    // The captured order, less `thumb` and `deviceID`.
+    assert_eq!(
+        keys_of(entry),
+        [
+            "historyKey",
+            "key",
+            "ratingKey",
+            "librarySectionID",
+            "title",
+            "type",
+            "originallyAvailableAt",
+            "viewedAt",
+            "accountID"
+        ]
+    );
+    assert!(entry["historyKey"]
+        .as_str()
+        .unwrap()
+        .starts_with("/status/sessions/history/"));
+    assert_eq!(entry["key"], "/library/metadata/100");
+    assert_eq!(entry["ratingKey"], "100");
+    // A string, where `accountID` and `viewedAt` are numbers.
+    assert_eq!(entry["librarySectionID"], "4");
+    assert_eq!(entry["accountID"], 1);
+    assert!(entry["viewedAt"].is_i64());
+    assert_eq!(entry["originallyAvailableAt"], "2009-12-16");
+}
+
+#[tokio::test]
+async fn history_of_what_was_marked_carries_the_view_type_and_the_series() {
+    let app = watched_app().await;
+    let body = json_from(
+        &app,
+        "/status/sessions/history/all?type=1&metadataItemID=200",
+    )
+    .await;
+    let entry = &body["MediaContainer"]["Metadata"][0];
+    assert_eq!(
+        keys_of(entry),
+        [
+            "historyKey",
+            "key",
+            "ratingKey",
+            "librarySectionID",
+            "parentKey",
+            "grandparentKey",
+            "title",
+            "grandparentTitle",
+            "type",
+            "index",
+            "parentIndex",
+            "viewedAt",
+            "accountID",
+            "viewType"
+        ]
+    );
+    assert_eq!(entry["parentKey"], "/library/metadata/201");
+    assert_eq!(entry["grandparentKey"], "/library/metadata/200");
+    assert_eq!(entry["grandparentTitle"], "Severance");
+    assert_eq!(entry["viewType"], 1);
+
+    // The XML element is named after the item, as in any listing.
+    let (_, content_type, _, xml) =
+        call(&app, "GET", "/status/sessions/history/all?type=1", None).await;
+    assert_eq!(content_type, "text/xml;charset=utf-8");
+    assert!(
+        xml.contains("<Video historyKey=\"/status/sessions/history/"),
+        "{xml}"
+    );
+    assert!(xml.contains("viewType=\"1\""), "{xml}");
+}
+
+#[tokio::test]
+async fn history_filters_and_refuses_as_the_reference_does() {
+    let app = watched_app().await;
+    let size = |uri: &'static str| {
+        let app = app.clone();
+        async move { json_from(&app, uri).await["MediaContainer"]["size"].clone() }
+    };
+    assert_eq!(
+        size("/status/sessions/history/all?librarySectionID=5").await,
+        0
+    );
+    assert_eq!(
+        size("/status/sessions/history/all?librarySectionID=4,5").await,
+        1
+    );
+    assert_eq!(size("/status/sessions/history/all?accountID=2").await, 0);
+    assert_eq!(
+        size("/status/sessions/history/all?accountID=1&deviceID=7").await,
+        1
+    );
+    assert_eq!(size("/status/sessions/history/all?type=4").await, 0);
+    assert_eq!(
+        size("/status/sessions/history/all?sort=viewedAt:desc,accountID").await,
+        1
+    );
+    assert_eq!(
+        size("/status/sessions/history/all?viewedAt%3E=4000000000").await,
+        0
+    );
+
+    let status = |uri: &'static str| {
+        let app = app.clone();
+        async move { call(&app, "GET", uri, None).await.0 }
+    };
+    for refused in [
+        "/status/sessions/history/all?sort=title",
+        "/status/sessions/history/all?librarySectionID=abc",
+        "/status/sessions/history/all?type=movie",
+    ] {
+        assert_eq!(status(refused).await, StatusCode::BAD_REQUEST, "{refused}");
+    }
+    assert_eq!(
+        status("/status/sessions/history/all?metadataItemID=999").await,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn a_history_entry_is_read_without_its_keys_and_deleted_without_the_state() {
+    let app = watched_app().await;
+    let listed = json_from(&app, "/status/sessions/history/all").await;
+    let key = listed["MediaContainer"]["Metadata"][0]["historyKey"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let one = json_from(&app, &key).await;
+    let entry = &one["MediaContainer"]["Metadata"][0];
+    assert_eq!(one["MediaContainer"]["size"], 1);
+    assert!(one["MediaContainer"].get("totalSize").is_none());
+    assert_eq!(
+        keys_of(entry),
+        [
+            "historyKey",
+            "librarySectionID",
+            "title",
+            "type",
+            "originallyAvailableAt",
+            "viewedAt",
+            "accountID"
+        ]
+    );
+
+    let (status, _, _, body) = call(&app, "DELETE", &key, Some("application/json")).await;
+    assert_eq!(
+        (status, body.as_str()),
+        (StatusCode::OK, r#"{"MediaContainer":{"size":0}}"#)
+    );
+    assert_eq!(call(&app, "GET", &key, None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(
+        call(&app, "DELETE", &key, None).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(&app, "DELETE", "/status/sessions/history/abc", None)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    let film = json_from(&app, "/library/metadata/100").await;
+    assert_eq!(film["MediaContainer"]["Metadata"][0]["viewCount"], 1);
+}

@@ -68,6 +68,11 @@ numeric_id! {
     PersonId
 }
 
+numeric_id! {
+    /// Identifies one viewing in a viewer's history.
+    HistoryId
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

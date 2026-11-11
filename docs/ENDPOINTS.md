@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 9 | 3.5 % |
-| `stub` | 130 | 50.0 % |
+| `stub` | 127 | 48.8 % |
 | `partial` | 20 | 7.7 % |
-| `done` | 64 | 24.6 % |
+| `done` | 67 | 25.8 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -40,7 +40,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Subscriptions](#subscriptions) | 10 | 10 | 0 | 0 | 0 | 0 |
 | [Download Queue](#download-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
 | [Play Queue](#play-queue) | 9 | 0 | 2 | 6 | 1 | 0 |
-| [Status](#status) | 6 | 0 | 1 | 5 | 0 | 0 |
+| [Status](#status) | 6 | 3 | 1 | 2 | 0 | 0 |
 | [Butler](#butler) | 5 | 0 | 0 | 5 | 0 | 0 |
 | [Transcoder](#transcoder) | 5 | 0 | 4 | 1 | 0 | 0 |
 | [General](#general) | 4 | 2 | 0 | 2 | 0 | 0 |
@@ -346,9 +346,9 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | --- | --- | --- | --- | --- | --- |
 | `partial` | `GET` | `/status/sessions` | admin | List Sessions | Direct Stream sessions, from the official API. The state comes from `/:/timeline`, Direct Play is not tracked yet, and the attributes follow what Plex Web reads, with no capture to compare against. |
 | `stub` | `GET` | `/status/sessions/background` | admin | Get background tasks |  |
-| `stub` | `GET` | `/status/sessions/history/all` | user | List Playback History |  |
-| `stub` | `DELETE` | `/status/sessions/history/{historyId}` | admin | Delete Single History Item |  |
-| `stub` | `GET` | `/status/sessions/history/{historyId}` | admin | Get Single History Item |  |
+| `done` | `GET` | `/status/sessions/history/all` | user | List Playback History | The caller's own viewings, through `viewingHistory`; filters, sorts and refusals as measured. Always windowed; no `deviceID`, no artwork. See spec-gaps. |
+| `done` | `DELETE` | `/status/sessions/history/{historyId}` | admin | Delete Single History Item | Through `deleteHistoryEntry`; the caller's own entry, watch state untouched. |
+| `done` | `GET` | `/status/sessions/history/{historyId}` | admin | Get Single History Item | The caller's own entry, without the item's keys, as measured. |
 | `stub` | `POST` | `/status/sessions/terminate` | admin | Terminate a session |  |
 
 ## Butler

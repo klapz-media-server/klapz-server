@@ -7,6 +7,7 @@ pub mod access;
 pub mod account;
 pub mod auth;
 pub mod edit;
+pub mod history;
 pub mod identity;
 pub mod ids;
 pub mod library;
@@ -29,7 +30,9 @@ pub use auth::{Accounts, Credential, Principal, Scope};
 pub use identity::{
     now_epoch, ServerCapabilities, ServerFeatures, ServerIdentity, TranscoderCapabilities,
 };
-pub use ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId};
+pub use ids::{
+    HistoryId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
+};
 pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot};
 pub use metadata::{
     Credit, EpisodeCredit, ExternalId, FieldValue, ItemFilter, ItemKind, ItemQuery, ItemSort,

@@ -1699,6 +1699,7 @@ pub struct InMemoryWatch {
     states: std::sync::Mutex<Vec<(crate::watch::Viewer, String, crate::watch::WatchState)>>,
     viewings: std::sync::Mutex<Vec<(crate::watch::Viewer, String, crate::watch::Viewing, i64)>>,
     choices: std::sync::Mutex<Vec<(crate::watch::Viewer, PartId, crate::tracks::TrackChoice)>>,
+    history: std::sync::Mutex<Vec<crate::history::HistoryEntry>>,
 }
 
 impl InMemoryWatch {
@@ -1708,7 +1709,37 @@ impl InMemoryWatch {
             states: std::sync::Mutex::new(Vec::new()),
             viewings: std::sync::Mutex::new(Vec::new()),
             choices: std::sync::Mutex::new(Vec::new()),
+            history: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    /// The entries a query reads, ordered, before any window.
+    fn read_history(
+        &self,
+        query: &crate::history::HistoryQuery,
+    ) -> Vec<crate::history::HistoryEntry> {
+        let parent_of = |id: RatingKey| self.items.iter().find(|item| item.id == id)?.parent_id;
+        let mut entries: Vec<crate::history::HistoryEntry> = Self::lock(&self.history)
+            .iter()
+            .filter(|entry| {
+                let parents: Vec<RatingKey> =
+                    std::iter::successors(parent_of(entry.item), |id| parent_of(*id)).collect();
+                query.admits(entry, &parents)
+            })
+            .copied()
+            .collect();
+        entries.sort_by(|a, b| {
+            let key = |entry: &crate::history::HistoryEntry| match query.order {
+                crate::history::HistoryOrder::Recorded => 0,
+                crate::history::HistoryOrder::ViewedAt => entry.viewed_at,
+                crate::history::HistoryOrder::Library => entry.section.get(),
+            };
+            key(a).cmp(&key(b)).then(a.id.cmp(&b.id))
+        });
+        if query.direction.is_descending() {
+            entries.reverse();
+        }
+        entries
     }
 
     fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -1747,6 +1778,81 @@ impl crate::watch::WatchRepository for InMemoryWatch {
             }
         }
         Ok(())
+    }
+
+    async fn record_viewings(
+        &self,
+        viewer: crate::watch::Viewer,
+        states: &[(String, crate::watch::WatchState)],
+        viewings: &[crate::history::NewViewing],
+    ) -> Result<(), crate::watch::WatchError> {
+        self.save(viewer, states).await?;
+        let mut history = Self::lock(&self.history);
+        for viewing in viewings {
+            let Some(item) = self.items.iter().find(|item| item.id == viewing.item) else {
+                continue;
+            };
+            let id = history.last().map_or(1, |last| last.id.get() + 1);
+            history.push(crate::history::HistoryEntry {
+                id: crate::HistoryId::new(id),
+                viewer,
+                item: viewing.item,
+                section: item.section_id,
+                kind: viewing.kind,
+                viewed_at: viewing.viewed_at,
+            });
+        }
+        Ok(())
+    }
+
+    /// Windows by position only, after any cursor's entry: enough for the tests, which page
+    /// forward.
+    async fn history(
+        &self,
+        query: &crate::history::HistoryQuery,
+        window: Window,
+    ) -> Result<Page<crate::history::HistoryEntry>, crate::watch::WatchError> {
+        let entries = self.read_history(query);
+        let start = window.after.as_ref().map_or(0, |after| {
+            entries
+                .iter()
+                .position(|entry| entry.id.get() == after.id)
+                .map_or(entries.len(), |position| position + 1)
+        });
+        let rows: Vec<crate::history::HistoryEntry> = entries
+            .into_iter()
+            .skip(start)
+            .skip(usize::try_from(window.skip).unwrap_or(usize::MAX))
+            .take(usize::try_from(window.fetch_limit()).unwrap_or(usize::MAX))
+            .collect();
+        Ok(Page::from_overfetch(rows, &window))
+    }
+
+    async fn history_count(
+        &self,
+        query: &crate::history::HistoryQuery,
+    ) -> Result<u64, crate::watch::WatchError> {
+        Ok(self.read_history(query).len() as u64)
+    }
+
+    async fn history_entry(
+        &self,
+        id: crate::HistoryId,
+    ) -> Result<Option<crate::history::HistoryEntry>, crate::watch::WatchError> {
+        Ok(Self::lock(&self.history)
+            .iter()
+            .find(|entry| entry.id == id)
+            .copied())
+    }
+
+    async fn delete_history_entry(
+        &self,
+        id: crate::HistoryId,
+    ) -> Result<bool, crate::watch::WatchError> {
+        let mut history = Self::lock(&self.history);
+        let count = history.len();
+        history.retain(|entry| entry.id != id);
+        Ok(history.len() < count)
     }
 
     async fn watched_leaves(

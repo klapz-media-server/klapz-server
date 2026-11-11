@@ -55,6 +55,8 @@ pub enum Node {
     /// Someone who can be given access to libraries.
     User(crate::access::UserObject),
     PlaybackSession(crate::playback::PlaybackSessionObject),
+    /// One viewing in a history.
+    HistoryEntry(crate::history::HistoryEntryObject),
     PlayQueue(crate::play_queue::PlayQueueObject),
     PlayQueueEntry(crate::play_queue::PlayQueueEntryObject),
     /// This server.
@@ -190,6 +192,12 @@ impl Query {
                         Node::PlaybackSession(crate::playback::PlaybackSessionObject(session))
                     }))
             }
+            crate::history::HISTORY_ENTRY_TYPE => Ok(crate::history::visible_entry(
+                context,
+                open_plex_core::HistoryId::new(global.key),
+            )
+            .await?
+            .map(Node::HistoryEntry)),
             other => Err(async_graphql::Error::new(format!(
                 "`{other}` is not an identifiable type"
             ))),
@@ -323,6 +331,42 @@ impl Query {
         last: Option<i32>,
     ) -> Result<crate::playback::PlaybackConnection> {
         crate::playback::sessions(context, after, before, first, last).await
+    }
+
+    /// What was watched, one entry per viewing: each playback that reached 90% of the
+    /// runtime, and each film or episode marked watched. A position kept is no viewing, and
+    /// marking an item unwatched leaves its history as it is.
+    ///
+    /// A user reads its own; the operator reads everyone's, its own with `mine`. Empty for a
+    /// caller with no watch state. In the order recorded unless asked otherwise.
+    // One Rust parameter per field argument; see the note on `Library.items`.
+    #[allow(clippy::too_many_arguments)]
+    async fn viewing_history(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Narrows the history. Every field is combined with `AND`.")]
+        filter: Option<crate::history::HistoryFilterInput>,
+        #[graphql(desc = "How to order the history.")] order_by: Option<
+            crate::history::HistoryOrderType,
+        >,
+        #[graphql(desc = "Which direction to order in.")] direction: Option<
+            crate::filter::SortDirection,
+        >,
+        #[graphql(desc = "Return entries after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return entries before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many entries from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many entries from the end of the range.")]
+        last: Option<i32>,
+        #[graphql(
+            desc = "Discard this many entries before the page begins, for a client that pages by position. It costs the entries it discards."
+        )]
+        offset: Option<u32>,
+    ) -> Result<crate::history::HistoryConnection> {
+        crate::history::viewing_history(
+            context, filter, order_by, direction, after, before, first, last, offset,
+        )
+        .await
     }
 
     /// Who is asking: the operator, a user, or no one.

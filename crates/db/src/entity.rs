@@ -32,4 +32,5 @@ pub mod user_extension;
 pub mod user_password;
 pub mod users;
 pub mod viewing;
+pub mod viewing_history;
 pub mod watch_state;
