@@ -643,6 +643,8 @@ pub struct ItemFilter {
     pub frame: Option<FrameRange>,
     /// Keeps only items carrying the named tags. Each condition must hold.
     pub tags: Vec<TagCondition>,
+    /// Keeps only items in the named collections. Each condition must hold.
+    pub collections: Vec<crate::collection::CollectionCondition>,
     /// Keeps only items crediting this tag or person themselves or on an item below them: a
     /// series counts for an actor who played in one of its episodes, as on the reference's
     /// person pages, where a tag filter (`tags`) reads only the item's own.

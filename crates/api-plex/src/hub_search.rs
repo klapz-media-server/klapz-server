@@ -1,8 +1,8 @@
 //! `GET /hubs/search`: a search answered as shelves, one per kind of result.
 //!
 //! What Plex Web's search page and most other clients call. The reference always answers the
-//! same seventeen shelves, filled or empty, of which this server can fill six: films,
-//! series, episodes, actors, directors and genres. Music, photos, playlists, collections and
+//! same seventeen shelves, filled or empty, of which this server can fill seven: films,
+//! series, episodes, actors, directors, genres and collections. Music, photos, playlists and
 //! the rest stay empty, as they would on a server holding none.
 //!
 //! Matching is the official API's (`search` and `searchTags`), a word prefix with accents
@@ -64,6 +64,12 @@ query PlexHubSearch($query: String!, $items: Int!, $tags: Int!, $withTags: Boole
   genres: searchTags(query: $query, kinds: [GENRE], first: $tags) @include(if: $withTags) {
     ...FoundTags
   }
+  collections(matching: $query, first: $tags) @include(if: $withTags) {
+    edges { node {
+      tagNumber title guid summary thumbUrl artUrl itemCount
+      library { id title kind }
+    } }
+  }
 }
 
 fragment MatchedItems on ItemConnection {
@@ -114,6 +120,31 @@ struct MatchesData {
     directors: TagMatches,
     #[serde(default)]
     genres: TagMatches,
+    #[serde(default)]
+    collections: CollectionMatches,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CollectionMatches {
+    edges: Vec<CollectionMatchEdge>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CollectionMatchEdge {
+    node: CollectionMatch,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CollectionMatch {
+    tag_number: String,
+    title: String,
+    guid: String,
+    summary: String,
+    thumb_url: Option<String>,
+    art_url: Option<String>,
+    item_count: u64,
+    library: Option<MatchedLibrary>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -269,7 +300,15 @@ struct TagResult {
     tag_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     thumb: Option<String>,
+    /// A collection's background, from its provider.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    art: Option<String>,
     count: u64,
+    /// A collection's, as its items name it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    guid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    summary: Option<String>,
 }
 
 /// A relevance score, which the reference writes as a string of five decimals.
@@ -658,7 +697,10 @@ fn tag_hub(
                         .as_ref()
                         .and_then(|person| person.provider_key.clone()),
                     thumb: person.and_then(|person| person.thumb_url),
+                    art: None,
                     count: found.item_count,
+                    guid: None,
+                    summary: None,
                 }
             },
         )
@@ -668,6 +710,92 @@ fn tag_hub(
         size: tags.len(),
         tags,
         ..shelf.empty(language.catalog())
+    }
+}
+
+/// A matched collection with what ranks it, as [`RankedTag`] is for a tag.
+struct RankedCollection {
+    rung: usize,
+    number: i64,
+    section: i64,
+    found: CollectionMatch,
+    library: MatchedLibrary,
+}
+
+/// The collections shelf: each collection in its library, ranked as a tag is, since the
+/// reference lists a collection as the tag its items carry (`tagType` 2).
+fn collection_hub(
+    edges: Vec<CollectionMatchEdge>,
+    request: &Request,
+    language: Language,
+) -> SearchHub {
+    let mut ranked: Vec<RankedCollection> = edges
+        .into_iter()
+        .filter_map(|edge| {
+            let mut found = edge.node;
+            let library = found.library.take()?;
+            Some(RankedCollection {
+                rung: tag_rung(&found.title, request.term.trim()),
+                number: found.tag_number.parse().ok()?,
+                section: GlobalId::decode(&library.id).ok()?.key,
+                found,
+                library,
+            })
+        })
+        .collect();
+    // As people are ranked: library by library in title order, the largest first.
+    ranked.sort_by(|left, right| {
+        right
+            .rung
+            .cmp(&left.rung)
+            .then_with(|| {
+                left.library
+                    .title
+                    .to_lowercase()
+                    .cmp(&right.library.title.to_lowercase())
+            })
+            .then_with(|| right.found.item_count.cmp(&left.found.item_count))
+            .then_with(|| right.number.cmp(&left.number))
+    });
+    let tags: Vec<TagResult> = ranked
+        .into_iter()
+        .take(request.limit as usize)
+        .map(
+            |RankedCollection {
+                 rung,
+                 number,
+                 section,
+                 found,
+                 library,
+             }| {
+                let filter = format!("collection={number}");
+                TagResult {
+                    key: format!("/library/sections/{section}/all?{filter}"),
+                    library_section_id: section,
+                    library_section_key: format!("/library/sections/{section}"),
+                    library_section_title: library.title.clone(),
+                    library_section_type: library.kind.top_level_type(),
+                    reason: FoundIn::library(section, library.title),
+                    score: Score(TAG_SCORES[rung]),
+                    kind: "tag",
+                    id: number,
+                    filter,
+                    tag: found.title,
+                    tag_type: 2,
+                    tag_key: None,
+                    thumb: found.thumb_url,
+                    art: found.art_url,
+                    count: found.item_count,
+                    guid: Some(found.guid),
+                    summary: Some(found.summary).filter(|summary| !summary.is_empty()),
+                }
+            },
+        )
+        .collect();
+    SearchHub {
+        size: tags.len(),
+        tags,
+        ..Shelf::Collection.empty(language.catalog())
     }
 }
 
@@ -752,6 +880,7 @@ async fn search(
         tag_hub(Shelf::Actor, matches.actors.edges, &request, language),
         tag_hub(Shelf::Director, matches.directors.edges, &request, language),
         tag_hub(Shelf::Genre, matches.genres.edges, &request, language),
+        collection_hub(matches.collections.edges, &request, language),
     ]
     .map(Some);
     let mut hubs: Vec<SearchHub> = SHELVES

@@ -16,6 +16,7 @@ use open_plex_core::metadata::{ItemKind, MetadataItem};
 use open_plex_core::page::{Cursor, MAX_ITEMS};
 use open_plex_core::RatingKey;
 
+use crate::collection::MembershipConnection;
 use crate::cursor::OpaqueCursor;
 use crate::edit::ItemFieldType;
 use crate::library::Library;
@@ -313,6 +314,20 @@ impl Movie {
         similar_connection(context, &self.0, after, before, first, last).await
     }
 
+    /// The collections it is in, in the order it joined them.
+    async fn collections(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return collections after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return collections before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many collections from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many collections from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<MembershipConnection> {
+        crate::collection::collections_of(context, self.0.id, (after, before, first, last)).await
+    }
+
     /// Identifiers this item has at external metadata providers.
     async fn external_ids(
         &self,
@@ -550,6 +565,20 @@ impl Show {
             with_episodes: include_episodes,
         }
     }
+    /// The collections it is in, in the order it joined them.
+    async fn collections(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return collections after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return collections before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many collections from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many collections from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<MembershipConnection> {
+        crate::collection::collections_of(context, self.0.id, (after, before, first, last)).await
+    }
+
     /// Identifiers this item has at external metadata providers.
     async fn external_ids(
         &self,
@@ -742,6 +771,20 @@ impl Season {
             with_episodes: include_episodes,
         }
     }
+    /// The collections it is in, in the order it joined them.
+    async fn collections(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return collections after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return collections before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many collections from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many collections from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<MembershipConnection> {
+        crate::collection::collections_of(context, self.0.id, (after, before, first, last)).await
+    }
+
     /// Identifiers this item has at external metadata providers.
     async fn external_ids(
         &self,
@@ -984,6 +1027,20 @@ impl Episode {
             classified_by: show.unwrap_or(self.0.id),
             with_episodes: false,
         })
+    }
+
+    /// The collections it is in, in the order it joined them.
+    async fn collections(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return collections after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return collections before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many collections from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many collections from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<MembershipConnection> {
+        crate::collection::collections_of(context, self.0.id, (after, before, first, last)).await
     }
 
     /// Identifiers this item has at external metadata providers.

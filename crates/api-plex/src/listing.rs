@@ -248,6 +248,8 @@ pub struct Filters {
     pub resolution: Option<&'static str>,
     /// One entry per tag parameter; several combine with `AND`.
     pub tags: Vec<TagFilter>,
+    /// One entry per `collection` parameter, combined the same way.
+    pub collections: Vec<CollectionFilter>,
     /// `id!=` — the shelf "more by this director", without the film it was opened from.
     pub excluded_id: Option<i64>,
     pub watched: Option<bool>,
@@ -315,6 +317,47 @@ impl TagFilter {
     }
 }
 
+/// One `collection` parameter: the numbers items carry collections under, or titles.
+///
+/// Read as a tag is, a number being the collection's `index` — what an item's `Collection`
+/// element publishes as its `id` and its `filter`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct CollectionFilter {
+    pub numbers: Vec<i64>,
+    pub titles: Vec<String>,
+}
+
+impl CollectionFilter {
+    fn parse(value: &str) -> Self {
+        let tag = TagFilter::parse("COLLECTION", value);
+        Self {
+            numbers: tag.ids,
+            titles: tag.names,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.numbers.len() + self.titles.len()
+    }
+
+    fn to_graphql(&self) -> Value {
+        let mut fields = async_graphql::indexmap::IndexMap::new();
+        if !self.numbers.is_empty() {
+            let numbers = self
+                .numbers
+                .iter()
+                .map(|number| Value::String(number.to_string()))
+                .collect();
+            fields.insert(Name::new("tagNumbers"), Value::List(numbers));
+        }
+        if !self.titles.is_empty() {
+            let titles = self.titles.iter().cloned().map(Value::String).collect();
+            fields.insert(Name::new("titles"), Value::List(titles));
+        }
+        Value::Object(fields)
+    }
+}
+
 impl Filters {
     /// Renders as the `ItemFilterInput` the schema takes, or null when nothing is set.
     ///
@@ -351,6 +394,17 @@ impl Filters {
             set(
                 "tags",
                 Value::List(self.tags.iter().map(TagFilter::to_graphql).collect()),
+            );
+        }
+        if !self.collections.is_empty() {
+            set(
+                "collections",
+                Value::List(
+                    self.collections
+                        .iter()
+                        .map(CollectionFilter::to_graphql)
+                        .collect(),
+                ),
             );
         }
         if let Some(id) = self.excluded_id {
@@ -456,6 +510,17 @@ pub fn parse(pairs: &[(String, String)]) -> Result<ListingRequest, ListingError>
                 });
             }
             request.filters.tags.push(filter);
+            continue;
+        }
+        if (field, operator) == ("collection", Operator::Equals) {
+            let filter = CollectionFilter::parse(value);
+            if filter.len() > TagCondition::MAX_VALUES {
+                return Err(ListingError::TooManyValues {
+                    field: field.to_owned(),
+                    count: filter.len(),
+                });
+            }
+            request.filters.collections.push(filter);
             continue;
         }
 
@@ -968,7 +1033,7 @@ mod tests {
     fn an_advertised_filter_we_cannot_honor_is_refused_not_dropped() {
         // The whole point: dropping `genre` would answer with the entire library and let the
         // client present it as the filtered result.
-        for field in ["collection", "label", "network", "hdr"] {
+        for field in ["label", "network", "hdr"] {
             let error = parse(&pairs(&[(field, "1")])).expect_err("refused");
             assert!(
                 matches!(&error, ListingError::UnsupportedFilter(name) if name == field),
@@ -988,6 +1053,24 @@ mod tests {
             ),
             "{error}"
         );
+    }
+
+    #[test]
+    fn a_collection_is_named_by_number_or_title() {
+        // Measured: `collection=187346` and `collection=La 7ème compagnie - Saga` list the
+        // same three films on the reference.
+        let filters = parse(&pairs(&[("collection", "187346,La 7ème compagnie - Saga")]))
+            .expect("parses")
+            .filters;
+        assert_eq!(
+            filters.collections,
+            [CollectionFilter {
+                numbers: vec![187_346],
+                titles: vec!["La 7ème compagnie - Saga".to_owned()],
+            }]
+        );
+        let rendered = filters.to_graphql(None).to_string();
+        assert!(rendered.contains("tagNumbers"), "{rendered}");
     }
 
     #[test]

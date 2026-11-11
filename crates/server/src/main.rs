@@ -102,6 +102,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         playback: Arc::clone(&playback),
         play_queues: Arc::clone(&play_queues),
         playlists: Arc::new(open_plex_db::SqlPlaylistRepository::new(connection.clone())),
+        collections: Arc::new(open_plex_db::SqlCollectionRepository::new(
+            connection.clone(),
+        )),
         access: Arc::clone(&users),
         directory: Arc::clone(&directory),
         watch: Arc::new(SqlWatchRepository::new(connection)),
@@ -262,6 +265,8 @@ async fn run_import(
         external_ids = summary.tags.external_ids,
         ratings = summary.tags.ratings,
         markers = summary.markers.markers,
+        collections = summary.collections.collections,
+        collection_entries = summary.collections.entries,
         orphans = summary.orphans,
         "import complete"
     );

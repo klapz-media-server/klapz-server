@@ -23,11 +23,16 @@
 //! no `id`, which the reference applies to every item of the library; tags, artwork, and the
 //! other fields we do not model; seasons and music. A value the field cannot hold is a `400`
 //! where the reference stores it or fails with a `500`.
+//!
+//! A collection, `type=18`, is edited through `updateCollection`: its title, sort title,
+//! summary and content rating, and the locks of those and of its artwork. The reference takes
+//! every item field on a collection; the others answer `501` here.
 
 use async_graphql::Variables;
 use axum::extract::{Path, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
+use open_plex_api::collection::COLLECTION_TYPE;
 use open_plex_api::item::ITEM_TYPE;
 use open_plex_api::library::LIBRARY_TYPE;
 use open_plex_api::GlobalId;
@@ -130,13 +135,27 @@ enum Route {
     Item,
 }
 
-/// The three types that can be edited, by Plex's `type` number.
+/// The types that can be edited, by Plex's `type` number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EditedType {
     Movie,
     Show,
     Episode,
+    Collection,
 }
+
+/// What a collection holds of the fields above: measured on the reference, which takes
+/// `year`, `studio` and the rest on a collection too and publishes them, where a collection
+/// here keeps these alone.
+const COLLECTION_VALUES: [&str; 4] = ["title", "titleSort", "summary", "contentRating"];
+const COLLECTION_LOCKS: [&str; 6] = [
+    "title",
+    "titleSort",
+    "summary",
+    "contentRating",
+    "thumb",
+    "art",
+];
 
 impl EditedType {
     fn of(plex_type: &str) -> Result<Self, ApiError> {
@@ -144,6 +163,7 @@ impl EditedType {
             Ok(1) => Ok(Self::Movie),
             Ok(2) => Ok(Self::Show),
             Ok(4) => Ok(Self::Episode),
+            Ok(18) => Ok(Self::Collection),
             Ok(_) => Err(ApiError::NotImplemented),
             Err(_) => Err(ApiError::BadRequest),
         }
@@ -155,6 +175,7 @@ impl EditedType {
             "Movie" => Ok(Self::Movie),
             "Show" => Ok(Self::Show),
             "Episode" => Ok(Self::Episode),
+            "Collection" => Ok(Self::Collection),
             _ => Err(ApiError::NotImplemented),
         }
     }
@@ -164,6 +185,7 @@ impl EditedType {
             Self::Movie => "Movie",
             Self::Show => "Show",
             Self::Episode => "Episode",
+            Self::Collection => "Collection",
         }
     }
 
@@ -172,7 +194,21 @@ impl EditedType {
             Self::Movie => UPDATE_MOVIE,
             Self::Show => UPDATE_SHOW,
             Self::Episode => UPDATE_EPISODE,
+            Self::Collection => UPDATE_COLLECTION,
         }
+    }
+
+    /// The global id an edited object of this type is named by.
+    fn global_id(self, key: i64) -> String {
+        match self {
+            Self::Collection => GlobalId::encode(COLLECTION_TYPE, key),
+            Self::Movie | Self::Show | Self::Episode => GlobalId::encode(ITEM_TYPE, key),
+        }
+    }
+
+    /// Whether a field the reference edits is one this type holds here.
+    fn holds(self, name: &str, of_collection: &[&str]) -> bool {
+        self != Self::Collection || of_collection.contains(&name)
     }
 
     /// A film's or a series' year is its release date's, so the two lock together.
@@ -192,6 +228,10 @@ mutation PlexEditShow($input: UpdateShowInput!) {
 const UPDATE_EPISODE: &str = r"
 mutation PlexEditEpisode($input: UpdateEpisodeInput!) {
   result: updateEpisode(input: $input) { userErrors { code } }
+}";
+const UPDATE_COLLECTION: &str = r"
+mutation PlexEditCollection($input: UpdateCollectionInput!) {
+  result: updateCollection(input: $input) { userErrors { code } }
 }";
 
 /// The input every item of the request is edited with, less its `id`.
@@ -221,6 +261,9 @@ impl Changes {
         }
         for (key, value) in params {
             if let Some(name) = key.strip_suffix(".value") {
+                if !edited.holds(name, &COLLECTION_VALUES) {
+                    return Err(unhandled(name));
+                }
                 changes.set(name, value)?;
             } else if let Some(name) = key.strip_suffix(".locked") {
                 match changes.set_lock(name, value, edited) {
@@ -269,6 +312,9 @@ impl Changes {
             "0" => &mut self.unlock,
             _ => return Err(InvalidLock),
         };
+        if !edited.holds(name, &COLLECTION_LOCKS) {
+            return Ok(Err(unhandled(name)));
+        }
         let Some((_, field)) = LOCKABLE.iter().find(|(plex, _)| *plex == name) else {
             return Ok(Err(unhandled(name)));
         };
@@ -280,9 +326,9 @@ impl Changes {
         Ok(Ok(()))
     }
 
-    fn input(&self, item: i64) -> Json {
+    fn input(&self, edited: EditedType, key: i64) -> Json {
         let mut input = self.values.clone();
-        input.insert("id".to_owned(), json!(GlobalId::encode(ITEM_TYPE, item)));
+        input.insert("id".to_owned(), json!(edited.global_id(key)));
         input.insert("lock".to_owned(), json!(self.lock));
         input.insert("unlock".to_owned(), json!(self.unlock));
         Json::Object(input)
@@ -305,7 +351,11 @@ fn unhandled(name: &str) -> ApiError {
 const TARGETS_QUERY: &str = r"
 query PlexEditTargets($library: ID!, $ids: [ID!]!) {
   library: node(id: $library) { ... on Library { viewerRole } }
-  items: nodes(ids: $ids) { __typename ... on Item { library { id } } }
+  items: nodes(ids: $ids) {
+    __typename
+    ... on Item { library { id } }
+    ... on Collection { library { id } }
+  }
 }";
 
 #[derive(Debug, Deserialize)]
@@ -380,7 +430,7 @@ pub async fn edit_items(
     let library = GlobalId::encode(LIBRARY_TYPE, section);
     let variables = Variables::from_json(json!({
         "library": library,
-        "ids": ids.iter().map(|id| GlobalId::encode(ITEM_TYPE, *id)).collect::<Vec<_>>(),
+        "ids": ids.iter().map(|id| edited.global_id(*id)).collect::<Vec<_>>(),
     }));
     let targets: TargetsData = gql::execute(&state.schema, TARGETS_QUERY, variables).await?;
     // Told apart from an unknown library no more than the settings route does.
@@ -407,7 +457,7 @@ async fn apply(
     edited: EditedType,
     item: i64,
 ) -> Result<(), ApiError> {
-    let variables = Variables::from_json(json!({ "input": changes.input(item) }));
+    let variables = Variables::from_json(json!({ "input": changes.input(edited, item) }));
     let data: EditData = gql::execute(&state.schema, edited.mutation(), variables).await?;
     if let Some(error) = data.result.user_errors.first() {
         tracing::info!(code = error.code, item, "refused an edit");
@@ -422,7 +472,11 @@ async fn apply(
 
 const ITEMS_QUERY: &str = r"
 query PlexEditItems($ids: [ID!]!) {
-  items: nodes(ids: $ids) { __typename ... on Item { library { viewerRole } } }
+  items: nodes(ids: $ids) {
+    __typename
+    ... on Item { library { viewerRole } }
+    ... on Collection { library { viewerRole } }
+  }
 }";
 
 #[derive(Debug, Deserialize)]
@@ -453,13 +507,23 @@ pub async fn edit_metadata(
     if ids.len() > MAX_ITEMS as usize {
         return Err(ApiError::BadRequest);
     }
-    let variables = Variables::from_json(json!({
-        "ids": ids.iter().map(|id| GlobalId::encode(ITEM_TYPE, *id)).collect::<Vec<_>>(),
-    }));
+    // Each number may name an item or a collection, which share the numbering: both are
+    // asked for, items first.
+    let encoded: Vec<String> = ids
+        .iter()
+        .map(|id| GlobalId::encode(ITEM_TYPE, *id))
+        .chain(ids.iter().map(|id| GlobalId::encode(COLLECTION_TYPE, *id)))
+        .collect();
+    let variables = Variables::from_json(json!({ "ids": encoded }));
     let found: ItemsData = gql::execute(&state.schema, ITEMS_QUERY, variables).await?;
+    let (items, collections) = found.items.split_at(ids.len().min(found.items.len()));
     let mut edited_any = false;
-    for (id, item) in ids.iter().zip(&found.items) {
-        let Some(item) = item else {
+    for (index, id) in ids.iter().enumerate() {
+        let Some(item) = items
+            .get(index)
+            .and_then(Option::as_ref)
+            .or_else(|| collections.get(index).and_then(Option::as_ref))
+        else {
             continue;
         };
         let role = item

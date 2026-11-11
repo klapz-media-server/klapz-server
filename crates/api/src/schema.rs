@@ -39,6 +39,7 @@ pub struct ApiContext {
     pub playback: Arc<dyn open_plex_core::playback::PlaybackRepository>,
     pub play_queues: Arc<dyn open_plex_core::play_queue::PlayQueueRepository>,
     pub playlists: Arc<dyn open_plex_core::playlist::PlaylistRepository>,
+    pub collections: Arc<dyn open_plex_core::collection::CollectionRepository>,
     pub access: Arc<dyn open_plex_core::access::AccessRepository>,
     pub directory: Arc<dyn open_plex_core::access::AccountDirectory>,
     pub watch: Arc<dyn open_plex_core::watch::WatchRepository>,
@@ -76,6 +77,8 @@ pub enum Node {
     Playlist(crate::playlist::PlaylistObject),
     /// One chosen item at its place in a playlist.
     PlaylistEntry(crate::playlist::PlaylistEntryObject),
+    /// Items of one library grouped under a name.
+    Collection(crate::collection::CollectionObject),
     /// This server.
     Server(Server),
     /// A media library.
@@ -180,26 +183,14 @@ impl Query {
                     .map(|person| Node::Person(PersonObject(person))),
             ),
             crate::play_queue::PLAY_QUEUE_TYPE => {
-                let caller = crate::access::require_caller(context)?;
-                Ok(crate::play_queue::queues(context)?
-                    .queue(global.key)
+                Ok(crate::play_queue::queue_node(context, global.key)
                     .await?
-                    .filter(|queue| caller.owns(queue.user))
-                    .map(|queue| Node::PlayQueue(crate::play_queue::PlayQueueObject(queue))))
+                    .map(Node::PlayQueue))
             }
             crate::play_queue::PLAY_QUEUE_ENTRY_TYPE => {
-                let caller = crate::access::require_caller(context)?;
-                let queues = crate::play_queue::queues(context)?;
-                let Some(entry) = queues.entry(global.key).await? else {
-                    return Ok(None);
-                };
-                let owned = queues
-                    .queue(entry.queue)
+                Ok(crate::play_queue::entry_node(context, global.key)
                     .await?
-                    .is_some_and(|queue| caller.owns(queue.user));
-                Ok(owned.then_some(Node::PlayQueueEntry(
-                    crate::play_queue::PlayQueueEntryObject(entry),
-                )))
+                    .map(Node::PlayQueueEntry))
             }
             crate::marker::MARKER_TYPE => Ok(crate::marker::marker_node(context, global.key)
                 .await?
@@ -213,6 +204,11 @@ impl Query {
                 Ok(crate::playlist::entry_node(context, global.key)
                     .await?
                     .map(Node::PlaylistEntry))
+            }
+            crate::collection::COLLECTION_TYPE => {
+                Ok(crate::collection::collection_node(context, global.key)
+                    .await?
+                    .map(Node::Collection))
             }
             crate::playback::PLAYBACK_TYPE => {
                 let caller = crate::access::require_caller(context)?;
@@ -480,6 +476,62 @@ impl Query {
         crate::playlist::list(context, request, (after, before, first, last), offset).await
     }
 
+    /// Collections across every library the caller reads; `Library.collections` lists one
+    /// library's.
+    // One Rust parameter per field argument; see the note on `Library.items`.
+    #[allow(clippy::too_many_arguments)]
+    async fn collections(
+        &self,
+        context: &Context<'_>,
+        #[graphql(
+            desc = "Only collections having a word that starts with each word of this text, in their title or sort title, accents folded."
+        )]
+        matching: Option<String>,
+        #[graphql(desc = "Only collections holding items of this kind.")] kind: Option<
+            crate::filter::ItemType,
+        >,
+        #[graphql(
+            desc = "Only smart collections (`true`), or only those of chosen items (`false`)."
+        )]
+        smart: Option<bool>,
+        #[graphql(
+            desc = "Only the collections carried under this `Collection.tagNumber`: one per library at most."
+        )]
+        tag_number: Option<String>,
+        #[graphql(desc = "How to order them.")] order_by: Option<
+            crate::collection::CollectionListOrder,
+        >,
+        #[graphql(desc = "Which direction to order in.")] direction: Option<
+            crate::filter::SortDirection,
+        >,
+        #[graphql(desc = "Return collections after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return collections before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many collections from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many collections from the end of the range.")]
+        last: Option<i32>,
+        #[graphql(desc = "Skip this many collections first.")] offset: Option<u32>,
+    ) -> Result<crate::collection::CollectionConnection> {
+        let request = crate::collection::ListRequest {
+            kind,
+            smart,
+            with_entries: None,
+            tag_number,
+            matching,
+            order_by,
+            direction,
+        };
+        let sections = crate::collection::readable_sections(context).await?;
+        crate::collection::list(
+            context,
+            sections,
+            request,
+            (after, before, first, last),
+            offset,
+        )
+        .await
+    }
+
     /// Who is asking: the operator, a user, or no one.
     async fn viewer(&self, context: &Context<'_>) -> crate::access::Viewer {
         crate::access::viewer(context)
@@ -736,6 +788,7 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
     let metadata = Arc::clone(&context.metadata);
     let watch = Arc::clone(&context.watch);
     let playlists = Arc::clone(&context.playlists);
+    let collections = Arc::clone(&context.collections);
 
     Schema::build(Query, crate::playback::Mutation, EmptySubscription)
         .data(context)
@@ -807,6 +860,14 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
         ))
         .data(DataLoader::new(
             crate::playlist::PlaylistTotalsLoader::new(playlists),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            crate::collection::CollectionTotalsLoader::new(Arc::clone(&collections)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            crate::collection::MembershipsLoader::new(collections),
             tokio::spawn,
         ))
         .finish()

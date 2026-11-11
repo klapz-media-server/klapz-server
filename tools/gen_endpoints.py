@@ -136,6 +136,15 @@ IMPLEMENTED = frozenset(
         "/playlists/{playlistId}/items/{generatorId}/items",
         "/playlists/{playlistId}/items/{generatorId}/{metadataId}/{action}",
         "/playlists/{playlistId}/items/{playlistItemId}/move",
+        # Collections (`collections.rs`).
+        "/library/collections",
+        "/library/collections/{collectionId}/items",
+        "/library/collections/{collectionId}/items/{itemId}",
+        "/library/collections/{collectionId}/items/{itemId}/move",
+        "/library/collections/{collectionId}/composite/{updatedAt}",
+        "/library/sections/{sectionId}/collections",
+        "/library/sections/{sectionId}/collection/{collectionId}",
+        "/library/metadata/{ids}/prefs",
     }
 )
 
@@ -159,6 +168,24 @@ OFF_SPEC = (
         "Stop a transcode session",
         "Stops the process and closes the playback session; `404` for one it does not know, as "
         "the reference. No test yet.",
+    ),
+    (
+        "done",
+        "GET",
+        "/library/collections/{collectionId}",
+        "user",
+        "A collection",
+        "As `/library/metadata/{collectionId}` shows it: in the lookup form, with its library "
+        "and its locks. See spec-gaps.md.",
+    ),
+    (
+        "done",
+        "GET",
+        "/library/collections/{collectionId}/children",
+        "user",
+        "Items in a collection",
+        "The same answer as `/items`, which the spec declares: what Plex Web calls. See "
+        "spec-gaps.md.",
     ),
     (
         "done",

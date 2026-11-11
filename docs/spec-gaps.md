@@ -1103,6 +1103,130 @@ Every populated column of a marker's `taggings` row, and where it goes:
 | `id` | 217,863 | not kept: our ids are our own |
 | `thumb_url` | 0 | — |
 
+### Collections
+
+Measured on the reference with collections of its test libraries 27 (Soul) and 28 (Bull, its
+season 5 and two episodes), every one deleted afterwards, and on the imported library read only.
+
+**How the reference keeps them.** A collection is an item of type 18 in its library, holding the
+title, summary, settings (`pr:collectionMode`, `pr:collectionSort` in `extra_data`) and locks
+(`user_fields`); its members carry a tag of type 2 whose id is the collection's `index`. One tag
+serves every library with a collection of that name — 588 tags span several — so a membership is
+a tagging of an item whose library holds a collection under that number. `rating_count` stores
+the `type` the collection was created with, plus 100 for a smart one. We keep the collection and
+its members as entries of it (`collection`, `collection_entry`), with the number as
+`tagNumber`. The imported library gives 2,295 collections and 4,586 entries: 7 taggings name a
+number no collection of the item's library carries and are left out, as are 3 repeated ones and
+the 4 smart collections, which all list `episode.duplicate`, a filter the official API cannot
+express. 115 collections keep a number whose tag is gone: that is what emptying through the tag
+leaves on the reference (below).
+
+Of the columns the reference fills on its 2,299 collections, the importer keeps `id`,
+`library_section_id`, `guid`, `title`, `title_sort`, `summary`, `content_rating`, `index` (the
+number), `rating_count` (the kind), `added_at`, `updated_at`, `pr:collectionMode` and
+`pr:collectionSort`, the locks of `user_fields`, and the tag's `user_thumb_url` and
+`user_art_url` when they are web addresses (544 and 506). Left out, each for a reason:
+`at:childCount`, `at:minYear`, `at:maxYear`, which are derived from the entries (2 of 2,299
+stale); the local poster (`user_thumb_url`, 788) and every blur hash and ultra-blur colour,
+artwork not being served; `absolute_index` (always 1), `created_at` (always `added_at`), `hash`,
+`changed_at` and `resources_changed_at`, which are a scanner's bookkeeping; the tag's `at:guid`
+and `at:summary`, see below.
+
+**What a collection shows.** `ratingKey`, `key` (`/library/collections/{id}/children`), `guid`
+(`collection://{uuid}` when made here), `type="collection"`, `title`, `titleSort` when it differs,
+the library trio where a lookup puts it, `contentRating`, `subtype` (`movie`, `show`, `season`,
+`episode`), `summary` always, empty included, `index` (the number), `content` on a smart one (its
+`uri`, as given), `ratingCount`, `thumb` (`/library/collections/{id}/composite/{updatedAt}?width=400&height=600`),
+`addedAt`, `updatedAt`, `childCount`, `collectionMode` and `collectionSort` once set, `maxYear` and
+`minYear` as **strings** (a smart collection has none), `smart="1"`, then `Field` for its locks in
+a lookup. XML names it `<Directory>`, in the long form.
+
+| Where | Shape |
+| --- | --- |
+| `GET /library/sections/{id}/collections`, `/all?type=18` | `/all`'s container; no library on the collection |
+| `GET /library/metadata/{id}`, `/library/collections/{id}` | The lookup container; the library trio after `title`, and `Field` |
+| `POST /library/collections` | `{size, Metadata}`; no library on the collection |
+| `PUT …/items`, `DELETE …/items/{item}`, `PUT …/move` | `{size, Metadata}`; the library trio, no `Field` |
+| `GET …/children`, `…/items` | `{size, Metadata}` of items in the listing form with their library; `totalSize` and `offset` with both container parameters |
+
+`updatedAt` moves when an item joins or leaves, and only then: not on a repeat, an edit, a
+setting or a move. A lookup of `{collection},{item}` answers both, in that order. Imported
+collections read identically to the reference's, artwork and `mediaTagVersion` aside.
+
+**Its items.** Release date by default, items without one first (`collectionSort` 0); title (1);
+custom (2), the order `PUT …/items/{item}/move?after=` arranges, without `after` first. Measured
+on two episodes, of which one has no date: 0 and 1 both listed the undated one first, so the
+title order is not confirmed beyond what an item listing does. A smart collection lists its rule
+anew, in the rule's order.
+
+**Creating and changing.**
+
+| Request | Reference | Here |
+| --- | --- | --- |
+| `POST` without `sectionId`, with an unknown one, without `title` | `400` | Same |
+| `POST` without `type` | The library's top level | Same |
+| `POST?type=99` | `200`, a collection of `subtype="unknown"`, `ratingCount=99` | `400`; nothing could join it |
+| `POST` with items of another kind or library in `uri` | `200`; they are left out | Same |
+| `POST?uri=garbage` | `200`, empty | Same |
+| `POST?smart=1` without `uri` | `400` | Same; a listing of another library `400`, a filter we cannot honor `501` |
+| `PUT …/items` with only items that cannot join, no `uri`, `uri=garbage` | `400` | Same |
+| `PUT …/items` with a repeat, or one that can join among others | `200` | Same |
+| `PUT …/items`, `…/move` on a smart collection | `400` | Same; `DELETE …/items/{item}` there changes nothing, as on the reference |
+| `DELETE …/items/{item}` twice, or for an item not in it | `200` | Same |
+| **`PUT …/items/{item}`**, the spec's removal | `404` | Same: `DELETE` removes |
+| `…/move?after=` itself, an item not in it, a word | `400` | Same |
+| `…/move?after=` an item not in it | `200`, moved first | Same |
+| Any of these on an unknown collection | `404` | Same |
+| `PUT /library/metadata/{id}/prefs?collectionSort=&collectionMode=` | `200`, empty; an unknown name `400` | Same; `collectionSort=7`, which the reference keeps, `400` |
+| `GET /library/metadata/{id}/prefs` | `404` | Not served either |
+| `PUT /library/sections/{id}/all?type=18&id=` | Every field an item takes, `year`, `studio`, `tagline` included | `title`, `titleSort`, `summary`, `contentRating` and their locks, `thumb` and `art` locks; the rest `501` |
+| `DELETE /library/metadata/{id}` | `200`, then `404` | Same |
+| **`DELETE /library/sections/{s}/collection/{n}`** | `n` is the **tag number**: every item of library `s` leaves the collection, which stays, `updatedAt` untouched; another library's number `200`, an unknown `404` | Same |
+| `GET …/composite/{updatedAt}` | `404`, for every collection tried | Same |
+
+A title edit derives the sort title, as an item's does, and a sort title given with it is kept
+here (the reference derives over it unless it is locked).
+
+**Rights, which are ours.** A collection is its library's: readable by whoever reads the library,
+changed by its admins and the operator, as items are edited. What a caller may not change answers
+as if it did not exist: `404` on the Plex surface, `COLLECTION_NOT_FOUND` on the official API.
+
+**Where we differ.**
+
+- **An item names its collections by their own title, guid and summary.** The reference names
+  the tag they share across libraries: its name, whose case differs from the collection's title
+  on 38 of 2,299 (`Men in Black - Saga` for `Men In Black - Saga`), and the tag's `at:guid` and
+  `at:summary`, which 1,231 tags lack and 162 take from a sibling library's collection. On 100
+  sampled films: 36 identical, 52 with a `guid` the reference leaves out, 6 with another `guid`,
+  6 without the tag's `summary`, 6 names in another case; the order, the order the item joined
+  them in, identical on all.
+- **A listing names one collection, the first the item joined.** The reference reads the listing
+  form from the stale `tags_collection` column — measured identical on 16,827 of 16,834 films —
+  which holds one name, or none for 1,343 films in a collection.
+- **`childCount` is always written.** The reference leaves it out of a collection that never held
+  an item, and writes `0` once one has left.
+- **`collectionMode="-1"` is never written**, the library's setting being what storage keeps when
+  none is set; the reference writes it once a client set it.
+- **Collations.** Collections list by sort title in byte order, as items do: `21 Jump Street`
+  before `3 histoires de l'au-delà`, where the reference's numeric collation puts `3` first.
+- **`includeCollections=1` mixes nothing into `/all`.** The reference does it in a library whose
+  collection mode shows collections (`2`, its test libraries' setting), not in one that hides them
+  (`0`, all of its real libraries'); collections are listed apart here, by `type=18` and
+  `/collections`.
+- **Numbers.** A collection made here takes the id past the highest item's or collection's, and
+  the number past the highest collection's: a later import of a library holding an item of that
+  id would clash. An import replaces every library's contents, collections made here included.
+- No shelf of collections was seen on the reference's `/hubs/sections/{id}`, so none is served.
+
+**Search and filter choices.** `/hubs/search` lists collections in its `collection` shelf as tags
+(`type="tag"`, `tagType="2"`): key `/library/sections/{s}/all?collection={n}`, the library and
+`reason`, the score of a tag, `id`, `filter`, `tag`, `thumb` and `art` (the provider's poster and
+background, which the tag holds), `count` (its items), `guid` and `summary`; one entry per library,
+ranked as people are. `GET /library/sections/{id}/collection` lists the collections holding an
+item — 1,024 of a film library's 1,116 on the reference — as `fastKey`, `thumb`, `key` (the
+number) and `title`, under `title2="By Collection"`. `collection=` filters a listing by number or
+title, comma for OR, as a tag filter does.
+
 ### Playback sessions are stored
 
 None of the reference's 71 tables holds a session in progress: only what outlives one, the play

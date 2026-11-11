@@ -188,7 +188,7 @@ async fn expand_item(
     })
 }
 
-async fn existing(state: &PlexState, keys: Vec<i64>) -> Result<Vec<String>, ApiError> {
+pub(crate) async fn existing(state: &PlexState, keys: Vec<i64>) -> Result<Vec<String>, ApiError> {
     let found = fetch_items(state, &keys, false).await?;
     Ok(found.into_iter().flatten().map(|item| item.id).collect())
 }

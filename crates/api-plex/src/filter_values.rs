@@ -39,6 +39,8 @@ enum Choice {
     },
     /// The classes of [`crate::resolution`] some version of the library falls in.
     Resolution,
+    /// The collections holding an item, by the number the filter takes.
+    Collection,
 }
 
 impl Choice {
@@ -57,6 +59,7 @@ impl Choice {
             },
             "studio" => Self::Text { field: "STUDIO" },
             "resolution" => Self::Resolution,
+            "collection" => Self::Collection,
             _ => return None,
         })
     }
@@ -80,6 +83,7 @@ fn view_title(filter: &str) -> &'static str {
         "decade" => "By Decade",
         "contentRating" => "By Content Rating",
         "resolution" => "By Resolution",
+        "collection" => "By Collection",
         _ => "By Studio",
     }
 }
@@ -98,6 +102,50 @@ query PlexTagChoices($id: ID!, $kind: TagType!, $billed: Int, $filter: ItemFilte
   }
 }
 ";
+
+/// The collections holding an item, by title: the reference lists 1,024 of the 1,116
+/// collections of a film library, the others being empty, and no smart one.
+const COLLECTIONS_QUERY: &str = r"
+query PlexCollectionChoices($id: ID!, $first: Int!, $offset: Int!) {
+  node(id: $id) {
+    ... on Library {
+      title
+      kind
+      collections(withEntries: true, smart: false, first: $first, offset: $offset) {
+        totalCount
+        edges { node { tagNumber title thumbUrl } }
+      }
+    }
+  }
+}
+";
+
+#[derive(Debug, Deserialize)]
+struct CollectionChoicesData {
+    node: Option<GqlCollectionChoices>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlCollectionChoices {
+    title: String,
+    kind: String,
+    collections: GqlCollectionPage,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlCollectionPage {
+    total_count: u64,
+    edges: Vec<GqlEdge<GqlCollectionChoice>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlCollectionChoice {
+    tag_number: String,
+    title: String,
+    thumb_url: Option<String>,
+}
 
 const YEARS_QUERY: &str = r"
 query PlexYearChoices($id: ID!, $filter: ItemFilterInput, $first: Int!, $offset: Int!) {
@@ -374,6 +422,7 @@ async fn choices(
 ) -> Result<Choices, ApiError> {
     Ok(match choice {
         Choice::Resolution => resolution_choices(state, variables, (offset, size)).await?,
+        Choice::Collection => collection_choices(state, variables, listing).await?,
         Choice::Tag { kind } => {
             variables.insert(Name::new("kind"), Value::Enum(Name::new(kind)));
             if kind == "ACTOR" {
@@ -464,6 +513,35 @@ async fn choices(
                 total,
             }
         }
+    })
+}
+
+/// The collections holding an item, by the number a listing filters on.
+async fn collection_choices(
+    state: &PlexState,
+    variables: Variables,
+    listing: &impl Fn(&str) -> String,
+) -> Result<Choices, ApiError> {
+    let data: CollectionChoicesData =
+        gql::execute(&state.schema, COLLECTIONS_QUERY, variables).await?;
+    let library = data.node.ok_or(ApiError::NotFound)?;
+    let entries = library
+        .collections
+        .edges
+        .into_iter()
+        .map(|edge| ChoiceDirectory {
+            fast_key: Some(listing(&edge.node.tag_number)),
+            thumb: edge.node.thumb_url,
+            key: edge.node.tag_number,
+            title: edge.node.title,
+            kind: None,
+        })
+        .collect();
+    Ok(Choices {
+        title: library.title,
+        kind: library.kind,
+        entries,
+        total: library.collections.total_count,
     })
 }
 

@@ -343,6 +343,12 @@ Places where we knowingly answer differently, each decided rather than overlooke
   playlist and `PUT /playlists/{a film's id}` renames nothing, where the reference renames the
   film. `POST /playlists/upload` imports `.m3u` files from a path the client names and stays
   refused (`403`): no endpoint accepts a path from a client.
+- **A collection is named by its own title, and listed apart.** The reference names a
+  collection on its items by the tag it shares across libraries, whose case, guid and summary
+  can differ from the collection's; we publish the collection's own. `includeCollections=1`
+  mixes nothing into `/all`: collections are listed by `type=18` and `/collections`. A
+  collection made here is numbered past the highest item, where a later import could bring an
+  item of that number (`docs/spec-gaps.md`).
 - **Live TV answers as a server with nothing set up.** There is no grabber, tuner or guide
   provider, so every Live TV, DVR, guide and recording list is empty and every one of them by
   id a `404`, as on the reference without a DVR. Where the reference lists what it has — the
@@ -592,6 +598,18 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `clearPlayQueue`, `resetPlayQueue`, `shufflePlayQueue`, `unshufflePlayQueue`,
   `PlayQueue.lastAddedEntry`, `kind`, `clientIdentifier`) and on the Plex surface (the nine
   `/playQueues` operations), replayed against the reference with the same trace
+  (`docs/spec-gaps.md`).
+- ✅ **collections**: a library's, read by whoever reads the library and changed by its admins
+  and the operator; imported from Plex's type-18 items and collection tags (2,295 collections,
+  4,586 entries; the 4 smart ones list a filter we cannot express) into tables of our own
+  (`collection`, `collection_entry`, `collection_word`), ordered by release date, title or a
+  custom order. On the official API `Collection`, `Library.collections`, `collections`, each
+  item's `collections`, `ItemFilterInput.collections`, and `createCollection`,
+  `updateCollection`, `deleteCollection`, `addToCollection`, `removeFromCollection`,
+  `moveCollectionItem`, `clearCollection`, a smart collection keeping `Library.items`' own
+  input. On the Plex surface the eight spec operations, `/children`, lookups and `type=18`,
+  `Collection` tags, `collection=` and its choices, the search shelf, prefs and deletion, as
+  measured on the reference's test libraries; composites answer `404`, as they did there
   (`docs/spec-gaps.md`).
 - ✅ **adaptive bitrate, chosen by the server or by the player**, over HLS and DASH: `quality`
   on `startStream` (`FIXED`, `SERVER_ADAPTIVE`, `CLIENT_ADAPTIVE`). The player's choice lists

@@ -13,8 +13,9 @@
 //! dangling parent, and skipping it orphans its 32 episodes too — 34 rows reported, from two
 //! corrupt references.
 //!
-//! Tags, people, external identifiers and ratings come next, see [`super::tags`]; markers
-//! last, see [`super::markers`].
+//! Tags, people, external identifiers and ratings come next, see [`super::tags`]; then
+//! markers, see [`super::markers`]. Collections come last, since their members are items;
+//! see [`super::collections`].
 
 use std::collections::HashSet;
 
@@ -23,7 +24,7 @@ use open_plex_core::metadata::{self, ItemKind};
 use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 
 use super::analysis::Analysis;
-use super::{markers, source_error, tags, ImportError, PlexRow, SOURCE_PAGE};
+use super::{collections, markers, source_error, tags, ImportError, PlexRow, SOURCE_PAGE};
 use crate::entity::{
     media, media_part, media_stream, metadata_item, stream_dolby_vision, stream_loudness,
 };
@@ -55,6 +56,7 @@ pub struct MetadataSummary {
     pub streams: usize,
     pub tags: tags::TagSummary,
     pub markers: markers::MarkerSummary,
+    pub collections: collections::CollectionSummary,
     /// Rows skipped because the parent they reference does not exist.
     pub orphans: usize,
 }
@@ -122,6 +124,14 @@ pub async fn import(
         markers = summary.markers.markers,
         skipped = summary.markers.skipped,
         "imported markers"
+    );
+    summary.collections = collections::import(destination, source, source_path, &item_ids).await?;
+    tracing::info!(
+        collections = summary.collections.collections,
+        entries = summary.collections.entries,
+        smart_skipped = summary.collections.smart_skipped,
+        orphan_memberships = summary.collections.orphan_memberships,
+        "imported collections"
     );
 
     Ok(summary)

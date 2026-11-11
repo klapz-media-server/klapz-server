@@ -16,14 +16,14 @@ use crate::client::ClientIdentity;
 use crate::container::{kind_rank, LibraryKind, SectionDirectory, SectionsContainer};
 use crate::error::ApiError;
 use crate::gql;
-use crate::gql_items::GqlLibraryRef;
 use crate::gql_items::{
     with_shared_fragments, GqlItemEdge, ItemsByIdData, SectionItemsData, ITEMS_BY_ID_QUERY,
     SECTION_ITEMS_QUERY,
 };
+use crate::gql_items::{GqlItem, GqlLibraryRef};
 use crate::items::{
-    CharacterDirectory, CharactersContainer, ItemContainer, ItemsContainer, MetadataEntry,
-    SearchContainer, SearchEntry,
+    CharacterDirectory, CharactersContainer, ItemsContainer, MetadataEntry, SearchContainer,
+    SearchEntry,
 };
 use crate::language::Language;
 use crate::listing;
@@ -42,7 +42,9 @@ pub fn router() -> Router<PlexState> {
         )
         .route(
             "/library/metadata/{ids}",
-            get(items_by_id).put(crate::edit::edit_metadata),
+            get(items_by_id)
+                .put(crate::edit::edit_metadata)
+                .delete(crate::collections::delete_metadata),
         )
         // Neither is in the spec; both are how a client opens a series.
         .route("/library/metadata/{id}/children", get(children::children))
@@ -280,7 +282,17 @@ async fn section_items(
     Path(section): Path<i64>,
     Query(pairs): Query<Vec<(String, String)>>,
     format: ResponseFormat,
-) -> Result<PlexResponse<ItemsContainer>, ApiError> {
+) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse as _;
+    // A collection is a type of its own on the reference, listed in the same container.
+    if pairs
+        .iter()
+        .any(|(key, value)| key == "type" && value == "18")
+    {
+        return Ok(crate::collections::listing(&state, section, &pairs, format)
+            .await?
+            .into_response());
+    }
     let request = listing::parse(&pairs)?;
     let language = Language::of(&client);
     let offset = request.start;
@@ -329,7 +341,9 @@ async fn section_items(
         body.meta =
             crate::meta::build(section, &library.kind, request.kind, request.sort, language);
     }
-    Ok(PlexResponse::new(body, format).paged(offset, total))
+    Ok(PlexResponse::new(body, format)
+        .paged(offset, total)
+        .into_response())
 }
 
 /// `GET /library/metadata/{ids}` — one or more items by identifier.
@@ -343,7 +357,7 @@ async fn items_by_id(
     Path(ids): Path<String>,
     Query(pairs): Query<Vec<(String, String)>>,
     format: ResponseFormat,
-) -> Result<PlexResponse<ItemContainer>, ApiError> {
+) -> Result<PlexResponse<serde_json::Value>, ApiError> {
     let keys: Vec<i64> = ids
         .split(',')
         .filter_map(|key| key.trim().parse().ok())
@@ -369,19 +383,51 @@ async fn items_by_id(
     );
 
     let data: ItemsByIdData = gql::execute(&state.schema, &ITEMS_BY_ID_QUERY, variables).await?;
-    let found: Vec<_> = data.items.into_iter().flatten().collect();
+    // A number no item carries may be a collection's: the two share the numbering.
+    let missing: Vec<i64> = keys
+        .iter()
+        .zip(&data.items)
+        .filter_map(|(key, item)| item.is_none().then_some(*key))
+        .collect();
+    let collections = if missing.is_empty() {
+        Vec::new()
+    } else {
+        crate::collections::lookups(&state, &missing).await?
+    };
+    let found: Vec<(i64, GqlItem)> = keys
+        .iter()
+        .copied()
+        .zip(data.items)
+        .filter_map(|(key, item)| Some((key, item?)))
+        .collect();
     // Every id missing is a 404; some missing is simply a shorter list, which is what a
     // reference server returns when one of several keys has been removed.
-    if found.is_empty() {
+    if found.is_empty() && collections.is_empty() {
         return Err(ApiError::NotFound);
     }
 
-    let library = found.first().and_then(|item| item.library.clone());
-    let items = found
+    let library = found
+        .first()
+        .and_then(|(_, item)| item.library.clone())
+        .or_else(|| {
+            collections
+                .first()
+                .and_then(|(_, _, library)| library.clone())
+        });
+    let mut entries: Vec<(i64, serde_json::Value)> = found
         .iter()
-        .filter_map(|item| MetadataEntry::from_graphql(item, true, Language::of(&client)))
+        .filter_map(|(key, item)| {
+            let entry = MetadataEntry::from_graphql(item, true, Language::of(&client))?;
+            Some((*key, serde_json::to_value(entry).ok()?))
+        })
+        .chain(collections.into_iter().map(|(key, entry, _)| (key, entry)))
         .collect();
-    let body = ItemContainer::new(items, library.as_ref());
+    // In the order asked, as the reference answers a list mixing the two.
+    entries.sort_by_key(|(key, _)| keys.iter().position(|asked| asked == key));
+    let body = crate::collections::lookup_container(
+        entries.into_iter().map(|(_, entry)| entry).collect(),
+        library.as_ref(),
+    )?;
     Ok(PlexResponse::new(body, format))
 }
 

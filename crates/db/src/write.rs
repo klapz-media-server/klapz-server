@@ -8,16 +8,21 @@
 //!
 //! So the words are derived here, from the values being written, and there is no path that
 //! inserts or edits an item without them. An edit rewrites the sort key the same way. Tags
-//! carry the same kind of index over their names, written the same way.
+//! carry the same kind of index over their names, written the same way, and so do
+//! collections over their titles.
 
 use std::collections::BTreeSet;
 
 use open_plex_core::edit::ItemField;
 use open_plex_core::metadata::{self, MetadataItem};
 use open_plex_core::search;
-use sea_orm::{ActiveValue, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter,
+};
 
-use crate::entity::{item_field_lock, item_title_word, metadata_item, tag, tag_word};
+use crate::entity::{
+    collection, collection_word, item_field_lock, item_title_word, metadata_item, tag, tag_word,
+};
 
 /// Rows per statement.
 ///
@@ -82,6 +87,49 @@ pub async fn insert_tags<C: ConnectionTrait>(
     }
     for chunk in words.chunks(WRITE_CHUNK) {
         tag_word::Entity::insert_many(chunk.to_vec())
+            .exec(connection)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Writes a collection, new or over the one under its id, with its sort key and the words
+/// its titles are searched by. Its entries are left as they are. Run it inside a
+/// transaction.
+///
+/// # Errors
+///
+/// Fails if any statement fails.
+pub async fn save_collection<C: ConnectionTrait>(
+    connection: &C,
+    mut row: collection::Model,
+) -> Result<(), DbErr> {
+    row.sort_key = metadata::sort_key(row.title_sort.as_deref(), Some(&row.title));
+    let id = row.id;
+    let words: Vec<collection_word::ActiveModel> =
+        search::title_words(Some(&row.title), row.title_sort.as_deref(), None)
+            .into_iter()
+            .map(|word| collection_word::ActiveModel {
+                collection_id: ActiveValue::Set(id),
+                word: ActiveValue::Set(word),
+            })
+            .collect();
+    let exists = collection::Entity::find_by_id(id)
+        .one(connection)
+        .await?
+        .is_some();
+    let active = collection::ActiveModel::from(row).reset_all();
+    if exists {
+        collection::Entity::update(active).exec(connection).await?;
+    } else {
+        collection::Entity::insert(active).exec(connection).await?;
+    }
+    collection_word::Entity::delete_many()
+        .filter(collection_word::Column::CollectionId.eq(id))
+        .exec(connection)
+        .await?;
+    if !words.is_empty() {
+        collection_word::Entity::insert_many(words)
             .exec(connection)
             .await?;
     }

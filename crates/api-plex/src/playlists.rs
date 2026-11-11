@@ -426,6 +426,20 @@ async fn list(
 
 /// A smart playlist's rule, read off a library listing's path as the listing reads it.
 fn rule_of(path: &str) -> Result<Value, ApiError> {
+    let (section, rule) = listing_rule(path)?;
+    let Value::Object(mut fields) = rule else {
+        return Err(ApiError::BadRequest);
+    };
+    fields.insert(
+        Name::new("libraryId"),
+        Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
+    );
+    Ok(Value::Object(fields))
+}
+
+/// The library a listing's path lists, and the listing as the official API's rule inputs
+/// take it: filter, order and direction. A smart collection keeps it as such.
+pub(crate) fn listing_rule(path: &str) -> Result<(i64, Value), ApiError> {
     let rest = path
         .strip_prefix("/library/sections/")
         .ok_or(ApiError::BadRequest)?;
@@ -441,21 +455,20 @@ fn rule_of(path: &str) -> Result<Value, ApiError> {
     let (order_by, direction) = request.ordering();
     let fields = [
         (
-            "libraryId",
-            Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
-        ),
-        (
             "filter",
             request.filters.to_graphql(item_type(request.kind)),
         ),
         ("orderBy", Value::Enum(Name::new(order_by))),
         ("direction", Value::Enum(Name::new(direction))),
     ];
-    Ok(Value::Object(
-        fields
-            .into_iter()
-            .map(|(name, value)| (Name::new(name), value))
-            .collect(),
+    Ok((
+        section,
+        Value::Object(
+            fields
+                .into_iter()
+                .map(|(name, value)| (Name::new(name), value))
+                .collect(),
+        ),
     ))
 }
 

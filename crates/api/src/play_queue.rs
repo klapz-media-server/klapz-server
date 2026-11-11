@@ -35,6 +35,33 @@ pub(crate) fn queues<'c>(context: &Context<'c>) -> Result<&'c dyn PlayQueueRepos
     Ok(context.data::<ApiContext>()?.play_queues.as_ref())
 }
 
+/// The caller's queue with this number: another viewer's is not there.
+pub(crate) async fn queue_node(context: &Context<'_>, key: i64) -> Result<Option<PlayQueueObject>> {
+    let caller = crate::access::require_caller(context)?;
+    Ok(queues(context)?
+        .queue(key)
+        .await?
+        .filter(|queue| caller.owns(queue.user))
+        .map(PlayQueueObject))
+}
+
+/// An entry of one of the caller's queues.
+pub(crate) async fn entry_node(
+    context: &Context<'_>,
+    key: i64,
+) -> Result<Option<PlayQueueEntryObject>> {
+    let caller = crate::access::require_caller(context)?;
+    let queues = queues(context)?;
+    let Some(entry) = queues.entry(key).await? else {
+        return Ok(None);
+    };
+    let owned = queues
+        .queue(entry.queue)
+        .await?
+        .is_some_and(|queue| caller.owns(queue.user));
+    Ok(owned.then_some(PlayQueueEntryObject(entry)))
+}
+
 /// What a queue plays. A player keeps one queue of each kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
 #[graphql(name = "PlayQueueKind")]

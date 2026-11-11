@@ -319,6 +319,60 @@ impl Library {
         .await
     }
 
+    /// This library's collections.
+    // One Rust parameter per field argument; see the note on `items`.
+    #[allow(clippy::too_many_arguments)]
+    async fn collections(
+        &self,
+        context: &Context<'_>,
+        #[graphql(
+            desc = "Only collections having a word that starts with each word of this text, in their title or sort title, accents folded."
+        )]
+        matching: Option<String>,
+        #[graphql(desc = "Only collections holding items of this kind.")] kind: Option<
+            crate::filter::ItemType,
+        >,
+        #[graphql(
+            desc = "Only smart collections (`true`), or only those of chosen items (`false`)."
+        )]
+        smart: Option<bool>,
+        #[graphql(
+            desc = "Only collections holding a chosen item (`true`): those a filter on collections can find."
+        )]
+        with_entries: Option<bool>,
+        #[graphql(desc = "Only the collection carried under this `Collection.tagNumber`.")]
+        tag_number: Option<String>,
+        #[graphql(desc = "How to order them.")] order_by: Option<
+            crate::collection::CollectionListOrder,
+        >,
+        #[graphql(desc = "Which direction to order in.")] direction: Option<SortDirection>,
+        #[graphql(desc = "Return collections after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return collections before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many collections from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many collections from the end of the range.")]
+        last: Option<i32>,
+        #[graphql(desc = "Skip this many collections first.")] offset: Option<u32>,
+    ) -> Result<crate::collection::CollectionConnection> {
+        let request = crate::collection::ListRequest {
+            kind,
+            smart,
+            with_entries,
+            tag_number,
+            matching,
+            order_by,
+            direction,
+        };
+        crate::collection::list(
+            context,
+            vec![self.section.id],
+            request,
+            (after, before, first, last),
+            offset,
+        )
+        .await
+    }
+
     /// What the caller may do in this library.
     async fn viewer_role(&self, context: &Context<'_>) -> Option<crate::access::LibraryRoleType> {
         crate::access::viewer_role(context, self.section.id)
