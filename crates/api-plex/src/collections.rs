@@ -114,7 +114,9 @@ pub(crate) struct GqlCollection {
     mode: String,
     order: String,
     locked_fields: Vec<String>,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     added_at: i64,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     updated_at: i64,
     item_count: u64,
     min_year: Option<i32>,

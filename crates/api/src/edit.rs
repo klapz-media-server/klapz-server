@@ -17,6 +17,7 @@ use open_plex_core::RatingKey;
 use crate::item::{Episode, Movie, Show, ITEM_TYPE};
 use crate::loader::{ItemLoader, LockedFieldsLoader};
 use crate::node::GlobalId;
+use crate::DateTime;
 
 /// A field of an item an editor can lock, so that a metadata refresh leaves it as it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
@@ -157,9 +158,9 @@ pub struct UpdateMovieInput {
     pub content_rating: MaybeUndefined<String>,
     /// The release year, from 1 to 9999.
     pub year: MaybeUndefined<i32>,
-    /// The release date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given too;
-    /// clearing it clears the year.
-    pub released_on: MaybeUndefined<String>,
+    /// The release date: the UTC day of this time, kept as its midnight. Sets `year` to its
+    /// own unless `year` is given too; clearing it clears the year.
+    pub released_on: MaybeUndefined<DateTime>,
     /// The critics' rating, from 0 to 10.
     pub rating: MaybeUndefined<f64>,
     /// The audience rating, from 0 to 10.
@@ -196,9 +197,9 @@ pub struct UpdateShowInput {
     pub content_rating: MaybeUndefined<String>,
     /// The year the series first aired, from 1 to 9999.
     pub year: MaybeUndefined<i32>,
-    /// The first-air date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given too;
-    /// clearing it clears the year.
-    pub released_on: MaybeUndefined<String>,
+    /// The first-air date: the UTC day of this time, kept as its midnight. Sets `year` to its
+    /// own unless `year` is given too; clearing it clears the year.
+    pub released_on: MaybeUndefined<DateTime>,
     /// The audience rating, from 0 to 10.
     pub audience_rating: MaybeUndefined<f64>,
     /// Fields to lock, before the values are written.
@@ -229,9 +230,9 @@ pub struct UpdateEpisodeInput {
     pub content_rating: MaybeUndefined<String>,
     /// The year the episode first aired, from 1 to 9999.
     pub year: MaybeUndefined<i32>,
-    /// The original air date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given
-    /// too; clearing it clears the year.
-    pub released_on: MaybeUndefined<String>,
+    /// The original air date: the UTC day of this time, kept as its midnight. Sets `year` to
+    /// its own unless `year` is given too; clearing it clears the year.
+    pub released_on: MaybeUndefined<DateTime>,
     /// The audience rating, from 0 to 10.
     pub audience_rating: MaybeUndefined<f64>,
     /// Fields to lock, before the values are written.
@@ -247,8 +248,8 @@ pub struct UpdateEpisodeInput {
 pub enum ItemEditErrorCode {
     /// No such item of this type, or not one the caller may edit.
     ItemNotFound,
-    /// A value the field cannot hold: a date that is not `YYYY-MM-DD`, a rating outside 0 to
-    /// 10, a year outside 1 to 9999.
+    /// A value the field cannot hold: a date before year 1, a rating outside 0 to 10, a year
+    /// outside 1 to 9999.
     InvalidValue,
     /// A field locked or unlocked that this type of item does not hold.
     NotApplicable,
@@ -360,12 +361,11 @@ impl Values {
         }
     }
 
-    fn released_on(&mut self, value: MaybeUndefined<String>) {
-        match Option::<Option<String>>::from(value) {
+    fn released_on(&mut self, value: MaybeUndefined<DateTime>) {
+        match Option::<Option<DateTime>>::from(value) {
             None => {}
             Some(None) => self.edits.push(FieldEdit::ReleasedOn(None)),
-            Some(Some(text)) if text.is_empty() => self.edits.push(FieldEdit::ReleasedOn(None)),
-            Some(Some(text)) => match CalendarDate::parse(&text) {
+            Some(Some(time)) => match CalendarDate::containing(time.unix_seconds()) {
                 Some(date) => self.edits.push(FieldEdit::ReleasedOn(Some(date))),
                 None => self.errors.push(ItemEditUserError::new(
                     "releasedOn",

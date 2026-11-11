@@ -16,7 +16,7 @@ use axum::Router;
 use open_plex_api::history::HISTORY_ENTRY_TYPE;
 use open_plex_api::item::ITEM_TYPE;
 use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::GlobalId;
+use open_plex_api::{date_time, GlobalId};
 use open_plex_core::page::MAX_ITEMS;
 use serde::{Deserialize, Serialize};
 
@@ -122,6 +122,7 @@ struct EntryData {
 struct GqlEntry {
     database_id: String,
     kind: String,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     viewed_at: i64,
     library_id: String,
     item: Option<GqlHistoryItem>,
@@ -135,6 +136,10 @@ struct GqlHistoryItem {
     id: String,
     title: Option<String>,
     number: Option<i32>,
+    #[serde(
+        default,
+        deserialize_with = "crate::gql::date_time::optional_calendar_date"
+    )]
     released_on: Option<String>,
     season: Option<GqlParent>,
     show: Option<GqlParent>,
@@ -405,10 +410,16 @@ async fn history(
         filter.push((Name::new("libraries"), Value::List(ids)));
     }
     if let Some(since) = request.viewed_since {
-        filter.push((Name::new("viewedSince"), Value::Number(since.into())));
+        filter.push((
+            Name::new("viewedSince"),
+            Value::String(date_time::format(since)),
+        ));
     }
     if let Some(until) = request.viewed_until {
-        filter.push((Name::new("viewedUntil"), Value::Number(until.into())));
+        filter.push((
+            Name::new("viewedUntil"),
+            Value::String(date_time::format(until)),
+        ));
     }
     let (order_by, direction) = request.order;
     let mut variables = Variables::default();

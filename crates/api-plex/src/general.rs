@@ -93,6 +93,7 @@ pub struct GqlServer {
     pub api_version: String,
     pub platform: String,
     pub platform_version: String,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     pub updated_at: i64,
     pub transcoder: GqlTranscoder,
     pub features: GqlFeatures,

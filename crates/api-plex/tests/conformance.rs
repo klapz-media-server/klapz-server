@@ -492,7 +492,8 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
     avatar.title_sort = Some("Avatar".to_owned());
     avatar.studio = Some("Lightstorm".to_owned());
     avatar.year = Some(2009);
-    avatar.released_on = Some("2009-12-16".to_owned());
+    avatar.released_on = open_plex_core::edit::CalendarDate::parse("2009-12-16")
+        .map(open_plex_core::edit::CalendarDate::midnight);
     avatar.duration_ms = Some(9_900_000);
     avatar.audience_rating = Some(7.924);
     avatar.content_rating = Some("fr/12".to_owned());

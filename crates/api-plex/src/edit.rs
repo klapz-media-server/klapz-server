@@ -35,7 +35,8 @@ use axum::response::IntoResponse;
 use open_plex_api::collection::COLLECTION_TYPE;
 use open_plex_api::item::ITEM_TYPE;
 use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::GlobalId;
+use open_plex_api::{date_time, GlobalId};
+use open_plex_core::edit::CalendarDate;
 use open_plex_core::page::MAX_ITEMS;
 use serde::Deserialize;
 use serde_json::{json, Map, Value as Json};
@@ -103,6 +104,8 @@ pub fn plex_locked_fields(locked: &[String]) -> impl Iterator<Item = &'static st
 #[derive(Debug, Clone, Copy)]
 enum ValueKind {
     Text,
+    /// `YYYY-MM-DD`, written as its midnight UTC.
+    Date,
     Year,
     Score,
 }
@@ -117,7 +120,7 @@ const EDITABLE: [(&str, &str, ValueKind); 11] = [
     ("studio", "studio", ValueKind::Text),
     ("contentRating", "contentRating", ValueKind::Text),
     ("year", "year", ValueKind::Year),
-    ("originallyAvailableAt", "releasedOn", ValueKind::Text),
+    ("originallyAvailableAt", "releasedOn", ValueKind::Date),
     ("rating", "rating", ValueKind::Score),
     ("audienceRating", "audienceRating", ValueKind::Score),
 ];
@@ -288,6 +291,10 @@ impl Changes {
         let written = match (kind, value) {
             (_, "") => Json::Null,
             (ValueKind::Text, text) => json!(text),
+            (ValueKind::Date, date) => {
+                let date = CalendarDate::parse(date).ok_or(ApiError::BadRequest)?;
+                json!(date_time::format(date.midnight()))
+            }
             (ValueKind::Year, year) => {
                 json!(year.parse::<i32>().map_err(|_| ApiError::BadRequest)?)
             }
@@ -620,7 +627,12 @@ mod tests {
         .unwrap();
         assert_eq!(
             Json::Object(changes.values),
-            json!({ "title": "The Soul", "year": null, "rating": 8.1, "releasedOn": "2019-05-01" })
+            json!({
+                "title": "The Soul",
+                "year": null,
+                "rating": 8.1,
+                "releasedOn": "2019-05-01T00:00:00Z"
+            })
         );
     }
 

@@ -26,6 +26,7 @@ use crate::library::LIBRARY_TYPE;
 use crate::loader::ItemLoader;
 use crate::node::GlobalId;
 use crate::schema::ApiContext;
+use crate::DateTime;
 
 /// What the caller has watched of a work.
 ///
@@ -53,10 +54,10 @@ impl WatchStateObject {
         self.0.offset_ms
     }
 
-    /// When it was last played or watched, in seconds since the Unix epoch. On a series or a
+    /// When it was last played or watched. On a series or a
     /// season, when any of its episodes was.
-    async fn last_viewed_at(&self) -> Option<i64> {
-        self.0.last_viewed_at
+    async fn last_viewed_at(&self) -> Option<DateTime> {
+        self.0.last_viewed_at.map(DateTime::from)
     }
 }
 
@@ -462,9 +463,9 @@ impl From<DeckReason> for ContinueReason {
 pub struct ContinueWatchingEdgeFields {
     /// Why the item is listed.
     pub reason: ContinueReason,
-    /// When the work behind it was last played, in seconds since the Unix epoch: the
-    /// film's, or for an episode its series', which the list is ordered by.
-    pub last_viewed_at: i64,
+    /// When the work behind it was last played: the film's, or for an episode its series',
+    /// which the list is ordered by.
+    pub last_viewed_at: DateTime,
 }
 
 /// Names the connection apart from `ItemConnection`, which shares its node type.
@@ -559,7 +560,7 @@ pub(crate) async fn continue_watching(
                             Item::from_domain(entry.item),
                             ContinueWatchingEdgeFields {
                                 reason: entry.reason.into(),
-                                last_viewed_at: entry.last_viewed_at,
+                                last_viewed_at: entry.last_viewed_at.into(),
                             },
                         )
                     },

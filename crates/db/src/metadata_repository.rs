@@ -128,8 +128,8 @@ impl SqlMetadataRepository {
             select = select.filter(in_collection(condition));
         }
         select = select.filter(watch_conditions(filter));
-        if let Some(from) = &filter.released_from {
-            select = select.filter(metadata_item::Column::ReleasedOn.gte(from.clone()));
+        if let Some(from) = filter.released_from {
+            select = select.filter(metadata_item::Column::ReleasedOn.gte(from));
         }
         if let Some(from) = filter.audience_rating_from {
             select = select.filter(metadata_item::Column::AudienceRating.gte(from));

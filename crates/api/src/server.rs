@@ -8,6 +8,7 @@ use async_graphql::{Object, SimpleObject, ID};
 use open_plex_core::identity::{ServerCapabilities, ServerFeatures, TranscoderCapabilities};
 
 use crate::node::GlobalId;
+use crate::DateTime;
 
 pub const SERVER_TYPE: &str = "Server";
 
@@ -164,9 +165,8 @@ impl Server {
         self.0.features.into()
     }
 
-    /// When the server last started or its configuration changed, in seconds since the Unix
-    /// epoch.
-    async fn updated_at(&self) -> i64 {
-        self.0.updated_at
+    /// When the server last started or its configuration changed.
+    async fn updated_at(&self) -> DateTime {
+        self.0.updated_at.into()
     }
 }

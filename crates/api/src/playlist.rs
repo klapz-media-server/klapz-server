@@ -38,6 +38,7 @@ use crate::library::{Library, LIBRARY_TYPE};
 use crate::loader::ItemLoader;
 use crate::node::GlobalId;
 use crate::schema::{self, ApiContext};
+use crate::DateTime;
 
 pub const PLAYLIST_TYPE: &str = "Playlist";
 pub const PLAYLIST_ENTRY_TYPE: &str = "PlaylistEntry";
@@ -287,19 +288,19 @@ impl PlaylistObject {
         self.0.view_count
     }
 
-    /// When it was last played or, never played, created; in seconds since the Unix epoch.
-    async fn last_viewed_at(&self) -> i64 {
-        self.0.last_viewed_at
+    /// When it was last played or, never played, created.
+    async fn last_viewed_at(&self) -> DateTime {
+        self.0.last_viewed_at.into()
     }
 
-    /// When it was created, in seconds since the Unix epoch.
-    async fn added_at(&self) -> i64 {
-        self.0.added_at
+    /// When it was created.
+    async fn added_at(&self) -> DateTime {
+        self.0.added_at.into()
     }
 
-    /// When it or its entries last changed, in seconds since the Unix epoch.
-    async fn updated_at(&self) -> i64 {
-        self.0.updated_at
+    /// When it or its entries last changed.
+    async fn updated_at(&self) -> DateTime {
+        self.0.updated_at.into()
     }
 
     /// How many items it lists, of those its owner may read.
@@ -435,9 +436,9 @@ impl PlaylistEntryObject {
         self.0.position
     }
 
-    /// When it was added, in seconds since the Unix epoch.
-    async fn added_at(&self) -> i64 {
-        self.0.added_at
+    /// When it was added.
+    async fn added_at(&self) -> DateTime {
+        self.0.added_at.into()
     }
 
     /// The playlist it belongs to, as returned in `Playlist.id`.

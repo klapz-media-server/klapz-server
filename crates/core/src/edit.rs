@@ -97,7 +97,8 @@ impl ItemField {
     }
 }
 
-/// A calendar date, as a release date is stored and published: `YYYY-MM-DD`.
+/// A day of the proleptic Gregorian calendar, in years 1 to 9999: what a release date is.
+/// Stored as its midnight UTC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CalendarDate {
     year: i32,
@@ -105,7 +106,54 @@ pub struct CalendarDate {
     day: u8,
 }
 
+const SECONDS_PER_DAY: i64 = 86_400;
+
+/// Days from 0000-03-01 to the Unix epoch. Counting from March puts the leap day last.
+const EPOCH_FROM_MARCH_0000: i64 = 719_468;
+
+/// Days in a 400-year cycle of the Gregorian calendar.
+const DAYS_PER_ERA: i64 = 146_097;
+
 impl CalendarDate {
+    /// The UTC day `seconds` since the Unix epoch falls on, if it is in years 1 to 9999.
+    pub fn containing(seconds: i64) -> Option<Self> {
+        // Howard Hinnant's `civil_from_days`.
+        let days = seconds
+            .div_euclid(SECONDS_PER_DAY)
+            .checked_add(EPOCH_FROM_MARCH_0000)?;
+        let era = days.div_euclid(DAYS_PER_ERA);
+        let day_of_era = days.rem_euclid(DAYS_PER_ERA);
+        let year_of_era =
+            (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+        let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+        let month_from_march = (5 * day_of_year + 2) / 153;
+        let day = day_of_year - (153 * month_from_march + 2) / 5 + 1;
+        let month = if month_from_march < 10 {
+            month_from_march + 3
+        } else {
+            month_from_march - 9
+        };
+        let year = era * 400 + year_of_era + i64::from(month <= 2);
+        (1..=9999).contains(&year).then_some(Self {
+            year: i32::try_from(year).ok()?,
+            month: u8::try_from(month).ok()?,
+            day: u8::try_from(day).ok()?,
+        })
+    }
+
+    /// The day's midnight UTC, in seconds since the Unix epoch.
+    pub fn midnight(self) -> i64 {
+        // Howard Hinnant's `days_from_civil`.
+        let (month, day) = (i64::from(self.month), i64::from(self.day));
+        let year = i64::from(self.year) - i64::from(month <= 2);
+        let era = year.div_euclid(400);
+        let year_of_era = year.rem_euclid(400);
+        let month_from_march = if month > 2 { month - 3 } else { month + 9 };
+        let day_of_year = (153 * month_from_march + 2) / 5 + day - 1;
+        let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+        (era * DAYS_PER_ERA + day_of_era - EPOCH_FROM_MARCH_0000) * SECONDS_PER_DAY
+    }
+
     /// Reads `YYYY-MM-DD`, refusing a day the month does not have.
     pub fn parse(text: &str) -> Option<Self> {
         let mut parts = text.split('-');
@@ -312,7 +360,7 @@ impl ItemEdit {
                     if !self.sets(ItemField::Year) {
                         item.year = date.map(CalendarDate::year);
                     }
-                    item.released_on = date.map(|date| date.to_string());
+                    item.released_on = date.map(CalendarDate::midnight);
                 }
                 FieldEdit::Rating(score) => item.rating = score,
                 FieldEdit::AudienceRating(score) => item.audience_rating = score,
@@ -445,12 +493,38 @@ mod tests {
     }
 
     #[test]
+    fn a_date_is_its_midnight_utc_and_back() {
+        for (text, midnight) in [
+            ("1970-01-01", 0),
+            ("1969-12-31", -86_400),
+            ("2000-02-29", 951_782_400),
+            ("2009-12-16", 1_260_921_600),
+            ("0001-01-01", -62_135_596_800),
+            ("9999-12-31", 253_402_214_400),
+        ] {
+            let date = CalendarDate::parse(text).unwrap();
+            assert_eq!(date.midnight(), midnight, "{text}");
+            assert_eq!(CalendarDate::containing(midnight), Some(date), "{text}");
+            assert_eq!(
+                CalendarDate::containing(midnight + 86_399),
+                Some(date),
+                "{text}"
+            );
+            assert_eq!(date.to_string(), text);
+        }
+        assert_eq!(CalendarDate::containing(-62_135_596_801), None);
+        assert_eq!(CalendarDate::containing(253_402_300_800), None);
+        assert_eq!(CalendarDate::containing(i64::MIN), None);
+        assert_eq!(CalendarDate::containing(i64::MAX), None);
+    }
+
+    #[test]
     fn a_release_date_gives_its_year_unless_the_year_is_given() {
         let date = CalendarDate::parse("2019-05-01");
         let dated = edited(vec![FieldEdit::ReleasedOn(date)], &[], &[]);
         assert_eq!(
-            (dated.year, dated.released_on.as_deref()),
-            (Some(2019), Some("2019-05-01"))
+            (dated.year, dated.released_on),
+            (Some(2019), Some(1_556_668_800))
         );
 
         let cleared = edited(vec![FieldEdit::ReleasedOn(None)], &[ItemField::Year], &[]);

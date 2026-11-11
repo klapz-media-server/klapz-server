@@ -12,6 +12,7 @@ pub mod access;
 pub mod account;
 pub mod collection;
 pub mod cursor;
+pub mod date_time;
 pub mod edit;
 pub mod filter;
 pub mod history;
@@ -32,6 +33,7 @@ pub mod watch;
 
 pub use account::{Sessions, SESSION_COOKIE};
 pub use cursor::{CursorError, OpaqueCursor};
+pub use date_time::DateTime;
 pub use filter::{ItemFilterInput, ItemOrder, ItemType, SortDirection};
 pub use item::{Episode, Item, ItemConnection, Movie, Season, Show};
 pub use library::{Library, LibraryConnection, LibraryKind, Root};

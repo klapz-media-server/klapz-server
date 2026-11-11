@@ -36,6 +36,7 @@ use crate::library::{Library, LIBRARY_TYPE};
 use crate::loader::ItemLoader;
 use crate::node::GlobalId;
 use crate::schema::{self, ApiContext};
+use crate::DateTime;
 
 pub const COLLECTION_TYPE: &str = "Collection";
 const DEFAULT_PAGE_SIZE: u32 = 50;
@@ -371,15 +372,15 @@ impl CollectionObject {
         self.0.art_url.as_deref()
     }
 
-    /// When it was created, in seconds since the Unix epoch.
-    async fn added_at(&self) -> i64 {
-        self.0.added_at
+    /// When it was created.
+    async fn added_at(&self) -> DateTime {
+        self.0.added_at.into()
     }
 
-    /// When an item last joined or left it, in seconds since the Unix epoch. An edit of its
+    /// When an item last joined or left it. An edit of its
     /// fields leaves it.
-    async fn updated_at(&self) -> i64 {
-        self.0.updated_at
+    async fn updated_at(&self) -> DateTime {
+        self.0.updated_at.into()
     }
 
     /// The library it belongs to.

@@ -227,6 +227,18 @@ async fn every_field_argument_and_enum_value_is_documented() {
 }
 
 #[tokio::test]
+async fn date_times_follow_the_specification_they_name() {
+    let data = run(r#"{ __type(name: "DateTime") { kind description specifiedByURL } }"#).await;
+    let scalar = &data["__type"];
+    assert_eq!(scalar["kind"], "SCALAR");
+    assert_eq!(
+        scalar["specifiedByURL"],
+        "https://scalars.graphql.org/andimarek/date-time"
+    );
+    assert!(scalar["description"].is_string(), "{scalar}");
+}
+
+#[tokio::test]
 async fn node_refetches_the_same_object_a_list_returned() {
     // Relay's core guarantee: an id taken from any response brings the object back.
     let listed = run("{ libraries(first: 1) { edges { node { id title } } } }").await;
@@ -796,7 +808,7 @@ async fn pairing_stores_the_account_and_publishes_the_address() {
     let paired = &response.data.into_json().unwrap()["pairExtension"];
     assert_eq!(paired["accountName"], "account 7");
     assert_eq!(paired["connectionUri"], "https://a.example.org:443");
-    assert!(paired["publishedAt"].is_i64());
+    assert!(open_plex_api::date_time::parse(paired["publishedAt"].as_str().unwrap()).is_some());
 }
 
 const MOVE: &str = r"mutation($input: MoveExtensionInput!) {
@@ -829,7 +841,11 @@ async fn moving_a_paired_server_publishes_its_new_address_at_once() {
     let link = &moved.data.into_json().unwrap()["moveExtension"];
     // Stored in lower case, as `Host` headers are matched.
     assert_eq!(link["connectionUri"], "https://new.trycloudflare.com");
-    assert!(link["publishedAt"].is_i64(), "{link}");
+    let published = link["publishedAt"].as_str().unwrap();
+    assert!(
+        open_plex_api::date_time::parse(published).is_some(),
+        "{link}"
+    );
 }
 
 #[tokio::test]
@@ -1649,7 +1665,8 @@ async fn editing_a_film_writes_what_it_derives_and_changes_only_the_locks_asked(
             "id": film,
             "title": "The Soul",
             "summary": "Probe summary",
-            "releasedOn": "2019-05-01",
+            // The UTC day of this time, which is the next day's early hours in Paris.
+            "releasedOn": "2019-05-02T01:30:00+02:00",
             "rating": 8.1,
             "unlock": ["TITLE_SORT"],
             "lock": ["SUMMARY"],
@@ -1665,7 +1682,7 @@ async fn editing_a_film_writes_what_it_derives_and_changes_only_the_locks_asked(
                 "titleSort": "Soul",
                 "summary": "Probe summary",
                 "year": 2019,
-                "releasedOn": "2019-05-01",
+                "releasedOn": "2019-05-01T00:00:00Z",
                 "rating": 8.1,
                 "lockedFields": ["SUMMARY"],
             },
@@ -1689,7 +1706,7 @@ async fn editing_a_film_writes_what_it_derives_and_changes_only_the_locks_asked(
     let cleared = update_movie(
         &schema,
         as_operator(UPDATE_MOVIE),
-        serde_json::json!({ "id": film, "summary": null, "releasedOn": "", "rating": null }),
+        serde_json::json!({ "id": film, "summary": null, "releasedOn": null, "rating": null }),
     )
     .await;
     assert_eq!(
@@ -1751,7 +1768,7 @@ async fn an_edit_refuses_another_type_a_bad_value_and_a_field_the_type_lacks() {
     let film = GlobalId::encode("Item", 577_986);
     for (input, field, expected) in [
         (
-            serde_json::json!({ "id": film, "releasedOn": "garbage" }),
+            serde_json::json!({ "id": film, "releasedOn": "0000-06-01T00:00:00Z" }),
             "releasedOn",
             "INVALID_VALUE",
         ),
@@ -1773,6 +1790,23 @@ async fn an_edit_refuses_another_type_a_bad_value_and_a_field_the_type_lacks() {
             "{field}"
         );
     }
+
+    // Not a date-time at all: refused before the mutation runs.
+    let garbage = schema
+        .execute(
+            as_operator(UPDATE_MOVIE).variables(async_graphql::Variables::from_json(
+                serde_json::json!({
+                    "input": { "id": film, "releasedOn": "2019-05-01" }
+                }),
+            )),
+        )
+        .await;
+    assert_eq!(garbage.errors.len(), 1, "{:?}", garbage.errors);
+    assert!(
+        garbage.errors[0].message.contains("RFC 3339"),
+        "{}",
+        garbage.errors[0].message
+    );
 
     let response = schema
         .execute(

@@ -20,6 +20,7 @@ use crate::item::Item;
 use crate::loader::ItemLoader;
 use crate::node::GlobalId;
 use crate::schema::ApiContext;
+use crate::DateTime;
 
 pub const PLAYBACK_TYPE: &str = "PlaybackSession";
 const DEFAULT_PAGE_SIZE: u32 = 20;
@@ -96,8 +97,8 @@ impl From<StreamDecisionType> for StreamDecision {
 #[derive(Debug, Clone, SimpleObject)]
 #[graphql(name = "PlaybackTermination")]
 pub struct PlaybackTerminationObject {
-    /// When it was terminated, in seconds since the epoch.
-    pub terminated_at: i64,
+    /// When it was terminated.
+    pub terminated_at: DateTime,
     /// What the operator told the player, when it said anything.
     pub reason: Option<String>,
 }
@@ -105,7 +106,7 @@ pub struct PlaybackTerminationObject {
 impl From<Termination> for PlaybackTerminationObject {
     fn from(termination: Termination) -> Self {
         Self {
-            terminated_at: termination.at,
+            terminated_at: termination.at.into(),
             reason: termination.reason,
         }
     }
@@ -209,19 +210,19 @@ impl PlaybackSessionObject {
         self.0.output.height
     }
 
-    /// When playback began, in seconds since the epoch.
-    async fn started_at(&self) -> i64 {
-        self.0.started_at
+    /// When playback began.
+    async fn started_at(&self) -> DateTime {
+        self.0.started_at.into()
     }
 
-    /// The last sign of life, in seconds since the epoch.
-    async fn updated_at(&self) -> i64 {
-        self.0.updated_at
+    /// The last sign of life.
+    async fn updated_at(&self) -> DateTime {
+        self.0.updated_at.into()
     }
 
-    /// When the session goes away without a further sign of life, in seconds since the epoch.
-    async fn expires_at(&self) -> i64 {
-        self.0.expires_at
+    /// When the session goes away without a further sign of life.
+    async fn expires_at(&self) -> DateTime {
+        self.0.expires_at.into()
     }
 }
 

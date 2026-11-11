@@ -22,6 +22,7 @@ use crate::loader::{ItemLoader, RootsLoader};
 use crate::node::GlobalId;
 use crate::schema::{self, DEFAULT_PAGE_SIZE};
 use crate::tag::{TagObject, TagType};
+use crate::DateTime;
 
 pub const LIBRARY_TYPE: &str = "Library";
 pub const ROOT_TYPE: &str = "Root";
@@ -89,18 +90,18 @@ impl Root {
         &self.0.path
     }
 
-    /// When the root was added to the library, in seconds since the Unix epoch.
-    async fn created_at(&self) -> i64 {
-        self.0.created_at
+    /// When the root was added to the library.
+    async fn created_at(&self) -> DateTime {
+        self.0.created_at.into()
     }
 }
 
 /// What a "recently added" entry says beyond the item.
 #[derive(Debug, Clone, SimpleObject)]
 pub struct RecentlyAddedEdgeFields {
-    /// When the entry was added, in seconds since the Unix epoch: the item's own time for a
-    /// film, its newest episode's for a series or season gathered from a batch.
-    pub added_at: i64,
+    /// When the entry was added: the item's own time for a film, its newest episode's for a
+    /// series or season gathered from a batch.
+    pub added_at: DateTime,
 }
 
 /// Names the connection apart from `ItemConnection`, which shares its node type.
@@ -263,20 +264,20 @@ impl Library {
         self.section.hidden
     }
 
-    /// When the library was created, in seconds since the Unix epoch.
-    async fn created_at(&self) -> i64 {
-        self.section.created_at
+    /// When the library was created.
+    async fn created_at(&self) -> DateTime {
+        self.section.created_at.into()
     }
 
-    /// When the library's settings or contents last changed, in seconds since the Unix epoch.
-    async fn updated_at(&self) -> i64 {
-        self.section.updated_at
+    /// When the library's settings or contents last changed.
+    async fn updated_at(&self) -> DateTime {
+        self.section.updated_at.into()
     }
 
-    /// When the library was last scanned, in seconds since the Unix epoch. Null if it never
+    /// When the library was last scanned. Null if it never
     /// has been.
-    async fn scanned_at(&self) -> Option<i64> {
-        self.section.scanned_at
+    async fn scanned_at(&self) -> Option<DateTime> {
+        self.section.scanned_at.map(DateTime::from)
     }
 
     /// Monotonic counter that advances whenever the library's contents change.
@@ -655,7 +656,9 @@ pub(crate) async fn recently_added(
                     Edge::with_additional_fields(
                         OpaqueCursor(Cursor::by_id(position)),
                         Item::from_domain(item),
-                        RecentlyAddedEdgeFields { added_at },
+                        RecentlyAddedEdgeFields {
+                            added_at: added_at.into(),
+                        },
                     )
                 },
             ));

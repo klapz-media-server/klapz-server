@@ -10,6 +10,7 @@ use http_body_util::BodyExt;
 use open_plex_api::{build_schema, ApiContext, ApiSchema};
 use open_plex_api_plex::{router, PlexState};
 use open_plex_core::access::{LibraryAccess, LibraryRole};
+use open_plex_core::edit::CalendarDate;
 use open_plex_core::metadata::{ItemKind, MetadataItem};
 use open_plex_core::testing::{InMemoryCollections, InMemoryLibrary, InMemoryMetadata};
 use open_plex_core::{
@@ -64,7 +65,7 @@ fn item(
         content_rating_age: None,
         position: None,
         year: released.map(|date| date[..4].parse().unwrap()),
-        released_on: released.map(ToOwned::to_owned),
+        released_on: released.map(|date| CalendarDate::parse(date).unwrap().midnight()),
         duration_ms: None,
         rating: None,
         audience_rating: None,

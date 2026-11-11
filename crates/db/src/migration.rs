@@ -30,6 +30,7 @@ mod m0025_tag_word;
 mod m0026_marker;
 mod m0027_collection;
 mod m0028_play_queue_edit;
+mod m0029_release_midnight;
 
 use sea_orm_migration::prelude::*;
 
@@ -67,6 +68,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0026_marker::Migration),
             Box::new(m0027_collection::Migration),
             Box::new(m0028_play_queue_edit::Migration),
+            Box::new(m0029_release_midnight::Migration),
         ]
     }
 }

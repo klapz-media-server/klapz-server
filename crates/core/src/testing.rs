@@ -305,11 +305,9 @@ impl InMemoryMetadata {
             })
             .filter(|item| filter.excluded != Some(item.id))
             .filter(|item| {
-                filter.released_from.as_ref().is_none_or(|from| {
-                    item.released_on
-                        .as_ref()
-                        .is_some_and(|released| released >= from)
-                })
+                filter
+                    .released_from
+                    .is_none_or(|from| item.released_on.is_some_and(|released| released >= from))
             })
             .filter(|item| {
                 filter

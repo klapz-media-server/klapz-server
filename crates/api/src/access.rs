@@ -20,6 +20,7 @@ use crate::cursor::OpaqueCursor;
 use crate::library::Library;
 use crate::node::GlobalId;
 use crate::schema::ApiContext;
+use crate::DateTime;
 
 pub const USER_TYPE: &str = "User";
 const DEFAULT_PAGE_SIZE: u32 = 50;
@@ -168,14 +169,14 @@ impl UserObject {
         Ok(repository(context)?.has_password(self.0.id).await?)
     }
 
-    /// When the user was created, in seconds since the epoch.
-    async fn created_at(&self) -> i64 {
-        self.0.created_at
+    /// When the user was created.
+    async fn created_at(&self) -> DateTime {
+        self.0.created_at.into()
     }
 
-    /// When the user last changed, in seconds since the epoch.
-    async fn updated_at(&self) -> i64 {
-        self.0.updated_at
+    /// When the user last changed.
+    async fn updated_at(&self) -> DateTime {
+        self.0.updated_at.into()
     }
 
     /// The libraries this user was given, and the role on each.
@@ -279,10 +280,10 @@ impl AccountLinkObject {
         &self.0.connection_uri
     }
 
-    /// When that service last accepted the address, in seconds since the epoch. Null until it
+    /// When that service last accepted the address. Null until it
     /// has; the server keeps trying.
-    async fn published_at(&self) -> Option<i64> {
-        self.0.published_at
+    async fn published_at(&self) -> Option<DateTime> {
+        self.0.published_at.map(DateTime::from)
     }
 }
 

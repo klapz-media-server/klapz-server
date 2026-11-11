@@ -184,13 +184,8 @@ async fn a_release_date_writes_its_year_and_clearing_writes_absence() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        (
-            row.year,
-            row.released_on.as_deref(),
-            row.studio.as_deref(),
-            row.rating
-        ),
-        (Some(2020), Some("2020-12-25"), Some("Pixar"), Some(8.1))
+        (row.year, row.released_on, row.studio.as_deref(), row.rating),
+        (Some(2020), Some(1_608_854_400), Some("Pixar"), Some(8.1))
     );
 
     repository

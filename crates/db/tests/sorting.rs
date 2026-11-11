@@ -3,6 +3,7 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
+use open_plex_core::edit::CalendarDate;
 use open_plex_core::metadata::{ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataRepository};
 use open_plex_core::page::{Direction, Window};
 use open_plex_core::watch::Viewer;
@@ -160,7 +161,10 @@ async fn seed(connection: &DatabaseConnection) {
         .map(|film| {
             let mut model = item(film.id, FILMS, "movie", None, film.title, film.added_at);
             model.rating = ActiveValue::Set(film.rating);
-            model.released_on = ActiveValue::Set(film.released_on.map(ToOwned::to_owned));
+            model.released_on = ActiveValue::Set(
+                film.released_on
+                    .map(|date| CalendarDate::parse(date).unwrap().midnight()),
+            );
             model
         })
         .collect();

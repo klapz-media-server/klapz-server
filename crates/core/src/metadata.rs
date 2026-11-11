@@ -69,8 +69,8 @@ pub struct MetadataItem {
     /// Episode or season number within its parent.
     pub position: Option<i32>,
     pub year: Option<i32>,
-    /// Calendar date, `YYYY-MM-DD`.
-    pub released_on: Option<String>,
+    /// The release date, as its midnight UTC in seconds since the Unix epoch.
+    pub released_on: Option<i64>,
     pub duration_ms: Option<i64>,
     pub rating: Option<f64>,
     pub audience_rating: Option<f64>,
@@ -610,8 +610,9 @@ pub struct ItemFilter {
     pub depth: ItemDepth,
     /// Earliest release year, inclusive.
     pub year_from: Option<i32>,
-    /// Earliest release date, inclusive, as an ISO 8601 calendar date: `2025-11-10`.
-    pub released_from: Option<String>,
+    /// Earliest release, inclusive, in seconds since the Unix epoch; a release date counts as
+    /// its midnight UTC.
+    pub released_from: Option<i64>,
     /// Lowest audience rating, inclusive, on its ten-point scale.
     pub audience_rating_from: Option<f64>,
     /// Latest release year, inclusive.

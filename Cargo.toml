@@ -16,6 +16,8 @@ open-plex-transcoder = { path = "crates/transcoder" }
 
 async-graphql = { version = "7", features = ["dataloader"] }
 base64 = "0.22"
+# Dates on the official API, RFC 3339 read and written; already in the tree through SeaORM.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 async-graphql-axum = "7"
 async-trait = "0.1"
 # Password hashing for sign-in: Argon2id, the OWASP recommendation, in pure Rust.

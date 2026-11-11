@@ -26,6 +26,7 @@ use crate::media::Version;
 use crate::node::GlobalId;
 use crate::tag::{external_ids_of, ratings_of, ExternalIdConnection, ItemTags, RatingConnection};
 use crate::watch::WatchStateObject;
+use crate::DateTime;
 
 /// The type tag all four item kinds share in their global id.
 ///
@@ -74,13 +75,13 @@ const DEFAULT_PAGE_SIZE: u32 = 50;
     ),
     field(
         name = "added_at",
-        ty = "i64",
-        desc = "When the item was added to the library, in seconds since the Unix epoch."
+        ty = "DateTime",
+        desc = "When the item was added to the library."
     ),
     field(
         name = "updated_at",
-        ty = "i64",
-        desc = "When the item's metadata last changed, in seconds since the Unix epoch."
+        ty = "DateTime",
+        desc = "When the item's metadata last changed."
     ),
     field(
         name = "library",
@@ -184,9 +185,9 @@ impl Movie {
         Ok(self.0.summary.clone())
     }
 
-    /// When the item was added to the library, in seconds since the Unix epoch.
-    pub async fn added_at(&self, _context: &Context<'_>) -> Result<i64> {
-        Ok(self.0.added_at)
+    /// When the item was added to the library.
+    pub async fn added_at(&self, _context: &Context<'_>) -> Result<DateTime> {
+        Ok(self.0.added_at.into())
     }
 
     /// What the caller has watched of the work, shared by every copy of it. Null without a
@@ -215,9 +216,9 @@ impl Movie {
         crate::marker::markers_of(context, self.0.id, after, before, first, last).await
     }
 
-    /// When the item's metadata last changed, in seconds since the Unix epoch.
-    pub async fn updated_at(&self, _context: &Context<'_>) -> Result<i64> {
-        Ok(self.0.updated_at)
+    /// When the item's metadata last changed.
+    pub async fn updated_at(&self, _context: &Context<'_>) -> Result<DateTime> {
+        Ok(self.0.updated_at.into())
     }
 
     /// The library this item belongs to.
@@ -239,9 +240,9 @@ impl Movie {
         self.0.year
     }
 
-    /// Release date as `YYYY-MM-DD`.
-    async fn released_on(&self) -> Option<String> {
-        self.0.released_on.clone()
+    /// Release date, as its midnight UTC.
+    async fn released_on(&self) -> Option<DateTime> {
+        self.0.released_on.map(DateTime::from)
     }
 
     /// Production studio.
@@ -402,9 +403,9 @@ impl Show {
         Ok(self.0.summary.clone())
     }
 
-    /// When the item was added to the library, in seconds since the Unix epoch.
-    pub async fn added_at(&self, _context: &Context<'_>) -> Result<i64> {
-        Ok(self.0.added_at)
+    /// When the item was added to the library.
+    pub async fn added_at(&self, _context: &Context<'_>) -> Result<DateTime> {
+        Ok(self.0.added_at.into())
     }
 
     /// What the caller has watched of the work, shared by every copy of it. Null without a
@@ -418,9 +419,9 @@ impl Show {
         crate::edit::locked_fields_of(context, self.0.id).await
     }
 
-    /// When the item's metadata last changed, in seconds since the Unix epoch.
-    pub async fn updated_at(&self, _context: &Context<'_>) -> Result<i64> {
-        Ok(self.0.updated_at)
+    /// When the item's metadata last changed.
+    pub async fn updated_at(&self, _context: &Context<'_>) -> Result<DateTime> {
+        Ok(self.0.updated_at.into())
     }
 
     /// The library this item belongs to.
@@ -479,9 +480,9 @@ impl Show {
         self.0.audience_rating
     }
 
-    /// First-air date as `YYYY-MM-DD`.
-    async fn released_on(&self) -> Option<String> {
-        self.0.released_on.clone()
+    /// First-air date, as its midnight UTC.
+    async fn released_on(&self) -> Option<DateTime> {
+        self.0.released_on.map(DateTime::from)
     }
 
     /// Typical episode runtime in milliseconds, not the sum over the series.
@@ -689,9 +690,9 @@ impl Season {
         Ok(self.0.summary.clone())
     }
 
-    /// When the item was added to the library, in seconds since the Unix epoch.
-    pub async fn added_at(&self, _context: &Context<'_>) -> Result<i64> {
-        Ok(self.0.added_at)
+    /// When the item was added to the library.
+    pub async fn added_at(&self, _context: &Context<'_>) -> Result<DateTime> {
+        Ok(self.0.added_at.into())
     }
 
     /// What the caller has watched of the work, shared by every copy of it. Null without a
@@ -705,9 +706,9 @@ impl Season {
         crate::edit::locked_fields_of(context, self.0.id).await
     }
 
-    /// When the item's metadata last changed, in seconds since the Unix epoch.
-    pub async fn updated_at(&self, _context: &Context<'_>) -> Result<i64> {
-        Ok(self.0.updated_at)
+    /// When the item's metadata last changed.
+    pub async fn updated_at(&self, _context: &Context<'_>) -> Result<DateTime> {
+        Ok(self.0.updated_at.into())
     }
 
     /// The library this item belongs to.
@@ -898,9 +899,9 @@ impl Episode {
         Ok(self.0.summary.clone())
     }
 
-    /// When the item was added to the library, in seconds since the Unix epoch.
-    pub async fn added_at(&self, _context: &Context<'_>) -> Result<i64> {
-        Ok(self.0.added_at)
+    /// When the item was added to the library.
+    pub async fn added_at(&self, _context: &Context<'_>) -> Result<DateTime> {
+        Ok(self.0.added_at.into())
     }
 
     /// What the caller has watched of the work, shared by every copy of it. Null without a
@@ -929,9 +930,9 @@ impl Episode {
         crate::marker::markers_of(context, self.0.id, after, before, first, last).await
     }
 
-    /// When the item's metadata last changed, in seconds since the Unix epoch.
-    pub async fn updated_at(&self, _context: &Context<'_>) -> Result<i64> {
-        Ok(self.0.updated_at)
+    /// When the item's metadata last changed.
+    pub async fn updated_at(&self, _context: &Context<'_>) -> Result<DateTime> {
+        Ok(self.0.updated_at.into())
     }
 
     /// The library this item belongs to.
@@ -965,9 +966,9 @@ impl Episode {
         Ok(parent_of(context, season.parent_id).await?.map(Show))
     }
 
-    /// Original air date as `YYYY-MM-DD`.
-    async fn released_on(&self) -> Option<String> {
-        self.0.released_on.clone()
+    /// Original air date, as its midnight UTC.
+    async fn released_on(&self) -> Option<DateTime> {
+        self.0.released_on.map(DateTime::from)
     }
 
     /// Age-rating label, as the metadata source expresses it — the series' when the episode

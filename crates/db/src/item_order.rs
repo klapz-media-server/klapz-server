@@ -28,7 +28,6 @@ const SHUFFLE_MODULUS: i64 = 2_147_483_647;
 /// The shape of the leading value, to read it back for the cursor.
 #[derive(Debug, Clone, Copy)]
 enum KeyType {
-    Text,
     Int,
     Real,
 }
@@ -81,7 +80,7 @@ impl ItemOrder {
             }
             ItemSort::ReleasedOn => Some(column(
                 metadata_item::Column::ReleasedOn,
-                KeyType::Text,
+                KeyType::Int,
                 true,
             )),
             ItemSort::Rating => Some(column(metadata_item::Column::Rating, KeyType::Real, true)),
@@ -246,9 +245,6 @@ impl ItemOrder {
             return Ok(Cursor::new(sort_key, item.id));
         };
         let value = match leading.key_type {
-            KeyType::Text => row
-                .try_get::<Option<String>>("", KEY_COLUMN)?
-                .map(CursorKey::Text),
             KeyType::Int => row
                 .try_get::<Option<i64>>("", KEY_COLUMN)?
                 .map(CursorKey::Int),

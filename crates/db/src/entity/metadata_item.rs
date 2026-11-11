@@ -28,7 +28,8 @@ pub struct Model {
     pub content_rating_age: Option<i32>,
     pub position: Option<i32>,
     pub year: Option<i32>,
-    pub released_on: Option<String>,
+    /// The release date's midnight UTC, in seconds since the Unix epoch.
+    pub released_on: Option<i64>,
     pub duration_ms: Option<i64>,
     pub rating: Option<f64>,
     pub audience_rating: Option<f64>,

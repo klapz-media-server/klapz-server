@@ -19,7 +19,7 @@
 
 use std::collections::HashSet;
 
-use open_plex_core::edit::ItemField;
+use open_plex_core::edit::{CalendarDate, ItemField};
 use open_plex_core::metadata::{self, ItemKind};
 use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 
@@ -234,10 +234,11 @@ async fn import_items(
                 // The source writes -1 for 39 episodes whose year it does not know, and the
                 // reference publishes no year for them.
                 year: ActiveValue::Set(row.plex_opt::<i32>("year").filter(|year| *year > 0)),
-                // Stored as an epoch in the source; the API publishes a calendar date.
+                // A date stored as a time in the source: kept as its day's midnight, UTC.
                 released_on: ActiveValue::Set(
                     row.plex_opt::<i64>("originally_available_at")
-                        .and_then(to_date),
+                        .and_then(CalendarDate::containing)
+                        .map(CalendarDate::midnight),
                 ),
                 duration_ms: ActiveValue::Set(row.plex_opt("duration")),
                 rating: ActiveValue::Set(row.plex_opt("rating")),
@@ -621,11 +622,6 @@ const fn stream_kind(stream_type: i32) -> Option<&'static str> {
         3 => Some("subtitle"),
         _ => None,
     }
-}
-
-/// Formats an epoch second as the calendar date the API publishes.
-fn to_date(epoch: i64) -> Option<String> {
-    chrono::DateTime::from_timestamp(epoch, 0).map(|moment| moment.format("%Y-%m-%d").to_string())
 }
 
 #[cfg(test)]

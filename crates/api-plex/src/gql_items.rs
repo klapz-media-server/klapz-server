@@ -598,6 +598,7 @@ pub struct GqlContinueConnection {
 pub struct GqlContinueEdge {
     /// `IN_PROGRESS` or `UP_NEXT`.
     pub reason: String,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     pub last_viewed_at: i64,
     pub node: GqlItem,
 }
@@ -628,6 +629,7 @@ pub struct GqlRecentConnection {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GqlRecentEdge {
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     pub added_at: i64,
     pub node: GqlItem,
 }
@@ -803,11 +805,17 @@ pub struct GqlItem {
     pub content_rating_age: Option<i32>,
     pub number: Option<i32>,
     pub year: Option<i32>,
+    #[serde(
+        default,
+        deserialize_with = "crate::gql::date_time::optional_calendar_date"
+    )]
     pub released_on: Option<String>,
     pub duration_ms: Option<i64>,
     pub rating: Option<f64>,
     pub audience_rating: Option<f64>,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     pub added_at: i64,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     pub updated_at: i64,
     pub library: Option<GqlLibraryRef>,
     pub season: Option<GqlParentRef>,
@@ -1075,6 +1083,7 @@ pub struct GqlShowStats {
 pub struct GqlWatchState {
     pub view_count: u32,
     pub offset_ms: Option<i64>,
+    #[serde(default, deserialize_with = "crate::gql::date_time::optional_seconds")]
     pub last_viewed_at: Option<i64>,
 }
 

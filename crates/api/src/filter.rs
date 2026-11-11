@@ -10,6 +10,7 @@ use open_plex_core::watch::Viewer;
 use open_plex_core::{CollectionId, RatingKey};
 
 use crate::tag::{TagFilterError, TagFilterInput};
+use crate::DateTime;
 
 /// The kind of media an item is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
@@ -163,8 +164,9 @@ pub struct ItemFilterInput {
     pub depth: Option<ItemDepthInput>,
     /// Keep only items released in or after this year.
     pub year_from: Option<i32>,
-    /// Keep only items released on or after this date, written `2025-11-10`.
-    pub released_from: Option<String>,
+    /// Keep only items released at or after this time. A release date is its day's midnight,
+    /// UTC.
+    pub released_from: Option<DateTime>,
     /// Keep only items whose audience rating, on its ten-point scale, is at least this.
     pub audience_rating_from: Option<f64>,
     /// Keep only items released in or before this year.
@@ -209,11 +211,10 @@ pub struct ItemFilterInput {
     /// Keep only items with an episode the caller watched or started, or with none: the
     /// series not yet begun.
     pub any_episode_started: Option<bool>,
-    /// Keep only items the caller last played at or after this time, in seconds since the
-    /// Unix epoch, written as a string because it exceeds 32 bits.
-    pub last_viewed_from: Option<String>,
-    /// Keep only items the caller last played at or before this time, as `lastViewedFrom`.
-    pub last_viewed_to: Option<String>,
+    /// Keep only items the caller last played at or after this time.
+    pub last_viewed_from: Option<DateTime>,
+    /// Keep only items the caller last played at or before this time.
+    pub last_viewed_to: Option<DateTime>,
 }
 
 /// Keeps items in at least one of the collections named. Name them by id, by the number
@@ -270,29 +271,6 @@ pub enum FilterError {
         TagCondition::MAX_VALUES
     )]
     CollectionCount,
-    #[error("`{0}` is not a date written YYYY-MM-DD")]
-    NotADate(String),
-    #[error("`{0}` is not a time in seconds since the Unix epoch")]
-    NotATime(String),
-}
-
-fn epoch(text: Option<String>) -> Result<Option<i64>, FilterError> {
-    text.map(|text| text.parse().map_err(|_| FilterError::NotATime(text)))
-        .transpose()
-}
-
-/// Whether `text` is a calendar date as stored: four digits, two, two, by hyphens. Compared
-/// as text in storage, so a looser form would compare wrongly rather than fail.
-fn is_iso_date(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    bytes.len() == 10
-        && bytes.iter().enumerate().all(|(position, byte)| {
-            if position == 4 || position == 7 {
-                *byte == b'-'
-            } else {
-                byte.is_ascii_digit()
-            }
-        })
 }
 
 /// A frame size, in pixels.
@@ -336,13 +314,6 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
     type Error = FilterError;
 
     fn try_from(input: ItemFilterInput) -> Result<Self, Self::Error> {
-        if let Some(date) = input
-            .released_from
-            .as_ref()
-            .filter(|date| !is_iso_date(date))
-        {
-            return Err(FilterError::NotADate(date.clone()));
-        }
         let tags = input
             .tags
             .unwrap_or_default()
@@ -361,7 +332,7 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
             depth: input.depth.unwrap_or_default().into(),
             year_from: input.year_from,
             year_to: input.year_to,
-            released_from: input.released_from,
+            released_from: input.released_from.map(DateTime::unix_seconds),
             audience_rating_from: input.audience_rating_from,
             content_rating: input.content_rating,
             studio_contains: input.studio_contains,
@@ -383,8 +354,8 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
             in_progress: input.in_progress,
             episodes_watched: input.all_episodes_watched,
             episodes_started: input.any_episode_started,
-            last_viewed_from: epoch(input.last_viewed_from)?,
-            last_viewed_to: epoch(input.last_viewed_to)?,
+            last_viewed_from: input.last_viewed_from.map(DateTime::unix_seconds),
+            last_viewed_to: input.last_viewed_to.map(DateTime::unix_seconds),
             // The caller's, which only the resolver knows.
             viewer: None,
         })
@@ -460,10 +431,10 @@ mod tests {
             watched: Some(false),
             in_progress: Some(true),
             all_episodes_watched: Some(false),
-            released_from: Some("2025-11-10".to_owned()),
+            released_from: Some(DateTime::from_unix_seconds(1_762_732_800)),
             audience_rating_from: Some(7.0),
             any_episode_started: Some(false),
-            last_viewed_from: Some("1700000000".to_owned()),
+            last_viewed_from: Some(DateTime::from_unix_seconds(1_700_000_000)),
             last_viewed_to: None,
         };
         let filter = ItemFilter::try_from(input).unwrap();
@@ -488,24 +459,10 @@ mod tests {
         assert_eq!(filter.watched, Some(false));
         assert_eq!(filter.in_progress, Some(true));
         assert_eq!(filter.episodes_watched, Some(false));
-        assert_eq!(filter.released_from.as_deref(), Some("2025-11-10"));
+        assert_eq!(filter.released_from, Some(1_762_732_800));
         assert_eq!(filter.audience_rating_from, Some(7.0));
         assert_eq!(filter.episodes_started, Some(false));
         assert_eq!(filter.last_viewed_from, Some(1_700_000_000));
-    }
-
-    #[test]
-    fn a_date_in_another_form_is_refused() {
-        for date in ["2025-1-10", "10/11/2025", "2025-11-10T00:00", "-1y"] {
-            let input = ItemFilterInput {
-                released_from: Some(date.to_owned()),
-                ..ItemFilterInput::default()
-            };
-            assert!(
-                matches!(ItemFilter::try_from(input), Err(FilterError::NotADate(_))),
-                "{date}"
-            );
-        }
     }
 
     #[test]

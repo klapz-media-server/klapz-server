@@ -36,5 +36,7 @@ fn main() {
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
     });
-    print!("{}", schema.sdl());
+    // `@specifiedBy` is left out by default, and `DateTime` names the specification it follows.
+    let options = async_graphql::SDLExportOptions::new().include_specified_by();
+    print!("{}", schema.sdl_with_options(options));
 }

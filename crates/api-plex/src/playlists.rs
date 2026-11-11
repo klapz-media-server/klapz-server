@@ -105,8 +105,11 @@ struct GqlPlaylist {
     source_uri: Option<String>,
     locked_fields: Vec<String>,
     view_count: u64,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     last_viewed_at: i64,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     added_at: i64,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     updated_at: i64,
     item_count: u64,
     duration_ms: Option<i64>,
@@ -1125,6 +1128,7 @@ struct GqlGeneratorEntries {
 struct GqlGeneratorEntry {
     id: String,
     position: i64,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     added_at: i64,
     item: Option<GqlIdentified>,
 }

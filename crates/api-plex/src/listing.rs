@@ -17,7 +17,8 @@ use std::fmt::Write as _;
 use async_graphql::{Name, Value};
 use open_plex_api::item::ITEM_TYPE;
 use open_plex_api::tag::TAG_TYPE;
-use open_plex_api::GlobalId;
+use open_plex_api::{date_time, GlobalId};
+use open_plex_core::edit::CalendarDate;
 use open_plex_core::metadata::TagCondition;
 
 /// Filters the reference advertises, captured from its `Meta/Type/Filter` declarations for
@@ -256,8 +257,8 @@ pub struct Filters {
     pub in_progress: Option<bool>,
     pub all_episodes_watched: Option<bool>,
     pub any_episode_started: Option<bool>,
-    /// A calendar date, `2025-11-10`.
-    pub released_from: Option<String>,
+    /// A calendar date's midnight UTC, in seconds since the Unix epoch.
+    pub released_from: Option<i64>,
     /// Seconds since the Unix epoch.
     pub last_viewed_from: Option<i64>,
     pub last_viewed_to: Option<i64>,
@@ -410,14 +411,14 @@ impl Filters {
         if let Some(id) = self.excluded_id {
             set("excludedId", Value::String(GlobalId::encode(ITEM_TYPE, id)));
         }
-        if let Some(date) = &self.released_from {
-            set("releasedFrom", Value::String(date.clone()));
+        if let Some(time) = self.released_from {
+            set("releasedFrom", Value::String(date_time::format(time)));
         }
         if let Some(time) = self.last_viewed_from {
-            set("lastViewedFrom", Value::String(time.to_string()));
+            set("lastViewedFrom", Value::String(date_time::format(time)));
         }
         if let Some(time) = self.last_viewed_to {
-            set("lastViewedTo", Value::String(time.to_string()));
+            set("lastViewedTo", Value::String(date_time::format(time)));
         }
         if let Some(rating) = self
             .audience_rating_from
@@ -595,7 +596,8 @@ fn apply(
         // rewatched, not begun. Other values of these answer `501`.
         ("originallyAvailableAt", Operator::AtLeast) => {
             let today = open_plex_core::now_epoch().div_euclid(SECONDS_PER_DAY);
-            filters.released_from = Some(calendar_date(value, today).ok_or_else(unsupported)?);
+            let date = calendar_date(value, today).and_then(|date| CalendarDate::parse(&date));
+            filters.released_from = Some(date.ok_or_else(unsupported)?.midnight());
         }
         ("audienceRating", Operator::AtLeast) => {
             let rating: f64 = value.parse().map_err(|_| unsupported())?;

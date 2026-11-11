@@ -165,7 +165,7 @@ pub async fn update_item<C: ConnectionTrait>(
         studio: ActiveValue::Set(item.studio.clone()),
         content_rating: ActiveValue::Set(item.content_rating.clone()),
         year: ActiveValue::Set(item.year),
-        released_on: ActiveValue::Set(item.released_on.clone()),
+        released_on: ActiveValue::Set(item.released_on),
         rating: ActiveValue::Set(item.rating),
         audience_rating: ActiveValue::Set(item.audience_rating),
         ..Default::default()

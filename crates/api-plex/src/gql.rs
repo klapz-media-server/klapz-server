@@ -94,3 +94,37 @@ pub async fn execute<T: DeserializeOwned>(
 #[derive(Debug, thiserror::Error)]
 #[error("the official API rejected an adapter query: {0}")]
 pub struct GraphQlFailure(String);
+
+/// The official API's `DateTime`, read back into the Unix seconds Plex publishes; for
+/// `#[serde(deserialize_with)]`.
+pub(crate) mod date_time {
+    use open_plex_core::edit::CalendarDate;
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer};
+
+    pub fn seconds<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        open_plex_api::date_time::parse(&text)
+            .ok_or_else(|| D::Error::custom(format!("`{text}` is not a DateTime")))
+    }
+
+    pub fn optional_seconds<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<i64>, D::Error> {
+        Option::<String>::deserialize(deserializer)?
+            .map(|text| {
+                open_plex_api::date_time::parse(&text)
+                    .ok_or_else(|| D::Error::custom(format!("`{text}` is not a DateTime")))
+            })
+            .transpose()
+    }
+
+    /// A release date's `DateTime`, its midnight, as the `YYYY-MM-DD` Plex publishes.
+    pub fn optional_calendar_date<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<String>, D::Error> {
+        Ok(optional_seconds(deserializer)?
+            .and_then(CalendarDate::containing)
+            .map(|date| date.to_string()))
+    }
+}

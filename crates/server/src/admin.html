@@ -266,7 +266,7 @@ function pairingRow(user, plex) {
     return el("button", { type: "button", textContent: "Pair with Plex", on: { click: () => showPairing(user) } });
   }
   const state = account.publishedAt
-    ? `published ${new Date(account.publishedAt * 1000).toLocaleString()}`
+    ? `published ${new Date(account.publishedAt).toLocaleString()}`
     : "not published yet, will retry";
   return el("span", { className: "note" },
     "Paired with ", el("strong", { textContent: account.accountName }), " at ",
@@ -341,7 +341,7 @@ function userCard(user) {
     }) },
   });
 
-  const added = new Date(user.createdAt * 1000).toLocaleDateString();
+  const added = new Date(user.createdAt).toLocaleDateString();
   const details = el("details", {
     open: expanded.has(user.id),
     on: { toggle: () => {

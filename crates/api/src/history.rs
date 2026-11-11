@@ -23,6 +23,7 @@ use crate::item::{Item, ITEM_TYPE};
 use crate::library::LIBRARY_TYPE;
 use crate::node::GlobalId;
 use crate::schema::ApiContext;
+use crate::DateTime;
 
 pub const HISTORY_ENTRY_TYPE: &str = "HistoryEntry";
 const DEFAULT_PAGE_SIZE: u32 = 50;
@@ -92,10 +93,10 @@ pub struct HistoryFilterInput {
     pub libraries: Option<Vec<ID>>,
     /// Only viewings of this kind.
     pub kind: Option<ViewingKindType>,
-    /// Only viewings at or after this time, in seconds since the Unix epoch.
-    pub viewed_since: Option<i64>,
-    /// Only viewings at or before this time, in seconds since the Unix epoch.
-    pub viewed_until: Option<i64>,
+    /// Only viewings at or after this time.
+    pub viewed_since: Option<DateTime>,
+    /// Only viewings at or before this time.
+    pub viewed_until: Option<DateTime>,
 }
 
 /// One viewing: an item played to the end, or marked watched.
@@ -139,9 +140,9 @@ impl HistoryEntryObject {
         self.0.kind.into()
     }
 
-    /// When the item was watched, in seconds since the Unix epoch.
-    async fn viewed_at(&self) -> i64 {
-        self.0.viewed_at
+    /// When the item was watched.
+    async fn viewed_at(&self) -> DateTime {
+        self.0.viewed_at.into()
     }
 }
 
@@ -247,8 +248,8 @@ fn history_query(
         item,
         sections,
         kind: filter.kind.map(Into::into),
-        viewed_since: filter.viewed_since,
-        viewed_until: filter.viewed_until,
+        viewed_since: filter.viewed_since.map(DateTime::unix_seconds),
+        viewed_until: filter.viewed_until.map(DateTime::unix_seconds),
         order: order.into(),
         direction: direction.into(),
     }))

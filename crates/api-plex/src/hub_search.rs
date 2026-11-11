@@ -997,8 +997,8 @@ mod tests {
                 "id": GlobalId::encode("Item", id),
                 "guid": "plex://movie/5d7768273c3c2a001fbcb51a",
                 "title": title,
-                "addedAt": 0,
-                "updatedAt": 0,
+                "addedAt": "1970-01-01T00:00:00Z",
+                "updatedAt": "1970-01-01T00:00:00Z",
                 "library": {
                     "id": GlobalId::encode(LIBRARY_TYPE, section),
                     "title": library,

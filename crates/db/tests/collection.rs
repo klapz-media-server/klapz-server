@@ -10,6 +10,7 @@ use open_plex_core::collection::{
     CollectionOrder, CollectionQuery, CollectionRef, CollectionRepository, CollectionSort,
     Destination, NewCollection,
 };
+use open_plex_core::edit::CalendarDate;
 use open_plex_core::metadata::{
     ItemDepth, ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataRepository,
 };
@@ -64,7 +65,11 @@ fn item(
         content_rating_age: ActiveValue::Set(None),
         position: ActiveValue::Set(None),
         year: ActiveValue::Set(year),
-        released_on: ActiveValue::Set(year.map(|year| format!("{year}-04-30"))),
+        released_on: ActiveValue::Set(year.map(|year| {
+            CalendarDate::parse(&format!("{year}-04-30"))
+                .unwrap()
+                .midnight()
+        })),
         duration_ms: ActiveValue::Set(None),
         rating: ActiveValue::Set(None),
         audience_rating: ActiveValue::Set(None),

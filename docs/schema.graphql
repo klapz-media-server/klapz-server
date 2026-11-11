@@ -39,10 +39,10 @@ type AccountLink {
 	"""
 	connectionUri: String!
 	"""
-	When that service last accepted the address, in seconds since the epoch. Null until it
+	When that service last accepted the address. Null until it
 	has; the server keeps trying.
 	"""
-	publishedAt: Int
+	publishedAt: DateTime
 }
 
 """
@@ -351,14 +351,14 @@ type Collection implements Node {
 	"""
 	artUrl: String
 	"""
-	When it was created, in seconds since the Unix epoch.
+	When it was created.
 	"""
-	addedAt: Int!
+	addedAt: DateTime!
 	"""
-	When an item last joined or left it, in seconds since the Unix epoch. An edit of its
+	When an item last joined or left it. An edit of its
 	fields leaves it.
 	"""
-	updatedAt: Int!
+	updatedAt: DateTime!
 	"""
 	The library it belongs to.
 	"""
@@ -718,10 +718,10 @@ type ContinueWatchingEdge {
 	"""
 	reason: ContinueReason!
 	"""
-	When the work behind it was last played, in seconds since the Unix epoch: the
-	film's, or for an episode its series', which the list is ordered by.
+	When the work behind it was last played: the film's, or for an episode its series',
+	which the list is ordered by.
 	"""
-	lastViewedAt: Int!
+	lastViewedAt: DateTime!
 	"""
 	A cursor for use in pagination
 	"""
@@ -852,6 +852,12 @@ type CreatePlaylistPayload {
 	"""
 	userErrors: [PlaylistUserError!]!
 }
+
+"""
+A date-time as RFC 3339 defines it, with an offset. Written in UTC (`Z`) to the second;
+read with any offset, a fraction of a second dropped.
+"""
+scalar DateTime @specifiedBy(url: "https://scalars.graphql.org/andimarek/date-time")
 
 """
 A collection to delete.
@@ -1049,9 +1055,9 @@ type Episode implements Item & Node {
 	"""
 	summary: String
 	"""
-	When the item was added to the library, in seconds since the Unix epoch.
+	When the item was added to the library.
 	"""
-	addedAt: Int!
+	addedAt: DateTime!
 	"""
 	What the caller has watched of the work, shared by every copy of it. Null without a
 	caller.
@@ -1084,9 +1090,9 @@ type Episode implements Item & Node {
 		last: Int
 	): MarkerConnection!
 	"""
-	When the item's metadata last changed, in seconds since the Unix epoch.
+	When the item's metadata last changed.
 	"""
-	updatedAt: Int!
+	updatedAt: DateTime!
 	"""
 	The library this item belongs to.
 	
@@ -1111,9 +1117,9 @@ type Episode implements Item & Node {
 	"""
 	show: Show
 	"""
-	Original air date as `YYYY-MM-DD`.
+	Original air date, as its midnight UTC.
 	"""
-	releasedOn: String
+	releasedOn: DateTime
 	"""
 	Age-rating label, as the metadata source expresses it — the series' when the episode
 	has none of its own.
@@ -1480,9 +1486,9 @@ type HistoryEntry implements Node {
 	"""
 	kind: ViewingKindType!
 	"""
-	When the item was watched, in seconds since the Unix epoch.
+	When the item was watched.
 	"""
-	viewedAt: Int!
+	viewedAt: DateTime!
 }
 
 type HistoryEntryConnection {
@@ -1555,13 +1561,13 @@ input HistoryFilterInput {
 	"""
 	kind: ViewingKindType
 	"""
-	Only viewings at or after this time, in seconds since the Unix epoch.
+	Only viewings at or after this time.
 	"""
-	viewedSince: Int
+	viewedSince: DateTime
 	"""
-	Only viewings at or before this time, in seconds since the Unix epoch.
+	Only viewings at or before this time.
 	"""
-	viewedUntil: Int
+	viewedUntil: DateTime
 }
 
 """
@@ -1629,13 +1635,13 @@ interface Item {
 	"""
 	summary: String
 	"""
-	When the item was added to the library, in seconds since the Unix epoch.
+	When the item was added to the library.
 	"""
-	addedAt: Int!
+	addedAt: DateTime!
 	"""
-	When the item's metadata last changed, in seconds since the Unix epoch.
+	When the item's metadata last changed.
 	"""
-	updatedAt: Int!
+	updatedAt: DateTime!
 	"""
 	The library this item belongs to. The same work present in two libraries is two distinct items with two ids.
 	"""
@@ -1707,8 +1713,8 @@ enum ItemEditErrorCode {
 	"""
 	ITEM_NOT_FOUND
 	"""
-	A value the field cannot hold: a date that is not `YYYY-MM-DD`, a rating outside 0 to
-	10, a year outside 1 to 9999.
+	A value the field cannot hold: a date before year 1, a rating outside 0 to 10, a year
+	outside 1 to 9999.
 	"""
 	INVALID_VALUE
 	"""
@@ -1847,9 +1853,10 @@ input ItemFilterInput {
 	"""
 	yearFrom: Int
 	"""
-	Keep only items released on or after this date, written `2025-11-10`.
+	Keep only items released at or after this time. A release date is its day's midnight,
+	UTC.
 	"""
-	releasedFrom: String
+	releasedFrom: DateTime
 	"""
 	Keep only items whose audience rating, on its ten-point scale, is at least this.
 	"""
@@ -1921,14 +1928,13 @@ input ItemFilterInput {
 	"""
 	anyEpisodeStarted: Boolean
 	"""
-	Keep only items the caller last played at or after this time, in seconds since the
-	Unix epoch, written as a string because it exceeds 32 bits.
+	Keep only items the caller last played at or after this time.
 	"""
-	lastViewedFrom: String
+	lastViewedFrom: DateTime
 	"""
-	Keep only items the caller last played at or before this time, as `lastViewedFrom`.
+	Keep only items the caller last played at or before this time.
 	"""
-	lastViewedTo: String
+	lastViewedTo: DateTime
 }
 
 """
@@ -2189,18 +2195,18 @@ type Library implements Node {
 	"""
 	hidden: Boolean!
 	"""
-	When the library was created, in seconds since the Unix epoch.
+	When the library was created.
 	"""
-	createdAt: Int!
+	createdAt: DateTime!
 	"""
-	When the library's settings or contents last changed, in seconds since the Unix epoch.
+	When the library's settings or contents last changed.
 	"""
-	updatedAt: Int!
+	updatedAt: DateTime!
 	"""
-	When the library was last scanned, in seconds since the Unix epoch. Null if it never
+	When the library was last scanned. Null if it never
 	has been.
 	"""
-	scannedAt: Int
+	scannedAt: DateTime
 	"""
 	Monotonic counter that advances whenever the library's contents change.
 	
@@ -3163,9 +3169,9 @@ type Movie implements Item & Node {
 	"""
 	summary: String
 	"""
-	When the item was added to the library, in seconds since the Unix epoch.
+	When the item was added to the library.
 	"""
-	addedAt: Int!
+	addedAt: DateTime!
 	"""
 	What the caller has watched of the work, shared by every copy of it. Null without a
 	caller.
@@ -3198,9 +3204,9 @@ type Movie implements Item & Node {
 		last: Int
 	): MarkerConnection!
 	"""
-	When the item's metadata last changed, in seconds since the Unix epoch.
+	When the item's metadata last changed.
 	"""
-	updatedAt: Int!
+	updatedAt: DateTime!
 	"""
 	The library this item belongs to.
 	
@@ -3217,9 +3223,9 @@ type Movie implements Item & Node {
 	"""
 	year: Int
 	"""
-	Release date as `YYYY-MM-DD`.
+	Release date, as its midnight UTC.
 	"""
-	releasedOn: String
+	releasedOn: DateTime
 	"""
 	Production studio.
 	"""
@@ -4392,17 +4398,17 @@ type PlaybackSession implements Node {
 	"""
 	height: Int
 	"""
-	When playback began, in seconds since the epoch.
+	When playback began.
 	"""
-	startedAt: Int!
+	startedAt: DateTime!
 	"""
-	The last sign of life, in seconds since the epoch.
+	The last sign of life.
 	"""
-	updatedAt: Int!
+	updatedAt: DateTime!
 	"""
-	When the session goes away without a further sign of life, in seconds since the epoch.
+	When the session goes away without a further sign of life.
 	"""
-	expiresAt: Int!
+	expiresAt: DateTime!
 }
 
 type PlaybackSessionConnection {
@@ -4457,9 +4463,9 @@ The operator ending a session.
 """
 type PlaybackTermination {
 	"""
-	When it was terminated, in seconds since the epoch.
+	When it was terminated.
 	"""
-	terminatedAt: Int!
+	terminatedAt: DateTime!
 	"""
 	What the operator told the player, when it said anything.
 	"""
@@ -4509,17 +4515,17 @@ type Playlist implements Node {
 	"""
 	viewCount: Int!
 	"""
-	When it was last played or, never played, created; in seconds since the Unix epoch.
+	When it was last played or, never played, created.
 	"""
-	lastViewedAt: Int!
+	lastViewedAt: DateTime!
 	"""
-	When it was created, in seconds since the Unix epoch.
+	When it was created.
 	"""
-	addedAt: Int!
+	addedAt: DateTime!
 	"""
-	When it or its entries last changed, in seconds since the Unix epoch.
+	When it or its entries last changed.
 	"""
-	updatedAt: Int!
+	updatedAt: DateTime!
 	"""
 	How many items it lists, of those its owner may read.
 	"""
@@ -4627,9 +4633,9 @@ type PlaylistEntry implements Node {
 	"""
 	position: Int!
 	"""
-	When it was added, in seconds since the Unix epoch.
+	When it was added.
 	"""
-	addedAt: Int!
+	addedAt: DateTime!
 	"""
 	The playlist it belongs to, as returned in `Playlist.id`.
 	"""
@@ -5286,10 +5292,10 @@ type RecentlyAddedEdge {
 	"""
 	node: Item!
 	"""
-	When the entry was added, in seconds since the Unix epoch: the item's own time for a
-	film, its newest episode's for a series or season gathered from a batch.
+	When the entry was added: the item's own time for a film, its newest episode's for a
+	series or season gathered from a batch.
 	"""
-	addedAt: Int!
+	addedAt: DateTime!
 	"""
 	A cursor for use in pagination
 	"""
@@ -5462,9 +5468,9 @@ type Root implements Node {
 	"""
 	path: String!
 	"""
-	When the root was added to the library, in seconds since the Unix epoch.
+	When the root was added to the library.
 	"""
-	createdAt: Int!
+	createdAt: DateTime!
 }
 
 """
@@ -5514,9 +5520,9 @@ type Season implements Item & Node {
 	"""
 	summary: String
 	"""
-	When the item was added to the library, in seconds since the Unix epoch.
+	When the item was added to the library.
 	"""
-	addedAt: Int!
+	addedAt: DateTime!
 	"""
 	What the caller has watched of the work, shared by every copy of it. Null without a
 	caller.
@@ -5527,9 +5533,9 @@ type Season implements Item & Node {
 	"""
 	lockedFields: [ItemField!]!
 	"""
-	When the item's metadata last changed, in seconds since the Unix epoch.
+	When the item's metadata last changed.
 	"""
-	updatedAt: Int!
+	updatedAt: DateTime!
 	"""
 	The library this item belongs to.
 	
@@ -5735,10 +5741,9 @@ type Server implements Node {
 	"""
 	features: Features!
 	"""
-	When the server last started or its configuration changed, in seconds since the Unix
-	epoch.
+	When the server last started or its configuration changed.
 	"""
-	updatedAt: Int!
+	updatedAt: DateTime!
 }
 
 """
@@ -5793,9 +5798,9 @@ type Show implements Item & Node {
 	"""
 	summary: String
 	"""
-	When the item was added to the library, in seconds since the Unix epoch.
+	When the item was added to the library.
 	"""
-	addedAt: Int!
+	addedAt: DateTime!
 	"""
 	What the caller has watched of the work, shared by every copy of it. Null without a
 	caller.
@@ -5806,9 +5811,9 @@ type Show implements Item & Node {
 	"""
 	lockedFields: [ItemField!]!
 	"""
-	When the item's metadata last changed, in seconds since the Unix epoch.
+	When the item's metadata last changed.
 	"""
-	updatedAt: Int!
+	updatedAt: DateTime!
 	"""
 	The library this item belongs to.
 	
@@ -5856,9 +5861,9 @@ type Show implements Item & Node {
 	"""
 	audienceRating: Float
 	"""
-	First-air date as `YYYY-MM-DD`.
+	First-air date, as its midnight UTC.
 	"""
-	releasedOn: String
+	releasedOn: DateTime
 	"""
 	Typical episode runtime in milliseconds, not the sum over the series.
 	"""
@@ -7018,10 +7023,10 @@ input UpdateEpisodeInput {
 	"""
 	year: Int
 	"""
-	The original air date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given
-	too; clearing it clears the year.
+	The original air date: the UTC day of this time, kept as its midnight. Sets `year` to
+	its own unless `year` is given too; clearing it clears the year.
 	"""
-	releasedOn: String
+	releasedOn: DateTime
 	"""
 	The audience rating, from 0 to 10.
 	"""
@@ -7153,10 +7158,10 @@ input UpdateMovieInput {
 	"""
 	year: Int
 	"""
-	The release date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given too;
-	clearing it clears the year.
+	The release date: the UTC day of this time, kept as its midnight. Sets `year` to its
+	own unless `year` is given too; clearing it clears the year.
 	"""
-	releasedOn: String
+	releasedOn: DateTime
 	"""
 	The critics' rating, from 0 to 10.
 	"""
@@ -7269,10 +7274,10 @@ input UpdateShowInput {
 	"""
 	year: Int
 	"""
-	The first-air date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given too;
-	clearing it clears the year.
+	The first-air date: the UTC day of this time, kept as its midnight. Sets `year` to its
+	own unless `year` is given too; clearing it clears the year.
 	"""
-	releasedOn: String
+	releasedOn: DateTime
 	"""
 	The audience rating, from 0 to 10.
 	"""
@@ -7328,13 +7333,13 @@ type User implements Node {
 	"""
 	hasPassword: Boolean!
 	"""
-	When the user was created, in seconds since the epoch.
+	When the user was created.
 	"""
-	createdAt: Int!
+	createdAt: DateTime!
 	"""
-	When the user last changed, in seconds since the epoch.
+	When the user last changed.
 	"""
-	updatedAt: Int!
+	updatedAt: DateTime!
 	"""
 	The libraries this user was given, and the role on each.
 	"""
@@ -7583,10 +7588,10 @@ type WatchState {
 	"""
 	offsetMs: Int
 	"""
-	When it was last played or watched, in seconds since the Unix epoch. On a series or a
+	When it was last played or watched. On a series or a
 	season, when any of its episodes was.
 	"""
-	lastViewedAt: Int
+	lastViewedAt: DateTime
 }
 
 type YearConnection {
@@ -7626,6 +7631,10 @@ directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 Directs the executor to skip this field or fragment when the `if` argument is true.
 """
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Provides a scalar specification URL for specifying the behavior of custom scalar types.
+"""
+directive @specifiedBy(url: String!) on SCALAR
 schema {
 	query: Query
 	mutation: Mutation

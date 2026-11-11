@@ -140,7 +140,11 @@ without them saying so.
 - **DataLoaders for anything resolved per parent.** `Library.roots` batches: ten libraries cost
   one `WHERE section_id IN (…)` query, verified against the SQL log.
 - Values exceeding 32 bits are exposed as `String`, since GraphQL's `Int` only guarantees 32
-  bits — `contentChangedAt` routinely exceeds it.
+  bits — `contentChangedAt`, a counter rather than a time, routinely exceeds it.
+- **Points in time are `DateTime`** (`@specifiedBy` the andimarek date-time spec): RFC 3339,
+  written in UTC with `Z` to the second, read with any offset. Storage, `core` and `db` keep
+  Unix seconds as integers, converted in `api` (`date_time`); a release date is its day's
+  midnight UTC. The Plex adapter reads them back into Plex's epochs and `YYYY-MM-DD`.
 - **Database through an ORM** so the engine can be swapped: **SeaORM** (one API across
   PostgreSQL / MySQL / SQLite, built-in migrations, natively async). SQLite is one backend among
   several, not the design.
