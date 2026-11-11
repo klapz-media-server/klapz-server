@@ -6494,6 +6494,37 @@
               "deprecationReason": null
             },
             {
+              "name": "terminatePlaybackSession",
+              "description": "Ends a session for the operator: its stream stops at once, and its player learns why\nfrom `PlaybackSession.termination` or `playbackTermination`, until it stops. For the\nserver's operator only.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The session to terminate.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "TerminatePlaybackSessionInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "TerminatePlaybackSessionPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "stopStream",
               "description": "Stops a stream and closes its session.",
               "args": [
@@ -6526,7 +6557,7 @@
             },
             {
               "name": "touchPlaybackSession",
-              "description": "Records a sign of life, pushing the session's expiry forward. Whether it is still\nrunning.",
+              "description": "Records a sign of life, pushing the session's expiry forward and keeping its stream\nrunning. Whether it is still playing: false once it has ended, expired or been\nterminated.",
               "args": [
                 {
                   "name": "key",
@@ -6557,7 +6588,7 @@
             },
             {
               "name": "reportPlayback",
-              "description": "Records where a player stands, pushing its sessions' expiry forward, or closes them\nwhen it has stopped. Whether the playback had any session.",
+              "description": "Records where a player stands, pushing its sessions' expiry forward and keeping their\nstreams running, or ends them with their streams when it has stopped. Whether the\nplayback had any session playing, or any at all for a stop.",
               "args": [
                 {
                   "name": "input",
@@ -6849,7 +6880,7 @@
             },
             {
               "name": "endPlaybackSession",
-              "description": "Closes a session. Whether there was one.",
+              "description": "Closes a session and stops its stream. Whether there was either.",
               "args": [
                 {
                   "name": "key",
@@ -8460,6 +8491,34 @@
               "deprecationReason": null
             },
             {
+              "name": "databaseId",
+              "description": "The server-local number of this session.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "termination",
+              "description": "Set once the operator has terminated the session: its stream is stopped, and the\nsession stays until its player stops or it expires, so that the player can learn why.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "PlaybackTermination",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "key",
               "description": "The identifier the client chose for this playback.",
               "args": [],
@@ -8844,6 +8903,45 @@
         },
         {
           "kind": "OBJECT",
+          "name": "PlaybackTermination",
+          "description": "The operator ending a session.",
+          "fields": [
+            {
+              "name": "terminatedAt",
+              "description": "When it was terminated, in seconds since the epoch.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "reason",
+              "description": "What the operator told the player, when it said anything.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
           "name": "Query",
           "description": null,
           "fields": [
@@ -9160,7 +9258,7 @@
             },
             {
               "name": "playbackSessions",
-              "description": "What is being played right now, oldest first. A session a player has stopped keeping\nalive disappears by itself.",
+              "description": "What is being played right now, oldest first. A session a player has stopped keeping\nalive disappears by itself, and a terminated one at once.",
               "args": [
                 {
                   "name": "after",
@@ -9308,6 +9406,33 @@
                   "name": "HistoryEntryConnection",
                   "ofType": null
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "playbackTermination",
+              "description": "Why the operator terminated one of the caller's playbacks, while its player has not\nstopped: a player that finds its stream gone asks here.",
+              "args": [
+                {
+                  "name": "playbackId",
+                  "description": "The player's identifier for the whole playback.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "OBJECT",
+                "name": "PlaybackTermination",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -12540,6 +12665,12 @@
               "description": "Too many streams are running.",
               "isDeprecated": false,
               "deprecationReason": null
+            },
+            {
+              "name": "SESSION_TERMINATED",
+              "description": "The key names a session the operator terminated: its player has to stop first.",
+              "isDeprecated": false,
+              "deprecationReason": null
             }
           ],
           "possibleTypes": null
@@ -13512,6 +13643,194 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "TerminatePlaybackErrorCode",
+          "description": "Why a session could not be terminated.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "SESSION_NOT_FOUND",
+              "description": "No such session playing: it ended, expired or was terminated already.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "TerminatePlaybackSessionInput",
+          "description": "A session for the operator to end.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "session",
+              "description": "The session, as returned in `PlaybackSession.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "reason",
+              "description": "What its player is told, for a person to read.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "TerminatePlaybackSessionPayload",
+          "description": "What `terminatePlaybackSession` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "The value the input carried.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "session",
+              "description": "The session as it now stands, terminated, unless it could not be.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "PlaybackSession",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why it could not be terminated. Empty when it was.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "TerminatePlaybackUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "TerminatePlaybackUserError",
+          "description": "A problem with what was asked, as opposed to a failure of the server.",
+          "fields": [
+            {
+              "name": "field",
+              "description": "The input field at fault, as a path from the input's root.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "message",
+              "description": "What went wrong, for a person.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "code",
+              "description": "What went wrong, for a program.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "TerminatePlaybackErrorCode",
                   "ofType": null
                 }
               },

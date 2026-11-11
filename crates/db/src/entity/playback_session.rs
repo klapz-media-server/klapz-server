@@ -25,6 +25,9 @@ pub struct Model {
     pub started_at: i64,
     pub updated_at: i64,
     pub expires_at: i64,
+    /// Set once the operator terminates the session, the reason with it.
+    pub terminated_at: Option<i64>,
+    pub termination_reason: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

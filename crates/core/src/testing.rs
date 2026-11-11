@@ -1124,10 +1124,12 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
         now: i64,
     ) -> Result<crate::playback::PlaybackSession, crate::playback::PlaybackError> {
         let mut rows = self.rows();
-        let id = rows.iter().find(|row| row.key == session.key).map_or_else(
-            || i64::try_from(rows.len()).unwrap_or(i64::MAX - 1) + 1,
+        let previous = rows.iter().find(|row| row.key == session.key);
+        let id = previous.map_or_else(
+            || rows.iter().map(|row| row.id).max().unwrap_or(0) + 1,
             |row| row.id,
         );
+        let termination = previous.and_then(|row| row.termination.clone());
         rows.retain(|row| row.key != session.key);
         let stored = crate::playback::PlaybackSession {
             id,
@@ -1146,6 +1148,7 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
             started_at: now,
             updated_at: now,
             expires_at: now + crate::playback::SESSION_LIFETIME_SECONDS,
+            termination,
         };
         rows.push(stored.clone());
         Ok(stored)
@@ -1155,7 +1158,7 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
         let mut rows = self.rows();
         let found = rows
             .iter_mut()
-            .find(|row| row.key == key && row.expires_at > now);
+            .find(|row| row.key == key && row.expires_at > now && row.termination.is_none());
         Ok(found
             .map(|row| {
                 row.updated_at = now;
@@ -1170,30 +1173,32 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
         state: crate::playback::PlaybackState,
         position_ms: Option<i64>,
         now: i64,
-    ) -> Result<bool, crate::playback::PlaybackError> {
-        let mut found = false;
-        for row in self
-            .rows()
-            .iter_mut()
-            .filter(|row| row.playback_id.as_deref() == Some(playback_id) && row.expires_at > now)
-        {
-            found = true;
+    ) -> Result<Vec<String>, crate::playback::PlaybackError> {
+        let mut reached = Vec::new();
+        for row in self.rows().iter_mut().filter(|row| {
+            row.playback_id.as_deref() == Some(playback_id)
+                && row.expires_at > now
+                && row.termination.is_none()
+        }) {
+            reached.push(row.key.clone());
             row.state = state;
             row.position_ms = position_ms.unwrap_or(row.position_ms);
             row.updated_at = now;
             row.expires_at = now + crate::playback::SESSION_LIFETIME_SECONDS;
         }
-        Ok(found)
+        Ok(reached)
     }
 
-    async fn end_playback(
+    async fn keys_of_playback(
         &self,
         playback_id: &str,
-    ) -> Result<bool, crate::playback::PlaybackError> {
-        let mut rows = self.rows();
-        let before = rows.len();
-        rows.retain(|row| row.playback_id.as_deref() != Some(playback_id));
-        Ok(rows.len() < before)
+    ) -> Result<Vec<String>, crate::playback::PlaybackError> {
+        Ok(self
+            .rows()
+            .iter()
+            .filter(|row| row.playback_id.as_deref() == Some(playback_id))
+            .map(|row| row.key.clone())
+            .collect())
     }
 
     async fn end(&self, key: &str) -> Result<bool, crate::playback::PlaybackError> {
@@ -1201,6 +1206,47 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
         let before = rows.len();
         rows.retain(|row| row.key != key);
         Ok(rows.len() < before)
+    }
+
+    async fn end_if_expired(
+        &self,
+        key: &str,
+        now: i64,
+    ) -> Result<bool, crate::playback::PlaybackError> {
+        let mut rows = self.rows();
+        let before = rows.len();
+        rows.retain(|row| row.key != key || row.expires_at > now);
+        Ok(rows.len() < before)
+    }
+
+    async fn terminate(
+        &self,
+        key: &str,
+        reason: Option<String>,
+        now: i64,
+    ) -> Result<Option<crate::playback::PlaybackSession>, crate::playback::PlaybackError> {
+        let mut rows = self.rows();
+        let found = rows
+            .iter_mut()
+            .find(|row| row.key == key && row.expires_at > now && row.termination.is_none());
+        Ok(found.map(|row| {
+            row.termination = Some(crate::playback::Termination { at: now, reason });
+            row.updated_at = now;
+            row.expires_at = now + crate::playback::SESSION_LIFETIME_SECONDS;
+            row.clone()
+        }))
+    }
+
+    async fn termination(
+        &self,
+        playback_id: &str,
+        now: i64,
+    ) -> Result<Option<crate::playback::Termination>, crate::playback::PlaybackError> {
+        Ok(self
+            .rows()
+            .iter()
+            .filter(|row| row.playback_id.as_deref() == Some(playback_id) && row.expires_at > now)
+            .find_map(|row| row.termination.clone()))
     }
 
     async fn active(
@@ -1213,7 +1259,7 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
             items: self
                 .rows()
                 .iter()
-                .filter(|row| row.expires_at > now)
+                .filter(|row| row.expires_at > now && row.termination.is_none())
                 .filter(|row| only.is_none() || row.user == only)
                 .cloned()
                 .collect(),
@@ -1234,11 +1280,13 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
             .cloned())
     }
 
-    async fn delete_expired(&self, now: i64) -> Result<u64, crate::playback::PlaybackError> {
-        let mut rows = self.rows();
-        let before = rows.len();
-        rows.retain(|row| row.expires_at > now);
-        Ok(u64::try_from(before - rows.len()).unwrap_or(u64::MAX))
+    async fn expired(&self, now: i64) -> Result<Vec<String>, crate::playback::PlaybackError> {
+        Ok(self
+            .rows()
+            .iter()
+            .filter(|row| row.expires_at <= now)
+            .map(|row| row.key.clone())
+            .collect())
     }
 
     async fn delete_all(&self) -> Result<u64, crate::playback::PlaybackError> {
@@ -2111,6 +2159,16 @@ impl crate::watch::WatchRepository for InMemoryWatch {
 #[derive(Debug, Default)]
 pub struct StubStreams {
     pub started: std::sync::Mutex<Vec<crate::stream::StreamOrder>>,
+    /// The keys it was asked to stop, in order.
+    pub stopped: std::sync::Mutex<Vec<String>>,
+}
+
+impl StubStreams {
+    fn lock_stopped(&self) -> std::sync::MutexGuard<'_, Vec<String>> {
+        self.stopped
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 #[async_trait::async_trait]
@@ -2148,7 +2206,23 @@ impl crate::stream::StreamEngine for StubStreams {
         Ok(started)
     }
 
-    fn stop(&self, _key: &str) -> bool {
+    fn stop(&self, key: &str) -> bool {
+        let mut stopped = self.lock_stopped();
+        stopped.push(key.to_owned());
         false
     }
+
+    fn touch(&self, _key: &str) -> bool {
+        false
+    }
+
+    fn idle(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn stop_if_idle(&self, _key: &str) -> bool {
+        false
+    }
+
+    async fn stop_all(&self) {}
 }

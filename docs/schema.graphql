@@ -2238,6 +2238,17 @@ type Mutation {
 		input: StartStreamInput!
 	): StartStreamPayload!
 	"""
+	Ends a session for the operator: its stream stops at once, and its player learns why
+	from `PlaybackSession.termination` or `playbackTermination`, until it stops. For the
+	server's operator only.
+	"""
+	terminatePlaybackSession(
+		"""
+		The session to terminate.
+		"""
+		input: TerminatePlaybackSessionInput!
+	): TerminatePlaybackSessionPayload!
+	"""
 	Stops a stream and closes its session.
 	"""
 	stopStream(
@@ -2247,8 +2258,9 @@ type Mutation {
 		input: StopStreamInput!
 	): StopStreamPayload!
 	"""
-	Records a sign of life, pushing the session's expiry forward. Whether it is still
-	running.
+	Records a sign of life, pushing the session's expiry forward and keeping its stream
+	running. Whether it is still playing: false once it has ended, expired or been
+	terminated.
 	"""
 	touchPlaybackSession(
 		"""
@@ -2257,8 +2269,9 @@ type Mutation {
 		key: String!
 	): Boolean!
 	"""
-	Records where a player stands, pushing its sessions' expiry forward, or closes them
-	when it has stopped. Whether the playback had any session.
+	Records where a player stands, pushing its sessions' expiry forward and keeping their
+	streams running, or ends them with their streams when it has stopped. Whether the
+	playback had any session playing, or any at all for a stop.
 	"""
 	reportPlayback(
 		"""
@@ -2354,7 +2367,7 @@ type Mutation {
 		input: CreatePlayQueueInput!
 	): PlayQueue!
 	"""
-	Closes a session. Whether there was one.
+	Closes a session and stops its stream. Whether there was either.
 	"""
 	endPlaybackSession(
 		"""
@@ -2822,6 +2835,15 @@ type PlaybackSession implements Node {
 	"""
 	id: ID!
 	"""
+	The server-local number of this session.
+	"""
+	databaseId: String!
+	"""
+	Set once the operator has terminated the session: its stream is stopped, and the
+	session stays until its player stops or it expires, so that the player can learn why.
+	"""
+	termination: PlaybackTermination
+	"""
 	The identifier the client chose for this playback.
 	"""
 	key: String!
@@ -2933,6 +2955,20 @@ enum PlaybackStateType {
 	The player is waiting for data.
 	"""
 	BUFFERING
+}
+
+"""
+The operator ending a session.
+"""
+type PlaybackTermination {
+	"""
+	When it was terminated, in seconds since the epoch.
+	"""
+	terminatedAt: Int!
+	"""
+	What the operator told the player, when it said anything.
+	"""
+	reason: String
 }
 
 type Query {
@@ -3076,7 +3112,7 @@ type Query {
 	): TagUseConnection!
 	"""
 	What is being played right now, oldest first. A session a player has stopped keeping
-	alive disappears by itself.
+	alive disappears by itself, and a terminated one at once.
 	"""
 	playbackSessions(
 		"""
@@ -3138,6 +3174,16 @@ type Query {
 		"""
 		offset: Int
 	): HistoryEntryConnection!
+	"""
+	Why the operator terminated one of the caller's playbacks, while its player has not
+	stopped: a player that finds its stream gone asks here.
+	"""
+	playbackTermination(
+		"""
+		The player's identifier for the whole playback.
+		"""
+		playbackId: String!
+	): PlaybackTermination
 	"""
 	Who is asking: the operator, a user, or no one.
 	"""
@@ -4259,6 +4305,10 @@ enum StreamErrorCode {
 	Too many streams are running.
 	"""
 	TOO_MANY_STREAMS
+	"""
+	The key names a session the operator terminated: its player has to stop first.
+	"""
+	SESSION_TERMINATED
 }
 
 """
@@ -4605,6 +4655,70 @@ type TagUseEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+"""
+Why a session could not be terminated.
+"""
+enum TerminatePlaybackErrorCode {
+	"""
+	No such session playing: it ended, expired or was terminated already.
+	"""
+	SESSION_NOT_FOUND
+}
+
+"""
+A session for the operator to end.
+"""
+input TerminatePlaybackSessionInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The session, as returned in `PlaybackSession.id`.
+	"""
+	session: ID!
+	"""
+	What its player is told, for a person to read.
+	"""
+	reason: String
+}
+
+"""
+What `terminatePlaybackSession` did.
+"""
+type TerminatePlaybackSessionPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The session as it now stands, terminated, unless it could not be.
+	"""
+	session: PlaybackSession
+	"""
+	Why it could not be terminated. Empty when it was.
+	"""
+	userErrors: [TerminatePlaybackUserError!]!
+}
+
+"""
+A problem with what was asked, as opposed to a failure of the server.
+"""
+type TerminatePlaybackUserError {
+	"""
+	The input field at fault, as a path from the input's root.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program.
+	"""
+	code: TerminatePlaybackErrorCode!
 }
 
 """

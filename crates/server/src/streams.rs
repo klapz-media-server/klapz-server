@@ -7,6 +7,10 @@
 //! the query, and every one is an absolute path, so that it resolves the same whether or not
 //! the player followed a redirect to the manifest.
 //!
+//! A stream lives as long as its playback session, and reading it is a sign of life for that
+//! session: at most every `TOUCH_INTERVAL`, a read pushes the session's expiry forward, and a
+//! read whose session has gone stops the stream there and then.
+//!
 //! A stream's renditions are numbered from 0, the best: one, unless the player chooses its
 //! quality. `/streams/{id}/{rendition}/…` holds a rendition's HLS playlist and segments, or its
 //! DASH video; `/streams/{id}/audio/…` the DASH audio every rendition shares.
@@ -24,7 +28,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use futures_util::StreamExt as _;
-use open_plex_core::playback::{PlaybackOutput, StreamDecision};
+use open_plex_core::lifecycle::{Lifecycle, SessionLocks};
+use open_plex_core::playback::{PlaybackOutput, PlaybackRepository, StreamDecision};
 use open_plex_core::stream::{
     Delivery, StartedStream, StreamEngine, StreamError, StreamOrder, StreamProtocol, StreamQuality,
     StreamTrack, SubtitleOutput,
@@ -45,9 +50,9 @@ use tokio::io::AsyncReadExt as _;
 use tower::ServiceExt as _;
 use tower_http::services::ServeFile;
 
-/// How long a file played as it is stays reachable without being read. A conversion lives as
-/// long as its process instead.
-const FILE_IDLE: Duration = Duration::from_secs(6 * 3600);
+/// How often reading a stream counts as a sign of life for its session. A player reads a
+/// segment every few seconds; one write to the sessions per segment would be for nothing.
+const TOUCH_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Streams kept at once. Each start makes one, and a client calling in a loop must not grow
 /// the table without end: past this the least recently read goes.
@@ -70,6 +75,8 @@ struct Entry {
     token: String,
     content: Content,
     read_at: Instant,
+    /// When a read last counted as a sign of life for the session.
+    touched_at: Instant,
 }
 
 #[derive(Debug, Clone)]
@@ -191,12 +198,10 @@ impl Streams {
         self.entries.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Files no one reads, conversions whose process is gone, and the oldest beyond the cap.
+    /// Conversions whose process is gone, and the oldest beyond the cap. A file goes with its
+    /// session.
     fn prune(&self, entries: &mut HashMap<String, Entry>) {
-        entries.retain(|_, entry| match entry.content {
-            Content::File(_) => entry.read_at.elapsed() < FILE_IDLE,
-            Content::Converted(_) => self.transcoder.has_session(&entry.key),
-        });
+        entries.retain(|_, entry| !self.conversion_gone(entry));
         while entries.len() >= MAX_STREAMS {
             let Some(oldest) = entries
                 .iter()
@@ -215,34 +220,57 @@ impl Streams {
         let token = open_plex_core::access::new_token();
         let mut entries = self.entries();
         self.prune(&mut entries);
+        let now = Instant::now();
         entries.insert(
             id.clone(),
             Entry {
                 key,
                 token: token.clone(),
                 content,
-                read_at: Instant::now(),
+                read_at: now,
+                touched_at: now,
             },
         );
         (id, token)
     }
 
+    fn conversion_gone(&self, entry: &Entry) -> bool {
+        matches!(entry.content, Content::Converted(_)) && !self.transcoder.has_session(&entry.key)
+    }
+
     /// The stream an address names, if its secret is the one handed out and, for a
-    /// conversion, its process still runs: a stopped one is forgotten at once.
-    fn open(&self, id: &str, token: &str) -> Option<(String, Content)> {
+    /// conversion, its process still runs: a stopped one is forgotten at once. Says whether
+    /// this read is due to count as a sign of life for the session, too.
+    fn open(&self, id: &str, token: &str) -> Option<Opened> {
         let mut entries = self.entries();
-        let entry = entries.get_mut(id)?;
+        let entry = entries.get(id)?;
         if !bool::from(entry.token.as_bytes().ct_eq(token.as_bytes())) {
             return None;
         }
-        if matches!(entry.content, Content::Converted(_))
-            && !self.transcoder.has_session(&entry.key)
-        {
+        if self.conversion_gone(entry) {
             entries.remove(id);
             return None;
         }
-        entry.read_at = Instant::now();
-        Some((entry.key.clone(), entry.content.clone()))
+        let entry = entries.get_mut(id)?;
+        let now = Instant::now();
+        entry.read_at = now;
+        let touch_due = now.duration_since(entry.touched_at) >= TOUCH_INTERVAL;
+        if touch_due {
+            entry.touched_at = now;
+        }
+        Some(Opened {
+            key: entry.key.clone(),
+            content: entry.content.clone(),
+            touch_due,
+        })
+    }
+
+    /// Forgets every address of a key. Whether there was any.
+    fn forget(&self, key: &str) -> bool {
+        let mut entries = self.entries();
+        let before = entries.len();
+        entries.retain(|_, entry| entry.key != key);
+        entries.len() < before
     }
 
     async fn convert(
@@ -373,24 +401,116 @@ impl StreamEngine for Streams {
     }
 
     fn stop(&self, key: &str) -> bool {
-        let removed = {
-            let mut entries = self.entries();
-            let before = entries.len();
-            entries.retain(|_, entry| entry.key != key);
-            entries.len() < before
-        };
-        self.transcoder.stop_session(key) || removed
+        let forgotten = self.forget(key);
+        self.transcoder.stop_session(key) || forgotten
+    }
+
+    fn touch(&self, key: &str) -> bool {
+        let mut known = false;
+        for entry in self.entries().values_mut() {
+            if entry.key == key {
+                entry.read_at = Instant::now();
+                known = true;
+            }
+        }
+        self.transcoder.ping_session(key) || known
+    }
+
+    fn idle(&self) -> Vec<String> {
+        let mut keys = self.transcoder.idle_sessions();
+        keys.extend(
+            self.entries()
+                .values()
+                .filter(|entry| self.conversion_gone(entry))
+                .map(|entry| entry.key.clone()),
+        );
+        keys.sort_unstable();
+        keys.dedup();
+        keys
+    }
+
+    fn stop_if_idle(&self, key: &str) -> bool {
+        if self.transcoder.stop_session_if_idle(key) {
+            self.forget(key);
+            return true;
+        }
+        let mut entries = self.entries();
+        let before = entries.len();
+        entries.retain(|_, entry| entry.key != key || !self.conversion_gone(entry));
+        entries.len() < before
+    }
+
+    async fn stop_all(&self) {
+        self.entries().clear();
+        self.transcoder.stop_all_sessions().await;
     }
 }
 
-pub fn router(streams: Arc<Streams>) -> Router {
+/// The sessions, their streams and the locks between them: what the stream routes reach, and
+/// what ends sessions outside a request (the sweep, startup and shutdown).
+#[derive(Debug, Clone)]
+pub struct Sessions {
+    pub streams: Arc<Streams>,
+    pub playback: Arc<dyn PlaybackRepository>,
+    pub locks: Arc<SessionLocks>,
+}
+
+impl Sessions {
+    pub fn lifecycle(&self) -> Lifecycle<'_> {
+        Lifecycle {
+            sessions: self.playback.as_ref(),
+            streams: self.streams.as_ref(),
+            locks: &self.locks,
+        }
+    }
+
+    /// The stream an address names, the read counting for its session when due. A stream whose
+    /// session is gone is stopped, and answers as one that never existed.
+    async fn open(&self, id: &str, secret: &Secret) -> Result<(String, Content), Refusal> {
+        let token = secret.token.as_deref().ok_or(Refusal::NotFound)?;
+        let opened = self.streams.open(id, token).ok_or(Refusal::NotFound)?;
+        if opened.touch_due {
+            match self
+                .lifecycle()
+                .read(&opened.key, open_plex_core::now_epoch())
+                .await
+            {
+                Ok(true) => {}
+                Ok(false) => return Err(Refusal::NotFound),
+                // Failing to record a sign of life is no reason to cut a film off.
+                Err(error) => tracing::warn!(%error, "could not keep a playback session alive"),
+            }
+        }
+        Ok((opened.key, opened.content))
+    }
+
+    async fn conversion(
+        &self,
+        id: &str,
+        secret: &Secret,
+    ) -> Result<(String, Arc<Conversion>), Refusal> {
+        match self.open(id, secret).await? {
+            (key, Content::Converted(conversion)) => Ok((key, conversion)),
+            (_, Content::File(_)) => Err(Refusal::NotFound),
+        }
+    }
+}
+
+/// A stream an address opened.
+struct Opened {
+    key: String,
+    content: Content,
+    touch_due: bool,
+}
+
+pub fn router(routes: Sessions) -> Router {
     Router::new()
         .route("/streams/{id}/manifest.mpd", get(dash))
         .route("/streams/{id}/master.m3u8", get(master_playlist))
         .route("/streams/{id}/subtitles.ass", get(subtitles))
         .route("/streams/{id}/file", get(original))
         .route("/streams/{id}/{rendition}/{part}", get(rendition_part))
-        .with_state(streams)
+        .with_state(routes)
 }
 
 #[derive(Debug, Deserialize)]
@@ -439,22 +559,6 @@ impl<'a> Address<'a> {
             base: format!("/streams/{id}"),
             query,
         }
-    }
-}
-
-fn opened(streams: &Streams, id: &str, secret: &Secret) -> Result<(String, Content), Refusal> {
-    let token = secret.token.as_deref().ok_or(Refusal::NotFound)?;
-    streams.open(id, token).ok_or(Refusal::NotFound)
-}
-
-fn conversion(
-    streams: &Streams,
-    id: &str,
-    secret: &Secret,
-) -> Result<(String, Arc<Conversion>), Refusal> {
-    match opened(streams, id, secret)? {
-        (key, Content::Converted(conversion)) => Ok((key, conversion)),
-        (_, Content::File(_)) => Err(Refusal::NotFound),
     }
 }
 
@@ -546,12 +650,12 @@ fn measured(response: Response, report: impl FnOnce(adapt::Delivery) + Send + 's
 
 /// `GET /streams/{id}/file`: the file as it is.
 async fn original(
-    State(streams): State<Arc<Streams>>,
+    State(routes): State<Sessions>,
     Path(id): Path<String>,
     Query(secret): Query<Secret>,
     request: Request,
 ) -> Result<Response, Refusal> {
-    match opened(&streams, &id, &secret)? {
+    match routes.open(&id, &secret).await? {
         (_, Content::File(path)) => Ok(serve(path, request).await),
         (_, Content::Converted(_)) => Err(Refusal::NotFound),
     }
@@ -563,16 +667,16 @@ async fn original(
 /// A copy's codec strings are known only to the process, and read from the manifest it writes.
 /// An encode's are fixed: the reference announces them at once, and so does this.
 async fn dash(
-    State(streams): State<Arc<Streams>>,
+    State(routes): State<Sessions>,
     Path(id): Path<String>,
     Query(secret): Query<Secret>,
 ) -> Result<Response, Refusal> {
-    let (key, conversion) = conversion(&streams, &id, &secret)?;
+    let (key, conversion) = routes.conversion(&id, &secret).await?;
     if conversion.protocol != Protocol::Dash {
         return Err(Refusal::NotFound);
     }
     let written = if conversion.ladder.copies() {
-        streams.transcoder.session_manifest(&key).await?
+        routes.streams.transcoder.session_manifest(&key).await?
     } else {
         String::new()
     };
@@ -599,11 +703,11 @@ fn playlist(body: String) -> Response {
 
 /// `GET /streams/{id}/master.m3u8`: a variant per rendition, one unless the player chooses.
 async fn master_playlist(
-    State(streams): State<Arc<Streams>>,
+    State(routes): State<Sessions>,
     Path(id): Path<String>,
     Query(secret): Query<Secret>,
 ) -> Result<Response, Refusal> {
-    let (_, conversion) = conversion(&streams, &id, &secret)?;
+    let (_, conversion) = routes.conversion(&id, &secret).await?;
     if conversion.protocol != Protocol::Hls {
         return Err(Refusal::NotFound);
     }
@@ -654,15 +758,15 @@ fn numbered(part: &str, extension: &str) -> Option<u32> {
 /// `GET /streams/{id}/{rendition}/…`: an HLS rendition's playlist and segments, a DASH
 /// rendition's video, and the DASH audio under `audio`.
 async fn rendition_part(
-    State(streams): State<Arc<Streams>>,
+    State(routes): State<Sessions>,
     Path((id, rendition, part)): Path<(String, String, String)>,
     Query(secret): Query<Secret>,
     request: Request,
 ) -> Result<Response, Refusal> {
-    let (key, conversion) = conversion(&streams, &id, &secret)?;
+    let (key, conversion) = routes.conversion(&id, &secret).await?;
     let server_adapted = conversion.ladder.adaptation == Adaptation::Server;
     let report = {
-        let transcoder = Arc::clone(&streams.transcoder);
+        let transcoder = Arc::clone(&routes.streams.transcoder);
         let key = key.clone();
         move |delivery| transcoder.record_delivery(&key, delivery)
     };
@@ -670,7 +774,11 @@ async fn rendition_part(
         Protocol::Hls => {
             let rendition: usize = rendition.parse().map_err(|_| Refusal::NotFound)?;
             if part == "index.m3u8" {
-                let output = streams.transcoder.session_output(&key, rendition).await?;
+                let output = routes
+                    .streams
+                    .transcoder
+                    .session_output(&key, rendition)
+                    .await?;
                 let query = format!("?token={}", secret.token.as_deref().unwrap_or_default());
                 return Ok(playlist(hls_playlist(
                     &output,
@@ -679,7 +787,8 @@ async fn rendition_part(
                 )));
             }
             let number = numbered(&part, ".ts").ok_or(Refusal::NotFound)?;
-            let files = streams
+            let files = routes
+                .streams
                 .transcoder
                 .session_segment(&key, rendition, number)
                 .await?;
@@ -697,11 +806,15 @@ async fn rendition_part(
                 DashTrack::Video(rendition.parse().map_err(|_| Refusal::NotFound)?)
             };
             if part == "header" {
-                let path = streams.transcoder.dash_header(&key, track).await?;
+                let path = routes.streams.transcoder.dash_header(&key, track).await?;
                 return Ok(serve(path, request).await);
             }
             let number = numbered(&part, ".m4s").ok_or(Refusal::NotFound)?;
-            let files = streams.transcoder.dash_chunk(&key, track, number).await?;
+            let files = routes
+                .streams
+                .transcoder
+                .dash_chunk(&key, track, number)
+                .await?;
             let response = served(files, "video/mp4", request).await;
             Ok(match track {
                 DashTrack::Video(_) if server_adapted => measured(response, report),
@@ -721,12 +834,12 @@ async fn served(mut files: Vec<PathBuf>, content_type: &'static str, request: Re
 /// `GET /streams/{id}/subtitles.ass`: the stream's text subtitles as one ASS script, written
 /// out as the process converts them, on a response that stays open until it ends.
 async fn subtitles(
-    State(streams): State<Arc<Streams>>,
+    State(routes): State<Sessions>,
     Path(id): Path<String>,
     Query(secret): Query<Secret>,
 ) -> Result<Response, Refusal> {
-    let (key, _) = conversion(&streams, &id, &secret)?;
-    let reader = streams.transcoder.subtitles(&key).await?;
+    let (key, _) = routes.conversion(&id, &secret).await?;
+    let reader = routes.streams.transcoder.subtitles(&key).await?;
     let pieces = futures_util::stream::unfold(reader, |mut reader: SubtitleReader| async move {
         let piece = reader.next_piece().await?;
         Some((Ok::<_, std::convert::Infallible>(piece), reader))
@@ -900,6 +1013,8 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use axum::body::to_bytes;
+    use open_plex_core::playback::NewPlaybackSession;
+    use open_plex_core::testing::InMemoryPlayback;
     use open_plex_transcoder::session::Segment;
 
     use super::*;
@@ -1181,6 +1296,37 @@ mod tests {
         )
     }
 
+    fn routes(streams: &Arc<Streams>, sessions: &Arc<InMemoryPlayback>) -> Sessions {
+        Sessions {
+            streams: Arc::clone(streams),
+            playback: Arc::clone(sessions) as Arc<dyn PlaybackRepository>,
+            locks: Arc::default(),
+        }
+    }
+
+    fn recorded(key: &str) -> NewPlaybackSession {
+        NewPlaybackSession {
+            key: key.to_owned(),
+            user: None,
+            playback_id: None,
+            item: open_plex_core::RatingKey::new(1),
+            part: open_plex_core::PartId::new(1),
+            client: None,
+            product: None,
+            video: StreamDecision::Copy,
+            audio: StreamDecision::Copy,
+            position_ms: 0,
+            output: PlaybackOutput::default(),
+        }
+    }
+
+    /// As if the stream's last sign of life were older than the interval.
+    fn age_touches(streams: &Streams) {
+        for entry in streams.entries().values_mut() {
+            entry.touched_at = Instant::now().checked_sub(TOUCH_INTERVAL).unwrap();
+        }
+    }
+
     #[tokio::test]
     async fn a_file_played_as_it_is_opens_with_its_secret_only() {
         let scratch = Scratch::new("original");
@@ -1189,7 +1335,7 @@ mod tests {
         assert!(started.url.starts_with("/streams/"));
         assert_eq!(started.video, StreamDecision::Copy);
 
-        let app = router(Arc::clone(&streams));
+        let app = router(routes(&streams, &Arc::default()));
         let (status, body) = fetch(app.clone(), &started.url).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, b"the film");
@@ -1201,6 +1347,64 @@ mod tests {
 
         assert!(streams.stop("u1~k"));
         assert_eq!(fetch(app, &started.url).await.0, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn reading_a_stream_keeps_its_session_alive_at_most_every_interval() {
+        let scratch = Scratch::new("keep-alive");
+        let streams = Arc::new(Streams::new(Arc::new(Transcoder::default())));
+        let sessions = Arc::new(InMemoryPlayback::default());
+        let started = streams.start(order(&scratch)).await.unwrap();
+        let first = sessions.start(recorded("u1~k"), 0).await.unwrap();
+        let app = router(routes(&streams, &sessions));
+
+        // Within the interval, a read writes nothing.
+        assert_eq!(fetch(app.clone(), &started.url).await.0, StatusCode::OK);
+        let now = open_plex_core::now_epoch();
+        assert!(sessions.session(first.id, now).await.unwrap().is_none());
+
+        // The session expired meanwhile: a due read finds it gone and stops the stream.
+        age_touches(&streams);
+        assert_eq!(
+            fetch(app.clone(), &started.url).await.0,
+            StatusCode::NOT_FOUND
+        );
+        assert!(!streams.touch("u1~k"));
+
+        let started = streams.start(order(&scratch)).await.unwrap();
+        let live = sessions.start(recorded("u1~k"), now).await.unwrap();
+        age_touches(&streams);
+        assert_eq!(fetch(app, &started.url).await.0, StatusCode::OK);
+        let touched = sessions.session(live.id, now).await.unwrap().unwrap();
+        assert!(touched.updated_at >= now);
+    }
+
+    #[tokio::test]
+    async fn a_terminated_session_takes_its_stream_down_at_the_next_due_read() {
+        let scratch = Scratch::new("terminated");
+        let streams = Arc::new(Streams::new(Arc::new(Transcoder::default())));
+        let sessions = Arc::new(InMemoryPlayback::default());
+        let started = streams.start(order(&scratch)).await.unwrap();
+        let now = open_plex_core::now_epoch();
+        sessions.start(recorded("u1~k"), now).await.unwrap();
+        // Marked terminated without the stream being reached.
+        sessions.terminate("u1~k", None, now).await.unwrap();
+        age_touches(&streams);
+        let app = router(routes(&streams, &sessions));
+        assert_eq!(fetch(app, &started.url).await.0, StatusCode::NOT_FOUND);
+        assert!(streams.entries().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_file_is_never_idle_by_itself() {
+        let scratch = Scratch::new("never-idle");
+        let streams = Streams::new(Arc::new(Transcoder::default()));
+        streams.start(order(&scratch)).await.unwrap();
+        assert!(streams.idle().is_empty());
+        assert!(!streams.stop_if_idle("u1~k"));
+        assert!(streams.touch("u1~k"));
+        streams.stop_all().await;
+        assert!(!streams.touch("u1~k"));
     }
 
     #[tokio::test]

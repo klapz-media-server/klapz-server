@@ -110,9 +110,95 @@ async fn the_sweep_deletes_only_what_has_expired() {
         .await
         .expect("start");
     let sweep = NOW + SESSION_LIFETIME_SECONDS;
-    assert_eq!(repository.delete_expired(sweep).await.expect("sweep"), 1);
+    assert_eq!(repository.expired(sweep).await.expect("sweep"), ["old"]);
+    assert!(!repository
+        .end_if_expired("new", sweep)
+        .await
+        .expect("sweep"));
+    assert!(repository
+        .end_if_expired("old", sweep)
+        .await
+        .expect("sweep"));
     assert_eq!(active_keys(&repository, sweep).await, ["new"]);
-    assert_eq!(repository.delete_expired(sweep).await.expect("sweep"), 0);
+    assert!(repository.expired(sweep).await.expect("sweep").is_empty());
+}
+
+#[tokio::test]
+async fn a_restart_saves_its_session_from_the_sweep() {
+    let repository = repository().await;
+    repository.start(session("a"), NOW).await.expect("start");
+    let sweep = NOW + SESSION_LIFETIME_SECONDS;
+    assert_eq!(repository.expired(sweep).await.expect("sweep"), ["a"]);
+    // Restarted between the sweep's listing and its deletion.
+    repository.start(session("a"), sweep).await.expect("start");
+    assert!(!repository.end_if_expired("a", sweep).await.expect("sweep"));
+    assert_eq!(active_keys(&repository, sweep).await, ["a"]);
+}
+
+#[tokio::test]
+async fn a_terminated_session_stops_playing_and_tells_its_player_why() {
+    let repository = repository().await;
+    let id = repository.start(session("a"), NOW).await.expect("start").id;
+    let later = NOW + 100;
+    let terminated = repository
+        .terminate("a", Some("Bedtime".to_owned()), later)
+        .await
+        .expect("terminate")
+        .expect("session");
+    let termination = terminated.termination.expect("termination");
+    assert_eq!(termination.at, later);
+    assert_eq!(termination.reason.as_deref(), Some("Bedtime"));
+    // The player gets a whole lifetime to hear of it.
+    assert_eq!(terminated.expires_at, later + SESSION_LIFETIME_SECONDS);
+
+    assert!(active_keys(&repository, later).await.is_empty());
+    assert!(!repository.touch("a", later).await.expect("touch"));
+    assert!(repository
+        .report("player", PlaybackState::Playing, Some(1), later)
+        .await
+        .expect("report")
+        .is_empty());
+    assert!(repository
+        .terminate("a", None, later)
+        .await
+        .expect("terminate")
+        .is_none());
+    let found = repository.session(id, later).await.expect("read");
+    assert!(found.is_some_and(|session| session.termination.is_some()));
+    let told = repository
+        .termination("player", later)
+        .await
+        .expect("read")
+        .expect("termination");
+    assert_eq!(told.reason.as_deref(), Some("Bedtime"));
+    assert!(repository
+        .termination("other player", later)
+        .await
+        .expect("read")
+        .is_none());
+
+    // A restart under the key does not lift it.
+    repository
+        .start(session("a"), later + 1)
+        .await
+        .expect("start");
+    assert!(repository
+        .termination("player", later + 1)
+        .await
+        .expect("read")
+        .is_some());
+}
+
+#[tokio::test]
+async fn an_expired_session_cannot_be_terminated() {
+    let repository = repository().await;
+    repository.start(session("a"), NOW).await.expect("start");
+    let after = NOW + SESSION_LIFETIME_SECONDS;
+    assert!(repository
+        .terminate("a", None, after)
+        .await
+        .expect("terminate")
+        .is_none());
 }
 
 #[tokio::test]
@@ -149,10 +235,13 @@ async fn a_report_moves_every_session_of_its_playback_and_no_other() {
     let other = repository.start(other, NOW).await.expect("start");
 
     let later = NOW + 10;
-    assert!(repository
-        .report("player", PlaybackState::Paused, Some(9000), later)
-        .await
-        .expect("report"));
+    assert_eq!(
+        repository
+            .report("player", PlaybackState::Paused, Some(9000), later)
+            .await
+            .expect("report"),
+        ["a", "b"]
+    );
 
     let read = |id| {
         let repository = &repository;
@@ -196,15 +285,16 @@ async fn a_report_does_not_revive_an_expired_session() {
     let repository = repository().await;
     repository.start(session("a"), NOW).await.expect("start");
     let after = NOW + SESSION_LIFETIME_SECONDS;
-    assert!(!repository
+    assert!(repository
         .report("player", PlaybackState::Playing, Some(1), after)
         .await
-        .expect("report"));
+        .expect("report")
+        .is_empty());
     assert!(active_keys(&repository, after).await.is_empty());
 }
 
 #[tokio::test]
-async fn ending_a_playback_closes_all_its_sessions_and_only_those() {
+async fn a_playback_names_all_its_sessions_and_only_those() {
     let repository = repository().await;
     repository.start(session("a"), NOW).await.expect("start");
     repository.start(session("b"), NOW).await.expect("start");
@@ -214,9 +304,20 @@ async fn ending_a_playback_closes_all_its_sessions_and_only_those() {
     };
     repository.start(other, NOW).await.expect("start");
 
-    assert!(repository.end_playback("player").await.expect("end"));
-    assert!(!repository.end_playback("player").await.expect("end"));
-    assert_eq!(active_keys(&repository, NOW).await, ["c"]);
+    let mut keys = repository.keys_of_playback("player").await.expect("keys");
+    keys.sort();
+    assert_eq!(keys, ["a", "b"]);
+    // Expired ones too: the player stopping still removes them.
+    let after = NOW + SESSION_LIFETIME_SECONDS;
+    assert_eq!(
+        repository
+            .keys_of_playback("player")
+            .await
+            .expect("keys")
+            .len(),
+        2
+    );
+    assert!(active_keys(&repository, after).await.is_empty());
 }
 
 #[tokio::test]

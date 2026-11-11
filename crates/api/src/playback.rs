@@ -6,11 +6,11 @@
 
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::dataloader::DataLoader;
-use async_graphql::{Context, Enum, InputObject, Object, Result, ID};
+use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
 use open_plex_core::page::Cursor;
 use open_plex_core::playback::{
     NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackSession, PlaybackState,
-    StreamDecision,
+    StreamDecision, Termination,
 };
 use open_plex_core::{now_epoch, PartId, RatingKey};
 
@@ -91,6 +91,25 @@ impl From<StreamDecisionType> for StreamDecision {
     }
 }
 
+/// The operator ending a session.
+#[derive(Debug, Clone, SimpleObject)]
+#[graphql(name = "PlaybackTermination")]
+pub struct PlaybackTerminationObject {
+    /// When it was terminated, in seconds since the epoch.
+    pub terminated_at: i64,
+    /// What the operator told the player, when it said anything.
+    pub reason: Option<String>,
+}
+
+impl From<Termination> for PlaybackTerminationObject {
+    fn from(termination: Termination) -> Self {
+        Self {
+            terminated_at: termination.at,
+            reason: termination.reason,
+        }
+    }
+}
+
 /// One playback in progress. Expires by itself when the player stops giving signs of life.
 #[derive(Debug, Clone)]
 pub struct PlaybackSessionObject(pub PlaybackSession);
@@ -100,6 +119,17 @@ impl PlaybackSessionObject {
     /// Globally unique, opaque identifier. Pass it to `node` to refetch this session.
     pub async fn id(&self) -> ID {
         ID(GlobalId::encode(PLAYBACK_TYPE, self.0.id))
+    }
+
+    /// The server-local number of this session.
+    async fn database_id(&self) -> String {
+        self.0.id.to_string()
+    }
+
+    /// Set once the operator has terminated the session: its stream is stopped, and the
+    /// session stays until its player stops or it expires, so that the player can learn why.
+    async fn termination(&self) -> Option<PlaybackTerminationObject> {
+        self.0.termination.clone().map(Into::into)
     }
 
     /// The identifier the client chose for this playback.
@@ -269,6 +299,95 @@ pub struct ReportPlaybackInput {
     pub position_ms: Option<i64>,
 }
 
+/// A session for the operator to end.
+#[derive(Debug, InputObject)]
+pub struct TerminatePlaybackSessionInput {
+    /// Echoed back in the payload, for the client to match the two.
+    pub client_mutation_id: Option<String>,
+    /// The session, as returned in `PlaybackSession.id`.
+    pub session: ID,
+    /// What its player is told, for a person to read.
+    pub reason: Option<String>,
+}
+
+/// Why a session could not be terminated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum TerminatePlaybackErrorCode {
+    /// No such session playing: it ended, expired or was terminated already.
+    SessionNotFound,
+}
+
+/// A problem with what was asked, as opposed to a failure of the server.
+#[derive(Debug, Clone, SimpleObject)]
+pub struct TerminatePlaybackUserError {
+    /// The input field at fault, as a path from the input's root.
+    pub field: Vec<String>,
+    /// What went wrong, for a person.
+    pub message: String,
+    /// What went wrong, for a program.
+    pub code: TerminatePlaybackErrorCode,
+}
+
+/// What `terminatePlaybackSession` did.
+#[derive(Debug, SimpleObject)]
+pub struct TerminatePlaybackSessionPayload {
+    /// The value the input carried.
+    pub client_mutation_id: Option<String>,
+    /// The session as it now stands, terminated, unless it could not be.
+    pub session: Option<PlaybackSessionObject>,
+    /// Why it could not be terminated. Empty when it was.
+    pub user_errors: Vec<TerminatePlaybackUserError>,
+}
+
+async fn terminate(
+    context: &Context<'_>,
+    input: TerminatePlaybackSessionInput,
+) -> Result<TerminatePlaybackSessionPayload> {
+    crate::access::require_operator(context)?;
+    let api = context.data::<ApiContext>()?;
+    let now = now_epoch();
+    let found = match GlobalId::decode(&input.session) {
+        Ok(global) if global.type_name == PLAYBACK_TYPE => {
+            api.playback.session(global.key, now).await?
+        }
+        _ => None,
+    };
+    let terminated = match found {
+        Some(session) => {
+            api.lifecycle()
+                .terminate(&session.key, input.reason, now)
+                .await?
+        }
+        None => None,
+    };
+    let user_errors = if terminated.is_some() {
+        Vec::new()
+    } else {
+        vec![TerminatePlaybackUserError {
+            field: vec!["input".to_owned(), "session".to_owned()],
+            message: "no such session playing".to_owned(),
+            code: TerminatePlaybackErrorCode::SessionNotFound,
+        }]
+    };
+    Ok(TerminatePlaybackSessionPayload {
+        client_mutation_id: input.client_mutation_id,
+        session: terminated.map(PlaybackSessionObject),
+        user_errors,
+    })
+}
+
+/// The termination of one of the caller's playbacks, while its player has not stopped.
+pub(crate) async fn termination(
+    context: &Context<'_>,
+    playback_id: &str,
+) -> Result<Option<PlaybackTerminationObject>> {
+    let playback_id = crate::access::require_caller(context)?.session_key(playback_id);
+    Ok(playback(context)?
+        .termination(&playback_id, now_epoch())
+        .await?
+        .map(Into::into))
+}
+
 /// Changes to what is being played.
 #[derive(Debug, Default)]
 pub struct Mutation;
@@ -327,6 +446,17 @@ impl Mutation {
         crate::stream::start_stream(context, input).await
     }
 
+    /// Ends a session for the operator: its stream stops at once, and its player learns why
+    /// from `PlaybackSession.termination` or `playbackTermination`, until it stops. For the
+    /// server's operator only.
+    async fn terminate_playback_session(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The session to terminate.")] input: TerminatePlaybackSessionInput,
+    ) -> Result<TerminatePlaybackSessionPayload> {
+        terminate(context, input).await
+    }
+
     /// Stops a stream and closes its session.
     async fn stop_stream(
         &self,
@@ -336,35 +466,38 @@ impl Mutation {
         crate::stream::stop_stream(context, input).await
     }
 
-    /// Records a sign of life, pushing the session's expiry forward. Whether it is still
-    /// running.
+    /// Records a sign of life, pushing the session's expiry forward and keeping its stream
+    /// running. Whether it is still playing: false once it has ended, expired or been
+    /// terminated.
     async fn touch_playback_session(
         &self,
         context: &Context<'_>,
         #[graphql(desc = "The identifier the client chose for this playback.")] key: String,
     ) -> Result<bool> {
         let key = crate::access::require_caller(context)?.session_key(&key);
-        Ok(playback(context)?.touch(&key, now_epoch()).await?)
+        let api = context.data::<ApiContext>()?;
+        Ok(api.lifecycle().touch(&key, now_epoch()).await?)
     }
 
-    /// Records where a player stands, pushing its sessions' expiry forward, or closes them
-    /// when it has stopped. Whether the playback had any session.
+    /// Records where a player stands, pushing its sessions' expiry forward and keeping their
+    /// streams running, or ends them with their streams when it has stopped. Whether the
+    /// playback had any session playing, or any at all for a stop.
     async fn report_playback(
         &self,
         context: &Context<'_>,
         #[graphql(desc = "The player's report.")] input: ReportPlaybackInput,
     ) -> Result<bool> {
-        let repository = playback(context)?;
+        let lifecycle = context.data::<ApiContext>()?.lifecycle();
         let playback_id = crate::access::require_caller(context)?.session_key(&input.playback_id);
         let state = match input.state {
             ReportedPlaybackState::Playing => PlaybackState::Playing,
             ReportedPlaybackState::Paused => PlaybackState::Paused,
             ReportedPlaybackState::Buffering => PlaybackState::Buffering,
             ReportedPlaybackState::Stopped => {
-                return Ok(repository.end_playback(&playback_id).await?);
+                return Ok(lifecycle.end_playback(&playback_id).await?);
             }
         };
-        Ok(repository
+        Ok(lifecycle
             .report(&playback_id, state, input.position_ms, now_epoch())
             .await?)
     }
@@ -454,14 +587,15 @@ impl Mutation {
         crate::play_queue::create(context, input).await
     }
 
-    /// Closes a session. Whether there was one.
+    /// Closes a session and stops its stream. Whether there was either.
     async fn end_playback_session(
         &self,
         context: &Context<'_>,
         #[graphql(desc = "The identifier the client chose for this playback.")] key: String,
     ) -> Result<bool> {
         let key = crate::access::require_caller(context)?.session_key(&key);
-        Ok(playback(context)?.end(&key).await?)
+        let api = context.data::<ApiContext>()?;
+        Ok(api.lifecycle().end(&key).await?)
     }
 
     /// Creates a user. For the server's operator only.

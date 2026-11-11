@@ -56,6 +56,8 @@ IMPLEMENTED = frozenset(
         "/status/sessions",
         "/status/sessions/history/all",
         "/status/sessions/history/{historyId}",
+        "/status/sessions/background",
+        "/status/sessions/terminate",
         "/:/prefs",
         "/updater/status",
         "/updater/check",

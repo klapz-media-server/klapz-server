@@ -32,14 +32,20 @@ mutation PlexReportViewing($input: ReportViewingInput!) {
 ";
 
 const SESSIONS: &str = r"
-query PlexTimelineSessions {
+query PlexTimelineSessions($playback: String!) {
   playbackSessions(first: 500) {
     edges {
       node { key playbackId videoDecision audioDecision videoBitrate audioBitrate width }
     }
   }
+  playbackTermination(playbackId: $playback) { reason }
 }
 ";
+
+/// What the reference's decision table calls an operator's termination. Plex Web only checks
+/// that a code is there, and shows the text.
+const ADMIN_TERMINATION_CODE: u32 = 2006;
+const ADMIN_TERMINATION_TEXT: &str = "Admin Terminated Playback.";
 
 pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
     router.route("/:/timeline", get(timeline).post(timeline).put(timeline))
@@ -221,26 +227,27 @@ async fn timeline(
             }
         }
         if let Some(playback_id) = client.session_identifier {
-            // Found before the report, which closes the session once the player has stopped.
-            let session = latest_session(&state, &playback_id).await;
+            // Read before the report, which ends the sessions once the player has stopped: the
+            // reference tears the conversion down then, and so does the official API.
+            let found = playback_state(&state, &playback_id).await;
             report(&state, playback_id.clone(), reported, position).await;
-            match (&session, reported) {
-                // The reference tears the conversion down when the player stops; so do we, or its
-                // process runs on for five minutes holding a session slot.
-                (Some(session), "STOPPED") => {
+            match (&found.session, reported) {
+                (_, "STOPPED") | (None, _) => {}
+                (Some(session), _) => {
                     // The key GraphQL hands back is the client's; the transcoder stores it under
                     // the caller's name.
-                    state
-                        .transcoder
-                        .stop_session(&gql::session_key(&session.key));
-                }
-                (Some(session), _) => {
                     let status = state
                         .transcoder
                         .session_status(&gql::session_key(&session.key));
                     describe_session(&mut body, session, status.as_ref());
                 }
-                _ => {}
+            }
+            if let (Some(termination), false) = (found.termination, reported == "STOPPED") {
+                body["terminationCode"] = json!(ADMIN_TERMINATION_CODE);
+                body["terminationText"] = json!(termination
+                    .reason
+                    .filter(|reason| !reason.is_empty())
+                    .unwrap_or_else(|| ADMIN_TERMINATION_TEXT.to_owned()));
             }
         }
     }
@@ -252,6 +259,19 @@ async fn timeline(
 #[serde(rename_all = "camelCase")]
 struct SessionsData {
     playback_sessions: GqlSessions,
+    playback_termination: Option<GqlTermination>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlTermination {
+    reason: Option<String>,
+}
+
+/// Where a playback stands: its latest session playing, or the operator's termination of it.
+#[derive(Debug, Default)]
+struct PlaybackFound {
+    session: Option<GqlSession>,
+    termination: Option<GqlTermination>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -276,20 +296,28 @@ struct GqlSession {
     width: Option<i32>,
 }
 
-/// A change of quality leaves the previous conversion's row behind until it expires, and rows
-/// come oldest first. This only decorates the answer: failing to read it costs a report nothing.
-async fn latest_session(state: &PlexState, playback_id: &str) -> Option<GqlSession> {
+/// Rows come oldest first, and the latest is the conversion the player is on. This only
+/// decorates the answer: failing to read it costs a report nothing.
+async fn playback_state(state: &PlexState, playback_id: &str) -> PlaybackFound {
+    let mut variables = Variables::default();
+    variables.insert(Name::new("playback"), Value::String(playback_id.to_owned()));
     let data: Result<SessionsData, ApiError> =
-        gql::execute(&state.schema, SESSIONS, Variables::default()).await;
-    let data = data
-        .map_err(|error| tracing::warn!(%error, "could not read the playback sessions"))
-        .ok()?;
-    data.playback_sessions
-        .edges
-        .into_iter()
-        .rev()
-        .map(|edge| edge.node)
-        .find(|session| session.playback_id.as_deref() == Some(playback_id))
+        gql::execute(&state.schema, SESSIONS, variables).await;
+    let Ok(data) =
+        data.map_err(|error| tracing::warn!(%error, "could not read the playback sessions"))
+    else {
+        return PlaybackFound::default();
+    };
+    PlaybackFound {
+        session: data
+            .playback_sessions
+            .edges
+            .into_iter()
+            .rev()
+            .map(|edge| edge.node)
+            .find(|session| session.playback_id.as_deref() == Some(playback_id)),
+        termination: data.playback_termination,
+    }
 }
 
 /// What the player is being sent: the rung of the latest video segment it received when the
