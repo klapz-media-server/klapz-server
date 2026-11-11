@@ -32,6 +32,7 @@ fn main() {
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     });
     print!("{}", schema.sdl());
 }

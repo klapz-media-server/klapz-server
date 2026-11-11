@@ -141,6 +141,20 @@ pub trait StreamEngine: Send + Sync + std::fmt::Debug {
     /// players ask for the same start more than once.
     async fn start(&self, order: StreamOrder) -> Result<StartedStream, StreamError>;
 
-    /// Stops the stream stored under `key`. Whether there was one.
+    /// Stops the stream stored under `key`: its process, its addresses and what it wrote.
+    /// Whether there was one.
     fn stop(&self, key: &str) -> bool;
+
+    /// A sign of life for the stream under `key`. Whether there is one.
+    fn touch(&self, key: &str) -> bool;
+
+    /// The keys of the streams nobody has asked anything of for the engine's idle limit, and
+    /// of those whose conversion is gone.
+    fn idle(&self) -> Vec<String>;
+
+    /// Stops the stream under `key` if it is still one `idle` would list. Whether it did.
+    fn stop_if_idle(&self, key: &str) -> bool;
+
+    /// Stops every stream, and returns once their processes have exited.
+    async fn stop_all(&self);
 }

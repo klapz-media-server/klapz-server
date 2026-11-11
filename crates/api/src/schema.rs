@@ -42,6 +42,18 @@ pub struct ApiContext {
     pub directory: Arc<dyn open_plex_core::access::AccountDirectory>,
     pub watch: Arc<dyn open_plex_core::watch::WatchRepository>,
     pub streams: Arc<dyn open_plex_core::stream::StreamEngine>,
+    /// Shared with whatever else ends sessions outside a request: the sweep, the stream routes.
+    pub session_locks: Arc<open_plex_core::lifecycle::SessionLocks>,
+}
+
+impl ApiContext {
+    pub(crate) fn lifecycle(&self) -> open_plex_core::lifecycle::Lifecycle<'_> {
+        open_plex_core::lifecycle::Lifecycle {
+            sessions: self.playback.as_ref(),
+            streams: self.streams.as_ref(),
+            locks: &self.session_locks,
+        }
+    }
 }
 
 /// Anything that can be refetched by its global identifier.
@@ -311,7 +323,7 @@ impl Query {
     }
 
     /// What is being played right now, oldest first. A session a player has stopped keeping
-    /// alive disappears by itself.
+    /// alive disappears by itself, and a terminated one at once.
     async fn playback_sessions(
         &self,
         context: &Context<'_>,
@@ -323,6 +335,16 @@ impl Query {
         last: Option<i32>,
     ) -> Result<crate::playback::PlaybackConnection> {
         crate::playback::sessions(context, after, before, first, last).await
+    }
+
+    /// Why the operator terminated one of the caller's playbacks, while its player has not
+    /// stopped: a player that finds its stream gone asks here.
+    async fn playback_termination(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The player's identifier for the whole playback.")] playback_id: String,
+    ) -> Result<Option<crate::playback::PlaybackTerminationObject>> {
+        crate::playback::termination(context, &playback_id).await
     }
 
     /// Who is asking: the operator, a user, or no one.

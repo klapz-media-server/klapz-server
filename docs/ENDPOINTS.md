@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 9 | 3.5 % |
-| `stub` | 130 | 50.0 % |
-| `partial` | 20 | 7.7 % |
-| `done` | 64 | 24.6 % |
+| `stub` | 128 | 49.2 % |
+| `partial` | 21 | 8.1 % |
+| `done` | 65 | 25.0 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -40,7 +40,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Subscriptions](#subscriptions) | 10 | 10 | 0 | 0 | 0 | 0 |
 | [Download Queue](#download-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
 | [Play Queue](#play-queue) | 9 | 0 | 2 | 6 | 1 | 0 |
-| [Status](#status) | 6 | 0 | 1 | 5 | 0 | 0 |
+| [Status](#status) | 6 | 1 | 2 | 3 | 0 | 0 |
 | [Butler](#butler) | 5 | 0 | 0 | 5 | 0 | 0 |
 | [Transcoder](#transcoder) | 5 | 0 | 4 | 1 | 0 | 0 |
 | [General](#general) | 4 | 2 | 0 | 2 | 0 | 0 |
@@ -344,12 +344,12 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `partial` | `GET` | `/status/sessions` | admin | List Sessions | Direct Stream sessions, from the official API. The state comes from `/:/timeline`, Direct Play is not tracked yet, and the attributes follow what Plex Web reads, with no capture to compare against. |
-| `stub` | `GET` | `/status/sessions/background` | admin | Get background tasks |  |
+| `partial` | `GET` | `/status/sessions` | admin | List Sessions | Direct Stream sessions, from the official API, terminated ones left out. `Session.id` is the player's `X-Plex-Session-Identifier` and `sessionKey` the server's number, as captured on the reference. The state comes from `/:/timeline`, Direct Play is not tracked yet, and the other attributes follow what Plex Web reads. |
+| `done` | `GET` | `/status/sessions/background` | admin | Get background tasks | Always empty: no optimizer or download conversions run here. The reference's answer when none run, byte for byte. |
 | `stub` | `GET` | `/status/sessions/history/all` | user | List Playback History |  |
 | `stub` | `DELETE` | `/status/sessions/history/{historyId}` | admin | Delete Single History Item |  |
 | `stub` | `GET` | `/status/sessions/history/{historyId}` | admin | Get Single History Item |  |
-| `stub` | `POST` | `/status/sessions/terminate` | admin | Terminate a session |  |
+| `partial` | `POST` | `/status/sessions/terminate` | admin | Terminate a session | Also `GET`, what Plex Web sends. `terminatePlaybackSession` on the official API for every session under that `Session.id`: the conversion stops at once and the next `/:/timeline` carries `terminationCode` and `terminationText`. `400` without `sessionId`, `403` empty, `404` unknown. The reference refuses it `401` without a subscription, so the success path is unmeasured. See spec-gaps.md. |
 
 ## Butler
 
@@ -435,7 +435,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `done` | `PUT` | `/:/scrobble` | user | Mark an item as played | Also `GET`, as the reference. A film or an episode once more, counted on its season and series; a season or a series by each of its episodes. Refused as the reference refuses: `400` without `identifier` or `key`, `404` for a foreign provider, a `uri` or an unknown item. See spec-gaps.md. |
-| `partial` | `POST` | `/:/timeline` | user | Report media timeline | Also `GET`, what Plex Web sends, and `PUT`. Updates the state and position of a Direct Stream session; on `stopped` it closes the session and stops its conversion, as the reference does. `TranscodeSession` carries the reference's full field set, from the live conversion (`progress`, `speed`, `maxOffsetAvailable`…). Records the watch state of Direct Play and Direct Stream alike, and answers as the reference: `ignore`, `progress` or `complete`, with `skipCount`, `viewCount` and `viewOffset`. Identical to the reference over an 18-step sequence. See spec-gaps.md. |
+| `partial` | `POST` | `/:/timeline` | user | Report media timeline | Also `GET`, what Plex Web sends, and `PUT`. Updates the state and position of a Direct Stream session; on `stopped` it ends the playback's sessions and their conversions through `reportPlayback`, as the reference does; after a termination it answers `terminationCode`/`terminationText`. `TranscodeSession` carries the reference's full field set, from the live conversion (`progress`, `speed`, `maxOffsetAvailable`…). Records the watch state of Direct Play and Direct Stream alike, and answers as the reference: `ignore`, `progress` or `complete`, with `skipCount`, `viewCount` and `viewOffset`. Identical to the reference over an 18-step sequence. See spec-gaps.md. |
 | `done` | `PUT` | `/:/unscrobble` | user | Mark an item as unplayed | Also `GET`. An episode alone, a season with its episodes, a series with everything below it; a series keeps its count when a season is forgotten. |
 
 ## Updater

@@ -5,6 +5,7 @@
 //! it records is the stream's identity: `stopStream` names it.
 
 use async_graphql::{Context, Enum, InputObject, Result, SimpleObject, ID};
+use open_plex_core::lifecycle::StartError;
 use open_plex_core::playback::{NewPlaybackSession, PlaybackOutput, StreamDecision};
 use open_plex_core::stream::{
     Delivery, StartedStream, StreamError, StreamLimits, StreamOrder, StreamProtocol, StreamQuality,
@@ -203,6 +204,8 @@ pub enum StreamErrorCode {
     SubtitleNotDeliverable,
     /// Too many streams are running.
     TooManyStreams,
+    /// The key names a session the operator terminated: its player has to stop first.
+    SessionTerminated,
 }
 
 /// A problem with what was asked, as opposed to a failure of the server.
@@ -227,6 +230,7 @@ impl StreamUserError {
             }
             StreamErrorCode::SubtitleNotDeliverable => "this subtitle cannot be delivered this way",
             StreamErrorCode::TooManyStreams => "too many streams are running",
+            StreamErrorCode::SessionTerminated => "this session was terminated",
         };
         Self {
             field: vec!["input".to_owned(), field.to_owned()],
@@ -416,10 +420,31 @@ pub(crate) async fn start_stream(
     let delivery = order.delivery;
     let quality = input.quality;
     let playback_id = order.playback.clone();
+    let position_ms = input.position_ms.max(0);
+    let record = |started: &StartedStream| NewPlaybackSession {
+        key,
+        user: caller.user,
+        playback_id,
+        item,
+        part: file,
+        client: input.client_identifier.clone(),
+        product: input.client_product.clone(),
+        video: started.video,
+        audio: started.audio,
+        position_ms,
+        output: started.output,
+    };
 
-    let started = match api.streams.start(order).await {
+    let (started, session) = match api.lifecycle().start(order, record, now_epoch()).await {
         Ok(started) => started,
-        Err(error) => {
+        Err(StartError::Storage(error)) => return Err(error.into()),
+        Err(StartError::Terminated) => {
+            return refuse(StreamUserError::new(
+                "key",
+                StreamErrorCode::SessionTerminated,
+            ));
+        }
+        Err(StartError::Stream(error)) => {
             let (field, code) = match error {
                 StreamError::MissingFile => ("file", StreamErrorCode::FileMissing),
                 StreamError::VideoNotConvertible => ("file", StreamErrorCode::VideoNotConvertible),
@@ -430,39 +455,6 @@ pub(crate) async fn start_stream(
                 StreamError::Engine(_) => return Err(error.into()),
             };
             return refuse(StreamUserError::new(field, code));
-        }
-    };
-    for replaced in &started.replaced {
-        if let Err(error) = api.playback.end(replaced).await {
-            // It expires by itself.
-            tracing::warn!(%error, "could not close a replaced playback session");
-        }
-    }
-    let recorded = api
-        .playback
-        .start(
-            NewPlaybackSession {
-                key: key.clone(),
-                user: caller.user,
-                playback_id,
-                item,
-                part: file,
-                client: input.client_identifier,
-                product: input.client_product,
-                video: started.video,
-                audio: started.audio,
-                position_ms: input.position_ms.max(0),
-                output: started.output,
-            },
-            now_epoch(),
-        )
-        .await;
-    let session = match recorded {
-        Ok(session) => session,
-        Err(error) => {
-            // A stream nobody can see or stop must not keep running.
-            api.streams.stop(&key);
-            return Err(error.into());
         }
     };
     Ok(StartStreamPayload {
@@ -523,10 +515,7 @@ pub(crate) async fn stop_stream(
         None => None,
     };
     let stopped = match session.filter(|session| caller.owns(session.user)) {
-        Some(session) => {
-            let stopped = api.streams.stop(&session.key);
-            api.playback.end(&session.key).await? || stopped
-        }
+        Some(session) => api.lifecycle().end(&session.key).await?,
         None => false,
     };
     Ok(StopStreamPayload {

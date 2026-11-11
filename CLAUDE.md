@@ -114,6 +114,13 @@ without them saying so.
   the account's token, because a player hands those URLs to components that never see the
   account. Direct play gets a file address the same way. The stream is identified by the
   playback session it records, which `stopStream` names.
+- **A session and its stream end together, through `core::lifecycle`.** Whatever ends one — the
+  player stopping, `stopStream` or Plex's `/stop`, a replacing start, the operator's
+  termination, the expiry sweep, an idle stream, a stream read whose session is gone, the server
+  stopping — stops the process, forgets the stream's addresses and secret, lets the directory
+  go and deletes the row, under a per-key lock (`SessionLocks`, shared by the schema, the stream
+  routes and the sweep). An automatic end checks its reason again under the lock. Every sign of
+  life counts for both; a read of `/streams/{id}/…` counts at most every 30 seconds.
 - **HTTP token authentication lives in `server`**, because both surfaces share it. It attaches a
   `Principal`; each surface then enforces scope in its own idiom (`Caller`/`AdminCaller`
   extractors on the Plex side, request data on the GraphQL side).
@@ -250,7 +257,9 @@ Places where we knowingly answer differently, each decided rather than overlooke
   that a player or a link hovering between two rungs does not restart the process back and
   forth; the rules and their values are in `docs/spec-gaps.md`.
 - **`/:/timeline` with `state=stopped` tears the conversion down**, as the reference does: its
-  process would otherwise run on for five minutes holding a session slot. The `TranscodeSession`
+  process would otherwise run on for five minutes holding a session slot. `/stop` ends the
+  session with its conversion, where the reference keeps listing it until the timeline stops. The
+  `TranscodeSession`
   it reports carries the reference's full field set, filled from the live conversion
   (`transcoder::session_status`): decisions, codecs, `progress`, `speed`, `maxOffsetAvailable`.
 - **A chunk whose process has ended is refused after 5 seconds, not at once.** The repo owner's
@@ -260,8 +269,17 @@ Places where we knowingly answer differently, each decided rather than overlooke
   answers `404` at once, as on the reference.
 - **Playback sessions are stored, with automatic expiry.** The reference keeps them in memory.
   Ours are rows in `playback_session`, exposed on the official API; every sign of life pushes
-  `expires_at` forward 300 seconds, reads skip what has expired, a sweep deletes it, and startup
-  clears everything.
+  `expires_at` forward 300 seconds, reads skip what has expired, a sweep every 30 seconds ends it
+  with its stream, and startup and Ctrl-C clear everything; the sweep also removes transcode
+  directories no session owns, which a process outliving a killed server leaves behind. A direct-play stream lives as long as
+  its session, no longer six hours.
+- **The operator terminates a session on the official API first** (`terminatePlaybackSession`,
+  operator only); `/status/sessions/terminate` binds onto it, by `Session.id`, which is now the
+  player's session identifier as on the reference. The stream stops at once; the row stays,
+  listed nowhere, until the player stops or one more lifetime passes, so that its next timeline
+  carries `terminationCode` 2006 and the reason; a start under its key is refused meanwhile. The
+  reference refuses terminate `401` without a subscription: the success path follows its binary
+  and Plex Web, not a capture.
 - **The transcoder's callbacks are the transcoder's, and carry no token.**
   `/transcoder/{session}/{run}/…` (`source`, `manifest`, `progress`) is how the process reads its
   source and reports its segments, served by `server::callbacks` straight over the transcoder:
@@ -485,6 +503,11 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
 - ✅ **native streams**: `startStream` and `stopStream` on the official API — direct play,
   direct stream or transcode, decided from the file and the player's limits — read at
   `/streams/{id}/…?token=…`, and Plex's `start.mpd`/`start.m3u8` redirecting there;
+- ✅ **the end of a session**: every end path converges on `core::lifecycle` (stream and row
+  together, per-key locks, the sweep re-checking under them), reads of a native stream keep its
+  session alive, Ctrl-C ends everything; `terminatePlaybackSession` and
+  `/status/sessions/terminate`, `playbackTermination` and the timeline's `terminationCode`, and
+  `/status/sessions/background`, always empty;
 - ✅ **editing films, series and episodes**: `updateMovie`, `updateShow`, `updateEpisode` on the
   official API, for a library's admins and the operator, with per-field locks (`lock`,
   `unlock`, `lockedFields`) kept in `item_field_lock` and imported from Plex's `user_fields`;

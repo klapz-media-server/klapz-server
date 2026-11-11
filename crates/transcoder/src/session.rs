@@ -37,6 +37,10 @@ const MAX_SESSIONS: usize = 4;
 /// A client that stopped asking has gone away without saying so.
 const IDLE_LIFETIME: Duration = Duration::from_secs(300);
 
+/// How old a directory no session owns must be to be removed: a session creates its directory
+/// a moment before it is registered.
+const ORPHAN_AGE: Duration = Duration::from_secs(60);
+
 /// How long a request for a playlist or a segment waits for the process to reach it.
 const WAIT_FOR_OUTPUT: Duration = Duration::from_secs(20);
 
@@ -1227,6 +1231,38 @@ enum Restart {
     ServerSwitch,
 }
 
+fn remove_unowned(root: &Path, owned: &std::collections::HashSet<String>, settled_after: Duration) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if owned.contains(name.to_string_lossy().as_ref()) {
+            continue;
+        }
+        let settled = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age >= settled_after);
+        // A process still running holds it: the next sweep tries again.
+        if settled && std::fs::remove_dir_all(entry.path()).is_ok() {
+            tracing::info!(directory = %entry.path().display(), "removed an orphaned transcode directory");
+        }
+    }
+}
+
+/// Marks a session taken out of the table closed, and tells its process to stop.
+fn close(session: &Session) {
+    session.closed.store(true, Ordering::Release);
+    let stop =
+        session.with_process(|process| process.as_ref().map(|process| Arc::clone(&process.stop)));
+    if let Some(stop) = stop {
+        stop.notify_one();
+    }
+}
+
 impl Transcoder {
     fn session(&self, id: &str) -> Option<Arc<Session>> {
         let found = self
@@ -1263,6 +1299,25 @@ impl Transcoder {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => tracing::warn!(%error, "could not remove old transcode sessions"),
+        }
+    }
+
+    /// Removes the directories no session owns. A process outlives a server killed outright,
+    /// until its source stops answering, and holds its directory until then: the emptying at
+    /// startup misses it, and this catches it once the process is gone.
+    pub async fn remove_orphan_directories(&self) {
+        let owned: std::collections::HashSet<String> = self
+            .sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .map(|session| session.callback.clone())
+            .collect();
+        let root = self.config.sessions_directory.clone();
+        let removal =
+            tokio::task::spawn_blocking(move || remove_unowned(&root, &owned, ORPHAN_AGE)).await;
+        if let Err(error) = removal {
+            tracing::warn!(%error, "could not look for orphaned transcode directories");
         }
     }
 
@@ -1556,35 +1611,67 @@ impl Transcoder {
 
     /// Stops the sessions nobody has asked about for a while.
     pub fn stop_idle_sessions(&self) {
-        let idle: Vec<String> = self
-            .sessions
+        for id in self.idle_sessions() {
+            self.stop_session_if_idle(&id);
+        }
+    }
+
+    /// The sessions nobody has asked about for the idle limit.
+    #[must_use]
+    pub fn idle_sessions(&self) -> Vec<String> {
+        self.sessions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
             .filter(|(_, session)| session.idle_for() > IDLE_LIFETIME)
             .map(|(id, _)| id.clone())
-            .collect();
-        for id in idle {
-            self.stop_session(&id);
-        }
+            .collect()
     }
 
-    /// Whether the session existed.
+    /// Stops the session if nobody has asked about it for the idle limit. Whether it did.
+    pub fn stop_session_if_idle(&self, id: &str) -> bool {
+        let session = {
+            let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+            match sessions.get(id) {
+                Some(session) if session.idle_for() > IDLE_LIFETIME => sessions.remove(id),
+                _ => None,
+            }
+        };
+        session.as_deref().map(close).is_some()
+    }
+
+    /// Whether the session existed. Its process is told to stop; its directory goes once the
+    /// process has exited and nothing reads from it any more.
     pub fn stop_session(&self, id: &str) -> bool {
         let session = self
             .sessions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(id);
-        if let Some(session) = &session {
-            session.closed.store(true, Ordering::Release);
-            let stop = session
-                .with_process(|process| process.as_ref().map(|process| Arc::clone(&process.stop)));
-            if let Some(stop) = stop {
-                stop.notify_one();
+        session.as_deref().map(close).is_some()
+    }
+
+    /// Stops every session, and returns once their processes have exited.
+    pub async fn stop_all_sessions(&self) {
+        let sessions: Vec<Arc<Session>> = self
+            .sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .drain()
+            .map(|(_, session)| session)
+            .collect();
+        let mut supervisors = Vec::new();
+        for session in &sessions {
+            close(session);
+            if let Some(task) = session.with_process(|process| process.as_mut()?.task.take()) {
+                supervisors.push(task);
             }
         }
-        session.is_some()
+        for supervisor in supervisors {
+            if let Err(error) = supervisor.await {
+                tracing::warn!(%error, "a transcoder process's supervisor failed");
+            }
+        }
     }
 
     /// Whether the session exists, without counting as a sign of life.
@@ -2709,6 +2796,65 @@ mod tests {
             .lock()
             .unwrap()
             .insert("known".to_owned(), session);
+    }
+
+    #[test]
+    fn only_a_session_still_idle_is_stopped_for_it() {
+        let transcoder = Transcoder::default();
+        let idle = session_writing_to(scratch_directory(), false);
+        *idle.last_used.lock().unwrap() = Instant::now()
+            .checked_sub(IDLE_LIFETIME + Duration::from_secs(1))
+            .unwrap();
+        register(&transcoder, idle);
+        let busy = session_writing_to(scratch_directory(), false);
+        transcoder
+            .sessions
+            .lock()
+            .unwrap()
+            .insert("busy".to_owned(), busy);
+
+        assert_eq!(transcoder.idle_sessions(), ["known"]);
+        assert!(!transcoder.stop_session_if_idle("busy"));
+        // A request between the listing and the stop keeps it.
+        assert!(transcoder.ping_session("known"));
+        assert!(!transcoder.stop_session_if_idle("known"));
+        *transcoder.sessions.lock().unwrap()["known"]
+            .last_used
+            .lock()
+            .unwrap() = Instant::now()
+            .checked_sub(IDLE_LIFETIME + Duration::from_secs(1))
+            .unwrap();
+        assert!(transcoder.stop_session_if_idle("known"));
+        assert!(!transcoder.has_session("known"));
+        assert!(transcoder.has_session("busy"));
+    }
+
+    #[test]
+    fn only_a_settled_directory_no_session_owns_is_removed() {
+        let root = scratch_directory();
+        for name in ["owned", "orphan"] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+        }
+        let owned = std::iter::once("owned".to_owned()).collect();
+        // Just created, as a session's is before it is registered.
+        remove_unowned(&root, &owned, ORPHAN_AGE);
+        assert!(root.join("orphan").exists());
+        remove_unowned(&root, &owned, Duration::ZERO);
+        assert!(root.join("owned").exists());
+        assert!(!root.join("orphan").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn stopping_every_session_empties_the_table_and_their_directories() {
+        let transcoder = Transcoder::default();
+        let directory = scratch_directory();
+        std::fs::create_dir_all(&directory).unwrap();
+        register(&transcoder, session_writing_to(directory.clone(), false));
+        transcoder.stop_all_sessions().await;
+        assert!(!transcoder.has_session("known"));
+        // The last reference gone, the directory goes with it.
+        assert!(!directory.exists());
     }
 
     #[test]

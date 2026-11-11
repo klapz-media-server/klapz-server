@@ -1,9 +1,9 @@
 //! Stored playback sessions.
 
-use open_plex_core::page::{Page, Window};
+use open_plex_core::page::{Page, Window, MAX_ITEMS};
 use open_plex_core::playback::{
     NewPlaybackSession, PlaybackError, PlaybackOutput, PlaybackRepository, PlaybackSession,
-    PlaybackState, StreamDecision, SESSION_LIFETIME_SECONDS,
+    PlaybackState, StreamDecision, Termination, SESSION_LIFETIME_SECONDS,
 };
 use open_plex_core::{PartId, RatingKey, UserId};
 use sea_orm::sea_query::OnConflict;
@@ -84,7 +84,18 @@ fn to_domain(row: playback_session::Model) -> PlaybackSession {
         started_at: row.started_at,
         updated_at: row.updated_at,
         expires_at: row.expires_at,
+        termination: row.terminated_at.map(|at| Termination {
+            at,
+            reason: row.termination_reason,
+        }),
     }
+}
+
+/// A session still playing: not expired, not terminated.
+fn live(now: i64) -> sea_orm::Condition {
+    sea_orm::Condition::all()
+        .add(Column::ExpiresAt.gt(now))
+        .add(Column::TerminatedAt.is_null())
 }
 
 #[async_trait::async_trait]
@@ -114,6 +125,8 @@ impl PlaybackRepository for SqlPlaybackRepository {
             started_at: ActiveValue::Set(now),
             updated_at: ActiveValue::Set(now),
             expires_at: ActiveValue::Set(now + SESSION_LIFETIME_SECONDS),
+            terminated_at: ActiveValue::NotSet,
+            termination_reason: ActiveValue::NotSet,
         };
         Entity::insert(row)
             .on_conflict(
@@ -157,7 +170,7 @@ impl PlaybackRepository for SqlPlaybackRepository {
             .col_expr(Column::UpdatedAt, now.into())
             .col_expr(Column::ExpiresAt, (now + SESSION_LIFETIME_SECONDS).into())
             .filter(Column::SessionKey.eq(key))
-            .filter(Column::ExpiresAt.gt(now))
+            .filter(live(now))
             .exec(&self.connection)
             .await
             .map_err(storage)?;
@@ -170,27 +183,42 @@ impl PlaybackRepository for SqlPlaybackRepository {
         state: PlaybackState,
         position_ms: Option<i64>,
         now: i64,
-    ) -> Result<bool, PlaybackError> {
+    ) -> Result<Vec<String>, PlaybackError> {
+        let reached: Vec<String> = Entity::find()
+            .select_only()
+            .column(Column::SessionKey)
+            .filter(Column::PlaybackId.eq(playback_id))
+            .filter(live(now))
+            .limit(u64::from(MAX_ITEMS))
+            .into_tuple()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        if reached.is_empty() {
+            return Ok(reached);
+        }
         let mut update = Entity::update_many()
             .col_expr(Column::State, state_name(state).into())
             .col_expr(Column::UpdatedAt, now.into())
             .col_expr(Column::ExpiresAt, (now + SESSION_LIFETIME_SECONDS).into())
-            .filter(Column::PlaybackId.eq(playback_id))
-            .filter(Column::ExpiresAt.gt(now));
+            .filter(Column::SessionKey.is_in(reached.iter().map(String::as_str)));
         if let Some(position_ms) = position_ms {
             update = update.col_expr(Column::PositionMs, position_ms.into());
         }
-        let result = update.exec(&self.connection).await.map_err(storage)?;
-        Ok(result.rows_affected > 0)
+        update.exec(&self.connection).await.map_err(storage)?;
+        Ok(reached)
     }
 
-    async fn end_playback(&self, playback_id: &str) -> Result<bool, PlaybackError> {
-        let result = Entity::delete_many()
+    async fn keys_of_playback(&self, playback_id: &str) -> Result<Vec<String>, PlaybackError> {
+        Entity::find()
+            .select_only()
+            .column(Column::SessionKey)
             .filter(Column::PlaybackId.eq(playback_id))
-            .exec(&self.connection)
+            .limit(u64::from(MAX_ITEMS))
+            .into_tuple()
+            .all(&self.connection)
             .await
-            .map_err(storage)?;
-        Ok(result.rows_affected > 0)
+            .map_err(storage)
     }
 
     async fn end(&self, key: &str) -> Result<bool, PlaybackError> {
@@ -202,13 +230,66 @@ impl PlaybackRepository for SqlPlaybackRepository {
         Ok(result.rows_affected > 0)
     }
 
+    async fn end_if_expired(&self, key: &str, now: i64) -> Result<bool, PlaybackError> {
+        let result = Entity::delete_many()
+            .filter(Column::SessionKey.eq(key))
+            .filter(Column::ExpiresAt.lte(now))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(result.rows_affected > 0)
+    }
+
+    async fn terminate(
+        &self,
+        key: &str,
+        reason: Option<String>,
+        now: i64,
+    ) -> Result<Option<PlaybackSession>, PlaybackError> {
+        let result = Entity::update_many()
+            .col_expr(Column::TerminatedAt, now.into())
+            .col_expr(Column::TerminationReason, reason.into())
+            .col_expr(Column::UpdatedAt, now.into())
+            .col_expr(Column::ExpiresAt, (now + SESSION_LIFETIME_SECONDS).into())
+            .filter(Column::SessionKey.eq(key))
+            .filter(live(now))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        if result.rows_affected == 0 {
+            return Ok(None);
+        }
+        Ok(Entity::find()
+            .filter(Column::SessionKey.eq(key))
+            .one(&self.connection)
+            .await
+            .map_err(storage)?
+            .map(to_domain))
+    }
+
+    async fn termination(
+        &self,
+        playback_id: &str,
+        now: i64,
+    ) -> Result<Option<Termination>, PlaybackError> {
+        Ok(Entity::find()
+            .filter(Column::PlaybackId.eq(playback_id))
+            .filter(Column::ExpiresAt.gt(now))
+            .filter(Column::TerminatedAt.is_not_null())
+            .order_by(Column::TerminatedAt, Order::Desc)
+            .one(&self.connection)
+            .await
+            .map_err(storage)?
+            .and_then(|row| to_domain(row).termination))
+    }
+
     async fn active(
         &self,
         only: Option<UserId>,
         now: i64,
         window: Window,
     ) -> Result<Page<PlaybackSession>, PlaybackError> {
-        let mut select = Entity::find().filter(Column::ExpiresAt.gt(now));
+        let mut select = Entity::find().filter(live(now));
         if let Some(user) = only {
             select = select.filter(Column::UserId.eq(user.get()));
         }
@@ -247,13 +328,16 @@ impl PlaybackRepository for SqlPlaybackRepository {
             .map(to_domain))
     }
 
-    async fn delete_expired(&self, now: i64) -> Result<u64, PlaybackError> {
-        Ok(Entity::delete_many()
+    async fn expired(&self, now: i64) -> Result<Vec<String>, PlaybackError> {
+        Entity::find()
+            .select_only()
+            .column(Column::SessionKey)
             .filter(Column::ExpiresAt.lte(now))
-            .exec(&self.connection)
+            .limit(u64::from(MAX_ITEMS))
+            .into_tuple()
+            .all(&self.connection)
             .await
-            .map_err(storage)?
-            .rows_affected)
+            .map_err(storage)
     }
 
     async fn delete_all(&self) -> Result<u64, PlaybackError> {

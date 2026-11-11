@@ -90,6 +90,7 @@ fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     });
     router(PlexState::new(identity, schema, accounts))
 }
@@ -807,6 +808,7 @@ fn items_app() -> axum::Router {
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(watch),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     });
     authenticated(router(PlexState::new(identity, schema, accounts)))
 }
@@ -1702,6 +1704,7 @@ fn app_as_user(user: i64, role: LibraryRole) -> axum::Router {
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     });
     router(PlexState::new(identity, schema, accounts))
         .layer(axum::Extension(user_principal(user, role)))
@@ -1750,6 +1753,7 @@ async fn app_as_paired_user() -> axum::Router {
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     });
     router(PlexState::new(identity, schema, accounts))
         .layer(axum::Extension(user_principal(1, LibraryRole::Viewer)))
@@ -2070,6 +2074,7 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     });
     let app = authenticated(router(PlexState::new(identity, schema, accounts)));
 
@@ -3222,6 +3227,7 @@ fn editing_app(principal: Principal) -> axum::Router {
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     });
     router(PlexState::new(identity, schema, accounts)).layer(axum::Extension(principal))
 }
@@ -3875,4 +3881,201 @@ async fn a_search_of_one_type_finds_that_kind_only_and_no_track() {
             "{kind}"
         );
     }
+}
+
+/// An app with one session playing under `key`, its sessions and its stub engine.
+async fn playing(
+    key: &str,
+    playback_id: Option<&str>,
+) -> (
+    axum::Router,
+    std::sync::Arc<open_plex_core::testing::InMemoryPlayback>,
+    std::sync::Arc<open_plex_core::testing::StubStreams>,
+) {
+    use open_plex_core::now_epoch;
+    use open_plex_core::playback::{
+        NewPlaybackSession, PlaybackOutput, PlaybackRepository, StreamDecision,
+    };
+
+    let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
+    let accounts = Accounts::new(vec![Credential::new(TOKEN, "owner", Scope::Admin)]);
+    let (library, metadata) = catalog();
+    let playback = std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default());
+    let streams = std::sync::Arc::new(open_plex_core::testing::StubStreams::default());
+    let schema = build_schema(ApiContext {
+        capabilities: ServerCapabilities::new(identity.clone(), 0),
+        library: std::sync::Arc::new(library),
+        metadata: std::sync::Arc::new(metadata),
+        playback: playback.clone(),
+        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        streams: streams.clone(),
+        session_locks: std::sync::Arc::default(),
+    });
+    playback
+        .start(
+            NewPlaybackSession {
+                key: key.to_owned(),
+                user: None,
+                playback_id: playback_id.map(str::to_owned),
+                item: RatingKey::new(100),
+                part: PartId::new(1),
+                client: None,
+                product: None,
+                video: StreamDecision::Copy,
+                audio: StreamDecision::Copy,
+                position_ms: 0,
+                output: PlaybackOutput::default(),
+            },
+            now_epoch(),
+        )
+        .await
+        .expect("start");
+    let app = authenticated(router(PlexState::new(identity, schema, accounts)));
+    (app, playback, streams)
+}
+
+async fn send(app: axum::Router, method: &str, uri: &str) -> StatusCode {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("X-Plex-Token", TOKEN)
+        .body(Body::empty())
+        .expect("request builds");
+    app.oneshot(request)
+        .await
+        .expect("router responds")
+        .status()
+}
+
+#[tokio::test]
+async fn the_operator_terminates_a_session_and_its_player_hears_why() {
+    use open_plex_core::playback::PlaybackRepository;
+
+    let (app, playback, streams) = playing("transcode-session", Some("tab")).await;
+
+    // As on the reference: the session's id is the player's, and its key a number.
+    let (_, body) = get_from(app.clone(), "/status/sessions", Some("application/json")).await;
+    let listed: Value = serde_json::from_str(&body).expect("json body");
+    let listed = &listed["MediaContainer"]["Metadata"][0];
+    assert_eq!(listed["Session"]["id"], "tab");
+    assert_eq!(listed["sessionKey"], "1");
+    assert_eq!(
+        listed["TranscodeSession"]["key"],
+        "/transcode/sessions/transcode-session"
+    );
+
+    let terminate = "/status/sessions/terminate";
+    assert_eq!(
+        send(app.clone(), "POST", terminate).await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        send(app.clone(), "POST", &format!("{terminate}?sessionId=")).await,
+        StatusCode::FORBIDDEN
+    );
+    // The conversion's key is not the session's id.
+    assert_eq!(
+        send(
+            app.clone(),
+            "POST",
+            &format!("{terminate}?sessionId=transcode-session")
+        )
+        .await,
+        StatusCode::NOT_FOUND
+    );
+    // Plex Web sends it as `GET`.
+    assert_eq!(
+        send(
+            app.clone(),
+            "GET",
+            &format!("{terminate}?sessionId=tab&reason=Bedtime%20now")
+        )
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        *streams.stopped.lock().expect("lock"),
+        ["transcode-session"]
+    );
+    assert_eq!(
+        get_from(app.clone(), "/status/sessions", Some("application/json"))
+            .await
+            .1,
+        r#"{"MediaContainer":{"size":0}}"#
+    );
+    assert_eq!(
+        send(app.clone(), "GET", &format!("{terminate}?sessionId=tab")).await,
+        StatusCode::NOT_FOUND
+    );
+    // Its conversion is gone: a ping says so.
+    assert_eq!(
+        send(
+            app.clone(),
+            "GET",
+            "/video/:/transcode/universal/ping?session=transcode-session"
+        )
+        .await,
+        StatusCode::NOT_FOUND
+    );
+
+    let (_, answer) = timeline(
+        app.clone(),
+        "GET",
+        "ratingKey=100&state=playing&time=2000&X-Plex-Session-Identifier=tab",
+        "application/json",
+    )
+    .await;
+    let answer: Value = serde_json::from_str(&answer).expect("json body");
+    assert_eq!(answer["MediaContainer"]["terminationCode"], 2006);
+    assert_eq!(answer["MediaContainer"]["terminationText"], "Bedtime now");
+    assert!(answer["MediaContainer"].get("TranscodeSession").is_none());
+
+    // The player stops, having shown the reason: the session is gone for good.
+    let (_, answer) = timeline(
+        app.clone(),
+        "GET",
+        "ratingKey=100&state=stopped&time=2000&X-Plex-Session-Identifier=tab",
+        "application/json",
+    )
+    .await;
+    assert!(!answer.contains("termination"));
+    assert!(playback
+        .keys_of_playback("tab")
+        .await
+        .expect("keys")
+        .is_empty());
+}
+
+#[tokio::test]
+async fn ping_and_stop_answer_from_the_official_api() {
+    let (app, _, streams) = playing("conversion", None).await;
+
+    let ping = "/video/:/transcode/universal/ping?session=conversion";
+    let stop = "/video/:/transcode/universal/stop?session=conversion";
+    assert_eq!(send(app.clone(), "GET", ping).await, StatusCode::OK);
+    assert_eq!(send(app.clone(), "GET", stop).await, StatusCode::OK);
+    assert_eq!(*streams.stopped.lock().expect("lock"), ["conversion"]);
+    // As on the reference once it is stopped.
+    assert_eq!(send(app.clone(), "GET", stop).await, StatusCode::NOT_FOUND);
+    assert_eq!(send(app.clone(), "GET", ping).await, StatusCode::NOT_FOUND);
+    assert_eq!(
+        send(app, "GET", "/video/:/transcode/universal/ping").await,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn background_tasks_answer_the_empty_container_the_reference_sends_when_idle() {
+    // Captured on the reference with no optimizer or download running, in both formats.
+    let (status, _, body) = get("/status/sessions/background", Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, r#"{"MediaContainer":{"size":0}}"#);
+    let (_, _, xml) = get("/status/sessions/background", None).await;
+    assert_eq!(
+        xml,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer size=\"0\">\n</MediaContainer>\n"
+    );
 }

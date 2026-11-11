@@ -2,7 +2,8 @@
 //!
 //! A session expires by itself: a player that vanishes sends nothing to say so, and a crash
 //! leaves its rows behind. Every sign of life pushes `expires_at` forward; a session past it is
-//! no longer read, and is deleted by the next sweep.
+//! no longer read, and is deleted by the next sweep. Ending one is `crate::lifecycle`'s: the
+//! row and the stream behind it go together.
 
 use crate::ids::{PartId, RatingKey, UserId};
 use crate::page::{Page, Window};
@@ -54,6 +55,16 @@ pub struct NewPlaybackSession {
     pub output: PlaybackOutput,
 }
 
+/// The operator ending a session. The session stays readable, and stops counting as playing,
+/// until its player hears of it: a player that stops, or the session's expiry, removes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Termination {
+    /// Epoch seconds.
+    pub at: i64,
+    /// What the operator told the player, if anything.
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaybackSession {
     pub id: i64,
@@ -73,6 +84,7 @@ pub struct PlaybackSession {
     pub started_at: i64,
     pub updated_at: i64,
     pub expires_at: i64,
+    pub termination: Option<Termination>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -84,33 +96,55 @@ pub enum PlaybackError {
 #[async_trait::async_trait]
 pub trait PlaybackRepository: Send + Sync + std::fmt::Debug {
     /// Opens a session, or restarts the one already under this key: a player asks more than
-    /// once for the same start.
+    /// once for the same start. A restart keeps a termination: it was the session's.
     async fn start(
         &self,
         session: NewPlaybackSession,
         now: i64,
     ) -> Result<PlaybackSession, PlaybackError>;
 
-    /// Pushes a session's expiry forward. Whether it exists and has not expired.
+    /// Pushes a session's expiry forward. Whether it exists, has not expired and was not
+    /// terminated.
     async fn touch(&self, key: &str, now: i64) -> Result<bool, PlaybackError>;
 
-    /// Records where a player stands, on every unexpired session of its playback. Without a
-    /// position, the last one stays. Whether there was any.
+    /// Records where a player stands, on every live session of its playback. Without a
+    /// position, the last one stays. The keys of the sessions it reached.
     async fn report(
         &self,
         playback_id: &str,
         state: PlaybackState,
         position_ms: Option<i64>,
         now: i64,
-    ) -> Result<bool, PlaybackError>;
+    ) -> Result<Vec<String>, PlaybackError>;
 
-    /// Closes every session of a playback. Whether there was any.
-    async fn end_playback(&self, playback_id: &str) -> Result<bool, PlaybackError>;
+    /// The keys of a playback's sessions, terminated and expired ones included, at most
+    /// `page::MAX_ITEMS`.
+    async fn keys_of_playback(&self, playback_id: &str) -> Result<Vec<String>, PlaybackError>;
 
     /// Closes a session. Whether it existed.
     async fn end(&self, key: &str) -> Result<bool, PlaybackError>;
 
-    /// The sessions that have not expired, oldest first. `only` narrows it to one user's.
+    /// Closes a session if it has expired by `now`. Whether it did.
+    async fn end_if_expired(&self, key: &str, now: i64) -> Result<bool, PlaybackError>;
+
+    /// Marks a live session terminated, and gives its player one more lifetime to hear of it.
+    /// The session as it now stands, unless there was no live one under this key.
+    async fn terminate(
+        &self,
+        key: &str,
+        reason: Option<String>,
+        now: i64,
+    ) -> Result<Option<PlaybackSession>, PlaybackError>;
+
+    /// The termination of a playback whose player has not stopped yet.
+    async fn termination(
+        &self,
+        playback_id: &str,
+        now: i64,
+    ) -> Result<Option<Termination>, PlaybackError>;
+
+    /// The sessions playing: neither expired nor terminated, oldest first. `only` narrows it
+    /// to one user's.
     async fn active(
         &self,
         only: Option<UserId>,
@@ -118,11 +152,11 @@ pub trait PlaybackRepository: Send + Sync + std::fmt::Debug {
         window: Window,
     ) -> Result<Page<PlaybackSession>, PlaybackError>;
 
-    /// One session by its identifier, unless it has expired.
+    /// One session by its identifier, unless it has expired. A terminated one is still found.
     async fn session(&self, id: i64, now: i64) -> Result<Option<PlaybackSession>, PlaybackError>;
 
-    /// Deletes the expired sessions, and says how many there were.
-    async fn delete_expired(&self, now: i64) -> Result<u64, PlaybackError>;
+    /// The keys of the sessions expired by `now`, at most `page::MAX_ITEMS`.
+    async fn expired(&self, now: i64) -> Result<Vec<String>, PlaybackError>;
 
     /// Deletes every session. At startup: no process from before is still running.
     async fn delete_all(&self) -> Result<u64, PlaybackError>;

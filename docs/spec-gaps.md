@@ -768,14 +768,75 @@ None of the reference's 71 tables holds a session in progress: only what outlive
 queues and the viewing history. Ours are stored in `playback_session`, by the repo owner's
 decision, and exposed by `playbackSessions` on the official API, which `/status/sessions` reads.
 
-A session expires by itself, 300 seconds after its last sign of life (a `ping`, a playlist or a
-segment fetched), the same limit as the transcoder's idle processes. An expired session is no
-longer read at once, and a sweep every 30 seconds deletes the row and stops the process. At
-startup every row is deleted: no process from an earlier run is still alive.
+A session expires by itself, 300 seconds after its last sign of life, the same limit as the
+transcoder's idle processes. Every sign of life counts for the session and its stream together:
+a `ping`, a timeline report, `touchPlaybackSession`, `reportPlayback`, a playlist or a segment
+fetched from the Plex routes, and a read of a stream's own address (`/streams/{id}/…`), which
+pushes the session's expiry forward at most every 30 seconds. An expired session is no longer
+read at once. At startup every row is deleted and the transcoder's directory emptied. A server
+killed outright (not stopped with Ctrl-C) leaves its processes running until their source, which
+they read back from the server, stops answering: measured here, 5 to 15 seconds. One still alive
+at the next start holds its directory, so the sweep also removes any directory no session owns
+once nothing has written to it for 60 seconds.
 
-`/status/sessions` cannot be held against the reference, whose files are not on this machine: its
-attributes are what Plex Web reads. `Player.state` is what `/:/timeline` last reported. Direct Play
-creates no session: only the timeline could reveal one, and we do not open one from it.
+In `/status/sessions`, `Session.id` and `sessionKey` follow a capture of the reference (the
+player's session identifier, and a number of the server's as a string); the other attributes are
+what Plex Web reads. `Player.state` is what `/:/timeline` last reported. Direct Play through the
+Plex routes creates no session: only the timeline could reveal one, and we do not open one from it.
+
+### Ending a session
+
+A session and its stream begin together and end together (`core::lifecycle`). Whatever ends one
+stops the process, forgets the stream's addresses and their secret, lets its directory go once
+the process has exited, and deletes the row, each change to a key made under that key's lock:
+
+| What ends it | Path |
+| --- | --- |
+| The player stops | `/:/timeline` with `state=stopped`, or `reportPlayback(STOPPED)`: every session of the playback |
+| A client stops the conversion | `/video/:/transcode/universal/stop`, `endPlaybackSession`, `stopStream` |
+| A new start replaces it | a change of quality under the same playback (`startStream`) |
+| The operator | `/status/sessions/terminate`, `terminatePlaybackSession` (below) |
+| Nobody gives a sign of life | the sweep, every 30 seconds: a row past its expiry, or a stream whose process has gone idle for 300 seconds or has been stopped |
+| A stream read whose session is gone | the stream is stopped there and then, and answers `404` |
+| The server stops | Ctrl-C ends every session before the server stops listening, then waits 5 seconds at most for its connections |
+
+An automatic end checks again under the lock that its reason still holds, so a player restarting
+under the same key between the sweep's listing and its deletion keeps what it started. A file
+played as it is (direct play through `startStream`) lives as long as its session, where it used
+to stay reachable for six hours: a player keeps it with `reportPlayback` or by reading it.
+
+Measured on the reference with a remux of its test film (library 27): `stop` answers `200` once
+and `404` after, as does `ping`; the reference then keeps listing the session in
+`/status/sessions`, its `TranscodeSession` still there, until the player's timeline reports
+`stopped`. Ours ends the session with its conversion, by the repo owner's decision that a
+session never outlives its stream.
+
+### Terminating a session
+
+`/status/sessions/terminate` is a subscription feature on the reference: without one it answers
+`401` to any `sessionId`, known or not, and on every method, so only its refusals could be
+measured. `400` with no `sessionId` at all is the reference's, measured; `403` for an empty one
+and `404` for an unknown one are the spec's. `sessionId` is `Session.id` from `/status/sessions`,
+which on the reference is the player's `X-Plex-Session-Identifier`, measured; it was the
+conversion's key here before, and now follows the reference. Plex Web calls it with `GET`, so
+both `GET` and `POST` are served.
+
+What a terminated player sees comes from the reference's binary and Plex Web, not from a capture:
+the binary logs `Denying access to transcode of key %s due to terminated session` and carries
+`terminationCode`, `terminationText` and the text `Admin Terminated Playback.` in its decision
+table; Plex Web stops playback with `terminationText` as the error when a timeline answer holds a
+`terminationCode`. Ours stops the conversion at once and keeps the row, marked terminated and
+listed nowhere, for one more lifetime: the player's next timeline answers
+`terminationCode="2006"` and the operator's `reason` as `terminationText`, or
+`Admin Terminated Playback.` without one. The code is the one Plex's published decision codes
+give that text; Plex Web only checks that one is there. The player's `stopped` then removes the
+row. Until then a start under the same key is refused, as the binary's log line says the
+reference refuses it: `SESSION_TERMINATED` on `startStream`, `403` on `start.m3u8` and
+`start.mpd`, a status of ours.
+
+`/status/sessions/background` lists the optimizer's and downloads' conversions, none of which run
+here: it is always the empty container the reference answers with none running, measured in both
+formats.
 
 ### One server per user
 

@@ -13,6 +13,7 @@ mod remote_tokens;
 mod streams;
 mod web;
 
+use std::future::IntoFuture as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,6 +23,7 @@ use open_plex_api::{build_schema, ApiContext};
 use open_plex_api_plex::PlexState;
 use open_plex_core::access::{publish_link, AccessRepository, AccountDirectory, Extension};
 use open_plex_core::account::SessionKey;
+use open_plex_core::lifecycle::SessionLocks;
 use open_plex_core::metadata::MetadataRepository;
 use open_plex_core::play_queue::PlayQueueRepository;
 use open_plex_core::playback::PlaybackRepository;
@@ -38,8 +40,11 @@ use tower_http::trace::TraceLayer;
 
 /// Where our own database lives. `rwc` creates it on first run.
 const DEFAULT_DATABASE_URL: &str = "sqlite://open-plex.db?mode=rwc";
-/// How often expired playback sessions are removed. Reads already skip them.
-const EXPIRY_SWEEP: std::time::Duration = std::time::Duration::from_secs(30);
+/// How often expired playback sessions and idle streams are ended. Reads already skip them.
+const EXPIRY_SWEEP: Duration = Duration::from_secs(30);
+/// How long a stopping server waits for its connections once every session has ended: a
+/// player still reading a file can hold one open.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 const DEFAULT_BIND: &str = "127.0.0.1:32500";
 /// How often paired servers announce their address. The reference does it when it starts; the
@@ -80,10 +85,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(SqlMetadataRepository::new(connection.clone()));
     let directory: Arc<dyn AccountDirectory> =
         Arc::new(open_plex_api_plex::plex_tv::PlexTv::new()?);
-    clear_stale_sessions(playback.as_ref()).await?;
     let transcoder = Arc::new(transcoder());
     transcoder.remove_leftover_sessions();
     let streams = Arc::new(streams::Streams::new(Arc::clone(&transcoder)));
+    let locks = Arc::new(SessionLocks::default());
+    let sessions = streams::Sessions {
+        playback: Arc::clone(&playback),
+        streams: Arc::clone(&streams),
+        locks: Arc::clone(&locks),
+    };
+    clear_stale_sessions(&sessions).await?;
     let schema = build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity(), open_plex_core::now_epoch()),
         library,
@@ -94,13 +105,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         directory: Arc::clone(&directory),
         watch: Arc::new(SqlWatchRepository::new(connection)),
         streams: Arc::clone(&streams) as Arc<dyn open_plex_core::stream::StreamEngine>,
+        session_locks: locks,
     });
     tokio::spawn(publish_paired_servers(
         Arc::clone(&users),
         Arc::clone(&directory),
     ));
     let accounts = accounts();
-    let (session_key, sessions) = sessions()?;
+    let (session_key, sign_in) = sign_in()?;
     let access = Arc::new(
         auth::Access::new(accounts.clone(), trusted_networks()?)
             .with_users(users)
@@ -116,16 +128,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // merged in. GraphQL has no such paths and merges cleanly either way.
     let mut plex_state = PlexState::new(identity(), schema.clone(), accounts);
     plex_state.transcoder = Arc::clone(&transcoder);
-    tokio::spawn(expire_playback(
-        Arc::clone(&playback),
-        Arc::clone(&play_queues),
-        Arc::clone(&transcoder),
-    ));
+    let sweep = expire_playback(sessions.clone(), play_queues, Arc::clone(&transcoder));
+    tokio::spawn(sweep);
     let app = open_plex_api_plex::router(plex_state)
-        .merge(graphql::router(schema, sessions))
+        .merge(graphql::router(schema, sign_in))
         .merge(admin::router())
-        .merge(streams::router(streams))
-        .merge(callbacks::router(transcoder));
+        .merge(streams::router(sessions.clone()))
+        .merge(callbacks::router(Arc::clone(&transcoder)));
     let app = with_web_client(app)
         // One token middleware for every surface, so neither can be left unauthenticated by
         // omission.
@@ -153,13 +162,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind = std::env::var("OPENPLEX_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
     let listener = listen(&bind).await?;
     tracing::info!(address = %bind, "open-plex listening");
+    serve_until_signal(listener, app, sessions).await?;
+    transcoder.remove_leftover_sessions();
+    Ok(())
+}
+
+/// Serves until Ctrl-C, then ends every session before giving the connections a moment.
+async fn serve_until_signal(
+    listener: tokio::net::TcpListener,
+    app: axum::Router,
+    sessions: streams::Sessions,
+) -> std::io::Result<()> {
+    let ended = Arc::new(tokio::sync::Notify::new());
     // With the peer's address attached, which is what a trusted network is checked against.
-    axum::serve(
+    let serving = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .await?;
-    Ok(())
+    .with_graceful_shutdown(end_on_signal(sessions, Arc::clone(&ended)));
+    tokio::select! {
+        served = serving.into_future() => served,
+        () = async {
+            ended.notified().await;
+            tokio::time::sleep(SHUTDOWN_GRACE).await;
+        } => {
+            tracing::info!("stopped without waiting for the remaining connections");
+            Ok(())
+        }
+    }
+}
+
+/// Waits for Ctrl-C, then ends every session before the server stops listening: no process,
+/// directory or row outlives the server that started it.
+async fn end_on_signal(sessions: streams::Sessions, ended: Arc<tokio::sync::Notify>) {
+    if let Err(error) = tokio::signal::ctrl_c().await {
+        tracing::warn!(%error, "cannot listen for Ctrl-C: sessions end at the next start");
+        std::future::pending::<()>().await;
+    }
+    tracing::info!("stopping: ending every playback session");
+    if let Err(error) = sessions.lifecycle().end_all().await {
+        tracing::warn!(%error, "could not delete the playback sessions");
+    }
+    ended.notify_one();
 }
 
 /// The kernel grows a connection's send buffer to megabytes on a fast path, and a segment that
@@ -187,9 +231,9 @@ async fn listen(bind: &str) -> std::io::Result<tokio::net::TcpListener> {
 
 /// No process from before this one is still running, so no session from before is either.
 async fn clear_stale_sessions(
-    playback: &dyn PlaybackRepository,
+    sessions: &streams::Sessions,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let cleared = playback.delete_all().await?;
+    let cleared = sessions.lifecycle().end_all().await?;
     if cleared > 0 {
         tracing::info!(
             cleared,
@@ -243,7 +287,7 @@ fn accounts() -> Accounts {
 
 /// The key sessions are signed with, for the transport to check them, and the sign-in
 /// machinery around it, for the schema.
-fn sessions() -> Result<(Arc<SessionKey>, Arc<open_plex_api::Sessions>), String> {
+fn sign_in() -> Result<(Arc<SessionKey>, Arc<open_plex_api::Sessions>), String> {
     let key = Arc::new(session_key()?);
     let sessions = open_plex_api::Sessions::new(Arc::clone(&key), secure_cookies());
     Ok((key, Arc::new(sessions)))
@@ -354,19 +398,28 @@ fn transcoder() -> open_plex_transcoder::Transcoder {
     })
 }
 
-/// Removes what a vanished player left behind: its session, its process and old queues.
+/// Removes what a vanished player left behind: its session with its stream, and old queues;
+/// and what a server killed outright left on disk.
 async fn expire_playback(
-    playback: Arc<dyn PlaybackRepository>,
+    sessions: streams::Sessions,
     play_queues: Arc<dyn PlayQueueRepository>,
     transcoder: Arc<open_plex_transcoder::Transcoder>,
 ) {
     let mut ticks = tokio::time::interval(EXPIRY_SWEEP);
     loop {
         ticks.tick().await;
-        transcoder.stop_idle_sessions();
-        match playback.delete_expired(open_plex_core::now_epoch()).await {
-            Ok(0) => {}
-            Ok(expired) => tracing::info!(expired, "expired playback sessions"),
+        transcoder.remove_orphan_directories().await;
+        match sessions
+            .lifecycle()
+            .sweep(open_plex_core::now_epoch())
+            .await
+        {
+            Ok(swept) if swept == open_plex_core::lifecycle::Swept::default() => {}
+            Ok(swept) => tracing::info!(
+                expired = swept.expired,
+                idle = swept.idle,
+                "ended playback sessions"
+            ),
             Err(error) => tracing::warn!(%error, "could not expire playback sessions"),
         }
         let cutoff =

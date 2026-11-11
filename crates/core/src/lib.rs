@@ -10,6 +10,7 @@ pub mod edit;
 pub mod identity;
 pub mod ids;
 pub mod library;
+pub mod lifecycle;
 pub mod metadata;
 pub mod page;
 pub mod play_queue;

@@ -1732,6 +1732,7 @@ dependencies = [
  "subtle",
  "thiserror",
  "tokio",
+ "tracing",
  "unicode-normalization",
  "uuid",
 ]

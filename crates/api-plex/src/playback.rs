@@ -598,18 +598,6 @@ fn position_ms(offset: Option<f64>) -> i64 {
     (offset.unwrap_or(0.0) * 1000.0) as i64
 }
 
-/// Records a sign of life. Failing to is no reason to interrupt a film: the session expires
-/// a little sooner.
-async fn touch_session(state: &PlexState, session: &str) {
-    let mut variables = Variables::default();
-    variables.insert(Name::new("key"), Value::String(session.to_owned()));
-    let touched: Result<serde::de::IgnoredAny, ApiError> =
-        gql::execute(&state.schema, TOUCH_SESSION, variables).await;
-    if let Err(error) = touched {
-        tracing::warn!(%error, "could not record a playback session's sign of life");
-    }
-}
-
 const START_STREAM: &str = r"
 mutation PlexStartStream($input: StartStreamInput!) {
   startStream(input: $input) { stream { url } userErrors { code } }
@@ -682,6 +670,8 @@ async fn start_stream(
         return Err(match error.code.as_str() {
             "FILE_MISSING" => ApiError::NotFound,
             "VIDEO_NOT_CONVERTIBLE" | "SUBTITLE_NOT_DELIVERABLE" => ApiError::NotImplemented,
+            // The reference denies a terminated session's transcodes; its status is unmeasured.
+            "SESSION_TERMINATED" => ApiError::Forbidden,
             // The reference answers `400` too when it will not start another stream.
             _ => ApiError::BadRequest,
         });
@@ -753,45 +743,50 @@ struct SessionParams {
     session: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TouchedData {
+    touch_playback_session: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EndedData {
+    end_playback_session: bool,
+}
+
+fn key_variable(session: String) -> Variables {
+    let mut variables = Variables::default();
+    variables.insert(Name::new("key"), Value::String(session));
+    variables
+}
+
+/// A sign of life for the session and its conversion, on the official API.
 async fn ping(
     _caller: Caller,
     State(state): State<PlexState>,
     Query(params): Query<SessionParams>,
-) -> StatusCode {
-    let Some(session) = params.session else {
-        return StatusCode::NOT_FOUND;
-    };
-    if !state.transcoder.ping_session(&gql::session_key(&session)) {
-        return StatusCode::NOT_FOUND;
-    }
-    touch_session(&state, &session).await;
-    StatusCode::OK
+) -> Result<StatusCode, ApiError> {
+    let session = params.session.ok_or(ApiError::NotFound)?;
+    let data: TouchedData =
+        gql::execute(&state.schema, TOUCH_SESSION, key_variable(session)).await?;
+    data.touch_playback_session
+        .then_some(StatusCode::OK)
+        .ok_or(ApiError::NotFound)
 }
 
+/// Ends the conversion and its session together, on the official API. The reference keeps the
+/// session listed until the player's timeline stops; ours goes at once.
 async fn stop(
     _caller: Caller,
     State(state): State<PlexState>,
     Query(params): Query<SessionParams>,
-) -> StatusCode {
-    let Some(session) = params.session else {
-        return StatusCode::NOT_FOUND;
-    };
-    if !state.transcoder.stop_session(&gql::session_key(&session)) {
-        return StatusCode::NOT_FOUND;
-    }
-    end_record(&state, session).await;
-    StatusCode::OK
-}
-
-async fn end_record(state: &PlexState, session: String) {
-    let mut variables = Variables::default();
-    variables.insert(Name::new("key"), Value::String(session));
-    let ended: Result<serde::de::IgnoredAny, ApiError> =
-        gql::execute(&state.schema, END_SESSION, variables).await;
-    if let Err(error) = ended {
-        // It expires by itself.
-        tracing::warn!(%error, "could not close a playback session");
-    }
+) -> Result<StatusCode, ApiError> {
+    let session = params.session.ok_or(ApiError::NotFound)?;
+    let data: EndedData = gql::execute(&state.schema, END_SESSION, key_variable(session)).await?;
+    data.end_playback_session
+        .then_some(StatusCode::OK)
+        .ok_or(ApiError::NotFound)
 }
 
 #[cfg(test)]

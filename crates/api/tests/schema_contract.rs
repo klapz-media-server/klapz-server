@@ -56,6 +56,7 @@ fn schema() -> ApiSchema {
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     })
 }
 
@@ -92,6 +93,7 @@ fn searchable() -> ApiSchema {
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     })
 }
 
@@ -485,6 +487,7 @@ fn series_with_episodes() -> ApiSchema {
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     })
 }
 
@@ -962,6 +965,7 @@ fn watchable() -> ApiSchema {
         directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: Arc::new(open_plex_core::testing::InMemoryWatch::over(items)),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     })
 }
 
@@ -1132,6 +1136,7 @@ fn streamable(engine: Arc<open_plex_core::testing::StubStreams>) -> ApiSchema {
         directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: engine,
+        session_locks: std::sync::Arc::default(),
     })
 }
 
@@ -1248,6 +1253,122 @@ mutation Stop($input: StopStreamInput!) {
     }
 }
 
+#[tokio::test]
+async fn the_operator_terminates_a_session_which_its_player_can_still_read() {
+    let engine = Arc::new(open_plex_core::testing::StubStreams::default());
+    let schema = streamable(Arc::clone(&engine));
+    let started = start(
+        &schema,
+        serde_json::json!({
+            "file": GlobalId::encode("MediaFile", 910),
+            "key": "k1",
+            "playbackId": "tab",
+        }),
+    )
+    .await;
+    let session = started["session"]["id"].clone();
+    let terminate = r"
+mutation Terminate($input: TerminatePlaybackSessionInput!) {
+  terminatePlaybackSession(input: $input) {
+    clientMutationId
+    session { key termination { reason } }
+    userErrors { field code }
+  }
+}";
+    let input = serde_json::json!({
+        "input": { "clientMutationId": "t1", "session": session, "reason": "Bedtime" }
+    });
+    let run = |request: async_graphql::Request| {
+        let schema = &schema;
+        async move { schema.execute(request).await }
+    };
+
+    // A user may stop its own stream, never terminate one.
+    let refused =
+        run(as_user(terminate).variables(async_graphql::Variables::from_json(input.clone()))).await;
+    assert!(!refused.errors.is_empty());
+    assert!(engine.stopped.lock().unwrap().is_empty());
+
+    let response =
+        run(as_operator(terminate).variables(async_graphql::Variables::from_json(input.clone())))
+            .await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    let data = serde_json::to_value(response.data).unwrap();
+    let payload = &data["terminatePlaybackSession"];
+    assert_eq!(payload["clientMutationId"], "t1");
+    assert_eq!(payload["userErrors"], serde_json::json!([]));
+    assert_eq!(payload["session"]["termination"]["reason"], "Bedtime");
+    assert_eq!(*engine.stopped.lock().unwrap(), ["k1"]);
+
+    // No longer playing, but still there for its player to read.
+    let read = format!(
+        r#"{{
+  playbackSessions(first: 10) {{ edges {{ node {{ key }} }} }}
+  playbackTermination(playbackId: "tab") {{ reason terminatedAt }}
+  node(id: "{}") {{ ... on PlaybackSession {{ termination {{ reason }} }} }}
+}}"#,
+        session.as_str().unwrap()
+    );
+    let response = run(as_operator(read)).await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    let data = serde_json::to_value(response.data).unwrap();
+    assert_eq!(data["playbackSessions"]["edges"], serde_json::json!([]));
+    assert_eq!(data["playbackTermination"]["reason"], "Bedtime");
+    assert_eq!(data["node"]["termination"]["reason"], "Bedtime");
+
+    let touch = r#"mutation { touchPlaybackSession(key: "k1") }"#;
+    let data = serde_json::to_value(run(as_operator(touch)).await.data).unwrap();
+    assert_eq!(data["touchPlaybackSession"], false);
+
+    let again =
+        run(as_operator(terminate).variables(async_graphql::Variables::from_json(input))).await;
+    let data = serde_json::to_value(again.data).unwrap();
+    assert_eq!(
+        data["terminatePlaybackSession"]["userErrors"],
+        serde_json::json!([{ "field": ["input", "session"], "code": "SESSION_NOT_FOUND" }])
+    );
+
+    // The player stops: the session goes, its stream asked to stop again, harmlessly.
+    let stopped = r#"mutation { reportPlayback(input: { playbackId: "tab", state: STOPPED }) }"#;
+    let data = serde_json::to_value(run(as_operator(stopped)).await.data).unwrap();
+    assert_eq!(data["reportPlayback"], true);
+    let data = serde_json::to_value(
+        run(as_operator(
+            r#"{ playbackTermination(playbackId: "tab") { reason } }"#,
+        ))
+        .await
+        .data,
+    )
+    .unwrap();
+    assert_eq!(data["playbackTermination"], Value::Null);
+    assert_eq!(*engine.stopped.lock().unwrap(), ["k1", "k1"]);
+}
+
+#[tokio::test]
+async fn a_player_stopping_stops_every_stream_of_its_playback() {
+    let engine = Arc::new(open_plex_core::testing::StubStreams::default());
+    let schema = streamable(Arc::clone(&engine));
+    for key in ["k1", "k2"] {
+        start(
+            &schema,
+            serde_json::json!({
+                "file": GlobalId::encode("MediaFile", 910),
+                "key": key,
+                "playbackId": "tab",
+            }),
+        )
+        .await;
+    }
+    let stopped = r#"mutation { reportPlayback(input: { playbackId: "tab", state: STOPPED }) }"#;
+    let data = serde_json::to_value(schema.execute(as_operator(stopped)).await.data).unwrap();
+    assert_eq!(data["reportPlayback"], true);
+    let mut keys = engine.stopped.lock().unwrap().clone();
+    keys.sort();
+    assert_eq!(keys, ["k1", "k2"]);
+    let data = serde_json::to_value(schema.execute(as_operator(stopped)).await.data).unwrap();
+    assert_eq!(data["reportPlayback"], false);
+}
+
 /// The reference's two test libraries as its database held them: a film named after its file,
 /// and a series whose season and episode have no title. The film's sort title is locked.
 fn editable() -> ApiSchema {
@@ -1292,6 +1413,7 @@ fn editable() -> ApiSchema {
         directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        session_locks: std::sync::Arc::default(),
     })
 }
 
