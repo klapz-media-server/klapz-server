@@ -12,6 +12,7 @@ pub mod identity;
 pub mod ids;
 pub mod library;
 pub mod lifecycle;
+pub mod marker;
 pub mod metadata;
 pub mod page;
 pub mod play_queue;
@@ -33,8 +34,8 @@ pub use identity::{
     now_epoch, ServerCapabilities, ServerFeatures, ServerIdentity, TranscoderCapabilities,
 };
 pub use ids::{
-    HistoryId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey, SectionId,
-    StreamId, TagId, UserId,
+    HistoryId, MarkerId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey,
+    SectionId, StreamId, TagId, UserId,
 };
 pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot};
 pub use metadata::{

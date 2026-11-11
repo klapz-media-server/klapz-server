@@ -16,8 +16,8 @@ use serde::Serialize;
 use crate::language::Language;
 
 use crate::gql_items::{
-    GqlConnection, GqlEdge, GqlItem, GqlLibraryRef, GqlPart, GqlProfiled, GqlRating, GqlStream,
-    GqlTag, GqlVersion, GqlWatchState,
+    GqlConnection, GqlEdge, GqlItem, GqlLibraryRef, GqlMarker, GqlPart, GqlProfiled, GqlRating,
+    GqlStream, GqlTag, GqlVersion, GqlWatchState,
 };
 use crate::stream_labels;
 
@@ -228,9 +228,81 @@ pub struct MetadataEntry {
     pub role: Vec<TagEntry>,
     #[serde(rename = "Producer", skip_serializing_if = "Vec::is_empty")]
     pub producer: Vec<TagEntry>,
+    /// On `includeMarkers=1` only: after the tags, before the locked fields, measured on a
+    /// film's listing and its lookup.
+    #[serde(rename = "Marker", skip_serializing_if = "Vec::is_empty")]
+    pub marker: Vec<MarkerEntry>,
     /// The locked fields, last of all, and on a lookup only: a listing carries none.
     #[serde(rename = "Field", skip_serializing_if = "Vec::is_empty")]
     pub field: Vec<FieldEntry>,
+}
+
+/// A marker: an intro, credits or a commercial, the work's, or the caller's bookmark.
+///
+/// Measured on bookmarks, which the reference publishes without a subscription:
+/// `<Marker type="bookmark" startTimeOffset="10000" endTimeOffset="20000">` holding
+/// `<Attributes color="ff0000" id="2" title="Spot" />`, no `id` on the marker itself, the end
+/// absent for a point, an attribute without a value absent, and `Attributes` an object in
+/// JSON. The work's markers the reference hides from an account without a subscription, so
+/// their shape is the spec's example — `id` on the marker, `final` on the last credits — with
+/// the detection's `version` among the attributes, where Plex's analysis keeps it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkerEntry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    pub start_time_offset: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_time_offset: Option<i64>,
+    #[serde(rename = "final", skip_serializing_if = "std::ops::Not::not")]
+    pub is_final: bool,
+    #[serde(rename = "Attributes")]
+    pub attributes: MarkerAttributes,
+}
+
+/// What Plex calls a marker's attributes, in the order it writes them: alphabetical.
+#[derive(Debug, Default, Serialize)]
+pub struct MarkerAttributes {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<i32>,
+}
+
+impl MarkerEntry {
+    pub fn from_graphql(marker: &GqlMarker) -> Option<Self> {
+        let id = marker.database_id.parse().ok()?;
+        let kind = match marker.kind.as_str() {
+            "INTRO" => "intro",
+            "CREDITS" => "credits",
+            "COMMERCIAL" => "commercial",
+            _ => "bookmark",
+        };
+        let bookmark = kind == "bookmark";
+        Some(Self {
+            id: (!bookmark).then_some(id),
+            kind,
+            start_time_offset: marker.start_ms,
+            end_time_offset: marker.end_ms,
+            is_final: marker.is_final,
+            attributes: MarkerAttributes {
+                color: marker.color.clone(),
+                id: Some(id),
+                title: marker.title.clone(),
+                version: marker.version,
+            },
+        })
+    }
+
+    fn all(markers: &GqlConnection<GqlMarker>) -> Vec<Self> {
+        markers.nodes().filter_map(Self::from_graphql).collect()
+    }
 }
 
 /// A locked field. The reference sends no `Field` for an unlocked one, so `locked` is always
@@ -870,6 +942,7 @@ impl MetadataEntry {
                 .map(TagEntry::from_cast_member)
                 .collect(),
             producer: TagEntry::all(&item.tags.producers, "producer"),
+            marker: MarkerEntry::all(&item.markers),
             field: FieldEntry::all(&item.locked_fields),
         })
     }

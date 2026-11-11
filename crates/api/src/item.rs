@@ -20,6 +20,7 @@ use crate::cursor::OpaqueCursor;
 use crate::edit::ItemFieldType;
 use crate::library::Library;
 use crate::loader::{ChildCountLoader, ItemLoader, LeafCountLoader, LibraryLoader, VersionsLoader};
+use crate::marker::MarkerConnection;
 use crate::media::Version;
 use crate::node::GlobalId;
 use crate::tag::{external_ids_of, ratings_of, ExternalIdConnection, ItemTags, RatingConnection};
@@ -196,6 +197,21 @@ impl Movie {
     /// The fields an editor locked, which a metadata refresh leaves as they are.
     pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
         crate::edit::locked_fields_of(context, self.0.id).await
+    }
+
+    /// Where its intro, credits and commercials are, and the places the caller bookmarked in
+    /// it, in the order they were added.
+    async fn markers(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return markers after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return markers before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many markers from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many markers from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<MarkerConnection> {
+        crate::marker::markers_of(context, self.0.id, after, before, first, last).await
     }
 
     /// When the item's metadata last changed, in seconds since the Unix epoch.
@@ -853,6 +869,21 @@ impl Episode {
     /// The fields an editor locked, which a metadata refresh leaves as they are.
     pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
         crate::edit::locked_fields_of(context, self.0.id).await
+    }
+
+    /// Where its intro, credits and commercials are, and the places the caller bookmarked in
+    /// it, in the order they were added.
+    async fn markers(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return markers after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return markers before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many markers from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many markers from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<MarkerConnection> {
+        crate::marker::markers_of(context, self.0.id, after, before, first, last).await
     }
 
     /// When the item's metadata last changed, in seconds since the Unix epoch.

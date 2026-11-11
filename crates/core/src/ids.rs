@@ -83,6 +83,11 @@ numeric_id! {
     PlaylistEntryId
 }
 
+numeric_id! {
+    /// Identifies a marker: an intro, credits, a commercial or a bookmark on one item.
+    MarkerId
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

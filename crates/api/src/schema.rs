@@ -100,6 +100,8 @@ pub enum Node {
     Tag(TagObject),
     /// Someone credited on an item.
     Person(PersonObject),
+    /// An item's intro, credits or commercial, or a place the caller bookmarked.
+    Marker(crate::marker::MarkerObject),
 }
 
 /// Default page size when the client requests neither end of a range.
@@ -199,6 +201,9 @@ impl Query {
                     crate::play_queue::PlayQueueEntryObject(entry),
                 )))
             }
+            crate::marker::MARKER_TYPE => Ok(crate::marker::marker_node(context, global.key)
+                .await?
+                .map(Node::Marker)),
             crate::playlist::PLAYLIST_TYPE => {
                 Ok(crate::playlist::playlist_node(context, global.key)
                     .await?
@@ -745,6 +750,10 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
         ))
         .data(DataLoader::new(
             crate::loader::LockedFieldsLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            crate::marker::MarkersLoader::new(Arc::clone(&metadata)),
             tokio::spawn,
         ))
         .data(DataLoader::new(

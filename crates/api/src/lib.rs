@@ -17,6 +17,7 @@ pub mod history;
 pub mod item;
 pub mod library;
 pub mod loader;
+pub mod marker;
 pub mod media;
 pub mod node;
 pub mod play_queue;

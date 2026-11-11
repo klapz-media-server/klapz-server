@@ -303,6 +303,10 @@ async fn section_items(
         Name::new("filter"),
         request.filters.to_graphql(item_type(request.kind)),
     );
+    variables.insert(
+        Name::new("markers"),
+        Value::Boolean(crate::markers::requested(&pairs)),
+    );
 
     let data: SectionItemsData =
         gql::execute(&state.schema, &SECTION_ITEMS_QUERY, variables).await?;
@@ -337,6 +341,7 @@ async fn items_by_id(
     client: ClientIdentity,
     State(state): State<PlexState>,
     Path(ids): Path<String>,
+    Query(pairs): Query<Vec<(String, String)>>,
     format: ResponseFormat,
 ) -> Result<PlexResponse<ItemContainer>, ApiError> {
     let keys: Vec<i64> = ids
@@ -357,6 +362,10 @@ async fn items_by_id(
                 .map(|key| Value::String(GlobalId::encode(ITEM_TYPE, *key)))
                 .collect(),
         ),
+    );
+    variables.insert(
+        Name::new("markers"),
+        Value::Boolean(crate::markers::requested(&pairs)),
     );
 
     let data: ItemsByIdData = gql::execute(&state.schema, &ITEMS_BY_ID_QUERY, variables).await?;

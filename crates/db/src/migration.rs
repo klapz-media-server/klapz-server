@@ -27,6 +27,7 @@ mod m0021_playlist;
 mod m0022_viewing_history;
 mod m0023_session_termination;
 mod m0025_tag_word;
+mod m0026_marker;
 
 use sea_orm_migration::prelude::*;
 
@@ -61,6 +62,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0022_viewing_history::Migration),
             Box::new(m0023_session_termination::Migration),
             Box::new(m0025_tag_word::Migration),
+            Box::new(m0026_marker::Migration),
         ]
     }
 }

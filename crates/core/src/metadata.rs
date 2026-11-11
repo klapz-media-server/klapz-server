@@ -1,7 +1,8 @@
 //! Library contents: items, their media, and the queries bindings run against them.
 
 use crate::edit::{ItemEdit, ItemField};
-use crate::ids::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
+use crate::ids::{MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
+use crate::marker::{Marker, NewMarker};
 use crate::page::{Cursor, CursorKey, Direction, Page, Window};
 use crate::watch::Viewer;
 
@@ -1146,6 +1147,30 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
     ///
     /// `ItemNotFound` for an item that is not of the kind the edit was checked against.
     async fn edit_item(&self, id: RatingKey, edit: &ItemEdit) -> Result<Edited, MetadataError>;
+
+    /// The markers on these items that `viewer` sees — the works' own, and its bookmarks — in
+    /// the order they were added.
+    ///
+    /// Unwindowed: bounded by the items, a handful of markers each.
+    async fn markers(
+        &self,
+        items: &[RatingKey],
+        viewer: Option<Viewer>,
+    ) -> Result<Vec<Marker>, MetadataError>;
+
+    /// One marker, whoever owns it.
+    async fn marker(&self, id: MarkerId) -> Result<Option<Marker>, MetadataError>;
+
+    /// Adds a marker, unless one it [duplicates](NewMarker::duplicates) is there already:
+    /// the marker either way, and whether it was added.
+    async fn add_marker(&self, marker: &NewMarker) -> Result<(Marker, bool), MetadataError>;
+
+    /// Writes a marker's values, its item, kind and owner left as they are. `None` when it no
+    /// longer exists.
+    async fn update_marker(&self, marker: &Marker) -> Result<Option<Marker>, MetadataError>;
+
+    /// Removes a marker; false when there was none.
+    async fn delete_marker(&self, id: MarkerId) -> Result<bool, MetadataError>;
 }
 
 /// An item after an edit, with its locks.
@@ -1359,6 +1384,30 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
 
     async fn edit_item(&self, id: RatingKey, edit: &ItemEdit) -> Result<Edited, MetadataError> {
         (**self).edit_item(id, edit).await
+    }
+
+    async fn markers(
+        &self,
+        items: &[RatingKey],
+        viewer: Option<Viewer>,
+    ) -> Result<Vec<Marker>, MetadataError> {
+        (**self).markers(items, viewer).await
+    }
+
+    async fn marker(&self, id: MarkerId) -> Result<Option<Marker>, MetadataError> {
+        (**self).marker(id).await
+    }
+
+    async fn add_marker(&self, marker: &NewMarker) -> Result<(Marker, bool), MetadataError> {
+        (**self).add_marker(marker).await
+    }
+
+    async fn update_marker(&self, marker: &Marker) -> Result<Option<Marker>, MetadataError> {
+        (**self).update_marker(marker).await
+    }
+
+    async fn delete_marker(&self, id: MarkerId) -> Result<bool, MetadataError> {
+        (**self).delete_marker(id).await
     }
 }
 

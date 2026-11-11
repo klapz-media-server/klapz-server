@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use open_plex_core::edit::{ItemEdit, ItemField};
+use open_plex_core::marker::{Marker, NewMarker};
 use open_plex_core::metadata::{
     first_character_bucket, AudioAnalysis, ColorDescription, CreditRef, DolbyVision, Edited,
     EpisodeCredit, ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemFilter,
@@ -21,7 +22,7 @@ use open_plex_core::recent::EpisodeAddition;
 use open_plex_core::search;
 use open_plex_core::similar::TagOverlap;
 use open_plex_core::watch::Viewer;
-use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
+use open_plex_core::{MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
 use sea_orm::QueryTrait;
 use sea_orm::{
@@ -36,6 +37,7 @@ use crate::entity::{
     watch_state,
 };
 use crate::item_order::ItemOrder;
+use crate::marker_store;
 use crate::watch_repository::viewer_id;
 use crate::write;
 
@@ -1461,6 +1463,40 @@ impl MetadataRepository for SqlMetadataRepository {
             item,
             locked: locked.into_iter().collect(),
         })
+    }
+
+    async fn markers(
+        &self,
+        items: &[RatingKey],
+        viewer: Option<Viewer>,
+    ) -> Result<Vec<Marker>, MetadataError> {
+        marker_store::markers(&self.connection, items, viewer)
+            .await
+            .map_err(storage)
+    }
+
+    async fn marker(&self, id: MarkerId) -> Result<Option<Marker>, MetadataError> {
+        marker_store::marker(&self.connection, id)
+            .await
+            .map_err(storage)
+    }
+
+    async fn add_marker(&self, marker: &NewMarker) -> Result<(Marker, bool), MetadataError> {
+        marker_store::add(&self.connection, marker)
+            .await
+            .map_err(storage)
+    }
+
+    async fn update_marker(&self, marker: &Marker) -> Result<Option<Marker>, MetadataError> {
+        marker_store::update(&self.connection, marker)
+            .await
+            .map_err(storage)
+    }
+
+    async fn delete_marker(&self, id: MarkerId) -> Result<bool, MetadataError> {
+        marker_store::delete(&self.connection, id)
+            .await
+            .map_err(storage)
     }
 }
 

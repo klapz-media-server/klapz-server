@@ -11,9 +11,11 @@ use std::collections::BTreeMap;
 
 use crate::edit::{ItemEdit, ItemField};
 use crate::ids::{
-    MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey, SectionId, StreamId, TagId,
+    MarkerId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey, SectionId,
+    StreamId, TagId,
 };
 use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
+use crate::marker::{Marker, NewMarker};
 use crate::metadata::{
     self, CreditRef, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind, ItemQuery,
     ItemSort, ItemTag, Listed, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
@@ -109,6 +111,7 @@ impl LibraryRepository for InMemoryLibrary {
 pub struct InMemoryMetadata {
     items: std::sync::Mutex<Vec<MetadataItem>>,
     locked_fields: std::sync::Mutex<Vec<(RatingKey, ItemField)>>,
+    markers: std::sync::Mutex<Vec<Marker>>,
     versions: Vec<MediaVersion>,
     files: Vec<MediaFile>,
     streams: Vec<MediaStream>,
@@ -122,6 +125,7 @@ impl InMemoryMetadata {
         Self {
             items: std::sync::Mutex::new(items),
             locked_fields: std::sync::Mutex::default(),
+            markers: std::sync::Mutex::default(),
             versions: Vec::new(),
             files: Vec::new(),
             streams: Vec::new(),
@@ -153,6 +157,13 @@ impl InMemoryMetadata {
     #[must_use]
     pub fn with_locked_fields(self, locked_fields: Vec<(RatingKey, ItemField)>) -> Self {
         *locked(&self.locked_fields) = locked_fields;
+        self
+    }
+
+    /// Places markers, as an import would; they are listed in the order given.
+    #[must_use]
+    pub fn with_markers(self, markers: Vec<Marker>) -> Self {
+        *locked(&self.markers) = markers;
         self
     }
 
@@ -1002,6 +1013,75 @@ impl MetadataRepository for InMemoryMetadata {
             item: item.clone(),
             locked: fields.into_iter().collect(),
         })
+    }
+
+    async fn markers(
+        &self,
+        items: &[RatingKey],
+        viewer: Option<crate::watch::Viewer>,
+    ) -> Result<Vec<Marker>, MetadataError> {
+        Ok(locked(&self.markers)
+            .iter()
+            .filter(|marker| items.contains(&marker.item) && marker.is_visible_to(viewer))
+            .cloned()
+            .collect())
+    }
+
+    async fn marker(&self, id: MarkerId) -> Result<Option<Marker>, MetadataError> {
+        Ok(locked(&self.markers)
+            .iter()
+            .find(|marker| marker.id == id)
+            .cloned())
+    }
+
+    async fn add_marker(&self, marker: &NewMarker) -> Result<(Marker, bool), MetadataError> {
+        let mut markers = locked(&self.markers);
+        if let Some(present) = markers.iter().find(|present| marker.duplicates(present)) {
+            return Ok((present.clone(), false));
+        }
+        let id = markers
+            .iter()
+            .map(|present| present.id.get())
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let values = marker.values();
+        let added = Marker {
+            id: MarkerId::new(id),
+            item: marker.item(),
+            kind: marker.kind(),
+            owner: marker.owner(),
+            start_ms: values.start_ms,
+            end_ms: values.end_ms,
+            is_final: values.is_final,
+            version: None,
+            title: values.title.clone(),
+            color: values.color.clone(),
+        };
+        markers.push(added.clone());
+        Ok((added, true))
+    }
+
+    async fn update_marker(&self, marker: &Marker) -> Result<Option<Marker>, MetadataError> {
+        let mut markers = locked(&self.markers);
+        let Some(present) = markers.iter_mut().find(|present| present.id == marker.id) else {
+            return Ok(None);
+        };
+        *present = Marker {
+            id: present.id,
+            item: present.item,
+            kind: present.kind,
+            owner: present.owner,
+            ..marker.clone()
+        };
+        Ok(Some(present.clone()))
+    }
+
+    async fn delete_marker(&self, id: MarkerId) -> Result<bool, MetadataError> {
+        let mut markers = locked(&self.markers);
+        let before = markers.len();
+        markers.retain(|marker| marker.id != id);
+        Ok(markers.len() < before)
     }
 }
 

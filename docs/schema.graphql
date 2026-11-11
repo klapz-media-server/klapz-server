@@ -64,6 +64,70 @@ type AccountUserError {
 }
 
 """
+A marker to add to an item.
+"""
+input AddMarkerInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The film or episode, as returned in its `id`.
+	"""
+	itemId: ID!
+	"""
+	What it marks. A bookmark is the caller's; any other kind is the work's, and needs the
+	right to edit the item's library.
+	"""
+	kind: MarkerKind!
+	"""
+	Where it starts, in milliseconds from the start of the media.
+	"""
+	startMs: Int!
+	"""
+	Where it ends, in milliseconds, after `startMs`. Required but for a bookmark.
+	"""
+	endMs: Int
+	"""
+	Whether these are the credits that run to the end. Credits only; false when absent.
+	"""
+	final: Boolean
+	"""
+	A bookmark's name.
+	"""
+	title: String
+	"""
+	A bookmark's colour, kept as written.
+	"""
+	color: String
+}
+
+"""
+What `addMarker` did.
+"""
+type AddMarkerPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The marker, unless the request was refused. An add identical in kind and span to a
+	marker of the item's already there — the caller's own, for a bookmark — returns that
+	one, its title and colour as they were.
+	"""
+	marker: Marker
+	"""
+	Whether the marker returned is a new one. False when it was already there, and when
+	the request was refused.
+	"""
+	added: Boolean!
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [MarkerUserError!]!
+}
+
+"""
 Items to append to a playlist of chosen items.
 """
 input AddToPlaylistInput {
@@ -318,6 +382,38 @@ type DeleteHistoryEntryPayload {
 }
 
 """
+A marker to remove.
+"""
+input DeleteMarkerInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The marker, as returned in its `id`.
+	"""
+	id: ID!
+}
+
+"""
+What `deleteMarker` did.
+"""
+type DeleteMarkerPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The marker removed, as it was returned in `Marker.id`. Null when refused.
+	"""
+	deletedMarkerId: ID
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [MarkerUserError!]!
+}
+
+"""
 A playlist to delete.
 """
 input DeletePlaylistInput {
@@ -429,6 +525,28 @@ type Episode implements Item & Node {
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
+	"""
+	Where its intro, credits and commercials are, and the places the caller bookmarked in
+	it, in the order they were added.
+	"""
+	markers(
+		"""
+		Return markers after this cursor.
+		"""
+		after: String,
+		"""
+		Return markers before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many markers from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many markers from the end of the range.
+		"""
+		last: Int
+	): MarkerConnection!
 	"""
 	When the item's metadata last changed, in seconds since the Unix epoch.
 	"""
@@ -1933,6 +2051,160 @@ type Loudness {
 	gainOffset: Float!
 }
 
+type Marker implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this marker.
+	"""
+	id: ID!
+	"""
+	The server-local number, which the compatibility layer publishes.
+	"""
+	databaseId: String!
+	"""
+	The film or episode it marks.
+	"""
+	item: Item
+	"""
+	What it marks.
+	"""
+	kind: MarkerKind!
+	"""
+	Where it starts, in milliseconds from the start of the media.
+	"""
+	startMs: Int!
+	"""
+	Where it ends, in milliseconds from the start of the media. Null for a bookmark that
+	marks a point. Every other marker has one, though a detection may have written one
+	before its start: such markers are published as found.
+	"""
+	endMs: Int
+	"""
+	Whether these are the credits that run to the end of the item, after which a player
+	moves to what comes next. False for every other marker.
+	"""
+	final: Boolean!
+	"""
+	The version of the detection that found it. Null for a marker set or changed by hand.
+	"""
+	version: Int
+	"""
+	A bookmark's name. Null when it has none, and on every other marker.
+	"""
+	title: String
+	"""
+	A bookmark's colour, as the client that set it wrote it (`ff0000`). Null when it has
+	none, and on every other marker.
+	"""
+	color: String
+}
+
+type MarkerConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [MarkerEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Marker!]!
+}
+
+"""
+An edge in a connection.
+"""
+type MarkerEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Marker!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+Why a marker mutation was refused.
+"""
+enum MarkerErrorCode {
+	"""
+	No item the caller may mark has this id.
+	"""
+	ITEM_NOT_FOUND
+	"""
+	No marker the caller may change has this id.
+	"""
+	MARKER_NOT_FOUND
+	"""
+	The item is a series or a season, which nothing plays.
+	"""
+	NOT_PLAYABLE
+	"""
+	The start is before the start of the media.
+	"""
+	NEGATIVE_START
+	"""
+	The end is not after the start.
+	"""
+	EMPTY_SPAN
+	"""
+	Only a bookmark can mark a point; every other marker needs an end.
+	"""
+	MISSING_END
+	"""
+	Only credits can be final.
+	"""
+	FINAL_NOT_CREDITS
+	"""
+	Only a bookmark has a title or a colour.
+	"""
+	NOT_BOOKMARK
+}
+
+"""
+What a marker marks.
+"""
+enum MarkerKind {
+	"""
+	The opening titles, which a player offers to skip.
+	"""
+	INTRO
+	"""
+	Credits, at the end or within the item; the ones that run to the end are `final`.
+	"""
+	CREDITS
+	"""
+	An advertisement break.
+	"""
+	COMMERCIAL
+	"""
+	A place the caller kept. Seen by the caller alone.
+	"""
+	BOOKMARK
+}
+
+"""
+A request a marker mutation refused, and where in the input the reason lies.
+"""
+type MarkerUserError {
+	"""
+	The path to the input field at fault.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person to read.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program to branch on.
+	"""
+	code: MarkerErrorCode!
+}
+
 type MediaFile implements Node {
 	"""
 	Globally unique, opaque identifier. Playback and download endpoints take it too.
@@ -2248,6 +2520,28 @@ type Movie implements Item & Node {
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
+	"""
+	Where its intro, credits and commercials are, and the places the caller bookmarked in
+	it, in the order they were added.
+	"""
+	markers(
+		"""
+		Return markers after this cursor.
+		"""
+		after: String,
+		"""
+		Return markers before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many markers from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many markers from the end of the range.
+		"""
+		last: Int
+	): MarkerConnection!
 	"""
 	When the item's metadata last changed, in seconds since the Unix epoch.
 	"""
@@ -2715,6 +3009,36 @@ type Mutation {
 		"""
 		input: UpdateEpisodeInput!
 	): UpdateEpisodePayload!
+	"""
+	Adds a marker to a film or an episode: an intro, credits or a commercial, for its
+	library's admins and the operator, or a bookmark of the caller's own.
+	"""
+	addMarker(
+		"""
+		The marker to add.
+		"""
+		input: AddMarkerInput!
+	): AddMarkerPayload!
+	"""
+	Moves a marker or changes what it says. The work's markers for its library's admins
+	and the operator, a bookmark for its owner.
+	"""
+	updateMarker(
+		"""
+		The changes.
+		"""
+		input: UpdateMarkerInput!
+	): UpdateMarkerPayload!
+	"""
+	Removes a marker. The work's markers for its library's admins and the operator, a
+	bookmark for its owner.
+	"""
+	deleteMarker(
+		"""
+		The marker to remove.
+		"""
+		input: DeleteMarkerInput!
+	): DeleteMarkerPayload!
 	"""
 	Creates a playlist of the caller's: of chosen items, or smart with a rule.
 	"""
@@ -5573,6 +5897,59 @@ type UpdateEpisodePayload {
 	Why the edit was refused. Empty when it was applied.
 	"""
 	userErrors: [ItemEditUserError!]!
+}
+
+"""
+Changes to a marker. An absent field is left as it is; `null` clears what can be cleared.
+"""
+input UpdateMarkerInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The marker, as returned in its `id`.
+	"""
+	id: ID!
+	"""
+	Where it starts, in milliseconds.
+	"""
+	startMs: Int
+	"""
+	Where it ends, in milliseconds; `null` leaves a bookmark marking a point.
+	"""
+	endMs: Int
+	"""
+	Whether these are the credits that run to the end.
+	"""
+	final: Boolean
+	"""
+	A bookmark's name; `null` or empty removes it.
+	"""
+	title: String
+	"""
+	A bookmark's colour; `null` or empty removes it.
+	"""
+	color: String
+}
+
+"""
+What `updateMarker` did.
+"""
+type UpdateMarkerPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The marker as it now is, unless the request was refused. A marker of the work changed
+	by hand no longer carries the detection's `version`.
+	"""
+	marker: Marker
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [MarkerUserError!]!
 }
 
 """

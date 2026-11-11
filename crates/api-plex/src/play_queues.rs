@@ -149,7 +149,7 @@ async fn expand_item(state: &PlexState, key: i64) -> Result<Vec<String>, ApiErro
 }
 
 async fn existing(state: &PlexState, keys: Vec<i64>) -> Result<Vec<String>, ApiError> {
-    let found = fetch_items(state, &keys).await?;
+    let found = fetch_items(state, &keys, false).await?;
     Ok(found.into_iter().flatten().map(|item| item.id).collect())
 }
 
@@ -197,8 +197,13 @@ async fn expand_section(state: &PlexState, rest: &str) -> Result<Vec<String>, Ap
         .unwrap_or_default())
 }
 
-async fn fetch_items(state: &PlexState, keys: &[i64]) -> Result<Vec<Option<GqlItem>>, ApiError> {
+async fn fetch_items(
+    state: &PlexState,
+    keys: &[i64],
+    markers: bool,
+) -> Result<Vec<Option<GqlItem>>, ApiError> {
     let mut variables = Variables::default();
+    variables.insert(Name::new("markers"), Value::Boolean(markers));
     variables.insert(
         Name::new("ids"),
         Value::List(
@@ -341,6 +346,9 @@ async fn create(
         &data.create_play_queue.id,
         Range::default(),
         Language::of(&client),
+        params
+            .get("includeMarkers")
+            .is_some_and(|value| value == "1"),
     )
     .await?;
     Ok(PlexResponse::new(body, format))
@@ -585,6 +593,7 @@ async fn respond(
     queue_id: &str,
     range: Range,
     language: Language,
+    markers: bool,
 ) -> Result<Json, ApiError> {
     let data: QueueData =
         gql::execute(&state.schema, QUEUE_QUERY, id_variable(queue_id.to_owned())).await?;
@@ -605,7 +614,7 @@ async fn respond(
     let items = if keys.is_empty() {
         Vec::new()
     } else {
-        fetch_items(state, &keys).await?
+        fetch_items(state, &keys, markers).await?
     };
     let shown = entries.iter().filter(|entry| entry.item.is_some());
     let metadata: Vec<Json> = shown
@@ -665,9 +674,14 @@ async fn read(
     RawQuery(query): RawQuery,
     format: ResponseFormat,
 ) -> Result<PlexResponse<Json>, ApiError> {
-    let range = Range::parse(query.as_deref().unwrap_or_default())?;
+    let query = query.unwrap_or_default();
+    let range = Range::parse(&query)?;
+    let pairs: Vec<(String, String)> = form_urlencoded::parse(query.as_bytes())
+        .into_owned()
+        .collect();
     let id = GlobalId::encode(PLAY_QUEUE_TYPE, queue);
-    let body = respond(&state, &id, range, Language::of(&client)).await?;
+    let markers = crate::markers::requested(&pairs);
+    let body = respond(&state, &id, range, Language::of(&client), markers).await?;
     Ok(PlexResponse::new(body, format))
 }
 
