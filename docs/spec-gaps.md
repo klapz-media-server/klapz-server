@@ -857,21 +857,20 @@ same frames: measured on Soul, chunk 402 starts at 2010.090 s on the copy and 20
 1280×720, with its pieces at 2012.968/2012.969 and 2014.094/2014.095. Without a copy (a burned
 subtitle, a cap below the file) the encodes are keyed on the 5-second grid instead.
 
-Audio cannot be served in its pieces. Each process cuts them a fraction of a second before the
-video's key frame, by an amount that depends on the rung (0.48 s on the copy of Soul, 0.15 s on
-an encode), and a process started for a new rung begins its audio where its seek lands; when
-Soul's E-AC3 is converted, every process also places its AAC frames on a grid of its own. A
-segment from one run followed by the next from another left the audio between their cuts
-unheard: 0.33 s and 0.21 s at the two restarts of one probe, which a browser buffers as a hole
-in the stream since it plays only where audio and video both are. So a DASH audio segment is
-the samples shown from the start of its video segment to the start of the next, cut out of the
-pieces and rewritten as one fragment (`transcoder::fragment::cut`); a frame straddling a bound
-goes to both sides, and two segments from different runs overlap by at most a frame (21 ms,
-32 ms measured), which a player overwrites, instead of leaving a gap. Any run holding the whole
-segment answers, the newest first. The same probe over twenty segments and five restarts then
-found no gap. HLS still carries the hole, about 0.25 s at a restart: its audio travels in the
-video's MPEG-TS pieces, and hls.js fills it with silence; a native HLS player has not been
-tried.
+The audio has to be cut where the video is, the same way in every run. A muxer cutting at a key
+frame ends the audio it has received so far, and the interleaving runs the audio behind the
+video by a distance that depends on the encoder and the seek: 0.48 s on a copy of Soul, 0.15 s on
+an encode. A segment from one run followed by the next from another left the audio between their
+cuts unheard (0.33 s and 0.21 s at two restarts, about 0.25 s in HLS), a hole a browser buffers,
+since it plays only where audio and video both are: the 0.66 s gap shaka stepped over below.
+ffmpeg-plex therefore cuts the audio on its first packet shown at or after the key frame
+(`-align_audio_cuts` for DASH, `-segment_align_audio_cuts` for HLS, asked of pieces only). A DASH
+audio piece then starts within one frame after its video's in the time a player shows it, that is
+with each track's edit list taken off: 83 ms for the video, 21 ms for the AAC priming, which read
+without it put every audio cut 62 ms early. Probed over twenty segments and five restarts, each
+segment's audio is continuous with the next's to the sample within a run, and within one AAC
+frame across runs (+11 ms to −32 ms in DASH, −94 ms to +11 ms in HLS): converted audio is framed
+from where each run's encoder starts, a residue a player covers.
 
 A run stopped for another rung writes nothing more, but its last piece did not end a segment:
 only a run that reached the end of the media (`finished`) closes one with its last piece.
@@ -885,8 +884,8 @@ Played by shaka-player 4.7 and hls.js 1.5 in a browser, on Soul, forcing a rung 
 in both directions between the copy and the encodes: the picture changed size each time
 (1920×1080, 1280×720, 720×405, 480×270, 320×180), playback never stopped, no frame was dropped
 (2,847 and 1,951). DASH buffered one gap of 0.66 s at 39.3 s, which shaka stepped over in 0.07 s:
-the audio hole described above, since closed; hls.js had none, and retried three segment
-requests that timed out while a restart waited.
+the audio cut described above, since aligned; hls.js had none, filling such holes with silence,
+and retried three segment requests that timed out while a restart waited.
 
 **Chosen by the server.** One representation at one picture size, the top rung's, and lower
 bitrates under it (Soul: 20, 7.4, 3.4, 1.3, 0.3 and 0.2 Mbps, all 1920×1080), in 3-second

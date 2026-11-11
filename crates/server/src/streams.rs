@@ -36,7 +36,7 @@ use open_plex_transcoder::plan::{
     VideoAction,
 };
 use open_plex_transcoder::session::{
-    Chunk, DashTrack, Output, Protocol, StreamRequest, SubtitleDelivery, SubtitleReader,
+    DashTrack, Output, Protocol, StreamRequest, SubtitleDelivery, SubtitleReader,
 };
 use open_plex_transcoder::{TranscodeError, Transcoder};
 use serde::Deserialize;
@@ -701,10 +701,8 @@ async fn rendition_part(
                 return Ok(serve(path, request).await);
             }
             let number = numbered(&part, ".m4s").ok_or(Refusal::NotFound)?;
-            let response = match streams.transcoder.dash_chunk(&key, track, number).await? {
-                Chunk::Files(files) => served(files, "video/mp4", request).await,
-                Chunk::Cut(bytes) => ([(header::CONTENT_TYPE, "video/mp4")], bytes).into_response(),
-            };
+            let files = streams.transcoder.dash_chunk(&key, track, number).await?;
+            let response = served(files, "video/mp4", request).await;
             Ok(match track {
                 DashTrack::Video(_) if server_adapted => measured(response, report),
                 _ => response,
