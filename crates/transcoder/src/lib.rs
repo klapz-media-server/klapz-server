@@ -4,7 +4,9 @@
 //! and knows nothing of HTTP or Plex. `open-plex-api-plex` binds Plex's routes onto it, and
 //! keeps what is only Plex's: parameter names, status codes, and a PNG labelled `image/jpeg`.
 
+pub mod adapt;
 mod convert;
+mod fragment;
 pub mod media;
 pub mod plan;
 pub mod session;

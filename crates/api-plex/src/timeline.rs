@@ -292,16 +292,63 @@ async fn latest_session(state: &PlexState, playback_id: &str) -> Option<GqlSessi
         .find(|session| session.playback_id.as_deref() == Some(playback_id))
 }
 
-/// A copied track weighs 2.1 times its bitrate and an encoded one 1.05, rounded up over their
-/// sum: every `bandwidth` measured on the reference fits this.
-fn bandwidth_kbps(session: &GqlSession) -> i64 {
-    let weighted = |bits: Option<i32>, decision: &str| {
-        let kbps = i64::from(bits.unwrap_or(0)) / 1000;
-        kbps * if decision == "COPY" { 210 } else { 105 }
-    };
-    let total = weighted(session.video_bitrate, &session.video_decision)
-        + weighted(session.audio_bitrate, &session.audio_decision);
-    (total + 99) / 100
+/// What the player is being sent: the rung of the latest video segment it received when the
+/// conversion is running, which an adaptive stream changes, or what the session recorded at
+/// its start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Sent {
+    video_bits: Option<i32>,
+    video_copied: bool,
+    audio_bits: Option<i32>,
+    audio_copied: bool,
+    width: u32,
+}
+
+impl Sent {
+    fn of(
+        session: &GqlSession,
+        status: Option<&open_plex_transcoder::session::SessionStatus>,
+    ) -> Self {
+        let recorded = Self {
+            video_bits: session.video_bitrate,
+            video_copied: session.video_decision == "COPY",
+            audio_bits: session.audio_bitrate,
+            audio_copied: session.audio_decision == "COPY",
+            width: session.width.map_or(0, i32::unsigned_abs),
+        };
+        let Some(status) = status else {
+            return recorded;
+        };
+        let bits = |kbps: u32| i32::try_from(u64::from(kbps) * 1000).ok();
+        let audio = match status.audio_kbps {
+            Some(kbps) => (bits(kbps), false),
+            None => (recorded.audio_bits, true),
+        };
+        match status.video_encode {
+            Some(encode) => Self {
+                video_bits: bits(encode.video_kbps),
+                video_copied: false,
+                audio_bits: audio.0,
+                audio_copied: audio.1,
+                width: encode.width,
+            },
+            // The copy is the source, whose measurements the session recorded when it began
+            // on it; a stream that began on an encode has no copy among its rungs.
+            None => recorded,
+        }
+    }
+
+    /// A copied track weighs 2.1 times its bitrate and an encoded one 1.05, rounded up over
+    /// their sum: every `bandwidth` measured on the reference fits this.
+    fn bandwidth_kbps(self) -> i64 {
+        let weighted = |bits: Option<i32>, copied: bool| {
+            let kbps = i64::from(bits.unwrap_or(0)) / 1000;
+            kbps * if copied { 210 } else { 105 }
+        };
+        let total = weighted(self.video_bits, self.video_copied)
+            + weighted(self.audio_bits, self.audio_copied);
+        (total + 99) / 100
+    }
 }
 
 /// What Plex Web reads to show the current quality and buffered range. `TranscodeSession.key`
@@ -311,13 +358,13 @@ fn describe_session(
     session: &GqlSession,
     status: Option<&open_plex_transcoder::session::SessionStatus>,
 ) {
-    let resolution = resolution_label(session.width.map_or(0, i32::unsigned_abs));
+    let sent = Sent::of(session, status);
     body["size"] = json!(2);
     body["Bandwidths"] = json!([{
         "Bandwidth": [{
             "time": 0,
-            "bandwidth": bandwidth_kbps(session),
-            "resolution": resolution,
+            "bandwidth": sent.bandwidth_kbps(),
+            "resolution": resolution_label(sent.width),
         }],
     }]);
     let key = format!("/transcode/sessions/{}", session.key);
@@ -370,4 +417,77 @@ fn transcode_session(
         transcode["audioChannels"] = json!(channels);
     }
     transcode
+}
+
+#[cfg(test)]
+mod tests {
+    use open_plex_transcoder::plan::{KeyFrames, VideoEncode};
+    use open_plex_transcoder::session::SessionStatus;
+
+    use super::*;
+
+    /// Soul started on its copy, with E-AC-3 converted to AAC.
+    fn started_on_the_copy() -> GqlSession {
+        GqlSession {
+            key: "k".to_owned(),
+            playback_id: None,
+            video_decision: "COPY".to_owned(),
+            audio_decision: "TRANSCODE".to_owned(),
+            video_bitrate: Some(7_726_000),
+            audio_bitrate: Some(256_000),
+            width: Some(1920),
+        }
+    }
+
+    fn status(video_encode: Option<VideoEncode>) -> SessionStatus {
+        SessionStatus {
+            protocol: "dash",
+            container: "mp4",
+            source_video_codec: "h264".to_owned(),
+            source_audio_codec: "eac3".to_owned(),
+            video_decision: if video_encode.is_some() {
+                "transcode"
+            } else {
+                "copy"
+            },
+            audio_decision: "transcode",
+            video_codec: "h264".to_owned(),
+            audio_codec: "aac".to_owned(),
+            audio_channels: Some(2),
+            video_encode,
+            audio_kbps: Some(256),
+            duration_ms: 6_031_568,
+            max_offset_seconds: 0.0,
+            min_offset_seconds: 0.0,
+            progress: 0.0,
+            speed: 0.0,
+            remaining_seconds: 0,
+            complete: false,
+        }
+    }
+
+    #[test]
+    fn the_bandwidth_reported_is_the_rung_being_sent() {
+        let session = started_on_the_copy();
+        // 7726 × 2.1 + 256 × 1.05, rounded up.
+        assert_eq!(Sent::of(&session, None).bandwidth_kbps(), 16_494);
+        assert_eq!(
+            Sent::of(&session, Some(&status(None))).bandwidth_kbps(),
+            16_494
+        );
+        let lower = VideoEncode {
+            width: 720,
+            height: 404,
+            video_kbps: 1297,
+            audio_kbps: 256,
+            crf: 21,
+            frame_rate: Some(23.976),
+            key_frames: KeyFrames::AsSource,
+            shared_headers: false,
+        };
+        let sent = Sent::of(&session, Some(&status(Some(lower))));
+        // 1297 × 1.05 + 256 × 1.05, rounded up; and "SD" for 720 wide.
+        assert_eq!(sent.bandwidth_kbps(), 1631);
+        assert_eq!(resolution_label(sent.width), "SD");
+    }
 }

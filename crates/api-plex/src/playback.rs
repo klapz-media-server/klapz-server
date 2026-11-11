@@ -25,7 +25,8 @@ use open_plex_api::media::FILE_TYPE;
 use open_plex_api::GlobalId;
 use open_plex_transcoder::media::resolve_within;
 use open_plex_transcoder::plan::{
-    plan_stream, AudioAction, Limits, StreamPlan, StreamSource, VideoAction, VideoEncode,
+    plan_stream, Adaptation, AudioAction, Limits, StreamPlan, StreamSource, VideoAction,
+    VideoEncode,
 };
 use open_plex_transcoder::session::Protocol;
 use serde::Deserialize;
@@ -209,6 +210,8 @@ impl PlaybackParams {
         }
     }
 
+    /// Plex Web's "Convert automatically": the reference announces one quality and changes it
+    /// itself.
     fn adaptive(&self) -> bool {
         self.auto_adjust_quality.as_deref() == Some("1")
     }
@@ -307,7 +310,11 @@ impl<'a> Selection<'a> {
         let limits = Limits {
             max_video_kbps: params.max_video_bitrate,
             convert_audio: params.direct_stream_audio.as_deref() == Some("0"),
-            adaptive: params.adaptive(),
+            adaptation: if params.adaptive() {
+                Adaptation::Server
+            } else {
+                Adaptation::Fixed
+            },
             burn_subtitle: self.delivery == Some(Delivery::Burn),
         };
         Ok(plan_stream(&source, limits)?)
@@ -681,7 +688,7 @@ async fn start_stream(
             .max_video_bitrate
             .map(|kbps| i32::try_from(u64::from(kbps) * 1000).unwrap_or(i32::MAX)),
         "convertAudio": params.direct_stream_audio.as_deref() == Some("0"),
-        "adaptive": params.adaptive(),
+        "quality": if params.adaptive() { "SERVER_ADAPTIVE" } else { "FIXED" },
         "positionMs": position_ms(params.offset),
         "key": session,
         "playbackId": client.session_identifier,
@@ -818,9 +825,11 @@ async fn callback_source(
     Ok(serve(path, request).await)
 }
 
+/// The first segment of the path is the run the process belongs to: one replaced since may
+/// still be heard from.
 async fn callback_manifest(
     State(state): State<PlexState>,
-    Path((_session, callback)): Path<(String, String)>,
+    Path((run, callback)): Path<(String, String)>,
     body: axum::body::Body,
 ) -> StatusCode {
     if !state.transcoder.has_callback(&callback) {
@@ -833,7 +842,7 @@ async fn callback_manifest(
         match axum::body::to_bytes(body, MAX_ANNOUNCEMENT_BYTES).await {
             Ok(bytes) => {
                 let text = String::from_utf8_lossy(&bytes);
-                if !state.transcoder.announce_segments(&callback, &text) {
+                if !state.transcoder.announce_segments(&callback, &run, &text) {
                     tracing::debug!("an announcement arrived for a session since stopped");
                 }
             }

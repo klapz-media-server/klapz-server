@@ -1,22 +1,36 @@
-//! A stream in progress: one supervised transcoder process and the segments it has written.
+//! A stream in progress: one supervised transcoder process at a time, and what it wrote.
 //!
 //! The command line is the reference's, taken from its log. The process reads the source and
 //! reports its segments over HTTP on loopback, as it does on Plex, at URLs holding an
 //! unguessable per-session id: this also keeps the client's token out of the process list.
+//!
+//! Every process a session starts is a run, writing into a directory of its own: a seek or a
+//! change of rung starts another, and what earlier runs wrote stays and is served. An adaptive
+//! stream is a ladder of rungs. When the server moves between them they share one
+//! representation, and the newest run started at or before a segment is the one that answers
+//! for it. When the player chooses, each rung is a representation of its own, written as one
+//! piece per group of pictures and served as the pieces starting within each segment's time:
+//! the transcoder cuts its segments relative to where its run started, so two runs started at
+//! different points would not otherwise agree on where a segment begins.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use tokio::io::AsyncReadExt as _;
 use tokio::process::Command;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
+use crate::adapt::{self, Delivery, ServerAdaptation};
+use crate::fragment;
 use crate::plan::{
-    audio_decoder, language_tag, AudioAction, StreamPlan, Track, VideoAction, VideoEncode,
+    audio_decoder, language_tag, Adaptation, AudioAction, KeyFrames, Ladder, StreamPlan, Track,
+    VideoAction, VideoEncode,
 };
 use crate::{TranscodeError, Transcoder};
 
@@ -45,9 +59,15 @@ const SEGMENTS_BEFORE_PLAYLIST: usize = 3;
 /// beyond this is a seek: a moment for a remux, a few seconds for an encode.
 const SEEK_MARGIN_SECONDS: u32 = 30;
 
-/// The length of a segment of copied video, as the reference asks for it.
-const COPIED_DASH_SEGMENT_SECONDS: u32 = 5;
-const COPIED_HLS_SEGMENT_SECONDS: u32 = 10;
+/// A piece's start is read in its track's timescale: one starting on a segment's boundary
+/// must not fall before it by a rounding.
+const BOUNDARY_TOLERANCE: f64 = 0.000_5;
+
+/// An audio piece is cut along with the video's, within a few audio frames of it.
+const AUDIO_CUT_TOLERANCE: f64 = 1.0;
+
+/// How much of a piece is read to find where it starts: its `moof` comes first.
+const PIECE_HEAD_BYTES: u64 = 4096;
 
 /// How the result reaches the player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,13 +76,20 @@ pub enum Protocol {
     Dash,
 }
 
-/// How long a session's segments are. An encode decides by its picture size.
-#[must_use]
-pub const fn segment_seconds(plan: &StreamPlan, protocol: Protocol) -> u32 {
-    match (plan.video, protocol) {
-        (VideoAction::Encode(encode), _) => encode.segment_seconds(),
-        (VideoAction::Copy, Protocol::Dash) => COPIED_DASH_SEGMENT_SECONDS,
-        (VideoAction::Copy, Protocol::Hls) => COPIED_HLS_SEGMENT_SECONDS,
+/// A track of a DASH stream: the video of one rendition, or the audio all of them share.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashTrack {
+    Video(usize),
+    Audio,
+}
+
+impl DashTrack {
+    /// The process's number for it, in its file names.
+    const fn stream(self) -> u32 {
+        match self {
+            Self::Video(_) => 0,
+            Self::Audio => 1,
+        }
     }
 }
 
@@ -77,7 +104,8 @@ pub struct StreamRequest {
     pub source: PathBuf,
     pub video: Track,
     pub audio: Track,
-    pub plan: StreamPlan,
+    /// The stream starts on its top rung.
+    pub ladder: Ladder,
     /// Where to start, in seconds.
     pub offset: Option<f64>,
     pub protocol: Protocol,
@@ -131,13 +159,27 @@ impl StreamRequest {
         self.source == other.source
             && self.video == other.video
             && self.audio == other.audio
-            && self.plan == other.plan
+            && self.ladder == other.ladder
             && self.protocol == other.protocol
             && self.subtitle == other.subtitle
     }
 
-    const fn segment_seconds(&self) -> u32 {
-        segment_seconds(&self.plan, self.protocol)
+    fn segment_seconds(&self) -> u32 {
+        self.ladder.segment_seconds(self.protocol)
+    }
+
+    fn client_adapted(&self) -> bool {
+        self.ladder.adaptation == Adaptation::Client
+    }
+
+    /// Which representation a rung is written as: its own when the player chooses, the one
+    /// they all share otherwise.
+    fn rendition_of(&self, rung: usize) -> usize {
+        if self.client_adapted() {
+            rung
+        } else {
+            0
+        }
     }
 }
 
@@ -148,6 +190,7 @@ pub struct SubtitleReader {
     /// The run whose pieces these are: a seek restarts the process, which numbers its pieces
     /// from 0 again, and they would not follow what was already read.
     generation: Option<u64>,
+    directory: PathBuf,
     next: SubtitlePiece,
 }
 
@@ -161,18 +204,14 @@ impl SubtitleReader {
                 (subtitle_chunk_name(number), subtitle_chunk_name(number + 1))
             }
         };
-        let (path, following) = (
-            self.session.directory.join(path),
-            self.session.directory.join(following),
-        );
+        let (path, following) = (self.directory.join(path), self.directory.join(following));
         loop {
-            let current = self
-                .session
-                .with_run(|run| run.as_ref().map(|run| run.generation));
-            if self.session.closed.load(Ordering::Acquire) || current != self.generation {
+            if self.session.closed.load(Ordering::Acquire)
+                || self.session.current_generation() != self.generation
+            {
                 return None;
             }
-            let ended = self.session.with_progress(|progress| progress.ended);
+            let ended = self.session.ended();
             if following.exists() || (ended && path.exists()) {
                 let piece = tokio::fs::read(&path).await.ok()?;
                 self.next = match self.next {
@@ -222,6 +261,11 @@ pub struct SessionStatus {
     pub audio_codec: String,
     /// The converted audio's channel count; `None` when the audio is copied and unknown.
     pub audio_channels: Option<u32>,
+    /// The rung of the latest video segment the player received: its encode, `None` when the
+    /// video is copied.
+    pub video_encode: Option<VideoEncode>,
+    /// The converted audio's bitrate; `None` when the audio is copied.
+    pub audio_kbps: Option<u32>,
     pub duration_ms: u64,
     /// How far content is available, and from where, in seconds.
     pub max_offset_seconds: f64,
@@ -236,45 +280,112 @@ pub struct SessionStatus {
 
 #[derive(Debug, Clone, Copy)]
 struct Announced {
+    start: f64,
     seconds: f64,
     finished: bool,
 }
 
+/// One process's output.
+#[derive(Debug)]
+struct Run {
+    generation: u64,
+    rung: usize,
+    rendition: usize,
+    /// The segment it was started at, as the player numbers them.
+    start_chunk: u32,
+    directory: PathBuf,
+    /// HLS files, as the process announced them.
+    segments: BTreeMap<u32, Announced>,
+    /// Where each DASH piece starts, by track, in the order of their files.
+    pieces: [Vec<f64>; 2],
+    timescales: [Option<u32>; 2],
+    ended: bool,
+}
+
+impl Run {
+    /// HLS pieces as `(start, file number)`, the finished ones.
+    fn finished_pieces(&self) -> Vec<(f64, u32)> {
+        self.segments
+            .iter()
+            .filter(|(_, piece)| piece.finished)
+            .map(|(number, piece)| (piece.start, *number))
+            .collect()
+    }
+
+    fn latest_finished(&self) -> Option<u32> {
+        self.segments
+            .iter()
+            .rev()
+            .find(|(_, segment)| segment.finished)
+            .map(|(number, _)| *number)
+    }
+}
+
+/// A run's pieces as far as they were read, to read the ones written since.
+struct ReadPieces {
+    generation: u64,
+    directory: PathBuf,
+    first: u32,
+    known: [usize; 2],
+    timescales: [Option<u32>; 2],
+}
+
 #[derive(Debug, Default)]
 struct Progress {
-    segments: BTreeMap<u32, Announced>,
-    /// The manifest the process wrote for DASH, once it holds the tracks.
-    manifest: Option<String>,
-    ended: bool,
+    /// Oldest first: the last is the one running, or the one that ran last.
+    runs: Vec<Run>,
+    /// The manifest the process wrote for DASH, once it holds the tracks, by rendition.
+    manifests: HashMap<usize, String>,
+}
+
+impl Progress {
+    fn current(&self) -> Option<&Run> {
+        self.runs.last()
+    }
 }
 
 /// The process currently working for a session.
 #[derive(Debug)]
-struct Run {
-    /// Tells runs apart: one that was replaced must not report the session as finished.
+struct Process {
     generation: u64,
-    /// The first DASH chunk it writes, numbered as its files are.
-    first_chunk: u32,
-    /// When this process started, for the transcode speed a status reports.
+    /// When it started, for the transcode speed a status reports.
     started: Instant,
     stop: Arc<Notify>,
     task: Option<JoinHandle<()>>,
 }
 
+/// What decides a session's rung.
+#[derive(Debug)]
+struct Switching {
+    /// The server's choice, for a stream it adapts.
+    server: Option<ServerAdaptation>,
+    /// When the process was last restarted for a rung the player asked for.
+    last_client_switch: Option<Instant>,
+    /// The rung of the latest video segment served.
+    served_rung: usize,
+    /// The latest video segment asked for: where a player switching rungs is.
+    last_video_chunk: Option<u32>,
+    /// The latest video segment sent whole, and when its sending began: it is judged once the
+    /// player asks for the next one.
+    sent: Option<(Delivery, Instant)>,
+}
+
 #[derive(Debug)]
 pub(crate) struct Session {
     callback: String,
-    url: String,
+    /// The process's way back in, up to the run: `…/video/:/transcode/session`.
+    callback_base: String,
     request: StreamRequest,
     directory: PathBuf,
     progress: Mutex<Progress>,
     changed: Notify,
     closed: AtomicBool,
-    run: Mutex<Option<Run>>,
+    process: Mutex<Option<Process>>,
     /// Held while one process replaces another: the video and the audio of one seek both
     /// arrive here, and only the first may restart anything.
     restarting: tokio::sync::Mutex<()>,
     last_used: Mutex<Instant>,
+    switching: Mutex<Switching>,
 }
 
 /// Removed with the last reference, which the process's supervising task holds until it exits.
@@ -284,6 +395,42 @@ impl Drop for Session {
             tracing::warn!(%error, "could not remove a transcode session's directory");
         }
     }
+}
+
+/// Which pieces of a run make up the segment `[from, to)`: those starting within it or, when the
+/// source's key frames are further apart than a segment, the one it falls in. `None` until all
+/// of them are written. The run must have started at or before the segment, so that none of
+/// its pieces can be missing before the first one found.
+fn chunk_pieces(starts: &[f64], ended: bool, from: f64, to: f64) -> Option<Range<usize>> {
+    let begin = starts.partition_point(|start| *start < from - BOUNDARY_TOLERANCE);
+    let end = starts.partition_point(|start| *start < to - BOUNDARY_TOLERANCE);
+    let range = if begin < end {
+        begin..end
+    } else if begin > 0 && begin < starts.len() {
+        begin - 1..begin
+    } else {
+        // Past what the run wrote: not reached yet, or past the end of the media.
+        return None;
+    };
+    (range.end < starts.len() || ended).then_some(range)
+}
+
+/// Each audio piece counted at the start of the video piece it was cut with.
+fn audio_starts(audio: &[f64], video: &[f64]) -> Vec<f64> {
+    audio
+        .iter()
+        .map(|&start| {
+            let at = video.partition_point(|cut| *cut < start);
+            [at.checked_sub(1), Some(at)]
+                .into_iter()
+                .flatten()
+                .filter_map(|index| video.get(index))
+                .copied()
+                .filter(|cut| (cut - start).abs() <= AUDIO_CUT_TOLERANCE)
+                .min_by(|a, b| (a - start).abs().total_cmp(&(b - start).abs()))
+                .unwrap_or(start)
+        })
+        .collect()
 }
 
 impl Session {
@@ -305,13 +452,50 @@ impl Session {
         read(&mut self.progress.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
+    fn with_process<T>(&self, read: impl FnOnce(&mut Option<Process>) -> T) -> T {
+        read(&mut self.process.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    fn with_switching<T>(&self, read: impl FnOnce(&mut Switching) -> T) -> T {
+        read(
+            &mut self
+                .switching
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        )
+    }
+
+    fn seconds(&self) -> f64 {
+        f64::from(self.request.segment_seconds())
+    }
+
+    fn current_generation(&self) -> Option<u64> {
+        self.with_progress(|progress| progress.current().map(|run| run.generation))
+    }
+
+    /// The running run's rendition, rung and starting segment.
+    fn current(&self) -> Option<(usize, usize, u32)> {
+        self.with_progress(|progress| {
+            progress
+                .current()
+                .map(|run| (run.rendition, run.rung, run.start_chunk))
+        })
+    }
+
+    /// Whether the latest process has ended, or none was started.
+    fn ended(&self) -> bool {
+        self.with_progress(|progress| progress.current().is_none_or(|run| run.ended))
+    }
+
     /// Waits until `ready` holds or the process has had long enough.
     async fn wait_until(&self, ready: impl Fn(&Progress) -> bool) {
         let deadline = tokio::time::Instant::now() + WAIT_FOR_OUTPUT;
         loop {
             // Taken before checking, so a change arriving in between is not missed.
             let change = self.changed.notified();
-            if self.with_progress(|progress| ready(progress) || progress.ended) {
+            if self.with_progress(|progress| {
+                ready(progress) || progress.current().is_none_or(|run| run.ended)
+            }) {
                 return;
             }
             if tokio::time::timeout_at(deadline, change).await.is_err() {
@@ -321,134 +505,326 @@ impl Session {
     }
 
     /// Waits for part of the output to exist. Whether it did in time.
-    async fn wait_for(&self, exists: impl Fn() -> bool) -> bool {
+    async fn wait_for<T>(&self, mut found: impl FnMut() -> Option<T>) -> Option<T> {
         let began = tokio::time::Instant::now();
         loop {
-            if exists() {
-                return true;
+            if let Some(found) = found() {
+                return Some(found);
             }
             if self.closed.load(Ordering::Acquire) {
-                return false;
+                return None;
             }
-            let limit = if self.with_progress(|progress| progress.ended) {
+            let limit = if self.ended() {
                 HOLD_BEFORE_REFUSAL
             } else {
                 WAIT_FOR_OUTPUT
             };
             if began.elapsed() >= limit {
-                return false;
+                return None;
             }
             tokio::time::sleep(FILE_POLL).await;
         }
     }
 
-    /// Waits for one of the files the process is expected to write.
-    async fn wait_for_file(&self, paths: &[PathBuf]) -> Result<(), TranscodeError> {
-        if self
-            .wait_for(|| paths.iter().any(|path| path.exists()))
-            .await
-        {
-            Ok(())
-        } else {
-            Err(TranscodeError::UnknownSegment)
-        }
-    }
-
-    fn with_run<T>(&self, read: impl FnOnce(&mut Option<Run>) -> T) -> T {
-        read(&mut self.run.lock().unwrap_or_else(PoisonError::into_inner))
-    }
-
-    fn chunk_path(&self, stream: u32, number: u32) -> PathBuf {
-        self.directory
-            .join(format!("chunk-stream{stream}-{number:05}.m4s"))
+    /// The file holding chunk `number` of a stream copied or converted at one rendition. When
+    /// the server moves between rungs, only the newest run started at or before it may answer:
+    /// an older one wrote another rung there.
+    fn written_chunk(&self, stream: u32, number: u32) -> Option<PathBuf> {
+        let only_newest = self.request.ladder.adaptation == Adaptation::Server;
+        self.with_progress(|progress| {
+            progress
+                .runs
+                .iter()
+                .rev()
+                .filter(|run| run.start_chunk <= number)
+                .take(if only_newest { 1 } else { usize::MAX })
+                .map(|run| run.directory.join(chunk_name(stream, number + 1)))
+                .find(|path| path.exists())
+        })
     }
 
     /// Whether the running process will reach this chunk soon without being told to.
     fn will_reach(&self, stream: u32, number: u32) -> bool {
-        if self.with_progress(|progress| progress.ended) {
-            return false;
-        }
-        let Some(first) = self.with_run(|run| run.as_ref().map(|run| run.first_chunk)) else {
+        let Some((directory, first)) = self.with_progress(|progress| {
+            progress
+                .current()
+                .filter(|run| !run.ended)
+                .map(|run| (run.directory.clone(), run.start_chunk))
+        }) else {
             return false;
         };
         if number < first {
             return false;
         }
         // A chunk being written carries a `.tmp` suffix until it is whole.
-        let in_progress = self
-            .directory
-            .join(format!("chunk-stream{stream}-{number:05}.m4s.tmp"))
+        let in_progress = directory
+            .join(format!("{}.tmp", chunk_name(stream, number + 1)))
             .exists();
         let margin = SEEK_MARGIN_SECONDS.div_ceil(self.request.segment_seconds());
         number == first
             || in_progress
             || (number.saturating_sub(margin).max(first)..number)
-                .any(|earlier| self.chunk_path(stream, earlier).exists())
+                .any(|earlier| directory.join(chunk_name(stream, earlier + 1)).exists())
+    }
+
+    /// The finished HLS segment `number`, by the same rule as [`Self::written_chunk`].
+    fn hls_written(&self, number: u32) -> Option<PathBuf> {
+        let only_newest = self.request.ladder.adaptation == Adaptation::Server;
+        self.with_progress(|progress| {
+            progress
+                .runs
+                .iter()
+                .rev()
+                .filter(|run| run.start_chunk <= number)
+                .take(if only_newest { 1 } else { usize::MAX })
+                .find(|run| run.segments.get(&number).is_some_and(|s| s.finished))
+                .map(|run| run.directory.join(hls_name(number)))
+        })
     }
 
     /// Whether the running process will reach this HLS segment soon without being told to.
-    /// HLS muxes one `.ts` stream, numbered sequentially from the run's first segment.
     fn hls_will_reach(&self, number: u32) -> bool {
-        if self.with_progress(|progress| progress.ended) {
-            return false;
-        }
-        let Some(first) = self.with_run(|run| run.as_ref().map(|run| run.first_chunk)) else {
-            return false;
-        };
-        if number < first {
-            return false;
-        }
         let margin = SEEK_MARGIN_SECONDS.div_ceil(self.request.segment_seconds());
-        let frontier = self
-            .with_progress(|progress| {
-                progress
-                    .segments
-                    .iter()
-                    .filter(|(_, segment)| segment.finished)
-                    .map(|(number, _)| *number)
-                    .max()
-            })
-            .map_or(first, |latest| latest.max(first));
-        number <= frontier.saturating_add(margin)
+        self.with_progress(|progress| {
+            progress
+                .current()
+                .filter(|run| !run.ended && run.start_chunk <= number)
+                .is_some_and(|run| {
+                    let frontier = run
+                        .latest_finished()
+                        .map_or(run.start_chunk, |latest| latest.max(run.start_chunk));
+                    number <= frontier.saturating_add(margin)
+                })
+        })
     }
 
-    fn output(&self) -> Output {
+    /// Reads where the DASH pieces written since the last look start.
+    async fn refresh_pieces(&self) {
+        let pending: Vec<ReadPieces> = self.with_progress(|progress| {
+            progress
+                .runs
+                .iter()
+                .map(|run| ReadPieces {
+                    generation: run.generation,
+                    directory: run.directory.clone(),
+                    first: first_file(Protocol::Dash, run.start_chunk),
+                    known: [run.pieces[0].len(), run.pieces[1].len()],
+                    timescales: run.timescales,
+                })
+                .collect()
+        });
+        for ReadPieces {
+            generation,
+            directory,
+            first,
+            known,
+            timescales,
+        } in pending
+        {
+            for (index, stream) in [(0, 0), (1, 1)] {
+                let Some(timescale) = (match timescales[index] {
+                    Some(timescale) => Some(timescale),
+                    None => tokio::fs::read(directory.join(init_name(stream)))
+                        .await
+                        .ok()
+                        .and_then(|init| fragment::timescale(&init))
+                        .filter(|timescale| *timescale > 0),
+                }) else {
+                    continue;
+                };
+                let mut found = Vec::new();
+                loop {
+                    let Some(file) = u32::try_from(known[index] + found.len())
+                        .ok()
+                        .and_then(|index| first.checked_add(index))
+                    else {
+                        break;
+                    };
+                    let path = directory.join(chunk_name(stream, file));
+                    let Some(shown) = read_head(&path)
+                        .await
+                        .and_then(|head| fragment::first_presentation_time(&head))
+                    else {
+                        break;
+                    };
+                    #[allow(
+                        clippy::cast_precision_loss,
+                        reason = "a presentation time far below 2^52 ticks"
+                    )]
+                    found.push(shown as f64 / f64::from(timescale));
+                }
+                self.with_progress(|progress| {
+                    if let Some(run) = progress
+                        .runs
+                        .iter_mut()
+                        .find(|run| run.generation == generation)
+                    {
+                        run.timescales[index] = Some(timescale);
+                        if run.pieces[index].len() == known[index] {
+                            run.pieces[index].extend(found);
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    /// The files of segment `number` of a rendition the player chose, `None` for audio, when
+    /// some run has written all of them.
+    fn assembled(
+        &self,
+        track: Option<DashTrack>,
+        rendition: usize,
+        number: u32,
+    ) -> Option<Vec<PathBuf>> {
+        let seconds = self.seconds();
+        let (from, to) = (f64::from(number) * seconds, f64::from(number + 1) * seconds);
+        self.with_progress(|progress| {
+            progress
+                .runs
+                .iter()
+                .rev()
+                .filter(|run| run.start_chunk <= number)
+                .find_map(|run| match track {
+                    None if run.rendition == rendition => {
+                        let pieces = run.finished_pieces();
+                        let starts: Vec<f64> = pieces.iter().map(|(start, _)| *start).collect();
+                        let range = chunk_pieces(&starts, run.ended, from, to)?;
+                        Some(
+                            pieces[range]
+                                .iter()
+                                .map(|(_, file)| run.directory.join(hls_name(*file)))
+                                .collect(),
+                        )
+                    }
+                    Some(DashTrack::Video(wanted)) if run.rendition == wanted => {
+                        let range = chunk_pieces(&run.pieces[0], run.ended, from, to)?;
+                        Some(piece_paths(run, 0, range))
+                    }
+                    Some(DashTrack::Audio) => {
+                        let starts = audio_starts(&run.pieces[1], &run.pieces[0]);
+                        let range = chunk_pieces(&starts, run.ended, from, to)?;
+                        Some(piece_paths(run, 1, range))
+                    }
+                    _ => None,
+                })
+        })
+    }
+
+    /// Whether the running process, of this rendition, will write segment `number` soon.
+    fn pieces_will_reach(&self, rendition: usize, number: u32) -> bool {
+        let seconds = self.seconds();
+        let from = f64::from(number) * seconds;
+        let margin = f64::from(SEEK_MARGIN_SECONDS);
+        self.with_progress(|progress| {
+            progress.current().is_some_and(|run| {
+                let frontier = match self.request.protocol {
+                    Protocol::Dash => run.pieces[0].last().copied(),
+                    Protocol::Hls => run.finished_pieces().last().map(|(start, _)| *start),
+                }
+                .unwrap_or(f64::from(run.start_chunk) * seconds);
+                run.rendition == rendition
+                    && !run.ended
+                    && run.start_chunk <= number
+                    && frontier >= from - margin
+            })
+        })
+    }
+
+    fn output(&self, rendition: usize) -> Output {
         let total_ms = self.request.total_ms;
         let segment_seconds = self.request.segment_seconds();
-        self.with_progress(|progress| Output {
-            segments: progress
-                .segments
-                .iter()
-                .filter(|(_, segment)| segment.finished)
-                .map(|(number, segment)| Segment {
-                    number: *number,
-                    seconds: segment.seconds,
-                })
-                .collect(),
-            ended: progress.ended,
+        let segments = if self.request.client_adapted() {
+            // Every segment some run of the rendition completed, at its nominal length.
+            let mut segments = Vec::new();
+            let mut number = 0;
+            while let Some(files) = self.assembled(None, rendition, number) {
+                if files.is_empty() {
+                    break;
+                }
+                segments.push(Segment {
+                    number,
+                    seconds: f64::from(segment_seconds),
+                });
+                number += 1;
+            }
+            segments
+        } else {
+            self.with_progress(|progress| {
+                let mut merged: BTreeMap<u32, f64> = BTreeMap::new();
+                for run in &progress.runs {
+                    merged.extend(
+                        run.segments
+                            .iter()
+                            .filter(|(_, segment)| segment.finished)
+                            .map(|(number, segment)| (*number, segment.seconds)),
+                    );
+                }
+                merged
+                    .into_iter()
+                    .map(|(number, seconds)| Segment { number, seconds })
+                    .collect()
+            })
+        };
+        Output {
+            segments,
+            ended: self.ended(),
             total_ms,
             segment_seconds,
-        })
+        }
     }
 
-    /// How many segment files the process has finished writing. HLS segments and DASH chunks are
-    /// named differently; a chunk still being written carries a `.tmp` suffix and is not counted.
-    fn produced_segments(&self) -> usize {
-        let (prefix, suffix) = match self.request.protocol {
-            Protocol::Hls => ("media-", ".ts"),
-            Protocol::Dash => ("chunk-stream0-", ".m4s"),
-        };
-        std::fs::read_dir(&self.directory).map_or(0, |entries| {
-            entries
-                .filter_map(Result::ok)
-                .filter(|entry| {
-                    let name = entry.file_name();
-                    let name = name.to_string_lossy();
-                    name.starts_with(prefix) && name.ends_with(suffix)
-                })
-                .count()
+    /// The rung of a video segment just served, for the status a timeline reports.
+    fn served(&self, rung: usize, number: u32) {
+        self.with_switching(|switching| {
+            switching.served_rung = rung;
+            switching.last_video_chunk = Some(number);
+        });
+    }
+
+    /// The rung the newest run answering for a segment was started at.
+    fn rung_answering(&self, number: u32) -> usize {
+        self.with_progress(|progress| {
+            progress
+                .runs
+                .iter()
+                .rev()
+                .find(|run| run.start_chunk <= number)
+                .or_else(|| progress.current())
+                .map_or(0, |run| run.rung)
         })
     }
+}
+
+fn chunk_name(stream: u32, file: u32) -> String {
+    format!("chunk-stream{stream}-{file:05}.m4s")
+}
+
+fn init_name(stream: u32) -> String {
+    format!("init-stream{stream}.m4s")
+}
+
+fn hls_name(number: u32) -> String {
+    format!("media-{number:05}.ts")
+}
+
+fn piece_paths(run: &Run, stream: u32, range: Range<usize>) -> Vec<PathBuf> {
+    let first = first_file(Protocol::Dash, run.start_chunk);
+    range
+        .filter_map(|index| u32::try_from(index).ok())
+        .map(|index| run.directory.join(chunk_name(stream, first + index)))
+        .collect()
+}
+
+/// The start of a finished piece, or `None` while it does not exist under its final name.
+async fn read_head(path: &Path) -> Option<Vec<u8>> {
+    let file = tokio::fs::File::open(path).await.ok()?;
+    let mut head = Vec::new();
+    file.take(PIECE_HEAD_BYTES)
+        .read_to_end(&mut head)
+        .await
+        .ok()?;
+    Some(head)
 }
 
 /// Reads the transcoder's announcement, which restates the latest segments each time:
@@ -471,6 +847,7 @@ fn parse_announcement(body: &str) -> Vec<(u32, Announced)> {
             Some((
                 number,
                 Announced {
+                    start,
                     seconds: end - start,
                     finished,
                 },
@@ -479,7 +856,16 @@ fn parse_announcement(body: &str) -> Vec<(u32, Announced)> {
         .collect()
 }
 
-fn hls_output(callback: &str, seconds: u32, first_chunk: u32) -> Vec<String> {
+/// A process's outputs cut in pieces at every key frame, for a rung the player chooses: no
+/// cut can then fall anywhere but on one.
+const PIECE_SECONDS: &str = "0.001";
+
+fn hls_output(callback: &str, seconds: u32, first_file: u32, pieces: bool) -> Vec<String> {
+    let segment_time = if pieces {
+        PIECE_SECONDS.to_owned()
+    } else {
+        seconds.to_string()
+    };
     [
         "-segment_format",
         "mpegts",
@@ -488,9 +874,9 @@ fn hls_output(callback: &str, seconds: u32, first_chunk: u32) -> Vec<String> {
         "-individual_header_trailer",
         "0",
         "-segment_time",
-        &seconds.to_string(),
+        &segment_time,
         "-segment_start_number",
-        &first_chunk.to_string(),
+        &first_file.to_string(),
         "-segment_time_delta",
         "0.0625",
         "-segment_list",
@@ -522,13 +908,17 @@ fn hls_output(callback: &str, seconds: u32, first_chunk: u32) -> Vec<String> {
 }
 
 /// This build keeps the chunks on a grid of `seconds` even when copying video, so their number
-/// says where they are in time: 494 chunks of 5 seconds for 2467 seconds.
-fn dash_output(callback: &str, seconds: u32, first_chunk: u32) -> Vec<String> {
-    [
-        "-f",
-        "dash",
-        "-seg_duration",
-        &seconds.to_string(),
+/// says where they are in time: 494 chunks of 5 seconds for 2467 seconds. The grid starts where
+/// the run does, though. Cut in pieces, the audio follows the video's cuts.
+fn dash_output(callback: &str, seconds: u32, first_file: u32, pieces: bool) -> Vec<String> {
+    let mut args = strings(&["-f", "dash", "-seg_duration", &seconds.to_string()]);
+    if pieces {
+        args.extend(strings(&[
+            "-adaptation_sets",
+            &format!("id=0,seg_duration={PIECE_SECONDS},streams=0 id=1,streams=1"),
+        ]));
+    }
+    args.extend(strings(&[
         "-dash_segment_type",
         "mp4",
         "-init_seg_name",
@@ -540,7 +930,7 @@ fn dash_output(callback: &str, seconds: u32, first_chunk: u32) -> Vec<String> {
         "-delete_removed",
         "false",
         "-skip_to_segment",
-        &first_chunk.to_string(),
+        &first_file.to_string(),
         "-manifest_name",
         &format!("{callback}/manifest?X-Plex-Http-Pipeline=infinite"),
         "-avoid_negative_ts",
@@ -550,26 +940,34 @@ fn dash_output(callback: &str, seconds: u32, first_chunk: u32) -> Vec<String> {
         "-map_chapters",
         "-1",
         "dash",
-    ]
-    .iter()
-    .map(ToString::to_string)
-    .collect()
+    ]));
+    args
 }
 
 fn strings(values: &[&str]) -> Vec<String> {
     values.iter().map(ToString::to_string).collect()
 }
 
-fn input_arguments(request: &StreamRequest, callback: &str) -> Vec<String> {
+/// What one process of a session is asked to do.
+struct RunPlan<'a> {
+    plan: &'a StreamPlan,
+    /// Where it starts in the source, in seconds.
+    offset: Option<f64>,
+    /// The number of its first segment's file.
+    first_file: u32,
+    callback: &'a str,
+}
+
+fn input_arguments(request: &StreamRequest, run: &RunPlan<'_>) -> Vec<String> {
     let StreamRequest {
         video,
         audio,
-        plan,
-        offset,
         protocol,
         ..
     } = request;
+    let plan = run.plan;
     let encodes = plan.video != VideoAction::Copy;
+    let client = request.client_adapted();
     let mut args = strings(&[&format!("-codec:{}", video.index), "h264"]);
     if plan.audio == AudioAction::ConvertToAac {
         args.extend(strings(&[
@@ -579,14 +977,21 @@ fn input_arguments(request: &StreamRequest, callback: &str) -> Vec<String> {
     }
     // The reference always states it for copied DASH, otherwise only when there is one.
     let start = match protocol {
-        _ if encodes => offset.filter(|seconds| *seconds > 0.0),
-        Protocol::Dash => Some(offset.unwrap_or(0.0)),
-        Protocol::Hls => *offset,
+        _ if client => Some(run.offset.unwrap_or(0.0)),
+        _ if encodes => run.offset.filter(|seconds| *seconds > 0.0),
+        Protocol::Dash => Some(run.offset.unwrap_or(0.0)),
+        Protocol::Hls => run.offset,
     };
     if let Some(start) = start {
         args.extend(strings(&["-ss", &start.to_string()]));
     }
-    if !encodes {
+    // Rungs cut where the copy is all start on the key frame before, as the copy has to.
+    let inaccurate = if client {
+        request.ladder.copies()
+    } else {
+        !encodes
+    };
+    if inaccurate {
         args.push("-noaccurate_seek".to_owned());
     }
     args.extend(strings(&[
@@ -595,11 +1000,11 @@ fn input_arguments(request: &StreamRequest, callback: &str) -> Vec<String> {
         "-probesize",
         "20000000",
         "-i",
-        &format!("{callback}/source"),
+        &format!("{}/source", run.callback),
         "-start_at_zero",
         "-copyts",
     ]));
-    if !encodes || start.is_none() {
+    if !encodes || start.is_none_or(|start| start <= 0.0) {
         args.extend(strings(&["-fps_mode", "cfr"]));
     }
     args.extend(strings(&[
@@ -610,10 +1015,14 @@ fn input_arguments(request: &StreamRequest, callback: &str) -> Vec<String> {
         "-loglevel_plex",
         "error",
         "-progressurl",
-        &format!("{callback}/progress"),
+        &format!("{}/progress", run.callback),
     ]));
     args
 }
+
+/// The level every rung of a server-adapted stream declares, high enough for 1080p at 60 frames
+/// and the top rung's 20 Mbps: left to x264, it follows the bitrate.
+const SHARED_LEVEL: &str = "4.2";
 
 fn video_encoder_options(encode: &VideoEncode) -> Vec<String> {
     let mut args = strings(&[
@@ -629,14 +1038,24 @@ fn video_encoder_options(encode: &VideoEncode) -> Vec<String> {
     if let Some(rate) = encode.frame_rate {
         args.extend(strings(&["-r:0", &rate.to_string()]));
     }
-    args.extend(strings(&[
-        "-preset:0",
-        "veryfast",
-        "-x264opts:0",
-        encode.x264_options(),
-        "-force_key_frames:0",
-        &format!("expr:gte(t,n_forced*{})", encode.segment_seconds()),
-    ]));
+    let mut x264 = encode.x264_options().to_owned();
+    if encode.key_frames == KeyFrames::AsSource {
+        // x264's own key frames would cut a piece where the copy has none.
+        x264.push_str(":scenecut=0:keyint=infinite");
+    }
+    if encode.shared_headers {
+        // Otherwise the picture parameters follow the CRF, and the level the bitrate.
+        x264.push_str(":stitchable=1");
+    }
+    args.extend(strings(&["-preset:0", "veryfast", "-x264opts:0", &x264]));
+    if encode.shared_headers {
+        args.extend(strings(&["-level:0", SHARED_LEVEL]));
+    }
+    let key_frames = match encode.key_frames {
+        KeyFrames::Every(seconds) => format!("expr:gte(t,n_forced*{seconds})"),
+        KeyFrames::AsSource => "source".to_owned(),
+    };
+    args.extend(strings(&["-force_key_frames:0", &key_frames]));
     args
 }
 
@@ -718,7 +1137,15 @@ fn video_arguments(
     args
 }
 
-fn audio_arguments(audio: &Track, plan: &StreamPlan, burns: bool) -> Vec<String> {
+/// `native_encoder`: the reference converts audio beside copied video with Media Foundation's
+/// encoder and beside an encode with ffmpeg's own; rungs a player moves between must all use
+/// the same, and use ffmpeg's.
+fn audio_arguments(
+    audio: &Track,
+    plan: &StreamPlan,
+    burns: bool,
+    native_encoder: bool,
+) -> Vec<String> {
     let converts = plan.audio == AudioAction::ConvertToAac;
     let encodes = plan.video != VideoAction::Copy;
     let mut args = if converts {
@@ -747,7 +1174,11 @@ fn audio_arguments(audio: &Track, plan: &StreamPlan, burns: bool) -> Vec<String>
     if converts {
         args.extend(strings(&[
             "-codec:1",
-            if encodes { "aac" } else { "aac_mf" },
+            if encodes || native_encoder {
+                "aac"
+            } else {
+                "aac_mf"
+            },
             "-b:1",
             &format!("{}k", plan.audio_kbps()),
         ]));
@@ -759,27 +1190,28 @@ fn audio_arguments(audio: &Track, plan: &StreamPlan, burns: bool) -> Vec<String>
 
 fn stream_arguments(
     request: &StreamRequest,
-    callback: &str,
-    first_chunk: u32,
+    run: &RunPlan<'_>,
     fonts: Option<&Path>,
 ) -> Vec<String> {
     let seconds = request.segment_seconds();
+    let pieces = request.client_adapted();
     let burn = match (&request.subtitle, fonts) {
         (Some(SubtitleDelivery::Burn { track, scale }), Some(fonts)) => {
             Some((track, *scale, fonts))
         }
         _ => None,
     };
-    let mut args = input_arguments(request, callback);
-    args.extend(video_arguments(&request.video, request.plan.video, burn));
+    let mut args = input_arguments(request, run);
+    args.extend(video_arguments(&request.video, run.plan.video, burn));
     args.extend(audio_arguments(
         &request.audio,
-        &request.plan,
+        run.plan,
         burn.is_some(),
+        pieces,
     ));
     args.extend(match request.protocol {
-        Protocol::Hls => hls_output(callback, seconds, first_chunk),
-        Protocol::Dash => dash_output(callback, seconds, first_chunk),
+        Protocol::Hls => hls_output(run.callback, seconds, run.first_file, pieces),
+        Protocol::Dash => dash_output(run.callback, seconds, run.first_file, pieces),
     });
     if let Some((subtitle, _, _)) = burn {
         // The filter draws only what this output decodes alongside: without it, nothing.
@@ -794,7 +1226,7 @@ fn stream_arguments(
         ]));
     }
     if let Some(SubtitleDelivery::Text { track }) = &request.subtitle {
-        args.extend(text_subtitle_output(track, callback));
+        args.extend(text_subtitle_output(track, run.callback));
     }
     args
 }
@@ -850,8 +1282,8 @@ fn sessions_root() -> PathBuf {
     std::env::temp_dir().join("open-plex-transcode")
 }
 
-/// Moves a DASH start onto the chunk grid and says which chunk that is. A chunk's number has to
-/// say where it is in time, so the process must start on one.
+/// Moves a start onto the segment grid and says which segment that is, as the player numbers
+/// them. A segment's number has to say where it is in time, so the process must start on one.
 fn align_to_chunk(request: &mut StreamRequest) -> u32 {
     let seconds = f64::from(request.segment_seconds());
     let whole = (request.offset.unwrap_or(0.0).max(0.0) / seconds).floor();
@@ -863,8 +1295,15 @@ fn align_to_chunk(request: &mut StreamRequest) -> u32 {
         reason = "not negative, and a chunk count far below u32::MAX"
     )]
     let chunk = whole as u32;
-    // DASH numbers its chunks from one, HLS its segments from zero.
-    match request.protocol {
+    chunk
+}
+
+/// The number the file of a run's first segment carries: DASH numbers its chunks from one,
+/// HLS its segments from zero. A run cut in pieces numbers them from there too, though its
+/// numbers no longer say where a piece is: this build writes an encode's timestamps from zero
+/// when told its first DASH segment is the first, wherever it starts.
+const fn first_file(protocol: Protocol, chunk: u32) -> u32 {
+    match protocol {
         Protocol::Dash => chunk + 1,
         Protocol::Hls => chunk,
     }
@@ -886,6 +1325,64 @@ fn external_libs_value(directory: &Path) -> String {
     } else {
         format!("{escaped}/")
     }
+}
+
+/// Watches a run's process until it exits or is told to stop, then marks the run ended.
+fn supervise(session: &Arc<Session>, mut child: tokio::process::Child, generation: u64) {
+    let stop = Arc::new(Notify::new());
+    session.with_process(|process| {
+        *process = Some(Process {
+            generation,
+            started: Instant::now(),
+            stop: Arc::clone(&stop),
+            task: None,
+        });
+    });
+
+    let supervised = Arc::clone(session);
+    let task = tokio::spawn(async move {
+        tokio::select! {
+            result = child.wait() => {
+                if let Err(error) = result {
+                    tracing::warn!(%error, "lost track of a transcoder process");
+                }
+            }
+            () = stop.notified() => {
+                if let Err(error) = child.kill().await {
+                    tracing::warn!(%error, "could not kill a transcoder process");
+                }
+            }
+        }
+        supervised.with_progress(|progress| {
+            if let Some(run) = progress
+                .runs
+                .iter_mut()
+                .find(|run| run.generation == generation)
+            {
+                run.ended = true;
+            }
+        });
+        supervised.changed.notify_waiters();
+    });
+    session.with_process(|process| {
+        if let Some(process) = process
+            .as_mut()
+            .filter(|process| process.generation == generation)
+        {
+            process.task = Some(task);
+        }
+    });
+}
+
+/// Why a process is replaced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Restart {
+    /// Another place in the same rung.
+    Seek,
+    /// A rung the player asked for.
+    ClientSwitch,
+    /// A rung the server chose.
+    ServerSwitch,
 }
 
 impl Transcoder {
@@ -968,23 +1465,39 @@ impl Transcoder {
             .await
             .map_err(TranscodeError::Io)?;
 
-        let first_chunk = align_to_chunk(&mut request);
-        let url = format!(
-            "{}/video/:/transcode/session/{callback}/{callback}",
-            self.config.callback_base
-        );
+        let chunk = align_to_chunk(&mut request);
+        let server = (request.ladder.adaptation == Adaptation::Server).then(|| {
+            ServerAdaptation::new(
+                request
+                    .ladder
+                    .rungs
+                    .iter()
+                    .map(|rung| match rung.video {
+                        VideoAction::Encode(encode) => encode.video_kbps + encode.audio_kbps,
+                        VideoAction::Copy => 0,
+                    })
+                    .collect(),
+            )
+        });
         let key = request.session.clone();
         let session = Arc::new(Session {
+            callback_base: format!("{}/video/:/transcode/session", self.config.callback_base),
             callback,
-            url,
-            request: request.clone(),
+            request,
             directory,
             progress: Mutex::default(),
             changed: Notify::new(),
             closed: AtomicBool::new(false),
-            run: Mutex::new(None),
+            process: Mutex::new(None),
             restarting: tokio::sync::Mutex::new(()),
             last_used: Mutex::new(Instant::now()),
+            switching: Mutex::new(Switching {
+                server,
+                last_client_switch: None,
+                served_rung: 0,
+                last_video_chunk: None,
+                sent: None,
+            }),
         });
         // Registered before the process exists: its first act is to read its source back.
         self.sessions
@@ -992,7 +1505,8 @@ impl Transcoder {
             .unwrap_or_else(PoisonError::into_inner)
             .insert(key.clone(), Arc::clone(&session));
 
-        if let Err(error) = self.launch(&session, &request, first_chunk) {
+        let offset = session.request.offset;
+        if let Err(error) = self.launch(&session, 0, chunk, offset).await {
             self.sessions
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
@@ -1023,22 +1537,49 @@ impl Transcoder {
         replaced
     }
 
-    /// Starts a process for this session, which must have none running.
-    fn launch(
+    /// Starts a process for this session at a rung and a segment, writing into a directory of
+    /// its own. The session must have none running.
+    async fn launch(
         &self,
         session: &Arc<Session>,
-        request: &StreamRequest,
-        first_chunk: u32,
+        rung: usize,
+        chunk: u32,
+        offset: Option<f64>,
     ) -> Result<(), TranscodeError> {
+        let request = &session.request;
+        let plan = request
+            .ladder
+            .rungs
+            .get(rung)
+            .ok_or(TranscodeError::UnknownSegment)?;
+        let generation = session.with_progress(|progress| {
+            progress
+                .runs
+                .last()
+                .map_or(0, |previous| previous.generation + 1)
+        });
+        let directory = session.directory.join(format!("run-{generation}"));
+        tokio::fs::create_dir_all(&directory)
+            .await
+            .map_err(TranscodeError::Io)?;
+        let callback = format!(
+            "{}/{generation}/{}",
+            session.callback_base, session.callback
+        );
+        let run = RunPlan {
+            plan,
+            offset,
+            first_file: first_file(request.protocol, chunk),
+            callback: &callback,
+        };
         let mut command = Command::new(&self.config.binary);
         command
             .args(stream_arguments(
                 request,
-                &session.url,
-                first_chunk,
+                &run,
                 self.config.fonts.as_deref(),
             ))
-            .current_dir(&session.directory)
+            .current_dir(&directory)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -1046,91 +1587,45 @@ impl Transcoder {
         if let Some(codecs) = &self.config.external_libs {
             command.env("FFMPEG_EXTERNAL_LIBS", external_libs_value(codecs));
         }
-        let mut child = command.spawn().map_err(TranscodeError::Spawn)?;
+        let child = command.spawn().map_err(TranscodeError::Spawn)?;
+        tracing::debug!(rung, chunk, generation, "started a transcoder run");
 
-        let stop = Arc::new(Notify::new());
-        let generation = session.with_run(|run| {
-            let generation = run.as_ref().map_or(0, |previous| previous.generation + 1);
-            *run = Some(Run {
+        session.with_progress(|progress| {
+            progress.runs.push(Run {
                 generation,
-                first_chunk,
-                started: Instant::now(),
-                stop: Arc::clone(&stop),
-                task: None,
+                rung,
+                rendition: request.rendition_of(rung),
+                start_chunk: chunk,
+                directory,
+                segments: BTreeMap::new(),
+                pieces: [Vec::new(), Vec::new()],
+                timescales: [None, None],
+                ended: false,
             });
-            generation
         });
-        session.with_progress(|progress| progress.ended = false);
-
-        let supervised = Arc::clone(session);
-        let task = tokio::spawn(async move {
-            tokio::select! {
-                result = child.wait() => {
-                    if let Err(error) = result {
-                        tracing::warn!(%error, "lost track of a transcoder process");
-                    }
-                }
-                () = stop.notified() => {
-                    if let Err(error) = child.kill().await {
-                        tracing::warn!(%error, "could not kill a transcoder process");
-                    }
-                }
-            }
-            let current = supervised
-                .with_run(|run| run.as_ref().is_some_and(|run| run.generation == generation));
-            if current {
-                supervised.with_progress(|progress| progress.ended = true);
-                supervised.changed.notify_waiters();
-            }
-        });
-        session.with_run(|run| {
-            if let Some(run) = run.as_mut().filter(|run| run.generation == generation) {
-                run.task = Some(task);
-            }
-        });
+        supervise(session, child, generation);
         Ok(())
     }
 
-    /// Replaces the session's process with one starting at this DASH chunk. What is already
-    /// written stays, so going back over it costs nothing.
-    async fn seek(
+    /// Replaces the session's process with one at `rung` starting at segment `chunk`, unless
+    /// another request did so since `seen` was the running run. What is already written stays,
+    /// so going back over it costs nothing.
+    async fn restart(
         &self,
         session: &Arc<Session>,
-        stream: u32,
-        number: u32,
+        seen: Option<u64>,
+        rung: usize,
+        chunk: u32,
+        reason: Restart,
     ) -> Result<(), TranscodeError> {
         let _exclusive = session.restarting.lock().await;
-        // The other track of the same seek may have done this while we waited.
-        if session.closed.load(Ordering::Acquire) || session.will_reach(stream, number) {
+        if session.closed.load(Ordering::Acquire) || session.current_generation() != seen {
             return Ok(());
         }
-        let offset = (number - 1) * session.request.segment_seconds();
-        self.relaunch(session, number, offset).await
-    }
-
-    /// Replaces the session's process with one starting at this HLS segment, which the running
-    /// process is too far behind to reach on its own.
-    async fn seek_hls(&self, session: &Arc<Session>, number: u32) -> Result<(), TranscodeError> {
-        let _exclusive = session.restarting.lock().await;
-        if session.closed.load(Ordering::Acquire) || session.hls_will_reach(number) {
-            return Ok(());
-        }
-        let offset = number * session.request.segment_seconds();
-        self.relaunch(session, number, offset).await
-    }
-
-    /// Stops the running process and starts a new one numbering its output from `first_chunk`
-    /// and seeking the source to `offset_seconds`. The caller holds `restarting` and has
-    /// checked the segment is not coming on its own.
-    async fn relaunch(
-        &self,
-        session: &Arc<Session>,
-        first_chunk: u32,
-        offset_seconds: u32,
-    ) -> Result<(), TranscodeError> {
-        let previous = session.with_run(|run| {
-            run.as_mut()
-                .map(|run| (Arc::clone(&run.stop), run.task.take()))
+        let previous = session.with_process(|process| {
+            process
+                .as_mut()
+                .map(|process| (Arc::clone(&process.stop), process.task.take()))
         });
         if let Some((stop, task)) = previous {
             stop.notify_one();
@@ -1140,9 +1635,83 @@ impl Transcoder {
                 }
             }
         }
-        let mut request = session.request.clone();
-        request.offset = Some(f64::from(offset_seconds));
-        self.launch(session, &request, first_chunk)
+        if reason == Restart::ClientSwitch {
+            session.with_switching(|switching| {
+                switching.last_client_switch = Some(Instant::now());
+            });
+        }
+        tracing::debug!(?reason, rung, chunk, "restarting a transcoder");
+        let offset = f64::from(chunk) * session.seconds();
+        self.launch(session, rung, chunk, Some(offset)).await
+    }
+
+    /// Moves a server-adapted session to the rung its measurements chose, if that is not the
+    /// one running. `requested` is the segment being asked for.
+    async fn follow_server_choice(
+        &self,
+        session: &Arc<Session>,
+        requested: u32,
+    ) -> Result<(), TranscodeError> {
+        let Some(wanted) = session
+            .with_switching(|switching| switching.server.as_ref().map(ServerAdaptation::current))
+        else {
+            return Ok(());
+        };
+        let Some((_, running, _)) = session.current() else {
+            return Ok(());
+        };
+        if wanted == running {
+            return Ok(());
+        }
+        let seen = session.current_generation();
+        let finished = match session.request.protocol {
+            Protocol::Hls => {
+                session.with_progress(|progress| progress.current().and_then(Run::latest_finished))
+            }
+            Protocol::Dash => (requested..u32::MAX)
+                .take_while(|number| session.written_chunk(0, *number).is_some())
+                .last(),
+        };
+        let at = adapt::server_restart_at(requested, finished, wanted < running);
+        self.restart(session, seen, wanted, at, Restart::ServerSwitch)
+            .await
+    }
+
+    /// Records a video segment sent whole, for a stream the server adapts. It is judged when
+    /// the player asks for the next one.
+    pub fn record_delivery(&self, id: &str, delivery: Delivery) {
+        let Some(session) = self.session(id) else {
+            return;
+        };
+        let began = Instant::now()
+            .checked_sub(delivery.sending)
+            .unwrap_or_else(Instant::now);
+        session.with_switching(|switching| {
+            if switching.server.is_some() {
+                switching.sent = Some((delivery, began));
+            }
+        });
+    }
+
+    /// The player asks for another video segment: the one sent before it has arrived.
+    fn judge_delivery(session: &Session) {
+        let segment = Duration::from_secs(u64::from(session.request.segment_seconds()));
+        let moved = session.with_switching(|switching| {
+            let (delivery, began) = switching.sent.take()?;
+            let delivery = Delivery {
+                sending: adapt::delivery_time(delivery.sending, began.elapsed(), segment),
+                ..delivery
+            };
+            tracing::debug!(?delivery, "judged a delivery");
+            let moved = switching
+                .server
+                .as_mut()?
+                .record(delivery, Instant::now())?;
+            Some((moved, delivery))
+        });
+        if let Some((rung, delivery)) = moved {
+            tracing::info!(rung, ?delivery, "the link moved a stream to another rung");
+        }
     }
 
     /// Stops the sessions nobody has asked about for a while.
@@ -1169,7 +1738,8 @@ impl Transcoder {
             .remove(id);
         if let Some(session) = &session {
             session.closed.store(true, Ordering::Release);
-            let stop = session.with_run(|run| run.as_ref().map(|run| Arc::clone(&run.stop)));
+            let stop = session
+                .with_process(|process| process.as_ref().map(|process| Arc::clone(&process.stop)));
             if let Some(stop) = stop {
                 stop.notify_one();
             }
@@ -1190,24 +1760,35 @@ impl Transcoder {
         self.session(id).is_some()
     }
 
-    /// The segments finished so far, once there are enough to start on.
+    /// The segments of a rendition finished so far, once there are enough to start on. A
+    /// rendition the process is not writing has nothing to wait for.
     ///
     /// # Errors
     ///
     /// [`TranscodeError::UnknownSession`].
-    pub async fn session_output(&self, id: &str) -> Result<Output, TranscodeError> {
+    pub async fn session_output(
+        &self,
+        id: &str,
+        rendition: usize,
+    ) -> Result<Output, TranscodeError> {
         let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
-        session
-            .wait_until(|progress| {
-                progress
-                    .segments
-                    .values()
-                    .filter(|segment| segment.finished)
-                    .count()
-                    >= SEGMENTS_BEFORE_PLAYLIST
-            })
-            .await;
-        Ok(session.output())
+        if session
+            .current()
+            .is_some_and(|(running, _, _)| running == rendition)
+        {
+            session
+                .wait_until(|progress| {
+                    progress.current().is_some_and(|run| {
+                        run.segments
+                            .values()
+                            .filter(|segment| segment.finished)
+                            .count()
+                            >= SEGMENTS_BEFORE_PLAYLIST
+                    })
+                })
+                .await;
+        }
+        Ok(session.output(rendition))
     }
 
     /// A running session's decisions and live progress, or `None` if it is not known.
@@ -1220,42 +1801,77 @@ impl Transcoder {
     pub fn session_status(&self, id: &str) -> Option<SessionStatus> {
         let session = self.session(id)?;
         let request = &session.request;
-        let seconds = request.segment_seconds();
+        let seconds = session.seconds();
+        let served = session.with_switching(|switching| switching.served_rung);
+        let plan = request
+            .ladder
+            .rungs
+            .get(served)
+            .unwrap_or(request.ladder.top());
         let (protocol, container) = match request.protocol {
             Protocol::Dash => ("dash", "mp4"),
             Protocol::Hls => ("hls", "mpegts"),
         };
-        let video_decision = match request.plan.video {
-            VideoAction::Copy => "copy",
-            VideoAction::Encode(_) => "transcode",
+        let (video_decision, video_codec, video_encode) = match plan.video {
+            VideoAction::Copy => ("copy", request.video.codec.clone(), None),
+            VideoAction::Encode(encode) => ("transcode", "h264".to_owned(), Some(encode)),
         };
-        let video_codec = match request.plan.video {
-            VideoAction::Copy => request.video.codec.clone(),
-            VideoAction::Encode(_) => "h264".to_owned(),
+        let (audio_decision, audio_codec, audio_channels, audio_kbps) = match plan.audio {
+            AudioAction::Copy => ("copy", request.audio.codec.clone(), None, None),
+            AudioAction::ConvertToAac => (
+                "transcode",
+                "aac".to_owned(),
+                Some(2),
+                Some(plan.audio_kbps()),
+            ),
         };
-        let (audio_decision, audio_codec, audio_channels) = match request.plan.audio {
-            AudioAction::Copy => ("copy", request.audio.codec.clone(), None),
-            AudioAction::ConvertToAac => ("transcode", "aac".to_owned(), Some(2)),
-        };
-        let ended = session.with_progress(|progress| progress.ended);
-        let count = u32::try_from(session.produced_segments()).unwrap_or(u32::MAX);
-        let produced = f64::from(count) * f64::from(seconds);
+        let (ended, frontier, started) = session.with_progress(|progress| {
+            let run = progress.current();
+            let frontier = run.map_or(0.0, |run| {
+                let written = match request.protocol {
+                    Protocol::Dash if request.client_adapted() => {
+                        run.pieces[0].last().copied().unwrap_or(0.0)
+                    }
+                    Protocol::Hls => run
+                        .segments
+                        .values()
+                        .filter(|segment| segment.finished)
+                        .map(|segment| segment.start + segment.seconds)
+                        .fold(0.0, f64::max),
+                    Protocol::Dash => {
+                        let first = run.start_chunk + 1;
+                        let count = (first..u32::MAX)
+                            .take_while(|file| run.directory.join(chunk_name(0, *file)).exists())
+                            .count();
+                        f64::from(run.start_chunk) * seconds + count as f64 * seconds
+                    }
+                };
+                written.max(f64::from(run.start_chunk) * seconds)
+            });
+            let started = run.map_or(0.0, |run| f64::from(run.start_chunk) * seconds);
+            (run.is_none_or(|run| run.ended), frontier, started)
+        });
         let total_seconds = request.total_ms as f64 / 1000.0;
         let elapsed = session
-            .with_run(|run| run.as_ref().map(|run| run.started.elapsed().as_secs_f64()))
+            .with_process(|process| {
+                process
+                    .as_ref()
+                    .map(|process| process.started.elapsed().as_secs_f64())
+            })
             .unwrap_or(0.0);
+        let produced = (frontier - started).max(0.0);
         let speed = if elapsed > 0.0 {
             produced / elapsed
         } else {
             0.0
         };
         let progress = if total_seconds > 0.0 {
-            (produced / total_seconds * 100.0).clamp(0.0, 100.0)
+            (frontier / total_seconds * 100.0).clamp(0.0, 100.0)
         } else {
             0.0
         };
         let remaining = if speed > 0.0 {
-            ((total_seconds - produced) / speed).max(0.0) as i64
+            ((total_seconds - frontier) / speed).max(0.0) as i64
         } else {
             0
         };
@@ -1270,8 +1886,10 @@ impl Transcoder {
             video_codec,
             audio_codec,
             audio_channels,
+            video_encode,
+            audio_kbps,
             duration_ms: request.total_ms,
-            max_offset_seconds: produced,
+            max_offset_seconds: frontier,
             min_offset_seconds: 0.0,
             progress: round(progress),
             speed: round(speed),
@@ -1280,35 +1898,51 @@ impl Transcoder {
         })
     }
 
-    /// A finished segment's file, waiting for it if it is still being written.
+    /// A finished HLS segment's files, waiting for them if they are still being written: one,
+    /// or the pieces of a rung the player chose.
     ///
     /// # Errors
     ///
     /// [`TranscodeError::UnknownSession`], or [`TranscodeError::UnknownSegment`] if it never
     /// appears.
-    pub async fn session_segment(&self, id: &str, number: u32) -> Result<PathBuf, TranscodeError> {
+    pub async fn session_segment(
+        &self,
+        id: &str,
+        rendition: usize,
+        number: u32,
+    ) -> Result<Vec<PathBuf>, TranscodeError> {
         let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
-        let present = || {
-            session.with_progress(|progress| {
-                progress.segments.get(&number).is_some_and(|s| s.finished)
-            })
-        };
+        if session.request.client_adapted() {
+            return self.chosen_chunk(&session, None, rendition, number).await;
+        }
+        if rendition != 0 {
+            return Err(TranscodeError::UnknownSegment);
+        }
+        Self::judge_delivery(&session);
+        self.follow_server_choice(&session, number).await?;
         // Not written yet, and the running process is too far behind to reach it soon: restart
         // there, as a far forward seek needs. Without this the request only waits, then refuses a
         // segment the process was never going to produce. A process that has already ended is held
         // then refused rather than restarted, so a player does not drive an endless relaunch.
-        let running = || !session.with_progress(|progress| progress.ended);
-        if !present() && running() && !session.hls_will_reach(number) {
-            self.seek_hls(&session, number).await?;
+        if session.hls_written(number).is_none()
+            && !session.ended()
+            && !session.hls_will_reach(number)
+        {
+            let seen = session.current_generation();
+            let rung = session.current().map_or(0, |(_, rung, _)| rung);
+            self.restart(&session, seen, rung, number, Restart::Seek)
+                .await?;
         }
-        if session.wait_for(present).await {
-            Ok(session.directory.join(format!("media-{number:05}.ts")))
-        } else {
-            Err(TranscodeError::UnknownSegment)
-        }
+        let path = session
+            .wait_for(|| session.hls_written(number))
+            .await
+            .ok_or(TranscodeError::UnknownSegment)?;
+        session.served(session.rung_answering(number), number);
+        Ok(vec![path])
     }
 
-    /// The manifest the process wrote for a DASH session, waiting for it.
+    /// The manifest the process wrote for a DASH session, waiting for it: its top rung's, which
+    /// alone may copy the video and so be the only one to know its codec.
     ///
     /// # Errors
     ///
@@ -1317,27 +1951,95 @@ impl Transcoder {
     pub async fn session_manifest(&self, id: &str) -> Result<String, TranscodeError> {
         let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
         session
-            .wait_until(|progress| progress.manifest.is_some())
+            .wait_until(|progress| progress.manifests.contains_key(&0))
             .await;
         session
-            .with_progress(|progress| progress.manifest.clone())
+            .with_progress(|progress| progress.manifests.get(&0).cloned())
             .ok_or(TranscodeError::UnknownSegment)
     }
 
-    /// A DASH stream's initialization segment, waiting for it.
+    /// A DASH track's initialization segment, waiting for it.
     ///
     /// # Errors
     ///
     /// [`TranscodeError::UnknownSession`], or [`TranscodeError::UnknownSegment`] if it never
     /// appears.
-    pub async fn dash_header(&self, id: &str, stream: u32) -> Result<PathBuf, TranscodeError> {
+    pub async fn dash_header(&self, id: &str, track: DashTrack) -> Result<PathBuf, TranscodeError> {
         let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
+        let stream = track.stream();
         // Unlike a chunk it has no temporary name: it is whole once the first chunk is begun.
-        let first = session.with_run(|run| run.as_ref().map_or(1, |run| run.first_chunk));
-        let finished = session.chunk_path(stream, first);
-        let begun = finished.with_extension("m4s.tmp");
-        session.wait_for_file(&[begun, finished]).await?;
-        Ok(session.directory.join(format!("init-stream{stream}.m4s")))
+        let header = |session: &Session| {
+            session.with_progress(|progress| {
+                progress
+                    .runs
+                    .iter()
+                    .rev()
+                    .filter(|run| match track {
+                        DashTrack::Video(rendition) => run.rendition == rendition,
+                        DashTrack::Audio => true,
+                    })
+                    .find(|run| {
+                        let first = first_file(Protocol::Dash, run.start_chunk);
+                        let finished = run.directory.join(chunk_name(stream, first));
+                        let begun = run
+                            .directory
+                            .join(format!("{}.tmp", chunk_name(stream, first)));
+                        finished.exists() || begun.exists()
+                    })
+                    .map(|run| run.directory.join(init_name(stream)))
+            })
+        };
+        if let DashTrack::Video(rendition) = track {
+            if rendition >= session.request.ladder.rungs.len()
+                || (rendition > 0 && !session.request.client_adapted())
+            {
+                return Err(TranscodeError::UnknownSegment);
+            }
+            let running = session.current().map(|(running, _, _)| running);
+            if header(&session).is_none() && running != Some(rendition) {
+                // A player moving to a rung asks for its header first, from where it is.
+                let at = session
+                    .with_switching(|switching| switching.last_video_chunk)
+                    .map_or_else(
+                        || session.current().map_or(0, |(_, _, start)| start),
+                        |latest| latest + 1,
+                    );
+                self.switch_for_player(&session, rendition, at, Instant::now())
+                    .await?;
+            }
+        }
+        session
+            .wait_for(|| header(&session))
+            .await
+            .ok_or(TranscodeError::UnknownSegment)
+    }
+
+    /// Restarts the process at a rung the player asked for, once the rules allow it.
+    async fn switch_for_player(
+        &self,
+        session: &Arc<Session>,
+        rendition: usize,
+        chunk: u32,
+        asked_at: Instant,
+    ) -> Result<(), TranscodeError> {
+        loop {
+            let Some((running, _, _)) = session.current() else {
+                return Ok(());
+            };
+            if running == rendition || session.closed.load(Ordering::Acquire) {
+                return Ok(());
+            }
+            let last = session.with_switching(|switching| switching.last_client_switch);
+            match adapt::client_switch_wait(Instant::now(), asked_at, last, rendition < running) {
+                None => {
+                    let seen = session.current_generation();
+                    return self
+                        .restart(session, seen, rendition, chunk, Restart::ClientSwitch)
+                        .await;
+                }
+                Some(wait) => tokio::time::sleep(wait.min(FILE_POLL)).await,
+            }
+        }
     }
 
     /// Reads a session's text subtitles from their header on, waiting for the session to start:
@@ -1365,16 +2067,24 @@ impl Transcoder {
         ) {
             return Err(TranscodeError::UnknownSegment);
         }
-        let generation = session.with_run(|run| run.as_ref().map(|run| run.generation));
+        let (generation, directory) = session.with_progress(|progress| {
+            progress
+                .current()
+                .map_or((None, session.directory.clone()), |run| {
+                    (Some(run.generation), run.directory.clone())
+                })
+        });
         Ok(SubtitleReader {
             session,
             generation,
+            directory,
             next: SubtitlePiece::Header,
         })
     }
 
-    /// A finished DASH chunk. `number` counts from zero, as the manifest given to the player
-    /// does. One the running process will not get to soon is a seek, and restarts it there.
+    /// A finished DASH chunk's files: one, or the pieces of a rung the player chose. `number`
+    /// counts from zero, as the manifest given to the player does. One the running process will
+    /// not get to soon is a seek, and restarts it there.
     ///
     /// # Errors
     ///
@@ -1382,21 +2092,107 @@ impl Transcoder {
     pub async fn dash_chunk(
         &self,
         id: &str,
-        stream: u32,
+        track: DashTrack,
         number: u32,
-    ) -> Result<PathBuf, TranscodeError> {
+    ) -> Result<Vec<PathBuf>, TranscodeError> {
         let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
-        // The process numbers its files from one, and renames each only once it is whole.
-        let number = number + 1;
-        let path = session.chunk_path(stream, number);
-        if path.exists() {
-            return Ok(path);
+        if session.request.client_adapted() {
+            let rendition = match track {
+                DashTrack::Video(rendition) => rendition,
+                DashTrack::Audio => session.current().map_or(0, |(running, _, _)| running),
+            };
+            return self
+                .chosen_chunk(&session, Some(track), rendition, number)
+                .await;
         }
-        if !session.will_reach(stream, number) {
-            self.seek(&session, stream, number).await?;
+        if matches!(track, DashTrack::Video(rendition) if rendition != 0) {
+            return Err(TranscodeError::UnknownSegment);
         }
-        session.wait_for_file(std::slice::from_ref(&path)).await?;
-        Ok(path)
+        let stream = track.stream();
+        if stream == 0 {
+            Self::judge_delivery(&session);
+        }
+        self.follow_server_choice(&session, number).await?;
+        if session.written_chunk(stream, number).is_none() && !session.will_reach(stream, number) {
+            let seen = session.current_generation();
+            let rung = session.current().map_or(0, |(_, rung, _)| rung);
+            self.restart(&session, seen, rung, number, Restart::Seek)
+                .await?;
+        }
+        let path = session
+            .wait_for(|| session.written_chunk(stream, number))
+            .await
+            .ok_or(TranscodeError::UnknownSegment)?;
+        if stream == 0 {
+            session.served(session.rung_answering(number), number);
+        }
+        Ok(vec![path])
+    }
+
+    /// A segment of a stream whose player chooses the rung, `track` `None` for HLS. Served from
+    /// whatever run wrote it; otherwise the running process is left to reach it, moved there
+    /// if it is too far, or replaced by one at the rung asked for, once the rules allow.
+    async fn chosen_chunk(
+        &self,
+        session: &Arc<Session>,
+        track: Option<DashTrack>,
+        rendition: usize,
+        number: u32,
+    ) -> Result<Vec<PathBuf>, TranscodeError> {
+        if rendition >= session.request.ladder.rungs.len() {
+            return Err(TranscodeError::UnknownSegment);
+        }
+        let video = !matches!(track, Some(DashTrack::Audio));
+        let asked_at = Instant::now();
+        let began = tokio::time::Instant::now();
+        loop {
+            if session.closed.load(Ordering::Acquire) {
+                return Err(TranscodeError::UnknownSegment);
+            }
+            if session.request.protocol == Protocol::Dash {
+                session.refresh_pieces().await;
+            }
+            if let Some(files) = session.assembled(track, rendition, number) {
+                if video {
+                    session.served(rendition, number);
+                }
+                return Ok(files);
+            }
+            let seen = session.current_generation();
+            let Some((running, _, start)) = session.current() else {
+                return Err(TranscodeError::UnknownSegment);
+            };
+            let ended = session.ended();
+            // The audio is the same on every rung: whichever runs writes it.
+            let rendition = if video { rendition } else { running };
+            if running == rendition {
+                // A run that started at or before the segment and ended without it has reached
+                // the end of the media, or failed: restarting it would only fail again.
+                let exhausted = ended && start <= number;
+                if !exhausted && !session.pieces_will_reach(rendition, number) {
+                    self.restart(session, seen, rendition, number, Restart::Seek)
+                        .await?;
+                    continue;
+                }
+            } else {
+                let last = session.with_switching(|switching| switching.last_client_switch);
+                let upgrade = rendition < running;
+                if adapt::client_switch_wait(Instant::now(), asked_at, last, upgrade).is_none() {
+                    self.restart(session, seen, rendition, number, Restart::ClientSwitch)
+                        .await?;
+                    continue;
+                }
+            }
+            let limit = if ended {
+                HOLD_BEFORE_REFUSAL
+            } else {
+                WAIT_FOR_OUTPUT
+            };
+            if began.elapsed() >= limit {
+                return Err(TranscodeError::UnknownSegment);
+            }
+            tokio::time::sleep(FILE_POLL).await;
+        }
     }
 
     /// The source of the session behind a callback URL, for the process to read.
@@ -1405,16 +2201,29 @@ impl Transcoder {
         Some(self.by_callback(callback)?.request.source.clone())
     }
 
-    /// Records the process's announcement of its segments. Whether the callback is known.
+    /// Records the process's announcement of its segments. `run` is the generation its URL
+    /// names: an announcement from a process since replaced must not count for the new one.
+    /// Whether the callback is known.
     #[must_use]
-    pub fn announce_segments(&self, callback: &str, body: &str) -> bool {
+    pub fn announce_segments(&self, callback: &str, run: &str, body: &str) -> bool {
         let Some(session) = self.by_callback(callback) else {
             return false;
         };
+        let Ok(generation) = run.parse::<u64>() else {
+            return true;
+        };
         session.with_progress(|progress| {
-            progress.segments.extend(parse_announcement(body));
+            let Some(run) = progress
+                .runs
+                .iter_mut()
+                .find(|run| run.generation == generation)
+            else {
+                return;
+            };
+            let rendition = run.rendition;
+            run.segments.extend(parse_announcement(body));
             if body.contains("<Representation") {
-                progress.manifest = Some(body.to_owned());
+                progress.manifests.insert(rendition, body.to_owned());
             }
         });
         session.changed.notify_waiters();
@@ -1448,6 +2257,13 @@ mod tests {
         }
     }
 
+    fn fixed(plan: StreamPlan) -> Ladder {
+        Ladder {
+            adaptation: Adaptation::Fixed,
+            rungs: vec![plan],
+        }
+    }
+
     fn request(audio: AudioAction) -> StreamRequest {
         StreamRequest {
             session: "s".to_owned(),
@@ -1455,10 +2271,10 @@ mod tests {
             source: PathBuf::from("x"),
             video: track(0, "h264", "en"),
             audio: track(1, "dca", "fr"),
-            plan: StreamPlan {
+            ladder: fixed(StreamPlan {
                 video: VideoAction::Copy,
                 audio,
-            },
+            }),
             offset: None,
             protocol: Protocol::Hls,
             total_ms: 0,
@@ -1466,9 +2282,23 @@ mod tests {
         }
     }
 
+    /// The command of a run of the request's top rung, from where it asks to start.
+    fn arguments(request: &StreamRequest, first_file: u32, fonts: Option<&Path>) -> Vec<String> {
+        stream_arguments(
+            request,
+            &RunPlan {
+                plan: request.ladder.top(),
+                offset: request.offset,
+                first_file,
+                callback: "CB",
+            },
+            fonts,
+        )
+    }
+
     #[test]
     fn writes_the_references_command_line() {
-        let args = stream_arguments(&request(AudioAction::ConvertToAac), "CB", 0, None);
+        let args = arguments(&request(AudioAction::ConvertToAac), 0, None);
         // The space inside the filter is what makes it one argument here and several there.
         let joined = args.join(" ").replace("[0:1] aresample", "[0:1]_aresample");
         assert_eq!(joined, CAPTURED);
@@ -1491,7 +2321,7 @@ mod tests {
         let mut asked = request(AudioAction::ConvertToAac);
         asked.protocol = Protocol::Dash;
         asked.audio = track(2, "eac3", "fr");
-        let joined = stream_arguments(&asked, "CB", 1, None)
+        let joined = arguments(&asked, 1, None)
             .join(" ")
             .replace("[0:2] aresample", "[0:2]_aresample");
         assert_eq!(joined, CAPTURED_DASH);
@@ -1512,6 +2342,23 @@ mod tests {
 -skip_to_segment 1 -manifest_name CB/manifest?X-Plex-Http-Pipeline=infinite -avoid_negative_ts disabled \
 -map_metadata -1 -map_chapters -1 dash";
 
+    fn encode(width: u32, height: u32, video_kbps: u32, audio_kbps: u32, crf: u32) -> VideoEncode {
+        VideoEncode {
+            width,
+            height,
+            video_kbps,
+            audio_kbps,
+            crf,
+            frame_rate: Some(25.0),
+            key_frames: KeyFrames::Every(match width {
+                0..=720 => 8,
+                721..=1280 => 5,
+                _ => 1,
+            }),
+            shared_headers: false,
+        }
+    }
+
     fn encoded(
         width: u32,
         height: u32,
@@ -1523,14 +2370,9 @@ mod tests {
         asked.protocol = Protocol::Dash;
         asked.audio = track(1, "eac3", "fr");
         asked.offset = Some(0.0);
-        asked.plan.video = VideoAction::Encode(VideoEncode {
-            width,
-            height,
-            video_kbps,
-            audio_kbps,
-            crf,
-            frame_rate: Some(25.0),
-            adaptive: false,
+        asked.ladder = fixed(StreamPlan {
+            video: VideoAction::Encode(encode(width, height, video_kbps, audio_kbps, crf)),
+            audio: AudioAction::ConvertToAac,
         });
         asked
     }
@@ -1554,7 +2396,7 @@ mod tests {
     #[test]
     fn burns_a_subtitle_with_the_references_filter() {
         let fonts = Path::new(r"\\?\C:\Program Files\Plex\Plex Media Server\Resources\Fonts");
-        let args = stream_arguments(&burned(1.0), "CB", 1, Some(fonts));
+        let args = arguments(&burned(1.0), 1, Some(fonts));
         let at = |flag: &str| args.iter().position(|arg| arg == flag).unwrap();
         assert_eq!(args[at("-map_inlineass") + 1], "0:3");
         // The burn's filter comes right after the subtitle's mapping, and the picture it
@@ -1571,12 +2413,12 @@ mod tests {
 
     #[test]
     fn a_subtitle_scales_with_the_clients_size() {
-        let args = stream_arguments(&burned(1.5), "CB", 1, Some(Path::new("fonts")));
+        let args = arguments(&burned(1.5), 1, Some(Path::new("fonts")));
         assert!(args
             .iter()
             .any(|arg| arg.contains("inlineass=font_scale=1.500000:")));
         // Without fonts there is nothing to draw with, and the command is an encode's.
-        let plain = stream_arguments(&burned(1.0), "CB", 1, None).join(" ");
+        let plain = arguments(&burned(1.0), 1, None).join(" ");
         assert!(!plain.contains("inlineass"), "{plain}");
     }
 
@@ -1589,7 +2431,7 @@ mod tests {
 
     #[test]
     fn writes_the_references_encoding_command_line() {
-        let joined = stream_arguments(&encoded(720, 388, 1333, 167, 20), "CB", 1, None)
+        let joined = arguments(&encoded(720, 388, 1333, 167, 20), 1, None)
             .join(" ")
             .replace("[0:1] aresample", "[0:1]_aresample");
         assert_eq!(joined, CAPTURED_ENCODE);
@@ -1600,7 +2442,7 @@ mod tests {
     fn an_encode_seeks_as_the_reference_does() {
         let mut asked = encoded(1280, 692, 2566, 98, 24);
         asked.offset = Some(600.0);
-        let joined = stream_arguments(&asked, "CB", 121, None).join(" ");
+        let joined = arguments(&asked, 121, None).join(" ");
         assert!(joined.starts_with("-codec:0 h264 -codec:1 eac3_mf -ss 600 -analyzeduration"));
         assert!(joined.contains("-copyts -y -nostats"));
         assert!(joined.contains("-force_key_frames:0 expr:gte(t,n_forced*5) "));
@@ -1626,8 +2468,9 @@ mod tests {
     fn an_encode_lands_on_its_own_chunk_grid() {
         let mut asked = encoded(720, 388, 1333, 167, 20);
         asked.offset = Some(603.0);
-        assert_eq!(align_to_chunk(&mut asked), 76);
+        assert_eq!(align_to_chunk(&mut asked), 75);
         assert_eq!(asked.offset, Some(600.0));
+        assert_eq!(first_file(Protocol::Dash, 75), 76);
     }
 
     /// Measured on the transcoder itself: chunk 121 of a 5-second grid starts at 600 seconds.
@@ -1636,7 +2479,7 @@ mod tests {
         let mut asked = request(AudioAction::Copy);
         asked.protocol = Protocol::Dash;
         asked.offset = Some(600.0);
-        let joined = stream_arguments(&asked, "CB", 121, None).join(" ");
+        let joined = arguments(&asked, 121, None).join(" ");
         assert!(joined.contains("-ss 600 -noaccurate_seek"));
         assert!(joined.contains("-skip_to_segment 121 "));
     }
@@ -1646,12 +2489,14 @@ mod tests {
         let mut asked = request(AudioAction::Copy);
         asked.protocol = Protocol::Dash;
         asked.offset = Some(603.0);
-        assert_eq!(align_to_chunk(&mut asked), 121);
+        assert_eq!(align_to_chunk(&mut asked), 120);
         assert_eq!(asked.offset, Some(600.0));
+        assert_eq!(first_file(Protocol::Dash, 120), 121);
 
         asked.offset = None;
-        assert_eq!(align_to_chunk(&mut asked), 1);
+        assert_eq!(align_to_chunk(&mut asked), 0);
         assert_eq!(asked.offset, Some(0.0));
+        assert_eq!(first_file(Protocol::Dash, 0), 1);
     }
 
     #[test]
@@ -1660,6 +2505,7 @@ mod tests {
         asked.offset = Some(603.0);
         assert_eq!(align_to_chunk(&mut asked), 60);
         assert_eq!(asked.offset, Some(600.0));
+        assert_eq!(first_file(Protocol::Hls, 60), 60);
 
         asked.offset = None;
         assert_eq!(align_to_chunk(&mut asked), 0);
@@ -1673,14 +2519,14 @@ mod tests {
     fn an_hls_seek_numbers_its_segments_from_the_target() {
         let mut asked = request(AudioAction::Copy);
         asked.offset = Some(3000.0);
-        let joined = stream_arguments(&asked, "CB", 300, None).join(" ");
+        let joined = arguments(&asked, 300, None).join(" ");
         assert!(joined.contains("-ss 3000 -noaccurate_seek"));
         assert!(joined.contains("-segment_start_number 300 "));
     }
 
     #[test]
     fn copied_audio_is_neither_decoded_nor_filtered() {
-        let joined = stream_arguments(&request(AudioAction::Copy), "CB", 1, None).join(" ");
+        let joined = arguments(&request(AudioAction::Copy), 1, None).join(" ");
         assert!(!joined.contains("-codec:1 dca"));
         assert!(!joined.contains("aresample"));
         assert!(joined.contains("-map 0:1 -metadata:s:1 language=fra -codec:1 copy"));
@@ -1691,7 +2537,7 @@ mod tests {
         let mut asked = request(AudioAction::Copy);
         asked.video.index = 5;
         asked.audio.index = 0;
-        let joined = stream_arguments(&asked, "CB", 1, None).join(" ");
+        let joined = arguments(&asked, 1, None).join(" ");
         assert!(joined.starts_with("-codec:5 h264"));
         assert!(joined.contains("-map 0:5 "));
         assert!(joined.contains("-map 0:0 "));
@@ -1701,8 +2547,91 @@ mod tests {
     fn seeks_before_opening_the_input() {
         let mut asked = request(AudioAction::Copy);
         asked.offset = Some(90.0);
-        let joined = stream_arguments(&asked, "CB", 1, None).join(" ");
+        let joined = arguments(&asked, 1, None).join(" ");
         assert!(joined.contains("-ss 90 -noaccurate_seek -analyzeduration"));
+    }
+
+    /// A ladder the player chooses from: the copy, then an encode cut where the copy is.
+    fn chosen(protocol: Protocol) -> StreamRequest {
+        let mut asked = request(AudioAction::ConvertToAac);
+        asked.protocol = protocol;
+        asked.offset = Some(0.0);
+        asked.ladder = Ladder {
+            adaptation: Adaptation::Client,
+            rungs: vec![
+                StreamPlan {
+                    video: VideoAction::Copy,
+                    audio: AudioAction::ConvertToAac,
+                },
+                StreamPlan {
+                    video: VideoAction::Encode(VideoEncode {
+                        key_frames: KeyFrames::AsSource,
+                        ..encode(480, 268, 300, 256, 23)
+                    }),
+                    audio: AudioAction::ConvertToAac,
+                },
+            ],
+        };
+        asked
+    }
+
+    fn run_of(request: &StreamRequest, rung: usize, offset: f64) -> String {
+        stream_arguments(
+            request,
+            &RunPlan {
+                plan: &request.ladder.rungs[rung],
+                offset: Some(offset),
+                first_file: first_file(request.protocol, 7),
+                callback: "CB",
+            },
+            None,
+        )
+        .join(" ")
+    }
+
+    #[test]
+    fn rungs_a_player_chooses_from_are_cut_at_every_key_frame_of_the_source() {
+        let asked = chosen(Protocol::Dash);
+        let copy = run_of(&asked, 0, 35.0);
+        let encode = run_of(&asked, 1, 35.0);
+        for run in [&copy, &encode] {
+            // Both start on the key frame before, where the copy has to.
+            assert!(
+                run.contains("-ss 35 -noaccurate_seek -analyzeduration"),
+                "{run}"
+            );
+            assert!(
+                run.contains("-adaptation_sets id=0,seg_duration=0.001,streams=0 id=1,streams=1 "),
+                "{run}"
+            );
+            // Not 1, which would make this build write an encode's timestamps from zero.
+            assert!(run.contains("-skip_to_segment 8 "), "{run}");
+            // One audio encoder for every rung, or the audio would shift between them.
+            assert!(run.contains("-codec:1 aac -b:1 256k"), "{run}");
+        }
+        assert!(encode.contains(":scenecut=0:keyint=infinite -force_key_frames:0 source "));
+        let hls = run_of(&chosen(Protocol::Hls), 1, 35.0);
+        assert!(
+            hls.contains("-segment_time 0.001 -segment_start_number 7 "),
+            "{hls}"
+        );
+    }
+
+    #[test]
+    fn rungs_the_server_moves_between_share_their_headers() {
+        let mut asked = encoded(1920, 1080, 3419, 256, 23);
+        asked.ladder.adaptation = Adaptation::Server;
+        asked.ladder.rungs[0].video = VideoAction::Encode(VideoEncode {
+            key_frames: KeyFrames::Every(3),
+            shared_headers: true,
+            ..encode(1920, 1080, 3419, 256, 23)
+        });
+        let joined = arguments(&asked, 41, None).join(" ");
+        assert!(
+            joined.contains(":partitions=none:stitchable=1 -level:0 4.2 -force_key_frames:0 expr:gte(t,n_forced*3) "),
+            "{joined}"
+        );
+        assert!(joined.contains("-seg_duration 3 "), "{joined}");
     }
 
     #[test]
@@ -1717,6 +2646,7 @@ mod tests {
         assert!(parsed[0].1.finished);
         assert!((parsed[0].1.seconds - 8.0).abs() < f64::EPSILON);
         assert_eq!(parsed[1].0, 1);
+        assert!((parsed[1].1.start - 8.0).abs() < f64::EPSILON);
         assert!(!parsed[1].1.finished);
     }
 
@@ -1727,27 +2657,146 @@ mod tests {
         assert!(parse_announcement("other-00000.ts,0,1").is_empty());
     }
 
-    fn session_writing_to(directory: PathBuf, ended: bool) -> Arc<Session> {
+    /// Where the transcoder started the pieces of a test episode, run from 27 seconds: a key
+    /// frame every 3 seconds.
+    const PIECES: [f64; 6] = [27.0, 30.0, 33.0, 36.0, 39.0, 42.0];
+
+    #[test]
+    fn a_segment_is_the_pieces_starting_within_it() {
+        // [30, 35): the pieces at 30 and 33, complete since the one at 36 exists.
+        assert_eq!(chunk_pieces(&PIECES, false, 30.0, 35.0), Some(1..3));
+        // [35, 40): 36 and 39, whose end only the piece at 42 proves.
+        assert_eq!(chunk_pieces(&PIECES, false, 35.0, 40.0), Some(3..5));
+        assert_eq!(chunk_pieces(&PIECES, false, 40.0, 45.0), None);
+        assert_eq!(chunk_pieces(&PIECES, true, 40.0, 45.0), Some(5..6));
+        // A rounding below a boundary does not move a piece to the segment before.
+        assert_eq!(
+            chunk_pieces(&[29.9999, 35.0], false, 30.0, 35.0),
+            Some(0..1)
+        );
+    }
+
+    #[test]
+    fn a_segment_before_every_piece_is_not_there() {
+        assert_eq!(chunk_pieces(&[40.0, 45.0], true, 25.0, 30.0), None);
+        assert_eq!(chunk_pieces(&[], true, 0.0, 5.0), None);
+    }
+
+    #[test]
+    fn a_segment_comes_from_a_run_started_at_or_before_it() {
+        let directory = scratch_directory();
+        let mut from_start = run_in(directory.join("run-0"), 0, 0, 0);
+        from_start.pieces[0] = vec![0.08, 3.9, 7.8, 11.8];
+        // Started at segment 2 on the key frame before it, so holding a piece of segment 1.
+        let mut later = run_in(directory.join("run-1"), 1, 0, 2);
+        later.pieces[0] = vec![7.8, 11.8, 15.7];
+        let session = session_with(chosen(Protocol::Dash), directory, vec![from_start, later]);
+        let video = Some(DashTrack::Video(0));
+        // The first piece is shown a little after the start, and still opens segment 0.
+        let first = session.assembled(video, 0, 0).unwrap();
+        assert_eq!(first.len(), 2);
+        assert!(first[0].ends_with(Path::new("run-0").join(chunk_name(0, 1))));
+        // Segment 1 only from the run that covers all of it.
+        let second = session.assembled(video, 0, 1).unwrap();
+        assert!(second[0].starts_with(session.directory.join("run-0")));
+        let third = session.assembled(video, 0, 2).unwrap();
+        assert!(third[0].ends_with(Path::new("run-1").join(chunk_name(0, 4))));
+    }
+
+    #[test]
+    fn a_segment_between_two_far_key_frames_is_the_piece_it_falls_in() {
+        // Ten seconds between key frames, five-second segments.
+        let sparse = [0.0, 10.0, 20.0];
+        assert_eq!(chunk_pieces(&sparse, false, 5.0, 10.0), Some(0..1));
+        assert_eq!(chunk_pieces(&sparse, false, 10.0, 15.0), Some(1..2));
+        assert_eq!(chunk_pieces(&sparse, false, 15.0, 20.0), Some(1..2));
+        assert_eq!(chunk_pieces(&sparse, true, 25.0, 30.0), None);
+    }
+
+    #[test]
+    fn audio_pieces_count_from_the_video_cut_they_follow() {
+        // Measured: audio cut a few hundredths of a second before each video key frame, and
+        // a run's first audio piece starting where its seek landed rather than on a cut.
+        let audio = [29.979, 32.966, 35.974];
+        assert_eq!(audio_starts(&audio, &PIECES), [30.0, 33.0, 36.0]);
+        assert_eq!(audio_starts(&[50.0], &PIECES), [50.0]);
+    }
+
+    fn run_in(directory: PathBuf, generation: u64, rung: usize, start_chunk: u32) -> Run {
+        std::fs::create_dir_all(&directory).unwrap();
+        Run {
+            generation,
+            rung,
+            rendition: 0,
+            start_chunk,
+            directory,
+            segments: BTreeMap::new(),
+            pieces: [Vec::new(), Vec::new()],
+            timescales: [None, None],
+            ended: false,
+        }
+    }
+
+    fn session_with(request: StreamRequest, directory: PathBuf, runs: Vec<Run>) -> Arc<Session> {
         std::fs::create_dir_all(&directory).unwrap();
         Arc::new(Session {
             callback: "callback".to_owned(),
-            url: String::new(),
-            request: request(AudioAction::Copy),
+            callback_base: String::new(),
+            request,
             directory,
             progress: Mutex::new(Progress {
-                ended,
+                runs,
                 ..Progress::default()
             }),
             changed: Notify::new(),
             closed: AtomicBool::new(false),
-            run: Mutex::new(None),
+            process: Mutex::new(None),
             restarting: tokio::sync::Mutex::new(()),
             last_used: Mutex::new(Instant::now()),
+            switching: Mutex::new(Switching {
+                server: None,
+                last_client_switch: None,
+                served_rung: 0,
+                last_video_chunk: None,
+                sent: None,
+            }),
         })
+    }
+
+    fn session_writing_to(directory: PathBuf, ended: bool) -> Arc<Session> {
+        let mut run = run_in(directory.clone(), 0, 0, 0);
+        run.ended = ended;
+        session_with(request(AudioAction::Copy), directory, vec![run])
     }
 
     fn scratch_directory() -> PathBuf {
         std::env::temp_dir().join(format!("open-plex-test-{}", uuid::Uuid::new_v4().simple()))
+    }
+
+    /// Two runs of one rendition: the first from chunk 0, then one moved to another rung at
+    /// chunk 40, while the first had already written chunk 45.
+    fn moved_at_forty(adaptation: Adaptation) -> Arc<Session> {
+        let directory = scratch_directory();
+        let first = run_in(directory.join("run-0"), 0, 0, 0);
+        let second = run_in(directory.join("run-1"), 1, 1, 40);
+        std::fs::write(first.directory.join(chunk_name(0, 46)), b"top rung").unwrap();
+        std::fs::write(first.directory.join(chunk_name(0, 10)), b"top rung").unwrap();
+        let mut asked = encoded(1920, 1080, 20_000, 256, 16);
+        asked.ladder.adaptation = adaptation;
+        session_with(asked, directory, vec![first, second])
+    }
+
+    #[test]
+    fn once_the_server_moves_rung_a_segment_is_answered_by_the_newest_run_only() {
+        let session = moved_at_forty(Adaptation::Server);
+        assert!(session.written_chunk(0, 45).is_none());
+        assert!(session.written_chunk(0, 9).is_some());
+        assert_eq!(session.rung_answering(45), 1);
+        assert_eq!(session.rung_answering(9), 0);
+        // A seek of a fixed quality loses nothing another run wrote.
+        assert!(moved_at_forty(Adaptation::Fixed)
+            .written_chunk(0, 45)
+            .is_some());
     }
 
     /// The subtitle output of the reference's command for Soul's French subtitles, `auto`.
@@ -1760,7 +2809,7 @@ mod tests {
         asked.subtitle = Some(SubtitleDelivery::Text {
             track: track(3, "srt", "fr"),
         });
-        let joined = stream_arguments(&asked, "CB", 1, None).join(" ");
+        let joined = arguments(&asked, 1, None).join(" ");
         assert!(joined.ends_with(CAPTURED_TEXT_SUBTITLES), "{joined}");
         // Copied video stays copied: a soft subtitle needs no encode.
         assert!(joined.contains("-codec:0 copy"), "{joined}");
@@ -1842,27 +2891,37 @@ mod tests {
     async fn a_request_for_no_session_is_refused_at_once() {
         let transcoder = Transcoder::default();
         let began = tokio::time::Instant::now();
-        for refused in [
-            transcoder.dash_chunk("missing", 0, 0).await,
-            transcoder.dash_header("missing", 0).await,
-            transcoder.session_segment("missing", 0).await,
-        ] {
-            assert!(matches!(refused, Err(TranscodeError::UnknownSession)));
-        }
+        assert!(matches!(
+            transcoder
+                .dash_chunk("missing", DashTrack::Video(0), 0)
+                .await,
+            Err(TranscodeError::UnknownSession)
+        ));
+        assert!(matches!(
+            transcoder.dash_header("missing", DashTrack::Audio).await,
+            Err(TranscodeError::UnknownSession)
+        ));
+        assert!(matches!(
+            transcoder.session_segment("missing", 0, 0).await,
+            Err(TranscodeError::UnknownSession)
+        ));
         assert_eq!(began.elapsed(), Duration::ZERO);
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_wait_ends_as_soon_as_the_session_is_stopped() {
         let session = session_writing_to(scratch_directory(), false);
-        let missing = session.chunk_path(0, 1);
+        let missing = session.directory.join(chunk_name(0, 1));
         let stopped = Arc::clone(&session);
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(1)).await;
             stopped.closed.store(true, Ordering::Release);
         });
         let began = tokio::time::Instant::now();
-        assert!(session.wait_for_file(&[missing]).await.is_err());
+        assert!(session
+            .wait_for(|| missing.exists().then_some(()))
+            .await
+            .is_none());
         assert!(began.elapsed() < HOLD_BEFORE_REFUSAL);
     }
 
@@ -1871,7 +2930,7 @@ mod tests {
         let transcoder = Transcoder::default();
         register(&transcoder, session_writing_to(scratch_directory(), true));
         let began = tokio::time::Instant::now();
-        let refused = transcoder.session_segment("known", 3).await;
+        let refused = transcoder.session_segment("known", 0, 3).await;
         assert!(matches!(refused, Err(TranscodeError::UnknownSegment)));
         assert!(began.elapsed() >= HOLD_BEFORE_REFUSAL);
         assert!(began.elapsed() < WAIT_FOR_OUTPUT);
@@ -1880,23 +2939,38 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_running_process_gets_the_full_wait() {
         let session = session_writing_to(scratch_directory(), false);
-        let missing = session.chunk_path(0, 1);
+        let missing = session.directory.join(chunk_name(0, 1));
         let began = tokio::time::Instant::now();
-        assert!(session.wait_for_file(&[missing]).await.is_err());
+        assert!(session
+            .wait_for(|| missing.exists().then_some(()))
+            .await
+            .is_none());
         assert!(began.elapsed() >= WAIT_FOR_OUTPUT);
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_file_arriving_during_the_hold_is_served() {
         let session = session_writing_to(scratch_directory(), true);
-        let path = session.chunk_path(0, 1);
+        let path = session.directory.join(chunk_name(0, 1));
         let written = path.clone();
         tokio::spawn(async move {
             tokio::time::sleep(HOLD_BEFORE_REFUSAL / 2).await;
             std::fs::write(written, b"chunk").unwrap();
         });
         let began = tokio::time::Instant::now();
-        session.wait_for_file(&[path]).await.unwrap();
+        session
+            .wait_for(|| path.exists().then_some(()))
+            .await
+            .unwrap();
         assert!(began.elapsed() < HOLD_BEFORE_REFUSAL);
+    }
+
+    #[test]
+    fn a_rendition_beyond_one_exists_only_where_the_player_chooses() {
+        let asked = chosen(Protocol::Dash);
+        assert_eq!(asked.rendition_of(1), 1);
+        let mut server = asked;
+        server.ladder.adaptation = Adaptation::Server;
+        assert_eq!(server.rendition_of(1), 0);
     }
 }

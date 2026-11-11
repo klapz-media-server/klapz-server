@@ -241,9 +241,14 @@ Places where we knowingly answer differently, each decided rather than overlooke
   bitrates measured on the reference, whose own values vary per film. It copies the video only
   when the limit covers a peak its analysis stored; we have no analysis and compare with the
   file's average, so we copy more often.
-- **Automatic quality does not adapt during playback.** `autoAdjustQuality=1` gets the
-  reference's decision, encode and timeline, but one quality for the whole session. The
-  reference did not change quality either in any test here, so its rule is unknown.
+- **Automatic quality adapts by a rule of our own.** `autoAdjustQuality=1` is the official
+  API's `SERVER_ADAPTIVE`: the reference's decision and single representation, then lower
+  bitrates at the same picture size, chosen from the server's timing of its own deliveries and
+  moved to by restarting the encoder under the same URLs. The reference holds such a mechanism,
+  but no test here fed it, so its rule is unknown. `CLIENT_ADAPTIVE`, where the player chooses
+  among the copy and the encodes, exists on the official API only. Both hold restarts back so
+  that a player or a link hovering between two rungs does not restart the process back and
+  forth; the rules and their values are in `docs/spec-gaps.md`.
 - **`/:/timeline` with `state=stopped` tears the conversion down**, as the reference does: its
   process would otherwise run on for five minutes holding a session slot. The `TranscodeSession`
   it reports carries the reference's full field set, filled from the live conversion
@@ -491,6 +496,12 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   and empty, and `/library/sections/{id}/albums` is its empty view;
 - ⬜ a series library's "more in" a genre, whose genre follows the viewer's history by a rule
   not found yet.
+- ✅ **adaptive bitrate, chosen by the server or by the player**, over HLS and DASH: `quality`
+  on `startStream` (`FIXED`, `SERVER_ADAPTIVE`, `CLIENT_ADAPTIVE`). The player's choice lists
+  the copy first and encodes cut on the same key frames, served from pieces so that every rung
+  and every restart agree on where a segment starts; the server's moves bitrates under one
+  representation whose codec headers never change (`transcoder::adapt` holds both rules).
+  Played across rung changes by shaka-player and hls.js without a stop.
 
 ## Reference server
 

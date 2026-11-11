@@ -802,21 +802,118 @@ episode):
 - without a limit, a 1920-wide source gets 20000k at CRF 16, and a 1280-wide one 9000k at CRF 16,
   its ceiling for any limit of 10 Mbps or more. Below that the rungs are in `plan.rs`.
 
-**The quality never changes during a session here, and it did not on the reference either.** Four
-attempts to provoke a change left the bitrate alone, with one job and one `Bandwidth` entry:
-downloads throttled to 2.5 and 3 Mbps for up to 215 seconds, over loopback and the machine's own
-address, then with a real playback clock and `state=buffering`, with `location=lan` and `wan`. Its
-binary does hold a mechanism (`Client buffer has dropped; switching to measurement`, `Reducing
-bandwidth of %s by %d to %d`), so the condition exists and is unknown; every connection here was
-local. Plex Web's timelines carry no bandwidth, so nothing the client sends explains it.
+The reference announces **one** representation in DASH and one variant in HLS (five client
+profiles, LAN and WAN), and its binary holds a mechanism to move it: `Segments have been delayed`,
+`Client buffer has dropped; switching to measurement`, `Reducing bandwidth of %s by %d to %d`.
+No test here fed it: four attempts left the bitrate alone, with one job and one `Bandwidth` entry
+(downloads throttled to 2.5 and 3 Mbps for up to 215 seconds, over loopback and the machine's own
+address, with a real playback clock and `state=buffering`, `location=lan` and `wan`). Plex Web's
+timelines carry no bandwidth, so the reference can only be timing its own deliveries.
+
+**Divergence: ours moves, by a rule of our own.** `autoAdjustQuality=1` is the official API's
+`SERVER_ADAPTIVE` quality (*Adaptive streams, chosen by the server or by the player*): the same
+decision and the same first encode, then lower bitrates at the same picture size as the link
+requires, and back up as it allows.
 
 A timeline for a running conversion also answers `Bandwidths` and `TranscodeSession` (`size` 2),
 fixed quality and copies included. `Bandwidth.bandwidth` is the rounded-up sum of 2.1 times the
 bitrate of each copied track and 1.05 times that of each encoded one, and `resolution` follows the
-width of what is sent. Plex Web shows it as the current quality, once `TranscodeSession.key` ends
+width of what is sent: for an adaptive stream, the rung of the latest video segment the player
+received. Plex Web shows it as the current quality, once `TranscodeSession.key` ends
 with the session it started. We send the attributes we can state and leave out `progress`, `speed`
 and the codec fields. After `stopped` our session is closed, so neither is sent; the reference
 still sends them until `/stop`.
+
+### Adaptive streams, chosen by the server or by the player
+
+`startStream` takes `quality`: `FIXED` (one rung, as above), `SERVER_ADAPTIVE` or
+`CLIENT_ADAPTIVE`, over HLS and DASH alike; `maxVideoBitrate` caps every rung. The rungs come from
+the measured ladder (`plan::ADAPTIVE_RUNG_LIMITS`, Plex Web's 8, 4, 2, 0.72 and 0.32 Mbps), and
+there is still one process per stream: a segment of another rung, or one too far ahead, restarts
+it there. What earlier runs wrote stays on disk and is served without a restart.
+
+**Chosen by the player.** The manifest lists every rung: DASH as `Representation`s of one
+`AdaptationSet`, HLS as `#EXT-X-STREAM-INF` variants with `#EXT-X-INDEPENDENT-SEGMENTS`. The top
+one is the copy of the video whenever the file allows it (H.264, no subtitle to burn, within the
+cap), then encodes below 75% of the file's bitrate: Soul (7.7 Mbps) gets the copy, 1280×720 at
+3.4 Mbps, 720×404 at 1.3, 480×268 at 0.3 and 320×180 at 0.2. Every rung carries the same audio,
+copied or converted by the same encoder, since a player switching video keeps its audio. Segments
+are 5 seconds on every rung and both protocols. Addresses: `/streams/{id}/{rung}/index.m3u8` and
+`…/{rung}/00012.ts`; `/streams/{id}/{rung}/header` and `…/{rung}/12.m4s` for DASH video, and
+`/streams/{id}/audio/…` for the audio every rung shares.
+
+Copied video can only be cut on the source's key frames, and the transcoder cuts its segments on
+a grid that starts where *its run* starts: measured on a test episode, a copy restarted at 30 s
+began on the key frame at 27 and then numbered every chunk 3 seconds early. Two runs of the same
+rung started at different points therefore disagree on where a segment begins, and a player
+moving between them meets gaps. So these streams are written in pieces, one per group of pictures
+(`-seg_duration 0.001` on the video's adaptation set; `-segment_time 0.001` for HLS, whose audio
+travels in the same pieces), and a segment is served as the pieces whose key frame is *shown*
+within its five seconds: decode times are no use, a copy taking the source container's and an
+encode the encoder's, up to half a second apart on Soul for the same frame. Encodes put their key
+frames where the source has them (`-force_key_frames source`, `scenecut=0:keyint=infinite`) and
+every run starts on the key frame before its segment (`-noaccurate_seek`), so all rungs cut at the
+same frames: measured on Soul, chunk 402 starts at 2010.090 s on the copy and 2010.091 s at
+1280×720, with its pieces at 2012.968/2012.969 and 2014.094/2014.095. Without a copy (a burned
+subtitle, a cap below the file) the encodes are keyed on the 5-second grid instead. A DASH audio
+piece is cut with the video's, and counted with the video piece it was cut with.
+
+Two quirks of this build, found doing it: `-skip_to_segment 1` makes it write an encode's
+timestamps from zero wherever the input starts (from 2 on they stay the source's), so a run's
+pieces are numbered from its segment; and `-fps_mode cfr` after a seek fills the time before the
+first frame with copies of it, each a key frame.
+
+Played by shaka-player 4.7 and hls.js 1.5 in a browser, on Soul, forcing a rung every 9 seconds
+in both directions between the copy and the encodes: the picture changed size each time
+(1920×1080, 1280×720, 720×405, 480×270, 320×180), playback never stopped, no frame was dropped
+(2,847 and 1,951). DASH buffered one gap of 0.66 s at 39.3 s, which shaka stepped over in 0.07 s;
+hls.js had none, and retried three segment requests that timed out while a restart waited.
+
+**Chosen by the server.** One representation at one picture size, the top rung's, and lower
+bitrates under it (Soul: 20, 7.4, 3.4, 1.3, 0.3 and 0.2 Mbps, all 1920×1080), in 3-second
+segments. A player keeps the initialization segment it read first, which another picture size
+would not decode, and x264 otherwise writes other headers for another bitrate: the level follows
+the bitrate and the picture parameters the CRF. Every rung is encoded `stitchable=1` and at level
+4.2, which makes their `avcC` byte for byte the same (checked at 9, 1.3 and 0.3 Mbps, and after a
+seek). HLS needs no discontinuity, the picture never changing.
+
+The server times every video segment it sends, from its first byte to its last, after the wait for
+the process to write it. That alone is not enough: a connection's buffers take a whole segment at
+once over a fast path (1.3 MB "sent" in 0.35 s to a reader at 1.5 Mbps over loopback), so the
+listening socket's send buffer is held at 256 KiB, and the wait until the player asks for the next
+segment counts too once it is longer than 1.2 segments, which an idle player never waits. From
+those deliveries, the rules (`adapt::ServerAdaptation`, with their reasons beside them):
+
+| Rule | Value |
+| --- | --- |
+| throughput | the lower of two moving averages, weights 0.5 and 0.15; a sample counted at no more than twice the top rung's needs, a send at no less than 20 ms |
+| stay | while the rung needs at most 90% of it |
+| move to | the best rung needing at most 75% of it, of the latest delivery when going down |
+| down | after 2 slow deliveries in a row |
+| up | one rung, after 30 s of room for it |
+| after a move | 9 s without a decision |
+| failed probe | down within 60 s of going up: the next wait to try that rung doubles, up to 240 s |
+| restart | down at the segment asked for; up one segment later, the one asked for being written |
+
+Measured on a test episode over loopback, with a player keeping 20 s of buffer on a real clock:
+the link dropped from unlimited to 1.5 Mbps, the second slow segment (14 s later) moved the stream
+from 9 Mbps to 0.3, and the first segment of the new rung arrived 0.9 s after it was asked for;
+restored, it climbed one rung every 42 s back to the top. 0.2 s of stall in 360 s, and everything
+received, decoded as one stream under the first initialization segment, gave 9,525 frames without
+an error, DASH and HLS alike. On the Plex surface, the timeline's `Bandwidth` followed it: 9719,
+584, 1631, 3859.
+
+**Restarts are held back.** A request for another rung than the running one waits, and the process
+is restarted only when allowed (`adapt::client_switch_wait`): restarts for a change of rung at
+least 4 seconds apart, so that each run writes a segment or two before it can be replaced; a
+better rung only once its request has been waiting 2 seconds, so that a player changing its mind
+or abandoning the request has cost nothing; a worse one at once. Seeks within a rung are not held.
+Measured: the first change of rung costs 0.6 to 0.7 s (the encode's start and first piece), a
+change within 4 s of the last about 3.5 to 4 s.
+
+Not handled: a rung change, like a seek, ends the response of soft subtitles, the new process
+numbering its pieces from 0. And the server does not slow the process down: a low rung runs minutes
+ahead of the player, which is why an upgrade does not wait for what it wrote.
 
 ### Refusing a chunk
 
@@ -833,7 +930,7 @@ Playlists and manifests are not held.
 **Divergence.** The reference answers `start.mpd` and `start.m3u8` with its manifest, whose
 segments are relative URLs under `session/{id}/…` and carry no token. Ours answers `307` to the
 stream the official API's `startStream` started: `/streams/{id}/manifest.mpd?token=…` or
-`/streams/{id}/master.m3u8?token=…`. The id is a fresh UUID, the token a 256-bit secret of that
+`/streams/{id}/master.m3u8?token=…`, whose renditions are under `/streams/{id}/{rendition}/…`. The id is a fresh UUID, the token a 256-bit secret of that
 stream alone, and every URL the manifest names (headers, chunks, the variant playlist, its
 segments) is an absolute path carrying it, because a relative reference drops the query. A wrong
 or missing secret answers `404`, as an unknown stream does. The manifest's body is otherwise the

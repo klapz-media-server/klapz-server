@@ -7,8 +7,8 @@
 use async_graphql::{Context, Enum, InputObject, Result, SimpleObject, ID};
 use open_plex_core::playback::{NewPlaybackSession, PlaybackOutput, StreamDecision};
 use open_plex_core::stream::{
-    Delivery, StartedStream, StreamError, StreamLimits, StreamOrder, StreamProtocol, StreamSource,
-    StreamTrack, SubtitleOutput,
+    Delivery, StartedStream, StreamError, StreamLimits, StreamOrder, StreamProtocol, StreamQuality,
+    StreamSource, StreamTrack, SubtitleOutput,
 };
 use open_plex_core::tracks::selected_tracks;
 use open_plex_core::{now_epoch, MediaStream, PartId, RatingKey, StreamKind};
@@ -46,6 +46,29 @@ pub enum StreamDeliveryType {
     Transcode,
 }
 
+/// How a conversion's quality follows the link.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum StreamQualityType {
+    /// One quality for the whole stream, the best within `maxVideoBitrate`.
+    Fixed,
+    /// One quality announced, which the server lowers and raises by measuring how fast the
+    /// player receives it. Always a re-encode, at one picture size.
+    ServerAdaptive,
+    /// Every quality announced, the video copied first when the file allows it, and the player
+    /// chooses among them as it goes.
+    ClientAdaptive,
+}
+
+impl From<StreamQualityType> for StreamQuality {
+    fn from(quality: StreamQualityType) -> Self {
+        match quality {
+            StreamQualityType::Fixed => Self::Fixed,
+            StreamQualityType::ServerAdaptive => Self::ServerAdaptive,
+            StreamQualityType::ClientAdaptive => Self::ClientAdaptive,
+        }
+    }
+}
+
 /// How a subtitle reaches the player of a conversion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
 pub enum SubtitleDeliveryType {
@@ -80,14 +103,15 @@ pub struct StartStreamInput {
     /// The size burned subtitles are drawn at, 1.0 being the normal size.
     #[graphql(default = 1.0)]
     pub subtitle_scale: f64,
-    /// The most the video may weigh, in bits per second.
+    /// The most the video may weigh, in bits per second: for an adaptive stream, a ceiling on
+    /// every quality.
     pub max_video_bitrate: Option<i32>,
     /// Convert the audio even when the player could take it as it is.
     #[graphql(default)]
     pub convert_audio: bool,
-    /// Automatic quality: always a re-encode.
-    #[graphql(default)]
-    pub adaptive: bool,
+    /// How the quality follows the link.
+    #[graphql(default_with = "StreamQualityType::Fixed")]
+    pub quality: StreamQualityType,
     /// Where to start, in milliseconds.
     #[graphql(default)]
     pub position_ms: i64,
@@ -117,7 +141,7 @@ impl StartStreamInput {
                 .max_video_bitrate
                 .and_then(|bits| u32::try_from(bits).ok()),
             convert_audio: self.convert_audio,
-            adaptive: self.adaptive,
+            quality: self.quality.into(),
         }
     }
 
@@ -141,6 +165,8 @@ pub struct StreamObject {
     pub delivery: StreamDeliveryType,
     /// How it is cut up. Null for direct play.
     pub protocol: Option<StreamProtocolType>,
+    /// How its quality follows the link, as asked.
+    pub quality: StreamQualityType,
     /// What happens to the video track.
     pub video_decision: StreamDecisionType,
     /// What happens to the audio track.
@@ -150,7 +176,8 @@ pub struct StreamObject {
     pub url: String,
     /// Where the player reads text subtitles, when they were asked for.
     pub subtitles_url: Option<String>,
-    /// The bitrate of the video sent, in bits per second, when known.
+    /// The bitrate of the video sent, in bits per second, when known: at the start, for an
+    /// adaptive stream.
     pub video_bitrate: Option<i32>,
     /// The bitrate of the audio sent, in bits per second, when known.
     pub audio_bitrate: Option<i32>,
@@ -387,6 +414,7 @@ pub(crate) async fn start_stream(
     };
     let key = order.key.clone();
     let delivery = order.delivery;
+    let quality = input.quality;
     let playback_id = order.playback.clone();
 
     let started = match api.streams.start(order).await {
@@ -439,13 +467,17 @@ pub(crate) async fn start_stream(
     };
     Ok(StartStreamPayload {
         client_mutation_id: input.client_mutation_id,
-        stream: Some(stream_object(started, delivery)),
+        stream: Some(stream_object(started, delivery, quality)),
         session: Some(PlaybackSessionObject(session)),
         user_errors: Vec::new(),
     })
 }
 
-fn stream_object(started: StartedStream, delivery: Delivery) -> StreamObject {
+fn stream_object(
+    started: StartedStream,
+    delivery: Delivery,
+    quality: StreamQualityType,
+) -> StreamObject {
     let PlaybackOutput {
         video_bitrate,
         audio_bitrate,
@@ -468,6 +500,7 @@ fn stream_object(started: StartedStream, delivery: Delivery) -> StreamObject {
     StreamObject {
         delivery,
         protocol,
+        quality,
         video_decision: started.video.into(),
         audio_decision: started.audio.into(),
         url: started.url,
