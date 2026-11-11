@@ -188,10 +188,10 @@ pub fn parse_networks(list: &str) -> Result<Vec<IpNet>, String> {
         .collect()
 }
 
-/// The transcoder process calling back. It holds no token: these routes answer only to the
-/// unguessable id of a session it was started for.
+/// The transcoder process calling back. It holds no token: these routes answer only on
+/// loopback and to the unguessable id of a session it was started for (`callbacks`).
 fn is_transcoder_callback(path: &str) -> bool {
-    path.starts_with("/video/:/transcode/session/")
+    path.starts_with("/transcoder/")
 }
 
 /// A stream at an address of our own, which carries a secret of its own instead of a token.

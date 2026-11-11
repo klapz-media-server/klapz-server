@@ -262,9 +262,12 @@ Places where we knowingly answer differently, each decided rather than overlooke
   Ours are rows in `playback_session`, exposed on the official API; every sign of life pushes
   `expires_at` forward 300 seconds, reads skip what has expired, a sweep deletes it, and startup
   clears everything.
-- **The transcoder's callbacks carry no token.** `/video/:/transcode/session/{id}/{callback}/…`
-  is how the process reads its source and reports its segments. Those routes bypass token
-  authentication and answer only to the unguessable id of a running session.
+- **The transcoder's callbacks are the transcoder's, and carry no token.**
+  `/transcoder/{session}/{run}/…` (`source`, `manifest`, `progress`) is how the process reads its
+  source and reports its segments, served by `server::callbacks` straight over the transcoder:
+  no Plex route is involved, where the reference's process calls back under
+  `/video/:/transcode/session/`. Those routes bypass token authentication and answer only on
+  loopback, and to the unguessable id of a running session.
 - **A stream lives at an address of its own.** `start.mpd` and `start.m3u8` start the stream
   through the official API's `startStream` and answer `307` to `/streams/{id}/manifest.mpd` or
   `master.m3u8`, whose URLs all carry the stream's own secret (`?token=`, not the account's): the

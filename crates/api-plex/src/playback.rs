@@ -6,19 +6,16 @@
 //! A conversion is started through the official API's `startStream`, and `start.mpd` and
 //! `start.m3u8` send the player to the stream's own address, where its manifest and segments
 //! are served.
-//!
-//! `/video/:/transcode/session/…` is the process's own way back in. Those routes are served
-//! without a token and answer only to the unguessable id its session was given.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_graphql::{Name, Value, Variables};
 use axum::body::Body;
-use axum::extract::{Path, Query, RawQuery, Request, State};
+use axum::extract::{Path, Query, Request, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::routing::{get, post, put};
+use axum::routing::get;
 use axum::Router;
 use open_plex_api::item::ITEM_TYPE;
 use open_plex_api::media::FILE_TYPE;
@@ -53,22 +50,6 @@ pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
         .route("/video/:/transcode/universal/ping", get(ping))
         .route("/video/:/transcode/universal/stop", get(stop))
         .route("/video/:/transcode/universal/subtitles", get(subtitles))
-        .route(
-            "/video/:/transcode/session/{session}/{callback}/source",
-            get(callback_source),
-        )
-        .route(
-            "/video/:/transcode/session/{session}/{callback}/manifest",
-            post(callback_manifest),
-        )
-        .route(
-            "/video/:/transcode/session/{session}/{callback}/progress",
-            put(acknowledge),
-        )
-        .route(
-            "/video/:/transcode/session/{session}/{callback}/progress/{detail}",
-            put(acknowledge),
-        )
         .route(
             "/library/parts/{partId}/{changestamp}/{filename}",
             get(part_file),
@@ -811,53 +792,6 @@ async fn end_record(state: &PlexState, session: String) {
         // It expires by itself.
         tracing::warn!(%error, "could not close a playback session");
     }
-}
-
-async fn callback_source(
-    State(state): State<PlexState>,
-    Path((_session, callback)): Path<(String, String)>,
-    request: Request,
-) -> Result<Response, ApiError> {
-    let path = state
-        .transcoder
-        .callback_source(&callback)
-        .ok_or(ApiError::NotFound)?;
-    Ok(serve(path, request).await)
-}
-
-/// The first segment of the path is the run the process belongs to: one replaced since may
-/// still be heard from.
-async fn callback_manifest(
-    State(state): State<PlexState>,
-    Path((run, callback)): Path<(String, String)>,
-    body: axum::body::Body,
-) -> StatusCode {
-    if !state.transcoder.has_callback(&callback) {
-        return StatusCode::NOT_FOUND;
-    }
-    // Answered before the body is read: Plex's build often sends a request's head and waits
-    // for the answer before its body, as the reference answers at once. Waiting for the body
-    // first would hold both sides, and every announcement after the first would be lost.
-    tokio::spawn(async move {
-        match axum::body::to_bytes(body, MAX_ANNOUNCEMENT_BYTES).await {
-            Ok(bytes) => {
-                let text = String::from_utf8_lossy(&bytes);
-                if !state.transcoder.announce_segments(&callback, &run, &text) {
-                    tracing::debug!("an announcement arrived for a session since stopped");
-                }
-            }
-            Err(error) => tracing::debug!(%error, "a transcoder announcement did not arrive"),
-        }
-    });
-    StatusCode::OK
-}
-
-/// An announcement is a segment list or a manifest: a few kilobytes.
-const MAX_ANNOUNCEMENT_BYTES: usize = 1 << 20;
-
-/// Progress reports. Nothing reads them yet, and the process only needs an answer.
-async fn acknowledge(RawQuery(_query): RawQuery) -> StatusCode {
-    StatusCode::OK
 }
 
 #[cfg(test)]

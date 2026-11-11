@@ -957,8 +957,11 @@ segments) is an absolute path carrying it, because a relative reference drops th
 or missing secret answers `404`, as an unknown stream does. The manifest's body is otherwise the
 reference's, unchanged. So the Plex binding no longer builds a manifest: there is one, and it is
 the official API's. The cost: a client that does not follow redirects cannot start a stream, and
-a stream's URLs are tied to its secret rather than to the session's name. The transcoder's
-callbacks and `/video/:/transcode/universal/subtitles` keep their Plex routes.
+a stream's URLs are tied to its secret rather than to the session's name.
+`/video/:/transcode/universal/subtitles` keeps its Plex route. The transcoder's callbacks have
+left the Plex surface: the reference's process calls back under `/video/:/transcode/session/`,
+ours under `/transcoder/{session}/{run}/`, served by the server over the transcoder and only to
+loopback.
 
 ### Timelines
 

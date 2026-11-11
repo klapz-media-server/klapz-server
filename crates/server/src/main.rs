@@ -6,6 +6,7 @@
 
 mod admin;
 mod auth;
+mod callbacks;
 mod cors;
 mod graphql;
 mod remote_tokens;
@@ -118,20 +119,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(expire_playback(
         Arc::clone(&playback),
         Arc::clone(&play_queues),
-        transcoder,
+        Arc::clone(&transcoder),
     ));
-    let mut app = open_plex_api_plex::router(plex_state)
+    let app = open_plex_api_plex::router(plex_state)
         .merge(graphql::router(schema, sessions))
         .merge(admin::router())
-        .merge(streams::router(streams));
-    let web_dir = web::directory();
-    if let Some(client) = web::router(&web_dir) {
-        tracing::info!(directory = %web_dir.display(), "serving the web client at /web");
-        app = app.merge(client);
-    } else {
-        tracing::info!(directory = %web_dir.display(), "no web client found, /web is not served");
-    }
-    let app = app
+        .merge(streams::router(streams))
+        .merge(callbacks::router(transcoder));
+    let app = with_web_client(app)
         // One token middleware for every surface, so neither can be left unauthenticated by
         // omission.
         .layer(axum::middleware::from_fn_with_state(
@@ -320,6 +315,18 @@ fn request_span(request: &axum::extract::Request) -> tracing::Span {
 /// separately distributed codecs are, for Plex's own build; `OPENPLEX_TRANSCODER_FONTS` the
 /// fonts subtitles are burned in with, by default `Resources/Fonts` beside the binary, where a
 /// Plex install keeps them.
+/// Plex Web at `/web`, when its directory holds it.
+fn with_web_client(app: axum::Router) -> axum::Router {
+    let web_dir = web::directory();
+    if let Some(client) = web::router(&web_dir) {
+        tracing::info!(directory = %web_dir.display(), "serving the web client at /web");
+        app.merge(client)
+    } else {
+        tracing::info!(directory = %web_dir.display(), "no web client found, /web is not served");
+        app
+    }
+}
+
 fn transcoder() -> open_plex_transcoder::Transcoder {
     let bind = std::env::var("OPENPLEX_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
     let port = bind.rsplit(':').next().unwrap_or("32500");

@@ -375,7 +375,7 @@ struct Switching {
 #[derive(Debug)]
 pub(crate) struct Session {
     callback: String,
-    /// The process's way back in, up to the run: `…/video/:/transcode/session`.
+    /// The process's way back in, up to the session: `…/transcoder`.
     callback_base: String,
     request: StreamRequest,
     directory: PathBuf,
@@ -1323,7 +1323,7 @@ impl Transcoder {
         });
         let key = request.session.clone();
         let session = Arc::new(Session {
-            callback_base: format!("{}/video/:/transcode/session", self.config.callback_base),
+            callback_base: format!("{}/transcoder", self.config.callback_base),
             callback,
             request,
             directory,
@@ -1405,7 +1405,7 @@ impl Transcoder {
             .await
             .map_err(TranscodeError::Io)?;
         let callback = format!(
-            "{}/{generation}/{}",
+            "{}/{}/{generation}",
             session.callback_base, session.callback
         );
         let run = RunPlan {
