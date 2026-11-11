@@ -18,6 +18,11 @@ async-graphql = { version = "7", features = ["dataloader"] }
 base64 = "0.22"
 async-graphql-axum = "7"
 async-trait = "0.1"
+# Password hashing for sign-in: Argon2id, the OWASP recommendation, in pure Rust.
+argon2 = { version = "0.5", features = ["std"] }
+# Session tokens. Version 9 signs HS256 with `ring`, already in the tree through rustls; later
+# versions require choosing a new crypto backend.
+jsonwebtoken = { version = "9", default-features = false }
 axum = "0.8"
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "net", "fs", "signal"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "pnm", "webp"] }

@@ -55,8 +55,18 @@ pub(crate) fn visible_sections(context: &Context<'_>) -> Option<Vec<SectionId>> 
     caller(context).map_or_else(|| Some(Vec::new()), |caller| caller.libraries.sections())
 }
 
-fn require_operator(context: &Context<'_>) -> Result<()> {
+pub(crate) fn require_operator(context: &Context<'_>) -> Result<()> {
     if caller(context).is_some_and(|caller| caller.scope.allows(Scope::Admin)) {
+        Ok(())
+    } else {
+        Err(denied())
+    }
+}
+
+/// The operator, or a user acting on itself: how a user pairs its own server.
+fn require_operator_or_self(context: &Context<'_>, user: UserId) -> Result<()> {
+    let caller = require_caller(context)?;
+    if caller.scope.allows(Scope::Admin) || caller.user == Some(user) {
         Ok(())
     } else {
         Err(denied())
@@ -145,6 +155,17 @@ impl UserObject {
     /// The user's e-mail address.
     async fn email(&self) -> &str {
         &self.0.email
+    }
+
+    /// Whether the user may use the server. A user who signs up waits inactive until the
+    /// operator lets them in; inactive, nothing it presents opens anything.
+    async fn active(&self) -> bool {
+        self.0.active
+    }
+
+    /// Whether the user can sign in with a password: a user the operator created has none.
+    async fn has_password(&self, context: &Context<'_>) -> Result<bool> {
+        Ok(repository(context)?.has_password(self.0.id).await?)
     }
 
     /// When the user was created, in seconds since the epoch.
@@ -321,6 +342,39 @@ pub struct MoveExtensionInput {
     pub connection_uri: String,
 }
 
+/// Who is asking: what a client needs to know before it offers to manage users or a
+/// connection.
+#[derive(Debug, Clone, Copy)]
+pub struct Viewer {
+    operator: bool,
+    user: Option<UserId>,
+}
+
+#[Object]
+impl Viewer {
+    /// Whether the caller is the server's operator, who manages users and sees every library.
+    async fn is_operator(&self) -> bool {
+        self.operator
+    }
+
+    /// The caller as a user. Null for the operator, who is nobody's user, and for a request
+    /// with no caller.
+    async fn user(&self, context: &Context<'_>) -> Result<Option<UserObject>> {
+        let Some(user) = self.user else {
+            return Ok(None);
+        };
+        Ok(repository(context)?.user(user).await?.map(UserObject))
+    }
+}
+
+pub(crate) fn viewer(context: &Context<'_>) -> Viewer {
+    let caller = caller(context);
+    Viewer {
+        operator: caller.is_some_and(|caller| caller.scope.allows(Scope::Admin)),
+        user: caller.and_then(|caller| caller.user),
+    }
+}
+
 pub(crate) async fn users(
     context: &Context<'_>,
     after: Option<String>,
@@ -469,17 +523,13 @@ pub(crate) async fn move_extension(
     context: &Context<'_>,
     input: MoveExtensionInput,
 ) -> Result<AccountLinkObject> {
-    require_operator(context)?;
+    let user = user_id(&input.user_id)?;
+    require_operator_or_self(context, user)?;
     let connection_uri = connection_uri(&input.connection_uri)?;
     let api = context.data::<ApiContext>()?;
     let mut link = api
         .access
-        .move_account(
-            user_id(&input.user_id)?,
-            input.extension.into(),
-            &connection_uri,
-            now_epoch(),
-        )
+        .move_account(user, input.extension.into(), &connection_uri, now_epoch())
         .await?
         .ok_or_else(|| async_graphql::Error::new("this connection is not paired"))?;
     publish_now(api, &mut link).await;
@@ -490,10 +540,10 @@ pub(crate) async fn pair_extension(
     context: &Context<'_>,
     input: PairExtensionInput,
 ) -> Result<AccountLinkObject> {
-    require_operator(context)?;
+    let user = user_id(&input.user_id)?;
+    require_operator_or_self(context, user)?;
     let connection_uri = connection_uri(&input.connection_uri)?;
     let api = context.data::<ApiContext>()?;
-    let user = user_id(&input.user_id)?;
     let extension: Extension = input.extension.into();
     let connection = api
         .access
@@ -533,8 +583,9 @@ pub(crate) async fn unpair_extension(
     user: &ID,
     extension: ExtensionType,
 ) -> Result<bool> {
-    require_operator(context)?;
+    let user = user_id(user)?;
+    require_operator_or_self(context, user)?;
     Ok(repository(context)?
-        .unlink_account(user_id(user)?, extension.into())
+        .unlink_account(user, extension.into())
         .await?)
 }

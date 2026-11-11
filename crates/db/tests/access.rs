@@ -489,3 +489,91 @@ async fn deleting_a_user_closes_its_access() {
         .unwrap()
         .is_none());
 }
+
+#[tokio::test]
+async fn a_user_who_signs_up_waits_inactive_with_its_password() {
+    let repository = repository().await;
+    let user = repository
+        .sign_up("b@example.org", "$argon2id$hash", NOW)
+        .await
+        .unwrap();
+    assert!(!user.active);
+    assert!(repository.has_password(user.id).await.unwrap());
+    let (found, hash) = repository
+        .credentials("b@example.org")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!((found.id, hash.as_str()), (user.id, "$argon2id$hash"));
+
+    let created = repository.create_user("c@example.org", NOW).await.unwrap();
+    assert!(created.active, "a user the operator creates is let in");
+    assert!(!repository.has_password(created.id).await.unwrap());
+    assert!(repository
+        .credentials("c@example.org")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(matches!(
+        repository
+            .sign_up("c@example.org", "$argon2id$x", NOW)
+            .await,
+        Err(AccessError::EmailTaken)
+    ));
+}
+
+#[tokio::test]
+async fn an_inactive_user_opens_nothing_until_it_is_let_in() {
+    let repository = repository().await;
+    let user = connected(&repository, "a@example.org").await;
+    let deactivated = repository
+        .set_active(user, false, NOW + 1)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!deactivated.active);
+    assert_eq!(deactivated.updated_at, NOW + 1);
+    let digest = token_digest("a@example.org");
+    assert!(repository
+        .grant(Extension::Plex, &digest)
+        .await
+        .unwrap()
+        .is_none());
+
+    repository.set_active(user, true, NOW + 2).await.unwrap();
+    assert!(repository
+        .grant(Extension::Plex, &digest)
+        .await
+        .unwrap()
+        .is_some());
+    assert!(repository
+        .set_active(UserId::new(999), true, NOW)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn deleting_a_user_forgets_its_password() {
+    let repository = repository().await;
+    let user = repository
+        .sign_up("b@example.org", "$argon2id$hash", NOW)
+        .await
+        .unwrap();
+    assert!(repository.delete_user(user.id).await.unwrap());
+    assert!(!repository.has_password(user.id).await.unwrap());
+    let again = repository
+        .sign_up("b@example.org", "$argon2id$other", NOW)
+        .await
+        .unwrap();
+    assert_eq!(
+        repository
+            .credentials("b@example.org")
+            .await
+            .unwrap()
+            .unwrap()
+            .1,
+        "$argon2id$other"
+    );
+    assert_ne!(again.id, user.id);
+}

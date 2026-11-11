@@ -5,6 +5,10 @@
 //! to a [`Principal`] and attaches it to the request; each surface then enforces scope in
 //! its own idiom.
 //!
+//! A browser that signed in with a password presents a session cookie instead of a token; the
+//! token, when there is one, wins, and the cookie wins over a trusted network, so a user signed
+//! in on that network is that user rather than the operator.
+//!
 //! A request with no valid token is still admitted when it comes from a network the operator
 //! trusts, which is Plex's `allowedNetworks`: the one way a client with no plex.tv account,
 //! Plex Web among them, can talk to the server at all. It is an authentication bypass by
@@ -18,7 +22,10 @@ use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use ipnet::IpNet;
-use open_plex_core::access::{connection_uris_for_host, token_digest, AccessRepository, Extension};
+use open_plex_core::access::{
+    connection_uris_for_host, token_digest, user_principal, AccessRepository, Extension,
+};
+use open_plex_core::account::SessionKey;
 use open_plex_core::{Accounts, Principal};
 
 use crate::remote_tokens::RemoteTokens;
@@ -45,6 +52,7 @@ pub struct Access {
     trusted_networks: Vec<IpNet>,
     users: Option<Arc<dyn AccessRepository>>,
     remote: Option<Arc<RemoteTokens>>,
+    sessions: Option<Arc<SessionKey>>,
 }
 
 impl Access {
@@ -54,6 +62,37 @@ impl Access {
             trusted_networks,
             users: None,
             remote: None,
+            sessions: None,
+        }
+    }
+
+    /// Accepts the session cookies this key signed.
+    #[must_use]
+    pub fn with_sessions(mut self, key: Arc<SessionKey>) -> Self {
+        self.sessions = Some(key);
+        self
+    }
+
+    /// The active user a session cookie names, with its libraries.
+    async fn session_of(&self, token: &str) -> Option<Principal> {
+        let user = self
+            .sessions
+            .as_ref()?
+            .verify(token, open_plex_core::now_epoch())?;
+        let users = self.users.as_ref()?;
+        let found = match users.user(user).await {
+            Ok(found) => found.filter(|user| user.active)?,
+            Err(error) => {
+                tracing::warn!(%error, "could not look a session's user up");
+                return None;
+            }
+        };
+        match users.permissions(found.id).await {
+            Ok(permissions) => Some(user_principal(found, &permissions)),
+            Err(error) => {
+                tracing::warn!(%error, "could not read a session's permissions");
+                None
+            }
         }
     }
 
@@ -198,9 +237,20 @@ pub async fn require_token(
         return next.run(request).await;
     }
 
+    let by_token = match (by_token, session_cookie(&request).map(str::to_owned)) {
+        (Some(principal), _) => Some(principal),
+        // Read first: a request's body cannot be held across an await.
+        (None, Some(session)) => access.session_of(&session).await,
+        (None, None) => None,
+    };
     // A token that does not match still lets a trusted peer in: a client that once signed in
     // elsewhere keeps sending its stale one, and refusing it would refuse the peer we trust.
     let Some(principal) = by_token.or_else(|| trusted_peer(&access, &request)) else {
+        // Signing in happens on the GraphQL endpoint, before the caller is anyone. It goes
+        // through with no principal, which the schema answers as nobody: it sees nothing.
+        if request.uri().path() == "/graphql" {
+            return next.run(request).await;
+        }
         return unauthorized();
     };
 
@@ -221,6 +271,20 @@ fn trusted_peer(access: &Access, request: &Request) -> Option<Principal> {
     access
         .trusts(peer.ip())
         .then(|| Principal::operator("trusted network"))
+}
+
+/// The session cookie's value, if the request carries one.
+fn session_cookie(request: &Request) -> Option<&str> {
+    request
+        .headers()
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';'))
+        .filter_map(|pair| pair.trim().split_once('='))
+        .find(|(name, _)| *name == open_plex_api::SESSION_COOKIE)
+        .map(|(_, value)| value)
+        .filter(|value| !value.is_empty())
 }
 
 /// Reads the token from the header, falling back to the query string.
@@ -590,5 +654,97 @@ mod tests {
         let (status, body) = call("/identity", None).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, "anonymous");
+    }
+
+    use open_plex_core::access::AccessRepository;
+    use open_plex_core::account::SessionKey;
+
+    /// A router accepting sessions, with one active and one inactive user, trusting
+    /// `networks`, and the cookie of each.
+    async fn app_with_sessions(networks: &str) -> (Router, String, String) {
+        let users = Arc::new(open_plex_core::testing::InMemoryAccess::default());
+        let active = users.create_user("alice@example.org", 0).await.unwrap();
+        let waiting = users
+            .sign_up("bob@example.org", "$argon2id$x", 0)
+            .await
+            .unwrap();
+        let key = Arc::new(SessionKey::generate());
+        let now = open_plex_core::now_epoch();
+        let cookie =
+            |token: String| format!("theme=dark; {}={token}", open_plex_api::SESSION_COOKIE);
+        let alice = cookie(key.issue(active.id, now).unwrap());
+        let bob = cookie(key.issue(waiting.id, now).unwrap());
+        let access = Arc::new(
+            Access::new(Accounts::default(), parse_networks(networks).unwrap())
+                .with_users(users)
+                .with_sessions(key),
+        );
+        let app = Router::new()
+            .route("/library/sections", get(whoami))
+            .route("/graphql", get(whoami))
+            .layer(axum::middleware::from_fn_with_state(access, require_token));
+        (app, alice, bob)
+    }
+
+    async fn call_with_cookie(
+        app: Router,
+        path: &str,
+        cookie: Option<&str>,
+    ) -> (StatusCode, String) {
+        let mut request = Request::builder().uri(path);
+        if let Some(cookie) = cookie {
+            request = request.header("Cookie", cookie);
+        }
+        let mut request = request.body(Body::empty()).unwrap();
+        request.extensions_mut().insert(ConnectInfo(
+            "127.0.0.1:51000".parse::<SocketAddr>().unwrap(),
+        ));
+        let response = app.oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = http_body_util::BodyExt::collect(response.into_body())
+            .await
+            .unwrap()
+            .to_bytes();
+        (status, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    #[tokio::test]
+    async fn a_session_cookie_acts_as_its_user() {
+        let (app, alice, _) = app_with_sessions("").await;
+        assert_eq!(
+            call_with_cookie(app, "/library/sections", Some(&alice)).await,
+            (StatusCode::OK, "alice@example.org".to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_session_wins_over_a_trusted_network() {
+        let (app, alice, _) = app_with_sessions("127.0.0.1/32").await;
+        let (_, body) = call_with_cookie(app.clone(), "/library/sections", Some(&alice)).await;
+        assert_eq!(body, "alice@example.org");
+        let (_, body) = call_with_cookie(app, "/library/sections", None).await;
+        assert_eq!(body, "trusted network");
+    }
+
+    #[tokio::test]
+    async fn the_session_of_an_inactive_user_or_an_altered_one_opens_nothing() {
+        let (app, alice, bob) = app_with_sessions("").await;
+        let altered = format!("{alice}x");
+        for cookie in [bob.as_str(), altered.as_str()] {
+            let (status, _) =
+                call_with_cookie(app.clone(), "/library/sections", Some(cookie)).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{cookie}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_graphql_endpoint_lets_nobody_through_to_sign_in_and_nothing_else_does() {
+        let (app, _, _) = app_with_sessions("").await;
+        assert_eq!(
+            call_with_cookie(app.clone(), "/graphql", None).await,
+            (StatusCode::OK, "anonymous".to_owned())
+        );
+        let (status, _) = call_with_cookie(app, "/library/sections", None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 }

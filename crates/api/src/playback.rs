@@ -517,7 +517,8 @@ impl Mutation {
     }
 
     /// Ties a user's connection to its account on the extension's own service, and tells that
-    /// service where the server can be reached. For the server's operator only.
+    /// service where the server can be reached. For the server's operator, and for the user
+    /// itself.
     async fn pair_extension(
         &self,
         context: &Context<'_>,
@@ -528,8 +529,8 @@ impl Mutation {
     }
 
     /// Changes where a paired server is reached, and tells the extension's service at once:
-    /// what a tunnel or a new domain needs, without pairing again. For the server's operator
-    /// only.
+    /// what a tunnel or a new domain needs, without pairing again. For the server's operator,
+    /// and for the user itself.
     async fn move_extension(
         &self,
         context: &Context<'_>,
@@ -540,7 +541,7 @@ impl Mutation {
     }
 
     /// Forgets the account tied to a user's connection. Whether there was one. For the server's
-    /// operator only.
+    /// operator, and for the user itself.
     async fn unpair_extension(
         &self,
         context: &Context<'_>,
@@ -548,6 +549,53 @@ impl Mutation {
         #[graphql(desc = "The protocol to unpair.")] extension: crate::access::ExtensionType,
     ) -> Result<bool> {
         crate::access::unpair_extension(context, &user_id, extension).await
+    }
+
+    /// Creates an account that signs in with a password. It waits, inactive, until the
+    /// operator lets it in. Open to anyone.
+    async fn sign_up(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The address and password of the new account.")]
+        input: crate::account::SignUpInput,
+    ) -> Result<crate::account::SignUpPayload> {
+        crate::account::sign_up(context, input).await
+    }
+
+    /// Checks an address and its password and, when they match an active user, opens a
+    /// session for it: a cookie the server reads on every request. Open to anyone; failed
+    /// attempts on one address are limited.
+    async fn sign_in(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The address and password to sign in with.")]
+        input: crate::account::SignInInput,
+    ) -> Result<crate::account::SignInPayload> {
+        crate::account::sign_in(context, input).await
+    }
+
+    /// Clears the session cookie.
+    async fn sign_out(&self, context: &Context<'_>) -> Result<bool> {
+        crate::account::sign_out(context)
+    }
+
+    /// Lets in a user who signed up, or one that was shut out. For the server's operator only.
+    async fn activate_user(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The user, as returned in `User.id`.")] id: ID,
+    ) -> Result<crate::access::UserObject> {
+        crate::account::set_active(context, &id, true).await
+    }
+
+    /// Shuts a user out: its sessions and its tokens stop opening anything at once, and it
+    /// keeps its libraries for when it is let in again. For the server's operator only.
+    async fn deactivate_user(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The user, as returned in `User.id`.")] id: ID,
+    ) -> Result<crate::access::UserObject> {
+        crate::account::set_active(context, &id, false).await
     }
 
     /// Changes a film's metadata and locks. For a library's admins and the operator.

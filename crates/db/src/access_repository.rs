@@ -13,8 +13,8 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    extension_account, library_permission, track_choice, user_extension, users, viewing,
-    watch_state,
+    extension_account, library_permission, track_choice, user_extension, user_password, users,
+    viewing, watch_state,
 };
 
 #[derive(Debug, Clone)]
@@ -42,9 +42,10 @@ impl SqlAccessRepository {
             .and_then(user_extension_of))
     }
 
-    /// What a connection opens, once it is known to be switched on.
+    /// What a connection opens, once it is known to be switched on: nothing when its user is
+    /// not active.
     async fn grant_of(&self, extension: UserExtension) -> Result<Option<Grant>, AccessError> {
-        let Some(user) = self.user(extension.user).await? else {
+        let Some(user) = self.user(extension.user).await?.filter(|user| user.active) else {
             return Ok(None);
         };
         let permissions = self.permissions(user.id).await?;
@@ -53,6 +54,30 @@ impl SqlAccessRepository {
             extension,
             permissions,
         }))
+    }
+
+    async fn insert_user(
+        &self,
+        connection: &impl sea_orm::ConnectionTrait,
+        email: &str,
+        active: bool,
+        now: i64,
+    ) -> Result<User, AccessError> {
+        let row = users::ActiveModel {
+            id: ActiveValue::NotSet,
+            email: ActiveValue::Set(email.to_owned()),
+            active: ActiveValue::Set(active),
+            created_at: ActiveValue::Set(now),
+            updated_at: ActiveValue::Set(now),
+        };
+        let inserted = users::Entity::insert(row)
+            .exec_with_returning(connection)
+            .await
+            .map_err(|error| match error.sql_err() {
+                Some(SqlErr::UniqueConstraintViolation(_)) => AccessError::EmailTaken,
+                _ => storage(error),
+            })?;
+        Ok(user_of(inserted))
     }
 
     async fn require_user(&self, id: UserId) -> Result<(), AccessError> {
@@ -98,6 +123,7 @@ fn user_of(row: users::Model) -> User {
     User {
         id: UserId::new(row.id),
         email: row.email,
+        active: row.active,
         created_at: row.created_at,
         updated_at: row.updated_at,
     }
@@ -139,20 +165,68 @@ fn account_link_of(row: extension_account::Model, connection: UserExtension) -> 
 #[async_trait::async_trait]
 impl AccessRepository for SqlAccessRepository {
     async fn create_user(&self, email: &str, now: i64) -> Result<User, AccessError> {
-        let row = users::ActiveModel {
-            id: ActiveValue::NotSet,
-            email: ActiveValue::Set(email.to_owned()),
+        self.insert_user(&self.connection, email, true, now).await
+    }
+
+    async fn sign_up(
+        &self,
+        email: &str,
+        password_hash: &str,
+        now: i64,
+    ) -> Result<User, AccessError> {
+        let transaction = self.connection.begin().await.map_err(storage)?;
+        let user = self.insert_user(&transaction, email, false, now).await?;
+        user_password::Entity::insert(user_password::ActiveModel {
+            user_id: ActiveValue::Set(user.id.get()),
+            password_hash: ActiveValue::Set(password_hash.to_owned()),
             created_at: ActiveValue::Set(now),
             updated_at: ActiveValue::Set(now),
-        };
-        let inserted = users::Entity::insert(row)
-            .exec_with_returning(&self.connection)
+        })
+        .exec(&transaction)
+        .await
+        .map_err(storage)?;
+        transaction.commit().await.map_err(storage)?;
+        Ok(user)
+    }
+
+    async fn credentials(&self, email: &str) -> Result<Option<(User, String)>, AccessError> {
+        let Some(user) = users::Entity::find()
+            .filter(users::Column::Email.eq(email))
+            .one(&self.connection)
             .await
-            .map_err(|error| match error.sql_err() {
-                Some(SqlErr::UniqueConstraintViolation(_)) => AccessError::EmailTaken,
-                _ => storage(error),
-            })?;
-        Ok(user_of(inserted))
+            .map_err(storage)?
+        else {
+            return Ok(None);
+        };
+        Ok(user_password::Entity::find_by_id(user.id)
+            .one(&self.connection)
+            .await
+            .map_err(storage)?
+            .map(|password| (user_of(user), password.password_hash)))
+    }
+
+    async fn has_password(&self, user: UserId) -> Result<bool, AccessError> {
+        Ok(user_password::Entity::find_by_id(user.get())
+            .one(&self.connection)
+            .await
+            .map_err(storage)?
+            .is_some())
+    }
+
+    async fn set_active(
+        &self,
+        user: UserId,
+        active: bool,
+        now: i64,
+    ) -> Result<Option<User>, AccessError> {
+        users::Entity::update_many()
+            .col_expr(users::Column::Active, active.into())
+            .col_expr(users::Column::UpdatedAt, now.into())
+            .filter(users::Column::Id.eq(user.get()))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        self.user(user).await
     }
 
     async fn users(&self, window: Window) -> Result<Page<User>, AccessError> {
@@ -204,6 +278,10 @@ impl AccessRepository for SqlAccessRepository {
             .map_err(storage)?;
         library_permission::Entity::delete_many()
             .filter(library_permission::Column::UserId.eq(id.get()))
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
+        user_password::Entity::delete_by_id(id.get())
             .exec(&transaction)
             .await
             .map_err(storage)?;

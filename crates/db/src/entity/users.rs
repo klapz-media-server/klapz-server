@@ -8,6 +8,7 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(unique)]
     pub email: String,
+    pub active: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
