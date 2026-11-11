@@ -855,24 +855,65 @@ their head and read after.
 
 ### Play queues
 
-`POST /playQueues` needs `type` and `uri` (`400`), and `type` otherwise changes nothing: `audio` or
-`bogus` on a film gives the same queue. The URI is
+Measured on the reference with queues of its test libraries 27 (Soul) and 28 (Bull's two
+episodes): creating, editing and reading back every operation below, then replaying the whole
+sequence on both servers with the same trace.
+
+**Creating.** `POST /playQueues` needs `type` and `uri` or `playlistID` (`400`). The URI is
 `server://{machine}/com.plexapp.plugins.library{path}`. The path names a film or an episode (one
-entry, `continuous` changes nothing), a series (every episode), a season, a list of keys, or a
-library listing with its filters and sort. A URI that names nothing, another server or an unknown
-item is still a `200`: an empty queue, without the selected attributes or `playQueueTotalCount`.
-`key` selects the entry to play first, `shuffle=1` randomizes and selects the first.
-`playQueueSourceURI` restates the source as `library://x/item/…` for one item and
-`library://x/directory/…` otherwise.
+entry), a series (every episode), a season, a list of keys, or a library listing with its filters
+and sort. `continuous=1` plays an episode on to the end of its series (the first episode gives
+both, the last only itself) and changes nothing on a film. A URI that names nothing, another
+server or an unknown item is still a `200`: an empty queue, without the selected attributes or
+`playQueueTotalCount`. `key` selects the entry to play first, `shuffle=1` randomizes and plays the
+selected entry first. `playQueueSourceURI` restates the source as `library://x/item/…` for one
+item and `library://x/directory/…` otherwise. `onDeck`, `extrasPrefixCount` and the
+`include…` flags change nothing on these libraries.
 
-The window, measured on a queue of 22 centred on position 4: `window=N` (20 by default) shows N
-entries on each side plus the centre. `includeBefore=0` or `includeAfter=0` drops that side **and
-the centre**; both together are `400`. `window=0` shows nothing, and so does a `center` that is
-not in this queue. Entries come in the form of a lookup, `playQueueItemID` first.
+**One queue per player and type.** A new queue deletes the previous one the same
+`X-Plex-Client-Identifier` made with the same `type`: `GET` on it answers `404` at once. Another
+player's queue, or the same player's of another `type` (`audio`, `photo`), stays. This is the only
+way the reference forgets a queue; the one it numbers 1 is still there. Without a client
+identifier the reference refuses the request `400`; here such a queue is made and replaces
+nothing. Queues are also deleted after 7 days, a figure of ours.
 
-A queue holds at most 500 entries, where the reference took all 9,667 films of a library: every
-window here is capped. Queues are deleted after 7 days, a figure of ours. `PUT` answers `501`, and
-editing a queue is not served.
+**The window**, measured on a queue of 22 centred on position 4: `window=N` (20 by default) shows
+N entries on each side plus the centre. `includeBefore=0` or `includeAfter=0` drops that side
+**and the centre**; both together are `400`. `window=0` shows nothing, and so does a `center` that
+is not in this queue. Entries come in the form of a lookup, `playQueueItemID` first.
+`repeat=1` on `GET`, measured on a queue of 5: a window clipped by one end takes what it lacks from
+the other end, never showing an entry twice — `window=1` around the last entry shows the fourth,
+the fifth and the first; `window=3` around the last shows 1, 2, 3, 4 and 0; a window that already
+holds the whole queue is not reordered, and with either side refused nothing wraps.
+
+**The "up next" area.** `playQueueLastAddedItemID`, after `playQueueID`, names the last entry
+queued by hand. `PUT /playQueues/{id}?uri=…` inserts after it, or right after the entry playing
+when there is none, and the last inserted becomes it. `next=1` inserts right after the entry
+playing and leaves it alone, unless there was none. The area is positional only: an addition goes
+after that entry even once it stands before the one playing. `playlistID` adds a playlist's items
+the same way; a URI or playlist naming nothing adds nothing and leaves the version alone. Moving an
+entry right after it makes the moved entry the area's end; moving or deleting the end itself makes
+the entry before it the end. Clearing ends the area.
+
+**Editing.** Every edit raises `playQueueVersion` by one, except a reset and an addition of
+nothing. Unknown queues and entries answer `404` everywhere, entries of another queue included;
+a non-numeric id or `after` is `400`.
+
+| Operation | Rule measured |
+| --- | --- |
+| `PUT …/items/{id}/move` | `after` absent or `-1`: first. `after` an entry: right after it. `after` naming no entry (`0`, `999`): second, after the first other entry. `after` itself: `404`. The entry playing keeps playing. |
+| `DELETE …/items/{id}` | The entry after the one playing plays when it goes. The answer is the container *as it was* — version, total and area's end before the deletion — around the entries left, centred on the entry that was playing: gone, the window is empty, `playQueueSelectedItemOffset` is 0 and `playQueueSelectedMetadataItemID` absent. |
+| `DELETE …/items` | Every entry but the one playing goes; the answer is the queue after. |
+| `PUT …/reset` | The first entry plays. The version stays, and the answer is the container as it was before the reset, with no entries. |
+| `PUT …/shuffle` | Rebuilt from the source: the entry playing first with its id, every other entry new (new ids each time, removed entries back, entries queued by hand lost). `404` while the area has an end, or for an empty queue. |
+| `PUT …/unshuffle` | Rebuilt the same way in natural order, the entry playing at its item's place; also on a queue that was never shuffled, which still renews its entries and raises the version. |
+
+An entry playing that its source never held — queued by hand, everything else cleared — keeps its
+id when the queue is rebuilt and plays the first item of the rebuilt order instead.
+
+Here, a queue holds at most 500 entries, where the reference took all 9,667 films of a library:
+the source is cut there, and an addition that would pass it is cut too. `GET … ?own=1` is
+tolerated, and `onDeck=1` is not honored: the queue starts where `key` says.
 
 ### Playlists
 

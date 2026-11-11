@@ -18,10 +18,10 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 9 | 3.5 % |
-| `stub` | 106 | 40.8 % |
-| `partial` | 25 | 9.6 % |
-| `done` | 83 | 31.9 % |
+| `todo` | 8 | 3.1 % |
+| `stub` | 100 | 38.5 % |
+| `partial` | 24 | 9.2 % |
+| `done` | 91 | 35.0 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
 
@@ -39,7 +39,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Metadata Agents](#metadata-agents) | 12 | 0 | 0 | 0 | 0 | 12 |
 | [Subscriptions](#subscriptions) | 10 | 10 | 0 | 0 | 0 | 0 |
 | [Download Queue](#download-queue) | 9 | 0 | 0 | 9 | 0 | 0 |
-| [Play Queue](#play-queue) | 9 | 0 | 2 | 6 | 1 | 0 |
+| [Play Queue](#play-queue) | 9 | 8 | 1 | 0 | 0 | 0 |
 | [Status](#status) | 6 | 4 | 2 | 0 | 0 | 0 |
 | [Butler](#butler) | 5 | 0 | 0 | 5 | 0 | 0 |
 | [Transcoder](#transcoder) | 5 | 0 | 4 | 1 | 0 | 0 |
@@ -331,15 +331,15 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `partial` | `POST` | `/playQueues` | user | Create a play queue | From an item, a list of items, a series, a season or a library listing, with `key` and `shuffle`. Same container and items as the reference. A queue holds at most 500 entries. |
-| `partial` | `GET` | `/playQueues/{playQueueId}` | user | Retrieve a play queue | `window`, `center`, `includeBefore` and `includeAfter`, with the reference's rules. |
-| `todo` | `PUT` | `/playQueues/{playQueueId}` | user | Add a generator or playlist to a play queue |  |
-| `stub` | `DELETE` | `/playQueues/{playQueueId}/items` | user | Clear a play queue |  |
-| `stub` | `DELETE` | `/playQueues/{playQueueId}/items/{playQueueItemId}` | user | Delete an item from a play queue |  |
-| `stub` | `PUT` | `/playQueues/{playQueueId}/items/{playQueueItemId}/move` | user | Move an item in a play queue |  |
-| `stub` | `PUT` | `/playQueues/{playQueueId}/reset` | user | Reset a play queue |  |
-| `stub` | `PUT` | `/playQueues/{playQueueId}/shuffle` | user | Shuffle a play queue |  |
-| `stub` | `PUT` | `/playQueues/{playQueueId}/unshuffle` | user | Unshuffle a play queue |  |
+| `partial` | `POST` | `/playQueues` | user | Create a play queue | From an item, a list of items, a series, a season, a library listing or a playlist, with `key`, `shuffle`, `continuous` (an episode plays on to the end of its series) and `repeat`. Replaces the player's previous queue of the same `type`. Same container and items as the reference. `onDeck` is not honored (the queue starts where `key` says); a queue holds at most 500 entries. |
+| `done` | `GET` | `/playQueues/{playQueueId}` | user | Retrieve a play queue | `window`, `center`, `includeBefore`, `includeAfter` and `repeat`, with the reference's rules; `own` is tolerated. |
+| `done` | `PUT` | `/playQueues/{playQueueId}` | user | Add a generator or playlist to a play queue | `uri` or `playlistID`, after the last entry queued by hand or, with `next=1`, right after the one playing; `playQueueLastAddedItemID` as measured. What names nothing adds nothing, with a `200`. |
+| `done` | `DELETE` | `/playQueues/{playQueueId}/items` | user | Clear a play queue | Keeps the entry playing, as the reference does. |
+| `done` | `DELETE` | `/playQueues/{playQueueId}/items/{playQueueItemId}` | user | Delete an item from a play queue | Answers with the container as it was before, as the reference does; the next entry plays when the one playing goes. |
+| `done` | `PUT` | `/playQueues/{playQueueId}/items/{playQueueItemId}/move` | user | Move an item in a play queue | `after` absent or `-1` is first; an `after` naming no entry puts it second, as measured. Moving onto itself is `404`. |
+| `done` | `PUT` | `/playQueues/{playQueueId}/reset` | user | Reset a play queue | Selects the first entry without raising the version, and answers with the container as it was, with no entries, as the reference does. |
+| `done` | `PUT` | `/playQueues/{playQueueId}/shuffle` | user | Shuffle a play queue | Rebuilt from its source, the entry playing first with its id, the others new. `404` while an entry queued by hand remains, or for an empty queue. |
+| `done` | `PUT` | `/playQueues/{playQueueId}/unshuffle` | user | Unshuffle a play queue | Rebuilt from its source in natural order, the entry playing where its item falls. Refused as shuffling is. |
 
 ## Status
 

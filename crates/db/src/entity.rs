@@ -22,6 +22,7 @@ pub mod metadata_item;
 pub mod person;
 pub mod play_queue;
 pub mod play_queue_entry;
+pub mod play_queue_source;
 pub mod playback_session;
 pub mod playlist;
 pub mod playlist_entry;

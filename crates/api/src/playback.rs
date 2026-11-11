@@ -8,6 +8,7 @@ use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
 use open_plex_core::page::Cursor;
+use open_plex_core::play_queue::PlayQueueChange;
 use open_plex_core::playback::{
     NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackSession, PlaybackState,
     StreamDecision, Termination,
@@ -578,13 +579,85 @@ impl Mutation {
         crate::history::delete_history_entry(context, input).await
     }
 
-    /// Creates a play queue from a list of items.
+    /// Creates a play queue from a list of items, replacing the player's previous queue of
+    /// the same kind.
     async fn create_play_queue(
         &self,
         context: &Context<'_>,
         #[graphql(desc = "The queue to create.")] input: crate::play_queue::CreatePlayQueueInput,
     ) -> Result<crate::play_queue::PlayQueueObject> {
         crate::play_queue::create(context, input).await
+    }
+
+    /// Queues items by hand in one of the caller's play queues.
+    async fn add_to_play_queue(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The queue, the items and where they go.")]
+        input: crate::play_queue::AddToPlayQueueInput,
+    ) -> Result<crate::play_queue::PlayQueuePayload> {
+        crate::play_queue::add(context, input).await
+    }
+
+    /// Moves one entry of one of the caller's play queues after another, or first.
+    async fn move_play_queue_entry(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The entry and where it goes.")]
+        input: crate::play_queue::MovePlayQueueEntryInput,
+    ) -> Result<crate::play_queue::PlayQueuePayload> {
+        crate::play_queue::move_entry(context, input).await
+    }
+
+    /// Takes one entry out of one of the caller's play queues.
+    async fn remove_from_play_queue(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The entry.")] input: crate::play_queue::RemoveFromPlayQueueInput,
+    ) -> Result<crate::play_queue::PlayQueuePayload> {
+        crate::play_queue::remove(context, input).await
+    }
+
+    /// Removes every entry of one of the caller's play queues but the one playing, which ends
+    /// what was queued by hand.
+    async fn clear_play_queue(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The queue.")] input: crate::play_queue::PlayQueueInput,
+    ) -> Result<crate::play_queue::PlayQueuePayload> {
+        crate::play_queue::edit_whole(context, input, PlayQueueChange::Clear).await
+    }
+
+    /// Makes the first entry of one of the caller's play queues the one playing. Leaves the
+    /// version as it is, as the reference does.
+    async fn reset_play_queue(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The queue.")] input: crate::play_queue::PlayQueueInput,
+    ) -> Result<crate::play_queue::PlayQueuePayload> {
+        crate::play_queue::edit_whole(context, input, PlayQueueChange::Reset).await
+    }
+
+    /// Rebuilds one of the caller's play queues from its source in random order, the entry
+    /// playing kept and first; every other entry is new. Refused while an entry queued by
+    /// hand remains.
+    async fn shuffle_play_queue(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The queue.")] input: crate::play_queue::PlayQueueInput,
+    ) -> Result<crate::play_queue::PlayQueuePayload> {
+        crate::play_queue::edit_whole(context, input, PlayQueueChange::Shuffle).await
+    }
+
+    /// Rebuilds one of the caller's play queues from its source in natural order, the entry
+    /// playing kept where its item falls; every other entry is new. Refused while an entry
+    /// queued by hand remains.
+    async fn unshuffle_play_queue(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The queue.")] input: crate::play_queue::PlayQueueInput,
+    ) -> Result<crate::play_queue::PlayQueuePayload> {
+        crate::play_queue::edit_whole(context, input, PlayQueueChange::Unshuffle).await
     }
 
     /// Closes a session and stops its stream. Whether there was either.

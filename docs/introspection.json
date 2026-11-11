@@ -180,6 +180,77 @@
         },
         {
           "kind": "INPUT_OBJECT",
+          "name": "AddToPlayQueueInput",
+          "description": "Items to queue by hand.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "playQueueId",
+              "description": "The queue, as returned in `PlayQueue.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "itemIds",
+              "description": "The items, in order, as returned in `Item.id`. A queue may hold an item several\ntimes; what would take it past 500 entries is left out.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "ID",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "next",
+              "description": "Play them right after the entry playing. Otherwise they go after the last entry\nqueued by hand, or right after the entry playing when there is none.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "false"
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
           "name": "AddToPlaylistInput",
           "description": "Items to append to a playlist of chosen items.",
           "fields": null,
@@ -656,7 +727,7 @@
             },
             {
               "name": "itemIds",
-              "description": "What to play, in order, as returned in `Item.id`. May be empty.",
+              "description": "What to play, in natural order, as returned in `Item.id`. May be empty. Shuffling\nrebuilds the queue from these; at most 500 are kept.",
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
@@ -692,7 +763,7 @@
             },
             {
               "name": "shuffle",
-              "description": "Put the entries in random order, playing whichever lands first.",
+              "description": "Put the entries in random order, the selected one first.",
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
@@ -713,6 +784,30 @@
                 "ofType": null
               },
               "defaultValue": null
+            },
+            {
+              "name": "clientIdentifier",
+              "description": "The player the queue is for, as it identifies itself. Its previous queue of the same\nkind is deleted. Omitted, the queue replaces nothing.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "kind",
+              "description": "What the queue plays.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "PlayQueueKind",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "VIDEO"
             }
           ],
           "interfaces": null,
@@ -6346,6 +6441,51 @@
         },
         {
           "kind": "INPUT_OBJECT",
+          "name": "MovePlayQueueEntryInput",
+          "description": "An entry to move within its queue.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "entryId",
+              "description": "The entry, as returned in `PlayQueueEntry.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "afterEntryId",
+              "description": "The entry to put it after, of the same queue. Omitted, it goes first. Put right after\nthe last entry queued by hand, it becomes that last entry.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
           "name": "MovePlaylistEntryInput",
           "description": "An entry to move within its playlist.",
           "fields": null,
@@ -7329,7 +7469,7 @@
             },
             {
               "name": "createPlayQueue",
-              "description": "Creates a play queue from a list of items.",
+              "description": "Creates a play queue from a list of items, replacing the player's previous queue of\nthe same kind.",
               "args": [
                 {
                   "name": "input",
@@ -7352,6 +7492,223 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "PlayQueue",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "addToPlayQueue",
+              "description": "Queues items by hand in one of the caller's play queues.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The queue, the items and where they go.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "AddToPlayQueueInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PlayQueuePayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "movePlayQueueEntry",
+              "description": "Moves one entry of one of the caller's play queues after another, or first.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The entry and where it goes.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "MovePlayQueueEntryInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PlayQueuePayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "removeFromPlayQueue",
+              "description": "Takes one entry out of one of the caller's play queues.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The entry.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "RemoveFromPlayQueueInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PlayQueuePayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "clearPlayQueue",
+              "description": "Removes every entry of one of the caller's play queues but the one playing, which ends\nwhat was queued by hand.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The queue.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "PlayQueueInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PlayQueuePayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "resetPlayQueue",
+              "description": "Makes the first entry of one of the caller's play queues the one playing. Leaves the\nversion as it is, as the reference does.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The queue.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "PlayQueueInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PlayQueuePayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "shufflePlayQueue",
+              "description": "Rebuilds one of the caller's play queues from its source in random order, the entry\nplaying kept and first; every other entry is new. Refused while an entry queued by\nhand remains.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The queue.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "PlayQueueInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PlayQueuePayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "unshufflePlayQueue",
+              "description": "Rebuilds one of the caller's play queues from its source in natural order, the entry\nplaying kept where its item falls; every other entry is new. Refused while an entry\nqueued by hand remains.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The queue.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "PlayQueueInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PlayQueuePayload",
                   "ofType": null
                 }
               },
@@ -8874,6 +9231,34 @@
               "deprecationReason": null
             },
             {
+              "name": "kind",
+              "description": "What it plays.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "PlayQueueKind",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "clientIdentifier",
+              "description": "The player it was made for, as it identifies itself. Null for none in particular.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "shuffled",
               "description": "Whether the entries are in random order.",
               "args": [],
@@ -8891,7 +9276,7 @@
             },
             {
               "name": "version",
-              "description": "Raised each time the queue changes.",
+              "description": "Raised each time the queue changes, except by a reset.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
@@ -8935,7 +9320,19 @@
             },
             {
               "name": "selectedEntry",
-              "description": "The entry to play first. Null for an empty queue.",
+              "description": "The entry playing. Null for an empty queue.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "PlayQueueEntry",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "lastAddedEntry",
+              "description": "The last entry queued by hand, after which the next addition goes. Null when there is\nnone: only then can the queue be shuffled.",
               "args": [],
               "type": {
                 "kind": "OBJECT",
@@ -9207,6 +9604,249 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "PlayQueueErrorCode",
+          "description": "Why a play queue edit did nothing.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "PLAY_QUEUE_NOT_FOUND",
+              "description": "No queue of the caller's carries this id.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ENTRY_NOT_FOUND",
+              "description": "No entry of a queue of the caller's carries this id.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ITEM_NOT_FOUND",
+              "description": "No item the caller can read carries this id.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AFTER_NOT_FOUND",
+              "description": "The entry to move after is not in the same queue.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ONTO_ITSELF",
+              "description": "An entry cannot be moved after itself.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "UP_NEXT",
+              "description": "Entries were queued by hand (`PlayQueue.lastAddedEntry`): such a queue keeps its\norder, and cannot be shuffled or unshuffled.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EMPTY",
+              "description": "The queue is empty: there is nothing to reorder.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "PlayQueueInput",
+          "description": "A whole queue to act on.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "playQueueId",
+              "description": "The queue, as returned in `PlayQueue.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "PlayQueueKind",
+          "description": "What a queue plays. A player keeps one queue of each kind.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "VIDEO",
+              "description": "Films and episodes.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AUDIO",
+              "description": "Music. Nothing here holds any.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PHOTO",
+              "description": "Photographs. Nothing here holds any.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "PlayQueuePayload",
+          "description": "A play queue after an edit.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "As given in the input.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "playQueue",
+              "description": "The queue as it now stands. Null when the request was refused.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "PlayQueue",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why the request was refused. Empty on success.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "PlayQueueUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "PlayQueueUserError",
+          "description": "A request a play queue edit refused, and where in the input the reason lies.",
+          "fields": [
+            {
+              "name": "field",
+              "description": "The path to the input field at fault.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "message",
+              "description": "What went wrong, for a person to read.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "code",
+              "description": "What went wrong, for a program to branch on.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "PlayQueueErrorCode",
                   "ofType": null
                 }
               },
@@ -11889,6 +12529,41 @@
           ],
           "inputFields": null,
           "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "RemoveFromPlayQueueInput",
+          "description": "An entry to take out of its queue.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "entryId",
+              "description": "The entry, as returned in `PlayQueueEntry.id`. Removing the entry playing makes the\none after it play, or the one before when it was the last.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
           "enumValues": null,
           "possibleTypes": null
         },

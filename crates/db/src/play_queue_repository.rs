@@ -1,16 +1,21 @@
 //! Stored play queues.
+//!
+//! An edit reads the queue whole, lets `core` apply it, and writes the entries back in their
+//! new order, all in one transaction: a queue holds at most `MAX_ITEMS` entries, and the
+//! reference's rules are about positions, which a rewrite keeps simple.
 
 use open_plex_core::page::{Page, Window};
 use open_plex_core::play_queue::{
-    NewPlayQueue, PlayQueue, PlayQueueEntry, PlayQueueError, PlayQueueRepository,
+    ChangeOutcome, NewPlayQueue, PlayQueue, PlayQueueChange, PlayQueueContents, PlayQueueEntry,
+    PlayQueueError, PlayQueueKind, PlayQueueRepository, Slot,
 };
 use open_plex_core::RatingKey;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, Order,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr,
+    EntityTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 
-use crate::entity::{play_queue, play_queue_entry};
+use crate::entity::{play_queue, play_queue_entry, play_queue_source};
 
 #[derive(Debug, Clone)]
 pub struct SqlPlayQueueRepository {
@@ -21,42 +26,6 @@ impl SqlPlayQueueRepository {
     #[must_use]
     pub const fn new(connection: DatabaseConnection) -> Self {
         Self { connection }
-    }
-
-    async fn entry_at(
-        &self,
-        queue: i64,
-        position: i64,
-    ) -> Result<Option<PlayQueueEntry>, PlayQueueError> {
-        Ok(play_queue_entry::Entity::find()
-            .filter(play_queue_entry::Column::QueueId.eq(queue))
-            .filter(play_queue_entry::Column::Position.eq(position))
-            .one(&self.connection)
-            .await
-            .map_err(storage)?
-            .map(to_entry))
-    }
-
-    async fn loaded(&self, row: play_queue::Model) -> Result<PlayQueue, PlayQueueError> {
-        let total = play_queue_entry::Entity::find()
-            .filter(play_queue_entry::Column::QueueId.eq(row.id))
-            .count(&self.connection)
-            .await
-            .map_err(storage)?;
-        let selected = match row.selected_position {
-            Some(position) => self.entry_at(row.id, position).await?,
-            None => None,
-        };
-        Ok(PlayQueue {
-            id: row.id,
-            user: row.user_id.map(open_plex_core::UserId::new),
-            source_uri: row.source_uri,
-            shuffled: row.shuffled,
-            version: row.version,
-            total,
-            selected,
-            playlist: row.playlist_id.map(open_plex_core::PlaylistId::new),
-        })
     }
 }
 
@@ -73,22 +42,153 @@ fn to_entry(row: play_queue_entry::Model) -> PlayQueueEntry {
     }
 }
 
+fn position(index: usize) -> i64 {
+    i64::try_from(index).unwrap_or(i64::MAX)
+}
+
 /// `SQLite` refuses a statement with too many bound values.
 const INSERT_BATCH: usize = 200;
+
+async fn entry_at<C: ConnectionTrait>(
+    connection: &C,
+    queue: i64,
+    position: Option<i64>,
+) -> Result<Option<PlayQueueEntry>, PlayQueueError> {
+    let Some(position) = position else {
+        return Ok(None);
+    };
+    Ok(play_queue_entry::Entity::find()
+        .filter(play_queue_entry::Column::QueueId.eq(queue))
+        .filter(play_queue_entry::Column::Position.eq(position))
+        .one(connection)
+        .await
+        .map_err(storage)?
+        .map(to_entry))
+}
+
+async fn loaded<C: ConnectionTrait>(
+    connection: &C,
+    row: play_queue::Model,
+) -> Result<PlayQueue, PlayQueueError> {
+    let total = play_queue_entry::Entity::find()
+        .filter(play_queue_entry::Column::QueueId.eq(row.id))
+        .count(connection)
+        .await
+        .map_err(storage)?;
+    let selected = entry_at(connection, row.id, row.selected_position).await?;
+    let last_added = entry_at(connection, row.id, row.last_added_position).await?;
+    Ok(PlayQueue {
+        id: row.id,
+        user: row.user_id.map(open_plex_core::UserId::new),
+        client: row.client,
+        kind: PlayQueueKind::parse(&row.kind).unwrap_or_default(),
+        source_uri: row.source_uri,
+        shuffled: row.shuffled,
+        version: row.version,
+        total,
+        selected,
+        last_added,
+        playlist: row.playlist_id.map(open_plex_core::PlaylistId::new),
+    })
+}
+
+/// Replaces a queue's entries with `slots`, in order, keeping the id of those that have one.
+async fn write_entries<C: ConnectionTrait>(
+    connection: &C,
+    queue: i64,
+    slots: &[Slot],
+) -> Result<(), PlayQueueError> {
+    play_queue_entry::Entity::delete_many()
+        .filter(play_queue_entry::Column::QueueId.eq(queue))
+        .exec(connection)
+        .await
+        .map_err(storage)?;
+    let rows: Vec<play_queue_entry::ActiveModel> = slots
+        .iter()
+        .zip(0_i64..)
+        .map(|(slot, position)| play_queue_entry::ActiveModel {
+            id: slot.entry.map_or(ActiveValue::NotSet, ActiveValue::Set),
+            queue_id: ActiveValue::Set(queue),
+            position: ActiveValue::Set(position),
+            item_id: ActiveValue::Set(slot.item.get()),
+        })
+        .collect();
+    // Rows that keep their id and rows that get one cannot share a statement: an INSERT
+    // names the same columns for every row.
+    let (kept, new): (Vec<_>, Vec<_>) = rows
+        .into_iter()
+        .partition(|row| matches!(row.id, ActiveValue::Set(_)));
+    for group in [kept, new] {
+        for batch in group.chunks(INSERT_BATCH) {
+            play_queue_entry::Entity::insert_many(batch.to_vec())
+                .exec_without_returning(connection)
+                .await
+                .map_err(storage)?;
+        }
+    }
+    Ok(())
+}
+
+async fn delete_queues<C: ConnectionTrait>(
+    connection: &C,
+    queues: &[i64],
+) -> Result<u64, PlayQueueError> {
+    let mut deleted = 0;
+    for batch in queues.chunks(INSERT_BATCH) {
+        let ids = || batch.iter().copied();
+        play_queue_entry::Entity::delete_many()
+            .filter(play_queue_entry::Column::QueueId.is_in(ids()))
+            .exec(connection)
+            .await
+            .map_err(storage)?;
+        play_queue_source::Entity::delete_many()
+            .filter(play_queue_source::Column::QueueId.is_in(ids()))
+            .exec(connection)
+            .await
+            .map_err(storage)?;
+        deleted += play_queue::Entity::delete_many()
+            .filter(play_queue::Column::Id.is_in(ids()))
+            .exec(connection)
+            .await
+            .map_err(storage)?
+            .rows_affected;
+    }
+    Ok(deleted)
+}
 
 #[async_trait::async_trait]
 impl PlayQueueRepository for SqlPlayQueueRepository {
     async fn create(&self, queue: NewPlayQueue, now: i64) -> Result<PlayQueue, PlayQueueError> {
         let transaction = self.connection.begin().await.map_err(storage)?;
-        let selected_position =
-            (!queue.items.is_empty()).then(|| i64::try_from(queue.selected).unwrap_or(0));
+        if let Some(client) = &queue.client {
+            let user = match queue.user {
+                Some(user) => play_queue::Column::UserId.eq(user.get()),
+                None => play_queue::Column::UserId.is_null(),
+            };
+            let replaced: Vec<i64> = play_queue::Entity::find()
+                .select_only()
+                .column(play_queue::Column::Id)
+                .filter(user)
+                .filter(play_queue::Column::Client.eq(client.as_str()))
+                .filter(play_queue::Column::Kind.eq(queue.kind.as_str()))
+                .into_tuple()
+                .all(&transaction)
+                .await
+                .map_err(storage)?;
+            delete_queues(&transaction, &replaced).await?;
+        }
+
+        let contents = queue.initial_contents();
         let row = play_queue::ActiveModel {
             id: ActiveValue::NotSet,
             user_id: ActiveValue::Set(queue.user.map(open_plex_core::UserId::get)),
-            source_uri: ActiveValue::Set(queue.source_uri),
-            shuffled: ActiveValue::Set(queue.shuffled),
+            client: ActiveValue::Set(queue.client.clone()),
+            kind: ActiveValue::Set(queue.kind.as_str().to_owned()),
+            source_uri: ActiveValue::Set(queue.source_uri.clone()),
+            shuffled: ActiveValue::Set(contents.shuffled),
             version: ActiveValue::Set(1),
-            selected_position: ActiveValue::Set(selected_position),
+            selected_position: ActiveValue::Set(contents.selected.map(position)),
+            last_added_position: ActiveValue::Set(None),
             created_at: ActiveValue::Set(now),
             playlist_id: ActiveValue::Set(queue.playlist.map(open_plex_core::PlaylistId::get)),
         }
@@ -96,25 +196,27 @@ impl PlayQueueRepository for SqlPlayQueueRepository {
         .await
         .map_err(storage)?;
 
-        let rows: Vec<play_queue_entry::ActiveModel> = queue
-            .items
+        write_entries(&transaction, row.id, &contents.slots).await?;
+        let source: Vec<play_queue_source::ActiveModel> = queue
+            .source
             .iter()
+            .take(open_plex_core::page::MAX_ITEMS as usize)
             .zip(0_i64..)
-            .map(|(item, position)| play_queue_entry::ActiveModel {
-                id: ActiveValue::NotSet,
+            .map(|(item, position)| play_queue_source::ActiveModel {
                 queue_id: ActiveValue::Set(row.id),
                 position: ActiveValue::Set(position),
                 item_id: ActiveValue::Set(item.get()),
             })
             .collect();
-        for batch in rows.chunks(INSERT_BATCH) {
-            play_queue_entry::Entity::insert_many(batch.to_vec())
-                .exec(&transaction)
+        for batch in source.chunks(INSERT_BATCH) {
+            play_queue_source::Entity::insert_many(batch.to_vec())
+                .exec_without_returning(&transaction)
                 .await
                 .map_err(storage)?;
         }
+        let queue = loaded(&transaction, row).await?;
         transaction.commit().await.map_err(storage)?;
-        self.loaded(row).await
+        Ok(queue)
     }
 
     async fn queue(&self, id: i64) -> Result<Option<PlayQueue>, PlayQueueError> {
@@ -123,7 +225,7 @@ impl PlayQueueRepository for SqlPlayQueueRepository {
             .await
             .map_err(storage)?;
         match row {
-            Some(row) => Ok(Some(self.loaded(row).await?)),
+            Some(row) => Ok(Some(loaded(&self.connection, row).await?)),
             None => Ok(None),
         }
     }
@@ -169,6 +271,68 @@ impl PlayQueueRepository for SqlPlayQueueRepository {
         Ok(page)
     }
 
+    async fn change(
+        &self,
+        queue: i64,
+        change: &PlayQueueChange,
+    ) -> Result<ChangeOutcome, PlayQueueError> {
+        let transaction = self.connection.begin().await.map_err(storage)?;
+        let Some(row) = play_queue::Entity::find_by_id(queue)
+            .one(&transaction)
+            .await
+            .map_err(storage)?
+        else {
+            return Ok(None);
+        };
+        let slots: Vec<Slot> = play_queue_entry::Entity::find()
+            .filter(play_queue_entry::Column::QueueId.eq(queue))
+            .order_by_asc(play_queue_entry::Column::Position)
+            .all(&transaction)
+            .await
+            .map_err(storage)?
+            .into_iter()
+            .map(|entry| Slot {
+                entry: Some(entry.id),
+                item: RatingKey::new(entry.item_id),
+            })
+            .collect();
+        let source: Vec<RatingKey> = play_queue_source::Entity::find()
+            .filter(play_queue_source::Column::QueueId.eq(queue))
+            .order_by_asc(play_queue_source::Column::Position)
+            .all(&transaction)
+            .await
+            .map_err(storage)?
+            .into_iter()
+            .map(|item| RatingKey::new(item.item_id))
+            .collect();
+        let index = |position: Option<i64>| {
+            position
+                .and_then(|position| usize::try_from(position).ok())
+                .filter(|index| *index < slots.len())
+        };
+        let mut contents = PlayQueueContents {
+            selected: index(row.selected_position),
+            last_added: index(row.last_added_position),
+            shuffled: row.shuffled,
+            slots,
+        };
+        let raised = match change.apply(&mut contents, &source) {
+            Ok(raised) => raised,
+            Err(refusal) => return Ok(Some(Err(refusal))),
+        };
+        write_entries(&transaction, queue, &contents.slots).await?;
+        let version = if raised { row.version + 1 } else { row.version };
+        let mut edited: play_queue::ActiveModel = row.into();
+        edited.version = ActiveValue::Set(version);
+        edited.shuffled = ActiveValue::Set(contents.shuffled);
+        edited.selected_position = ActiveValue::Set(contents.selected.map(position));
+        edited.last_added_position = ActiveValue::Set(contents.last_added.map(position));
+        let row = edited.update(&transaction).await.map_err(storage)?;
+        let queue = loaded(&transaction, row).await?;
+        transaction.commit().await.map_err(storage)?;
+        Ok(Some(Ok(queue)))
+    }
+
     async fn delete_created_before(&self, before: i64) -> Result<u64, PlayQueueError> {
         let transaction = self.connection.begin().await.map_err(storage)?;
         let stale: Vec<i64> = play_queue::Entity::find()
@@ -179,19 +343,7 @@ impl PlayQueueRepository for SqlPlayQueueRepository {
             .all(&transaction)
             .await
             .map_err(storage)?;
-        for batch in stale.chunks(INSERT_BATCH) {
-            play_queue_entry::Entity::delete_many()
-                .filter(play_queue_entry::Column::QueueId.is_in(batch.iter().copied()))
-                .exec(&transaction)
-                .await
-                .map_err(storage)?;
-        }
-        let deleted = play_queue::Entity::delete_many()
-            .filter(play_queue::Column::CreatedAt.lt(before))
-            .exec(&transaction)
-            .await
-            .map_err(storage)?
-            .rows_affected;
+        let deleted = delete_queues(&transaction, &stale).await?;
         transaction.commit().await.map_err(storage)?;
         Ok(deleted)
     }
