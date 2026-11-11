@@ -437,6 +437,10 @@ publishes its new address to plex.tv through `moveExtension`, with the server ru
 refuses a loopback origin, which a trusted network would admit without a token.
 `python tools/seed_test_library.py DIRECTORY` adds a folder of real files as a `Test` library
 (`--remove` takes it out); `python tools/capture_transcoder.py` studies the transcoder alone.
+To import again into a database the server has written to, `python tools/reimport.py`, server
+stopped: the importer replaces every library, and with them the history, track choices,
+locks and collections made here and the seeded libraries; the script backs the database up,
+keeps those, imports, seeds again and puts back whatever still has its item.
 
 ## Current milestone
 
