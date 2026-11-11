@@ -8935,7 +8935,7 @@
             },
             {
               "name": "continueWatching",
-              "description": "Items whose title matches a search term, across every library.\n\nWhat the caller has started and what comes next, newest first: every film in\nprogress, and for every series the episode in progress or the one after the last\nwatched. Played within the last sixteen weeks; every copy of a work is listed.\n\nEmpty for a caller with no watch state. Pages forward only, by position: the list is\nbuilt whole from the caller's recent viewing, which is bounded by those sixteen weeks.",
+              "description": "What the caller has started and what comes next, newest first: every film in\nprogress, and for every series the episode in progress or the one after the last\nwatched. Played within the last sixteen weeks; every copy of a work is listed.\n\nEmpty for a caller with no watch state. Pages forward only, by position: the list is\nbuilt whole from the caller's recent viewing, which is bounded by those sixteen weeks.",
               "args": [
                 {
                   "name": "library",
@@ -8982,7 +8982,7 @@
             },
             {
               "name": "search",
-              "description": "Matches a *word prefix*: `hell` finds \"Good News About Hell\", and accents are folded so\n`soiree` finds \"# Pire Soirée\". A term inside a word does not match — the index is a\nrange scan, not a substring scan.\n\nPolymorphic and cross-library by design: results mix films, series and episodes from\ndifferent libraries, which is what a single search box needs. Narrow with `kinds`.\n\nOrdered by sort title. Not by relevance: ranking needs a score this server does not\ncompute, and a title ordering at least gives the cursor a stable position to resume\nfrom. A blank term matches nothing rather than everything.",
+              "description": "Items whose title matches a search term, across every library.\n\nMatches a *word prefix*: `hell` finds \"Good News About Hell\", and accents are folded so\n`soiree` finds \"# Pire Soirée\". A term inside a word does not match — the index is a\nrange scan, not a substring scan.\n\nPolymorphic and cross-library by design: results mix films, series and episodes from\ndifferent libraries, which is what a single search box needs. Narrow with `kinds`.\n\nOrdered by sort title. Not by relevance: ranking needs a score this server does not\ncompute, and a title ordering at least gives the cursor a stable position to resume\nfrom. A blank term matches nothing rather than everything.",
               "args": [
                 {
                   "name": "query",
@@ -9063,6 +9063,95 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "ItemConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "searchTags",
+              "description": "Genres and people whose name matches a search term, once per library carrying them.\n\nMatches as `search` does: every word of the term begins a word of the name, accents\nfolded, so `hanks` and `tom han` both find Tom Hanks. A person credited in two roles\nis found twice, as an actor and as a director, and each in every library whose films\nor series credit them: one crediting them on episodes alone is left out, since its\nlisting filtered on them would be empty.\n\nOrdered by how many items carry the tag, most first: a common first name matches\nthousands of people, and the ones a library is full of are the ones a search box\nshould offer. A blank term matches nothing.",
+              "args": [
+                {
+                  "name": "query",
+                  "description": "Term to match a prefix of any word of the name against.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "kinds",
+                  "description": "Restrict to these kinds. Omit to search every kind.",
+                  "type": {
+                    "kind": "LIST",
+                    "name": null,
+                    "ofType": {
+                      "kind": "NON_NULL",
+                      "name": null,
+                      "ofType": {
+                        "kind": "ENUM",
+                        "name": "TagType",
+                        "ofType": null
+                      }
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "after",
+                  "description": "Return tags after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return tags before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many tags from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many tags from the end of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "TagUseConnection",
                   "ofType": null
                 }
               },
@@ -13260,6 +13349,179 @@
               "deprecationReason": null
             }
           ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "TagUse",
+          "description": null,
+          "fields": [
+            {
+              "name": "tag",
+              "description": "The tag.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Tag",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "library",
+              "description": "The library whose items carry it.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "Library",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "itemCount",
+              "description": "How many of the library's items carry the tag, whatever their kind: in a series\nlibrary, the series and the episodes crediting someone.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "TagUseConnection",
+          "description": null,
+          "fields": [
+            {
+              "name": "pageInfo",
+              "description": "Information to aid in pagination.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PageInfo",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "edges",
+              "description": "A list of edges.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "TagUseEdge",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nodes",
+              "description": "A list of nodes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "TagUse",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "TagUseEdge",
+          "description": "An edge in a connection.",
+          "fields": [
+            {
+              "name": "node",
+              "description": "The item at the end of the edge",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "TagUse",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cursor",
+              "description": "A cursor for use in pagination",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
           "possibleTypes": null
         },
         {

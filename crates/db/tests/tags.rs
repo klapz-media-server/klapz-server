@@ -8,7 +8,7 @@
 
 use open_plex_core::metadata::{
     CreditRef, FieldValue, ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataRepository,
-    RatingKind, TagCondition, TagKind, TagRef, TagScope, ValueField,
+    RatingKind, TagCondition, TagKind, TagRef, TagScope, TagSearch, TagUse, ValueField,
 };
 use open_plex_core::page::{Direction, Window};
 use open_plex_core::{PersonId, RatingKey, SectionId, TagId};
@@ -198,44 +198,46 @@ async fn seed_tags(connection: &DatabaseConnection) {
     .await
     .expect("people");
 
-    tag::Entity::insert_many([
-        label(ACTION, TagKind::Genre, "Action", None),
-        label(CRIME, TagKind::Genre, "Crime", None),
-        label(THRILLER, TagKind::Genre, "Thriller", None),
-        label(COMEDIE, TagKind::Genre, "Comédie", None),
-        label(BESSON_WRITER, TagKind::Writer, "Luc Besson", Some(BESSON)),
-        label(
-            BESSON_PRODUCER,
-            TagKind::Producer,
-            "Luc Besson",
-            Some(BESSON),
-        ),
-        label(
-            STATHAM,
-            TagKind::Actor,
-            "Jason Statham",
-            Some(JASON_STATHAM),
-        ),
-        label(
-            STATHAM_HOMONYM,
-            TagKind::Actor,
-            "Jason Statham",
-            Some(OTHER_JASON_STATHAM),
-        ),
-        label(
-            SILVERMAN,
-            TagKind::Director,
-            "David Silverman",
-            Some(DAVID_SILVERMAN),
-        ),
-        label(
-            CASTELLANETA,
-            TagKind::Actor,
-            "Dan Castellaneta",
-            Some(DAN_CASTELLANETA),
-        ),
-    ])
-    .exec(connection)
+    write::insert_tags(
+        connection,
+        vec![
+            label(ACTION, TagKind::Genre, "Action", None),
+            label(CRIME, TagKind::Genre, "Crime", None),
+            label(THRILLER, TagKind::Genre, "Thriller", None),
+            label(COMEDIE, TagKind::Genre, "Comédie", None),
+            label(BESSON_WRITER, TagKind::Writer, "Luc Besson", Some(BESSON)),
+            label(
+                BESSON_PRODUCER,
+                TagKind::Producer,
+                "Luc Besson",
+                Some(BESSON),
+            ),
+            label(
+                STATHAM,
+                TagKind::Actor,
+                "Jason Statham",
+                Some(JASON_STATHAM),
+            ),
+            label(
+                STATHAM_HOMONYM,
+                TagKind::Actor,
+                "Jason Statham",
+                Some(OTHER_JASON_STATHAM),
+            ),
+            label(
+                SILVERMAN,
+                TagKind::Director,
+                "David Silverman",
+                Some(DAVID_SILVERMAN),
+            ),
+            label(
+                CASTELLANETA,
+                TagKind::Actor,
+                "Dan Castellaneta",
+                Some(DAN_CASTELLANETA),
+            ),
+        ],
+    )
     .await
     .expect("tags");
 
@@ -823,4 +825,114 @@ async fn a_persons_credits_come_with_the_libraries_carrying_them() {
             (SILVERMAN, vec![SERIES]),
         ]
     );
+}
+
+fn tag_search(term: &str, kinds: Vec<TagKind>) -> TagSearch {
+    TagSearch {
+        word_prefix: term.to_owned(),
+        kinds,
+        sections: None,
+    }
+}
+
+fn uses(page: &[TagUse]) -> Vec<(i64, i64, u64)> {
+    page.iter()
+        .map(|found| (found.tag.id.get(), found.section.get(), found.item_count))
+        .collect()
+}
+
+#[tokio::test]
+async fn finds_a_tag_by_any_word_of_its_name_once_per_library() {
+    let repository = repository().await;
+
+    let found = repository
+        .search_tags(&tag_search("castel", vec![]), first(10))
+        .await
+        .unwrap();
+    // The series and two of its episodes credit him: three items of one library.
+    assert_eq!(uses(&found.items), [(CASTELLANETA, SERIES, 3)]);
+    let person = found.items[0]
+        .tag
+        .person
+        .as_ref()
+        .expect("a credit names someone");
+    assert_eq!(
+        person.provider_key.as_deref(),
+        Some("5d7768267e9a3c0020c6ab0c")
+    );
+
+    // Every word of the term has to begin a word of the name, accents folded.
+    let found = repository
+        .search_tags(&tag_search("dan cast", vec![]), first(10))
+        .await
+        .unwrap();
+    assert_eq!(uses(&found.items), [(CASTELLANETA, SERIES, 3)]);
+    for missing in ["dan silverman", "aneta", "   "] {
+        let found = repository
+            .search_tags(&tag_search(missing, vec![]), first(10))
+            .await
+            .unwrap();
+        assert!(found.items.is_empty(), "{missing}");
+    }
+    let found = repository
+        .search_tags(&tag_search("comedie", vec![TagKind::Genre]), first(10))
+        .await
+        .unwrap();
+    assert_eq!(uses(&found.items), [(COMEDIE, FILMS, 1)]);
+}
+
+#[tokio::test]
+async fn orders_tag_uses_by_item_count_and_pages_them() {
+    let repository = repository().await;
+
+    // Castellaneta on three items first; Crime and Comédie on one film each, by id.
+    let found = repository
+        .search_tags(&tag_search("c", vec![]), first(10))
+        .await
+        .unwrap();
+    assert_eq!(
+        uses(&found.items),
+        [
+            (CASTELLANETA, SERIES, 3),
+            (CRIME, FILMS, 1),
+            (COMEDIE, FILMS, 1)
+        ]
+    );
+
+    let search = tag_search("statham", vec![TagKind::Actor]);
+    let page = repository.search_tags(&search, first(1)).await.unwrap();
+    assert_eq!(uses(&page.items), [(STATHAM, FILMS, 1)]);
+    assert!(page.has_next);
+    let after = Window::new(Some(page.items[0].cursor()), None, Some(10), None).unwrap();
+    let rest = repository.search_tags(&search, after).await.unwrap();
+    assert_eq!(uses(&rest.items), [(STATHAM_HOMONYM, FILMS, 1)]);
+    assert!(!rest.has_next);
+}
+
+#[tokio::test]
+async fn a_tag_carried_by_episodes_alone_names_no_library() {
+    let repository = repository().await;
+    // David Silverman directed an episode: the series list of that library has no one to
+    // show for him.
+    let found = repository
+        .search_tags(&tag_search("silverman", vec![]), first(10))
+        .await
+        .unwrap();
+    assert!(found.items.is_empty());
+}
+
+#[tokio::test]
+async fn a_tag_search_sees_only_its_kinds_and_libraries() {
+    let repository = repository().await;
+
+    let directors = repository
+        .search_tags(&tag_search("david", vec![TagKind::Actor]), first(10))
+        .await
+        .unwrap();
+    assert!(directors.items.is_empty());
+
+    let mut search = tag_search("dan", vec![]);
+    search.sections = Some(vec![SectionId::new(FILMS)]);
+    let found = repository.search_tags(&search, first(10)).await.unwrap();
+    assert!(found.items.is_empty());
 }

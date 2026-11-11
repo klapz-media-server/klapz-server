@@ -77,6 +77,16 @@ pub fn title_words(
     collected
 }
 
+/// Every distinct searchable word of a tag's name: a person, a genre.
+///
+/// The same words as a title's, so `hanks` finds Tom Hanks the way `nixon` finds Frost / Nixon.
+pub fn name_words(name: &str) -> Vec<String> {
+    let mut collected: Vec<String> = words(name).collect();
+    collected.sort();
+    collected.dedup();
+    collected
+}
+
 /// The half-open range of words that begin with `prefix`, or `None` when there is none.
 ///
 /// A range rather than a `LIKE 'prefix%'`: an explicit range is a seek on a plain binary
@@ -186,6 +196,13 @@ mod tests {
     fn an_absent_field_contributes_nothing() {
         assert_eq!(title_words(Some("Avatar"), None, None), ["avatar"]);
         assert!(title_words(None, None, None).is_empty());
+    }
+
+    #[test]
+    fn a_name_has_each_of_its_words_once() {
+        assert_eq!(name_words("Jean-Pierre Léaud"), ["jean-pierre", "leaud"]);
+        assert_eq!(name_words("Bob Bob"), ["bob"]);
+        assert!(name_words("").is_empty());
     }
 
     #[test]

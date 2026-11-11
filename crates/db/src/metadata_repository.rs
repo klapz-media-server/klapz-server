@@ -14,7 +14,7 @@ use open_plex_core::metadata::{
     ItemKind, ItemQuery, ItemTag, Listed, Loudness, MediaFile, MediaStream, MediaVersion,
     MetadataError, MetadataItem, MetadataRepository, Person, PersonCredit, Rating, ScanType,
     SearchQuery, StreamKind, SubtitleAnalysis, Tag, TagCondition, TagKind, TagRef, TagScope,
-    TrackTraits, ValueField, VideoAnalysis,
+    TagSearch, TagUse, TrackTraits, ValueField, VideoAnalysis,
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
@@ -32,7 +32,8 @@ use sea_orm::{
 
 use crate::entity::{
     item_external_id, item_field_lock, item_rating, item_tag, item_title_word, media, media_part,
-    media_stream, metadata_item, person, stream_dolby_vision, stream_loudness, tag, watch_state,
+    media_stream, metadata_item, person, stream_dolby_vision, stream_loudness, tag, tag_word,
+    watch_state,
 };
 use crate::item_order::ItemOrder;
 use crate::watch_repository::viewer_id;
@@ -365,6 +366,59 @@ fn word_exists(prefix: &str) -> Condition {
     ))
 }
 
+/// Every word of the term must begin some word of the tag's name.
+fn name_matches(term: &str) -> Condition {
+    search::words(term).fold(Condition::all(), |all, word| {
+        all.add(
+            Expr::col((tag::Entity, tag::Column::Id)).in_subquery(
+                Query::select()
+                    .column(tag_word::Column::TagId)
+                    .from(tag_word::Entity)
+                    .cond_where(prefix_condition(
+                        Expr::col((tag_word::Entity, tag_word::Column::Word)),
+                        &word,
+                    ))
+                    .to_owned(),
+            ),
+        )
+    })
+}
+
+/// The uses past a cursor in a tag search's order: item count descending, then tag and
+/// library ascending. Every column is a grouped one or an aggregate, so it goes in `HAVING`.
+fn beyond_use(cursor: &Cursor, after: bool) -> Result<Condition, MetadataError> {
+    let [CursorKey::Int(count), CursorKey::Int(tag_id)] = cursor.keys.as_slice() else {
+        return Err(MetadataError::CursorMismatch);
+    };
+    let item_count =
+        || Expr::expr(Expr::col((item_tag::Entity, item_tag::Column::ItemId)).count_distinct());
+    let tag = || Expr::col((tag::Entity, tag::Column::Id));
+    let section = Expr::col((
+        metadata_item::Entity,
+        metadata_item::Column::LibrarySectionId,
+    ));
+    let (fewer, later_tag, later_section) = if after {
+        (
+            item_count().lt(*count),
+            tag().gt(*tag_id),
+            section.gt(cursor.id),
+        )
+    } else {
+        (
+            item_count().gt(*count),
+            tag().lt(*tag_id),
+            section.lt(cursor.id),
+        )
+    };
+    Ok(Condition::any().add(fewer).add(
+        Condition::all().add(item_count().eq(*count)).add(
+            Condition::any()
+                .add(later_tag)
+                .add(Condition::all().add(tag().eq(*tag_id)).add(later_section)),
+        ),
+    ))
+}
+
 /// What the filter asks of the viewer's watch state, each condition reading its own rows.
 fn watch_conditions(filter: &ItemFilter) -> Condition {
     let mut condition = Condition::all();
@@ -610,6 +664,88 @@ impl MetadataRepository for SqlMetadataRepository {
             page.items.reverse();
         }
         Ok(page)
+    }
+
+    async fn search_tags(
+        &self,
+        query: &TagSearch,
+        window: Window,
+    ) -> Result<Page<TagUse>, MetadataError> {
+        if query.is_blank() {
+            return Ok(Page {
+                items: Vec::new(),
+                has_previous: false,
+                has_next: false,
+            });
+        }
+
+        let item_count =
+            || Expr::col((item_tag::Entity, item_tag::Column::ItemId)).count_distinct();
+        let section = || {
+            Expr::col((
+                metadata_item::Entity,
+                metadata_item::Column::LibrarySectionId,
+            ))
+        };
+        let mut select = with_tag_columns(item_tag::Entity::find().select_only())
+            .column_as(section(), "section_id")
+            .column_as(item_count(), "item_count")
+            .join(JoinType::InnerJoin, item_tag::Relation::Tag.def())
+            .join(JoinType::InnerJoin, item_tag::Relation::MetadataItem.def())
+            .join(JoinType::LeftJoin, tag::Relation::Person.def())
+            .filter(name_matches(&query.word_prefix));
+        if !query.kinds.is_empty() {
+            let kinds = query.kinds.iter().map(|kind| tag::kind_name(*kind));
+            select = select.filter(tag::Column::Kind.is_in(kinds));
+        }
+        if let Some(sections) = &query.sections {
+            let sections = sections.iter().map(|section| section.get());
+            select = select.filter(metadata_item::Column::LibrarySectionId.is_in(sections));
+        }
+        // Some item without a parent: a film or a series carries it, not only episodes.
+        let top_level =
+            Expr::expr(Expr::col((metadata_item::Entity, metadata_item::Column::Id)).count())
+                .gt(Expr::col((metadata_item::Entity, metadata_item::Column::ParentId)).count());
+        select = select
+            .group_by(Expr::col((tag::Entity, tag::Column::Id)))
+            .group_by(section())
+            .having(top_level);
+        for (cursor, after) in [(&window.after, true), (&window.before, false)] {
+            if let Some(cursor) = cursor {
+                select = select.having(beyond_use(cursor, after)?);
+            }
+        }
+
+        // Most carried first, then tag and library ascending; a reversed window walks it back.
+        let (most, least) = if window.is_reversed() {
+            (Order::Asc, Order::Desc)
+        } else {
+            (Order::Desc, Order::Asc)
+        };
+        let rows = select
+            .order_by(item_count(), most)
+            .order_by(Expr::col((tag::Entity, tag::Column::Id)), least.clone())
+            .order_by(section(), least)
+            .offset(window.skip)
+            .limit(window.fetch_limit())
+            .into_model::<TagUseRow>()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+
+        let mut page = Page::from_overfetch(rows, &window);
+        if window.is_reversed() {
+            page.items.reverse();
+        }
+        Ok(Page {
+            items: page
+                .items
+                .into_iter()
+                .filter_map(TagUseRow::into_use)
+                .collect(),
+            has_previous: page.has_previous,
+            has_next: page.has_next,
+        })
     }
 
     async fn first_characters(
@@ -1379,6 +1515,40 @@ impl TagRow {
             kind,
             name: self.name,
             person,
+        })
+    }
+}
+
+/// A tag, one library carrying it, and how many of that library's items do.
+#[derive(Debug, FromQueryResult)]
+struct TagUseRow {
+    id: i64,
+    kind: String,
+    name: String,
+    person_id: Option<i64>,
+    person_name: Option<String>,
+    provider_key: Option<String>,
+    thumb_url: Option<String>,
+    section_id: i64,
+    item_count: i64,
+}
+
+impl TagUseRow {
+    fn into_use(self) -> Option<TagUse> {
+        let tag = TagRow {
+            id: self.id,
+            kind: self.kind,
+            name: self.name,
+            person_id: self.person_id,
+            person_name: self.person_name,
+            provider_key: self.provider_key,
+            thumb_url: self.thumb_url,
+        }
+        .into_tag()?;
+        Some(TagUse {
+            tag,
+            section: SectionId::new(self.section_id),
+            item_count: u64::try_from(self.item_count).unwrap_or_default(),
         })
     }
 }

@@ -488,6 +488,50 @@ fn series_with_episodes() -> ApiSchema {
     })
 }
 
+#[tokio::test]
+async fn search_tags_finds_people_once_per_library_most_credited_first() {
+    let schema = series_with_episodes();
+    let data = run_on(
+        &schema,
+        r#"{ searchTags(query: "da") { edges { cursor node {
+            itemCount tag { name kind person { name } } library { title }
+        } } } }"#,
+    )
+    .await;
+    let found: Vec<(String, String, u64, String)> = data["searchTags"]["edges"]
+        .as_array()
+        .expect("edges")
+        .iter()
+        .map(|edge| {
+            let node = &edge["node"];
+            (
+                node["tag"]["name"].as_str().unwrap().to_owned(),
+                node["tag"]["kind"].as_str().unwrap().to_owned(),
+                node["itemCount"].as_u64().unwrap(),
+                node["library"]["title"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    // The series and its two episodes credit Dan Castellaneta. David Silverman directed
+    // the episodes only, so the library's series list would not lead to him.
+    assert_eq!(
+        found,
+        [(
+            "Dan Castellaneta".into(),
+            "ACTOR".into(),
+            3,
+            "Series".into()
+        )]
+    );
+
+    let directors = run_on(
+        &schema,
+        r#"{ searchTags(query: "silver", kinds: [ACTOR]) { edges { node { itemCount } } } }"#,
+    )
+    .await;
+    assert_eq!(directors["searchTags"]["edges"], serde_json::json!([]));
+}
+
 fn names(connection: &Value) -> Vec<(String, Value)> {
     connection["edges"]
         .as_array()
@@ -1965,6 +2009,7 @@ async fn nobody_reads_nothing_from_any_entry_point() {
         format!(r#"{{ node(id: "{library}") {{ id }} }}"#),
         format!(r#"{{ nodes(ids: ["{show}", "{library}"]) {{ id }} }}"#),
         r#"{ search(query: "simpsons") { edges { node { id } } } }"#.to_owned(),
+        r#"{ searchTags(query: "dan") { edges { node { itemCount tag { id } } } } }"#.to_owned(),
         "{ libraries(first: 10) { edges { node { id } } } }".to_owned(),
         "{ recentlyAdded(kind: SHOW, first: 10) { edges { node { id } } } }".to_owned(),
         "{ continueWatching(first: 10) { edges { node { id } } } }".to_owned(),

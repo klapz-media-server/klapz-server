@@ -24,6 +24,7 @@ mod m0018_track_choice;
 mod m0019_field_lock;
 mod m0020_sign_in;
 mod m0022_viewing_history;
+mod m0025_tag_word;
 
 use sea_orm_migration::prelude::*;
 
@@ -55,6 +56,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0019_field_lock::Migration),
             Box::new(m0020_sign_in::Migration),
             Box::new(m0022_viewing_history::Migration),
+            Box::new(m0025_tag_word::Migration),
         ]
     }
 }

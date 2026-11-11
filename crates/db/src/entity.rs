@@ -27,6 +27,7 @@ pub mod section_root;
 pub mod stream_dolby_vision;
 pub mod stream_loudness;
 pub mod tag;
+pub mod tag_word;
 pub mod track_choice;
 pub mod user_extension;
 pub mod user_password;

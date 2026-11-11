@@ -84,7 +84,8 @@ without them saying so.
   reference tolerates them. The rule generalizes: silence is for what we were never asked, not
   for what we cannot do.
 - **A derived index has one write path.** `item_title_word` is maintained by
-  `db::write::insert_items`, and there is no other way to insert an item. Leaving it to each
+  `db::write::insert_items`, and there is no other way to insert an item; `tag_word` likewise by
+  `db::write::insert_tags`. Leaving it to each
   caller is how a search quietly stops finding things — found the easy way, by a test fixture
   that inserted items directly and then matched nothing.
 - **A path the server publishes is not a path the server accepts.** `MediaFile.path` is
@@ -228,6 +229,11 @@ Places where we knowingly answer differently, each decided rather than overlooke
   calls, answers films, series and episodes; the people and collections the reference mixes in
   are absent, and `searchTypes=people` is tolerated rather than refused, since Plex Web sends it
   with every search.
+- **Search shelves are filled by our own match.** `GET /hubs/search` answers the reference's
+  seventeen shelves, ranked on its score ladder, with films, series, episodes, actors, directors
+  and genres; collections are not imported, and no film is found through a person's name, as the
+  reference finds Tom Hanks' films for `tom hanks`. `sectionId` narrows nothing, as on the
+  reference. `/hubs/search/voice`, an edit-distance search, stays `501`.
 - **Range filter operators need their `>` encoded.** `year>=2020` travels with a raw `>`, which
   is not a legal URI character: `hyper` rejects the request line with `400` before any handler
   runs. `year%3E=2020`, the `>` alone encoded, reaches the parser and works; the reference
@@ -525,6 +531,11 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   pages; the library holds no biography to import (`docs/spec-gaps.md`);
 - ⬜ a series library's "more in" a genre, whose genre follows the viewer's history by a rule
   not found yet.
+- ✅ **search by shelves**, `/hubs/search`: the seventeen shelves of the reference, items
+  through `search` and people and genres through `searchTags` on the official API, one entry per
+  library carrying the tag, over a word index of tag names (`tag_word`, written by
+  `db::write::insert_tags` only); identical to the reference entry for entry on the people
+  shelves of six terms (`docs/spec-gaps.md`).
 - ✅ **adaptive bitrate, chosen by the server or by the player**, over HLS and DASH: `quality`
   on `startStream` (`FIXED`, `SERVER_ADAPTIVE`, `CLIENT_ADAPTIVE`). The player's choice lists
   the copy first and encodes cut on the same key frames, on a grid of segments ffmpeg-plex lays
