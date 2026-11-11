@@ -119,6 +119,9 @@ pub struct Config {
     /// The fonts subtitles are drawn with: Plex's own, `Resources/Fonts` beside its binary.
     /// Without them nothing is burned in.
     pub fonts: Option<PathBuf>,
+    /// Where sessions write their output. Emptied at startup, so it must be this server's
+    /// alone: a second server sharing it would delete the files of the first one's streams.
+    pub sessions_directory: PathBuf,
 }
 
 impl Default for Config {
@@ -128,6 +131,7 @@ impl Default for Config {
             external_libs: None,
             callback_base: "http://127.0.0.1:32500".to_owned(),
             fonts: None,
+            sessions_directory: std::env::temp_dir().join("open-plex-transcode"),
         }
     }
 }

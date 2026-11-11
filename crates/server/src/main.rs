@@ -342,6 +342,8 @@ fn transcoder() -> open_plex_transcoder::Transcoder {
         external_libs: std::env::var_os("OPENPLEX_TRANSCODER_CODECS").map(std::path::PathBuf::from),
         callback_base: format!("http://127.0.0.1:{port}"),
         fonts,
+        // One per port, so that two servers on one machine never empty each other's.
+        sessions_directory: std::env::temp_dir().join(format!("open-plex-transcode-{port}")),
     })
 }
 

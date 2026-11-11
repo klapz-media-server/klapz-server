@@ -1278,10 +1278,6 @@ fn subtitle_chunk_name(number: u32) -> String {
     format!("sub-chunk-{number:05}")
 }
 
-fn sessions_root() -> PathBuf {
-    std::env::temp_dir().join("open-plex-transcode")
-}
-
 /// Moves a start onto the segment grid and says which segment that is, as the player numbers
 /// them. A segment's number has to say where it is in time, so the process must start on one.
 fn align_to_chunk(request: &mut StreamRequest) -> u32 {
@@ -1417,7 +1413,7 @@ impl Transcoder {
     /// Removes what a previous run left on disk. A session cleans up after itself, unless the
     /// server is killed before it can.
     pub fn remove_leftover_sessions(&self) {
-        match std::fs::remove_dir_all(sessions_root()) {
+        match std::fs::remove_dir_all(&self.config.sessions_directory) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => tracing::warn!(%error, "could not remove old transcode sessions"),
@@ -1460,7 +1456,7 @@ impl Transcoder {
         }
 
         let callback = uuid::Uuid::new_v4().simple().to_string();
-        let directory = sessions_root().join(&callback);
+        let directory = self.config.sessions_directory.join(&callback);
         tokio::fs::create_dir_all(&directory)
             .await
             .map_err(TranscodeError::Io)?;
