@@ -7,7 +7,7 @@
 - [Executing ffmpeg](#executing-ffmpeg)
 - [Fetching a URL a client names](#fetching-a-url-a-client-names)
 - [Tokens and authentication](#tokens-and-authentication)
-- [Unauthenticated access (allowedNetworks)](#unauthenticated-access-allowednetworks)
+- [No unauthenticated access](#no-unauthenticated-access)
 - [SQL](#sql)
 - [XML](#xml)
 - [Resource limits](#resource-limits)
@@ -25,8 +25,8 @@ have no access to, a file path outside any library, or a thousand transcode sess
 endpoint authorizes *the requested object*, not just *the token bearer*.
 
 **Unauthenticated local network.** Plex deliberately exposes part of its surface without a token
-(`/identity`, GDM discovery) and allows exempting address ranges. Anything reachable without a
-token must be treated as public.
+(`/identity`, GDM discovery) and allows exempting address ranges. open-plex exempts none: anything
+reachable without a credential must be treated as public.
 
 **The internet.** A self-hosted server ends up exposed, through port forwarding or a tunnel.
 Nothing may rely on the assumption that the network is trusted.
@@ -152,32 +152,40 @@ Because the token sometimes travels in the URL, it ends up in access logs, `Refe
 browser history. Consequences: no full URL in logs (see [Logging](#logging)), and a bounded token
 lifetime with revocation.
 
+Every credential names a user: a Plex token is looked up by its digest in `user_extension`, and a
+session is a signed JWT — in its cookie for a browser, as `Authorization: Bearer` for a script —
+checked by the HMAC verification of its key, which is constant-time, then against the user's
+current state. There is no shared admin token to compare and nothing granted to an address.
+
 The spec's scopes (`shared user` / `admin`) are not decorative. Destructive or configuration
 operations — `DELETE /library/sections/{id}`, `PUT /:/prefs`, `/status/sessions/terminate`,
-Butler tasks, the Updater — require `admin`. A shared-token bearer able to wipe a library is a
-privilege escalation. And since the project has no paid tier, **no authorization depends on a
-subscription**: scopes are the only authorization axis, and they are role scopes.
+Butler tasks, the Updater — require a user whose server role is `OWNER` (`AdminCaller` on the
+Plex surface). A shared user able to wipe a library is a privilege escalation. And since the
+project has no paid tier, **no authorization depends on a subscription**: roles are the only
+authorization axis — the server role, and each library's `viewer` or `admin`.
 
 Finally, authorization is about the object. A valid `ratingKey` or `partId` does not mean the
 bearer is entitled to it: check membership in a library shared with them, in the SQL query
 rather than afterwards — a forgotten filter is invisible, while a missing join fails the test.
 
-## Unauthenticated access (allowedNetworks)
+## No unauthenticated access
 
-Plex lets an operator declare address ranges exempt from authentication. It is convenient, and it
-is an authentication bypass by design: treat it as one.
+Plex lets an administrator declare address ranges exempt from authentication (`allowedNetworks`).
+open-plex does not: an address proves nothing about who sends from it, and a tunnel or a reverse
+proxy makes every stranger a local peer. Every request that reaches content is a user's.
 
-The address to compare is the **socket** address, not a header. `X-Forwarded-For` and
-`X-Real-IP` are client-supplied and forgeable: read them only when the server is explicitly
-configured behind a trusted proxy, and only from that proxy's address. An
-`X-Forwarded-For: 127.0.0.1` must never grant access.
+What stays open without a credential is short and opens nothing: `/identity` (the server
+published at the address used, as a `PublishedServer` that grants no right), `/web` and `/admin`
+(pages holding no data), `/graphql` for a caller who is nobody (`signIn`; every resolver answers
+nobody as if nothing existed), a stream's own addresses under their per-stream secret, and the
+transcoder's callbacks, which answer only on loopback and only to the unguessable id of a running
+session. Where the socket address is checked, as for those callbacks, it is the **socket**
+address, never `X-Forwarded-For` or `X-Real-IP`, which the client writes; and an IPv4-mapped IPv6
+address (`::ffff:a.b.c.d`) is reduced to its IPv4 form before the check.
 
-Comparing ranges correctly needs a dedicated type (`ipnet`), not textual prefix matching. Watch
-for IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`), which must be reduced to their IPv4 form
-before comparison or the rule silently fails to match.
-
-Even when exempt from authentication, a client is not an administrator: the exemption grants a
-read scope, never `admin`.
+The built-in `admin` account exists so that someone can always manage the server. Its password is
+`OPENPLEX_ADMIN_PASSWORD` or one drawn from the OS RNG, printed once on standard output and never
+logged: a password in a log file outlives every rotation.
 
 ## SQL
 

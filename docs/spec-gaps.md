@@ -240,8 +240,8 @@ Where ours differ:
 - **Each user's server holds its own history.** The spec has the administrator read every
   account's; here a token reads the history of its own viewer, published as `accountID` 1, the
   account a server's owner has on the reference. `accountID` naming any other answers an empty
-  list. The operator's view of everyone's history is on the official API (`viewingHistory`),
-  as is the operator's own (`mine: true`), which is what the operator's token reads here. The
+  list. An owner's view of everyone's history is on the official API (`viewingHistory`), as is
+  its own (`mine: true`), which is what an owner's token reads here. The
   lookup and the `DELETE`, admin-only in the spec, are open to a user for its own entries.
 - **The listing always windows**, at most 500 an answer, and always states `totalSize` and
   `offset`, as a library listing does.
@@ -998,9 +998,9 @@ when two neighbours touch. `PUT …/items/{id}/move` without `after` moves the e
 (an internal counter), gives an entry's position as its `order`, its addition time as both dates,
 and the playlist's id as a smart playlist's generator id.
 
-**Ownership, which is ours.** A playlist is its owner's: the operator's (viewer 0, as for watch
-state) or one user's. Another viewer's playlist answers `404` everywhere; a visitor at a published
-address has none. An entry whose item lies in a library its owner may no longer read is hidden and
+**Ownership, which is ours.** A playlist is its owner's: one user's, an owner of the server's
+included, keyed by its user id as watch state is. Another viewer's playlist answers `404`
+everywhere; a request with no caller has none. An entry whose item lies in a library its owner may no longer read is hidden and
 not counted, and comes back with the library; an item deleted from the library is hidden the same
 way and returns if it is imported again under its id.
 
@@ -1071,12 +1071,13 @@ afterwards:
 | `DELETE …/marker/{id}` | `200`, empty `text/html` | Same |
 | `DELETE` of a marker that is not a bookmark | `400` (the spec) | Same; `PUT` likewise |
 
-Bookmarks are the caller's: another user and the operator do not see them, and a `PUT` or
+Bookmarks are the caller's: another user, an owner of the server included, does not see them,
+and a `PUT` or
 `DELETE` of someone else's answers `404`. `mediaTagVersion` is `0` here, as everywhere.
 
 **The official API** holds both kinds: `Movie.markers` and `Episode.markers`, the work's for
 whoever reads the item and the caller's own bookmarks; `addMarker`, `updateMarker`,
-`deleteMarker`, for a library's admins and the operator on the work's markers, for its keeper on
+`deleteMarker`, for a library's admins and the server's owners on the work's markers, for its keeper on
 a bookmark. A marker of the work edited by hand loses its `version`. Ours, not measured: the
 credits alone are final, every marker but a bookmark has an end, and a title or colour is a
 bookmark's.
@@ -1188,7 +1189,7 @@ A title edit derives the sort title, as an item's does, and a sort title given w
 here (the reference derives over it unless it is locked).
 
 **Rights, which are ours.** A collection is its library's: readable by whoever reads the library,
-changed by its admins and the operator, as items are edited. What a caller may not change answers
+changed by its admins and the server's owners, as items are edited. What a caller may not change answers
 as if it did not exist: `404` on the Plex surface, `COLLECTION_NOT_FOUND` on the official API.
 
 **Where we differ.**
@@ -1260,7 +1261,7 @@ the process has exited, and deletes the row, each change to a key made under tha
 | The player stops | `/:/timeline` with `state=stopped`, or `reportPlayback(STOPPED)`: every session of the playback |
 | A client stops the conversion | `/video/:/transcode/universal/stop`, `endPlaybackSession`, `stopStream` |
 | A new start replaces it | a change of quality under the same playback (`startStream`) |
-| The operator | `/status/sessions/terminate`, `terminatePlaybackSession` (below) |
+| An owner | `/status/sessions/terminate`, `terminatePlaybackSession` (below) |
 | Nobody gives a sign of life | the sweep, every 30 seconds: a row past its expiry, or a stream whose process has gone idle for 300 seconds or has been stopped |
 | A stream read whose session is gone | the stream is stopped there and then, and answers `404` |
 | The server stops | Ctrl-C ends every session before the server stops listening, then waits 5 seconds at most for its connections |
@@ -1292,7 +1293,7 @@ the binary logs `Denying access to transcode of key %s due to terminated session
 table; Plex Web stops playback with `terminationText` as the error when a timeline answer holds a
 `terminationCode`. Ours stops the conversion at once and keeps the row, marked terminated and
 listed nowhere, for one more lifetime: the player's next timeline answers
-`terminationCode="2006"` and the operator's `reason` as `terminationText`, or
+`terminationCode="2006"` and the owner's `reason` as `terminationText`, or
 `Admin Terminated Playback.` without one. The code is the one Plex's published decision codes
 give that text; Plex Web only checks that one is there. The player's `stopped` then removes the
 row. Until then a start under the same key is refused, as the binary's log line says the
@@ -1310,7 +1311,8 @@ Plex token: `X-Plex-Token`, in a header or the query string. The Plex surface th
 that user's `machineIdentifier` on `/`, `/identity` and `/media/providers`, lists only the
 libraries it was given, and answers `404` for anything else. A library's `viewer` browses and
 plays; its `admin` also gets past the check on `PUT /library/sections/{id}/prefs`. `/status/sessions`
-and `/updater/*` stay with the operator, who keeps the server's own identifier.
+and `/updater/*` stay with the server's owners, who keep the server's own identifier unless an
+extension of theirs gives them one.
 
 ### Automatic quality
 

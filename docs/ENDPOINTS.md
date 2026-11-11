@@ -481,7 +481,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `done` | `POST` | `/library/collections` | user | Create a collection | By `uri` (items, or a listing for `smart=1`), `type`, `title`, `sectionId`, as measured: items of another kind or library left out, no `type` the library's own, an unknown `type` `400` where the reference makes an `unknown` one. A smart rule is the official API's listing input; a filter it cannot honor `501`. Library admins and the operator. Through `createCollection`. |
+| `done` | `POST` | `/library/collections` | user | Create a collection | By `uri` (items, or a listing for `smart=1`), `type`, `title`, `sectionId`, as measured: items of another kind or library left out, no `type` the library's own, an unknown `type` `400` where the reference makes an `unknown` one. A smart rule is the official API's listing input; a filter it cannot honor `501`. Library admins and the server's owners. Through `createCollection`. |
 
 ## Rate
 

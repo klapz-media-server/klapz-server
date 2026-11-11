@@ -114,7 +114,7 @@ cannot produce a differently-shaped body.
 
 `Internal` carries its source error for logging, and deliberately renders as a flat
 `"internal error"`. Paths, SQL fragments, ffmpeg command lines and backtraces are diagnostics for
-the operator, not for the client — leaking them hands an attacker the filesystem layout and
+the server's logs, not for the client — leaking them hands an attacker the filesystem layout and
 schema.
 
 The pairing to get right: log the full error at the boundary, return the opaque one.

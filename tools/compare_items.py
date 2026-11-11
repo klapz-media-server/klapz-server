@@ -8,7 +8,9 @@ Reports three classes separately, because they call for different work.
   differing - both send it, with different values. A bug, unless explained.
   extra     - we send it, the reference does not. Usually a deliberate deviation.
 
-Usage: PLEX_TOKEN=... OPENPLEX_TOKEN=... python tools/compare_items.py [section...]
+Usage: PLEX_TOKEN=... OPENPLEX_ADMIN_PASSWORD=... python tools/compare_items.py [section...]
+
+Ours is read as its `admin` account, signed in with `OPENPLEX_ADMIN_PASSWORD`.
 """
 
 from __future__ import annotations
@@ -19,6 +21,8 @@ import sys
 import urllib.request
 from collections import defaultdict
 
+from open_plex_session import authorization, sign_in
+
 REFERENCE = "http://127.0.0.1:32400"
 OURS = "http://127.0.0.1:32500"
 
@@ -27,9 +31,8 @@ OURS = "http://127.0.0.1:32500"
 VOLATILE = {"mediaTagVersion"}
 
 
-def fetch(base: str, token: str, path: str) -> dict:
-    url = f"{base}{path}{'&' if '?' in path else '?'}X-Plex-Token={token}"
-    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+def fetch(base: str, credentials: dict[str, str], path: str) -> dict:
+    request = urllib.request.Request(f"{base}{path}", headers={"Accept": "application/json", **credentials})
     with urllib.request.urlopen(request) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -100,10 +103,11 @@ def summarize(label: str, rows: dict, show: int = 6) -> None:
 
 
 def main() -> None:
-    reference_token = os.environ.get("PLEX_TOKEN")
-    our_token = os.environ.get("OPENPLEX_TOKEN")
-    if not reference_token or not our_token:
-        sys.exit("set PLEX_TOKEN and OPENPLEX_TOKEN")
+    plex_token = os.environ.get("PLEX_TOKEN")
+    if not plex_token:
+        sys.exit("set PLEX_TOKEN")
+    reference_auth = {"X-Plex-Token": plex_token}
+    our_auth = authorization(sign_in(f"{OURS}/graphql"))
 
     sections = [int(a) for a in sys.argv[1:]] or [4, 5]
     size = 10
@@ -111,8 +115,8 @@ def main() -> None:
     for section in sections:
         query = f"/library/sections/{section}/all?X-Plex-Container-Start=0&X-Plex-Container-Size={size}"
         print(f"\n{'=' * 78}\n/library/sections/{section}/all\n{'=' * 78}")
-        reference = fetch(REFERENCE, reference_token, query)
-        ours = fetch(OURS, our_token, query)
+        reference = fetch(REFERENCE, reference_auth, query)
+        ours = fetch(OURS, our_auth, query)
 
         ref_items = reference["MediaContainer"].get("Metadata", [])
         our_items = ours["MediaContainer"].get("Metadata", [])
@@ -138,8 +142,8 @@ def main() -> None:
         if ref_keys and ref_keys == our_keys:
             key = ref_keys[0]
             print(f"\n{'-' * 78}\n/library/metadata/{key}\n{'-' * 78}")
-            reference = fetch(REFERENCE, reference_token, f"/library/metadata/{key}")
-            ours = fetch(OURS, our_token, f"/library/metadata/{key}")
+            reference = fetch(REFERENCE, reference_auth, f"/library/metadata/{key}")
+            ours = fetch(OURS, our_auth, f"/library/metadata/{key}")
             missing, differing, extra = compare(reference, ours)
             summarize("missing", missing)
             summarize("extra", extra)

@@ -190,7 +190,7 @@ Plus the non-negotiable reflexes: `unsafe_code = "forbid"` at the workspace leve
 parameterized SQL (never `format!` into SQL), and explicit caps on everything the client controls
 by size (`containerSize`, request bodies, concurrent transcode sessions).
 
-The details — full threat model, authentication and scopes, `allowedNetworks`, CORS, resource
+The details — full threat model, authentication and roles, the absence of unauthenticated access, CORS, resource
 limits, dependency auditing, data at rest — are in `references/security.md`. Read it before
 writing any endpoint that touches disk, `ffmpeg`, authentication or SQL.
 
@@ -354,8 +354,8 @@ Enable features explicitly (`default-features = false` where it makes sense): pu
 
 ## References
 
-- `references/security.md` — threat model, path traversal, `ffmpeg` execution, tokens and scopes,
-  `allowedNetworks`, resource limits, dependency auditing.
+- `references/security.md` — threat model, path traversal, `ffmpeg` execution, tokens and roles,
+  no unauthenticated access, resource limits, dependency auditing.
   **Read before any endpoint touching disk, `ffmpeg`, auth or SQL.**
 - `references/axum.md` — handlers, extractors, `State`, `X-Plex-*` headers, tower layers, router
   organization, the skeleton route pattern.

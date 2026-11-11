@@ -119,15 +119,15 @@ without them saying so.
   path of its own: `WatchRepository::record_viewings` writes the watch state and the entries in
   one transaction, and `core::watch` is its only caller.
 - **A session and its stream end together, through `core::lifecycle`.** Whatever ends one — the
-  player stopping, `stopStream` or Plex's `/stop`, a replacing start, the operator's
+  player stopping, `stopStream` or Plex's `/stop`, a replacing start, an owner's
   termination, the expiry sweep, an idle stream, a stream read whose session is gone, the server
   stopping — stops the process, forgets the stream's addresses and secret, lets the directory
   go and deletes the row, under a per-key lock (`SessionLocks`, shared by the schema, the stream
   routes and the sweep). An automatic end checks its reason again under the lock. Every sign of
   life counts for both; a read of `/streams/{id}/…` counts at most every 30 seconds.
-- **HTTP token authentication lives in `server`**, because both surfaces share it. It attaches a
-  `Principal`; each surface then enforces scope in its own idiom (`Caller`/`AdminCaller`
-  extractors on the Plex side, request data on the GraphQL side).
+- **HTTP authentication lives in `server`**, because both surfaces share it. It attaches a
+  `Principal`, which is always a user; each surface then enforces roles in its own idiom
+  (`Caller`/`AdminCaller` extractors on the Plex side, request data on the GraphQL side).
 
 ### GraphQL conventions
 
@@ -162,57 +162,82 @@ without them saying so.
   not `library_section_permissions`, not its account table, not its home/restricted flags. The
   importer copies no accounts, which also keeps the 283 real accounts (with names and e-mail
   addresses) in the reference database untouched.
-- **Three tables, one per concern.** `users` (id, email, dates), `library_permission` (a
+- **Every request is a user's.** There is no operator, no admin token and no trusted network:
+  a caller is a Plex token resolved through `user_extension`, or a session, and anything else
+  is nobody. What used to be the operator's is a server role, `OWNER`, on a user row.
+- **Three tables, one per concern.** `users` (id, a unique lower-case `username`, an optional
+  unique `email`, a server `role` — `owner` or `user` — and dates), `library_permission` (a
   `viewer` or `admin` role for one user on one library) and `user_extension` (one user
   connected through one protocol, `plex` for now, with its external identifier and a digest of
-  its token). The operator, `OPENPLEX_TOKEN` or a trusted network, is in none of them: it sees
-  everything and manages the rest through the GraphQL mutations.
+  its token).
+- **An owner manages the server.** It reaches every library as their admin
+  (`LibraryAccess::All`, whatever permissions it holds), manages users, their roles, permissions,
+  activation and extensions, reads everyone's history and sessions, terminates sessions and
+  edits everything. Library permissions shape what a `USER` reaches, as before. `setUserRole`
+  grants or revokes `OWNER`, for owners only.
+- **The built-in `admin` account always exists.** At startup, before serving, the server makes
+  sure a user named `admin` exists, is active and is an owner (`core::account::ensure_admin`,
+  called from `main`). Created, it takes `OPENPLEX_ADMIN_PASSWORD`, or a password drawn from the
+  OS RNG that is printed on standard output once and goes nowhere else, not even the logs;
+  existing, it takes `OPENPLEX_ADMIN_PASSWORD` when that is set and keeps its own otherwise. A
+  configured password the policy refuses stops the server. `admin` has no address, and it cannot
+  be demoted, deactivated or deleted: those mutations answer `BUILT_IN_ACCOUNT`.
 - **Rights are enforced in the schema.** The transport attaches a `Principal`, and the resolvers
   that lead to a library's content check it; every Plex query runs as the request's caller
   (`gql::run_as_caller`). A request with no caller sees nothing: forgetting to attach one fails
   closed. What a user was not given answers as if it did not exist.
-- **A user can sign in with a password, and waits for the operator first.** `signUp` creates an
-  inactive user with an Argon2id hash (`user_password`, one row per user); `activateUser` /
-  `deactivateUser` are the operator's. An inactive user opens nothing, whatever it presents:
-  its Plex token and its sessions stop at once. A user the operator creates is active and has
-  no password. `signIn` answers `INVALID_CREDENTIALS` alike for an unknown address and a wrong
+- **A username is 3 to 32 of `a-z`, `0-9`, `.`, `_`, `-`**, starting with a letter or a digit,
+  stored in lower case so that two users cannot differ by case alone. It holds no `@`, so a
+  login is unambiguous: with an `@` it is an address, without one a username.
+- **A user can sign in with a password, and waits for an owner first.** `signUp` (a username, an
+  optional address, a password) creates an inactive user with an Argon2id hash
+  (`user_password`, one row per user); `activateUser` / `deactivateUser` are the owners'. An
+  inactive user opens nothing, whatever it presents: its Plex token and its sessions stop at
+  once. A user an owner creates (`createUser`) is active and has no password. `signIn` takes a
+  username or an address, answers `INVALID_CREDENTIALS` alike for an unknown account and a wrong
   password (a decoy hash keeps the timing the same), tells `INACTIVE` only with the right
-  password, and limits failures to five per address per fifteen minutes.
+  password, and limits failures to five per identifier per fifteen minutes.
 - **A session is a signed JWT in an `HttpOnly; SameSite=Lax` cookie**, `open_plex_session`,
   HS256 with `OPENPLEX_SESSION_SECRET` (32 bytes at least; without it a key is drawn per process
   and sessions end with it), `Secure` unless `OPENPLEX_INSECURE_COOKIES=1`. Nothing stores it:
   the transport checks the signature and expiry, then the user's current state, on every
-  request. Precedence is token, then cookie, then trusted network, so a user signed in on a
-  trusted network is that user. `signOut` clears the cookie; a copied token stays valid until it
-  expires (30 days) unless its user is shut out.
+  request. A script or an API client reads the session from the `Set-Cookie` of `signIn` and
+  sends it as `Authorization: Bearer <session>`, on every surface; the payload carries no token,
+  so a page's scripts never see one. Precedence is the Plex token, then the bearer, then the
+  cookie. `signOut` clears the cookie; a copied session stays valid until it expires (30 days)
+  unless its user is shut out. The tools sign in as `admin` this way
+  (`tools/open_plex_session.py`, with `OPENPLEX_ADMIN_PASSWORD`).
 - **`/graphql` admits nobody**, so a browser can sign in before it is anyone. The request goes
   through with no principal, which every resolver already answers as "nothing exists";
   `nobody_reads_nothing_from_any_entry_point` keeps it that way. Every other route still
   answers `401`.
 - **A user pairs its own server.** `pairExtension`, `moveExtension` and `unpairExtension` are
-  open to the operator and to the user they name, so a client can offer pairing in the user's
-  own settings; issuing and revoking the token (`connectExtension`, `disableExtension`) stays the
-  operator's. `viewer` says who is asking (`isOperator`, and the `User` when it is one), which is
-  how a client decides what to offer.
-- **`/admin` is the operator's page.** Users, their libraries, their Plex connection; served
-  without a token, holding no data, and driven entirely by `/graphql`. That endpoint accepts
-  JSON only, because a trusted network is admitted without a token and any page its browsers
-  open could otherwise post to it.
-- **Watch state is the viewer's and the work's.** A user watches as itself, the operator as
-  viewer 0 — it has no user row, and a NULL in a key would not be unique — and a caller that is
-  neither, a visitor at a published address, has no watch state at all. Rows are keyed by `guid`,
+  open to owners and to the user they name, so a client can offer pairing in the user's own
+  settings; issuing and revoking the token (`connectExtension`, `disableExtension`) stays the
+  owners'. `viewer` says who is asking (its `role`, and the `User`), which is how a client
+  decides what to offer.
+- **`/admin` is the owners' page.** Users, their roles, their libraries, their Plex connection;
+  served without a token, holding no data, signing in through `signIn` and driven entirely by
+  `/graphql` with the session cookie. That endpoint accepts JSON only, because the cookie is
+  `SameSite=Lax` and a page of the same site (another port, another subdomain) could otherwise
+  post a form to it as whoever is signed in.
+- **Watch state is the viewer's and the work's.** Every viewer is a user, and its state is keyed
+  by its user id: the operator's viewer 0 is gone, deleted by migration `m0030` with everything
+  else it owned. A request with no caller has no watch state at all. Rows are keyed by `guid`,
   because the reference keeps one state for every copy of a work. History is per viewer too,
-  but by item, the copy watched: a user reads and deletes its own, the operator everyone's.
+  but by item, the copy watched: a user reads and deletes its own, an owner everyone's.
 - **Each Plex user has its own server.** A token resolves to a user, and the Plex surface
   answers with that user's machine identifier, on `/identity` too when a token comes with the
   request. One process and one address: the separation is in what each token sees. Session
   identifiers are chosen by clients, so they are stored under a per-user name.
-- **Pairing ties one user's server to one plex.tv account.** The operator, or the user itself,
+- **Pairing ties one user's server to one plex.tv account.** An owner, or the user itself,
   gives a code from `plex.tv/claim` and an address; `extension_account` keeps the account, its token
   and the address, which is republished at startup and hourly. plex.tv is reached through the
   `AccountDirectory` port, implemented in `api-plex::plex_tv`. `/identity` with no token shows
-  the server published at the address the request was sent to, when only one is. CORS admits
-  Plex's domains only, because a trusted network is admitted without a token. A client that found the server
+  the server published at the address the request was sent to, when only one is (the transport
+  attaches a `PublishedServer`, which opens nothing). CORS admits Plex's domains only, because a
+  browser here carries its user's session and Plex Web its token in every URL: a page allowed to
+  read the answers could read whatever that user can. A client that found the server
   through plex.tv presents a plex.tv token, which only plex.tv can attribute: the answer is
   remembered five minutes, a refusal included, and new tokens are looked up at most 60 times a
   minute, so a stranger cannot use the server to flood plex.tv. The account's token is stored
@@ -291,7 +316,7 @@ Places where we knowingly answer differently, each decided rather than overlooke
   answers `404` at once, as on the reference.
 - **Each user's server holds its own history.** The reference's administrator reads every
   account's viewing history; on the Plex surface a token reads its own viewer's, published as
-  `accountID` 1, the owner of the server it sees. The operator reads everyone's on the official
+  `accountID` 1, the owner of the server it sees. An owner reads everyone's on the official
   API (`viewingHistory`). An entry names the item watched and copies nothing of it, so it goes
   with its item; no device is recorded.
 - **Playback sessions are stored, with automatic expiry.** The reference keeps them in memory.
@@ -300,8 +325,8 @@ Places where we knowingly answer differently, each decided rather than overlooke
   with its stream, and startup and Ctrl-C clear everything; the sweep also removes transcode
   directories no session owns, which a process outliving a killed server leaves behind. A direct-play stream lives as long as
   its session, no longer six hours.
-- **The operator terminates a session on the official API first** (`terminatePlaybackSession`,
-  operator only); `/status/sessions/terminate` binds onto it, by `Session.id`, which is now the
+- **An owner terminates a session on the official API first** (`terminatePlaybackSession`,
+  owners only); `/status/sessions/terminate` binds onto it, by `Session.id`, which is now the
   player's session identifier as on the reference. The stream stops at once; the row stays,
   listed nowhere, until the player stops or one more lifetime passes, so that its next timeline
   carries `terminationCode` 2006 and the reason; a start under its key is refused meanwhile. The
@@ -348,7 +373,7 @@ Places where we knowingly answer differently, each decided rather than overlooke
   from: Plex Web refuses a server older than 1.18.3, and `0.1.0` reads as one. Clients that
   enable features by version then expect exactly the behavior we copied. The official API keeps
   open-plex's own version (`api-plex::general::PLEX_VERSION`).
-- **A playlist is its viewer's, and its ids are its own.** The operator's or one user's, as
+- **A playlist is its viewer's, and its ids are its own.** One user's, an owner's included, as
   watch state is; another's answers `404`, and an entry whose library its owner may no longer
   read is hidden. Ids start at 1 rather than sharing the items' numbering, so a film's id is not a
   playlist and `PUT /playlists/{a film's id}` renames nothing, where the reference renames the
@@ -426,15 +451,17 @@ No Rust-touching task is finished until these five steps have passed, in order:
 # Seed our schema from a real Plex database (idempotent; reads the source read-only).
 cargo run -p open-plex-server -- import db/com.plexapp.plugins.library.db
 
-# Serve. Without OPENPLEX_TOKEN every authenticated endpoint answers 401 by design.
-OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
+# Serve. The first start creates the `admin` account; without OPENPLEX_ADMIN_PASSWORD its
+# generated password is printed once on standard output.
+OPENPLEX_ADMIN_PASSWORD='a long passphrase' cargo run -p open-plex-server
 ```
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `OPENPLEX_DATABASE_URL` | `sqlite://open-plex.db?mode=rwc` | Any SeaORM backend; migrations run on connect. |
-| `OPENPLEX_TOKEN` | *(none)* | The accepted admin token. Unset means no authenticated route is reachable — the safe failure. |
-| `OPENPLEX_ALLOWED_NETWORKS` | *(none)* | Comma-separated addresses or CIDR ranges admitted **without a token**, with admin rights — Plex's `allowedNetworks`, and the only way Plex Web gets in without plex.tv. Checked against the socket address, never `X-Forwarded-For`. A malformed entry stops the server. For local use: `127.0.0.1/32,::1/128`. |
+| `OPENPLEX_ADMIN_PASSWORD` | *(none)* | The password of the built-in `admin` owner, set at every start. Unset, a new `admin` gets a generated one, printed once on standard output, and an existing one keeps its own. Outside the password policy (8 to 256 characters), the server refuses to start. The tools sign in with it. |
+| `OPENPLEX_SESSION_SECRET` | *(drawn per process)* | The HS256 key sessions are signed with, 32 bytes at least. Without it, sessions end when the server stops. |
+| `OPENPLEX_INSECURE_COOKIES` | *(off)* | `1` drops `Secure` from the session cookie, for plain HTTP on a local network. |
 | `OPENPLEX_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
@@ -444,8 +471,9 @@ OPENPLEX_TOKEN=dev-token cargo run -p open-plex-server
 
 The imported library's files live on another machine, so nothing imported can be played here.
 `python tools/plex_tunnel.py --origin http://LAN-IP:32500` opens a Cloudflare quick tunnel and
-publishes its new address to plex.tv through `moveExtension`, with the server running; it
-refuses a loopback origin, which a trusted network would admit without a token.
+publishes its new address to plex.tv through `moveExtension`, signed in as `admin`, with the
+server running; it refuses a loopback origin, where the transcoder's callbacks answer without a
+token.
 `python tools/seed_test_library.py DIRECTORY` adds a folder of real files as a `Test` library
 (`--remove` takes it out); `python tools/capture_transcoder.py` studies the transcoder alone.
 To import again into a database the server has written to, `python tools/reimport.py`, server
@@ -556,7 +584,7 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
 - ✅ **viewing history**: one entry per viewing counted — a playback crossing 90%, a film or
   episode marked watched — written with the watch state by `record_viewings`, its one write
   path, and left alone by unwatching; on the official API (`viewingHistory`, a user's own and
-  the operator's everyone's, `deleteHistoryEntry` with `userErrors`) and on the Plex surface
+  an owner everyone's, `deleteHistoryEntry` with `userErrors`) and on the Plex surface
   (`/status/sessions/history/all`, its lookup and `DELETE`), with the filters, sorts and
   refusals measured on the reference's test libraries;
 - ✅ the drawn shelves — top of a genre, of a person — drawn as measured on 150 of the
@@ -570,7 +598,7 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `/status/sessions/terminate`, `playbackTermination` and the timeline's `terminationCode`, and
   `/status/sessions/background`, always empty;
 - ✅ **editing films, series and episodes**: `updateMovie`, `updateShow`, `updateEpisode` on the
-  official API, for a library's admins and the operator, with per-field locks (`lock`,
+  official API, for a library's admins and the owners, with per-field locks (`lock`,
   `unlock`, `lockedFields`) kept in `item_field_lock` and imported from Plex's `user_fields`;
   a title edit rewrites the sort title, its key and the title-word index through
   `db::write::update_item`, the one write path. On the Plex surface, `PUT
@@ -615,7 +643,7 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `/playQueues` operations), replayed against the reference with the same trace
   (`docs/spec-gaps.md`).
 - ✅ **collections**: a library's, read by whoever reads the library and changed by its admins
-  and the operator; imported from Plex's type-18 items and collection tags (2,295 collections,
+  and the owners; imported from Plex's type-18 items and collection tags (2,295 collections,
   4,586 entries; the 4 smart ones list a filter we cannot express) into tables of our own
   (`collection`, `collection_entry`, `collection_word`), ordered by release date, title or a
   custom order. On the official API `Collection`, `Library.collections`, `collections`, each
@@ -637,7 +665,7 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   stored imported into a table of our own (`item_marker`), the work's and each viewer's
   bookmarks apart by owner; on the official API (`Movie.markers`, `Episode.markers`, `Marker`
   with `node`, `addMarker`, `updateMarker`, `deleteMarker`: the work's for a library's admins
-  and the operator, a bookmark for its keeper alone) and on the Plex surface (`Marker` on
+  and the owners, a bookmark for its keeper alone) and on the Plex surface (`Marker` on
   lookups, listings, `/children`, `/grandchildren`, `/allLeaves` and play queues with
   `includeMarkers=1`; the bookmark routes `POST`, `PUT` and `DELETE …/marker` as measured on the
   reference's test libraries). Detection (`…/intro`, `…/credits`) stays deferred.
@@ -686,6 +714,9 @@ absent.
 
 - Default database engine for development (SQLite for now).
 - Whether any client depends on attribute ordering within an element.
+- **Plex Web without plex.tv lost its way in with the trusted network.** A browser signed in at
+  `/admin` sends its session cookie on the same-origin calls of `/web`, which the transport
+  accepts; whether Plex Web goes on without an `X-Plex-Token` of its own is untested.
 - A library's `admin` role has little to open yet: changing a library's settings is the only
   route it gates, and that route still answers `501`.
 - **A paired server shows `presence=false` on plex.tv.** The reference becomes present through a
