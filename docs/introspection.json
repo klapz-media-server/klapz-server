@@ -95,11 +95,11 @@
             },
             {
               "name": "publishedAt",
-              "description": "When that service last accepted the address, in seconds since the epoch. Null until it\nhas; the server keeps trying.",
+              "description": "When that service last accepted the address. Null until it\nhas; the server keeps trying.",
               "args": [],
               "type": {
                 "kind": "SCALAR",
-                "name": "Int",
+                "name": "DateTime",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -1065,14 +1065,14 @@
             },
             {
               "name": "addedAt",
-              "description": "When it was created, in seconds since the Unix epoch.",
+              "description": "When it was created.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -1081,14 +1081,14 @@
             },
             {
               "name": "updatedAt",
-              "description": "When an item last joined or left it, in seconds since the Unix epoch. An edit of its\nfields leaves it.",
+              "description": "When an item last joined or left it. An edit of its\nfields leaves it.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -2076,14 +2076,14 @@
             },
             {
               "name": "lastViewedAt",
-              "description": "When the work behind it was last played, in seconds since the Unix epoch: the\nfilm's, or for an episode its series', which the list is ordered by.",
+              "description": "When the work behind it was last played: the film's, or for an episode its series',\nwhich the list is ordered by.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -2487,6 +2487,16 @@
           ],
           "inputFields": null,
           "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "SCALAR",
+          "name": "DateTime",
+          "description": "A date-time as RFC 3339 defines it, with an offset. Written in UTC (`Z`) to the second;\nread with any offset, a fraction of a second dropped.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
           "enumValues": null,
           "possibleTypes": null
         },
@@ -3076,14 +3086,14 @@
             },
             {
               "name": "addedAt",
-              "description": "When the item was added to the library, in seconds since the Unix epoch.",
+              "description": "When the item was added to the library.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -3185,14 +3195,14 @@
             },
             {
               "name": "updatedAt",
-              "description": "When the item's metadata last changed, in seconds since the Unix epoch.",
+              "description": "When the item's metadata last changed.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -3249,11 +3259,11 @@
             },
             {
               "name": "releasedOn",
-              "description": "Original air date as `YYYY-MM-DD`.",
+              "description": "Original air date, as its midnight UTC.",
               "args": [],
               "type": {
                 "kind": "SCALAR",
-                "name": "String",
+                "name": "DateTime",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -4473,14 +4483,14 @@
             },
             {
               "name": "viewedAt",
-              "description": "When the item was watched, in seconds since the Unix epoch.",
+              "description": "When the item was watched.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -4716,20 +4726,20 @@
             },
             {
               "name": "viewedSince",
-              "description": "Only viewings at or after this time, in seconds since the Unix epoch.",
+              "description": "Only viewings at or after this time.",
               "type": {
                 "kind": "SCALAR",
-                "name": "Int",
+                "name": "DateTime",
                 "ofType": null
               },
               "defaultValue": null
             },
             {
               "name": "viewedUntil",
-              "description": "Only viewings at or before this time, in seconds since the Unix epoch.",
+              "description": "Only viewings at or before this time.",
               "type": {
                 "kind": "SCALAR",
-                "name": "Int",
+                "name": "DateTime",
                 "ofType": null
               },
               "defaultValue": null
@@ -4946,14 +4956,14 @@
             },
             {
               "name": "addedAt",
-              "description": "When the item was added to the library, in seconds since the Unix epoch.",
+              "description": "When the item was added to the library.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -4962,14 +4972,14 @@
             },
             {
               "name": "updatedAt",
-              "description": "When the item's metadata last changed, in seconds since the Unix epoch.",
+              "description": "When the item's metadata last changed.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -5208,7 +5218,7 @@
             },
             {
               "name": "INVALID_VALUE",
-              "description": "A value the field cannot hold: a date that is not `YYYY-MM-DD`, a rating outside 0 to\n10, a year outside 1 to 9999.",
+              "description": "A value the field cannot hold: a date before year 1, a rating outside 0 to 10, a year\noutside 1 to 9999.",
               "isDeprecated": false,
               "deprecationReason": null
             },
@@ -5463,10 +5473,10 @@
             },
             {
               "name": "releasedFrom",
-              "description": "Keep only items released on or after this date, written `2025-11-10`.",
+              "description": "Keep only items released at or after this time. A release date is its day's midnight,\nUTC.",
               "type": {
                 "kind": "SCALAR",
-                "name": "String",
+                "name": "DateTime",
                 "ofType": null
               },
               "defaultValue": null
@@ -5619,20 +5629,20 @@
             },
             {
               "name": "lastViewedFrom",
-              "description": "Keep only items the caller last played at or after this time, in seconds since the\nUnix epoch, written as a string because it exceeds 32 bits.",
+              "description": "Keep only items the caller last played at or after this time.",
               "type": {
                 "kind": "SCALAR",
-                "name": "String",
+                "name": "DateTime",
                 "ofType": null
               },
               "defaultValue": null
             },
             {
               "name": "lastViewedTo",
-              "description": "Keep only items the caller last played at or before this time, as `lastViewedFrom`.",
+              "description": "Keep only items the caller last played at or before this time.",
               "type": {
                 "kind": "SCALAR",
-                "name": "String",
+                "name": "DateTime",
                 "ofType": null
               },
               "defaultValue": null
@@ -6234,14 +6244,14 @@
             },
             {
               "name": "createdAt",
-              "description": "When the library was created, in seconds since the Unix epoch.",
+              "description": "When the library was created.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -6250,14 +6260,14 @@
             },
             {
               "name": "updatedAt",
-              "description": "When the library's settings or contents last changed, in seconds since the Unix epoch.",
+              "description": "When the library's settings or contents last changed.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -6266,11 +6276,11 @@
             },
             {
               "name": "scannedAt",
-              "description": "When the library was last scanned, in seconds since the Unix epoch. Null if it never\nhas been.",
+              "description": "When the library was last scanned. Null if it never\nhas been.",
               "args": [],
               "type": {
                 "kind": "SCALAR",
-                "name": "Int",
+                "name": "DateTime",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -9052,14 +9062,14 @@
             },
             {
               "name": "addedAt",
-              "description": "When the item was added to the library, in seconds since the Unix epoch.",
+              "description": "When the item was added to the library.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -9161,14 +9171,14 @@
             },
             {
               "name": "updatedAt",
-              "description": "When the item's metadata last changed, in seconds since the Unix epoch.",
+              "description": "When the item's metadata last changed.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -9213,11 +9223,11 @@
             },
             {
               "name": "releasedOn",
-              "description": "Release date as `YYYY-MM-DD`.",
+              "description": "Release date, as its midnight UTC.",
               "args": [],
               "type": {
                 "kind": "SCALAR",
-                "name": "String",
+                "name": "DateTime",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -12920,14 +12930,14 @@
             },
             {
               "name": "startedAt",
-              "description": "When playback began, in seconds since the epoch.",
+              "description": "When playback began.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -12936,14 +12946,14 @@
             },
             {
               "name": "updatedAt",
-              "description": "The last sign of life, in seconds since the epoch.",
+              "description": "The last sign of life.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -12952,14 +12962,14 @@
             },
             {
               "name": "expiresAt",
-              "description": "When the session goes away without a further sign of life, in seconds since the epoch.",
+              "description": "When the session goes away without a further sign of life.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -13132,14 +13142,14 @@
           "fields": [
             {
               "name": "terminatedAt",
-              "description": "When it was terminated, in seconds since the epoch.",
+              "description": "When it was terminated.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -13331,14 +13341,14 @@
             },
             {
               "name": "lastViewedAt",
-              "description": "When it was last played or, never played, created; in seconds since the Unix epoch.",
+              "description": "When it was last played or, never played, created.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -13347,14 +13357,14 @@
             },
             {
               "name": "addedAt",
-              "description": "When it was created, in seconds since the Unix epoch.",
+              "description": "When it was created.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -13363,14 +13373,14 @@
             },
             {
               "name": "updatedAt",
-              "description": "When it or its entries last changed, in seconds since the Unix epoch.",
+              "description": "When it or its entries last changed.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -13724,14 +13734,14 @@
             },
             {
               "name": "addedAt",
-              "description": "When it was added, in seconds since the Unix epoch.",
+              "description": "When it was added.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -15457,14 +15467,14 @@
             },
             {
               "name": "addedAt",
-              "description": "When the entry was added, in seconds since the Unix epoch: the item's own time for a\nfilm, its newest episode's for a series or season gathered from a batch.",
+              "description": "When the entry was added: the item's own time for a film, its newest episode's for a\nseries or season gathered from a batch.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -15932,14 +15942,14 @@
             },
             {
               "name": "createdAt",
-              "description": "When the root was added to the library, in seconds since the Unix epoch.",
+              "description": "When the root was added to the library.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -16072,14 +16082,14 @@
             },
             {
               "name": "addedAt",
-              "description": "When the item was added to the library, in seconds since the Unix epoch.",
+              "description": "When the item was added to the library.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -16124,14 +16134,14 @@
             },
             {
               "name": "updatedAt",
-              "description": "When the item's metadata last changed, in seconds since the Unix epoch.",
+              "description": "When the item's metadata last changed.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -16800,14 +16810,14 @@
             },
             {
               "name": "updatedAt",
-              "description": "When the server last started or its configuration changed, in seconds since the Unix\nepoch.",
+              "description": "When the server last started or its configuration changed.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -16970,14 +16980,14 @@
             },
             {
               "name": "addedAt",
-              "description": "When the item was added to the library, in seconds since the Unix epoch.",
+              "description": "When the item was added to the library.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -17022,14 +17032,14 @@
             },
             {
               "name": "updatedAt",
-              "description": "When the item's metadata last changed, in seconds since the Unix epoch.",
+              "description": "When the item's metadata last changed.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -17146,11 +17156,11 @@
             },
             {
               "name": "releasedOn",
-              "description": "First-air date as `YYYY-MM-DD`.",
+              "description": "First-air date, as its midnight UTC.",
               "args": [],
               "type": {
                 "kind": "SCALAR",
-                "name": "String",
+                "name": "DateTime",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -20357,10 +20367,10 @@
             },
             {
               "name": "releasedOn",
-              "description": "The original air date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given\ntoo; clearing it clears the year.",
+              "description": "The original air date: the UTC day of this time, kept as its midnight. Sets `year` to\nits own unless `year` is given too; clearing it clears the year.",
               "type": {
                 "kind": "SCALAR",
-                "name": "String",
+                "name": "DateTime",
                 "ofType": null
               },
               "defaultValue": null
@@ -20739,10 +20749,10 @@
             },
             {
               "name": "releasedOn",
-              "description": "The release date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given too;\nclearing it clears the year.",
+              "description": "The release date: the UTC day of this time, kept as its midnight. Sets `year` to its\nown unless `year` is given too; clearing it clears the year.",
               "type": {
                 "kind": "SCALAR",
-                "name": "String",
+                "name": "DateTime",
                 "ofType": null
               },
               "defaultValue": null
@@ -21086,10 +21096,10 @@
             },
             {
               "name": "releasedOn",
-              "description": "The first-air date as `YYYY-MM-DD`. Sets `year` to its own unless `year` is given too;\nclearing it clears the year.",
+              "description": "The first-air date: the UTC day of this time, kept as its midnight. Sets `year` to its\nown unless `year` is given too; clearing it clears the year.",
               "type": {
                 "kind": "SCALAR",
-                "name": "String",
+                "name": "DateTime",
                 "ofType": null
               },
               "defaultValue": null
@@ -21283,14 +21293,14 @@
             },
             {
               "name": "createdAt",
-              "description": "When the user was created, in seconds since the epoch.",
+              "description": "When the user was created.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -21299,14 +21309,14 @@
             },
             {
               "name": "updatedAt",
-              "description": "When the user last changed, in seconds since the epoch.",
+              "description": "When the user last changed.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -22110,11 +22120,11 @@
             },
             {
               "name": "lastViewedAt",
-              "description": "When it was last played or watched, in seconds since the Unix epoch. On a series or a\nseason, when any of its episodes was.",
+              "description": "When it was last played or watched. On a series or a\nseason, when any of its episodes was.",
               "args": [],
               "type": {
                 "kind": "SCALAR",
-                "name": "Int",
+                "name": "DateTime",
                 "ofType": null
               },
               "isDeprecated": false,
