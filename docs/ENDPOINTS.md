@@ -18,10 +18,10 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 7 | 2.7 % |
+| `todo` | 6 | 2.3 % |
 | `stub` | 86 | 33.1 % |
-| `partial` | 28 | 10.8 % |
-| `done` | 100 | 38.5 % |
+| `partial` | 27 | 10.4 % |
+| `done` | 102 | 39.2 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -49,7 +49,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Library Collections](#library-collections) | 3 | 3 | 0 | 0 | 0 | 0 |
 | [Log](#log) | 3 | 0 | 0 | 3 | 0 | 0 |
 | [Playlist](#playlist) | 3 | 2 | 1 | 0 | 0 | 0 |
-| [Preferences](#preferences) | 3 | 0 | 1 | 1 | 1 | 0 |
+| [Preferences](#preferences) | 3 | 2 | 0 | 1 | 0 | 0 |
 | [Timeline](#timeline) | 3 | 2 | 1 | 0 | 0 | 0 |
 | [Updater](#updater) | 3 | 2 | 0 | 1 | 0 | 0 |
 | [Activities](#activities) | 2 | 1 | 0 | 1 | 0 | 0 |
@@ -429,8 +429,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `partial` | `GET` | `/:/prefs` | user | Get all preferences | The 10 settings Plex Web reads, of the reference's 162, with its definitions and order; `AcceptedEULA` true, `FriendlyName` and `allowMediaDeletion` from the official API. The other 152 name machinery this server does not have. |
-| `todo` | `PUT` | `/:/prefs` | user | Set preferences | Declared beside `GET`, answers 501. |
+| `done` | `GET` | `/:/prefs` | user | Get all preferences | `403`: Plex Web then offers none of the server settings screens, which drive machinery this server does not have (`docs/spec-gaps.md`). |
+| `done` | `PUT` | `/:/prefs` | user | Set preferences | `403`, as `GET`. |
 | `stub` | `GET` | `/:/prefs/get` | user | Get a preferences |  |
 
 ## Timeline

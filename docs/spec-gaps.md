@@ -1595,12 +1595,19 @@ catalogs. Unlike `/:/prefs`, every `default` and `value` here is a JSON string, 
 ### Server settings
 
 `GET /:/prefs` on the reference lists 162 settings: transcoder, DLNA, maintenance tasks,
-remote access, most of them hidden. Plex Web reads ten — found by searching its bundle for
-each of the 162 identifiers — and those ten are what we publish, with the reference's labels,
-types, defaults and order. The values are this server's: its name, whether media deletion is
-allowed, and `AcceptedEULA` true, since there is no Plex licence to accept and a client reading
-`false` stops on an agreement screen. `PublishServerOnPlexOnlineKey` is `false`, the server not
-being linked to plex.tv.
+remote access, most of them hidden. We answer `403`, `PUT` included, by the repo owner's
+decision, and that is what hides Plex Web's server settings. Its menu (`settings/server/…`)
+offers General, Remote Access, Agents, Languages, Optimized Versions, Live TV & DVR and
+Troubleshooting only once that list has loaded, and the per-group screens (Library, Network,
+Transcoder, DLNA, Scheduled Tasks, Extras) only for a group the list holds; refused, the whole
+Settings section and those Manage entries are gone, with no error shown. Plex Web reads the
+list nowhere else: `AcceptedEULA` sends it to the licence screen only when the list loaded and
+says `false`. Editing is not affected: Plex Web offers it on the provider's `manage` feature
+(`/media/providers`), not on settings.
+
+What stays is gated on the server being the viewer's own (`owned` on plex.tv) and nothing the
+server answers: Dashboard, Alerts, Conversions and Manage › Libraries. Plugins follows
+`allowChannelAccess`, which is `0`: there is no plug-in framework here.
 
 ### Global search is ranked, ours is not
 

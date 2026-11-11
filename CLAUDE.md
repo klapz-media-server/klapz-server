@@ -312,6 +312,11 @@ Places where we knowingly answer differently, each decided rather than overlooke
   `master.m3u8`, whose URLs all carry the stream's own secret (`?token=`, not the account's): the
   Plex binding builds no manifest. The reference serves its segments under the session's name,
   without a token.
+- **Server settings are refused.** `/:/prefs` answers `403`, the repo owner's decision, so that
+  Plex Web offers none of its server settings screens, which drive machinery this server does
+  not have; `allowChannelAccess` is `0`, which removes Plugins. Editing items is unaffected.
+  Dashboard, Alerts, Conversions and Manage › Libraries stay: Plex Web shows them for any server
+  plex.tv lists as the viewer's own (`docs/spec-gaps.md`).
 - **`/library/metadata/{id}/userState` exists here and not on the reference.** It belongs to
   plex.tv's Discover provider; Plex Web also sends it to the server for an item without a Plex
   GUID, and it answers in that provider's shape, always unwatched.

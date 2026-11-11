@@ -88,6 +88,8 @@ pub struct ServerFeatures {
     pub sharing: bool,
     pub media_deletion: bool,
     pub tuners: bool,
+    /// Plex's plug-in channels. Not a subscription feature: there is no plug-in framework
+    /// here, and Plex Web offers a plug-in screen on this flag alone.
     pub channel_access: bool,
     pub hub_search: bool,
     pub voice_search: bool,
@@ -115,7 +117,7 @@ impl Default for ServerFeatures {
             sharing: true,
             media_deletion: true,
             tuners: true,
-            channel_access: true,
+            channel_access: false,
             hub_search: true,
             voice_search: true,
             event_stream: true,
@@ -194,7 +196,6 @@ mod tests {
             ("sharing", features.sharing),
             ("media_deletion", features.media_deletion),
             ("tuners", features.tuners),
-            ("channel_access", features.channel_access),
             ("hub_search", features.hub_search),
             ("voice_search", features.voice_search),
             ("event_stream", features.event_stream),

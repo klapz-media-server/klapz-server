@@ -1,13 +1,10 @@
-//! `GET /:/prefs`: the server's settings, as Plex clients read them.
+//! Settings: the server's, which Plex clients are refused, and a library's.
 //!
-//! The reference publishes 162 settings — its transcoder, DLNA, maintenance tasks, remote
-//! access — and most name machinery this server does not have. Publishing them would invent
-//! knobs that change nothing. These are the ten Plex Web reads, found by searching its
-//! bundle for every one of the 162 identifiers, with the reference's definitions and in its
-//! order. A client reading another one finds it absent, which is what a setting we do not
-//! have is.
-//!
-//! Changing a setting is not implemented yet: `PUT` answers `501`.
+//! `/:/prefs` answers `403`. Plex Web draws its server settings screens — general, remote
+//! access, agents, languages, optimized versions, Live TV, troubleshooting — only once that
+//! list has loaded, and every one of them drives machinery this server does not have. Refused,
+//! the screens are not offered at all; served, they open onto routes that fail. Nothing else
+//! in Plex Web reads the list: the licence agreement it holds is only looked at once loaded.
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, State};
@@ -20,7 +17,6 @@ use serde::{Deserialize, Serialize};
 use crate::auth::Caller;
 use crate::client::ClientIdentity;
 use crate::error::ApiError;
-use crate::general::{self, GqlServer};
 use crate::gql;
 use crate::language::Language;
 use crate::response::{PlexResponse, ResponseFormat};
@@ -32,14 +28,14 @@ use crate::PlexState;
 /// accepts, and `merge` would re-validate it under the default rules.
 pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
     router
-        .route("/:/prefs", get(prefs).put(change_prefs))
+        .route("/:/prefs", get(refuse_prefs).put(refuse_prefs))
         .route(
             "/library/sections/{sectionId}/prefs",
             get(section_prefs).put(change_section_prefs),
         )
 }
 
-/// Response to `GET /:/prefs`.
+/// Response to `GET /library/sections/{id}/prefs`.
 #[derive(Debug, Serialize)]
 pub struct PrefsContainer {
     pub size: u32,
@@ -55,8 +51,8 @@ pub struct Setting {
     pub summary: &'static str,
     #[serde(rename = "type")]
     pub kind: &'static str,
-    pub default: SettingValue,
-    pub value: SettingValue,
+    pub default: String,
+    pub value: String,
     pub hidden: bool,
     pub advanced: bool,
     pub group: &'static str,
@@ -65,159 +61,9 @@ pub struct Setting {
     pub enum_values: Option<String>,
 }
 
-/// A setting's value, typed as the reference types it: a JSON boolean, number or string.
-#[derive(Debug, Clone, Serialize)]
-#[serde(untagged)]
-pub enum SettingValue {
-    Bool(bool),
-    Int(i64),
-    Text(String),
-}
-
-/// A setting as the reference defines it, value aside.
-struct Definition {
-    id: &'static str,
-    label: &'static str,
-    summary: &'static str,
-    kind: &'static str,
-    default: Fixed,
-    hidden: bool,
-    advanced: bool,
-    group: &'static str,
-    enum_values: Option<&'static str>,
-}
-
-/// A default, as a constant can hold it.
-#[derive(Clone, Copy)]
-enum Fixed {
-    Bool(bool),
-    Int(i64),
-    Text(&'static str),
-}
-
-impl From<Fixed> for SettingValue {
-    fn from(fixed: Fixed) -> Self {
-        match fixed {
-            Fixed::Bool(value) => Self::Bool(value),
-            Fixed::Int(value) => Self::Int(value),
-            Fixed::Text(value) => Self::Text(value.to_owned()),
-        }
-    }
-}
-
-const fn hidden(id: &'static str, kind: &'static str, default: Fixed) -> Definition {
-    Definition {
-        id,
-        label: "",
-        summary: "",
-        kind,
-        default,
-        hidden: true,
-        advanced: false,
-        group: "",
-        enum_values: None,
-    }
-}
-
-/// The ten, in the reference's order, with its labels and defaults.
-const DEFINITIONS: [Definition; 10] = [
-    Definition {
-        id: "FriendlyName",
-        label: "Friendly name",
-        summary: "This name will be used to identify this media server to other computers on \
-                  your network. If you leave it blank, your computer's name will be used \
-                  instead.",
-        kind: "text",
-        default: Fixed::Text(""),
-        hidden: false,
-        advanced: false,
-        group: "general",
-        enum_values: None,
-    },
-    Definition {
-        id: "allowMediaDeletion",
-        label: "Allow media deletion",
-        summary: "The owner of the server will be allowed to delete media files from disk.",
-        kind: "bool",
-        default: Fixed::Bool(true),
-        hidden: false,
-        advanced: true,
-        group: "library",
-        enum_values: None,
-    },
-    Definition {
-        id: "iTunesLibraryXmlPath",
-        label: "iTunes library XML path",
-        summary: "",
-        kind: "text",
-        default: Fixed::Text(""),
-        hidden: false,
-        advanced: true,
-        group: "library",
-        enum_values: None,
-    },
-    Definition {
-        label: "Has the user accepted the EULA",
-        ..hidden("AcceptedEULA", "bool", Fixed::Bool(false))
-    },
-    Definition {
-        label: "Publish server on Plex Online",
-        summary: "Publishing a server makes it automatically available on your client devices \
-                  without any configuration of your router.",
-        ..hidden("PublishServerOnPlexOnlineKey", "bool", Fixed::Bool(false))
-    },
-    hidden("ManualPortMappingMode", "bool", Fixed::Bool(false)),
-    hidden("ManualPortMappingPort", "int", Fixed::Int(32_400)),
-    hidden("BackgroundQueueIdlePaused", "bool", Fixed::Bool(false)),
-    Definition {
-        id: "ButlerUpdateChannel",
-        label: "Server update Channel",
-        summary: "",
-        kind: "text",
-        default: Fixed::Text("16"),
-        hidden: false,
-        advanced: false,
-        group: "general",
-        enum_values: Some("0:Public"),
-    },
-    hidden("MergedRecentlyAdded", "bool", Fixed::Bool(false)),
-];
-
-/// `GET /:/prefs`.
-async fn prefs(
-    _caller: Caller,
-    State(state): State<PlexState>,
-    format: ResponseFormat,
-) -> Result<PlexResponse<PrefsContainer>, ApiError> {
-    let server = general::server(&state).await?;
-    let setting: Vec<Setting> = DEFINITIONS
-        .iter()
-        .map(|definition| Setting {
-            id: definition.id,
-            label: definition.label,
-            summary: definition.summary,
-            kind: definition.kind,
-            default: definition.default.into(),
-            value: value_of(definition, &server),
-            hidden: definition.hidden,
-            advanced: definition.advanced,
-            group: definition.group,
-            enum_values: definition.enum_values.map(str::to_owned),
-        })
-        .collect();
-    Ok(PlexResponse::new(
-        PrefsContainer {
-            size: u32::try_from(setting.len()).unwrap_or(u32::MAX),
-            setting,
-        },
-        format,
-    ))
-}
-
-/// `PUT /:/prefs`. Declared here rather than left to the stubs, which can only take a whole
-/// path: without it the method would answer `405`, as if Plex had no such operation.
-async fn change_prefs(_caller: Caller) -> ApiError {
-    ApiError::NotImplemented
+/// `GET` and `PUT /:/prefs`, to a caller with a token as to the operator.
+async fn refuse_prefs(_caller: Caller) -> ApiError {
+    ApiError::Forbidden
 }
 
 const LIBRARY_EXISTS_QUERY: &str = r"
@@ -298,10 +144,9 @@ struct LibraryRoleNode {
     viewer_role: Option<String>,
 }
 
-/// Unlike the server's settings, every default and value here is a string on the wire, even
-/// for a boolean.
+/// Every default and value here is a string on the wire, even for a boolean.
 fn section_settings(catalog: &'static Catalog) -> Vec<Setting> {
-    let text = |value: &str| SettingValue::Text(value.to_owned());
+    let text = |value: &str| value.to_owned();
     vec![
         Setting {
             id: "hidden",
@@ -333,43 +178,4 @@ fn section_settings(catalog: &'static Catalog) -> Vec<Setting> {
             enum_values: None,
         },
     ]
-}
-
-/// What this server actually has for a setting; its default where nothing here differs.
-fn value_of(definition: &Definition, server: &GqlServer) -> SettingValue {
-    match definition.id {
-        "FriendlyName" => SettingValue::Text(server.friendly_name.clone()),
-        "allowMediaDeletion" => SettingValue::Bool(server.features.media_deletion),
-        // There is no Plex licence to agree to here, and a client reading `false` stops on
-        // an agreement screen before anything else.
-        "AcceptedEULA" => SettingValue::Bool(true),
-        // `PublishServerOnPlexOnlineKey` keeps its `false`: the server is not linked to
-        // plex.tv, and saying otherwise would send a client looking for it there.
-        _ => definition.default.into(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn publishes_the_ten_settings_plex_web_reads_in_the_reference_order() {
-        let ids: Vec<&str> = DEFINITIONS.iter().map(|definition| definition.id).collect();
-        assert_eq!(
-            ids,
-            [
-                "FriendlyName",
-                "allowMediaDeletion",
-                "iTunesLibraryXmlPath",
-                "AcceptedEULA",
-                "PublishServerOnPlexOnlineKey",
-                "ManualPortMappingMode",
-                "ManualPortMappingPort",
-                "BackgroundQueueIdlePaused",
-                "ButlerUpdateChannel",
-                "MergedRecentlyAdded",
-            ]
-        );
-    }
 }

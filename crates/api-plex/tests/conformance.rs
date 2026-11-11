@@ -406,7 +406,6 @@ async fn capabilities_advertise_every_gated_feature_as_available() {
     let container = &body["MediaContainer"];
     for flag in [
         "allowCameraUpload",
-        "allowChannelAccess",
         "allowMediaDeletion",
         "allowSharing",
         "allowSync",
@@ -2174,58 +2173,9 @@ async fn sessions_answer_the_empty_container_the_reference_sends_when_idle() {
 }
 
 #[tokio::test]
-async fn prefs_publish_the_settings_plex_web_reads() {
-    let (status, _, body) = get("/:/prefs", Some("application/json")).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let json: Value = serde_json::from_str(&body).expect("json body");
-    let settings = json["MediaContainer"]["Setting"]
-        .as_array()
-        .expect("settings");
-    assert_eq!(json["MediaContainer"]["size"], 10);
-
-    let setting = |id: &str| {
-        settings
-            .iter()
-            .find(|setting| setting["id"] == id)
-            .unwrap_or_else(|| panic!("{id}"))
-    };
-    // Without it a client stops on Plex's licence agreement before anything else.
-    assert_eq!(setting("AcceptedEULA")["value"], true);
-    assert_eq!(setting("PublishServerOnPlexOnlineKey")["value"], false);
-    // Typed per setting, as the reference types them.
-    assert_eq!(setting("ManualPortMappingPort")["value"], 32_400);
-    assert_eq!(setting("ButlerUpdateChannel")["enumValues"], "0:Public");
-    assert_eq!(
-        setting("allowMediaDeletion"),
-        &serde_json::json!({
-            "id": "allowMediaDeletion",
-            "label": "Allow media deletion",
-            "summary": "The owner of the server will be allowed to delete media files from disk.",
-            "type": "bool",
-            "default": true,
-            "value": true,
-            "hidden": false,
-            "advanced": true,
-            "group": "library"
-        })
-    );
-}
-
-#[tokio::test]
-async fn prefs_write_settings_as_the_reference_does_in_xml() {
-    let (_, _, xml) = get("/:/prefs", None).await;
-    // Byte for byte against the capture, apostrophe escaping included.
-    assert!(
-        xml.contains(
-            r#"<Setting id="ButlerUpdateChannel" label="Server update Channel" summary="" type="text" default="16" value="16" hidden="0" advanced="0" group="general" enumValues="0:Public" />"#
-        ),
-        "{xml}"
-    );
-    assert!(xml.contains("your computer&#39;s name"), "{xml}");
-}
-
-#[tokio::test]
-async fn changing_prefs_is_declared_but_not_implemented() {
+async fn server_settings_are_refused_so_plex_web_offers_no_settings_screen() {
+    let (status, _, _) = get("/:/prefs", Some("application/json")).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     let response = app()
         .oneshot(
             Request::builder()
@@ -2237,7 +2187,14 @@ async fn changing_prefs_is_declared_but_not_implemented() {
         )
         .await
         .expect("router responds");
-    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn capabilities_offer_no_plugin_channels() {
+    let (_, _, body) = get("/", Some("application/json")).await;
+    let body: Value = serde_json::from_str(&body).expect("json body");
+    assert_eq!(body["MediaContainer"]["allowChannelAccess"], false);
 }
 
 #[tokio::test]
