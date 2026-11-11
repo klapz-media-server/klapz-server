@@ -51,6 +51,7 @@ IMPLEMENTED = frozenset(
         "/library/sections/{sectionId}/firstCharacter",
         # Not in the spec either; the spec declares only `/hubs/search`.
         "/search",
+        "/hubs/search",
         "/media/providers",
         "/status/sessions",
         "/:/prefs",

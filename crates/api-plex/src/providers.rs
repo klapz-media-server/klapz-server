@@ -367,12 +367,7 @@ fn library_directory(library: &GqlLibrary) -> ContentDirectory {
 /// The tabs a library opens on. The listing tab asks for the library's top-level type, by
 /// Plex's number for it.
 fn library_pivots(id: i64, kind: LibraryKind) -> Vec<Pivot> {
-    let top_level_type = match kind {
-        LibraryKind::Movie => 1,
-        LibraryKind::Show => 2,
-        LibraryKind::Artist => 8,
-        LibraryKind::Photo => 13,
-    };
+    let top_level_type = kind.top_level_type();
     vec![
         Pivot {
             id: "recommended",

@@ -3876,3 +3876,183 @@ async fn a_search_of_one_type_finds_that_kind_only_and_no_track() {
         );
     }
 }
+
+/// The shelves of a search, by `hubIdentifier`, with their sizes.
+fn search_shelves(body: &Value) -> Vec<(String, u64)> {
+    body["MediaContainer"]["Hub"]
+        .as_array()
+        .expect("hubs")
+        .iter()
+        .map(|hub| {
+            (
+                hub["hubIdentifier"]
+                    .as_str()
+                    .expect("identifier")
+                    .to_owned(),
+                hub["size"].as_u64().expect("size"),
+            )
+        })
+        .collect()
+}
+
+fn search_shelf<'a>(body: &'a Value, identifier: &str) -> &'a Value {
+    body["MediaContainer"]["Hub"]
+        .as_array()
+        .expect("hubs")
+        .iter()
+        .find(|hub| hub["hubIdentifier"] == identifier)
+        .expect("every shelf is listed")
+}
+
+#[tokio::test]
+async fn a_hub_search_answers_seventeen_shelves_even_when_empty() {
+    let body = listing("/hubs/search?query=zzzz").await;
+    assert_eq!(body["MediaContainer"]["size"], 17);
+    // The order the reference lists them in when nothing ties them apart, as for `zzqxw`.
+    let identifiers: Vec<String> = search_shelves(&body)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(
+        identifiers,
+        [
+            "show",
+            "artist",
+            "album",
+            "movie",
+            "episode",
+            "track",
+            "photoalbum",
+            "autotag",
+            "photo",
+            "tag",
+            "actor",
+            "director",
+            "genre",
+            "collection",
+            "playlist",
+            "shared",
+            "place"
+        ]
+    );
+    // An empty shelf as captured: no item list at all, `more` false, the title in the
+    // client's language.
+    let shelf = search_shelf(&body, "show");
+    assert_eq!(
+        shelf.to_string(),
+        r#"{"title":"Shows","type":"show","hubIdentifier":"show","context":"","size":0,"more":false,"style":"shelf"}"#
+    );
+    let french = listing("/hubs/search?query=zzzz&X-Plex-Language=fr").await;
+    let titles: Vec<&str> = french["MediaContainer"]["Hub"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|hub| hub["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(titles[..4], ["Séries", "Artistes", "Albums", "Films"]);
+    assert_eq!(titles[9..13], ["Tags", "Acteurs", "Réalisateurs", "Genres"]);
+}
+
+#[tokio::test]
+async fn a_hub_search_puts_the_best_matching_shelf_first() {
+    let body = listing("/hubs/search?query=avatar").await;
+    assert_eq!(search_shelves(&body)[0], ("movie".to_owned(), 1));
+    let film = &search_shelf(&body, "movie")["Metadata"][0];
+    // An exact title, written as the reference writes a score.
+    assert_eq!(film["score"], "0.93000");
+    assert_eq!(film["ratingKey"], "100");
+    // Unlike `/library/search`, a film says where its library is.
+    assert_eq!(film["librarySectionID"], 4);
+    assert_eq!(film["librarySectionKey"], "/library/sections/4");
+    assert_eq!(film["librarySectionTitle"], "VF - Films");
+    // Alone with its title on the shelf, so nothing tells it apart by library.
+    assert!(film.get("reason").is_none(), "{film}");
+
+    // A later word of an episode's title: the lowest rung, two hundredths under a film's.
+    let body = listing("/hubs/search?query=hell").await;
+    assert_eq!(search_shelves(&body)[0], ("episode".to_owned(), 1));
+    let episode = &search_shelf(&body, "episode")["Metadata"][0];
+    assert_eq!(episode["score"], "0.31000");
+    assert_eq!(episode["key"], "/library/metadata/202");
+    assert_eq!(episode["librarySectionID"], 5);
+}
+
+#[tokio::test]
+async fn a_hub_search_offers_a_person_in_each_library_crediting_them() {
+    let body = listing("/hubs/search?query=jason%20statham").await;
+    assert_eq!(search_shelves(&body)[0], ("actor".to_owned(), 1));
+    let actor = &search_shelf(&body, "actor")["Directory"][0];
+    // The reference's attributes in its order, captured for Tom Hanks.
+    assert_eq!(
+        actor.to_string(),
+        r#"{"key":"/library/sections/4/all?actor=472942","librarySectionID":4,"librarySectionKey":"/library/sections/4","librarySectionTitle":"VF - Films","librarySectionType":1,"reason":"section","reasonID":4,"reasonTitle":"VF - Films","score":"0.92000","type":"tag","id":472942,"filter":"actor=472942","tag":"Jason Statham","tagType":6,"tagKey":"5d776826e6d55c002040af58","thumb":"https://metadata-static.plex.tv/c/people/c540bdd39873ee8e8612b0af06fc0d4c.jpg","count":1}"#
+    );
+
+    // A name starting with the term is a rung below the name itself.
+    let body = listing("/hubs/search?query=corey").await;
+    let director = &search_shelf(&body, "director")["Directory"][0];
+    assert_eq!(director["score"], "0.52000");
+    assert_eq!(director["filter"], "director=623027");
+    assert_eq!(director["tagType"], 4);
+
+    // A genre carries no person: no provider key, no portrait.
+    let body = listing("/hubs/search?query=thriller").await;
+    let genre = &search_shelf(&body, "genre")["Directory"][0];
+    assert_eq!(genre["key"], "/library/sections/4/all?genre=39");
+    assert_eq!(genre["tagType"], 1);
+    assert!(genre.get("tagKey").is_none() && genre.get("thumb").is_none());
+    // Writers and producers are not searched, as on the reference: Luc Besson is neither.
+    let body = listing("/hubs/search?query=besson").await;
+    assert!(search_shelves(&body).iter().all(|(_, size)| *size == 0));
+}
+
+#[tokio::test]
+async fn a_single_character_finds_only_titles_equal_to_it() {
+    // `s` begins Severance, Shu Qi and more, none of them named `s`.
+    let body = listing("/hubs/search?query=s").await;
+    assert!(search_shelves(&body).iter().all(|(_, size)| *size == 0));
+    let body = listing("/hubs/search?query=se").await;
+    assert_eq!(search_shelf(&body, "show")["size"], 1);
+}
+
+#[tokio::test]
+async fn a_hub_search_refuses_what_the_reference_refuses() {
+    for uri in [
+        "/hubs/search",
+        "/hubs/search?query=",
+        "/hubs/search?query=%20",
+        "/hubs/search?query=avatar&limit=abc",
+        "/hubs/search?query=avatar&limit=0",
+        // A library that does not exist; one that does narrows nothing.
+        "/hubs/search?query=avatar&sectionId=999",
+    ] {
+        let (status, _) = get_from(items_app(), uri, None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}");
+    }
+    let everywhere = listing("/hubs/search?query=hell").await;
+    for scoped in [
+        "/hubs/search?query=hell&sectionId=4",
+        "/hubs/search?query=hell&sectionId=abc",
+    ] {
+        assert_eq!(listing(scoped).await, everywhere, "{scoped}");
+    }
+}
+
+#[tokio::test]
+async fn a_hub_search_names_its_elements_by_kind_in_xml() {
+    let (status, body) = get_from(items_app(), "/hubs/search?query=avatar", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains(r#"<Hub title="Movies" type="movie" hubIdentifier="movie" context="" size="1" more="0" style="shelf">"#),
+        "{body}"
+    );
+    assert!(
+        body.contains(r#"<Video score="0.93000" ratingKey="100""#),
+        "{body}"
+    );
+    let (_, body) = get_from(items_app(), "/hubs/search?query=thriller", None).await;
+    assert!(
+        body.contains(r#"<Directory key="/library/sections/4/all?genre=39""#),
+        "{body}"
+    );
+}

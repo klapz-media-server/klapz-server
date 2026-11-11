@@ -23,6 +23,19 @@ pub enum LibraryKind {
     Photo,
 }
 
+impl LibraryKind {
+    /// Plex's number for the type of a library's top-level items: `1` for films, `2` for
+    /// series.
+    pub const fn top_level_type(self) -> u8 {
+        match self {
+            Self::Movie => 1,
+            Self::Show => 2,
+            Self::Artist => 8,
+            Self::Photo => 13,
+        }
+    }
+}
+
 /// Response to the unauthenticated handshake.
 #[derive(Debug, Serialize)]
 pub struct IdentityContainer {

@@ -17,6 +17,7 @@ pub mod error;
 mod filter_values;
 pub mod gql;
 pub mod gql_items;
+mod hub_search;
 pub mod hubs;
 pub mod items;
 pub mod language;
@@ -110,6 +111,7 @@ pub fn router(state: PlexState) -> Router {
         .merge(hubs::router())
         .merge(activities::router())
         .merge(search::router())
+        .merge(hub_search::router())
         .merge(play_queues::router())
         .merge(related::router())
         .merge(user_state::router())

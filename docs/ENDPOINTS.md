@@ -19,8 +19,8 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 9 | 3.5 % |
-| `stub` | 130 | 50.0 % |
-| `partial` | 20 | 7.7 % |
+| `stub` | 129 | 49.6 % |
+| `partial` | 21 | 8.1 % |
 | `done` | 64 | 24.6 % |
 | `deferred` | 37 | 14.2 % |
 | **Total** | **260** | |
@@ -54,7 +54,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Updater](#updater) | 3 | 2 | 0 | 1 | 0 | 0 |
 | [Activities](#activities) | 2 | 1 | 0 | 1 | 0 | 0 |
 | [Events](#events) | 2 | 0 | 0 | 2 | 0 | 0 |
-| [Search](#search) | 2 | 0 | 0 | 2 | 0 | 0 |
+| [Search](#search) | 2 | 0 | 1 | 1 | 0 | 0 |
 | [UltraBlur](#ultrablur) | 2 | 0 | 0 | 2 | 0 | 0 |
 | [Collections](#collections) | 1 | 0 | 0 | 1 | 0 | 0 |
 | [Rate](#rate) | 1 | 0 | 0 | 1 | 0 | 0 |
@@ -464,8 +464,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/hubs/search` | user | Search Hub |  |
-| `stub` | `GET` | `/hubs/search/voice` | user | Voice Search Hub |  |
+| `partial` | `GET` | `/hubs/search` | user | Search Hub | The reference's seventeen shelves; films, series, episodes, actors, directors and genres filled through `search` and `searchTags`, ranked on the reference's score ladder and cut to `limit` (3 by default). Word-prefix matching rather than the reference's fuzzy one, no collections, and no films found through a person's name. `sectionId` must name a library and narrows nothing, as on the reference. See `docs/spec-gaps.md`. |
+| `stub` | `GET` | `/hubs/search/voice` | user | Voice Search Hub | Not derived from `/hubs/search`: the reference ranks every title by edit distance to the whole term (`dune` finds `Cube` at distance 2), one shelf per kind with `distance` and `hubKey`, a different search altogether. |
 
 ## UltraBlur
 
