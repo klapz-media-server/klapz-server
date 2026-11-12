@@ -1,0 +1,24 @@
+{
+  "MediaContainer": {
+    "size": 1,
+    "allowSync": false,
+    "art": "/:/resources/movie-fanart.jpg",
+    "content": "secondary",
+    "identifier": "com.plexapp.plugins.library",
+    "mediaTagPrefix": "/system/bundle/media/flags/",
+    "mediaTagVersion": 1791210760,
+    "thumb": "/:/resources/movie.png",
+    "title1": "VF - Films",
+    "title2": "Common",
+    "viewGroup": "secondary",
+    "viewMode": 65592,
+    "Metadata": [
+      {
+        "mixedFields": "",
+        "guid": "",
+        "type": "common",
+        "titleSort": ""
+      }
+    ]
+  }
+}

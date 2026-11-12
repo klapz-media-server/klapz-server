@@ -8,6 +8,7 @@ pub mod account;
 pub mod auth;
 pub mod closest;
 pub mod collection;
+pub mod common;
 pub mod completion;
 pub mod credited;
 pub mod edit;

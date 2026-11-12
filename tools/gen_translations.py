@@ -109,6 +109,12 @@ STRINGS = {
     "most_played": "Most Played",
     "most_popular_tracks": "Most Popular Tracks",
     "music_videos": "Music Videos",
+    # The filter menu, `/library/sections/{id}/filters` and `includeMeta`.
+    "collection": "Collection",
+    "video_codec": "Video Codec",
+    "audio_codec": "Audio Codec",
+    "subtitle_codec": "Subtitle Codec",
+    "audio_layout": "Audio Layout",
 }
 
 

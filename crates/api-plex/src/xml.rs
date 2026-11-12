@@ -106,6 +106,7 @@ fn element_name<'a>(key: &'a str, fields: &Map<String, Value>) -> &'a str {
         Some("track") => "Track",
         Some("photo") => "Photo",
         Some("playlist") => "Playlist",
+        Some("common") => "Common",
         _ => "Directory",
     }
 }

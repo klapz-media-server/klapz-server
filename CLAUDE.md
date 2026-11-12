@@ -259,9 +259,10 @@ Places where we knowingly answer differently, each decided rather than overlooke
   matching stays the word prefix, every word required in any order, where the reference's is
   loose (`dune` finds `d'une`). `GET /search` ranks nothing on the reference either: the
   first 15 films, series and episodes in title order, as we answer it.
-- **`Meta` lists what we honor, not what Plex offers.** `includeMeta=1` publishes 11 filters and
-  2 sorts for a film library where the reference lists 27 and 9: a menu entry answering `501`
-  would be worse than an absent one. A test keeps the list in step with `listing::parse`.
+- **`Meta` lists what we honor, not what Plex offers.** `includeMeta=1` publishes 18 filters and
+  9 sorts for a film library where the reference lists 27 and 9: a menu entry answering `501`
+  would be worse than an absent one. A test keeps the list in step with `listing::parse`, and
+  `/library/sections/{id}/filters` and `/sorts` are served from the same tables.
 - **"Related" films are an approximation.** We found nothing in the reference's database stating
   which films are alike, so `core::similar` ranks by shared genres, actors and directors: a close list,
   not the same one (101 of 180 shown items on 30 films). The director and actor shelves around
@@ -720,6 +721,14 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   episode in progress on deck as on the reference, the playlists played last;
   `/hubs/metadata/{id}/related` and the empty music shelves of `/hubs/metadata/{id}`;
   `/hubs/popularInLibraries` a `404`, as on the reference.
+- ✅ **codecs, layouts, menus and common fields**: the values a library's tracks hold
+  (`videoCodec`, `audioCodec`, `audioLayout`, `subtitleCodec`), every track of every version,
+  as choice lists and as filters on `/all` with a comma `OR` and `!=` (`Library.trackValues`,
+  `ItemFilterInput.tracks` on the official API): the 40 lists of ten libraries identical, 780 of
+  782 filtered totals; `/filters` and `/sorts`, one type's `Meta` menus; and
+  `/library/sections/{id}/common`, what a set of items shares — fields, tags, collections and
+  locks, aggregated in storage (`Library.common`, `ItemFilterInput.ids`) — element for element
+  the reference's on films, series and episodes (`docs/spec-gaps.md`).
 
 ## Reference server
 

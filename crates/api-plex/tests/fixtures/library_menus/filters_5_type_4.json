@@ -1,0 +1,137 @@
+{
+  "MediaContainer": {
+    "size": 17,
+    "allowSync": false,
+    "art": "/:/resources/show-fanart.jpg",
+    "content": "secondary",
+    "identifier": "com.plexapp.plugins.library",
+    "mediaTagPrefix": "/system/bundle/media/flags/",
+    "mediaTagVersion": 1791210760,
+    "nocache": true,
+    "thumb": "/:/resources/show.png",
+    "title1": "VF - Series",
+    "viewGroup": "secondary",
+    "viewMode": 65592,
+    "Directory": [
+      {
+        "filter": "year",
+        "filterType": "integer",
+        "key": "/library/sections/5/year?type=4",
+        "title": "Year",
+        "type": "filter"
+      },
+      {
+        "filter": "collection",
+        "filterType": "string",
+        "key": "/library/sections/5/collection?type=4",
+        "title": "Collection",
+        "type": "filter"
+      },
+      {
+        "filter": "resolution",
+        "filterType": "string",
+        "key": "/library/sections/5/resolution?type=4",
+        "title": "Resolution",
+        "type": "filter"
+      },
+      {
+        "filter": "hdr",
+        "filterType": "boolean",
+        "key": "/library/sections/5/hdr?type=4",
+        "title": "HDR",
+        "type": "filter"
+      },
+      {
+        "filter": "dovi",
+        "filterType": "boolean",
+        "key": "/library/sections/5/dovi?type=4",
+        "title": "DOVI",
+        "type": "filter"
+      },
+      {
+        "filter": "hdr10plus",
+        "filterType": "boolean",
+        "key": "/library/sections/5/hdr10plus?type=4",
+        "title": "HDR10+",
+        "type": "filter"
+      },
+      {
+        "filter": "atmos",
+        "filterType": "boolean",
+        "key": "/library/sections/5/atmos?type=4",
+        "title": "Atmos",
+        "type": "filter"
+      },
+      {
+        "filter": "unwatched",
+        "filterType": "boolean",
+        "key": "/library/sections/5/unwatched?type=4",
+        "title": "Unwatched",
+        "type": "filter"
+      },
+      {
+        "filter": "inProgress",
+        "filterType": "boolean",
+        "key": "/library/sections/5/inProgress?type=4",
+        "title": "In Progress",
+        "type": "filter"
+      },
+      {
+        "filter": "videoCodec",
+        "filterType": "string",
+        "key": "/library/sections/5/videoCodec",
+        "title": "Video Codec",
+        "type": "filter"
+      },
+      {
+        "filter": "audioCodec",
+        "filterType": "string",
+        "key": "/library/sections/5/audioCodec",
+        "title": "Audio Codec",
+        "type": "filter"
+      },
+      {
+        "filter": "subtitleCodec",
+        "filterType": "string",
+        "key": "/library/sections/5/subtitleCodec",
+        "title": "Subtitle Codec",
+        "type": "filter"
+      },
+      {
+        "filter": "audioLayout",
+        "filterType": "string",
+        "key": "/library/sections/5/audioLayout",
+        "title": "Audio Layout",
+        "type": "filter"
+      },
+      {
+        "filter": "audioLanguage",
+        "filterType": "string",
+        "key": "/library/sections/5/audioLanguage",
+        "title": "Audio Language",
+        "type": "filter"
+      },
+      {
+        "filter": "subtitleLanguage",
+        "filterType": "string",
+        "key": "/library/sections/5/subtitleLanguage",
+        "title": "Subtitle Language",
+        "type": "filter"
+      },
+      {
+        "filter": "unmatched",
+        "filterType": "boolean",
+        "key": "/library/sections/5/unmatched",
+        "title": "Unmatched",
+        "type": "filter"
+      },
+      {
+        "filter": "location",
+        "filterType": "string",
+        "key": "/library/sections/5/location",
+        "title": "Folder Location",
+        "type": "filter"
+      }
+    ]
+  }
+}

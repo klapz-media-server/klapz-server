@@ -57,7 +57,7 @@ fn stub(methods: u8) -> MethodRouter<PlexState> {
     router
 }
 
-/// The 81 stub operations, across 68 paths.
+/// The 74 stub operations, across 61 paths.
 const STUBS: &[(&str, u8)] = &[
     ("/:/eventsource/notifications", verb::GET),
     ("/:/prefs/get", verb::GET),
@@ -121,25 +121,18 @@ const STUBS: &[(&str, u8)] = &[
     ),
     ("/library/sections/{sectionId}/allLeaves", verb::GET),
     ("/library/sections/{sectionId}/arts", verb::GET),
-    ("/library/sections/{sectionId}/audioCodec", verb::GET),
-    ("/library/sections/{sectionId}/audioLayout", verb::GET),
     ("/library/sections/{sectionId}/categories", verb::GET),
     ("/library/sections/{sectionId}/cluster", verb::GET),
-    ("/library/sections/{sectionId}/common", verb::GET),
     (
         "/library/sections/{sectionId}/composite/{updatedAt}",
         verb::GET,
     ),
     ("/library/sections/{sectionId}/computePath", verb::GET),
     ("/library/sections/{sectionId}/emptyTrash", verb::PUT),
-    ("/library/sections/{sectionId}/filters", verb::GET),
     ("/library/sections/{sectionId}/firstCharacters", verb::GET),
     ("/library/sections/{sectionId}/location", verb::GET),
     ("/library/sections/{sectionId}/moment", verb::GET),
     ("/library/sections/{sectionId}/nearest", verb::GET),
-    ("/library/sections/{sectionId}/sorts", verb::GET),
-    ("/library/sections/{sectionId}/subtitleCodec", verb::GET),
-    ("/library/sections/{sectionId}/videoCodec", verb::GET),
     ("/library/streams/{streamId}/levels", verb::GET),
     ("/library/streams/{streamId}/loudness", verb::GET),
     ("/library/tags", verb::GET),
@@ -162,7 +155,7 @@ const STUBS: &[(&str, u8)] = &[
     ),
 ];
 
-/// Adds 81 stub operations across 68 paths.
+/// Adds 74 stub operations across 61 paths.
 pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
     STUBS.iter().fold(router, |router, (path, methods)| {
         router.route(path, stub(*methods))

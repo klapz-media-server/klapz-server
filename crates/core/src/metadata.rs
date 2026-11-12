@@ -382,6 +382,8 @@ pub enum ValueField {
     Year,
     ContentRating,
     Studio,
+    /// A value of the items' tracks, from every version.
+    Track(TrackField),
 }
 
 /// One distinct value of a [`ValueField`].
@@ -533,6 +535,61 @@ impl TagCondition {
     pub const MAX_VALUES: usize = 50;
 }
 
+/// A value a track carries, which an item holds when any track of any of its versions does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrackField {
+    VideoCodec,
+    AudioCodec,
+    /// The channel layout, as the analysis names it: `5.1(side)`, `stereo`.
+    AudioLayout,
+    SubtitleCodec,
+}
+
+impl TrackField {
+    /// The kind of track the value is read from.
+    pub const fn kind(self) -> StreamKind {
+        match self {
+            Self::VideoCodec => StreamKind::Video,
+            Self::AudioCodec | Self::AudioLayout => StreamKind::Audio,
+            Self::SubtitleCodec => StreamKind::Subtitle,
+        }
+    }
+
+    /// The value a track holds, if it holds one.
+    pub fn of(self, track: &MediaStream) -> Option<&str> {
+        if track.kind != self.kind() {
+            return None;
+        }
+        match self {
+            Self::AudioLayout => track.audio.as_ref()?.channel_layout.as_deref(),
+            Self::VideoCodec | Self::AudioCodec | Self::SubtitleCodec => track.codec.as_deref(),
+        }
+    }
+}
+
+/// Keeps items with a track holding one of the values, or, negated, those with none.
+///
+/// Matched exactly, case included: the reference finds 8,854 films for `videoCodec=h264`
+/// and none for `H264`. Several conditions combine with `AND`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackCondition {
+    pub field: TrackField,
+    pub any_of: Vec<String>,
+    pub negated: bool,
+}
+
+impl TrackCondition {
+    /// Whether an item whose tracks are these satisfies the condition.
+    pub fn holds<'a>(&self, tracks: impl IntoIterator<Item = &'a MediaStream>) -> bool {
+        let found = tracks.into_iter().any(|track| {
+            self.field
+                .of(track)
+                .is_some_and(|value| self.any_of.iter().any(|wanted| wanted == value))
+        });
+        found != self.negated
+    }
+}
+
 /// Whose credits a [`ItemFilter::credited`] filter follows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CreditRef {
@@ -648,6 +705,11 @@ pub struct ItemFilter {
     /// A resolution filter is a property of the file rather than the item, so it is a join
     /// rather than a column — which is why it is the one filter that can slow a listing.
     pub frame: Option<FrameRange>,
+    /// Keeps only items whose own tracks satisfy each condition: a series has none, its
+    /// episodes' being theirs, as on the reference.
+    pub tracks: Vec<TrackCondition>,
+    /// Keeps only these items. Empty places no constraint.
+    pub ids: Vec<RatingKey>,
     /// Keeps only items carrying the named tags. Each condition must hold.
     pub tags: Vec<TagCondition>,
     /// Keeps only items in the named collections. Each condition must hold.
@@ -716,8 +778,8 @@ impl FrameRange {
 
 impl ItemFilter {
     /// Whether anything here reaches past the item table.
-    pub const fn needs_media(&self) -> bool {
-        self.frame.is_some()
+    pub fn needs_media(&self) -> bool {
+        self.frame.is_some() || !self.tracks.is_empty()
     }
 
     /// Whether to restrict the listing to items with no parent.
@@ -1236,6 +1298,15 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
 
     /// Removes a marker; false when there was none.
     async fn delete_marker(&self, id: MarkerId) -> Result<bool, MetadataError>;
+
+    /// What every item a query keeps has in common: fields, tags, collections and locks.
+    ///
+    /// Aggregated where the items are rather than read and compared, because the set can be
+    /// a whole library: what a client edits when every item is selected.
+    async fn common_fields(
+        &self,
+        query: &ItemQuery,
+    ) -> Result<crate::common::CommonFields, MetadataError>;
 }
 
 /// An item after an edit, with its locks.
@@ -1491,6 +1562,13 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
 
     async fn delete_marker(&self, id: MarkerId) -> Result<bool, MetadataError> {
         (**self).delete_marker(id).await
+    }
+
+    async fn common_fields(
+        &self,
+        query: &ItemQuery,
+    ) -> Result<crate::common::CommonFields, MetadataError> {
+        (**self).common_fields(query).await
     }
 }
 

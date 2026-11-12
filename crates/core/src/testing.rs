@@ -14,6 +14,7 @@ use crate::collection::{
     CollectionQuery, CollectionRef, CollectionRepository, CollectionSort, CollectionTotals,
     Membership, NewCollection,
 };
+use crate::common::{CommonFields, Shared, SharedTag};
 use crate::edit::{ItemEdit, ItemField};
 use crate::ids::{
     CollectionId, MarkerId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey,
@@ -247,6 +248,19 @@ impl InMemoryMetadata {
             })
     }
 
+    /// Every track of every version of an item.
+    fn tracks_of(&self, item: RatingKey) -> impl Iterator<Item = &MediaStream> {
+        self.versions
+            .iter()
+            .filter(move |version| version.item_id == item)
+            .flat_map(|version| {
+                self.files
+                    .iter()
+                    .filter(|file| file.version_id == version.id)
+            })
+            .flat_map(|file| self.streams.iter().filter(|track| track.file_id == file.id))
+    }
+
     #[must_use]
     pub fn with_media(
         mut self,
@@ -324,18 +338,9 @@ impl InMemoryMetadata {
             })
             .filter(|item| {
                 // Every item with an episode below it has one unwatched.
-                filter.episodes_watched.is_none_or(|watched| {
-                    let has_episode = items.iter().any(|episode| {
-                        episode.kind == ItemKind::Episode
-                            && (episode.parent_id == Some(item.id)
-                                || episode.parent_id.is_some_and(|parent| {
-                                    items.iter().any(|season| {
-                                        season.id == parent && season.parent_id == Some(item.id)
-                                    })
-                                }))
-                    });
-                    watched != has_episode
-                })
+                filter
+                    .episodes_watched
+                    .is_none_or(|watched| watched != has_episode(&items, item.id))
             })
             .filter(|item| {
                 filter.frame.is_none_or(|range| {
@@ -343,6 +348,11 @@ impl InMemoryMetadata {
                         version.item_id == item.id && range.contains(version.width, version.height)
                     })
                 })
+            })
+            .filter(|item| {
+                (filter.ids.is_empty() || filter.ids.contains(&item.id))
+                    && (filter.tracks.iter())
+                        .all(|condition| condition.holds(self.tracks_of(item.id)))
             })
             .filter(|item| {
                 filter
@@ -406,6 +416,19 @@ fn sort_matched(query: &ItemQuery, matched: &mut [MetadataItem]) {
 }
 
 /// The text completes the item's title, by the rule storage applies; no text, no constraint.
+/// Whether an episode lies below this item, directly or through a season.
+fn has_episode(items: &[MetadataItem], id: RatingKey) -> bool {
+    items.iter().any(|episode| {
+        episode.kind == ItemKind::Episode
+            && (episode.parent_id == Some(id)
+                || episode.parent_id.is_some_and(|parent| {
+                    items
+                        .iter()
+                        .any(|season| season.id == parent && season.parent_id == Some(id))
+                }))
+    })
+}
+
 fn title_completed(item: &MetadataItem, text: Option<&str>) -> bool {
     text.is_none_or(|text| {
         item.title
@@ -1190,6 +1213,128 @@ impl MetadataRepository for InMemoryMetadata {
         markers.retain(|marker| marker.id != id);
         Ok(markers.len() < before)
     }
+
+    async fn common_fields(&self, query: &ItemQuery) -> Result<CommonFields, MetadataError> {
+        let matched = self.matching(query);
+        if matched.is_empty() {
+            return Ok(CommonFields::empty());
+        }
+        let rows = self.rows();
+        let parent = |item: &MetadataItem| {
+            item.parent_id
+                .and_then(|id| rows.iter().find(|row| row.id == id))
+        };
+        let grandparent = |item: &MetadataItem| parent(item).and_then(parent);
+        let ids: Vec<RatingKey> = matched.iter().map(|item| item.id).collect();
+        Ok(CommonFields {
+            items: ids.len() as u64,
+            id: shared_by(&matched, |item| Some(item.id)),
+            parent: shared_by(&matched, |item| item.parent_id),
+            parent_title: shared_by(&matched, |item| parent(item)?.title.clone()),
+            grandparent: shared_by(&matched, |item| grandparent(item).map(|row| row.id)),
+            grandparent_title: shared_by(&matched, |item| grandparent(item)?.title.clone()),
+            title: shared_by(&matched, |item| item.title.clone()),
+            title_sort: shared_by(&matched, |item| item.title_sort.clone()),
+            original_title: shared_by(&matched, |item| item.original_title.clone()),
+            tagline: shared_by(&matched, |item| item.tagline.clone()),
+            summary: shared_by(&matched, |item| item.summary.clone()),
+            studio: shared_by(&matched, |item| item.studio.clone()),
+            content_rating: shared_by(&matched, |item| item.content_rating.clone()),
+            year: shared_by(&matched, |item| item.year),
+            released_on: shared_by(&matched, |item| item.released_on),
+            rating: shared_by(&matched, |item| item.rating),
+            position: shared_by(&matched, |item| item.position),
+            tags: self.shared_tags(&ids),
+            collections: self.shared_collections(&ids),
+            locked: self.shared_locks(&ids),
+        })
+    }
+}
+
+/// A field across a non-empty set of items, as storage aggregates it.
+fn shared_by<T: PartialEq>(
+    items: &[MetadataItem],
+    value: impl Fn(&MetadataItem) -> Option<T>,
+) -> Shared<T> {
+    let mut values = items.iter().map(value);
+    let first = values.next().flatten();
+    values.fold(Shared::Same(first), |shared, value| {
+        shared.with(value.as_ref())
+    })
+}
+
+impl InMemoryMetadata {
+    /// The tags every item carries, as storage orders them.
+    fn shared_tags(&self, ids: &[RatingKey]) -> Vec<SharedTag> {
+        let single = ids.len() == 1;
+        let carriers = |tag: TagId| {
+            ids.iter()
+                .filter(|id| {
+                    self.tags
+                        .iter()
+                        .any(|other| other.item_id == **id && other.tag.id == tag)
+                })
+                .count()
+        };
+        let mut tags: Vec<SharedTag> = Vec::new();
+        let attachments = self
+            .tags
+            .iter()
+            .filter(|attached| ids.contains(&attached.item_id));
+        for (index, attached) in attachments.enumerate() {
+            let known = tags.iter().any(|shared| shared.tag.id == attached.tag.id);
+            if !known && carriers(attached.tag.id) == ids.len() {
+                tags.push(SharedTag {
+                    tag: attached.tag.clone(),
+                    role: attached.role.clone().filter(|_| single),
+                    position: single.then(|| i32::try_from(index).unwrap_or(i32::MAX)),
+                });
+            }
+        }
+        crate::common::order_shared_tags(&mut tags);
+        tags
+    }
+
+    fn shared_locks(&self, ids: &[RatingKey]) -> Vec<ItemField> {
+        let locks = locked(&self.locked_fields);
+        ItemField::ALL
+            .into_iter()
+            .filter(|field| {
+                locks
+                    .iter()
+                    .filter(|(item, locked)| locked == field && ids.contains(item))
+                    .count()
+                    == ids.len()
+            })
+            .collect()
+    }
+
+    fn shared_collections(&self, ids: &[RatingKey]) -> Vec<CollectionId> {
+        let Some(store) = &self.collections else {
+            return Vec::new();
+        };
+        let store = locked(store);
+        let members = |collection: CollectionId| {
+            store
+                .entries
+                .iter()
+                .filter(|entry| entry.collection == collection && ids.contains(&entry.item))
+                .count()
+        };
+        let mut held: Vec<CollectionId> = store
+            .entries
+            .iter()
+            .filter(|entry| Some(&entry.item) == ids.first())
+            .map(|entry| entry.collection)
+            .filter(|collection| members(*collection) == ids.len())
+            .collect();
+        held.sort_by_key(|id| {
+            store
+                .collection(*id)
+                .map(|collection| collection.tag_number)
+        });
+        held
+    }
 }
 
 impl InMemoryMetadata {
@@ -1228,10 +1373,27 @@ impl InMemoryMetadata {
         let matched = self.matching(query);
         let mut values: Vec<FieldValue> = matched
             .iter()
-            .filter_map(|item| match field {
-                ValueField::Year => item.year.map(FieldValue::Year),
-                ValueField::ContentRating => item.content_rating.clone().map(FieldValue::Text),
-                ValueField::Studio => item.studio.clone().map(FieldValue::Text),
+            .flat_map(|item| -> Vec<FieldValue> {
+                match field {
+                    ValueField::Year => item.year.map(FieldValue::Year).into_iter().collect(),
+                    ValueField::ContentRating => item
+                        .content_rating
+                        .clone()
+                        .map(FieldValue::Text)
+                        .into_iter()
+                        .collect(),
+                    ValueField::Studio => item
+                        .studio
+                        .clone()
+                        .map(FieldValue::Text)
+                        .into_iter()
+                        .collect(),
+                    ValueField::Track(track_field) => self
+                        .tracks_of(item.id)
+                        .filter_map(|track| track_field.of(track))
+                        .map(|value| FieldValue::Text(value.to_owned()))
+                        .collect(),
+                }
             })
             .collect();
         values.sort_by(|a, b| match (a, b) {

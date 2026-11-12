@@ -18,7 +18,7 @@ library navigation, so the spec cannot be the only source for routing.
 | `GET /library/metadata/{id}/grandchildren` | `200` | Two levels down: all episodes of a show, all tracks of an artist. **Implemented**, same measurement. |
 | `GET /library/sections` | `200` | The library list — the entry point of all navigation, and what the bundled web client calls. The spec declares only the `/library/sections/all` alias. |
 | `GET /search?query=` | `200` | Global search across libraries. The spec declares only `/hubs/search`. **Implemented**, so the spec-coverage test cannot be what guards it — nothing the spec never mentions can be. |
-| `GET /library/sections/{id}/{filter}` | `200` | The choices of one filter — `genre`, `year`, `decade`, `contentRating`, `director`, `actor`, `writer`, `producer`, `country`, `studio`, `resolution` — each with the listing URL that applies it. The paths `includeMeta` points a client at. **Implemented**; see *Filter choices* below. |
+| `GET /library/sections/{id}/{filter}` | `200` | The choices of one filter — `genre`, `year`, `decade`, `contentRating`, `director`, `actor`, `writer`, `producer`, `country`, `studio`, `resolution`, `collection`, and `videoCodec`, `audioCodec`, `audioLayout`, `subtitleCodec`, which the spec declares — each with the listing URL that applies it. The paths `includeMeta` points a client at. **Implemented**; see *Filter choices* below. |
 | `GET /library/sections/{id}/firstCharacter?type=` | `200` | The A–Z jump bar. Singular, and absent from the spec in that form (see *Wrong in the spec*). **Implemented**, with bucket sets and counts identical to the reference on four libraries. |
 
 Both carry containers the listing endpoints do not; they are described under *Opening a
@@ -143,6 +143,32 @@ series library's genres are identical as sets; genres miss one. The rest:
   on the reference (850 of them), nothing here. 134 more show another photo of the same person.
 - **Order follows the folded byte order**, where the reference collates: studios match it
   case-insensitively, people and genres differ in places, as the listings do.
+
+#### Codecs and channel layouts
+
+`videoCodec`, `audioCodec`, `audioLayout` and `subtitleCodec` list what the tracks hold, and
+filter on it. Measured on ten libraries, every value of four of them filtered both ways:
+
+- **Every track of every version counts**, not a version's summary: `videoCodec` lists `mjpeg`,
+  which no version names as its codec — a cover picture stored as a second video track — and
+  `audioCodec=aac` keeps 1,348 films where 896 versions have AAC as their codec. A layout is an
+  audio track's channel layout as the analysis names it (`5.1(side)`, `8 channels
+  (FL+FR+FC+LFE+SL+SR+TFL+TFR)`); `subtitleCodec` includes sidecar files and `none`, which the
+  analysis writes for 21 tracks it could not identify.
+- **The list** is the distinct values in byte order, by `key` and `title` only: no `fastKey`,
+  the key percent-encoded once as a content rating's is (`5%2E1%28side%29`). A series library
+  lists its episodes' whatever `type` says, as for resolutions.
+- **The filter matches exactly**, case included (`H264` keeps nothing). A comma is an `OR`
+  (`videoCodec=av1,vc1`, 101 films), a repeated parameter an `AND` of two tracks
+  (`videoCodec=h264&videoCodec=mjpeg`, 1), and `!=` keeps the items with no such track, films
+  without media included (`subtitleCodec!=srt`, 3,217 = 9,667 − 6,450). An item is judged on
+  its own tracks: `type=2&videoCodec=vp9` keeps no series, `type=4` keeps 117 episodes.
+- The reference also compares the text (`videoCodec>=h264` keeps 23 films); that answers `501`
+  here, as any operator a filter cannot express.
+
+Ours: the 40 lists of ten libraries identical, and 780 of 782 listing totals over every value
+of four libraries with `=` and `!=` — the two others three episodes whose sidecar subtitles
+the snapshot predates.
 
 #### Resolution
 
@@ -351,8 +377,10 @@ for a film library.
 
 **Implemented**: `title`, `year` (with `>=`/`<=`), `decade`, `contentRating`, `studio`,
 verified against the reference on 11 of 12 probes with exact totals; `resolution`, identical on
-every class of eight libraries (see *Resolution*); and the six
-tag filters, `genre`, `country`, `director`, `writer`, `actor` and `producer`.
+every class of eight libraries (see *Resolution*); the six
+tag filters, `genre`, `country`, `director`, `writer`, `actor` and `producer`; `collection`;
+and the four track filters, `videoCodec`, `audioCodec`, `audioLayout` and `subtitleCodec`,
+with `=`, a comma `OR` and `!=` (see *Codecs and channel layouts*).
 
 **Refused with `501`**, not silently dropped: every other field on the published list, plus the
 operators (`!=`) and the comma-OR form outside the tag filters, which `ItemFilterInput`
@@ -1701,15 +1729,62 @@ its `Filter`s and `Sort`s, then `FieldType`. Without the parameter, or with `0`,
 requested `type` is the active one, the first by default. The active `Sort` carries `active` and
 `activeDirection`: `sort=addedAt:desc` marks it `desc`, `sort=addedAt` marks it `asc`.
 
-We publish the filters and sorts a listing honors, not the reference's whole list: 11 of 27
-filters and all 9 sorts for a film library, 9 of 14 and 7 of 8 for a series, 1 of a season's 2
-sorts, 2 of 17 and 6 of 7 for an episode. Two tests hold every filter and every sort offered to
+We publish the filters and sorts a listing honors, not the reference's whole list: 18 of 27
+filters and all 9 sorts for a film library, 11 of 14 and 7 of 8 for a series, 1 of a season's 2
+sorts, 9 of 17 and 6 of 7 for an episode. Two tests hold every filter and every sort offered to
 being one `listing::parse` accepts. What we do publish has the reference's attributes, wording
 and relative order on every type compared. Left out: the `folder` type, which no route serves,
 and the advanced filters' `Field` and `FieldType`.
 
-A filter's `key` (`/library/sections/4/genre`) is the list of its values, and those routes do not
-exist yet: they answer `404`.
+A filter's `key` (`/library/sections/4/genre`) is the list of its values (*Filter choices*).
+A series library qualifies it with the type (`genre?type=2`), except `country` and the four
+track filters, whose lists span the whole library (`/library/sections/5/videoCodec` on the
+episode type too).
+
+`GET /library/sections/{id}/filters` and `/sorts` are one type's `Filter` or `Sort` list of
+the same block, as `Directory` elements under a `secondary` container with no `title2` (the
+first type, or the one `type` names; a season's filter list is empty). No sort is marked
+active, `sort=` notwithstanding. They are whole unless both container parameters are sent,
+and then windowed with `totalSize` and `offset`, as the reference does. Ours are built from
+the same tables as `Meta`, so the three cannot disagree: every entry is the reference's,
+attribute for attribute, in its relative order, on both types of library.
+
+### The fields a set of items has in common
+
+`GET /library/sections/{id}/common` is what Plex Web's multi-item editor loads: `type` (a
+`400` without), `id` as a comma list, `includeExternalMedia=1`, and any listing filter, which
+narrows the set as it narrows `/all` — one that we cannot honor answers `501` there too. The
+answer is one element, `<Common>` in XML and `type="common"` under `Metadata` in JSON, even
+for a set of none. Measured on films, series, seasons and episodes, singly, in pairs, in
+fours and whole libraries:
+
+- **`mixedFields`** names, in a fixed order per type, the fields on which two items differ;
+  one holding a value and another none counts. Films and series: `title, ratingKey,
+  titleSort, tagline, (parentIndex,) rating, summary, year, studio, originallyAvailableAt,
+  originalTitle, contentRating, (isAdult, userRating)`; episodes: `title, parentTitle,
+  grandparentTitle, ratingKey, parentRatingKey, grandparentRatingKey, titleSort, index,
+  rating, summary, year, originallyAvailableAt, originalTitle, contentRating, …`.
+- **A shared field is written with its value; a mixed one, or one no item holds, is absent**,
+  but `guid` and `titleSort` are always written, empty when not shared, and so is an episode's
+  `parentTitle` when not mixed — empty, since seasons are untitled. One item shares its
+  `ratingKey` and a `key` of `/library/metadata/{id}/children`; ratings come to one decimal.
+- **Tags**: those every item carries. For one item they are its own, in billing order with
+  the character played; for several, by tag id, every `Role` with `role=""`. An episode's own
+  credits only: a single episode carries no `Genre`, as on the reference.
+- **`Field`**: the fields every item has locked, by the lookup's names: two films locking
+  `thumb` share `<Field locked="1" name="thumb" />`; one locking `title` and the other
+  `genre` share none.
+- An unknown id, or an item of another type, makes an empty set: `mixedFields=""`, `guid=""`,
+  `type`, `titleSort=""`.
+
+Ours answer the same elements in the same attribute order, and differ where the reference's
+data is newer than the snapshot. What we do not publish: `Guid`, `Similar` and
+`CommonSenseMedia` on a single item, and the `Rating` the reference writes as empty
+placeholders on several; `parentIndex`, `isAdult` and `userRating` in `mixedFields`, which we
+do not hold; and a season's `originallyAvailableAt`, which the reference writes as
+`1969-12-31` for a season with no date. The set is aggregated where it is stored, so a whole
+library costs one pass: 2.6 s for 79,518 episodes, 0.9 s on the reference. An `id` list is
+capped at 500, past which the request is a `400`.
 
 ### Filtering on what was watched
 

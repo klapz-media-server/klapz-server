@@ -3,9 +3,10 @@
 use async_graphql::{Enum, InputObject};
 use open_plex_core::collection::{CollectionCondition, CollectionRef};
 use open_plex_core::metadata::{
-    FrameRange, FrameSize, ItemDepth, ItemFilter, ItemKind, ItemSort, TagCondition,
+    FrameRange, FrameSize, ItemDepth, ItemFilter, ItemKind, ItemSort, TagCondition, TrackCondition,
+    TrackField as DomainTrackField,
 };
-use open_plex_core::page::Direction;
+use open_plex_core::page::{Direction, MAX_ITEMS};
 use open_plex_core::{CollectionId, RatingKey, UserId};
 
 use crate::tag::{TagFilterError, TagFilterInput};
@@ -200,6 +201,11 @@ pub struct ItemFilterInput {
     ///
     /// The one filter that reaches past the item table, so the one that can slow a listing.
     pub frame: Option<FrameRangeInput>,
+    /// Keep only these items, as returned in `id`: at least one, and at most 500.
+    pub ids: Option<Vec<async_graphql::ID>>,
+    /// Keep only items whose own tracks hold the values named. Every condition must hold. A
+    /// series has no tracks, its episodes holding them.
+    pub tracks: Option<Vec<TrackFilterInput>>,
     /// Keep only items carrying the named tags. Every condition must hold.
     pub tags: Option<Vec<TagFilterInput>>,
     /// Keep only items in the named collections. Every condition must hold.
@@ -266,6 +272,78 @@ impl TryFrom<CollectionFilterInput> for CollectionCondition {
     }
 }
 
+/// A value a track holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum TrackField {
+    /// The codec of a video track: `h264`, `hevc`.
+    VideoCodec,
+    /// The codec of an audio track: `ac3`, `eac3`, `truehd`.
+    AudioCodec,
+    /// The channel layout of an audio track, as the analysis names it: `5.1(side)`, `stereo`.
+    AudioLayout,
+    /// The format of a subtitle track, embedded or beside the file: `srt`, `pgs`.
+    SubtitleCodec,
+}
+
+impl From<TrackField> for DomainTrackField {
+    fn from(field: TrackField) -> Self {
+        match field {
+            TrackField::VideoCodec => Self::VideoCodec,
+            TrackField::AudioCodec => Self::AudioCodec,
+            TrackField::AudioLayout => Self::AudioLayout,
+            TrackField::SubtitleCodec => Self::SubtitleCodec,
+        }
+    }
+}
+
+/// Keeps items with a track of any of their versions holding one of the values, matched
+/// exactly, case included; or, negated, the items with none.
+#[derive(Debug, Clone, InputObject)]
+pub struct TrackFilterInput {
+    /// Which value of the tracks to compare.
+    pub field: TrackField,
+    /// The values, at least one and at most 50, any of which a track may hold.
+    pub any_of: Vec<String>,
+    /// Keep the items none of whose tracks holds any of the values instead.
+    #[graphql(default)]
+    pub negated: bool,
+}
+
+impl TryFrom<TrackFilterInput> for TrackCondition {
+    type Error = FilterError;
+
+    fn try_from(input: TrackFilterInput) -> Result<Self, Self::Error> {
+        if input.any_of.is_empty() || input.any_of.len() > TagCondition::MAX_VALUES {
+            return Err(FilterError::TrackValueCount);
+        }
+        Ok(Self {
+            field: input.field.into(),
+            any_of: input.any_of,
+            negated: input.negated,
+        })
+    }
+}
+
+/// Reads `ids`, which must name between one and `MAX_ITEMS` items: an empty list kept
+/// everything would be the opposite of what it says.
+fn item_ids(ids: Option<Vec<async_graphql::ID>>) -> Result<Vec<RatingKey>, FilterError> {
+    let Some(ids) = ids else {
+        return Ok(Vec::new());
+    };
+    if ids.is_empty() || ids.len() > MAX_ITEMS as usize {
+        return Err(FilterError::ItemCount);
+    }
+    ids.iter()
+        .map(|id| {
+            crate::GlobalId::decode(id)
+                .ok()
+                .filter(|decoded| decoded.type_name == crate::item::ITEM_TYPE)
+                .map(|decoded| RatingKey::new(decoded.key))
+                .ok_or(FilterError::NotAnItem)
+        })
+        .collect()
+}
+
 /// Why a filter cannot be honored.
 #[derive(Debug, thiserror::Error)]
 pub enum FilterError {
@@ -278,6 +356,15 @@ pub enum FilterError {
         TagCondition::MAX_VALUES
     )]
     CollectionCount,
+    #[error(
+        "a track filter names between one and {} values",
+        TagCondition::MAX_VALUES
+    )]
+    TrackValueCount,
+    #[error("an item filter names between one and {MAX_ITEMS} items")]
+    ItemCount,
+    #[error("not an item id")]
+    NotAnItem,
 }
 
 /// A frame size, in pixels.
@@ -333,7 +420,15 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
             .into_iter()
             .map(CollectionCondition::try_from)
             .collect::<Result<_, _>>()?;
+        let tracks = input
+            .tracks
+            .unwrap_or_default()
+            .into_iter()
+            .map(TrackCondition::try_from)
+            .collect::<Result<_, _>>()?;
         Ok(Self {
+            ids: item_ids(input.ids)?,
+            tracks,
             kind: input.kind.and_then(ItemType::held),
             kind_not_held: input.kind.is_some_and(|kind| kind.held().is_none()),
             depth: input.depth.unwrap_or_default().into(),
@@ -428,6 +523,15 @@ mod tests {
             }),
             depth: Some(ItemDepthInput::All),
             excluded_id: None,
+            ids: Some(vec![async_graphql::ID(crate::GlobalId::encode(
+                crate::item::ITEM_TYPE,
+                46_616,
+            ))]),
+            tracks: Some(vec![TrackFilterInput {
+                field: TrackField::AudioLayout,
+                any_of: vec!["5.1".to_owned()],
+                negated: true,
+            }]),
             tags: Some(vec![TagFilterInput {
                 kind: crate::tag::TagType::Genre,
                 ids: None,
@@ -473,6 +577,51 @@ mod tests {
         assert_eq!(filter.audience_rating_from, Some(7.0));
         assert_eq!(filter.episodes_started, Some(false));
         assert_eq!(filter.last_viewed_from, Some(1_700_000_000));
+        assert_eq!(filter.ids, vec![RatingKey::new(46_616)]);
+        assert_eq!(
+            filter.tracks,
+            vec![TrackCondition {
+                field: DomainTrackField::AudioLayout,
+                any_of: vec!["5.1".to_owned()],
+                negated: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn an_empty_list_of_items_or_values_is_refused() {
+        // Either would otherwise read as "no constraint" and keep the whole library.
+        let no_items = ItemFilterInput {
+            ids: Some(Vec::new()),
+            ..ItemFilterInput::default()
+        };
+        assert!(matches!(
+            ItemFilter::try_from(no_items),
+            Err(FilterError::ItemCount)
+        ));
+        let no_values = ItemFilterInput {
+            tracks: Some(vec![TrackFilterInput {
+                field: TrackField::VideoCodec,
+                any_of: Vec::new(),
+                negated: false,
+            }]),
+            ..ItemFilterInput::default()
+        };
+        assert!(matches!(
+            ItemFilter::try_from(no_values),
+            Err(FilterError::TrackValueCount)
+        ));
+        let a_tag = ItemFilterInput {
+            ids: Some(vec![async_graphql::ID(crate::GlobalId::encode(
+                crate::tag::TAG_TYPE,
+                38,
+            ))]),
+            ..ItemFilterInput::default()
+        };
+        assert!(matches!(
+            ItemFilter::try_from(a_tag),
+            Err(FilterError::NotAnItem)
+        ));
     }
 
     #[test]

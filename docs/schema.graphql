@@ -730,6 +730,206 @@ type ColorDescription {
 }
 
 """
+A field of the items compared, which `CommonFields.mixed` names when two of them differ.
+"""
+enum CommonField {
+	"""
+	The items themselves: mixed whenever there are two.
+	"""
+	ITEM
+	"""
+	`title`.
+	"""
+	TITLE
+	"""
+	`parent`.
+	"""
+	PARENT
+	"""
+	`parentTitle`.
+	"""
+	PARENT_TITLE
+	"""
+	`grandparent`.
+	"""
+	GRANDPARENT
+	"""
+	`grandparentTitle`.
+	"""
+	GRANDPARENT_TITLE
+	"""
+	`titleSort`.
+	"""
+	TITLE_SORT
+	"""
+	`originalTitle`.
+	"""
+	ORIGINAL_TITLE
+	"""
+	`tagline`.
+	"""
+	TAGLINE
+	"""
+	`summary`.
+	"""
+	SUMMARY
+	"""
+	`studio`.
+	"""
+	STUDIO
+	"""
+	`contentRating`.
+	"""
+	CONTENT_RATING
+	"""
+	`year`.
+	"""
+	YEAR
+	"""
+	`releasedOn`.
+	"""
+	RELEASED_ON
+	"""
+	`rating`.
+	"""
+	RATING
+	"""
+	`number`.
+	"""
+	NUMBER
+}
+
+"""
+What every item of a set shares. A field two items differ on is null and listed in
+`mixed`; one no item holds is null and not listed.
+"""
+type CommonFields {
+	"""
+	How many items were compared.
+	"""
+	itemCount: Int!
+	"""
+	The fields on which two items differ, one holding a value and another none included.
+	"""
+	mixed: [CommonField!]!
+	"""
+	The item, when exactly one was compared.
+	"""
+	item: Item
+	"""
+	The parent all items share: the season of episodes, the series of seasons.
+	"""
+	parent: Item
+	"""
+	The title of the parent, when every parent has the same one.
+	"""
+	parentTitle: String
+	"""
+	The parent's parent all items share: the series of episodes.
+	"""
+	grandparent: Item
+	"""
+	The title of the parent's parent, when every one has the same.
+	"""
+	grandparentTitle: String
+	"""
+	The common title.
+	"""
+	title: String
+	"""
+	The common title sorted by, as stored: an item whose sort title was never set has none.
+	"""
+	titleSort: String
+	"""
+	The common original-language title.
+	"""
+	originalTitle: String
+	"""
+	The common tagline.
+	"""
+	tagline: String
+	"""
+	The common synopsis.
+	"""
+	summary: String
+	"""
+	The common studio.
+	"""
+	studio: String
+	"""
+	The common age-rating label.
+	"""
+	contentRating: String
+	"""
+	The common release year.
+	"""
+	year: Int
+	"""
+	The common release date, as its day's midnight UTC.
+	"""
+	releasedOn: DateTime
+	"""
+	The common critics' rating, from 0 to 10.
+	"""
+	rating: Float
+	"""
+	The common position among siblings: an episode's or a season's number.
+	"""
+	number: Int
+	"""
+	The tags of one kind every item carries. For one item, in billing order and with the
+	character played; for several, whose billing and characters differ, by tag id.
+	"""
+	tags(
+		"""
+		Which kind of tag to list.
+		"""
+		kind: TagType!,
+		"""
+		Return tags after this cursor.
+		"""
+		after: String,
+		"""
+		Return tags before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many tags from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many tags from the end of the range.
+		"""
+		last: Int
+	): TagConnection!
+	"""
+	The collections holding every item, by the number their items carry them under.
+	"""
+	collections(
+		"""
+		Return collections after this cursor.
+		"""
+		after: String,
+		"""
+		Return collections before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many collections from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many collections from the end of the range.
+		"""
+		last: Int
+	): CollectionMembershipConnection!
+	"""
+	The fields every item has locked.
+	"""
+	lockedFields: [ItemField!]!
+}
+
+"""
 Why an item is in Continue Watching.
 """
 enum ContinueReason {
@@ -2056,6 +2256,15 @@ input ItemFilterInput {
 	"""
 	frame: FrameRangeInput
 	"""
+	Keep only these items, as returned in `id`: at least one, and at most 500.
+	"""
+	ids: [ID!]
+	"""
+	Keep only items whose own tracks hold the values named. Every condition must hold. A
+	series has no tracks, its episodes holding them.
+	"""
+	tracks: [TrackFilterInput!]
+	"""
 	Keep only items carrying the named tags. Every condition must hold.
 	"""
 	tags: [TagFilterInput!]
@@ -2659,6 +2868,51 @@ type Library implements Node {
 		offset: Int
 	): FieldValueConnection!
 	"""
+	The values the tracks of this library's items hold, each once, in ascending byte
+	order: every video codec, say, of every version. Series have no tracks: their
+	episodes', reached with `depth: ALL`, are listed.
+	"""
+	trackValues(
+		"""
+		Which value of the tracks to list.
+		"""
+		field: TrackField!,
+		"""
+		List only the values of the items this filter keeps.
+		"""
+		filter: ItemFilterInput,
+		"""
+		Return values after this cursor.
+		"""
+		after: String,
+		"""
+		Return values before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many values from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many values from the end of the range.
+		"""
+		last: Int,
+		"""
+		Discard this many values before the page begins.
+		"""
+		offset: Int
+	): FieldValueConnection!
+	"""
+	What every item a filter keeps has in common — fields, tags, collections and locks:
+	what a client starts from to edit several items at once.
+	"""
+	common(
+		"""
+		The items compared: those this filter keeps.
+		"""
+		filter: ItemFilterInput
+	): CommonFields!
+	"""
 	Aggregates over the contents of this library.
 	"""
 	stats(
@@ -2808,6 +3062,16 @@ type LibraryStats {
 		Which field to count the values of.
 		"""
 		field: TextField!
+	): Int!
+	"""
+	How many distinct values the items' tracks hold in a field: the size of
+	`Library.trackValues`.
+	"""
+	trackValueCount(
+		"""
+		Which value of the tracks to count.
+		"""
+		field: TrackField!
 	): Int!
 	"""
 	The first-letter buckets, with a count each, ordered `#` then A–Z.
@@ -7223,6 +7487,47 @@ enum TitleMatch {
 	Some word of a title begins with each word of the term.
 	"""
 	ANYWHERE
+}
+
+"""
+A value a track holds.
+"""
+enum TrackField {
+	"""
+	The codec of a video track: `h264`, `hevc`.
+	"""
+	VIDEO_CODEC
+	"""
+	The codec of an audio track: `ac3`, `eac3`, `truehd`.
+	"""
+	AUDIO_CODEC
+	"""
+	The channel layout of an audio track, as the analysis names it: `5.1(side)`, `stereo`.
+	"""
+	AUDIO_LAYOUT
+	"""
+	The format of a subtitle track, embedded or beside the file: `srt`, `pgs`.
+	"""
+	SUBTITLE_CODEC
+}
+
+"""
+Keeps items with a track of any of their versions holding one of the values, matched
+exactly, case included; or, negated, the items with none.
+"""
+input TrackFilterInput {
+	"""
+	Which value of the tracks to compare.
+	"""
+	field: TrackField!
+	"""
+	The values, at least one and at most 50, any of which a track may hold.
+	"""
+	anyOf: [String!]!
+	"""
+	Keep the items none of whose tracks holds any of the values instead.
+	"""
+	negated: Boolean! = false
 }
 
 """
