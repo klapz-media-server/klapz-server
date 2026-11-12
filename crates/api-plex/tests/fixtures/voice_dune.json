@@ -1,0 +1,50 @@
+{
+  "MediaContainer": {
+    "size": 1,
+    "Hub": [
+      {
+        "distance": 0,
+        "hubKey": "/library/metadata/470473,470476,279798",
+        "title": "movie",
+        "type": "movie",
+        "hubIdentifier": "results.search.1",
+        "context": "hub.results.search",
+        "size": 3,
+        "more": false,
+        "style": "shelf",
+        "Metadata": [
+          {
+            "distance": 0,
+            "ratingKey": "470473",
+            "key": "/library/metadata/470473",
+            "type": "movie",
+            "title": "Dune",
+            "librarySectionTitle": "VF - Films",
+            "librarySectionID": 4,
+            "librarySectionKey": "/library/sections/4"
+          },
+          {
+            "distance": 0,
+            "ratingKey": "470476",
+            "key": "/library/metadata/470476",
+            "type": "movie",
+            "title": "Dune",
+            "librarySectionTitle": "VO - Movies",
+            "librarySectionID": 6,
+            "librarySectionKey": "/library/sections/6"
+          },
+          {
+            "distance": 2,
+            "ratingKey": "279798",
+            "key": "/library/metadata/279798",
+            "type": "movie",
+            "title": "Cube",
+            "librarySectionTitle": "VF - Films",
+            "librarySectionID": 4,
+            "librarySectionKey": "/library/sections/4"
+          }
+        ]
+      }
+    ]
+  }
+}

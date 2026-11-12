@@ -1,0 +1,63 @@
+{
+  "MediaContainer": {
+    "size": 2,
+    "Hub": [
+      {
+        "distance": 0,
+        "hubKey": "/library/metadata/24569,22773",
+        "title": "show",
+        "type": "show",
+        "hubIdentifier": "results.search.2",
+        "context": "hub.results.search",
+        "size": 2,
+        "more": false,
+        "style": "shelf",
+        "Metadata": [
+          {
+            "distance": 0,
+            "ratingKey": "24569",
+            "key": "/library/metadata/24569/children",
+            "type": "show",
+            "title": "Breaking Bad",
+            "librarySectionTitle": "VF - Series",
+            "librarySectionID": 5,
+            "librarySectionKey": "/library/sections/5"
+          },
+          {
+            "distance": 0,
+            "ratingKey": "22773",
+            "key": "/library/metadata/22773/children",
+            "type": "show",
+            "title": "Breaking Bad",
+            "librarySectionTitle": "VO - TV Shows",
+            "librarySectionID": 7,
+            "librarySectionKey": "/library/sections/7"
+          }
+        ]
+      },
+      {
+        "distance": 3,
+        "hubKey": "/library/metadata/306682",
+        "title": "movie",
+        "type": "movie",
+        "hubIdentifier": "results.search.1",
+        "context": "hub.results.search",
+        "size": 1,
+        "more": false,
+        "style": "shelf",
+        "Metadata": [
+          {
+            "distance": 3,
+            "ratingKey": "306682",
+            "key": "/library/metadata/306682",
+            "type": "movie",
+            "title": "Breaking In",
+            "librarySectionTitle": "VF - Films",
+            "librarySectionID": 4,
+            "librarySectionKey": "/library/sections/4"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -303,6 +303,7 @@ impl InMemoryMetadata {
                     .as_ref()
                     .is_none_or(|term| title_matches(item, term))
             })
+            .filter(|item| title_completed(item, filter.title_completion.as_deref()))
             .filter(|item| filter.excluded != Some(item.id))
             .filter(|item| {
                 filter
@@ -402,6 +403,15 @@ fn sort_matched(query: &ItemQuery, matched: &mut [MetadataItem]) {
     if query.direction.is_descending() {
         matched.reverse();
     }
+}
+
+/// The text completes the item's title, by the rule storage applies; no text, no constraint.
+fn title_completed(item: &MetadataItem, text: Option<&str>) -> bool {
+    text.is_none_or(|text| {
+        item.title
+            .as_deref()
+            .is_some_and(|title| crate::completion::completes(title, text))
+    })
 }
 
 /// Every word of the term begins a word of the item's titles, as storage applies it.
@@ -963,6 +973,58 @@ impl MetadataRepository for InMemoryMetadata {
 
     async fn tag_count_in(&self, query: &ItemQuery, scope: TagScope) -> Result<u64, MetadataError> {
         Ok(self.distinct_tags(query, scope).len() as u64)
+    }
+
+    async fn tags_completing(
+        &self,
+        query: &ItemQuery,
+        scope: TagScope,
+        text: &str,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError> {
+        let mut tags = self.distinct_tags(query, scope);
+        tags.retain(|tag| crate::completion::completes(&tag.name, text));
+        Ok(windowed(tags, &window, Tag::name_cursor))
+    }
+
+    async fn closest_titles(
+        &self,
+        query: &crate::closest::ClosestTitles,
+        window: Window,
+    ) -> Result<Page<crate::closest::TitleMatch>, MetadataError> {
+        let distance = crate::closest::Distance::new(&crate::closest::term_key(&query.term));
+        let mut matches: Vec<crate::closest::TitleMatch> = self
+            .rows()
+            .iter()
+            .filter(|item| query.kinds.contains(&item.kind))
+            .filter(|item| {
+                query
+                    .sections
+                    .as_ref()
+                    .is_none_or(|sections| sections.contains(&item.section_id))
+            })
+            .map(|item| {
+                let key =
+                    crate::closest::title_key(item.title_sort.as_deref(), item.title.as_deref());
+                crate::closest::TitleMatch {
+                    distance: distance.to(&key),
+                    key,
+                    item: item.clone(),
+                }
+            })
+            .collect();
+        matches.sort_by(|left, right| {
+            (left.distance, &left.key, left.item.id.get()).cmp(&(
+                right.distance,
+                &right.key,
+                right.item.id.get(),
+            ))
+        });
+        Ok(windowed(
+            matches,
+            &window,
+            crate::closest::TitleMatch::cursor,
+        ))
     }
 
     async fn values_in(

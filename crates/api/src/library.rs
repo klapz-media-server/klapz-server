@@ -472,6 +472,10 @@ impl Library {
         #[graphql(desc = "List only the tags of the items this filter keeps.")] filter: Option<
             ItemFilterInput,
         >,
+        #[graphql(
+            desc = "List only the tags whose name this text completes: one phrase beginning a word of the name, case aside and accents minded, as `ItemFilterInput.titleCompletion` reads a title. `tom h` and `hanks` both complete Tom Hanks."
+        )]
+        completing: Option<String>,
         #[graphql(desc = "Return tags after this cursor.")] after: Option<String>,
         #[graphql(desc = "Return tags before this cursor.")] before: Option<String>,
         #[graphql(desc = "Return at most this many tags from the start of the range.")]
@@ -495,9 +499,15 @@ impl Library {
             |after, before, first, last| async move {
                 let window = schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?
                     .skipping(skip);
-                let page = schema::metadata(context)?
-                    .tags_in(&item_query, scope, window)
-                    .await?;
+                let metadata = schema::metadata(context)?;
+                let page = match &completing {
+                    Some(text) => {
+                        metadata
+                            .tags_completing(&item_query, scope, text, window)
+                            .await?
+                    }
+                    None => metadata.tags_in(&item_query, scope, window).await?,
+                };
                 let mut connection = Connection::new(page.has_previous, page.has_next);
                 connection.edges.extend(
                     page.items

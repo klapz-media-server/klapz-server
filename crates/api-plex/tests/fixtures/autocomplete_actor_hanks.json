@@ -1,0 +1,87 @@
+{
+  "MediaContainer": {
+    "size": 9,
+    "allowSync": false,
+    "art": "/:/resources/movie-fanart.jpg",
+    "content": "secondary",
+    "identifier": "com.plexapp.plugins.library",
+    "mediaTagPrefix": "/system/bundle/media/flags/",
+    "thumb": "/:/resources/movie.png",
+    "title1": "VF - Films",
+    "viewGroup": "secondary",
+    "viewMode": 65592,
+    "Directory": [
+      {
+        "id": 622844,
+        "filter": "actor=622844",
+        "tag": "Bailey Hanks",
+        "tagType": 6,
+        "tagKey": "5d7768756f4521001eaa7f66",
+        "thumb": "https://metadata-static.plex.tv/d/people/dd514f301ab31caa522ba24bd5347cd4.jpg"
+      },
+      {
+        "id": 474604,
+        "filter": "actor=474604",
+        "tag": "Chet Hanks",
+        "tagType": 6,
+        "tagKey": "5d776825880197001ec902f6",
+        "thumb": "https://metadata-static.plex.tv/4/people/48ebac23b0178ce9eafd256f82801953.jpg"
+      },
+      {
+        "id": 481281,
+        "filter": "actor=481281",
+        "tag": "Colin Hanks",
+        "tagType": 6,
+        "tagKey": "5d77682b8a7581001f12c410",
+        "thumb": "https://metadata-static.plex.tv/f/people/f91985d6c25f1eb1cd78c71cb02b8d04.jpg"
+      },
+      {
+        "id": 471758,
+        "filter": "actor=471758",
+        "tag": "Dan Hanks",
+        "tagType": 6,
+        "tagKey": "5d776863594b2b001e68a6d1",
+        "thumb": "https://metadata-static.plex.tv/5/people/5d471590896403c063e003813857a973.jpg"
+      },
+      {
+        "id": 481282,
+        "filter": "actor=481282",
+        "tag": "Elizabeth Hanks",
+        "tagType": 6,
+        "tagKey": "5f3fa7cfbf3e560040ae5ab3",
+        "thumb": "https://metadata-static.plex.tv/b/people/b07c77ac4969022d0ff14494a7f0a23e.jpg"
+      },
+      {
+        "id": 527101,
+        "filter": "actor=527101",
+        "tag": "Jim Hanks",
+        "tagType": 6,
+        "tagKey": "5d77683af54112001f5be0fc",
+        "thumb": "https://metadata-static.plex.tv/2/people/21dd85bf5ca7fb9959c4415b0dd1b537.jpg"
+      },
+      {
+        "id": 481501,
+        "filter": "actor=481501",
+        "tag": "Taylor Hanks",
+        "tagType": 6,
+        "tagKey": "6081a53750d05e003666260d"
+      },
+      {
+        "id": 469791,
+        "filter": "actor=469791",
+        "tag": "Tom Hanks",
+        "tagType": 6,
+        "tagKey": "5d77682654f42c001f8c2650",
+        "thumb": "https://metadata-static.plex.tv/d/people/dc5e983fa166811db7b1ab584c42df09.jpg"
+      },
+      {
+        "id": 469819,
+        "filter": "actor=469819",
+        "tag": "Truman Hanks",
+        "tagType": 6,
+        "tagKey": "5f406d5304a8650040a88c9f",
+        "thumb": "https://metadata-static.plex.tv/d/people/d7101c4f893c8cdc9cd5085353b2f459.jpg"
+      }
+    ]
+  }
+}

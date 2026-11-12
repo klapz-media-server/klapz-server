@@ -762,7 +762,14 @@ mod tests {
             "ids carry on from the copied rows"
         );
 
-        Migrator::down(&connection, Some(1)).await.unwrap();
+        // Back to just before this migration, whatever came after it.
+        let migrations = Migrator::migrations();
+        let this_one = migrations
+            .iter()
+            .position(|migration| migration.name() == "m0030_every_caller_a_user")
+            .expect("registered");
+        let steps = u32::try_from(migrations.len() - this_one).unwrap();
+        Migrator::down(&connection, Some(steps)).await.unwrap();
         assert_eq!(
             column::<String>(&connection, "SELECT email FROM users ORDER BY id").await,
             [

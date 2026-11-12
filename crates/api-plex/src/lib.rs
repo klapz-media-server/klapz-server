@@ -8,6 +8,7 @@
 
 pub mod activities;
 pub mod auth;
+mod autocomplete;
 pub mod capabilities;
 pub mod children;
 pub mod client;
@@ -52,6 +53,7 @@ mod tracks;
 pub mod translations;
 pub mod updater;
 mod user_state;
+mod voice_search;
 pub mod xml;
 
 pub mod general;
@@ -115,6 +117,8 @@ pub fn router(state: PlexState) -> Router {
         .merge(activities::router())
         .merge(search::router())
         .merge(hub_search::router())
+        .merge(voice_search::router())
+        .merge(autocomplete::router())
         .merge(play_queues::router())
         .merge(playlists::router())
         .merge(collections::router())

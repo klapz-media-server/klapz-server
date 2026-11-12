@@ -376,6 +376,37 @@ impl Query {
         crate::tag::search_tags(context, query, kinds, after, before, first, last).await
     }
 
+    /// Items whose title is closest to a term, closest first: what a voice assistant
+    /// searches with, since the words it hears are rarely the words of a title.
+    ///
+    /// Ranks by edit distance between the term and each item's sort title, falling back to
+    /// its title. Both are folded first: ASCII case, the accents of the Latin-1 letters, the
+    /// carons and the lower-case macrons; anything else counts for each byte of its UTF-8
+    /// form. One leading article is dropped from each (`the`, `das`, `der`, `a`, `an`, `el`,
+    /// `la`), so `the office` is 0 from "The Office", sorted as "Office". Every title is
+    /// ranked, however far: the distance says how good a match is. Ties follow by folded
+    /// title, then by id. A term is at most 256 bytes long.
+    #[allow(clippy::too_many_arguments)]
+    async fn closest_titles(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The term, as heard or typed.")] query: String,
+        #[graphql(desc = "The kinds of item to rank. Music kinds rank nothing.")] kinds: Vec<
+            crate::filter::ItemType,
+        >,
+        #[graphql(desc = "Return matches after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return matches before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many matches, the closest first.")] first: Option<
+            i32,
+        >,
+        #[graphql(
+            desc = "Return at most this many matches from the far end: the farthest, which costs a pass over every title."
+        )]
+        last: Option<i32>,
+    ) -> Result<crate::closest::TitleMatchConnection> {
+        crate::closest::closest_titles(context, query, kinds, after, before, first, last).await
+    }
+
     /// What is being played right now, oldest first. A session a player has stopped keeping
     /// alive disappears by itself, and a terminated one at once.
     async fn playback_sessions(

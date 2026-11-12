@@ -638,6 +638,11 @@ pub struct ItemFilter {
     /// "Sans Laisser de Traces" alike. Served by a word index, not by the title column —
     /// see `search` for the tokenizer the index and this filter must share.
     pub title_word_prefix: Option<String>,
+    /// Keeps only items whose title this text completes: it begins a word of the title, read
+    /// as one phrase, case aside. The rule is [`crate::completion::completes`]; unlike
+    /// `title_word_prefix` it reads the title alone and minds accents, as the reference's
+    /// autocompletion does.
+    pub title_completion: Option<String>,
     /// Keeps only items with a version whose frame falls in this range.
     ///
     /// A resolution filter is a property of the file rather than the item, so it is a join
@@ -958,6 +963,25 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
         window: Window,
     ) -> Result<Page<MetadataItem>, MetadataError>;
 
+    /// One page of the items whose title is closest to a term, closest first, then by the
+    /// title as compared, then by id. See [`crate::closest`] for the measure.
+    async fn closest_titles(
+        &self,
+        query: &crate::closest::ClosestTitles,
+        window: Window,
+    ) -> Result<Page<crate::closest::TitleMatch>, MetadataError>;
+
+    /// One page of the tags of one kind carried by a query's items whose name `text`
+    /// completes, by [`crate::completion::completes`], ordered by name as
+    /// [`MetadataRepository::tags_in`] orders them.
+    async fn tags_completing(
+        &self,
+        query: &ItemQuery,
+        scope: TagScope,
+        text: &str,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError>;
+
     /// One page of the tags whose name matches a search, each with the libraries carrying it.
     ///
     /// Ordered by item count, most first, then by tag and library: a common name matches
@@ -1206,6 +1230,24 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         window: Window,
     ) -> Result<Page<MetadataItem>, MetadataError> {
         (**self).search(query, window).await
+    }
+
+    async fn closest_titles(
+        &self,
+        query: &crate::closest::ClosestTitles,
+        window: Window,
+    ) -> Result<Page<crate::closest::TitleMatch>, MetadataError> {
+        (**self).closest_titles(query, window).await
+    }
+
+    async fn tags_completing(
+        &self,
+        query: &ItemQuery,
+        scope: TagScope,
+        text: &str,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError> {
+        (**self).tags_completing(query, scope, text, window).await
     }
 
     async fn search_tags(

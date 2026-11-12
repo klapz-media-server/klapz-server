@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use open_plex_core::closest::{ClosestTitles, TitleMatch};
 use open_plex_core::collection::{CollectionCondition, CollectionRef};
 use open_plex_core::edit::{ItemEdit, ItemField};
 use open_plex_core::marker::{Marker, NewMarker};
@@ -33,6 +34,7 @@ use sea_orm::{
     TransactionTrait,
 };
 
+use crate::closest_store;
 use crate::entity::{
     collection, collection_entry, item_external_id, item_field_lock, item_rating, item_tag,
     item_title_word, media, media_part, media_stream, metadata_item, person, stream_dolby_vision,
@@ -101,6 +103,10 @@ impl SqlMetadataRepository {
             // Driven from the word index rather than the title column: the reference matches
             // a prefix of *any* word, so `hell` has to find "Good News About Hell".
             select = select.filter(term_matches(prefix));
+        }
+        if let Some(text) = &filter.title_completion {
+            let title = Expr::col((metadata_item::Entity, metadata_item::Column::Title)).into();
+            select = select.filter(crate::completion::completes(&title, text));
         }
         if let Some(excluded) = filter.excluded {
             select = select.filter(metadata_item::Column::Id.ne(excluded.get()));
@@ -206,6 +212,56 @@ impl SqlMetadataRepository {
             .column(column)
             .filter(column.is_not_null())
             .distinct()
+    }
+
+    /// One page of tags in name order, from a selection of them with no column chosen.
+    async fn tag_page(
+        &self,
+        mut select: Select<tag::Entity>,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError> {
+        let name = Expr::col((tag::Entity, tag::Column::Name));
+        let id = Expr::col((tag::Entity, tag::Column::Id));
+        for (cursor, after) in [(&window.after, true), (&window.before, false)] {
+            if let Some(cursor) = cursor {
+                select = select.filter(keyset(
+                    name.clone(),
+                    Some(id.clone()),
+                    cursor,
+                    Direction::Ascending,
+                    after,
+                )?);
+            }
+        }
+        let order = if window.is_reversed() {
+            Order::Desc
+        } else {
+            Order::Asc
+        };
+        let rows = with_tag_columns(select)
+            .join(JoinType::LeftJoin, tag::Relation::Person.def())
+            .order_by(tag::Column::Name, order.clone())
+            .order_by(tag::Column::Id, order)
+            .offset(window.skip)
+            .limit(window.fetch_limit())
+            .into_model::<TagRow>()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+
+        let mut page = Page::from_overfetch(rows, &window);
+        if window.is_reversed() {
+            page.items.reverse();
+        }
+        Ok(Page {
+            items: page
+                .items
+                .into_iter()
+                .filter_map(TagRow::into_tag)
+                .collect(),
+            has_previous: page.has_previous,
+            has_next: page.has_next,
+        })
     }
 }
 
@@ -1046,48 +1102,54 @@ impl MetadataRepository for SqlMetadataRepository {
         scope: TagScope,
         window: Window,
     ) -> Result<Page<Tag>, MetadataError> {
-        let mut select = Self::tags_carried(query, scope);
-        let name = Expr::col((tag::Entity, tag::Column::Name));
-        let id = Expr::col((tag::Entity, tag::Column::Id));
-        for (cursor, after) in [(&window.after, true), (&window.before, false)] {
-            if let Some(cursor) = cursor {
-                select = select.filter(keyset(
-                    name.clone(),
-                    Some(id.clone()),
-                    cursor,
-                    Direction::Ascending,
-                    after,
-                )?);
-            }
-        }
-        let order = if window.is_reversed() {
-            Order::Desc
-        } else {
-            Order::Asc
-        };
-        let rows = with_tag_columns(select)
-            .join(JoinType::LeftJoin, tag::Relation::Person.def())
-            .order_by(tag::Column::Name, order.clone())
-            .order_by(tag::Column::Id, order)
-            .offset(window.skip)
-            .limit(window.fetch_limit())
-            .into_model::<TagRow>()
-            .all(&self.connection)
+        self.tag_page(Self::tags_carried(query, scope), window)
             .await
-            .map_err(storage)?;
+    }
 
-        let mut page = Page::from_overfetch(rows, &window);
-        if window.is_reversed() {
-            page.items.reverse();
-        }
+    async fn tags_completing(
+        &self,
+        query: &ItemQuery,
+        scope: TagScope,
+        text: &str,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError> {
+        let name = Expr::col((tag::Entity, tag::Column::Name)).into();
+        let select =
+            Self::tags_carried(query, scope).filter(crate::completion::completes(&name, text));
+        self.tag_page(select, window).await
+    }
+
+    async fn closest_titles(
+        &self,
+        query: &ClosestTitles,
+        window: Window,
+    ) -> Result<Page<TitleMatch>, MetadataError> {
+        let ranked = closest_store::rank(&self.connection, query, &window).await?;
+        let ids: Vec<RatingKey> = ranked
+            .items
+            .iter()
+            .map(|ranked| RatingKey::new(ranked.id))
+            .collect();
+        let mut items: HashMap<i64, MetadataItem> = self
+            .items_by_id(&ids)
+            .await?
+            .into_iter()
+            .map(|item| (item.id.get(), item))
+            .collect();
         Ok(Page {
-            items: page
+            items: ranked
                 .items
                 .into_iter()
-                .filter_map(TagRow::into_tag)
+                .filter_map(|ranked| {
+                    Some(TitleMatch {
+                        item: items.remove(&ranked.id)?,
+                        distance: ranked.distance,
+                        key: ranked.key,
+                    })
+                })
                 .collect(),
-            has_previous: page.has_previous,
-            has_next: page.has_next,
+            has_previous: ranked.has_previous,
+            has_next: ranked.has_next,
         })
     }
 
@@ -2111,6 +2173,6 @@ fn parse_scan_type(stored: &str) -> Option<ScanType> {
     }
 }
 
-fn storage(error: sea_orm::DbErr) -> MetadataError {
+pub(crate) fn storage(error: sea_orm::DbErr) -> MetadataError {
     MetadataError::Storage(Box::new(error))
 }
