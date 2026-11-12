@@ -115,9 +115,9 @@ impl HistoryEntryObject {
             .map(Item::from_domain))
     }
 
-    /// The library the item is in, as returned in `Library.id`.
-    async fn library_id(&self) -> ID {
-        ID(GlobalId::encode(LIBRARY_TYPE, self.0.section.get()))
+    /// The library the item is in.
+    async fn library(&self, context: &Context<'_>) -> Result<Option<crate::library::Library>> {
+        crate::schema::load_library(context, self.0.section).await
     }
 
     /// Who watched. Null once that user is deleted.

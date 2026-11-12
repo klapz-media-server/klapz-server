@@ -5454,17 +5454,13 @@
               "deprecationReason": null
             },
             {
-              "name": "libraryId",
-              "description": "The library the item is in, as returned in `Library.id`.",
+              "name": "library",
+              "description": "The library the item is in.",
               "args": [],
               "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "SCALAR",
-                  "name": "ID",
-                  "ofType": null
-                }
+                "kind": "OBJECT",
+                "name": "Library",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null

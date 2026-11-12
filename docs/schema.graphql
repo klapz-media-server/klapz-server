@@ -1824,9 +1824,9 @@ type HistoryEntry implements Node {
 	"""
 	item: Item
 	"""
-	The library the item is in, as returned in `Library.id`.
+	The library the item is in.
 	"""
-	libraryId: ID!
+	library: Library
 	"""
 	Who watched. Null once that user is deleted.
 	"""

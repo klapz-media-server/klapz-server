@@ -40,7 +40,7 @@ fragment PlexHistoryEntry on HistoryEntry {
   id
   kind
   viewedAt
-  libraryId
+  library { id }
   item {
     __typename
     id
@@ -124,7 +124,7 @@ struct GqlEntry {
     kind: String,
     #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     viewed_at: i64,
-    library_id: String,
+    library: Option<GqlLibrary>,
     item: Option<GqlHistoryItem>,
 }
 
@@ -143,6 +143,11 @@ struct GqlHistoryItem {
     released_on: Option<String>,
     season: Option<GqlParent>,
     show: Option<GqlParent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlLibrary {
+    id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -225,7 +230,7 @@ impl HistoryEntry {
             history_key: format!("/status/sessions/history/{}", database_id(&entry.id)?),
             key: with_keys.then(|| format!("/library/metadata/{rating_key}")),
             rating_key: with_keys.then(|| rating_key.to_string()),
-            library_section_id: database_id(&entry.library_id)?.to_string(),
+            library_section_id: database_id(&entry.library.as_ref()?.id)?.to_string(),
             parent_key: season
                 .filter(|_| with_keys)
                 .and_then(|season| metadata_key(&season.id)),
