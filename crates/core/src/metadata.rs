@@ -843,18 +843,31 @@ pub struct Listed {
 /// Separate from [`ItemQuery`], which is always rooted in one library: a global search is a
 /// different question and would otherwise mean an optional section id that every caller has
 /// to think about.
-///
-/// Ordered by sort title. The reference server orders by a relevance score it computes from
-/// its own index; we have no score, and a title ordering at least groups the four films named
-/// *Avatar* together and gives the cursor something stable to resume from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchQuery {
-    /// Matches items having a word beginning with this text. See [`crate::search`].
+    /// Matches items having a word beginning with each word of this text. See
+    /// [`crate::search`].
     pub word_prefix: String,
     /// Restricts to these kinds. Empty searches every kind.
     pub kinds: Vec<ItemKind>,
     /// Restricts to these sections, the ones a caller may see. `None` searches them all.
     pub sections: Option<Vec<crate::ids::SectionId>>,
+    pub order: SearchOrder,
+    /// Also matches an episode through its series' titles, as the reference's search shelves
+    /// match every episode of *Kaamelott* for `kaamelott` (its global `/search` does not).
+    /// Such an episode ranks as a match anywhere.
+    pub episodes_by_series: bool,
+}
+
+/// How a search orders what it matched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchOrder {
+    /// The best match first, by [`crate::search::score`]: its rung, then its audience
+    /// rating, then its sort title and id, so that equal scores still have a total order.
+    #[default]
+    Relevance,
+    /// By sort title, then id.
+    Title,
 }
 
 impl SearchQuery {
@@ -863,6 +876,8 @@ impl SearchQuery {
             word_prefix: word_prefix.into(),
             kinds: Vec::new(),
             sections: None,
+            order: SearchOrder::default(),
+            episodes_by_series: false,
         }
     }
 
@@ -874,15 +889,38 @@ impl SearchQuery {
         crate::search::fold(&self.word_prefix).trim().is_empty()
     }
 
-    /// The cursor position of an item under this ordering.
-    pub fn cursor_key(&self, item: &MetadataItem) -> CursorKey {
-        CursorKey::Text(
-            item.title_sort
-                .as_ref()
-                .or(item.title.as_ref())
-                .map(|text| text.to_lowercase())
-                .unwrap_or_default(),
+    /// How well an item answers the term.
+    pub fn rung(&self, item: &MetadataItem) -> crate::search::Rung {
+        crate::search::RankedTerm::new(&self.word_prefix).map_or(
+            crate::search::Rung::Anywhere,
+            |term| {
+                term.rung(&crate::search::title_keys(
+                    item.title.as_deref(),
+                    item.title_sort.as_deref(),
+                    item.original_title.as_deref(),
+                ))
+            },
         )
+    }
+
+    /// The position of an item in this search's order.
+    ///
+    /// By relevance, the score in two exact parts rather than one float: hundredths, which
+    /// the rung and the kind make, then the audience rating as stored (absent counting as
+    /// zero, as it does in the score). An exact cursor is what lets a page resume on equality.
+    pub fn cursor(&self, item: &MetadataItem) -> Cursor {
+        let sort_key = CursorKey::Text(sort_key(item.title_sort.as_deref(), item.title.as_deref()));
+        match self.order {
+            SearchOrder::Title => Cursor::new(sort_key, item.id.get()),
+            SearchOrder::Relevance => Cursor {
+                keys: vec![
+                    CursorKey::Int(crate::search::hundredths(item.kind, self.rung(item))),
+                    CursorKey::Real(item.audience_rating.unwrap_or(0.0)),
+                    sort_key,
+                ],
+                id: item.id.get(),
+            },
+        }
     }
 }
 
@@ -949,9 +987,8 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
     /// How many items the query matches.
     async fn item_count(&self, query: &ItemQuery) -> Result<u64, MetadataError>;
 
-    /// One page of a search across every library.
-    ///
-    /// Ordered by sort title, so the cursor machinery is the one the listing already uses.
+    /// One page of a search across every library, in [`SearchQuery::order`]; a page's
+    /// cursors are [`SearchQuery::cursor`].
     async fn search(
         &self,
         query: &SearchQuery,

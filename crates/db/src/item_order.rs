@@ -10,7 +10,7 @@
 //! the largest, so the position is stated in every `ORDER BY` and spelt out in every keyset
 //! comparison rather than left to the engine.
 
-use open_plex_core::metadata::{ItemKind, ItemQuery, ItemSort, MetadataError};
+use open_plex_core::metadata::{ItemKind, ItemQuery, ItemSort, MetadataError, SearchOrder};
 use open_plex_core::page::{Cursor, CursorKey, Direction};
 use sea_orm::sea_query::{Alias, CaseStatement, Expr, Func, NullOrdering, Query, SimpleExpr};
 use sea_orm::{Condition, Order, QueryFilter, QueryOrder, QueryResult, QuerySelect, Select};
@@ -184,26 +184,7 @@ impl ItemOrder {
         cursor: &Cursor,
         after: bool,
     ) -> Result<Select<metadata_item::Entity>, MetadataError> {
-        let terms = self.terms();
-        // Every term but the id carries a value: a cursor from another ordering cannot say
-        // where this one stands.
-        if cursor.keys.len() + 1 != terms.len() {
-            return Err(MetadataError::CursorMismatch);
-        }
-        let values: Vec<CursorKey> = cursor
-            .keys
-            .iter()
-            .cloned()
-            .chain([CursorKey::Int(cursor.id)])
-            .collect();
-        if values
-            .iter()
-            .zip(&terms)
-            .any(|(value, term)| matches!(value, CursorKey::Absent) && !term.nullable)
-        {
-            return Err(MetadataError::CursorMismatch);
-        }
-        Ok(select.filter(lexicographic(&terms, &values, after)))
+        resume_terms(&self.terms(), select, cursor, after)
     }
 
     /// Orders `select`, reading from the far end for a backward page.
@@ -215,22 +196,7 @@ impl ItemOrder {
         if let Some(leading) = &self.leading {
             select = select.column_as(leading.expr.clone(), KEY_COLUMN);
         }
-        for term in self.terms() {
-            let descending = term.descending != reversed;
-            let order = if descending { Order::Desc } else { Order::Asc };
-            select = if term.nullable {
-                // Smallest: first ascending, last descending.
-                let nulls = if descending {
-                    NullOrdering::Last
-                } else {
-                    NullOrdering::First
-                };
-                select.order_by_with_nulls(term.expr, order, nulls)
-            } else {
-                select.order_by(term.expr, order)
-            };
-        }
-        select
+        sort_terms(&self.terms(), select, reversed)
     }
 
     /// The cursor locating a row of a listing ordered by [`ItemOrder::sort`].
@@ -261,6 +227,113 @@ impl ItemOrder {
         }
         Ok(Cursor { keys, id: item.id })
     }
+}
+
+/// The order of a search across libraries, whose cursors `SearchQuery::cursor` writes.
+#[derive(Debug, Clone)]
+pub(crate) struct SearchRanking {
+    terms: Vec<Term>,
+}
+
+impl SearchRanking {
+    /// By relevance, `hundredths` is the score's leading part, as
+    /// `open_plex_core::search::hundredths` computes it for each row.
+    pub(crate) fn new(order: SearchOrder, hundredths: SimpleExpr) -> Self {
+        let column = |column: metadata_item::Column, descending| Term {
+            expr: Expr::col((metadata_item::Entity, column)).into(),
+            descending,
+            nullable: false,
+        };
+        let mut terms = Vec::new();
+        if order == SearchOrder::Relevance {
+            terms.push(Term {
+                expr: hundredths,
+                descending: true,
+                nullable: false,
+            });
+            // Absent counts as zero, as it does in the score.
+            terms.push(Term {
+                expr: Func::coalesce([
+                    Expr::col((metadata_item::Entity, metadata_item::Column::AudienceRating))
+                        .into(),
+                    Expr::val(0.0).into(),
+                ])
+                .into(),
+                descending: true,
+                nullable: false,
+            });
+        }
+        terms.push(column(metadata_item::Column::SortKey, false));
+        terms.push(column(metadata_item::Column::Id, false));
+        Self { terms }
+    }
+
+    pub(crate) fn resume(
+        &self,
+        select: Select<metadata_item::Entity>,
+        cursor: &Cursor,
+        after: bool,
+    ) -> Result<Select<metadata_item::Entity>, MetadataError> {
+        resume_terms(&self.terms, select, cursor, after)
+    }
+
+    pub(crate) fn sort(
+        &self,
+        select: Select<metadata_item::Entity>,
+        reversed: bool,
+    ) -> Select<metadata_item::Entity> {
+        sort_terms(&self.terms, select, reversed)
+    }
+}
+
+fn resume_terms(
+    terms: &[Term],
+    select: Select<metadata_item::Entity>,
+    cursor: &Cursor,
+    after: bool,
+) -> Result<Select<metadata_item::Entity>, MetadataError> {
+    // Every term but the id carries a value: a cursor from another ordering cannot say
+    // where this one stands.
+    if cursor.keys.len() + 1 != terms.len() {
+        return Err(MetadataError::CursorMismatch);
+    }
+    let values: Vec<CursorKey> = cursor
+        .keys
+        .iter()
+        .cloned()
+        .chain([CursorKey::Int(cursor.id)])
+        .collect();
+    if values
+        .iter()
+        .zip(terms)
+        .any(|(value, term)| matches!(value, CursorKey::Absent) && !term.nullable)
+    {
+        return Err(MetadataError::CursorMismatch);
+    }
+    Ok(select.filter(lexicographic(terms, &values, after)))
+}
+
+fn sort_terms(
+    terms: &[Term],
+    mut select: Select<metadata_item::Entity>,
+    reversed: bool,
+) -> Select<metadata_item::Entity> {
+    for term in terms {
+        let descending = term.descending != reversed;
+        let order = if descending { Order::Desc } else { Order::Asc };
+        select = if term.nullable {
+            // Smallest: first ascending, last descending.
+            let nulls = if descending {
+                NullOrdering::Last
+            } else {
+                NullOrdering::First
+            };
+            select.order_by_with_nulls(term.expr.clone(), order, nulls)
+        } else {
+            select.order_by(term.expr.clone(), order)
+        };
+    }
+    select
 }
 
 /// An item's shortest or longest version by `column`: the shortest leads an ascending

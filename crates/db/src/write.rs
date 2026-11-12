@@ -1,6 +1,7 @@
 //! The one way to write items.
 //!
-//! An item carries a derived index — its searchable title words — and that index is only
+//! An item carries a derived index — its searchable title words, and the whole titles a
+//! search ranks by — and that index is only
 //! correct if *every* write maintains it. Leaving that to each caller is how a search quietly
 //! stops finding things: the importer remembers, a later write path does not, and nothing
 //! fails until a user cannot find a film that is plainly there. The test suite found this the
@@ -21,7 +22,8 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    collection, collection_word, item_field_lock, item_title_word, metadata_item, tag, tag_word,
+    collection, collection_word, item_field_lock, item_title_key, item_title_word, metadata_item,
+    tag, tag_word,
 };
 
 /// Rows per statement.
@@ -30,7 +32,7 @@ use crate::entity::{
 /// rows stays comfortably under every engine's limit while keeping the round trips few.
 const WRITE_CHUNK: usize = 500;
 
-/// Inserts items and their title-word index.
+/// Inserts items, their title-word index and their title keys.
 ///
 /// # Errors
 ///
@@ -42,15 +44,21 @@ pub async fn insert_items<C: ConnectionTrait>(
     items: Vec<metadata_item::ActiveModel>,
 ) -> Result<usize, DbErr> {
     let words: Vec<item_title_word::ActiveModel> = items.iter().flat_map(model_words).collect();
+    let keys: Vec<item_title_key::ActiveModel> = items.iter().flat_map(model_keys).collect();
 
     for chunk in items.chunks(WRITE_CHUNK) {
         metadata_item::Entity::insert_many(chunk.to_vec())
             .exec(connection)
             .await?;
     }
-    // After the items: the word rows carry a foreign key to them.
+    // After the items: the word and key rows carry a foreign key to them.
     for chunk in words.chunks(WRITE_CHUNK) {
         item_title_word::Entity::insert_many(chunk.to_vec())
+            .exec(connection)
+            .await?;
+    }
+    for chunk in keys.chunks(WRITE_CHUNK) {
+        item_title_key::Entity::insert_many(chunk.to_vec())
             .exec(connection)
             .await?;
     }
@@ -136,7 +144,7 @@ pub async fn save_collection<C: ConnectionTrait>(
     Ok(())
 }
 
-/// Writes an edited item's values, sort key, title words and locks.
+/// Writes an edited item's values, sort key, title words, title keys and locks.
 ///
 /// Every column an edit can reach is written, whether or not it changed: the edit has already
 /// been applied to `item`, and writing its whole editable state is what keeps this function
@@ -185,6 +193,22 @@ pub async fn update_item<C: ConnectionTrait>(
     );
     if !words.is_empty() {
         item_title_word::Entity::insert_many(words)
+            .exec(connection)
+            .await?;
+    }
+
+    item_title_key::Entity::delete_many()
+        .filter(item_title_key::Column::ItemId.eq(id))
+        .exec(connection)
+        .await?;
+    let keys = title_keys(
+        id,
+        item.title.as_deref(),
+        item.title_sort.as_deref(),
+        item.original_title.as_deref(),
+    );
+    if !keys.is_empty() {
+        item_title_key::Entity::insert_many(keys)
             .exec(connection)
             .await?;
     }
@@ -268,6 +292,37 @@ fn model_words(item: &metadata_item::ActiveModel) -> Vec<item_title_word::Active
         text(&item.title_sort).as_deref(),
         text(&item.original_title).as_deref(),
     )
+}
+
+/// The key rows for one item, read back off the model as [`model_words`] reads its words.
+fn model_keys(item: &metadata_item::ActiveModel) -> Vec<item_title_key::ActiveModel> {
+    let Some(&id) = item.id.try_as_ref() else {
+        return Vec::new();
+    };
+    let text = |value: &ActiveValue<Option<String>>| value.try_as_ref().cloned().flatten();
+    title_keys(
+        id,
+        text(&item.title).as_deref(),
+        text(&item.title_sort).as_deref(),
+        text(&item.original_title).as_deref(),
+    )
+}
+
+fn title_keys(
+    id: i64,
+    title: Option<&str>,
+    title_sort: Option<&str>,
+    original_title: Option<&str>,
+) -> Vec<item_title_key::ActiveModel> {
+    search::title_keys(title, title_sort, original_title)
+        .into_iter()
+        .map(|key| item_title_key::ActiveModel {
+            item_id: ActiveValue::Set(id),
+            key: ActiveValue::Set(key.key),
+            exact: ActiveValue::Set(key.exact),
+            leading: ActiveValue::Set(key.leading),
+        })
+        .collect()
 }
 
 fn title_words(

@@ -5,11 +5,10 @@
 //! series, episodes, actors, directors, genres and collections. Music, photos, playlists and
 //! the rest stay empty, as they would on a server holding none.
 //!
-//! Matching is the official API's (`search` and `searchTags`), a word prefix with accents
-//! folded; the reference matches more loosely (`dune` finds `d'une`). Ranking follows the
-//! scores the reference gives, measured on a dozen terms: an exact title first, then a title
-//! whose first word is the term, then one starting with it, then the rest, each shelf cut to
-//! `limit`. `docs/spec-gaps.md` lists the rules and where they stop.
+//! Matching and ranking are the official API's: `search`, ranked by its score, the score the
+//! reference gives, and `searchTags`; a film or series shelf no title fills is filled through
+//! the people the term names (`searchCredits`), as the reference fills it. Each shelf is cut
+//! to `limit`. `docs/spec-gaps.md` lists the rules and where they stop.
 
 use std::cmp::Reverse;
 use std::collections::HashMap;
@@ -21,7 +20,7 @@ use axum::Router;
 use open_plex_api::library::LIBRARY_TYPE;
 use open_plex_api::GlobalId;
 use open_plex_core::page::MAX_ITEMS;
-use open_plex_core::search::fold;
+use open_plex_core::search::{fold, name_rung, name_score, tag_order, ListedTag, Rung};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Caller;
@@ -43,18 +42,13 @@ pub fn router() -> Router<PlexState> {
 /// Entries per shelf when the client does not say.
 const DEFAULT_LIMIT: u32 = 3;
 
-/// How many matches each shelf ranks before cutting to `limit`. Storage answers items in
-/// title order and tags most credited first, so without this margin an exact match would
-/// lose its place to whatever happens to come before it.
-const RANKED_MATCHES: u32 = 100;
-
-/// The matches, with only what ranking reads: the listing fields of a hundred items a shelf
-/// would cost more than the search itself, for the three each shelf keeps.
 const MATCHES_QUERY: &str = r"
 query PlexHubSearch($query: String!, $items: Int!, $tags: Int!, $withTags: Boolean!) {
-  movies: search(query: $query, kinds: [MOVIE], first: $items) { ...MatchedItems }
-  shows: search(query: $query, kinds: [SHOW], first: $items) { ...MatchedItems }
-  episodes: search(query: $query, kinds: [EPISODE], first: $items) { ...MatchedItems }
+  movies: search(query: $query, kinds: [MOVIE], first: $items) { ...FoundItems }
+  shows: search(query: $query, kinds: [SHOW], first: $items) { ...FoundItems }
+  episodes: search(query: $query, kinds: [EPISODE], episodesBySeries: true, first: $items) {
+    ...FoundItems
+  }
   actors: searchTags(query: $query, kinds: [ACTOR], first: $tags) @include(if: $withTags) {
     ...FoundTags
   }
@@ -64,23 +58,30 @@ query PlexHubSearch($query: String!, $items: Int!, $tags: Int!, $withTags: Boole
   genres: searchTags(query: $query, kinds: [GENRE], first: $tags) @include(if: $withTags) {
     ...FoundTags
   }
-  collections(matching: $query, first: $tags) @include(if: $withTags) {
-    edges { node {
-      tagNumber title guid summary thumbUrl artUrl itemCount
-      library { id title kind }
-    } }
+  collections(matching: $query, first: $tags) @include(if: $withTags) { ...FoundCollections }
+}
+";
+
+/// The film and series shelves no title filled, from the people the term names.
+const CREDITS_QUERY: &str = r"
+query PlexHubSearchCredits($query: String!, $items: Int!, $movies: Boolean!, $shows: Boolean!) {
+  movies: searchCredits(query: $query, kind: MOVIE, first: $items) @include(if: $movies) {
+    ...CreditedItems
+  }
+  shows: searchCredits(query: $query, kind: SHOW, first: $items) @include(if: $shows) {
+    ...CreditedItems
   }
 }
 
-fragment MatchedItems on ItemConnection {
-  edges { node {
-    id
-    title
-    titleSort
-    ... on Movie { originalTitle }
-    ... on Show { originalTitle }
-    ... on Episode { originalTitle }
-  } }
+fragment CreditedItems on CreditedItemConnection {
+  edges { score credit { tag { id name kind } } node { ...ListedItem } }
+}
+";
+
+/// What a search finds, as `/library/search` asks for it too.
+pub(crate) const SEARCH_FRAGMENTS: &str = r"
+fragment FoundItems on ItemSearchConnection {
+  edges { score titleMatch node { ...ListedItem } }
 }
 
 fragment FoundTags on TagUseConnection {
@@ -90,19 +91,21 @@ fragment FoundTags on TagUseConnection {
     library { id title kind }
   } }
 }
-";
 
-/// The listing fields of the items each shelf keeps, in the order asked.
-const ITEMS_QUERY: &str = r"
-query PlexHubSearchItems($movies: [ID!]!, $shows: [ID!]!, $episodes: [ID!]!) {
-  movies: nodes(ids: $movies) { ...ListedItem }
-  shows: nodes(ids: $shows) { ...ListedItem }
-  episodes: nodes(ids: $episodes) { ...ListedItem }
+fragment FoundCollections on CollectionConnection {
+  edges { node {
+    tagNumber title guid summary thumbUrl artUrl itemCount
+    library { id title kind }
+  } }
 }
 ";
 
-static ITEMS_QUERY_WITH_FRAGMENTS: std::sync::LazyLock<String> =
-    std::sync::LazyLock::new(|| with_shared_fragments(ITEMS_QUERY));
+static MATCHES_QUERY_WITH_FRAGMENTS: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    with_shared_fragments(&format!("{MATCHES_QUERY}{SEARCH_FRAGMENTS}"))
+});
+
+static CREDITS_QUERY_WITH_FRAGMENTS: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| with_shared_fragments(CREDITS_QUERY));
 
 const LIBRARY_QUERY: &str = r"
 query PlexHubSearchLibrary($id: ID!) { node(id: $id) { id } }
@@ -110,9 +113,9 @@ query PlexHubSearchLibrary($id: ID!) { node(id: $id) { id } }
 
 #[derive(Debug, Deserialize)]
 struct MatchesData {
-    movies: ItemMatches,
-    shows: ItemMatches,
-    episodes: ItemMatches,
+    movies: FoundItems,
+    shows: FoundItems,
+    episodes: FoundItems,
     /// Absent for a one-character term, which finds no tags.
     #[serde(default)]
     actors: TagMatches,
@@ -124,13 +127,78 @@ struct MatchesData {
     collections: CollectionMatches,
 }
 
+/// Items `search` found, ranked, with their scores.
 #[derive(Debug, Default, Deserialize)]
-struct CollectionMatches {
-    edges: Vec<CollectionMatchEdge>,
+pub(crate) struct FoundItems {
+    pub(crate) edges: Vec<FoundItem>,
 }
 
 #[derive(Debug, Deserialize)]
-struct CollectionMatchEdge {
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FoundItem {
+    pub(crate) score: f64,
+    pub(crate) title_match: TitleMatch,
+    pub(crate) node: GqlItem,
+}
+
+/// Mirrors the official API's `TitleMatch`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub(crate) enum TitleMatch {
+    Exact,
+    LeadingWord,
+    LeadingPrefix,
+    Anywhere,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CreditsData {
+    #[serde(default)]
+    movies: CreditedItems,
+    #[serde(default)]
+    shows: CreditedItems,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CreditedItems {
+    edges: Vec<CreditedItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreditedItem {
+    score: f64,
+    credit: Credit,
+    node: GqlItem,
+}
+
+#[derive(Debug, Deserialize)]
+struct Credit {
+    tag: CreditTag,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreditTag {
+    id: String,
+    name: String,
+    kind: CreditKind,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum CreditKind {
+    Actor,
+    Director,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct CollectionMatches {
+    pub(crate) edges: Vec<CollectionMatchEdge>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct CollectionMatchEdge {
     node: CollectionMatch,
 }
 
@@ -147,39 +215,13 @@ struct CollectionMatch {
     library: Option<MatchedLibrary>,
 }
 
-#[derive(Debug, Deserialize)]
-struct ItemMatches {
-    edges: Vec<ItemMatchEdge>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ItemMatchEdge {
-    node: MatchedItem,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MatchedItem {
-    id: String,
-    title: Option<String>,
-    title_sort: Option<String>,
-    original_title: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ItemsData {
-    movies: Vec<Option<GqlItem>>,
-    shows: Vec<Option<GqlItem>>,
-    episodes: Vec<Option<GqlItem>>,
-}
-
 #[derive(Debug, Default, Deserialize)]
-struct TagMatches {
-    edges: Vec<TagMatchEdge>,
+pub(crate) struct TagMatches {
+    pub(crate) edges: Vec<TagMatchEdge>,
 }
 
 #[derive(Debug, Deserialize)]
-struct TagMatchEdge {
+pub(crate) struct TagMatchEdge {
     node: TagMatch,
 }
 
@@ -249,7 +291,7 @@ struct SearchHub {
 #[derive(Debug, Serialize)]
 struct ItemResult {
     /// Set when the shelf holds another result of the same title, to tell them apart by
-    /// library.
+    /// library, and on what was found through a person, naming them.
     #[serde(flatten)]
     reason: Option<FoundIn>,
     score: Score,
@@ -257,9 +299,10 @@ struct ItemResult {
     metadata: MetadataEntry,
 }
 
-/// Why a result is listed, Plex's `reason`: here, always the library it comes from.
+/// Why a result is listed, Plex's `reason`: the library it comes from, or the person it was
+/// found through.
 #[derive(Debug, Serialize)]
-struct FoundIn {
+pub(crate) struct FoundIn {
     reason: &'static str,
     #[serde(rename = "reasonID")]
     reason_id: i64,
@@ -277,19 +320,23 @@ impl FoundIn {
     }
 }
 
-/// A person or a genre in one library, leading to that library's items filtered on it.
+/// A person, a genre or a collection in one library, leading to that library's items
+/// filtered on it.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TagResult {
+pub(crate) struct TagResult {
     key: String,
     #[serde(rename = "librarySectionID")]
     library_section_id: i64,
     library_section_key: String,
     library_section_title: String,
     library_section_type: u8,
+    /// The library again, on a shelf; `/library/search` carries none.
     #[serde(flatten)]
-    reason: FoundIn,
-    score: Score,
+    reason: Option<FoundIn>,
+    /// On a shelf; `/library/search` writes it around the entry instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    score: Option<Score>,
     #[serde(rename = "type")]
     kind: &'static str,
     id: i64,
@@ -311,9 +358,24 @@ struct TagResult {
     summary: Option<String>,
 }
 
+impl TagResult {
+    /// The library kind whose items it leads to.
+    pub(crate) const fn library_type(&self) -> u8 {
+        self.library_section_type
+    }
+
+    /// The entry as `/library/search` writes it, with its score apart and no library
+    /// repeated as a reason.
+    pub(crate) fn into_bare(mut self) -> (f64, Self) {
+        let score = self.score.take().map_or(0.0, |score| score.0);
+        self.reason = None;
+        (score, self)
+    }
+}
+
 /// A relevance score, which the reference writes as a string of five decimals.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-struct Score(f64);
+pub(crate) struct Score(f64);
 
 impl Score {
     /// The rung of the ladder, which is what orders the shelves: `0.73` and `0.71` are the
@@ -336,13 +398,8 @@ impl Serialize for Score {
     }
 }
 
-/// The scores of an item shelf, from a match anywhere to an exact title.
-const ITEM_SCORES: [f64; 4] = [0.33, 0.53, 0.73, 0.93];
-/// An episode scores two hundredths below a film or a series matching as well.
-const EPISODE_SCORES: [f64; 4] = [0.31, 0.51, 0.71, 0.91];
-/// The scores of a person or a genre: a match anywhere, a name starting with the term, the
-/// name itself.
-const TAG_SCORES: [f64; 3] = [0.32, 0.52, 0.92];
+/// Plex's `tagType` of a collection.
+const COLLECTION_TAG_TYPE: u8 = 2;
 
 /// The seventeen shelves, in the order the reference falls back on when their scores tie.
 const SHELVES: [Shelf; 17] = [
@@ -366,7 +423,7 @@ const SHELVES: [Shelf; 17] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Shelf {
+pub(crate) enum Shelf {
     Movie,
     Show,
     Artist,
@@ -450,7 +507,7 @@ impl Shelf {
 impl SearchHub {
     fn top_score(&self) -> Option<Score> {
         let items = self.items.iter().map(|result| result.score);
-        let tags = self.tags.iter().map(|result| result.score);
+        let tags = self.tags.iter().filter_map(|result| result.score);
         items
             .chain(tags)
             .reduce(|best, score| if score > best { score } else { best })
@@ -505,112 +562,88 @@ impl Request {
     }
 }
 
-/// The rung of a title equal to the term.
-const EXACT: usize = 3;
-
-/// Where a title ranks against the term, as an index into [`ITEM_SCORES`].
+/// A shelf of items, in the order `search` ranked them.
 ///
-/// Words are split on spaces and apostrophes for this, so that `Amelie's Miracle` starts
-/// with the word `amelie` while `Dune: Part Two` starts with `dune:` — a rung below `Dune :
-/// Deuxième partie`, as the reference ranks them. The sort title counts for an exact match
-/// (*The Batman* is `batman`), and the original title for the others: an episode carries its
-/// series' there, and ranks by it.
-fn item_rung(item: &MatchedItem, folded_term: &str) -> usize {
-    let folded = |text: &Option<String>| text.as_deref().map(fold);
-    let (title, title_sort, original) = (
-        folded(&item.title),
-        folded(&item.title_sort),
-        folded(&item.original_title),
-    );
-    if [&title, &title_sort]
-        .into_iter()
-        .any(|text| text.as_deref() == Some(folded_term))
-    {
-        return EXACT;
-    }
-    let first_word = |text: &str| text.split([' ', '\'', '’']).next().map(ToOwned::to_owned);
-    let term_word = first_word(folded_term).unwrap_or_default();
-    let titles: Vec<String> = [title, original].into_iter().flatten().collect();
-    if titles
-        .iter()
-        .any(|text| first_word(text).as_deref() == Some(term_word.as_str()))
-    {
-        2
-    } else {
-        usize::from(titles.iter().any(|text| text.starts_with(&term_word)))
-    }
-}
-
-/// Where a name ranks against the term, as an index into [`TAG_SCORES`]. Unlike a title, a
-/// name's rung minds its accents: `amelie` puts Amelie Kiefer above Amélie Glenn.
-fn tag_rung(name: &str, term: &str) -> usize {
-    let (name, term) = (name.to_lowercase(), term.to_lowercase());
-    if name == term {
-        2
-    } else {
-        usize::from(name.starts_with(&term))
-    }
-}
-
-/// A shelf's matches in rank order, cut to `limit`, with the rung each reached.
-fn rank_items(edges: Vec<ItemMatchEdge>, request: &Request) -> Vec<(usize, MatchedItem)> {
-    let folded_term = fold(request.term.trim());
-    let mut ranked: Vec<(usize, MatchedItem)> = edges
-        .into_iter()
-        .map(|edge| (item_rung(&edge.node, &folded_term), edge.node))
-        .collect();
-    // Stable, so title order survives within a rung.
-    ranked.sort_by_key(|(rung, _)| Reverse(*rung));
-    if request.is_single_character() {
-        ranked.retain(|(rung, _)| *rung == EXACT);
-    }
-    ranked.truncate(request.limit as usize);
-    ranked
-}
-
-/// A shelf of items from its ranked matches and their listing fields, in the same order.
+/// A single-character term keeps only the titles equal to it: on the reference, `a` finds
+/// the episodes titled "A" and `x` the film "X", nothing else.
 fn item_hub(
     shelf: Shelf,
-    ranked: &[(usize, MatchedItem)],
-    items: Vec<Option<GqlItem>>,
+    found: Vec<FoundItem>,
+    request: &Request,
     language: Language,
 ) -> SearchHub {
-    let scores = if shelf == Shelf::Episode {
-        EPISODE_SCORES
-    } else {
-        ITEM_SCORES
-    };
+    let found: Vec<FoundItem> = found
+        .into_iter()
+        .filter(|item| !request.is_single_character() || item.title_match == TitleMatch::Exact)
+        .take(request.limit as usize)
+        .collect();
     let mut titles: HashMap<&str, usize> = HashMap::new();
-    for (_, matched) in ranked {
+    for item in &found {
         *titles
-            .entry(matched.title.as_deref().unwrap_or_default())
+            .entry(item.node.title.as_deref().unwrap_or_default())
             .or_default() += 1;
     }
-    let items: Vec<ItemResult> = ranked
+    let shared_titles: Vec<bool> = found
         .iter()
-        .zip(items)
-        .filter_map(|((rung, matched), item)| {
-            let item = item?;
-            let mut metadata = MetadataEntry::from_graphql(&item, true, language)?;
-            // Empty rather than absent, as `/library/search` measured on films with none.
-            if metadata.kind == "movie" {
-                metadata.summary.get_or_insert_with(String::new);
-            }
-            let shared_title = titles
-                .get(matched.title.as_deref().unwrap_or_default())
-                .is_some_and(|count| *count > 1);
-            let reason = item
+        .map(|item| titles[item.node.title.as_deref().unwrap_or_default()] > 1)
+        .collect();
+    let items = found
+        .into_iter()
+        .zip(shared_titles)
+        .filter_map(|(found, shared_title)| {
+            let reason = found
+                .node
                 .library
+                .as_ref()
                 .filter(|_| shared_title)
-                .map(|library| FoundIn::library(library.database_id(), library.title));
-            Some(ItemResult {
-                reason,
-                score: Score(scores[*rung]),
-                metadata,
-            })
+                .map(|library| FoundIn::library(library.database_id(), library.title.clone()));
+            item_result(&found.node, reason, found.score, language)
         })
         .collect();
+    filled(shelf, items, language)
+}
 
+/// A film or series shelf from the works of the people the term names.
+fn credited_hub(shelf: Shelf, found: CreditedItems, language: Language) -> SearchHub {
+    let items = found
+        .edges
+        .into_iter()
+        .filter_map(|found| {
+            let reason = match found.credit.tag.kind {
+                CreditKind::Actor => "actor",
+                CreditKind::Director => "director",
+                CreditKind::Other => return None,
+            };
+            let reason = FoundIn {
+                reason,
+                reason_id: GlobalId::decode(&found.credit.tag.id).ok()?.key,
+                reason_title: found.credit.tag.name,
+            };
+            item_result(&found.node, Some(reason), found.score, language)
+        })
+        .collect();
+    filled(shelf, items, language)
+}
+
+fn item_result(
+    item: &GqlItem,
+    reason: Option<FoundIn>,
+    score: f64,
+    language: Language,
+) -> Option<ItemResult> {
+    let mut metadata = MetadataEntry::from_graphql(item, true, language)?;
+    // Empty rather than absent, as `/library/search` measured on films with none.
+    if metadata.kind == "movie" {
+        metadata.summary.get_or_insert_with(String::new);
+    }
+    Some(ItemResult {
+        reason,
+        score: Score(score),
+        metadata,
+    })
+}
+
+fn filled(shelf: Shelf, items: Vec<ItemResult>, language: Language) -> SearchHub {
     SearchHub {
         size: items.len(),
         items,
@@ -620,19 +653,32 @@ fn item_hub(
 
 /// A matched tag with what ranks it: its rung and numbers, decoded from the global ids.
 struct RankedTag {
-    rung: usize,
+    rung: Rung,
     id: i64,
     section: i64,
     found: TagMatch,
     library: MatchedLibrary,
 }
 
-fn tag_hub(
+impl RankedTag {
+    fn listed(&self) -> ListedTag<'_> {
+        ListedTag {
+            name: &self.found.tag.name,
+            library_title: &self.library.title,
+            count: self.found.item_count,
+            id: self.id,
+        }
+    }
+}
+
+/// The people or genres of a shelf, `shelf` naming which, in `tag_order` and cut to
+/// `limit`.
+pub(crate) fn ranked_tags(
     shelf: Shelf,
     edges: Vec<TagMatchEdge>,
-    request: &Request,
-    language: Language,
-) -> SearchHub {
+    term: &str,
+    limit: u32,
+) -> Vec<TagResult> {
     let (filter, tag_type) = match shelf {
         Shelf::Actor => ("actor", 6),
         Shelf::Director => ("director", 4),
@@ -644,7 +690,7 @@ fn tag_hub(
             let mut found = edge.node;
             let library = found.library.take()?;
             Some(RankedTag {
-                rung: tag_rung(&found.tag.name, request.term.trim()),
+                rung: name_rung(&found.tag.name, term),
                 id: GlobalId::decode(&found.tag.id).ok()?.key,
                 section: GlobalId::decode(&library.id).ok()?.key,
                 found,
@@ -652,24 +698,11 @@ fn tag_hub(
             })
         })
         .collect();
-    // Within a rung, library by library in title order, the most credited first.
-    ranked.sort_by(|left, right| {
-        right
-            .rung
-            .cmp(&left.rung)
-            .then_with(|| {
-                left.library
-                    .title
-                    .to_lowercase()
-                    .cmp(&right.library.title.to_lowercase())
-            })
-            .then_with(|| right.found.item_count.cmp(&left.found.item_count))
-            .then_with(|| right.id.cmp(&left.id))
-    });
+    ranked.sort_by(|left, right| tag_order(term, &left.listed(), &right.listed()));
 
-    let tags: Vec<TagResult> = ranked
+    ranked
         .into_iter()
-        .take(request.limit as usize)
+        .take(limit as usize)
         .map(
             |RankedTag {
                  rung,
@@ -686,8 +719,8 @@ fn tag_hub(
                     library_section_key: format!("/library/sections/{section}"),
                     library_section_title: library.title.clone(),
                     library_section_type: library.kind.top_level_type(),
-                    reason: FoundIn::library(section, library.title),
-                    score: Score(TAG_SCORES[rung]),
+                    reason: Some(FoundIn::library(section, library.title)),
+                    score: Some(Score(name_score(rung))),
                     kind: "tag",
                     id,
                     filter,
@@ -704,38 +737,43 @@ fn tag_hub(
                 }
             },
         )
-        .collect();
-
-    SearchHub {
-        size: tags.len(),
-        tags,
-        ..shelf.empty(language.catalog())
-    }
+        .collect()
 }
 
 /// A matched collection with what ranks it, as [`RankedTag`] is for a tag.
 struct RankedCollection {
-    rung: usize,
+    rung: Rung,
     number: i64,
     section: i64,
     found: CollectionMatch,
     library: MatchedLibrary,
 }
 
-/// The collections shelf: each collection in its library, ranked as a tag is, since the
-/// reference lists a collection as the tag its items carry (`tagType` 2).
-fn collection_hub(
+impl RankedCollection {
+    fn listed(&self) -> ListedTag<'_> {
+        ListedTag {
+            name: &self.found.title,
+            library_title: &self.library.title,
+            count: self.found.item_count,
+            id: self.number,
+        }
+    }
+}
+
+/// The collections, each in its library, ranked as a tag is, since the reference lists a
+/// collection as the tag its items carry (`tagType` 2).
+pub(crate) fn ranked_collections(
     edges: Vec<CollectionMatchEdge>,
-    request: &Request,
-    language: Language,
-) -> SearchHub {
+    term: &str,
+    limit: u32,
+) -> Vec<TagResult> {
     let mut ranked: Vec<RankedCollection> = edges
         .into_iter()
         .filter_map(|edge| {
             let mut found = edge.node;
             let library = found.library.take()?;
             Some(RankedCollection {
-                rung: tag_rung(&found.title, request.term.trim()),
+                rung: name_rung(&found.title, term),
                 number: found.tag_number.parse().ok()?,
                 section: GlobalId::decode(&library.id).ok()?.key,
                 found,
@@ -744,22 +782,10 @@ fn collection_hub(
         })
         .collect();
     // As people are ranked: library by library in title order, the largest first.
-    ranked.sort_by(|left, right| {
-        right
-            .rung
-            .cmp(&left.rung)
-            .then_with(|| {
-                left.library
-                    .title
-                    .to_lowercase()
-                    .cmp(&right.library.title.to_lowercase())
-            })
-            .then_with(|| right.found.item_count.cmp(&left.found.item_count))
-            .then_with(|| right.number.cmp(&left.number))
-    });
-    let tags: Vec<TagResult> = ranked
+    ranked.sort_by(|left, right| tag_order(term, &left.listed(), &right.listed()));
+    ranked
         .into_iter()
-        .take(request.limit as usize)
+        .take(limit as usize)
         .map(
             |RankedCollection {
                  rung,
@@ -775,13 +801,13 @@ fn collection_hub(
                     library_section_key: format!("/library/sections/{section}"),
                     library_section_title: library.title.clone(),
                     library_section_type: library.kind.top_level_type(),
-                    reason: FoundIn::library(section, library.title),
-                    score: Score(TAG_SCORES[rung]),
+                    reason: Some(FoundIn::library(section, library.title)),
+                    score: Some(Score(name_score(rung))),
                     kind: "tag",
                     id: number,
                     filter,
                     tag: found.title,
-                    tag_type: 2,
+                    tag_type: COLLECTION_TAG_TYPE,
                     tag_key: None,
                     thumb: found.thumb_url,
                     art: found.art_url,
@@ -791,39 +817,15 @@ fn collection_hub(
                 }
             },
         )
-        .collect();
+        .collect()
+}
+
+fn tag_hub(shelf: Shelf, tags: Vec<TagResult>, language: Language) -> SearchHub {
     SearchHub {
         size: tags.len(),
         tags,
-        ..Shelf::Collection.empty(language.catalog())
+        ..shelf.empty(language.catalog())
     }
-}
-
-/// The listing fields of the items kept on the film, series and episode shelves.
-async fn listing_fields(
-    state: &PlexState,
-    [movies, shows, episodes]: [&[(usize, MatchedItem)]; 3],
-) -> Result<ItemsData, ApiError> {
-    if movies.is_empty() && shows.is_empty() && episodes.is_empty() {
-        return Ok(ItemsData {
-            movies: Vec::new(),
-            shows: Vec::new(),
-            episodes: Vec::new(),
-        });
-    }
-    let ids = |ranked: &[(usize, MatchedItem)]| {
-        Value::List(
-            ranked
-                .iter()
-                .map(|(_, matched)| Value::String(matched.id.clone()))
-                .collect(),
-        )
-    };
-    let mut variables = Variables::default();
-    variables.insert(Name::new("movies"), ids(movies));
-    variables.insert(Name::new("shows"), ids(shows));
-    variables.insert(Name::new("episodes"), ids(episodes));
-    gql::execute(&state.schema, &ITEMS_QUERY_WITH_FRAGMENTS, variables).await
 }
 
 /// The library the client named, among those the caller can see.
@@ -835,6 +837,24 @@ async fn library_exists(state: &PlexState, section: i64) -> Result<bool, ApiErro
     );
     let data: LibraryData = gql::execute(&state.schema, LIBRARY_QUERY, variables).await?;
     Ok(data.node.is_some())
+}
+
+/// The works of the people the term names, for the film and series shelves no title filled.
+async fn credited(
+    state: &PlexState,
+    request: &Request,
+    movies: bool,
+    shows: bool,
+) -> Result<CreditsData, ApiError> {
+    if !(movies || shows) {
+        return Ok(CreditsData::default());
+    }
+    let mut variables = Variables::default();
+    variables.insert(Name::new("query"), Value::String(request.term.clone()));
+    variables.insert(Name::new("items"), Value::Number(request.limit.into()));
+    variables.insert(Name::new("movies"), Value::Boolean(movies));
+    variables.insert(Name::new("shows"), Value::Boolean(shows));
+    gql::execute(&state.schema, &CREDITS_QUERY_WITH_FRAGMENTS, variables).await
 }
 
 async fn search(
@@ -851,36 +871,60 @@ async fn search(
         }
     }
 
+    let with_tags = !request.is_single_character();
     let mut variables = Variables::default();
     variables.insert(Name::new("query"), Value::String(request.term.clone()));
-    // A single character begins thousands of words; the exact titles hide among them, in
-    // title order, behind whatever starts with a digit or a sign.
-    let pool = if request.is_single_character() {
-        MAX_ITEMS
-    } else {
-        request.limit.clamp(RANKED_MATCHES, MAX_ITEMS)
-    };
-    variables.insert(Name::new("items"), Value::Number(pool.into()));
+    variables.insert(Name::new("items"), Value::Number(request.limit.into()));
     variables.insert(Name::new("tags"), Value::Number(MAX_ITEMS.into()));
-    variables.insert(
-        Name::new("withTags"),
-        Value::Boolean(!request.is_single_character()),
-    );
-    let matches: MatchesData = gql::execute(&state.schema, MATCHES_QUERY, variables).await?;
-    let movies = rank_items(matches.movies.edges, &request);
-    let shows = rank_items(matches.shows.edges, &request);
-    let episodes = rank_items(matches.episodes.edges, &request);
-    let items = listing_fields(&state, [&movies, &shows, &episodes]).await?;
+    variables.insert(Name::new("withTags"), Value::Boolean(with_tags));
+    let matches: MatchesData =
+        gql::execute(&state.schema, &MATCHES_QUERY_WITH_FRAGMENTS, variables).await?;
+    let credits = credited(
+        &state,
+        &request,
+        with_tags && matches.movies.edges.is_empty(),
+        with_tags && matches.shows.edges.is_empty(),
+    )
+    .await?;
 
     let language = Language::of(&client);
+    let term = request.term.trim();
+    let item_shelf = |shelf, found: FoundItems, credited: CreditedItems| {
+        if found.edges.is_empty() {
+            credited_hub(shelf, credited, language)
+        } else {
+            item_hub(shelf, found.edges, &request, language)
+        }
+    };
     let mut filled = [
-        item_hub(Shelf::Movie, &movies, items.movies, language),
-        item_hub(Shelf::Show, &shows, items.shows, language),
-        item_hub(Shelf::Episode, &episodes, items.episodes, language),
-        tag_hub(Shelf::Actor, matches.actors.edges, &request, language),
-        tag_hub(Shelf::Director, matches.directors.edges, &request, language),
-        tag_hub(Shelf::Genre, matches.genres.edges, &request, language),
-        collection_hub(matches.collections.edges, &request, language),
+        item_shelf(Shelf::Movie, matches.movies, credits.movies),
+        item_shelf(Shelf::Show, matches.shows, credits.shows),
+        item_hub(Shelf::Episode, matches.episodes.edges, &request, language),
+        tag_hub(
+            Shelf::Actor,
+            ranked_tags(Shelf::Actor, matches.actors.edges, term, request.limit),
+            language,
+        ),
+        tag_hub(
+            Shelf::Director,
+            ranked_tags(
+                Shelf::Director,
+                matches.directors.edges,
+                term,
+                request.limit,
+            ),
+            language,
+        ),
+        tag_hub(
+            Shelf::Genre,
+            ranked_tags(Shelf::Genre, matches.genres.edges, term, request.limit),
+            language,
+        ),
+        tag_hub(
+            Shelf::Collection,
+            ranked_collections(matches.collections.edges, term, request.limit),
+            language,
+        ),
     ]
     .map(Some);
     let mut hubs: Vec<SearchHub> = SHELVES
@@ -914,18 +958,30 @@ mod tests {
 
     use super::*;
 
-    fn matched(
-        id: i64,
-        title: &str,
-        title_sort: Option<&str>,
-        original: Option<&str>,
-    ) -> MatchedItem {
-        MatchedItem {
-            id: GlobalId::encode("Item", id),
-            title: Some(title.to_owned()),
-            title_sort: title_sort.map(ToOwned::to_owned),
-            original_title: original.map(ToOwned::to_owned),
-        }
+    fn item_json(id: i64, title: &str, section: i64, library: &str) -> serde_json::Value {
+        serde_json::json!({
+            "__typename": "Movie",
+            "id": GlobalId::encode("Item", id),
+            "guid": "plex://movie/5d7768273c3c2a001fbcb51a",
+            "title": title,
+            "addedAt": "1970-01-01T00:00:00Z",
+            "updatedAt": "1970-01-01T00:00:00Z",
+            "library": {
+                "id": GlobalId::encode(LIBRARY_TYPE, section),
+                "title": library,
+                "uuid": "uuid",
+                "kind": "MOVIE",
+            },
+        })
+    }
+
+    fn found(id: i64, title: &str, section: i64, library: &str, title_match: &str) -> FoundItem {
+        serde_json::from_value(serde_json::json!({
+            "score": 0.93,
+            "titleMatch": title_match,
+            "node": item_json(id, title, section, library),
+        }))
+        .unwrap()
     }
 
     #[test]
@@ -949,81 +1005,22 @@ mod tests {
     }
 
     #[test]
-    fn ranks_titles_on_the_references_ladder() {
-        let rung = |title, sort, original, term: &str| {
-            item_rung(&matched(1, title, sort, original), &fold(term))
-        };
-        // Scores measured for `dune`, `batman` and `amélie`.
-        assert_eq!(rung("Dune", None, None, "dune"), 3);
-        assert_eq!(rung("The Batman", Some("Batman"), None, "batman"), 3);
-        assert_eq!(
-            rung(
-                "Dune : Deuxième partie",
-                None,
-                Some("Dune: Part Two"),
-                "dune"
-            ),
-            2
-        );
-        assert_eq!(
-            rung("Amelie's Miracle", None, Some("Amelie rennt"), "amélie"),
-            2
-        );
-        assert_eq!(rung("Le Fléau", None, Some("Batman Beyond"), "batman"), 2);
-        assert_eq!(rung("Dune: Part Two", None, None, "dune"), 1);
-        assert_eq!(rung("Breaking Bad", None, None, "breaking b"), 2);
-        assert_eq!(
-            rung("Les Nouvelles aventures de Batman", None, None, "batman"),
-            0
-        );
-        assert_eq!(rung("Legend", None, None, "le"), 1);
-    }
-
-    #[test]
-    fn ranks_names_minding_their_accents() {
-        assert_eq!(tag_rung("Tom Hanks", "tom hanks"), 2);
-        assert_eq!(tag_rung("Tom Hanks", "tom"), 1);
-        assert_eq!(tag_rung("Tommy Lee Jones", "tom"), 1);
-        assert_eq!(tag_rung("Cécile de France", "france"), 0);
-        assert_eq!(tag_rung("Amelie Kiefer", "amelie"), 1);
-        assert_eq!(tag_rung("Amélie Glenn", "amelie"), 0);
-    }
-
-    #[test]
     fn names_the_library_of_results_sharing_a_title() {
-        let listed = |id: i64, title: &str, section: i64, library: &str| -> Option<GqlItem> {
-            serde_json::from_value(serde_json::json!({
-                "__typename": "Movie",
-                "id": GlobalId::encode("Item", id),
-                "guid": "plex://movie/5d7768273c3c2a001fbcb51a",
-                "title": title,
-                "addedAt": "1970-01-01T00:00:00Z",
-                "updatedAt": "1970-01-01T00:00:00Z",
-                "library": {
-                    "id": GlobalId::encode(LIBRARY_TYPE, section),
-                    "title": library,
-                    "uuid": "uuid",
-                    "kind": "MOVIE",
-                },
-            }))
-            .ok()
-        };
         // As captured for `dune`: the two copies of Dune name their library, the sequel
         // alone on the shelf does not.
-        let copies = [
-            (470_473, "Dune", 4, "VF - Films"),
-            (470_476, "Dune", 6, "VO - Movies"),
-            (440_230, "Dune : Deuxième partie", 17, "VF - Films UHD"),
+        let shelf = vec![
+            found(470_473, "Dune", 4, "VF - Films", "EXACT"),
+            found(470_476, "Dune", 6, "VO - Movies", "EXACT"),
+            found(
+                440_230,
+                "Dune : Deuxième partie",
+                17,
+                "VF - Films UHD",
+                "LEADING_WORD",
+            ),
         ];
-        let ranked: Vec<(usize, MatchedItem)> = copies
-            .iter()
-            .map(|&(id, title, _, _)| (EXACT, matched(id, title, None, None)))
-            .collect();
-        let items = copies
-            .iter()
-            .map(|&(id, title, section, library)| listed(id, title, section, library))
-            .collect();
-        let hub = item_hub(Shelf::Movie, &ranked, items, Language::default());
+        let request = Request::parse("query=dune&limit=10").unwrap();
+        let hub = item_hub(Shelf::Movie, shelf, &request, Language::default());
         let reasons: Vec<Option<(i64, &str)>> = hub
             .items
             .iter()
@@ -1041,48 +1038,55 @@ mod tests {
     }
 
     #[test]
-    fn ranks_then_cuts_to_the_limit() {
-        let edges = || {
-            vec![
-                ItemMatchEdge {
-                    node: matched(440_230, "Dune : Deuxième partie", None, None),
-                },
-                ItemMatchEdge {
-                    node: matched(470_473, "Dune", None, None),
-                },
-                ItemMatchEdge {
-                    node: matched(470_476, "Dune", None, None),
-                },
-            ]
-        };
-        let ids = |ranked: Vec<(usize, MatchedItem)>| -> Vec<(usize, String)> {
-            ranked
-                .into_iter()
-                .map(|(rung, item)| (rung, item.id))
-                .collect()
-        };
+    fn cuts_to_the_limit_and_keeps_exact_titles_for_one_character() {
         let request = Request::parse("query=dune&limit=2").unwrap();
-        assert_eq!(
-            ids(rank_items(edges(), &request)),
-            [
-                (EXACT, GlobalId::encode("Item", 470_473)),
-                (EXACT, GlobalId::encode("Item", 470_476))
-            ]
-        );
-        // One character keeps the exact titles only.
-        let request = Request::parse("query=x").unwrap();
-        let edges = vec![
-            ItemMatchEdge {
-                node: matched(411_328, "X", None, None),
-            },
-            ItemMatchEdge {
-                node: matched(1, "X-Men", None, None),
-            },
+        let shelf = vec![
+            found(470_473, "Dune", 4, "VF - Films", "EXACT"),
+            found(470_476, "Dune", 6, "VO - Movies", "EXACT"),
+            found(
+                440_230,
+                "Dune : Deuxième partie",
+                17,
+                "VF - Films UHD",
+                "LEADING_WORD",
+            ),
         ];
         assert_eq!(
-            ids(rank_items(edges, &request)),
-            [(EXACT, GlobalId::encode("Item", 411_328))]
+            item_hub(Shelf::Movie, shelf, &request, Language::default()).size,
+            2
         );
+        let request = Request::parse("query=x").unwrap();
+        let shelf = vec![
+            found(411_328, "X", 4, "VF - Films", "EXACT"),
+            found(1, "X-Men", 4, "VF - Films", "LEADING_PREFIX"),
+        ];
+        let hub = item_hub(Shelf::Movie, shelf, &request, Language::default());
+        assert_eq!(hub.items.len(), 1);
+        assert_eq!(hub.items[0].metadata.title.as_deref(), Some("X"));
+    }
+
+    #[test]
+    fn names_the_person_an_item_was_found_through() {
+        let credited: CreditedItems = serde_json::from_value(serde_json::json!({ "edges": [{
+            "score": 0.33097,
+            "credit": { "tag": {
+                "id": GlobalId::encode("Tag", 469_791), "name": "Tom Hanks", "kind": "ACTOR",
+            } },
+            "node": item_json(418_098, "Le Pire voisin au monde", 4, "VF - Films"),
+        }] }))
+        .unwrap();
+        let hub = credited_hub(Shelf::Movie, credited, Language::default());
+        let result = &hub.items[0];
+        let reason = result.reason.as_ref().unwrap();
+        assert_eq!(
+            (
+                reason.reason,
+                reason.reason_id,
+                reason.reason_title.as_str()
+            ),
+            ("actor", 469_791, "Tom Hanks")
+        );
+        assert_eq!(serde_json::to_value(result.score).unwrap(), "0.33097");
     }
 
     #[test]
@@ -1107,10 +1111,8 @@ mod tests {
             found(907_718, "Emma Besson", 4, "VF - Films", 1),
             found(555_365, "Luc Besson", 4, "VF - Films", 3),
         ];
-        let request = Request::parse("query=besson&limit=10").unwrap();
-        let hub = tag_hub(Shelf::Actor, edges, &request, Language::default());
-        let order: Vec<(i64, i64)> = hub
-            .tags
+        let tags = ranked_tags(Shelf::Actor, edges, "besson", 10);
+        let order: Vec<(i64, i64)> = tags
             .iter()
             .map(|tag| (tag.id, tag.library_section_id))
             .collect();

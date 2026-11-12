@@ -401,6 +401,67 @@ async fn search_crosses_libraries_and_kinds() {
 }
 
 #[tokio::test]
+async fn search_ranks_its_matches_and_says_how_well_each_answers() {
+    let data = run_on(
+        &searchable(),
+        "{ search(query: \"dune\") { edges { score titleMatch node { title } } } }",
+    )
+    .await;
+    let edges: Vec<(String, f64, String)> = data["search"]["edges"]
+        .as_array()
+        .expect("edges")
+        .iter()
+        .map(|edge| {
+            (
+                edge["node"]["title"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
+                edge["score"].as_f64().unwrap_or_default(),
+                edge["titleMatch"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect();
+    // The title equal to the term first, however it sorts.
+    assert_eq!(
+        edges,
+        [
+            ("Dune".to_owned(), 0.93, "EXACT".to_owned()),
+            (
+                "Dune: Prophecy".to_owned(),
+                0.53,
+                "LEADING_PREFIX".to_owned()
+            )
+        ]
+    );
+
+    let by_title = run_on(
+        &searchable(),
+        "{ search(query: \"dune\", order: TITLE) { edges { node { title } } } }",
+    )
+    .await;
+    assert_eq!(by_title["search"]["edges"][0]["node"]["title"], "Dune");
+}
+
+#[tokio::test]
+async fn search_through_credits_is_empty_without_a_person_or_a_kind_that_has_one() {
+    for kind in ["MOVIE", "EPISODE", "TRACK"] {
+        let data = run_on(
+            &searchable(),
+            &format!(
+                "{{ searchCredits(query: \"dune\", kind: {kind}) {{ edges {{ score node {{ id }} }} }} }}"
+            ),
+        )
+        .await;
+        assert_eq!(
+            data["searchCredits"]["edges"],
+            serde_json::json!([]),
+            "{kind}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn search_results_are_refetchable_by_their_global_id() {
     // Relay's guarantee has to hold for search results too, not only for listings.
     let data = run_on(

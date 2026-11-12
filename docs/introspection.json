@@ -2619,6 +2619,156 @@
           "possibleTypes": null
         },
         {
+          "kind": "OBJECT",
+          "name": "CreditedItemConnection",
+          "description": null,
+          "fields": [
+            {
+              "name": "pageInfo",
+              "description": "Information to aid in pagination.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PageInfo",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "edges",
+              "description": "A list of edges.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "CreditedItemEdge",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nodes",
+              "description": "A list of nodes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INTERFACE",
+                      "name": "Item",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "CreditedItemEdge",
+          "description": "An edge in a connection.",
+          "fields": [
+            {
+              "name": "node",
+              "description": "The item at the end of the edge",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "INTERFACE",
+                  "name": "Item",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "score",
+              "description": "How relevant the item is, on the scale of `ItemSearchEdge.score`: a title matched\nnowhere in particular, 0.33 plus a ten-thousandth per point of audience rating.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Float",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "credit",
+              "description": "The person the item was found through, in the library it was found in.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "TagUse",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cursor",
+              "description": "A cursor for use in pagination",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "SCALAR",
           "name": "DateTime",
           "description": "A date-time as RFC 3339 defines it, with an offset. Written in UTC (`Z`) to the second;\nread with any offset, a fraction of a second dropped.",
@@ -5912,6 +6062,156 @@
               "deprecationReason": null
             }
           ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ItemSearchConnection",
+          "description": null,
+          "fields": [
+            {
+              "name": "pageInfo",
+              "description": "Information to aid in pagination.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PageInfo",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "edges",
+              "description": "A list of edges.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ItemSearchEdge",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nodes",
+              "description": "A list of nodes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INTERFACE",
+                      "name": "Item",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ItemSearchEdge",
+          "description": "An edge in a connection.",
+          "fields": [
+            {
+              "name": "node",
+              "description": "The item at the end of the edge",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "INTERFACE",
+                  "name": "Item",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "score",
+              "description": "How relevant the item is, between 0 and 1: two tenths for each step of `titleMatch`\nfrom 0.33 (0.31 for an episode), plus a ten-thousandth per point of audience rating.\nThe Plex server's own scale.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Float",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "titleMatch",
+              "description": "How well the title answers the term.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "TitleMatch",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cursor",
+              "description": "A cursor for use in pagination",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
           "possibleTypes": null
         },
         {
@@ -14540,7 +14840,7 @@
             },
             {
               "name": "search",
-              "description": "Items whose title matches a search term, across every library.\n\nMatches a *word prefix*: `hell` finds \"Good News About Hell\", and accents are folded so\n`soiree` finds \"# Pire Soirée\". A term inside a word does not match — the index is a\nrange scan, not a substring scan.\n\nPolymorphic and cross-library by design: results mix films, series and episodes from\ndifferent libraries, which is what a single search box needs. Narrow with `kinds`.\n\nOrdered by sort title. Not by relevance: ranking needs a score this server does not\ncompute, and a title ordering at least gives the cursor a stable position to resume\nfrom. A blank term matches nothing rather than everything.",
+              "description": "Items whose title matches a search term, across every library.\n\nMatches a *word prefix*: `hell` finds \"Good News About Hell\", and accents are folded so\n`soiree` finds \"# Pire Soirée\". A term inside a word does not match — the index is a\nrange scan, not a substring scan. Every word of a term must begin some word of a title.\n\nPolymorphic and cross-library by design: results mix films, series and episodes from\ndifferent libraries, which is what a single search box needs. Narrow with `kinds`.\n\nRanked by default, each edge carrying its `score` and `titleMatch`: the best match\nfirst, then the audience rating, then the sort title and the id, so that the order is\ntotal and a cursor resumes exactly where its page ended. A blank term matches nothing\nrather than everything.",
               "args": [
                 {
                   "name": "query",
@@ -14573,6 +14873,34 @@
                     }
                   },
                   "defaultValue": null
+                },
+                {
+                  "name": "order",
+                  "description": "How to order the matches.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "SearchOrderInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": "RELEVANCE"
+                },
+                {
+                  "name": "episodesBySeries",
+                  "description": "Also find an episode through its series' titles. It ranks as a match anywhere.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "Boolean",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": "false"
                 },
                 {
                   "name": "after",
@@ -14620,7 +14948,62 @@
                 "name": null,
                 "ofType": {
                   "kind": "OBJECT",
-                  "name": "ItemConnection",
+                  "name": "ItemSearchConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "searchCredits",
+              "description": "Films or series found through the people a search term names, rather than through\ntheir titles: what a search box offers for a name.\n\nThe first actor, then the first director, of the people `searchTags` would offer for\nthe term — ranked by how well the name answers it, then by library title, then the\nmost credited, and cut to `first` — whose library holds `kind`. Of the `first` items\ntheir credit was put on last in that library, those of `kind`: the actor's, then the\ndirector's not already listed, `first` in all; then ranked by `score`. Empty for a\nkind other than films and series.\n\nA bounded list rather than a range to page through: which items it holds depends on\n`first`.",
+              "args": [
+                {
+                  "name": "query",
+                  "description": "Term to match a prefix of any word of a person's name against.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "kind",
+                  "description": "What to list: films or series.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ItemType",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many items.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "CreditedItemConnection",
                   "ofType": null
                 }
               },
@@ -16207,6 +16590,29 @@
             {
               "name": "INTERLACED",
               "description": "Alternating fields of odd and even lines.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "SearchOrderInput",
+          "description": "How a search orders what it found.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "RELEVANCE",
+              "description": "The best match first: a title equal to the term, then one whose first word is the\nterm's, then one starting with it, then the rest; the audience rating breaks ties\nwithin each, then the sort title.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TITLE",
+              "description": "By sort title.",
               "isDeprecated": false,
               "deprecationReason": null
             }
@@ -20191,6 +20597,41 @@
             {
               "name": "STUDIO",
               "description": "The studio or network that made the item.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "TitleMatch",
+          "description": "How well an item's title answers a search term, from the best.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "EXACT",
+              "description": "The title or the sort title is the term, accents and case aside.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LEADING_WORD",
+              "description": "The first word of the title or of the original title is the term's first word. A\nword ends at a space or an apostrophe here, so `Amelie's Miracle` opens with `amelie`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LEADING_PREFIX",
+              "description": "The title or the original title begins with the term's first word.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ANYWHERE",
+              "description": "Some word of a title begins with each word of the term.",
               "isDeprecated": false,
               "deprecationReason": null
             }

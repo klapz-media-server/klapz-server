@@ -20,12 +20,12 @@ use open_plex_core::metadata::{
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
-use open_plex_core::search;
+use open_plex_core::search::{self, Rung};
 use open_plex_core::similar::TagOverlap;
 use open_plex_core::{
     MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
 };
-use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
+use sea_orm::sea_query::{Alias, CaseStatement, Expr, Func, IntoIden, Query, SimpleExpr};
 use sea_orm::QueryTrait;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult,
@@ -35,10 +35,10 @@ use sea_orm::{
 
 use crate::entity::{
     collection, collection_entry, item_external_id, item_field_lock, item_rating, item_tag,
-    item_title_word, media, media_part, media_stream, metadata_item, person, stream_dolby_vision,
-    stream_loudness, tag, tag_word, watch_state,
+    item_title_key, item_title_word, media, media_part, media_stream, metadata_item, person,
+    stream_dolby_vision, stream_loudness, tag, tag_word, watch_state,
 };
-use crate::item_order::ItemOrder;
+use crate::item_order::{ItemOrder, SearchRanking};
 use crate::marker_store;
 use crate::write;
 
@@ -385,27 +385,34 @@ fn credits(credited: CreditRef) -> Condition {
         .add(id().in_subquery(grandparents))
 }
 
-/// Whether the item has an indexed title word beginning with `prefix`.
-///
-/// An `EXISTS` rather than a join: an item has 4.3 words on average, and a join would return
-/// it once per matching word.
 /// Every word of the term must begin some word of the title.
 ///
 /// The reference also wants them in order (`bad breaking` finds nothing), which the index
 /// cannot tell: it holds each title's distinct words, without positions. So a reversed term
 /// finds a little more here, the harmless direction for a search.
 fn term_matches(term: &str) -> Condition {
-    search::words(term).fold(Condition::all(), |all, word| all.add(word_exists(&word)))
+    words_match(term, &metadata_item::Entity)
 }
 
-fn word_exists(prefix: &str) -> Condition {
+/// [`term_matches`] on `item`, the table or an alias of it.
+fn words_match<T: IntoIden + Clone + 'static>(term: &str, item: &T) -> Condition {
+    search::words(term).fold(Condition::all(), |all, word| {
+        all.add(word_exists(&word, item.clone()))
+    })
+}
+
+/// Whether the item has an indexed title word beginning with `prefix`.
+///
+/// An `EXISTS` rather than a join: an item has 4.3 words on average, and a join would return
+/// it once per matching word.
+fn word_exists<T: IntoIden + 'static>(prefix: &str, item: T) -> Condition {
     Condition::all().add(Expr::exists(
         Query::select()
             .expr(Expr::val(1))
             .from(item_title_word::Entity)
             .and_where(
                 Expr::col((item_title_word::Entity, item_title_word::Column::ItemId))
-                    .equals((metadata_item::Entity, metadata_item::Column::Id)),
+                    .equals((item, metadata_item::Column::Id)),
             )
             .cond_where(prefix_condition(
                 Expr::col((item_title_word::Entity, item_title_word::Column::Word)),
@@ -413,6 +420,104 @@ fn word_exists(prefix: &str) -> Condition {
             ))
             .to_owned(),
     ))
+}
+
+/// An episode whose series' titles the term matches, as [`term_matches`] matches them.
+///
+/// Through the series' seasons, two small seeks: the series a term matches are few, even when
+/// their episodes are hundreds.
+fn series_matches(term: &str) -> Condition {
+    let (series, season) = (Alias::new("series"), Alias::new("season"));
+    let matched_series = Query::select()
+        .column((series.clone(), metadata_item::Column::Id))
+        .from_as(metadata_item::Entity, series.clone())
+        .and_where(
+            Expr::col((series.clone(), metadata_item::Column::Kind)).eq(kind_name(ItemKind::Show)),
+        )
+        .cond_where(words_match(term, &series))
+        .to_owned();
+    let seasons = Query::select()
+        .column((season.clone(), metadata_item::Column::Id))
+        .from_as(metadata_item::Entity, season.clone())
+        .and_where(Expr::col((season, metadata_item::Column::ParentId)).in_subquery(matched_series))
+        .to_owned();
+    Condition::all()
+        .add(metadata_item::Column::Kind.eq(kind_name(ItemKind::Episode)))
+        .add(metadata_item::Column::ParentId.in_subquery(seasons))
+}
+
+/// The hundredths of each row's score, as `search::hundredths` makes them from the rung
+/// `search::RankedTerm::rung` reads off the row's title keys.
+///
+/// Each rung is an `EXISTS` seeking the row's own keys, at most three, so ranking costs a
+/// few index probes per matched row whatever the size of the library.
+fn relevance_hundredths(term: Option<&search::RankedTerm>) -> SimpleExpr {
+    let has_key = |condition: Condition| -> SimpleExpr {
+        Expr::exists(
+            Query::select()
+                .expr(Expr::val(1))
+                .from(item_title_key::Entity)
+                .and_where(
+                    Expr::col((item_title_key::Entity, item_title_key::Column::ItemId))
+                        .equals((metadata_item::Entity, metadata_item::Column::Id)),
+                )
+                .cond_where(condition)
+                .to_owned(),
+        )
+    };
+    let key = || Expr::col((item_title_key::Entity, item_title_key::Column::Key));
+    let flagged =
+        |column: item_title_key::Column| Expr::col((item_title_key::Entity, column)).eq(true);
+    let step = |rung: Rung| Expr::val(i64::from(rung.step()));
+
+    let rung: SimpleExpr = match term {
+        None => step(Rung::Anywhere).into(),
+        Some(term) => {
+            let mut rung = CaseStatement::new().case(
+                has_key(
+                    Condition::all()
+                        .add(flagged(item_title_key::Column::Exact))
+                        .add(key().eq(term.phrase())),
+                ),
+                step(Rung::Exact),
+            );
+            if let Some(lead) = term.lead() {
+                let mut word = Condition::any().add(key().eq(lead));
+                for separator in search::LEAD_SEPARATORS {
+                    word = word.add(prefix_condition(key(), &format!("{lead}{separator}")));
+                }
+                rung = rung
+                    .case(
+                        has_key(
+                            Condition::all()
+                                .add(flagged(item_title_key::Column::Leading))
+                                .add(word),
+                        ),
+                        step(Rung::LeadingWord),
+                    )
+                    .case(
+                        has_key(
+                            Condition::all()
+                                .add(flagged(item_title_key::Column::Leading))
+                                .add(prefix_condition(key(), lead)),
+                        ),
+                        step(Rung::LeadingPrefix),
+                    );
+            }
+            rung.finally(step(Rung::Anywhere)).into()
+        }
+    };
+    let base = |kind| search::hundredths(kind, Rung::Anywhere);
+    let per_step = search::hundredths(ItemKind::Movie, Rung::LeadingPrefix) - base(ItemKind::Movie);
+    let kind_base: SimpleExpr = CaseStatement::new()
+        .case(
+            Expr::col((metadata_item::Entity, metadata_item::Column::Kind))
+                .eq(kind_name(ItemKind::Episode)),
+            Expr::val(base(ItemKind::Episode)),
+        )
+        .finally(Expr::val(base(ItemKind::Movie)))
+        .into();
+    Expr::expr(rung).mul(per_step).add(kind_base)
 }
 
 /// Every word of the term must begin some word of the tag's name.
@@ -675,7 +780,11 @@ impl MetadataRepository for SqlMetadataRepository {
             });
         }
 
-        let mut select = metadata_item::Entity::find().filter(term_matches(&query.word_prefix));
+        let mut matches = Condition::any().add(term_matches(&query.word_prefix));
+        if query.episodes_by_series {
+            matches = matches.add(series_matches(&query.word_prefix));
+        }
+        let mut select = metadata_item::Entity::find().filter(matches);
         if !query.kinds.is_empty() {
             let kinds = query.kinds.iter().map(|kind| kind_name(*kind));
             select = select.filter(metadata_item::Column::Kind.is_in(kinds));
@@ -685,23 +794,18 @@ impl MetadataRepository for SqlMetadataRepository {
             select = select.filter(metadata_item::Column::LibrarySectionId.is_in(sections));
         }
 
-        // Title ordering, so the cursor is the one the listing already builds.
-        let sort_column = metadata_item::Column::SortKey;
+        let ranking = SearchRanking::new(
+            query.order,
+            relevance_hundredths(search::RankedTerm::new(&query.word_prefix).as_ref()),
+        );
         if let Some(after) = window.after.as_ref() {
-            select = select.filter(beyond(sort_column, after, Direction::Ascending, true)?);
+            select = ranking.resume(select, after, true)?;
         }
         if let Some(before) = window.before.as_ref() {
-            select = select.filter(beyond(sort_column, before, Direction::Ascending, false)?);
+            select = ranking.resume(select, before, false)?;
         }
-
-        let order = if window.is_reversed() {
-            Order::Desc
-        } else {
-            Order::Asc
-        };
-        let rows = select
-            .order_by(sort_column, order.clone())
-            .order_by(metadata_item::Column::Id, order)
+        let rows = ranking
+            .sort(select, window.is_reversed())
             .offset(window.skip)
             .limit(window.fetch_limit())
             .all(&self.connection)
@@ -1822,26 +1926,9 @@ impl SqlMetadataRepository {
 /// | ascending | `before` | `<` |
 /// | descending | `after` | `<` |
 /// | descending | `before` | `>` |
-fn beyond(
-    sort_column: metadata_item::Column,
-    cursor: &Cursor,
-    direction: Direction,
-    after: bool,
-) -> Result<Condition, MetadataError> {
-    keyset(
-        Expr::col((metadata_item::Entity, sort_column)),
-        Some(Expr::col((
-            metadata_item::Entity,
-            metadata_item::Column::Id,
-        ))),
-        cursor,
-        direction,
-        after,
-    )
-}
-
-/// [`beyond`] over any ordering expression. With no tiebreaker the ordering key must be
-/// unique, which it is in a list of distinct values.
+///
+/// With no tiebreaker the ordering key must be unique, which it is in a list of distinct
+/// values.
 fn keyset(
     column: Expr,
     id: Option<Expr>,

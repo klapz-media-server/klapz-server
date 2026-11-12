@@ -24,8 +24,8 @@ use crate::marker::{Marker, NewMarker};
 use crate::metadata::{
     self, CreditRef, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind, ItemQuery,
     ItemSort, ItemTag, Listed, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
-    MetadataRepository, Person, PersonCredit, Rating, SearchQuery, Tag, TagCondition, TagKind,
-    TagRef, TagScope, TagSearch, TagUse, ValueField,
+    MetadataRepository, Person, PersonCredit, Rating, SearchOrder, SearchQuery, Tag, TagCondition,
+    TagKind, TagRef, TagScope, TagSearch, TagUse, ValueField,
 };
 use crate::page::{Cursor, Page, Window};
 use crate::playlist::{
@@ -483,8 +483,20 @@ impl MetadataRepository for InMemoryMetadata {
             });
         }
 
-        let mut matched: Vec<MetadataItem> = self
-            .rows()
+        let rows = self.rows();
+        let parent = |item: &MetadataItem| {
+            item.parent_id
+                .and_then(|parent| rows.iter().find(|row| row.id == parent))
+        };
+        // An episode is also found through its series' titles, as storage finds it.
+        let series_matches = |item: &MetadataItem| {
+            query.episodes_by_series
+                && item.kind == ItemKind::Episode
+                && parent(item)
+                    .and_then(parent)
+                    .is_some_and(|series| title_matches(series, &query.word_prefix))
+        };
+        let mut matched: Vec<MetadataItem> = rows
             .iter()
             .filter(|item| query.kinds.is_empty() || query.kinds.contains(&item.kind))
             .filter(|item| {
@@ -493,41 +505,26 @@ impl MetadataRepository for InMemoryMetadata {
                     .as_ref()
                     .is_none_or(|sections| sections.contains(&item.section_id))
             })
-            .filter(|item| title_matches(item, &query.word_prefix))
+            .filter(|item| title_matches(item, &query.word_prefix) || series_matches(item))
             .cloned()
             .collect();
-        // Sort title then id, as storage orders a search.
+        let rank = |item: &MetadataItem| match query.order {
+            SearchOrder::Title => (0, 0.0),
+            SearchOrder::Relevance => (
+                crate::search::hundredths(item.kind, query.rung(item)),
+                item.audience_rating.unwrap_or(0.0),
+            ),
+        };
         matched.sort_by(|left, right| {
-            sort_key(left)
-                .cmp(&sort_key(right))
+            let ((left_points, left_rating), (right_points, right_rating)) =
+                (rank(left), rank(right));
+            right_points
+                .cmp(&left_points)
+                .then_with(|| right_rating.total_cmp(&left_rating))
+                .then_with(|| sort_key(left).cmp(&sort_key(right)))
                 .then_with(|| left.id.get().cmp(&right.id.get()))
         });
-
-        let position = |cursor: &Cursor| matched.iter().position(|item| item.id.get() == cursor.id);
-        let start = window
-            .after
-            .as_ref()
-            .and_then(position)
-            .map_or(0, |at| at + 1);
-        let end = window
-            .before
-            .as_ref()
-            .and_then(position)
-            .unwrap_or(matched.len());
-        let mut slice: Vec<MetadataItem> = matched[start..end.max(start)].to_vec();
-
-        if window.is_reversed() {
-            slice.reverse();
-        }
-        let skip = usize::try_from(window.skip).unwrap_or(usize::MAX);
-        slice.drain(..skip.min(slice.len()));
-        slice.truncate(page_limit(&window));
-
-        let mut page = Page::from_overfetch(slice, &window);
-        if window.is_reversed() {
-            page.items.reverse();
-        }
-        Ok(page)
+        Ok(windowed(matched, &window, |item| query.cursor(item)))
     }
 
     async fn search_tags(

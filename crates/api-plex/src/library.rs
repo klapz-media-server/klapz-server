@@ -547,7 +547,7 @@ async fn first_character(
 /// Everything `GET /search` needs from the official API.
 const SEARCH_QUERY: &str = r"
 query PlexSearch($query: String!, $kinds: [ItemType!], $first: Int!) {
-  search(query: $query, kinds: $kinds, first: $first) {
+  search(query: $query, kinds: $kinds, order: TITLE, first: $first) {
     edges {
       node {
         ...Shared
@@ -592,11 +592,16 @@ query PlexSearch($query: String!, $kinds: [ItemType!], $first: Int!) {
 static SEARCH_QUERY_WITH_FRAGMENTS: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| with_shared_fragments(SEARCH_QUERY));
 
-/// How many results `GET /search` returns.
+/// How many results of each kind `GET /search` returns: films, then series, then episodes,
+/// each in title order.
 ///
-/// The endpoint takes no container parameters on the reference server; it answers one page and
-/// expects the client to narrow the term. 50 is what a search box shows.
-const SEARCH_RESULTS: u32 = 50;
+/// Measured on 53 terms: never more than 15 of a kind, and the 15 a title-ordered match
+/// begins with. The reference takes no container parameters here; it answers one page and
+/// expects the client to narrow the term.
+const SEARCH_RESULTS_PER_KIND: u32 = 15;
+
+/// The kinds `GET /search` lists with no `type`, in the order it lists them.
+const SEARCH_KINDS: [&str; 3] = ["MOVIE", "SHOW", "EPISODE"];
 
 #[derive(Debug, Deserialize)]
 struct SearchData {
@@ -632,37 +637,39 @@ async fn search(
     // user is still typing, and the schema treats a blank term the same way.
     let term = params.query.unwrap_or_default();
 
-    let mut variables = Variables::default();
-    variables.insert(Name::new("query"), Value::String(term));
-    if let Some(kind) = &params.kind {
+    let kinds: Vec<&str> = match &params.kind {
         // A type the official API has no kind for finds nothing, as on the reference
         // (`type=99`); a music type finds nothing there too, since none is held.
-        let Some(kind) = item_type(kind.parse().ok()) else {
-            return Ok(PlexResponse::new(
-                SearchContainer::of_one_kind(Vec::new()),
-                format,
-            ));
-        };
+        Some(kind) => match item_type(kind.parse().ok()) {
+            Some(kind) => vec![kind],
+            None => {
+                return Ok(PlexResponse::new(
+                    SearchContainer::of_one_kind(Vec::new()),
+                    format,
+                ))
+            }
+        },
+        None => SEARCH_KINDS.to_vec(),
+    };
+
+    let mut items = Vec::new();
+    for kind in kinds {
+        let mut variables = Variables::default();
+        variables.insert(Name::new("query"), Value::String(term.clone()));
         variables.insert(
             Name::new("kinds"),
             Value::List(vec![Value::Enum(Name::new(kind))]),
         );
-    }
-    variables.insert(
-        Name::new("first"),
-        Value::Number(SEARCH_RESULTS.min(MAX_ITEMS).into()),
-    );
-
-    let data: SearchData =
-        gql::execute(&state.schema, &SEARCH_QUERY_WITH_FRAGMENTS, variables).await?;
-    let items = data
-        .search
-        .edges
-        .iter()
-        .filter_map(|edge| {
+        variables.insert(
+            Name::new("first"),
+            Value::Number(SEARCH_RESULTS_PER_KIND.into()),
+        );
+        let data: SearchData =
+            gql::execute(&state.schema, &SEARCH_QUERY_WITH_FRAGMENTS, variables).await?;
+        items.extend(data.search.edges.iter().filter_map(|edge| {
             SearchEntry::from_graphql(&edge.node, &state.identity.friendly_name, language)
-        })
-        .collect();
+        }));
+    }
 
     let body = if params.kind.is_some() {
         SearchContainer::of_one_kind(items)

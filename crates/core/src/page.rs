@@ -155,6 +155,17 @@ impl Window {
         })
     }
 
+    /// The first `count` rows, at most [`MAX_ITEMS`]: for a caller in `core` reading a
+    /// bounded list, which has no client input to refuse.
+    pub fn first(count: u32) -> Self {
+        Self {
+            after: None,
+            before: None,
+            bound: Bound::First(count.min(MAX_ITEMS)),
+            skip: 0,
+        }
+    }
+
     /// Discards `rows` before the page begins. See [`Window::skip`].
     #[must_use]
     pub const fn skipping(mut self, rows: u64) -> Self {

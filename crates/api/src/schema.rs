@@ -6,7 +6,7 @@ use async_graphql::connection;
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, EmptySubscription, Interface, Object, Result, Schema, ID};
 use open_plex_core::library::LibraryRepository;
-use open_plex_core::metadata::{MetadataRepository, SearchQuery};
+use open_plex_core::metadata::MetadataRepository;
 use open_plex_core::page::{Cursor, Window, WindowError};
 use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 
@@ -291,15 +291,15 @@ impl Query {
     ///
     /// Matches a *word prefix*: `hell` finds "Good News About Hell", and accents are folded so
     /// `soiree` finds "# Pire Soirée". A term inside a word does not match — the index is a
-    /// range scan, not a substring scan.
+    /// range scan, not a substring scan. Every word of a term must begin some word of a title.
     ///
     /// Polymorphic and cross-library by design: results mix films, series and episodes from
     /// different libraries, which is what a single search box needs. Narrow with `kinds`.
     ///
-    /// Ordered by sort title. Not by relevance: ranking needs a score this server does not
-    /// compute, and a title ordering at least gives the cursor a stable position to resume
-    /// from. A blank term matches nothing rather than everything.
-    // One Rust parameter per field argument; see the note on `Library.items`.
+    /// Ranked by default, each edge carrying its `score` and `titleMatch`: the best match
+    /// first, then the audience rating, then the sort title and the id, so that the order is
+    /// total and a cursor resumes exactly where its page ended. A blank term matches nothing
+    /// rather than everything.
     #[allow(clippy::too_many_arguments)]
     async fn search(
         &self,
@@ -308,6 +308,13 @@ impl Query {
         #[graphql(desc = "Restrict to these kinds. Omit to search every kind.")] kinds: Option<
             Vec<crate::filter::ItemType>,
         >,
+        #[graphql(desc = "How to order the matches.", default)]
+        order: crate::search::SearchOrderInput,
+        #[graphql(
+            desc = "Also find an episode through its series' titles. It ranks as a match anywhere.",
+            default = false
+        )]
+        episodes_by_series: bool,
         #[graphql(desc = "Return items after this cursor.")] after: Option<String>,
         #[graphql(desc = "Return items before this cursor.")] before: Option<String>,
         #[graphql(desc = "Return at most this many items from the start of the range.")]
@@ -315,35 +322,38 @@ impl Query {
         #[graphql(desc = "Return at most this many items from the end of the range.")] last: Option<
             i32,
         >,
-    ) -> Result<crate::item::ItemConnection> {
-        let mut search = SearchQuery::new(query);
-        search.sections = crate::access::visible_sections(context);
-        let kinds = kinds.unwrap_or_default();
-        search.kinds = kinds.iter().filter_map(|kind| kind.held()).collect();
-        // Every kind asked for is one this server holds none of. Not passed on as an empty
-        // list, which storage reads as every kind.
-        if !kinds.is_empty() && search.kinds.is_empty() {
-            return Ok(connection::Connection::new(false, false));
-        }
-
-        connection::query(
-            after,
-            before,
-            first,
-            last,
-            |after, before, first, last| async move {
-                let window = window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?;
-                let page = metadata(context)?.search(&search, window).await?;
-
-                let mut connection = connection::Connection::new(page.has_previous, page.has_next);
-                connection.edges.extend(page.items.into_iter().map(|item| {
-                    let cursor = Cursor::new(search.cursor_key(&item), item.id.get());
-                    connection::Edge::new(OpaqueCursor(cursor), Item::from_domain(item))
-                }));
-                Ok::<_, async_graphql::Error>(connection)
-            },
+    ) -> Result<crate::search::ItemSearchConnection> {
+        crate::search::search(
+            context,
+            query,
+            kinds,
+            (order, episodes_by_series),
+            (after, before, first, last),
         )
         .await
+    }
+
+    /// Films or series found through the people a search term names, rather than through
+    /// their titles: what a search box offers for a name.
+    ///
+    /// The first actor, then the first director, of the people `searchTags` would offer for
+    /// the term — ranked by how well the name answers it, then by library title, then the
+    /// most credited, and cut to `first` — whose library holds `kind`. Of the `first` items
+    /// their credit was put on last in that library, those of `kind`: the actor's, then the
+    /// director's not already listed, `first` in all; then ranked by `score`. Empty for a
+    /// kind other than films and series.
+    ///
+    /// A bounded list rather than a range to page through: which items it holds depends on
+    /// `first`.
+    async fn search_credits(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Term to match a prefix of any word of a person's name against.")]
+        query: String,
+        #[graphql(desc = "What to list: films or series.")] kind: crate::filter::ItemType,
+        #[graphql(desc = "Return at most this many items.")] first: Option<i32>,
+    ) -> Result<crate::search::CreditedItemConnection> {
+        crate::search::credited(context, query, kind, first).await
     }
 
     /// Genres and people whose name matches a search term, once per library carrying them.

@@ -273,7 +273,7 @@ pub type PersonCreditConnection = Connection<
 >;
 
 /// The libraries the caller can see, hidden ones included.
-async fn libraries_in_view(context: &Context<'_>) -> Result<Vec<LibrarySection>> {
+pub(crate) async fn libraries_in_view(context: &Context<'_>) -> Result<Vec<LibrarySection>> {
     let visible = crate::access::visible_sections(context);
     // Libraries are a handful; one window holds them all.
     let window = Window::new(None, None, Some(MAX_ITEMS), None)?;

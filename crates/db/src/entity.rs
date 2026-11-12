@@ -16,6 +16,7 @@ pub mod item_field_lock;
 pub mod item_marker;
 pub mod item_rating;
 pub mod item_tag;
+pub mod item_title_key;
 pub mod item_title_word;
 pub mod library_permission;
 pub mod library_section;

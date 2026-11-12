@@ -1611,33 +1611,72 @@ What stays is gated on the server being the viewer's own (`owned` on plex.tv) an
 server answers: Dashboard, Alerts, Conversions and Manage › Libraries. Plugins follows
 `allowChannelAccess`, which is `0`: there is no plug-in framework here.
 
-### Global search is ranked, ours is not
+### Global search, `/search`, is cut per kind in title order
 
 `GET /search?query=` applies the same match rule as the `title=` filter — a word prefix over
 the three title fields, confirmed in both directions (`jouet` finds *Le Nouveau Jouet*, `hell`
-finds *3 from Hell*) — and then **ranks the matches and cuts them off**. We return matches in
-sort-title order.
+finds *3 from Hell*) — and answers **at most 15 of each kind, in title order**: films, then
+series, then episodes, each the first fifteen a title-ordered match begins with. It ranks
+nothing; there is no score on its items. Measured on 53 terms (`captures/search/`): no kind
+over 15, and for `hell` the fifteen films are exactly the first fifteen of our 36 matches by
+sort title, `Hellboy` left out after `Hell on the Border`.
 
-For a distinctive term the answers coincide: `dune` gives 21 results on both, identical sets.
-For a common one they do not, because the reference is selecting and we are not:
-
-| Term | Reference | Our total matches |
-| --- | --: | --: |
-| `dune` | 21 | 21 |
-| `jouet` | 19 | 27 |
-| `genius` | 23 | 50 |
-| `avatar` | 37 | 116 |
-| `soiree` | 19 | 151 |
-| `hell` | 43 | 439 |
-| `world` | 45 | 500+ |
-
-Reproducing the cutoff needs a relevance score, and ranking by one conflicts with keyset
-cursors: the cursor resumes from the ordering column, so the ordering has to be a stored value.
-Left as it is deliberately — the endpoint finds what it should find, in a different order and
-with weaker matches included.
+We answer the same, through the official API's `search` with `order: TITLE` and
+`first: 15`, kind by kind. On 117 kinds over the 53 terms, the same first entry on 73 and the
+same entries on 65; the rest
+differ in collation (*Sort collation*) and in what the term matches: the reference wants the
+words in order (`bad breaking` finds nothing there), and an episode is matched by its own
+titles only, never through its series as the search shelves match it.
 
 `/search` also carries a static `Provider` array of four entries, and its `size` counts the
 items **plus** the providers: 37 items and 4 providers are reported as 41.
+
+### Relevance: the reference's score
+
+`/hubs/search` and `/library/search` rank what they match by one score, written with five
+decimals, the same in both. Measured on 9,151 scored items over 53 terms (distinctive, common,
+several words, people's names, prefixes; `captures/search/`):
+
+- **The rung**, two tenths apiece, is how well the title answers the term — the table under
+  *Search by shelves*. 0.93 a title or sort title equal to the term; 0.73 a title or original
+  title whose first word is the term's; 0.53 one starting with the term's first word; 0.33
+  any other match. An episode scores two hundredths less on each rung (0.91 … 0.31), and an
+  episode found through its series' title is on the lowest.
+- **The audience rating** breaks ties, one ten-thousandth per point: *Le Pire voisin au monde*,
+  rated 9.7 by its audience, scores 0.33097; *Dune* (1984), 6.5, scores 0.93065; an item with
+  no rating keeps the round value. 9,123 of the 9,151 tails are exactly the rating the
+  reference publishes on the item; the 28 others are a hundred-thousandth off, all on ratings
+  stored with a second decimal of 5.
+- Within one score the reference's order is not stable from one request to the next (*Toy
+  Story 5*, *Elvis* and *La Ligne verte*, all 0.33094, came back in two orders). Ours is the
+  sort title, then the id.
+
+The official API's `search` orders by that score by default (`order: RELEVANCE`), each edge
+carrying `score` and `titleMatch`. Storage computes the rung in SQL from a table of each
+item's folded whole titles (`item_title_key`, written by `write::insert_items` and
+`write::update_item`), so a page is a `WHERE`/`ORDER BY`/`LIMIT` like any other.
+
+**Paging a ranked search.** A keyset cursor carrying the score, in two exact parts — the
+hundredths that rung and kind make, an integer, and the audience rating as stored — then the
+sort title and the id. Integers and stored values compare exactly, so a page resumes on
+equality where a float recomputed per row might not; the id makes the order total, so no item
+is skipped or repeated even when hundreds share a score. A ranked search is not bounded and
+offset-paged: it can be walked to its end forwards and backwards like any listing, and a
+cursor from the title order is refused rather than misread.
+
+**Where the reference ranks something else.** It does not rank every match: it draws a pool
+first and ranks that, and for a common or a loosely matched term the pool leaves its best
+titles out. `le` at `limit=10` on `/library/search` answers *Le Nouveau Jouet* (0.53) and the
+nine films of *VF - Films* whose titles open with a digit (0.33) — the first ten of that
+library in title order — where *Le Parrain* and *Le Robot sauvage* score 0.73; `dune` on
+`/hubs/search` lists *Journal d'une ado hors norme* (0.33) on the series shelf before *Dune :
+Prophecy* in its other libraries (0.73). We rank every match, which is what the owner asked
+for. Hence, on the 53 terms, the same score for 4,657 of the 4,873 items both servers list on
+`/hubs/search` at `limit=100`, and 96.5% of the pairs of differently scored items both list
+in the same order; on the default shelves (`limit=3`), the same first score on 80 of 100 for
+distinctive terms, names and several words, where the pools do not bite, against 51 of 88 for
+common terms and prefixes. What remains is mostly the library having changed since our
+snapshot: *Matrix* has an audience rating there and none here.
 
 ### What a listing says it can do
 
@@ -1761,41 +1800,62 @@ attributes, with none of a listing's.
 Plex Web's search field does not use `/hubs/search` or `/search`. It calls the
 `universalsearch` feature from `/media/providers`, `GET /library/search?query=&limit=&searchTypes=
 &includeMetadata=1&filterPeople=1`, which the spec does not declare. The answer is a list of
-`SearchResult`, each a `score` around one `Metadata` (or one `Directory`, for a person or a
-collection, per library holding it).
+`SearchResult`, each a `score` (a JSON number) around one `Metadata`, or one `Directory` for a
+person, a genre or a collection in one library.
 
 Measured: `query` is required (`400`; empty is an empty container); `limit` defaults to 10, a
-non-number is `400` and zero `500` (a `400` here); `searchTypes` defaults to `movies,tv`, where
-`movies` is films and `tv` is series and episodes, and an unknown value yields nothing;
-`sectionId` changes nothing. Items come in the listing's form, naming `librarySectionTitle`;
-only a series adds `librarySectionID` and `librarySectionKey`. A film with no synopsis carries
-`summary=""`, where a listing omits it.
+non-number is `400` and zero `500` (a `400` here); `sectionId` changes nothing. Items come in
+the listing's form, naming `librarySectionTitle`; only a series adds `librarySectionID` and
+`librarySectionKey`. A film with no synopsis carries `summary=""`, where a listing omits it.
+
+**Order and cut.** One list, grouped by kind and cut to `limit` as a whole: films, series,
+episodes, then actors, directors, genres and collections, each group best first — items by
+the score of *Relevance*, tags by the order and scores of the `/hubs/search` shelves (0.92 the
+name itself, 0.52 a name starting with the term, 0.32 the rest; then library title, the most
+carried, the newest tag). `the` at `limit=100` is a hundred films; `luc besson` is one film,
+one episode, then Luc Besson the actor and the director in each library crediting him. A
+`Directory` is the shelf's without `reason` and `score`: `key`, `librarySectionID`, `Key`,
+`Title`, `Type`, `type="tag"`, `id`, `filter`, `tag`, `tagType`, a person's `tagKey` and
+`thumb`, a collection's `thumb`, `art`, `guid` and `summary`, and `count`.
+
+**`searchTypes`**, measured value by value on four terms:
+
+| Value | Brings |
+| --- | --- |
+| `movies` | Films, and the genres and collections of film libraries |
+| `tv` | Series and episodes, and the genres and collections of series libraries |
+| `people` | Actors and directors, of the libraries the other values name; of every library when it comes alone |
+| absent or empty | `movies,tv,people` |
+| anything else (`music`, `photos`, `livetv`, `bogus`) | Nothing, and it still narrows `people`: `music,people` and `people,bogus` find nobody |
+
+`tv,people` finds no Luc Besson, credited in film libraries only; `comedie` with `movies`
+brings the genre *Comédie* of the film libraries, with `people` alone no genre at all. An
+episode is matched through its series' titles here, as on the shelves.
 
 Differences that remain, each knowingly:
 
-- **Scores.** The reference's are finer and fuzzy: `zzzqqq` matches *Dragon Ball Z*. We keep the
-  word-prefix match and use three of its values: 0.93 for a title equal to the term, 0.73 for
-  one starting with it, 0.33 otherwise, ranking the first 100 matches of each of films and
-  series, then of episodes. Same top results for a title someone types in full.
-- **People and collections are absent.** `searchTypes=people` is accepted and finds nothing,
-  against the rule that what we cannot honor is refused: Plex Web sends it with every search,
-  and a `501` would take the whole field down. Collections are not imported; people could be
-  served from `searchTags`, which `/hubs/search` uses, but this endpoint does not ask it yet.
+- **Matching.** The reference's is loose: `zzzqqq` matches *Dragon Ball Z*, `comedie` finds
+  actors named *Comer* and *Cometti*, and `hanks` finds *Hank's Back*. Ours is the word
+  prefix of every search here, every word of the term required, in any order.
+- **The pool.** The reference ranks the first matches in title order, by library; we rank every
+  match (*Relevance*). For a distinctive term the lists agree — `dune`, `luc besson` and `tom
+  hanks` entry for entry at `limit=10` — and for `le` they share nothing.
+- **`otherVideos`** brings the genres and collections of film libraries on the reference; it
+  brings nothing here, as a kind this server holds none of.
+- **No film is found through a person here**, as on the reference: `tom hanks` lists Tom Hanks
+  and no film, whatever `filterPeople` says. That is the shelves' doing (`/hubs/search`).
 
-Against the reference on eight terms and 89 shared items, what still differs is items edited
-since the snapshot, the stream profiles (*Open questions*), and the `Field` lock list on two
-series, which we do not serve.
-
-A term of several words needs them all, here as on `title=` and `/search`. The reference also
-wants them in order (`bad breaking` finds nothing); our word index holds no positions, so a
-reversed term finds a little more.
+Against the reference on 53 terms at `limit=100`, 2,862 of the reference's 3,748 results are
+listed here too, 2,700 of them with the same score.
 
 ### Search by shelves, `/hubs/search`
 
 The spec's only search operation, and what most clients other than Plex Web's search field call.
 Measured on the reference with sixteen terms — distinctive (`dune`, `kaamelott`), common (`le`,
 `tom`), accented (`amélie`/`amelie`), people (`tom hanks`, `luc besson`, `spielberg`), a genre
-(`action`), single characters — and on every parameter below.
+(`action`), single characters — and on every parameter below; then again on 53 terms
+across `/hubs/search`, `/library/search` and `/search` at several limits for ranking and
+for what a person's name finds.
 
 **Shape.** Always seventeen `Hub`s, filled or empty: `movie`, `show`, `episode`, `artist`,
 `album`, `track`, `photoalbum`, `autotag`, `photo`, `tag`, `actor`, `director`, `genre`,
@@ -1823,8 +1883,9 @@ episodes alone credit someone is left out — Tom Hanks the director of two epis
 the two film libraries only — since its listing filtered on him would be empty; `count` still
 counts episodes where a series carries the credit (17 in *VF - Series*).
 
-**Ranking.** Scores sit on a ladder whose first decimal is what ranks; the trailing digits are
-the reference's own tie-breaker and are not reproduced (ours are `0.93000`).
+**Ranking.** Scores sit on a ladder whose first decimal is what ranks, and the audience rating
+breaks ties within a rung (*Relevance*): `0.93065` is *Dune* (1984), rated 6.5. People,
+genres and collections have no rating, and keep the round value.
 
 | | Films and series | Episodes | People and genres |
 | --- | --: | --: | --: |
@@ -1842,15 +1903,41 @@ Glenn 0.32, and the reverse for `amélie`. Within a shelf, people and genres are
 then library title, then `count` descending, then tag id descending — which the reference
 matches entry for entry on `tom hanks`, `luc besson`, `besson`, `spielberg`, `action` and `dune`
 (up to `limit=12`); on `tom`, 10 of 12 actors, two swapped or replaced where the counts differ.
-Items in a rung stay in title order.
+Items in a rung follow their audience rating, then their title.
 
 Shelves are ordered by their best rung, ties falling back on the order listed when nothing
 matches (`show`, `artist`, `album`, `movie`, `episode`, …). On the shelves both servers fill,
 that gives the reference's order for `dune`, `hell`, `amélie`, `amelie`, `tom hanks`, `batman`,
 `kaamelott` and `breaking`. It does not for `action`, where the reference puts the actors (0.52)
 before the films (0.73), nor where the shelves differ in rung because the matches do (`le`,
-`the`, and `spielberg`, whose films the reference finds through the director); the reference's
+`the`); the reference's
 order between shelves of one rung also varies from one term to the next.
+
+**Items found through a person.** A film or series shelf that no title fills lists the works
+of the people the term names, as `tom hanks` lists Tom Hanks' films, each with
+`reason="actor"` (or `"director"`), `reasonID` the tag and `reasonTitle` the name, scored as a
+match anywhere: 0.33 and the audience rating, *Le Pire voisin au monde* first at 0.33097.
+Measured on thirteen names and, for `tom hanks` and `hanks`, six limits from 3 to 100:
+
+- *Who:* the first actor, and the first director, of the actor and director shelves as listed
+  — in the order above and cut to `limit` — whose library holds that kind. `hanks` gives Tom
+  Hanks' films in *VF - Films*, and Colin Hanks' series in *VF - Series*, where he is the most
+  credited Hanks. At `limit=3` the three Tom Hanks listed are in film libraries, and the series
+  shelf stays empty; from `limit=5`, *VF - Series* is listed and his two series come.
+- *What:* the `limit` items that person's tag was put on last in that one library, of any kind,
+  then those of the shelf's kind: the actor's, then the director's not already listed, up to
+  `limit`. Plex credits a guest on the series as well as on the episode, so Colin Hanks'
+  series come — but only from `limit=100`: his thirty newest credits are episodes. `nolan`
+  with `limit=100` lists Nolan North's 16 films and Christopher Nolan's 11; with `limit=3`,
+  the three Nolan North films added last, and no director's.
+- A title found keeps the people off the shelf: `luc besson` finds the documentary *Luc Besson
+  Juste une mise au point*, and nothing of his.
+
+The official API's `searchCredits` serves it. Same set and same scores as the reference on the
+film shelf of all eleven names at `limit=3`, and on the series shelf of seven of the ten with one at
+`limit=100`; the others name a person the reference's own pool of people leaves out (*Nolan
+Gould*, the most credited Nolan in *VF - Series*, is absent from its list for `nolan`).
+`/library/search` never finds anything through a person.
 
 **Parameters.** `query` is required: absent, empty or blank is `400`. A term of one character
 finds only the titles equal to it and no tag — `a` gives the two episodes titled *A*, `x` the
@@ -1863,14 +1950,10 @@ other flags clients send change nothing on the reference, and are ignored.
 Differences that remain, each knowingly:
 
 - **Matching** is the word-prefix rule of every search here, with every word of the term
-  required. The reference matches loosely: `dune` finds *Journal d'une ado hors norme* (`d'une`)
-  and `zzqxw` finds *C.W.* and *Zweig*. A distinctive term gives the same shelves; a loose
-  match's 0.33s are absent.
-- **No collections**: they are not imported, so the `collection` shelf stays empty where the
-  reference shows *Dune - Saga* per library.
-- **No items found through a person.** The reference fills the film and series shelves with
-  the works of the people it matched (`tom hanks` gives *Toy Story 5* with `reason="actor"`,
-  `reasonID` the tag); ours stay empty, and the actor shelf leads to the same list.
+  required. The reference matches loosely: `dune` finds *Journal d'une ado hors norme*
+  (`d'une`) and `zzqxw` finds *C.W.* and *Zweig*. A distinctive term gives the same shelves;
+  a loose match's 0.33s are absent. An episode is found through its series' titles, as on the
+  reference: every episode of *Kaamelott* for `kaamelott`, on the lowest rung.
 - **Counts are live.** The reference's `count` comes from its own tallies, a few above the
   items it holds: 36 Tom Hanks films in *VF - Films* against 33 carrying the tag, as the filter
   choices already show.
@@ -1878,12 +1961,14 @@ Differences that remain, each knowingly:
   for `the`, *The Boys* is 0.53 where ours is 0.73, and for `le` the reference shows no
   *Le Bureau des légendes* at all. French sort titles keep their article, so the sort title is
   not what explains it.
-- **Pools.** Each shelf ranks the first 100 matches in title order (500 for a single
-  character), people and genres the 500 most credited. A common prefix can push a well-named
-  match out of the pool, and the reference cuts its own pool by a rule of its own: for `amelie`
-  at `limit=6` it lists one Amelie at 0.52 where we list six — and three at `limit=8`.
-- **Single characters** find the exact titles among the first 500 matches only: `x` misses
-  the three episodes titled *X*, which sort behind 764 episodes holding a word in `x`.
+- **Pools.** The reference ranks a pool it draws first (*Relevance*): `dune` lists *Journal
+  d'une ado hors norme* on the series shelf before *Dune : Prophecy* in its other libraries.
+  Ours ranks every item matched; people, genres and collections are ranked among the 500 most
+  credited, and the reference cuts its own pool of people by a rule of its own: for `amelie`
+  at `limit=6` it lists one Amelie at 0.52 where we list six.
+- **Single characters** find the exact titles first, the score putting them ahead of every
+  other match: `x` gives the two films and eight episodes titled *X*, entry for entry and
+  score for score with the reference.
 
 `GET /hubs/search/voice` is not derived from it and stays `501`: it ranks every title by edit
 distance to the whole term (`dune` finds *Cube* at distance 2, `tom hanks` finds *Four Hands*),

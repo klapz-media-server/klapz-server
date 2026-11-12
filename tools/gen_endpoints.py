@@ -270,7 +270,11 @@ OFF_SPEC = (
         "/library/search",
         "user",
         "Search field (universal search)",
-        "Films, series and episodes with their listing fields, in three score tiers. Not served: the people and collections the reference mixes in, and its fuzzy matching. See `docs/spec-gaps.md`.",
+        "Films, series and episodes ranked by the official API's `search` score, then actors, "
+        "directors, genres and collections, each group best first, cut to `limit`; "
+        "`searchTypes` honored as measured (`people` from the libraries the other values "
+        "name). Gaps: the reference's fuzzy matching, and the title-ordered pool it ranks, "
+        "which we do not cut. See `docs/spec-gaps.md`.",
     ),
     (
         "done",
@@ -305,9 +309,10 @@ OFF_SPEC = (
         "user",
         "Global search across libraries",
         "Matches exactly as the reference (word prefix over title, sort title, original "
-        "title) but returns matches in title order, unranked and uncut. `type=` narrows to one "
-        "kind without the `Provider` list, as the reference; a music or unknown type finds "
-        "nothing. The spec declares only `/hubs/search`.",
+        "title) and answers as it does: the first 15 films, series and episodes in title "
+        "order, kind by kind, unranked. `type=` narrows to one kind without the `Provider` "
+        "list, as the reference; a music or unknown type finds nothing. The spec declares "
+        "only `/hubs/search`.",
     ),
 )
 

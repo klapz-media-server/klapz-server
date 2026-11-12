@@ -4305,8 +4305,9 @@ async fn a_hub_search_puts_the_best_matching_shelf_first() {
     let body = listing("/hubs/search?query=avatar").await;
     assert_eq!(search_shelves(&body)[0], ("movie".to_owned(), 1));
     let film = &search_shelf(&body, "movie")["Metadata"][0];
-    // An exact title, written as the reference writes a score.
-    assert_eq!(film["score"], "0.93000");
+    // An exact title, its audience rating of 7.9 breaking ties, written as the reference
+    // writes a score.
+    assert_eq!(film["score"], "0.93079");
     assert_eq!(film["ratingKey"], "100");
     // Unlike `/library/search`, a film says where its library is.
     assert_eq!(film["librarySectionID"], 4);
@@ -4354,6 +4355,88 @@ async fn a_hub_search_offers_a_person_in_each_library_crediting_them() {
 }
 
 #[tokio::test]
+async fn a_hub_search_finds_films_through_the_person_a_term_names() {
+    // As the reference lists Tom Hanks' films for `tom hanks`: no title answers the term, so
+    // the film shelf holds the actor's films, naming the credit as the reason and scored as
+    // a match anywhere, 0.33 and 7.9 for the audience rating.
+    let body = listing("/hubs/search?query=jason%20statham").await;
+    let shelf = search_shelf(&body, "movie");
+    assert_eq!(shelf["size"], 1);
+    let film = &shelf["Metadata"][0];
+    assert_eq!(film["ratingKey"], "100");
+    assert_eq!(film["reason"], "actor");
+    assert_eq!(film["reasonID"], 472_942);
+    assert_eq!(film["reasonTitle"], "Jason Statham");
+    assert_eq!(film["score"], "0.33079");
+    // The director the term names counts too, when the actor leaves room.
+    let body = listing("/hubs/search?query=corey%20yuen").await;
+    assert_eq!(
+        search_shelf(&body, "movie")["Metadata"][0]["reason"],
+        "director"
+    );
+    // A one-character term finds nobody, and so nothing through anybody.
+    let body = listing("/hubs/search?query=j").await;
+    assert_eq!(search_shelf(&body, "movie")["size"], 0);
+}
+
+/// The people of `/library/search` as the reference writes them, captured for Luc Besson.
+const STATHAM_RESULT: &str = r#"{"score":0.92,"Directory":{"key":"/library/sections/4/all?actor=472942","librarySectionID":4,"librarySectionKey":"/library/sections/4","librarySectionTitle":"VF - Films","librarySectionType":1,"type":"tag","id":472942,"filter":"actor=472942","tag":"Jason Statham","tagType":6,"tagKey":"5d776826e6d55c002040af58","thumb":"https://metadata-static.plex.tv/c/people/c540bdd39873ee8e8612b0af06fc0d4c.jpg","count":1}}"#;
+
+fn search_results(body: &Value) -> Vec<Value> {
+    body["MediaContainer"]["SearchResult"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+}
+
+#[tokio::test]
+async fn the_search_field_finds_people_in_the_references_shape() {
+    let body = listing("/library/search?query=jason%20statham&limit=10").await;
+    let results = search_results(&body);
+    assert_eq!(results.len(), 1, "{body}");
+    assert_eq!(results[0].to_string(), STATHAM_RESULT);
+}
+
+#[tokio::test]
+async fn people_come_from_the_libraries_the_other_search_types_name() {
+    // Measured for `luc besson`, credited in film libraries alone.
+    for (search_types, found) in [
+        ("people", 1),
+        ("movies,people", 1),
+        ("movies,tv,people", 1),
+        ("tv,people", 0),
+        ("people,bogus", 0),
+        ("music,people", 0),
+        ("movies", 0),
+    ] {
+        let body = listing(&format!(
+            "/library/search?query=jason%20statham&searchTypes={search_types}"
+        ))
+        .await;
+        assert_eq!(search_results(&body).len(), found, "{search_types}");
+    }
+}
+
+#[tokio::test]
+async fn the_search_field_lists_items_then_people_then_genres() {
+    let body = listing("/library/search?query=thriller&searchTypes=movies").await;
+    let results = search_results(&body);
+    let genre = &results.last().unwrap()["Directory"];
+    assert_eq!(genre["tagType"], 1);
+    assert_eq!(genre["filter"], "genre=39");
+    assert!(genre.get("reason").is_none() && genre.get("score").is_none());
+    // A genre comes with the items of its libraries, not with the people.
+    let body = listing("/library/search?query=thriller&searchTypes=people").await;
+    assert!(search_results(&body).is_empty());
+
+    // An exact title before anything else, scored with its audience rating.
+    let body = listing("/library/search?query=avatar").await;
+    let film = &search_results(&body)[0];
+    assert_eq!(film["score"], 0.93079);
+    assert_eq!(film["Metadata"]["ratingKey"], "100");
+}
+
+#[tokio::test]
 async fn a_single_character_finds_only_titles_equal_to_it() {
     // `s` begins Severance, Shu Qi and more, none of them named `s`.
     let body = listing("/hubs/search?query=s").await;
@@ -4394,7 +4477,7 @@ async fn a_hub_search_names_its_elements_by_kind_in_xml() {
         "{body}"
     );
     assert!(
-        body.contains(r#"<Video score="0.93000" ratingKey="100""#),
+        body.contains(r#"<Video score="0.93079" ratingKey="100""#),
         "{body}"
     );
     let (_, body) = get_from(items_app(), "/hubs/search?query=thriller", None).await;

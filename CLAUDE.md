@@ -83,8 +83,9 @@ without them saying so.
   the client present it as the result. Parameters *not* on that list stay tolerated, as the
   reference tolerates them. The rule generalizes: silence is for what we were never asked, not
   for what we cannot do.
-- **A derived index has one write path.** `item_title_word` is maintained by
-  `db::write::insert_items`, and there is no other way to insert an item; `tag_word` likewise by
+- **A derived index has one write path.** `item_title_word` and `item_title_key` are maintained
+  by `db::write::insert_items` and `update_item`, and there is no other way to insert an item;
+  `tag_word` likewise by
   `db::write::insert_tags`. Leaving it to each
   caller is how a search quietly stops finding things — found the easy way, by a test fixture
   that inserted items directly and then matched nothing.
@@ -247,12 +248,17 @@ without them saying so.
 
 Places where we knowingly answer differently, each decided rather than overlooked.
 
-- **Search finds the right items, in the wrong order.** `GET /search` matches exactly as the
-  reference does — a word prefix over title, sort title and original title — and then differs:
-  the reference ranks the matches and cuts them off, we return them in title order. Identical
-  sets for a distinctive term (`dune`: 21 both sides), materially more for a common one
-  (`hell`: 43 against 439). Ranking needs a score, and ordering by a score conflicts with
-  keyset cursors, which resume from a stored column.
+- **Search ranks every match; the reference ranks a pool.** `/hubs/search` and
+  `/library/search` order by the reference's own score — a rung of two tenths for how well
+  the title answers, a ten-thousandth per point of audience rating (9,123 of 9,151 captured
+  scores reproduced exactly) — computed in SQL, and the official API's `search` pages it by a
+  keyset cursor of exact values: the score's hundredths, the stored rating, the sort title,
+  the id. The reference ranks only a pool it draws first, in title order library by library,
+  so a common term loses its best titles there (`le` at `limit=10`: nine films opening with a
+  digit, none of the 0.73s); ours ranks them all. Same score on 4,657 of 4,873 shared items;
+  matching stays the word prefix, every word required in any order, where the reference's is
+  loose (`dune` finds `d'une`). `GET /search` ranks nothing on the reference either: the
+  first 15 films, series and episodes in title order, as we answer it.
 - **`Meta` lists what we honor, not what Plex offers.** `includeMeta=1` publishes 11 filters and
   2 sorts for a film library where the reference lists 27 and 9: a menu entry answering `501`
   would be worse than an absent one. A test keeps the list in step with `listing::parse`.
@@ -263,15 +269,20 @@ Places where we knowingly answer differently, each decided rather than overlooke
 - **A person's page lists at most 500 items.** The reference lists everything a tag carries
   unpaged — 4,699 films for Action. Cut by `page::MAX_ITEMS`, the answer states `totalSize`
   and `offset`; whole, it is the reference's attribute for attribute.
-- **The search field finds no people yet.** `GET /library/search`, what Plex Web's search field
-  calls, answers films, series and episodes; the people and collections the reference mixes in
-  are absent, and `searchTypes=people` is tolerated rather than refused, since Plex Web sends it
-  with every search.
-- **Search shelves are filled by our own match.** `GET /hubs/search` answers the reference's
-  seventeen shelves, ranked on its score ladder, with films, series, episodes, actors, directors
-  and genres; collections are not imported, and no film is found through a person's name, as the
-  reference finds Tom Hanks' films for `tom hanks`. `sectionId` narrows nothing, as on the
-  reference. `/hubs/search/voice`, an edit-distance search, stays `501`.
+- **The search field lists people, genres and collections, never found loosely.**
+  `GET /library/search`, what Plex Web's search field calls, groups films, series, episodes,
+  actors, directors, genres and collections, cut to `limit` as a whole, and honors
+  `searchTypes` as measured (`people` drawn from the libraries the other values name). The
+  reference's fuzzy matches — `comedie` finding actors named *Comer* — are absent, and
+  `otherVideos`, which brings film genres there, brings nothing.
+- **Search shelves fill an empty film or series shelf through a person.** `GET /hubs/search`
+  answers the reference's seventeen shelves, collections included, and for `tom hanks` lists Tom
+  Hanks' films with `reason="actor"` by the measured rule (`core::credited`, `searchCredits` on
+  the official API): the shelf's first actor and director, their newest credits in one library,
+  ranked. Same set and scores as the reference on the film shelf for all eleven names measured
+  at `limit=3`; the person chosen differs where the reference's own pool of people leaves the
+  best-credited one out. `sectionId` narrows nothing, as on the reference.
+  `/hubs/search/voice`, an edit-distance search, stays `501`.
 - **Range filter operators need their `>` encoded.** `year>=2020` travels with a raw `>`, which
   is not a legal URI character: `hyper` rejects the request line with `400` before any handler
   runs. `year%3E=2020`, the `>` alone encoded, reaches the parser and works; the reference
@@ -669,6 +680,15 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   lookups, listings, `/children`, `/grandchildren`, `/allLeaves` and play queues with
   `includeMarkers=1`; the bookmark routes `POST`, `PUT` and `DELETE …/marker` as measured on the
   reference's test libraries). Detection (`…/intro`, `…/credits`) stays deferred.
+- ✅ **relevance, people and collections in search**: the reference's score — rung and audience
+  rating — computed in SQL over each item's folded whole titles (`item_title_key`, written by
+  `db::write` only, migration `m0031`) and served by the official API's `search` (`order`,
+  each edge's `score` and `titleMatch`, `episodesBySeries`), paged by an exact keyset cursor;
+  films and series found through a person's name by the measured rule (`core::credited`,
+  `searchCredits`); `/library/search` with people, genres and collections and `searchTypes`
+  honored, `/hubs/search` ranked by the API's score and filling an empty film or series shelf
+  through a person, and `/search` cut to 15 per kind in title order, as measured on 53 terms
+  (`docs/spec-gaps.md`, *Relevance*).
 
 ## Reference server
 

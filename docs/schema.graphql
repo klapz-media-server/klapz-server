@@ -902,6 +902,44 @@ type CreateUserPayload {
 	userErrors: [AccountUserError!]!
 }
 
+type CreditedItemConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CreditedItemEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Item!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CreditedItemEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Item!
+	"""
+	How relevant the item is, on the scale of `ItemSearchEdge.score`: a title matched
+	nowhere in particular, 0.33 plus a ten-thousandth per point of audience rating.
+	"""
+	score: Float!
+	"""
+	The person the item was found through, in the library it was found in.
+	"""
+	credit: TagUse!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
 """
 A date-time as RFC 3339 defines it, with an offset. Written in UTC (`Z`) to the second;
 read with any offset, a fraction of a second dropped.
@@ -2051,6 +2089,45 @@ enum ItemOrder {
 	Shuffled, by the `seed` argument: the same seed gives the same order, so pages follow one another.
 	"""
 	RANDOM
+}
+
+type ItemSearchConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ItemSearchEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Item!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ItemSearchEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Item!
+	"""
+	How relevant the item is, between 0 and 1: two tenths for each step of `titleMatch`
+	from 0.33 (0.31 for an episode), plus a ten-thousandth per point of audience rating.
+	The Plex server's own scale.
+	"""
+	score: Float!
+	"""
+	How well the title answers the term.
+	"""
+	titleMatch: TitleMatch!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 """
@@ -4933,14 +5010,15 @@ type Query {
 	
 	Matches a *word prefix*: `hell` finds "Good News About Hell", and accents are folded so
 	`soiree` finds "# Pire Soirée". A term inside a word does not match — the index is a
-	range scan, not a substring scan.
+	range scan, not a substring scan. Every word of a term must begin some word of a title.
 	
 	Polymorphic and cross-library by design: results mix films, series and episodes from
 	different libraries, which is what a single search box needs. Narrow with `kinds`.
 	
-	Ordered by sort title. Not by relevance: ranking needs a score this server does not
-	compute, and a title ordering at least gives the cursor a stable position to resume
-	from. A blank term matches nothing rather than everything.
+	Ranked by default, each edge carrying its `score` and `titleMatch`: the best match
+	first, then the audience rating, then the sort title and the id, so that the order is
+	total and a cursor resumes exactly where its page ended. A blank term matches nothing
+	rather than everything.
 	"""
 	search(
 		"""
@@ -4951,6 +5029,14 @@ type Query {
 		Restrict to these kinds. Omit to search every kind.
 		"""
 		kinds: [ItemType!],
+		"""
+		How to order the matches.
+		"""
+		order: SearchOrderInput! = RELEVANCE,
+		"""
+		Also find an episode through its series' titles. It ranks as a match anywhere.
+		"""
+		episodesBySeries: Boolean! = false,
 		"""
 		Return items after this cursor.
 		"""
@@ -4967,7 +5053,35 @@ type Query {
 		Return at most this many items from the end of the range.
 		"""
 		last: Int
-	): ItemConnection!
+	): ItemSearchConnection!
+	"""
+	Films or series found through the people a search term names, rather than through
+	their titles: what a search box offers for a name.
+	
+	The first actor, then the first director, of the people `searchTags` would offer for
+	the term — ranked by how well the name answers it, then by library title, then the
+	most credited, and cut to `first` — whose library holds `kind`. Of the `first` items
+	their credit was put on last in that library, those of `kind`: the actor's, then the
+	director's not already listed, `first` in all; then ranked by `score`. Empty for a
+	kind other than films and series.
+	
+	A bounded list rather than a range to page through: which items it holds depends on
+	`first`.
+	"""
+	searchCredits(
+		"""
+		Term to match a prefix of any word of a person's name against.
+		"""
+		query: String!,
+		"""
+		What to list: films or series.
+		"""
+		kind: ItemType!,
+		"""
+		Return at most this many items.
+		"""
+		first: Int
+	): CreditedItemConnection!
 	"""
 	Genres and people whose name matches a search term, once per library carrying them.
 	
@@ -5548,6 +5662,22 @@ enum Scan {
 	Alternating fields of odd and even lines.
 	"""
 	INTERLACED
+}
+
+"""
+How a search orders what it found.
+"""
+enum SearchOrderInput {
+	"""
+	The best match first: a title equal to the term, then one whose first word is the
+	term's, then one starting with it, then the rest; the audience rating breaks ties
+	within each, then the sort title.
+	"""
+	RELEVANCE
+	"""
+	By sort title.
+	"""
+	TITLE
 }
 
 type Season implements Item & Node {
@@ -6959,6 +7089,29 @@ enum TextField {
 	The studio or network that made the item.
 	"""
 	STUDIO
+}
+
+"""
+How well an item's title answers a search term, from the best.
+"""
+enum TitleMatch {
+	"""
+	The title or the sort title is the term, accents and case aside.
+	"""
+	EXACT
+	"""
+	The first word of the title or of the original title is the term's first word. A
+	word ends at a space or an apostrophe here, so `Amelie's Miracle` opens with `amelie`.
+	"""
+	LEADING_WORD
+	"""
+	The title or the original title begins with the term's first word.
+	"""
+	LEADING_PREFIX
+	"""
+	Some word of a title begins with each word of the term.
+	"""
+	ANYWHERE
 }
 
 """
