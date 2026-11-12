@@ -420,6 +420,46 @@ impl Watching<'_> {
         Ok(entries)
     }
 
+    /// What to play once an episode ends: its series' entry in Continue Watching, unless that
+    /// entry is the episode itself — one still in progress, or the next of a series whose
+    /// state has not moved yet. Measured on the reference's post-play shelf, which offers the
+    /// series' entry from any of its episodes, not the episode after the one played: S9E1 of
+    /// a series watched up to S24E2 offers S24E3. None when the series was not played within
+    /// [`DECK_WINDOW_SECONDS`], or has nothing left, as Continue Watching has nothing then.
+    ///
+    /// # Errors
+    ///
+    /// Fails when storage does.
+    pub async fn after_episode(
+        &self,
+        episode: &MetadataItem,
+        now: i64,
+    ) -> Result<Option<MetadataItem>, WatchError> {
+        let Some(season) = episode.parent_id else {
+            return Ok(None);
+        };
+        let Some(show) = self.metadata.item(season).await?.parent_id else {
+            return Ok(None);
+        };
+        let show = self.metadata.item(show).await?;
+        let below = self.metadata.descendants(show.id).await?;
+        let recent = self
+            .watch
+            .recent(self.viewer, now - DECK_WINDOW_SECONDS, DECK_SOURCES)
+            .await?;
+        let under_way = std::iter::once(&show)
+            .chain(&below)
+            .any(|item| recent.iter().any(|(guid, _)| *guid == item.guid));
+        if !under_way {
+            return Ok(None);
+        }
+        Ok(self
+            .up_next(&show)
+            .await?
+            .map(|(next, _)| next)
+            .filter(|next| next.id != episode.id))
+    }
+
     /// The episode of a series to play next, as the reference picks it: one in progress if
     /// any, the most recently played; else the episode after the one most recently watched,
     /// the next season's first after a season's last; else, when none was watched, the
@@ -1021,6 +1061,47 @@ mod tests {
         let deck = Deck::new();
         deck.start(577_986, NOW - DECK_WINDOW_SECONDS).await;
         assert!(deck.next().await.is_empty());
+    }
+
+    async fn after(deck: &Deck, id: i64) -> Option<i64> {
+        deck.watching()
+            .after_episode(&Deck::item(id), NOW + 100)
+            .await
+            .unwrap()
+            .map(|next| next.id.get())
+    }
+
+    #[tokio::test]
+    async fn after_an_episode_comes_its_series_entry_wherever_it_stands() {
+        // Measured on the reference's test series: with S5E1 in progress, S5E2 offers S5E1
+        // and S5E1 offers nothing; once S5E1 is watched, S5E1 offers S5E2.
+        let deck = Deck::new();
+        deck.start(S5E1, NOW).await;
+        assert_eq!(after(&deck, S5E2).await, Some(S5E1));
+        assert_eq!(after(&deck, S5E1).await, None);
+
+        deck.watch(&[S5E1]).await;
+        assert_eq!(after(&deck, S5E1).await, Some(S5E2));
+        // Not the episode after the one played: the series' entry.
+        assert_eq!(after(&deck, S5E4).await, Some(S5E2));
+    }
+
+    #[tokio::test]
+    async fn after_a_finished_or_untouched_series_comes_nothing() {
+        let deck = Deck::new();
+        assert_eq!(after(&deck, S5E1).await, None);
+        deck.watch(&[S6E1]).await;
+        assert_eq!(after(&deck, S5E1).await, None);
+    }
+
+    #[tokio::test]
+    async fn after_a_series_played_long_ago_comes_nothing() {
+        let deck = Deck::new();
+        deck.watching()
+            .mark_watched(&Deck::item(S5E1), NOW - DECK_WINDOW_SECONDS)
+            .await
+            .unwrap();
+        assert_eq!(after(&deck, S5E1).await, None);
     }
 
     #[test]

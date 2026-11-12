@@ -288,7 +288,7 @@ async fn an_unimplemented_route_answers_not_implemented() {
     let response = app()
         .oneshot(
             Request::builder()
-                .uri("/hubs")
+                .uri("/hubs/items")
                 .body(Body::empty())
                 .expect("request builds"),
         )

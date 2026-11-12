@@ -392,6 +392,19 @@ async fn fresh_state(
     Ok(WatchStateObject(state))
 }
 
+/// What the caller should play once this episode ends. None without a caller.
+pub(crate) async fn after_episode(
+    context: &Context<'_>,
+    episode: &MetadataItem,
+) -> Result<Option<MetadataItem>> {
+    let Some(viewer) = crate::access::viewer_id(context) else {
+        return Ok(None);
+    };
+    Ok(watching(context, viewer)?
+        .after_episode(episode, now_epoch())
+        .await?)
+}
+
 pub(crate) async fn mark_watched(context: &Context<'_>, id: &ID) -> Result<WatchStateObject> {
     let (item, viewer) = visible_item(context, id).await?;
     watching(context, viewer)?

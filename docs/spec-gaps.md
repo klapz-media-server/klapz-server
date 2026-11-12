@@ -271,7 +271,8 @@ Measured on the reference's test series, given for the purpose five episodes ove
   twice, as the series behind an episode does.
 - **The endpoints**: `/hubs/continueWatching` (shelf `continueWatching`, style `hero`, both
   kinds) and its `/items`; `/hubs/home/continueWatching` (started only) and `/hubs/home/onDeck`
-  (next episodes only); a library's shelf in `/hubs/sections/{id}` and its `/items`. Items are
+  (each series' episode, the one in progress included: Bull's first episode at 78 seconds is
+  listed by both); a library's shelf in `/hubs/sections/{id}` and its `/items`. Items are
   lookup-shaped, the library on each.
 
 Where ours differ:
@@ -626,10 +627,24 @@ Where ours differ:
 - **The `key` carries `%3E` for `>` and `%3C` for `<`**: a raw one is refused by this server's
   HTTP layer before any handler runs (*Range filter operators*), and a client follows the key
   as given.
-- **Not served**: a series library's `tv.moreingenre`. Its genre is not drawn evenly: 120
-  draws gave four genres of 45 — comedy 48 times, animation 31, fantasy 23, reality 18 — all
-  genres of series watched lately, while drama, the library's largest and as present in that
-  history, never came up. The rule is not found.
+
+A series library's `tv.moreingenre.{s}`, `More in {genre}`, comes after rediscover: a
+`random` shelf of `type=2&unwatchedLeaves=1&genre={id}`. Its genre follows the viewer's
+history. Measured on 260 draws over three libraries, each against its series ordered by
+`lastViewedAt`, the series' own:
+
+- take the series watched last, newest first, and the **first genre of each**, a repeat
+  adding nothing, until there are **four**;
+- the genre is drawn **evenly** among those four: 41, 37, 37, 34 of 150 in one library
+  (Comedy, Fantasy, Animation, Reality, from its five series watched last: Fantasy twice), 19,
+  19, 17, 14 of 70 in another, 12, 12, 11, 5 of 40 in the third — Comédie, Drame, Crime,
+  Action, where it took seven series to reach a fourth;
+- a series counts whether finished or not, at any distance in time: the seventh there was
+  last viewed ten months before;
+- no shelf when the viewer watched no series there.
+
+Our draw is the shuffle's ten-minute one, salted for the shelf, as the other drawn shelves'.
+Two draws in 260 gave no shelf at all on the reference, for a reason not found.
 
 Three more shelves are drawn or dated, measured on 150 draws of a film library (each new
 query string is a new draw there, kept for that string: `?nonce=1` answers the same until
@@ -1793,7 +1808,104 @@ The shelf exists on 40 of the 60 films here against 36 on the reference; why the
 it from a film with genres and actors is not known.
 
 `/library/metadata/{id}/similar` answers a bare container: `size`, `identifier` and the media tag
-attributes, with none of a listing's.
+attributes, with none of a listing's. Its items, as those of the `movie.similar` shelf, name
+their library; a person's shelf's do not.
+
+`GET /hubs/metadata/{id}/related` answers the same shelves in a container without
+`mediaTagPrefix` and `mediaTagVersion`. `GET /hubs/metadata/{id}`, which the spec reserves for
+music, answers an artist's four shelves for any item — `artist.mostplayedtracks`,
+`artist.mostpopulartracks`, `artist.albums`, `music.videos.popular.new` — each empty, its key a
+listing of the item's library with `artist.id={id}`; ours writes `viewCount%3E=10` where the
+reference has a raw `>` (*Range filter operators*). An empty shelf keeps the long form in XML,
+`<Hub …>` then `</Hub>`, on every endpoint.
+
+### The end of a playback
+
+`GET /hubs/metadata/{id}/postplay` is what a player shows once an item ends. Measured on the
+reference over the owner's series and films, read only, and on its test series Bull, whose
+watch state was moved through each case and put back. The container is bare — `size`,
+`allowSync="0"`, `identifier` — and `count` (default 6) sizes every shelf; `count=0` lists each
+shelf empty with `more="1"`. A series or a season has none: `size="0"`. An unknown item is a
+`404`.
+
+**After an episode**, one shelf at most:
+
+- `tv.upnext` (`Up Next`): the series' entry in Continue Watching — not the episode after the
+  one played. Every episode of South Park, S9E1 as S29E3, offers S24E3, the episode after the
+  one watched last; with Bull's first episode in progress, its second offers the first. The
+  shelf has `upNext="1"` and no `key`, one item, dated by its series as in Continue Watching.
+- None when that entry is the episode itself: Bull's first episode in progress offers
+  nothing, nor does it once both episodes are watched, nor anything of a series never played.
+- `tv.ondeck` (`On Deck`, key `/library/sections/{s}/onDeck`) when the series has no entry —
+  not begun, finished, or played longer ago than the window, as Game of Thrones: the library's
+  Continue Watching, the episode played left out. The reference's series libraries never held
+  more than one entry, so its size beyond one was not measured; ours is `count`.
+
+**After a film**, in this order:
+
+- `movie.upnext`, `Up Next in {collection}`, `upNext="1"`, no `key`: the film after this one
+  by release date, watched or not, in the first of its collections, in the order it joined
+  them, that both shows it and continues past it. *Shows it* is the shelf's: the reference
+  looks for the film among each collection's first `count` films, and offers what follows it
+  even past them — the sixth Jurassic Park offers the seventh; a James Bond past the sixth of
+  a saga of twenty is offered the next of a smaller saga that lists it third, and with
+  `count=20` the next of the large one; with `count=2` the fourth Scary Movie is offered
+  nothing.
+- `movie.collection.{n}` for each collection, `{title} Collection`: its films by release date,
+  the list behind `/library/sections/{s}/all?collection={n}&sort=originallyAvailableAt`. A
+  collection holding only the film is still listed.
+- `movie.similar`, the shelf `/related` shows, whether or not `/related` shows it.
+
+Items are a listing's, with their library on each; the similar films come in the form
+`/related` gives them. Titles are the client's language: `Lecture suivante dans {1}`,
+`{1} collection`, `À suivre`, `À l'affiche`.
+
+Against the reference on 200 films of collections in a film library: the same shelves on 191,
+the same next film on 111 of 112, and every difference traced to the snapshot — collections
+made or emptied since, a film's tags gone, a collection title whose case differs (*Collections*).
+On the official API: `Episode.upNext`, and `Movie.upNext(within:)`, which names the collection
+too; `within` is the shelf's size.
+
+### The home screen's shelves
+
+`GET /hubs` answers eight shelves, in this order, each `promoted="1"`:
+
+| `hubIdentifier` | `key` | Holds |
+| --- | --- | --- |
+| `home.continue` | `/hubs/home/continueWatching` | What was started, films and episodes; style `hero` |
+| `home.ondeck` | `/hubs/home/onDeck` | Each series' episode, in progress or next |
+| `home.movies.recent` | `/hubs/home/recentlyAdded?type=1` | Films by date added |
+| `home.television.recent` | `/hubs/home/recentlyAdded?type=2` | Series entries, grouped |
+| `home.music.recent` | `…?type=8` | Albums; empty here |
+| `home.photos.recent` | `…?type=13` | Photos; empty here |
+| `home.videos.recent` | `…?type=1&personal=1` | A personal library's videos (`clip`); empty here |
+| `home.playlists` | `/playlists/all?type=15&sort=lastViewedAt:desc&playlistType=video,audio` | Playlists played last |
+
+An episode in progress is on both of the first two: Bull's first episode, at 78 seconds, was
+first on each. `count` (default 6) sizes each shelf, `identifier` keeps the shelves it lists
+by `hubIdentifier`, comma-separated; `includeStations=1` changes nothing, and
+`identifier=home.popular` an empty container. `/playlists/all` takes `playlistType` as a list.
+
+`GET /hubs/promoted` keeps the first two, then each library's own recently added shelf —
+`movie.recentlyadded.{s}` or `tv.recentlyadded.{s}`, as in `/hubs/sections/{s}` — then the
+playlists. The libraries come by title, case aside (`open-plex tests` before `VF - Films`),
+and the two hidden ones have none. The reference's personal-video library shows as
+`video.recent.{s}`, a kind this server does not hold. Ours are identical in `hubKey` to the
+reference on its eight film and series libraries.
+
+Where ours differ:
+
+- **`home.videos.recent` is always empty**: a library of personal videos is a film library
+  with no agent on the reference, which this server does not tell apart.
+- **`onlyTransient` is tolerated**: every shelf here is transient but the playlists.
+
+`GET /hubs/popularInLibraries` is a `404` on the reference, with or without `count` and
+`contentDirectoryID`, and `/hubs` leaves its `home.popular` out. Its binary builds the shelf from
+the plays of the server's *other* users over `PopularInLibrariesWindow` weeks, a setting
+`/:/prefs` does not list. Ours answers the same `404`, and has a reason the reference may not:
+each user here has a server of its own, whose history no other user's plays reach, so there
+is nothing to count.
+
 
 ### The search field calls `/library/search`
 

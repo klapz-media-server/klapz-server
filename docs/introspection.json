@@ -3929,6 +3929,18 @@
               "deprecationReason": null
             },
             {
+              "name": "upNext",
+              "description": "What to play once this episode ends: its series' entry in `continueWatching`, unless\nthat entry is this episode — one still in progress, or the next of a series whose\nstate has not moved yet. Not the episode after this one: every episode of a series\nwatched up to its fourth offers its fifth. Null without a caller, and for a series\nnot played in the last sixteen weeks or with nothing left to play.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "Episode",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "externalIds",
               "description": "Identifiers this item has at external metadata providers.",
               "args": [
@@ -10139,6 +10151,29 @@
                   "name": "CollectionMembershipConnection",
                   "ofType": null
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "upNext",
+              "description": "The film to play once this one ends: the one after it by release date in the first\nof its collections where one follows it, watched or not. Null when none does.",
+              "args": [
+                {
+                  "name": "within",
+                  "description": "Count a collection only when this film is among its first this many, as a shelf showing that many does; what follows it may be past them. Every collection when absent.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "OBJECT",
+                "name": "UpNextInCollection",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -21143,6 +21178,49 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "UpNextInCollection",
+          "description": "The film to play once another ends, and the collection it follows that one in.",
+          "fields": [
+            {
+              "name": "movie",
+              "description": "The film to play next.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Movie",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "collection",
+              "description": "The collection it follows the film in: the first of the film's where one does.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Collection",
                   "ofType": null
                 }
               },

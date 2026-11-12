@@ -594,6 +594,74 @@ pub(crate) async fn collections_of(
     crate::tag::page_in_memory(rows, after, before, first, last).await
 }
 
+/// The film to play once another ends, and the collection it follows that one in.
+#[derive(Debug, SimpleObject)]
+pub struct UpNextInCollection {
+    /// The film to play next.
+    pub movie: crate::item::Movie,
+    /// The collection it follows the film in: the first of the film's where one does.
+    pub collection: CollectionObject,
+}
+
+/// The film after this one in the first of its collections where one follows it, each
+/// listed by release date as its shelf lists it.
+pub(crate) async fn next_film(
+    context: &Context<'_>,
+    film: &MetadataItem,
+    within: Option<u32>,
+) -> Result<Option<UpNextInCollection>> {
+    // One past the films looked at, which is what may follow the last of them.
+    let first = within
+        .map_or(MAX_ITEMS, |within| within.saturating_add(1))
+        .min(MAX_ITEMS) as usize;
+    let memberships: Vec<Collection> = context
+        .data::<DataLoader<MembershipsLoader>>()?
+        .load_one(film.id)
+        .await?
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|collection| !collection.is_smart())
+        .collect();
+    let metadata = schema::metadata(context)?;
+    let mut listed = Vec::new();
+    for collection in &memberships {
+        let mut query = ItemQuery::new(collection.section)
+            .of_kind(film.kind)
+            .sorted_by(ItemSort::ReleasedOn, Direction::Ascending);
+        query.filter.collections = vec![CollectionCondition {
+            any_of: vec![CollectionRef::Id(collection.id)],
+        }];
+        let window = schema::id_window(None, None, Some(first), None)?;
+        let page = metadata.items(&query, window).await?;
+        listed.push(
+            page.items
+                .iter()
+                .map(|member| member.item.id)
+                .collect::<Vec<_>>(),
+        );
+    }
+    let within = within.map(|within| within as usize);
+    let Some((index, next)) =
+        open_plex_core::collection::next_in_collections(film.id, &listed, within)
+    else {
+        return Ok(None);
+    };
+    let Some(movie) = context
+        .data::<DataLoader<ItemLoader>>()?
+        .load_one(next)
+        .await?
+    else {
+        return Ok(None);
+    };
+    Ok(memberships
+        .into_iter()
+        .nth(index)
+        .map(|collection| UpNextInCollection {
+            movie: crate::item::Movie(movie),
+            collection: CollectionObject(collection),
+        }))
+}
+
 /// The collection under this id, if the caller may read its library.
 async fn readable(context: &Context<'_>, id: CollectionId) -> Result<Option<Collection>> {
     Ok(collections(context)?

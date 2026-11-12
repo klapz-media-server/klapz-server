@@ -345,19 +345,61 @@ fn ordering(sort: Option<&str>) -> Result<(&'static str, &'static str), ApiError
     Ok((order, direction))
 }
 
+/// The official API's kind for `playlistType`. A list of them, `video,audio` as the home
+/// screen's shelf asks, is any kind: none of the three is held apart from the others.
+fn playlist_kind(value: Option<&str>) -> Result<Value, ApiError> {
+    let Some(value) = value.filter(|value| !value.is_empty()) else {
+        return Ok(Value::Null);
+    };
+    let mut kinds = value.split(',').map(|kind| match kind {
+        "video" => Ok("VIDEO"),
+        "audio" => Ok("AUDIO"),
+        "photo" => Ok("PHOTO"),
+        _ => Err(ApiError::BadRequest),
+    });
+    let first = kinds.next().unwrap_or(Err(ApiError::BadRequest))?;
+    let rest = kinds.collect::<Result<Vec<_>, _>>()?;
+    Ok(if rest.iter().all(|kind| *kind == first) {
+        Value::Enum(Name::new(first))
+    } else {
+        Value::Null
+    })
+}
+
+/// The caller's playlists played last, at most `count`, in `/playlists`' form, and whether
+/// there are more: the home screen's "recent playlists".
+pub(crate) async fn recently_played(
+    state: &PlexState,
+    count: u32,
+) -> Result<(Vec<Json>, bool), ApiError> {
+    let query = format!(
+        "query PlexRecentPlaylists($first: Int!) {{            playlists(orderBy: LAST_VIEWED_AT, direction: DESCENDING, first: $first) {{              totalCount edges {{ node {{ ...PlaylistFields }} }} }} }}
+{PLAYLIST_FIELDS}"
+    );
+    let data: ListData = gql::execute(
+        &state.schema,
+        &query,
+        variables([("first", Value::Number(count.into()))]),
+    )
+    .await?;
+    let more = data.playlists.total_count > u64::from(count);
+    Ok((
+        data.playlists
+            .edges
+            .iter()
+            .map(|edge| edge.node.metadata(Form::Listing))
+            .collect(),
+        more,
+    ))
+}
+
 async fn list(
     _caller: Caller,
     State(state): State<PlexState>,
     Query(params): Query<Vec<(String, String)>>,
     format: ResponseFormat,
 ) -> Result<PlexResponse<Json>, ApiError> {
-    let kind = match param(&params, "playlistType") {
-        None | Some("") => Value::Null,
-        Some("video") => Value::Enum(Name::new("VIDEO")),
-        Some("audio") => Value::Enum(Name::new("AUDIO")),
-        Some("photo") => Value::Enum(Name::new("PHOTO")),
-        Some(_) => return Err(ApiError::BadRequest),
-    };
+    let kind = playlist_kind(param(&params, "playlistType"))?;
     let smart_only = match param(&params, "smart") {
         None | Some("") => Value::Null,
         Some("1") => Value::Boolean(true),
