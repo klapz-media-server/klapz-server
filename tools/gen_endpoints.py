@@ -136,6 +136,15 @@ IMPLEMENTED = frozenset(
         "/playlists/{playlistId}/items/{generatorId}/items",
         "/playlists/{playlistId}/items/{generatorId}/{metadataId}/{action}",
         "/playlists/{playlistId}/items/{playlistItemId}/move",
+        # A library's menus (`menus.rs`), its common fields (`common.rs`) and the codec and
+        # layout choices, served by the `{filter}` route of `filter_values.rs`.
+        "/library/sections/{sectionId}/filters",
+        "/library/sections/{sectionId}/sorts",
+        "/library/sections/{sectionId}/common",
+        "/library/sections/{sectionId}/videoCodec",
+        "/library/sections/{sectionId}/audioCodec",
+        "/library/sections/{sectionId}/audioLayout",
+        "/library/sections/{sectionId}/subtitleCodec",
         # Collections (`collections.rs`).
         "/library/collections",
         "/library/collections/{collectionId}/items",

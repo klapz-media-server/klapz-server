@@ -167,6 +167,17 @@ const fn tag_type(field: &str) -> Option<&'static str> {
     })
 }
 
+/// The filters that select by a value of the tracks, with the schema's name for each.
+const fn track_field(field: &str) -> Option<&'static str> {
+    Some(match field.as_bytes() {
+        b"videoCodec" => "VIDEO_CODEC",
+        b"audioCodec" => "AUDIO_CODEC",
+        b"audioLayout" => "AUDIO_LAYOUT",
+        b"subtitleCodec" => "SUBTITLE_CODEC",
+        _ => return None,
+    })
+}
+
 /// How a filter compares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Operator {
@@ -251,6 +262,8 @@ pub struct Filters {
     pub tags: Vec<TagFilter>,
     /// One entry per `collection` parameter, combined the same way.
     pub collections: Vec<CollectionFilter>,
+    /// One entry per codec or layout parameter, combined the same way.
+    pub tracks: Vec<TrackFilter>,
     /// `id!=` — the shelf "more by this director", without the film it was opened from.
     pub excluded_id: Option<i64>,
     pub watched: Option<bool>,
@@ -314,6 +327,27 @@ impl TagFilter {
             let names = self.names.iter().cloned().map(Value::String).collect();
             fields.insert(Name::new("names"), Value::List(names));
         }
+        Value::Object(fields)
+    }
+}
+
+/// One codec or layout parameter: `videoCodec=av1,vc1` keeps the items with a track in
+/// either, `videoCodec!=h264` those with no h264 track, as measured on the reference.
+#[derive(Debug, PartialEq, Eq)]
+pub struct TrackFilter {
+    /// The schema's `TrackField` value.
+    pub field: &'static str,
+    pub values: Vec<String>,
+    pub negated: bool,
+}
+
+impl TrackFilter {
+    fn to_graphql(&self) -> Value {
+        let mut fields = async_graphql::indexmap::IndexMap::new();
+        fields.insert(Name::new("field"), Value::Enum(Name::new(self.field)));
+        let values = self.values.iter().cloned().map(Value::String).collect();
+        fields.insert(Name::new("anyOf"), Value::List(values));
+        fields.insert(Name::new("negated"), Value::Boolean(self.negated));
         Value::Object(fields)
     }
 }
@@ -406,6 +440,12 @@ impl Filters {
                         .map(CollectionFilter::to_graphql)
                         .collect(),
                 ),
+            );
+        }
+        if !self.tracks.is_empty() {
+            set(
+                "tracks",
+                Value::List(self.tracks.iter().map(TrackFilter::to_graphql).collect()),
             );
         }
         if let Some(id) = self.excluded_id {
@@ -511,6 +551,22 @@ pub fn parse(pairs: &[(String, String)]) -> Result<ListingRequest, ListingError>
                 });
             }
             request.filters.tags.push(filter);
+            continue;
+        }
+        if let (Some(track), Operator::Equals | Operator::Differs) = (track_field(field), operator)
+        {
+            let values: Vec<String> = value.split(',').map(ToOwned::to_owned).collect();
+            if values.len() > TagCondition::MAX_VALUES {
+                return Err(ListingError::TooManyValues {
+                    field: field.to_owned(),
+                    count: values.len(),
+                });
+            }
+            request.filters.tracks.push(TrackFilter {
+                field: track,
+                values,
+                negated: operator == Operator::Differs,
+            });
             continue;
         }
         if (field, operator) == ("collection", Operator::Equals) {
@@ -756,6 +812,11 @@ pub fn supported_filters() -> String {
         "unwatched",
         "inProgress",
         "unwatchedLeaves",
+        "collection",
+        "videoCodec",
+        "audioCodec",
+        "audioLayout",
+        "subtitleCodec",
     ] {
         if !out.is_empty() {
             out.push_str(", ");
@@ -811,6 +872,37 @@ mod tests {
         assert!(matches!(
             parse(&pairs(&[("year!", "2022")])),
             Err(ListingError::UnsupportedOperator { .. })
+        ));
+    }
+
+    #[test]
+    fn reads_the_track_filters_as_the_reference_does() {
+        let request = parse(&pairs(&[
+            ("videoCodec", "av1,vc1"),
+            ("videoCodec", "mjpeg"),
+            ("audioLayout", "5.1(side)"),
+            ("subtitleCodec!", "srt"),
+        ]))
+        .unwrap();
+        let track = |field: &'static str, values: &[&str], negated| TrackFilter {
+            field,
+            values: values.iter().map(|value| (*value).to_owned()).collect(),
+            negated,
+        };
+        // A comma is an `OR` inside one condition, a repeated parameter another condition.
+        assert_eq!(
+            request.filters.tracks,
+            vec![
+                track("VIDEO_CODEC", &["av1", "vc1"], false),
+                track("VIDEO_CODEC", &["mjpeg"], false),
+                track("AUDIO_LAYOUT", &["5.1(side)"], false),
+                track("SUBTITLE_CODEC", &["srt"], true),
+            ]
+        );
+        // A comparison the reference makes on the text, which a track filter does not.
+        assert!(matches!(
+            parse(&pairs(&[("videoCodec>=", "h264")])),
+            Err(ListingError::UnsupportedFilter(_))
         ));
     }
 

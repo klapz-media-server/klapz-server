@@ -41,6 +41,10 @@ enum Choice {
     Resolution,
     /// The collections holding an item, by the number the filter takes.
     Collection,
+    /// `field` is the schema's `TrackField` value.
+    Track {
+        field: &'static str,
+    },
 }
 
 impl Choice {
@@ -60,6 +64,18 @@ impl Choice {
             "studio" => Self::Text { field: "STUDIO" },
             "resolution" => Self::Resolution,
             "collection" => Self::Collection,
+            "videoCodec" => Self::Track {
+                field: "VIDEO_CODEC",
+            },
+            "audioCodec" => Self::Track {
+                field: "AUDIO_CODEC",
+            },
+            "audioLayout" => Self::Track {
+                field: "AUDIO_LAYOUT",
+            },
+            "subtitleCodec" => Self::Track {
+                field: "SUBTITLE_CODEC",
+            },
             _ => return None,
         })
     }
@@ -84,6 +100,10 @@ fn view_title(filter: &str) -> &'static str {
         "contentRating" => "By Content Rating",
         "resolution" => "By Resolution",
         "collection" => "By Collection",
+        "videoCodec" => "By Video Codec",
+        "audioCodec" => "By Audio Codec",
+        "audioLayout" => "By Audio Layout",
+        "subtitleCodec" => "By Subtitle Codec",
         _ => "By Studio",
     }
 }
@@ -173,6 +193,21 @@ query PlexTextChoices($id: ID!, $field: TextField!, $filter: ItemFilterInput, $f
 }
 ";
 
+/// The values of the library's tracks. Every version's, whatever `type` says: a series
+/// library lists its episodes', as the reference does, shows and seasons having no media.
+const TRACKS_QUERY: &str = r"
+query PlexTrackChoices($id: ID!, $field: TrackField!, $filter: ItemFilterInput, $first: Int!, $offset: Int!) {
+  node(id: $id) {
+    ... on Library {
+      title
+      kind
+      trackValues(field: $field, filter: $filter, first: $first, offset: $offset) { edges { node } }
+      stats(filter: $filter) { total: trackValueCount(field: $field) }
+    }
+  }
+}
+";
+
 /// How many items each resolution class holds, one alias per class in
 /// [`crate::resolution::keys`] order: a library lists the classes that hold any.
 const RESOLUTIONS_QUERY: &str = r"
@@ -247,7 +282,7 @@ struct ChoicesData<T> {
 struct GqlChoices<T> {
     title: String,
     kind: String,
-    #[serde(alias = "years", alias = "fieldValues")]
+    #[serde(alias = "years", alias = "fieldValues", alias = "trackValues")]
     tags: GqlEdges<T>,
     stats: GqlTotal,
 }
@@ -344,7 +379,15 @@ pub async fn filter_values(
         Name::new("id"),
         Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
     );
-    if choice == Choice::Resolution {
+    if let Choice::Track { .. } = choice {
+        variables.insert(
+            Name::new("filter"),
+            with_fields(
+                request.filters.to_graphql(None),
+                [("depth", Value::Enum(Name::new("ALL")))],
+            ),
+        );
+    } else if choice == Choice::Resolution {
         // A series library lists its episodes' classes whatever `type` says, as the
         // reference does: shows and seasons have no media.
         for (position, class) in crate::resolution::keys().enumerate() {
@@ -495,6 +538,7 @@ async fn choices(
                 total,
             }
         }
+        Choice::Track { field } => track_choices(state, field, variables).await?,
         Choice::Text { field } => {
             variables.insert(Name::new("field"), Value::Enum(Name::new(field)));
             let library = fetch::<String>(state, TEXT_QUERY, variables).await?;
@@ -513,6 +557,28 @@ async fn choices(
                 total,
             }
         }
+    })
+}
+
+/// The values the library's tracks hold in a field.
+async fn track_choices(
+    state: &PlexState,
+    field: &'static str,
+    mut variables: Variables,
+) -> Result<Choices, ApiError> {
+    variables.insert(Name::new("field"), Value::Enum(Name::new(field)));
+    let library = fetch::<String>(state, TRACKS_QUERY, variables).await?;
+    let entries = library
+        .tags
+        .edges
+        .into_iter()
+        .map(|edge| track_choice(edge.node))
+        .collect();
+    Ok(Choices {
+        title: library.title,
+        kind: library.kind,
+        entries,
+        total: library.stats.total,
     })
 }
 
@@ -624,6 +690,18 @@ fn text_choice(value: &str, studio: bool, listing: &impl Fn(&str) -> String) -> 
     }
 }
 
+/// A codec or a layout: its key encoded once, as a content rating's, and no listing URL,
+/// which the reference leaves the client to build from the key.
+fn track_choice(value: String) -> ChoiceDirectory {
+    ChoiceDirectory {
+        fast_key: None,
+        thumb: None,
+        key: encode(&value),
+        title: value,
+        kind: None,
+    }
+}
+
 /// Percent-encodes everything but letters, digits, `-` and `_`.
 ///
 /// Narrower than RFC 3986's unreserved set: the reference encodes `.` (`A.J. Films` is
@@ -695,6 +773,19 @@ mod tests {
     }
 
     #[test]
+    fn encodes_a_layout_key_once_and_gives_no_listing() {
+        // Captured from the reference's `audioLayout` list.
+        let choice = track_choice("8 channels (FL+FR+FC+LFE+SL+SR+TFL+TFR)".to_owned());
+        assert_eq!(
+            choice.key,
+            "8%20channels%20%28FL%2BFR%2BFC%2BLFE%2BSL%2BSR%2BTFL%2BTFR%29"
+        );
+        assert_eq!(choice.fast_key, None);
+        assert_eq!(track_choice("5.1(side)".to_owned()).key, "5%2E1%28side%29");
+        assert_eq!(track_choice("pcm_bluray".to_owned()).key, "pcm_bluray");
+    }
+
+    #[test]
     fn groups_years_into_decades_newest_first() {
         assert_eq!(
             decades([1915, 2026, 2020, 1999, 2019, 1910].into_iter()),
@@ -707,6 +798,12 @@ mod tests {
         assert_eq!(Choice::named("genre"), Some(Choice::Tag { kind: "GENRE" }));
         assert_eq!(Choice::named("decade"), Some(Choice::Decade));
         assert_eq!(Choice::named("resolution"), Some(Choice::Resolution));
+        assert_eq!(
+            Choice::named("audioLayout"),
+            Some(Choice::Track {
+                field: "AUDIO_LAYOUT"
+            })
+        );
         assert_eq!(Choice::named("bitrate"), None);
         assert_eq!(Choice::named("Genre"), None);
     }

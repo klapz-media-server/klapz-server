@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use open_plex_core::collection::{CollectionCondition, CollectionRef};
+use open_plex_core::common::CommonFields;
 use open_plex_core::edit::{ItemEdit, ItemField};
 use open_plex_core::marker::{Marker, NewMarker};
 use open_plex_core::metadata::{
@@ -16,7 +17,7 @@ use open_plex_core::metadata::{
     ItemKind, ItemQuery, ItemTag, Listed, Loudness, MediaFile, MediaStream, MediaVersion,
     MetadataError, MetadataItem, MetadataRepository, Person, PersonCredit, Rating, ScanType,
     SearchQuery, StreamKind, SubtitleAnalysis, Tag, TagCondition, TagKind, TagRef, TagScope,
-    TagSearch, TagUse, TrackTraits, ValueField, VideoAnalysis,
+    TagSearch, TagUse, TrackField, TrackTraits, ValueField, VideoAnalysis,
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
@@ -58,7 +59,7 @@ impl SqlMetadataRepository {
     /// filter is the only one that leaves the item table, and it is expressed as an
     /// `EXISTS` subquery rather than a join: a join would multiply rows when an item has
     /// several versions, and 8 films here do.
-    fn selection(query: &ItemQuery) -> Select<metadata_item::Entity> {
+    pub(crate) fn selection(query: &ItemQuery) -> Select<metadata_item::Entity> {
         let filter = &query.filter;
         let mut select = metadata_item::Entity::find().filter(
             metadata_item::Column::LibrarySectionId
@@ -117,6 +118,13 @@ impl SqlMetadataRepository {
                     .cond_where(frame_condition(range))
                     .to_owned(),
             ));
+        }
+        if !filter.ids.is_empty() {
+            select = select
+                .filter(metadata_item::Column::Id.is_in(filter.ids.iter().map(|id| id.get())));
+        }
+        for condition in &filter.tracks {
+            select = select.filter(crate::tracks::has_track(condition));
         }
         for condition in &filter.tags {
             select = select.filter(carries_tag(condition));
@@ -198,22 +206,75 @@ impl SqlMetadataRepository {
             .filter(tag::Column::Id.in_subquery(attachments))
     }
 
-    /// The distinct values a query's items hold in a field, absent ones left out.
-    fn values_held(query: &ItemQuery, field: ValueField) -> Select<metadata_item::Entity> {
-        let column = value_column(field);
+    /// The distinct values a query's items hold in a column of their own, absent ones left
+    /// out.
+    fn values_held(
+        query: &ItemQuery,
+        column: metadata_item::Column,
+    ) -> Select<metadata_item::Entity> {
         Self::selection(query)
             .select_only()
             .column(column)
             .filter(column.is_not_null())
             .distinct()
     }
+
+    /// One page of the distinct values the query's items' tracks hold, in ascending order.
+    async fn track_values_in(
+        &self,
+        query: &ItemQuery,
+        field: TrackField,
+        window: Window,
+    ) -> Result<Page<FieldValue>, MetadataError> {
+        let column = crate::tracks::track_column(field);
+        let mut select = crate::tracks::values_held(Self::selection(query), field);
+        for (cursor, after) in [(&window.after, true), (&window.before, false)] {
+            if let Some(cursor) = cursor {
+                select = select.filter(keyset(
+                    Expr::col((media_stream::Entity, column)),
+                    None,
+                    cursor,
+                    Direction::Ascending,
+                    after,
+                )?);
+            }
+        }
+        let order = if window.is_reversed() {
+            Order::Desc
+        } else {
+            Order::Asc
+        };
+        let values = select
+            .order_by(column, order)
+            .offset(window.skip)
+            .limit(window.fetch_limit())
+            .into_tuple::<String>()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?
+            .into_iter()
+            .map(FieldValue::Text)
+            .collect();
+        let mut page = Page::from_overfetch(values, &window);
+        if window.is_reversed() {
+            page.items.reverse();
+        }
+        Ok(page)
+    }
 }
 
-const fn value_column(field: ValueField) -> metadata_item::Column {
+/// Where a field is stored: a column of the item's own, or its tracks.
+enum ValueSource {
+    Item(metadata_item::Column),
+    Tracks(TrackField),
+}
+
+const fn value_source(field: ValueField) -> ValueSource {
     match field {
-        ValueField::Year => metadata_item::Column::Year,
-        ValueField::ContentRating => metadata_item::Column::ContentRating,
-        ValueField::Studio => metadata_item::Column::Studio,
+        ValueField::Year => ValueSource::Item(metadata_item::Column::Year),
+        ValueField::ContentRating => ValueSource::Item(metadata_item::Column::ContentRating),
+        ValueField::Studio => ValueSource::Item(metadata_item::Column::Studio),
+        ValueField::Track(track) => ValueSource::Tracks(track),
     }
 }
 
@@ -221,7 +282,9 @@ const fn value_column(field: ValueField) -> metadata_item::Column {
 const fn value_direction(field: ValueField) -> Direction {
     match field {
         ValueField::Year => Direction::Descending,
-        ValueField::ContentRating | ValueField::Studio => Direction::Ascending,
+        ValueField::ContentRating | ValueField::Studio | ValueField::Track(_) => {
+            Direction::Ascending
+        }
     }
 }
 
@@ -1105,9 +1168,12 @@ impl MetadataRepository for SqlMetadataRepository {
         field: ValueField,
         window: Window,
     ) -> Result<Page<FieldValue>, MetadataError> {
-        let column = value_column(field);
+        let column = match value_source(field) {
+            ValueSource::Item(column) => column,
+            ValueSource::Tracks(track) => return self.track_values_in(query, track, window).await,
+        };
         let direction = value_direction(field);
-        let mut select = Self::values_held(query, field);
+        let mut select = Self::values_held(query, column);
         for (cursor, after) in [(&window.after, true), (&window.before, false)] {
             if let Some(cursor) = cursor {
                 select = select.filter(keyset(
@@ -1161,10 +1227,19 @@ impl MetadataRepository for SqlMetadataRepository {
         query: &ItemQuery,
         field: ValueField,
     ) -> Result<u64, MetadataError> {
-        Self::values_held(query, field)
-            .count(&self.connection)
-            .await
-            .map_err(storage)
+        let count = match value_source(field) {
+            ValueSource::Item(column) => {
+                Self::values_held(query, column)
+                    .count(&self.connection)
+                    .await
+            }
+            ValueSource::Tracks(track) => {
+                crate::tracks::values_held(Self::selection(query), track)
+                    .count(&self.connection)
+                    .await
+            }
+        };
+        count.map_err(storage)
     }
 
     async fn descendants(&self, item: RatingKey) -> Result<Vec<MetadataItem>, MetadataError> {
@@ -1545,11 +1620,21 @@ impl MetadataRepository for SqlMetadataRepository {
             .await
             .map_err(storage)
     }
+
+    async fn common_fields(&self, query: &ItemQuery) -> Result<CommonFields, MetadataError> {
+        let items = Self::selection(query)
+            .select_only()
+            .column(metadata_item::Column::Id)
+            .into_query();
+        crate::common_fields::common_fields(&self.connection, items)
+            .await
+            .map_err(storage)
+    }
 }
 
 /// Selects a tag and its person, as [`TagRow`] reads them back. The person's name is
 /// aliased, or it would collide with the tag's.
-fn with_tag_columns<E: EntityTrait>(select: Select<E>) -> Select<E> {
+pub(crate) fn with_tag_columns<E: EntityTrait>(select: Select<E>) -> Select<E> {
     select
         .column(tag::Column::Id)
         .column(tag::Column::Kind)
@@ -1562,7 +1647,7 @@ fn with_tag_columns<E: EntityTrait>(select: Select<E>) -> Select<E> {
 
 /// A tag joined to its person, as a read selects it.
 #[derive(Debug, FromQueryResult)]
-struct TagRow {
+pub(crate) struct TagRow {
     id: i64,
     kind: String,
     name: String,
@@ -1575,7 +1660,7 @@ struct TagRow {
 impl TagRow {
     /// `None` for a kind this build does not know, which is skipped rather than guessed at:
     /// a genre presented as a director would be worse than a missing one.
-    fn into_tag(self) -> Option<Tag> {
+    pub(crate) fn into_tag(self) -> Option<Tag> {
         let Some(kind) = tag::parse_kind(&self.kind) else {
             tracing::warn!(
                 kind = self.kind,

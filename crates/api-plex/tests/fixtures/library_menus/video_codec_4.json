@@ -1,0 +1,50 @@
+{
+  "MediaContainer": {
+    "size": 8,
+    "allowSync": false,
+    "art": "/:/resources/movie-fanart.jpg",
+    "content": "secondary",
+    "identifier": "com.plexapp.plugins.library",
+    "mediaTagPrefix": "/system/bundle/media/flags/",
+    "mediaTagVersion": 1791210760,
+    "thumb": "/:/resources/movie.png",
+    "title1": "VF - Films",
+    "title2": "By Video Codec",
+    "viewGroup": "secondary",
+    "viewMode": 65592,
+    "Directory": [
+      {
+        "key": "av1",
+        "title": "av1"
+      },
+      {
+        "key": "h264",
+        "title": "h264"
+      },
+      {
+        "key": "hevc",
+        "title": "hevc"
+      },
+      {
+        "key": "mjpeg",
+        "title": "mjpeg"
+      },
+      {
+        "key": "mpeg2video",
+        "title": "mpeg2video"
+      },
+      {
+        "key": "mpeg4",
+        "title": "mpeg4"
+      },
+      {
+        "key": "msmpeg4v3",
+        "title": "msmpeg4v3"
+      },
+      {
+        "key": "vc1",
+        "title": "vc1"
+      }
+    ]
+  }
+}

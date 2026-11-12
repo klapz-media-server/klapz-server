@@ -5,6 +5,9 @@
 //! reference's wording, order and keys. A menu entry that answered `501` when picked would be
 //! worse than one that is not there. The advanced filters' `Field` and `FieldType` lists are
 //! left out for the same reason: no listing understands those expressions yet.
+//!
+//! `/library/sections/{id}/filters` and `/sorts` serve one type's menus from the same
+//! tables, so the two can never disagree.
 
 use serde::Serialize;
 
@@ -64,11 +67,21 @@ type Label = fn(&'static Catalog) -> &'static str;
 /// `(filter, filterType, label)`, in the reference's order for each item type.
 type FilterRow = (&'static str, &'static str, Label);
 
+/// What a version's tracks hold, in the reference's order. Listed after the watch state on
+/// films and episodes alike.
+const TRACK_FILTERS: [FilterRow; 4] = [
+    ("videoCodec", "string", |c| c.video_codec),
+    ("audioCodec", "string", |c| c.audio_codec),
+    ("subtitleCodec", "string", |c| c.subtitle_codec),
+    ("audioLayout", "string", |c| c.audio_layout),
+];
+
 const MOVIE_FILTERS: &[FilterRow] = &[
     ("genre", "string", |c| c.genre),
     ("year", "integer", |c| c.year),
     ("decade", "integer", |c| c.decade),
     ("contentRating", "string", |c| c.content_rating),
+    ("collection", "string", |c| c.collection),
     ("director", "string", |c| c.director),
     ("actor", "string", |c| c.actor),
     ("writer", "string", |c| c.writer),
@@ -78,6 +91,10 @@ const MOVIE_FILTERS: &[FilterRow] = &[
     ("resolution", "string", |c| c.resolution),
     ("unwatched", "boolean", |c| c.unwatched),
     ("inProgress", "boolean", |c| c.in_progress),
+    TRACK_FILTERS[0],
+    TRACK_FILTERS[1],
+    TRACK_FILTERS[2],
+    TRACK_FILTERS[3],
 ];
 
 const SHOW_FILTERS: &[FilterRow] = &[
@@ -86,6 +103,7 @@ const SHOW_FILTERS: &[FilterRow] = &[
     ("contentRating", "string", |c| c.content_rating),
     ("studio", "string", |c| c.studio),
     ("country", "string", |c| c.country),
+    ("collection", "string", |c| c.collection),
     ("director", "string", |c| c.director),
     ("actor", "string", |c| c.actor),
     ("writer", "string", |c| c.writer),
@@ -95,9 +113,14 @@ const SHOW_FILTERS: &[FilterRow] = &[
 
 const EPISODE_FILTERS: &[FilterRow] = &[
     ("year", "integer", |c| c.year),
+    ("collection", "string", |c| c.collection),
     ("resolution", "string", |c| c.resolution),
     ("unwatched", "boolean", |c| c.unwatched),
     ("inProgress", "boolean", |c| c.in_progress),
+    TRACK_FILTERS[0],
+    TRACK_FILTERS[1],
+    TRACK_FILTERS[2],
+    TRACK_FILTERS[3],
 ];
 
 /// `(key, defaultDirection, label)`, in the reference's order for each item type. The title
@@ -246,13 +269,66 @@ fn sorts(
 }
 
 /// The key a filter's value list lives at. Only a series library's types qualify it, and
-/// `country` not even there.
+/// neither `country` nor the track filters even there: their lists span the whole library.
 fn filter_key(section: i64, filter: &str, row: &TypeRow) -> String {
-    if row.number == 1 || filter == "country" {
+    let unqualified =
+        filter == "country" || TRACK_FILTERS.iter().any(|(name, _, _)| *name == filter);
+    if row.number == 1 || unqualified {
         format!("/library/sections/{section}/{filter}")
     } else {
         format!("/library/sections/{section}/{filter}?type={}", row.number)
     }
+}
+
+fn filters(section: i64, row: &TypeRow, catalog: &'static Catalog) -> Vec<MetaFilter> {
+    row.filters
+        .iter()
+        .map(|(filter, filter_type, label)| MetaFilter {
+            filter,
+            filter_type,
+            key: filter_key(section, filter, row),
+            title: label(catalog),
+            kind: "filter",
+        })
+        .collect()
+}
+
+/// The types a library of `library_kind` (the official API's `MOVIE` or `SHOW`) lists, and
+/// the one `requested_type` names: an unknown or absent `type` names the first.
+fn types_of(
+    library_kind: &str,
+    requested_type: Option<i32>,
+) -> Option<(&'static [TypeRow], &'static TypeRow)> {
+    let rows = match library_kind {
+        "MOVIE" => MOVIE_TYPES,
+        "SHOW" => SHOW_TYPES,
+        _ => return None,
+    };
+    let active = requested_type
+        .and_then(|number| rows.iter().find(|row| row.number == number))
+        .or_else(|| rows.first())?;
+    Some((rows, active))
+}
+
+/// One type's filter and sort menus, none marked: what `/filters` and `/sorts` list.
+#[derive(Debug)]
+pub struct Menus {
+    pub filters: Vec<MetaFilter>,
+    pub sorts: Vec<MetaSort>,
+}
+
+pub fn menus(
+    section: i64,
+    library_kind: &str,
+    requested_type: Option<i32>,
+    language: Language,
+) -> Option<Menus> {
+    let (_, row) = types_of(library_kind, requested_type)?;
+    let catalog = language.catalog();
+    Some(Menus {
+        filters: filters(section, row, catalog),
+        sorts: sorts(section, row, catalog, None),
+    })
 }
 
 /// Builds the block for a library of `library_kind` (the official API's `MOVIE` or `SHOW`).
@@ -263,37 +339,19 @@ pub fn build(
     sort: Option<Sort>,
     language: Language,
 ) -> Option<Meta> {
-    let rows = match library_kind {
-        "MOVIE" => MOVIE_TYPES,
-        "SHOW" => SHOW_TYPES,
-        _ => return None,
-    };
+    let (rows, active_row) = types_of(library_kind, requested_type)?;
     let catalog = language.catalog();
-    // An unknown or absent `type` leaves the library's first type active.
-    let active_number = requested_type
-        .filter(|number| rows.iter().any(|row| row.number == *number))
-        .unwrap_or(rows[0].number);
 
     let types = rows
         .iter()
         .map(|row| {
-            let active = row.number == active_number;
+            let active = row.number == active_row.number;
             MetaType {
                 key: format!("/library/sections/{section}/all?type={}", row.number),
                 kind: row.kind,
                 title: (row.title)(catalog),
                 active,
-                filters: row
-                    .filters
-                    .iter()
-                    .map(|(filter, filter_type, label)| MetaFilter {
-                        filter,
-                        filter_type,
-                        key: filter_key(section, filter, row),
-                        title: label(catalog),
-                        kind: "filter",
-                    })
-                    .collect(),
+                filters: filters(section, row, catalog),
                 sorts: sorts(
                     section,
                     row,
@@ -469,6 +527,108 @@ mod tests {
         );
     }
 
+    fn filter_keys(meta: &serde_json::Value, row: usize) -> Vec<(String, String)> {
+        meta["Type"][row]["Filter"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|filter| {
+                (
+                    filter["filter"].as_str().unwrap().to_owned(),
+                    filter["key"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect()
+    }
+
+    fn names(keys: Vec<(String, String)>) -> Vec<String> {
+        keys.into_iter().map(|(name, _)| name).collect()
+    }
+
+    /// The reference's lists (`/library/sections/{id}/filters`), less the filters we cannot
+    /// honor, each in its place.
+    #[test]
+    fn offers_the_reference_filters_in_its_order() {
+        assert_eq!(
+            names(filter_keys(&film_meta(None, None), 0)),
+            [
+                "genre",
+                "year",
+                "decade",
+                "contentRating",
+                "collection",
+                "director",
+                "actor",
+                "writer",
+                "producer",
+                "country",
+                "studio",
+                "resolution",
+                "unwatched",
+                "inProgress",
+                "videoCodec",
+                "audioCodec",
+                "subtitleCodec",
+                "audioLayout",
+            ]
+        );
+        let shows =
+            serde_json::to_value(build(5, "SHOW", None, None, Language::default())).unwrap();
+        assert_eq!(
+            names(filter_keys(&shows, 0)),
+            [
+                "genre",
+                "year",
+                "contentRating",
+                "studio",
+                "country",
+                "collection",
+                "director",
+                "actor",
+                "writer",
+                "producer",
+                "unwatchedLeaves",
+            ]
+        );
+        let expected: Vec<(String, String)> = [
+            ("year", "/library/sections/5/year?type=4"),
+            ("collection", "/library/sections/5/collection?type=4"),
+            ("resolution", "/library/sections/5/resolution?type=4"),
+            ("unwatched", "/library/sections/5/unwatched?type=4"),
+            ("inProgress", "/library/sections/5/inProgress?type=4"),
+            ("videoCodec", "/library/sections/5/videoCodec"),
+            ("audioCodec", "/library/sections/5/audioCodec"),
+            ("subtitleCodec", "/library/sections/5/subtitleCodec"),
+            ("audioLayout", "/library/sections/5/audioLayout"),
+        ]
+        .into_iter()
+        .map(|(name, key)| (name.to_owned(), key.to_owned()))
+        .collect();
+        assert_eq!(filter_keys(&shows, 2), expected);
+    }
+
+    #[test]
+    fn the_menus_are_one_types_block_unmarked() {
+        let Menus { filters, sorts } = menus(5, "SHOW", Some(4), Language::default()).unwrap();
+        let block =
+            serde_json::to_value(build(5, "SHOW", Some(4), None, Language::default())).unwrap();
+        assert_eq!(
+            serde_json::to_value(&filters).unwrap(),
+            block["Type"][2]["Filter"]
+        );
+        assert_eq!(
+            serde_json::to_value(&sorts).unwrap(),
+            block["Type"][2]["Sort"]
+        );
+        // An unknown type is the first one, as in the block; nothing is marked active.
+        let Menus { filters, sorts } = menus(4, "MOVIE", Some(7), Language::default()).unwrap();
+        assert_eq!(filters.len(), MOVIE_FILTERS.len());
+        assert!(serde_json::to_value(&sorts).unwrap()[0]
+            .get("active")
+            .is_none());
+        assert!(menus(4, "ARTIST", None, Language::default()).is_none());
+    }
+
     #[test]
     fn a_series_library_qualifies_its_filter_keys_except_country() {
         let meta = build(5, "SHOW", None, None, Language::default()).unwrap();
@@ -524,10 +684,10 @@ mod tests {
         for rows in [MOVIE_TYPES, SHOW_TYPES] {
             for row in rows {
                 for (filter, _, _) in row.filters {
-                    let value = if *filter == "resolution" {
-                        "1080"
-                    } else {
-                        "2020"
+                    let value = match *filter {
+                        "resolution" => "1080",
+                        "videoCodec" => "h264",
+                        _ => "2020",
                     };
                     let pairs = [((*filter).to_owned(), value.to_owned())];
                     assert!(crate::listing::parse(&pairs).is_ok(), "{filter}");

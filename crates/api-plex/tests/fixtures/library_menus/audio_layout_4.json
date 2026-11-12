@@ -1,0 +1,70 @@
+{
+  "MediaContainer": {
+    "size": 13,
+    "allowSync": false,
+    "art": "/:/resources/movie-fanart.jpg",
+    "content": "secondary",
+    "identifier": "com.plexapp.plugins.library",
+    "mediaTagPrefix": "/system/bundle/media/flags/",
+    "mediaTagVersion": 1791210760,
+    "thumb": "/:/resources/movie.png",
+    "title1": "VF - Films",
+    "title2": "By Audio Layout",
+    "viewGroup": "secondary",
+    "viewMode": 65592,
+    "Directory": [
+      {
+        "key": "3%2E0",
+        "title": "3.0"
+      },
+      {
+        "key": "3%2E1",
+        "title": "3.1"
+      },
+      {
+        "key": "4%2E0",
+        "title": "4.0"
+      },
+      {
+        "key": "4%2E1",
+        "title": "4.1"
+      },
+      {
+        "key": "5%2E0%28side%29",
+        "title": "5.0(side)"
+      },
+      {
+        "key": "5%2E1",
+        "title": "5.1"
+      },
+      {
+        "key": "5%2E1%28side%29",
+        "title": "5.1(side)"
+      },
+      {
+        "key": "6%2E1",
+        "title": "6.1"
+      },
+      {
+        "key": "7%2E1",
+        "title": "7.1"
+      },
+      {
+        "key": "8%20channels%20%28FL%2BFR%2BFC%2BLFE%2BSL%2BSR%2BTFL%2BTFR%29",
+        "title": "8 channels (FL+FR+FC+LFE+SL+SR+TFL+TFR)"
+      },
+      {
+        "key": "mono",
+        "title": "mono"
+      },
+      {
+        "key": "quad%28side%29",
+        "title": "quad(side)"
+      },
+      {
+        "key": "stereo",
+        "title": "stereo"
+      }
+    ]
+  }
+}

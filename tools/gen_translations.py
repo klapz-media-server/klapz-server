@@ -95,6 +95,12 @@ STRINGS = {
     "sdh": "SDH",
     "descriptive": "Descriptive",
     "external": "External",
+    # The filter menu, `/library/sections/{id}/filters` and `includeMeta`.
+    "collection": "Collection",
+    "video_codec": "Video Codec",
+    "audio_codec": "Audio Codec",
+    "subtitle_codec": "Subtitle Codec",
+    "audio_layout": "Audio Layout",
 }
 
 

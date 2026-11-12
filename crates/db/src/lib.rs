@@ -5,6 +5,7 @@
 
 pub mod access_repository;
 pub mod collection_repository;
+mod common_fields;
 pub mod entity;
 pub mod import;
 mod item_order;
@@ -15,6 +16,7 @@ pub mod play_queue_repository;
 pub mod playback_repository;
 pub mod playlist_repository;
 pub mod repository;
+mod tracks;
 pub mod watch_repository;
 pub mod write;
 

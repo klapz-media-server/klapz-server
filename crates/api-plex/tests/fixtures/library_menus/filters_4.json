@@ -1,0 +1,206 @@
+{
+  "MediaContainer": {
+    "size": 27,
+    "allowSync": false,
+    "art": "/:/resources/movie-fanart.jpg",
+    "content": "secondary",
+    "identifier": "com.plexapp.plugins.library",
+    "mediaTagPrefix": "/system/bundle/media/flags/",
+    "mediaTagVersion": 1791210760,
+    "thumb": "/:/resources/movie.png",
+    "title1": "VF - Films",
+    "viewGroup": "secondary",
+    "viewMode": 65592,
+    "Directory": [
+      {
+        "filter": "genre",
+        "filterType": "string",
+        "key": "/library/sections/4/genre",
+        "title": "Genre",
+        "type": "filter"
+      },
+      {
+        "filter": "year",
+        "filterType": "integer",
+        "key": "/library/sections/4/year",
+        "title": "Year",
+        "type": "filter"
+      },
+      {
+        "filter": "decade",
+        "filterType": "integer",
+        "key": "/library/sections/4/decade",
+        "title": "Decade",
+        "type": "filter"
+      },
+      {
+        "filter": "contentRating",
+        "filterType": "string",
+        "key": "/library/sections/4/contentRating",
+        "title": "Content Rating",
+        "type": "filter"
+      },
+      {
+        "filter": "collection",
+        "filterType": "string",
+        "key": "/library/sections/4/collection",
+        "title": "Collection",
+        "type": "filter"
+      },
+      {
+        "filter": "director",
+        "filterType": "string",
+        "key": "/library/sections/4/director",
+        "title": "Director",
+        "type": "filter"
+      },
+      {
+        "filter": "actor",
+        "filterType": "string",
+        "key": "/library/sections/4/actor",
+        "title": "Actor",
+        "type": "filter"
+      },
+      {
+        "filter": "writer",
+        "filterType": "string",
+        "key": "/library/sections/4/writer",
+        "title": "Writer",
+        "type": "filter"
+      },
+      {
+        "filter": "producer",
+        "filterType": "string",
+        "key": "/library/sections/4/producer",
+        "title": "Producer",
+        "type": "filter"
+      },
+      {
+        "filter": "country",
+        "filterType": "string",
+        "key": "/library/sections/4/country",
+        "title": "Country",
+        "type": "filter"
+      },
+      {
+        "filter": "studio",
+        "filterType": "string",
+        "key": "/library/sections/4/studio",
+        "title": "Studio",
+        "type": "filter"
+      },
+      {
+        "filter": "resolution",
+        "filterType": "string",
+        "key": "/library/sections/4/resolution",
+        "title": "Resolution",
+        "type": "filter"
+      },
+      {
+        "filter": "hdr",
+        "filterType": "boolean",
+        "key": "/library/sections/4/hdr",
+        "title": "HDR",
+        "type": "filter"
+      },
+      {
+        "filter": "dovi",
+        "filterType": "boolean",
+        "key": "/library/sections/4/dovi",
+        "title": "DOVI",
+        "type": "filter"
+      },
+      {
+        "filter": "hdr10plus",
+        "filterType": "boolean",
+        "key": "/library/sections/4/hdr10plus",
+        "title": "HDR10+",
+        "type": "filter"
+      },
+      {
+        "filter": "atmos",
+        "filterType": "boolean",
+        "key": "/library/sections/4/atmos",
+        "title": "Atmos",
+        "type": "filter"
+      },
+      {
+        "filter": "unwatched",
+        "filterType": "boolean",
+        "key": "/library/sections/4/unwatched",
+        "title": "Unwatched",
+        "type": "filter"
+      },
+      {
+        "filter": "inProgress",
+        "filterType": "boolean",
+        "key": "/library/sections/4/inProgress",
+        "title": "In Progress",
+        "type": "filter"
+      },
+      {
+        "filter": "unmatched",
+        "filterType": "boolean",
+        "key": "/library/sections/4/unmatched",
+        "title": "Unmatched",
+        "type": "filter"
+      },
+      {
+        "filter": "videoCodec",
+        "filterType": "string",
+        "key": "/library/sections/4/videoCodec",
+        "title": "Video Codec",
+        "type": "filter"
+      },
+      {
+        "filter": "audioCodec",
+        "filterType": "string",
+        "key": "/library/sections/4/audioCodec",
+        "title": "Audio Codec",
+        "type": "filter"
+      },
+      {
+        "filter": "subtitleCodec",
+        "filterType": "string",
+        "key": "/library/sections/4/subtitleCodec",
+        "title": "Subtitle Codec",
+        "type": "filter"
+      },
+      {
+        "filter": "audioLayout",
+        "filterType": "string",
+        "key": "/library/sections/4/audioLayout",
+        "title": "Audio Layout",
+        "type": "filter"
+      },
+      {
+        "filter": "audioLanguage",
+        "filterType": "string",
+        "key": "/library/sections/4/audioLanguage",
+        "title": "Audio Language",
+        "type": "filter"
+      },
+      {
+        "filter": "subtitleLanguage",
+        "filterType": "string",
+        "key": "/library/sections/4/subtitleLanguage",
+        "title": "Subtitle Language",
+        "type": "filter"
+      },
+      {
+        "filter": "label",
+        "filterType": "string",
+        "key": "/library/sections/4/label",
+        "title": "Labels",
+        "type": "filter"
+      },
+      {
+        "filter": "location",
+        "filterType": "string",
+        "key": "/library/sections/4/location",
+        "title": "Folder Location",
+        "type": "filter"
+      }
+    ]
+  }
+}

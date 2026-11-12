@@ -14,8 +14,9 @@ use open_plex_core::page::{Cursor, Direction, Window, MAX_ITEMS};
 use open_plex_core::recent::recently_added_episodes;
 use open_plex_core::{Listed, RatingKey, SectionId};
 
+use crate::common::CommonFieldsObject;
 use crate::cursor::OpaqueCursor;
-use crate::filter::{ItemFilterInput, ItemOrder, SortDirection};
+use crate::filter::{ItemFilterInput, ItemOrder, SortDirection, TrackField};
 use crate::item::{Item, ItemConnection};
 use crate::loader::{ItemLoader, RootsLoader};
 use crate::node::GlobalId;
@@ -575,32 +576,49 @@ impl Library {
         #[graphql(desc = "Discard this many values before the page begins.")] offset: Option<u32>,
     ) -> Result<FieldValues> {
         let item_query = self.item_query(context, filter, ItemSort::Title, None)?;
-        let skip = u64::from(offset.unwrap_or(0));
-        query(
-            after,
-            before,
-            first,
-            last,
-            |after, before, first, last| async move {
-                let window = schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?
-                    .skipping(skip);
-                let page = schema::metadata(context)?
-                    .values_in(&item_query, field.into(), window)
-                    .await?;
-                let mut connection = Connection::new(page.has_previous, page.has_next);
-                connection
-                    .edges
-                    .extend(page.items.into_iter().filter_map(|value| {
-                        let cursor = OpaqueCursor(value.cursor());
-                        match value {
-                            FieldValue::Text(text) => Some(Edge::new(cursor, text)),
-                            FieldValue::Year(_) => None,
-                        }
-                    }));
-                Ok::<_, async_graphql::Error>(connection)
-            },
-        )
-        .await
+        let window = (after, before, first, last, offset);
+        text_values(context, item_query, field.into(), window).await
+    }
+
+    /// The values the tracks of this library's items hold, each once, in ascending byte
+    /// order: every video codec, say, of every version. Series have no tracks: their
+    /// episodes', reached with `depth: ALL`, are listed.
+    #[allow(clippy::too_many_arguments)]
+    async fn track_values(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Which value of the tracks to list.")] field: TrackField,
+        #[graphql(desc = "List only the values of the items this filter keeps.")] filter: Option<
+            ItemFilterInput,
+        >,
+        #[graphql(desc = "Return values after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return values before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many values from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many values from the end of the range.")]
+        last: Option<i32>,
+        #[graphql(desc = "Discard this many values before the page begins.")] offset: Option<u32>,
+    ) -> Result<FieldValues> {
+        let item_query = self.item_query(context, filter, ItemSort::Title, None)?;
+        let window = (after, before, first, last, offset);
+        text_values(context, item_query, ValueField::Track(field.into()), window).await
+    }
+
+    /// What every item a filter keeps has in common — fields, tags, collections and locks:
+    /// what a client starts from to edit several items at once.
+    async fn common(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The items compared: those this filter keeps.")] filter: Option<
+            ItemFilterInput,
+        >,
+    ) -> Result<CommonFieldsObject> {
+        let item_query = self.item_query(context, filter, ItemSort::Title, None)?;
+        Ok(CommonFieldsObject(
+            schema::metadata(context)?
+                .common_fields(&item_query)
+                .await?,
+        ))
     }
 
     /// Aggregates over the contents of this library.
@@ -763,6 +781,50 @@ impl Library {
     }
 }
 
+/// A connection's `after`, `before`, `first`, `last` and `offset` arguments.
+type PageArguments = (
+    Option<String>,
+    Option<String>,
+    Option<i32>,
+    Option<i32>,
+    Option<u32>,
+);
+
+/// A page of the distinct text values a query's items hold in a field.
+async fn text_values(
+    context: &Context<'_>,
+    item_query: ItemQuery,
+    field: ValueField,
+    (after, before, first, last, offset): PageArguments,
+) -> Result<FieldValues> {
+    let skip = u64::from(offset.unwrap_or(0));
+    query(
+        after,
+        before,
+        first,
+        last,
+        |after, before, first, last| async move {
+            let window =
+                schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?.skipping(skip);
+            let page = schema::metadata(context)?
+                .values_in(&item_query, field, window)
+                .await?;
+            let mut connection = Connection::new(page.has_previous, page.has_next);
+            connection
+                .edges
+                .extend(page.items.into_iter().filter_map(|value| {
+                    let cursor = OpaqueCursor(value.cursor());
+                    match value {
+                        FieldValue::Text(text) => Some(Edge::new(cursor, text)),
+                        FieldValue::Year(_) => None,
+                    }
+                }));
+            Ok::<_, async_graphql::Error>(connection)
+        },
+    )
+    .await
+}
+
 /// One library's listing as the caller reads it: `Library.items` and a smart playlist both
 /// list through here.
 pub(crate) fn listing_query(
@@ -850,6 +912,18 @@ impl LibraryStats {
     ) -> Result<u64> {
         Ok(schema::metadata(context)?
             .value_count_in(&self.query, field.into())
+            .await?)
+    }
+
+    /// How many distinct values the items' tracks hold in a field: the size of
+    /// `Library.trackValues`.
+    async fn track_value_count(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Which value of the tracks to count.")] field: TrackField,
+    ) -> Result<u64> {
+        Ok(schema::metadata(context)?
+            .value_count_in(&self.query, ValueField::Track(field.into()))
             .await?)
     }
 

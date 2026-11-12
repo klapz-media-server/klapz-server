@@ -594,6 +594,21 @@ pub(crate) async fn collections_of(
     crate::tag::page_in_memory(rows, after, before, first, last).await
 }
 
+/// These collections, in this order, leaving out those the caller may not read.
+pub(crate) async fn collections_by_id(
+    context: &Context<'_>,
+    ids: &[CollectionId],
+    (after, before, first, last): (Option<String>, Option<String>, Option<i32>, Option<i32>),
+) -> Result<MembershipConnection> {
+    let mut rows = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(collection) = readable(context, *id).await? {
+            rows.push((CollectionObject(collection), EmptyFields));
+        }
+    }
+    crate::tag::page_in_memory(rows, after, before, first, last).await
+}
+
 /// The collection under this id, if the caller may read its library.
 async fn readable(context: &Context<'_>, id: CollectionId) -> Result<Option<Collection>> {
     Ok(collections(context)?

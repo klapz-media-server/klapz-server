@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 6 | 2.3 % |
-| `stub` | 86 | 33.1 % |
-| `partial` | 27 | 10.4 % |
-| `done` | 102 | 39.2 % |
+| `stub` | 79 | 30.4 % |
+| `partial` | 28 | 10.8 % |
+| `done` | 108 | 41.5 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 7 | 12 | 35 | 5 | 26 |
+| [Library](#library) | 85 | 13 | 13 | 28 | 5 | 26 |
 | [Hubs](#hubs) | 15 | 1 | 1 | 13 | 0 | 0 |
 | [Content](#content) | 13 | 2 | 3 | 8 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
@@ -148,15 +148,15 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `PUT` | `/library/sections/{sectionId}` | admin | Edit a library section |  |
 | `partial` | `PUT` | `/library/sections/{sectionId}/all` | user | Set the fields of the filtered items | Films, series and episodes by `id`: `{field}.value` for titles, summary, tagline, studio, content rating, year, date and ratings, `{field}.locked` for the 20 fields we model, through `updateMovie`/`updateShow`/`updateEpisode`; library admins only. No `id`, tags, artwork, seasons and music answer `501`. Locks published as `Field` on lookups. See spec-gaps.md. |
 | `deferred` | `PUT` | `/library/sections/{sectionId}/analyze` | admin | Analyze a section | scanner/analysis, separate binary |
-| `stub` | `GET` | `/library/sections/{sectionId}/audioCodec` | user | Get audio codecs in a section |  |
-| `stub` | `GET` | `/library/sections/{sectionId}/audioLayout` | user | Get audio layouts in a section |  |
+| `done` | `GET` | `/library/sections/{sectionId}/audioCodec` | user | Get audio codecs in a section | The distinct values every track of every version of the library holds, in byte order, key percent-encoded once and no `fastKey`, as measured; a series library lists its episodes' whatever `type` says. Identical to the reference on ten libraries. Each value filters `/all` (`audioCodec=`, a comma `OR`, `!=` for none, repeated `AND`): 780 of 782 totals identical over every value of four libraries, the two others 3 episodes' sidecar subtitles the snapshot predates. Through `Library.trackValues`. Always windowed, as every choice list here. See spec-gaps.md. |
+| `done` | `GET` | `/library/sections/{sectionId}/audioLayout` | user | Get audio layouts in a section | The distinct values every track of every version of the library holds, in byte order, key percent-encoded once and no `fastKey`, as measured; a series library lists its episodes' whatever `type` says. Identical to the reference on ten libraries. Each value filters `/all` (`audioLayout=`, a comma `OR`, `!=` for none, repeated `AND`): 780 of 782 totals identical over every value of four libraries, the two others 3 episodes' sidecar subtitles the snapshot predates. Through `Library.trackValues`. Always windowed, as every choice list here. See spec-gaps.md. |
 | `stub` | `GET` | `/library/sections/{sectionId}/autocomplete` | user | Get autocompletions for search |  |
 | `done` | `DELETE` | `/library/sections/{sectionId}/collection/{collectionId}` | admin | Delete a collection | As measured, `collectionId` is the collection's tag number (`index`), and the collection is emptied, not deleted: every item of that library leaves it. Another library's number answers `200` and changes nothing, one no library carries `404`. Through `clearCollection`. See spec-gaps.md. |
 | `done` | `GET` | `/library/sections/{sectionId}/collections` | user | Get collections in a section | In `/all`'s container, as `/all?type=18` answers too; by sort title (byte order, the reference's is numeric), `addedAt` or `updatedAt`, other sorts `501`. Always windowed, 500 at most without container parameters. Imported collections identical to the reference field for field, less artwork. See spec-gaps.md. |
-| `stub` | `GET` | `/library/sections/{sectionId}/common` | user | Get common fields for items |  |
+| `partial` | `GET` | `/library/sections/{sectionId}/common` | user | Get common fields for items | One `common` element for the items `type` (required, `400` without), `id` (a comma list, 500 at most) and any listing filter keep: `mixedFields`, the shared fields, the tags and collections every item carries and the fields every item locked, through `Library.common`. Identical to the reference on films, series and episodes but for data newer than the snapshot. Not published: `Guid`, `Rating` (empty placeholders there), `Similar`, `CommonSenseMedia`, and `parentIndex`, `isAdult` and `userRating` in `mixedFields`; a season's undated `originallyAvailableAt` (`1969-12-31` there). See spec-gaps.md. |
 | `stub` | `GET` | `/library/sections/{sectionId}/composite/{updatedAt}` | admin | Get a section composite image |  |
 | `stub` | `PUT` | `/library/sections/{sectionId}/emptyTrash` | admin | Empty section trash |  |
-| `stub` | `GET` | `/library/sections/{sectionId}/filters` | admin | Get section filters |  |
+| `done` | `GET` | `/library/sections/{sectionId}/filters` | admin | Get section filters | One type's `Filter` list from the `Meta` block, as `Directory` elements (`type`, the first by default): what a listing honors, the reference's entries in its order — 18 of 27 on a film library, 11 of 14, 0 of 0 and 9 of 17 on a series' three types. Windowed only on both container parameters, as on the reference. |
 | `partial` | `GET` | `/library/sections/{sectionId}/firstCharacters` | user | Get list of first characters | Bucket sets and counts identical to the reference on four libraries. Folded first character, `#` for everything unlettered, percent-encoded keys. Singular form, absent from the spec — see spec-gaps.md. |
 | `deferred` | `DELETE` | `/library/sections/{sectionId}/indexes` | admin | Delete section indexes | scanner/analysis, separate binary |
 | `deferred` | `DELETE` | `/library/sections/{sectionId}/intros` | admin | Delete section intro markers | scanner/analysis, separate binary |
@@ -164,9 +164,9 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `todo` | `PUT` | `/library/sections/{sectionId}/prefs` | admin | Set section prefs |  |
 | `deferred` | `DELETE` | `/library/sections/{sectionId}/refresh` | admin | Cancel section refresh | scanner/analysis, separate binary |
 | `deferred` | `POST` | `/library/sections/{sectionId}/refresh` | admin | Refresh section | scanner/analysis, separate binary |
-| `stub` | `GET` | `/library/sections/{sectionId}/sorts` | user | Get a section sorts |  |
-| `stub` | `GET` | `/library/sections/{sectionId}/subtitleCodec` | user | Get subtitle codecs in a section |  |
-| `stub` | `GET` | `/library/sections/{sectionId}/videoCodec` | user | Get video codecs in a section |  |
+| `done` | `GET` | `/library/sections/{sectionId}/sorts` | user | Get a section sorts | One type's `Sort` list from the `Meta` block, unmarked: 9 of 9 on a film library, 7 of 8, 1 of 2 and 6 of 7 on a series' types, the reference's entries attribute for attribute. |
+| `done` | `GET` | `/library/sections/{sectionId}/subtitleCodec` | user | Get subtitle codecs in a section | The distinct values every track of every version of the library holds, in byte order, key percent-encoded once and no `fastKey`, as measured; a series library lists its episodes' whatever `type` says. Identical to the reference on ten libraries. Each value filters `/all` (`subtitleCodec=`, a comma `OR`, `!=` for none, repeated `AND`): 780 of 782 totals identical over every value of four libraries, the two others 3 episodes' sidecar subtitles the snapshot predates. Through `Library.trackValues`. Always windowed, as every choice list here. See spec-gaps.md. |
+| `done` | `GET` | `/library/sections/{sectionId}/videoCodec` | user | Get video codecs in a section | The distinct values every track of every version of the library holds, in byte order, key percent-encoded once and no `fastKey`, as measured; a series library lists its episodes' whatever `type` says. Identical to the reference on ten libraries. Each value filters `/all` (`videoCodec=`, a comma `OR`, `!=` for none, repeated `AND`): 780 of 782 totals identical over every value of four libraries, the two others 3 episodes' sidecar subtitles the snapshot predates. Through `Library.trackValues`. Always windowed, as every choice list here. See spec-gaps.md. |
 | `todo` | `DELETE` | `/library/streams/{streamId}.{ext}` | user | Delete a stream | needs a hand-written handler: two parameters in segment `{streamId}.{ext}` |
 | `todo` | `GET` | `/library/streams/{streamId}.{ext}` | user | Get a stream | needs a hand-written handler: two parameters in segment `{streamId}.{ext}` |
 | `todo` | `PUT` | `/library/streams/{streamId}.{ext}` | user | Set a stream offset | needs a hand-written handler: two parameters in segment `{streamId}.{ext}` |

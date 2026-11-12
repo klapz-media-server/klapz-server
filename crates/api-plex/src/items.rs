@@ -316,7 +316,7 @@ pub struct FieldEntry {
 }
 
 impl FieldEntry {
-    fn all(locked: &[String]) -> Vec<Self> {
+    pub(crate) fn all(locked: &[String]) -> Vec<Self> {
         crate::edit::plex_locked_fields(locked)
             .map(|name| Self { locked: true, name })
             .collect()
@@ -383,7 +383,7 @@ pub struct CollectionTagEntry {
 }
 
 impl CollectionTagEntry {
-    fn all(collections: &GqlConnection<GqlCollectionTag>) -> Vec<Self> {
+    pub(crate) fn all(collections: &GqlConnection<GqlCollectionTag>) -> Vec<Self> {
         collections.nodes().map(Self::from_graphql).collect()
     }
 
@@ -451,7 +451,7 @@ impl TagEntry {
     /// A cast entry. In a lookup it always carries `role`, as the reference's does: the
     /// character's name with an ASCII first letter capitalized, or empty when the source
     /// names none.
-    fn from_cast_member(member: &GqlEdge<GqlTag>) -> Self {
+    pub(crate) fn from_cast_member(member: &GqlEdge<GqlTag>) -> Self {
         let mut entry = Self::from_graphql(&member.node, "actor", None);
         if entry.id.is_some() {
             entry.role = Some(credited_character(
@@ -461,7 +461,7 @@ impl TagEntry {
         entry
     }
 
-    fn all(tags: &GqlConnection<GqlTag>, field: &str) -> Vec<Self> {
+    pub(crate) fn all(tags: &GqlConnection<GqlTag>, field: &str) -> Vec<Self> {
         tags.nodes()
             .map(|tag| Self::from_graphql(tag, field, None))
             .collect()
@@ -1165,7 +1165,7 @@ fn credited_character(stored: &str) -> String {
 ///
 /// Verified against 280 rating values on the reference server, which reports 7.9 for a stored
 /// 7.924 without exception. The official API keeps the stored precision.
-fn one_decimal(rating: f64) -> f64 {
+pub(crate) fn one_decimal(rating: f64) -> f64 {
     (rating * 10.0).round() / 10.0
 }
 
