@@ -83,9 +83,9 @@ without them saying so.
   the client present it as the result. Parameters *not* on that list stay tolerated, as the
   reference tolerates them. The rule generalizes: silence is for what we were never asked, not
   for what we cannot do.
-- **A derived index has one write path.** `item_title_word` and `item_title_key` are maintained
-  by `db::write::insert_items` and `update_item`, and there is no other way to insert an item;
-  `tag_word` likewise by
+- **A derived index has one write path.** `item_title_word`, `item_title_key` and
+  `item_folded_title` (the voice search's) are maintained by `db::write::insert_items` and
+  `update_item`, and there is no other way to insert an item; `tag_word` likewise by
   `db::write::insert_tags`. Leaving it to each
   caller is how a search quietly stops finding things — found the easy way, by a test fixture
   that inserted items directly and then matched nothing.
@@ -282,7 +282,13 @@ Places where we knowingly answer differently, each decided rather than overlooke
   ranked. Same set and scores as the reference on the film shelf for all eleven names measured
   at `limit=3`; the person chosen differs where the reference's own pool of people leaves the
   best-credited one out. `sectionId` narrows nothing, as on the reference.
-  `/hubs/search/voice`, an edit-distance search, stays `501`.
+- **Voice search ranks by the distance it publishes.** `GET /hubs/search/voice` measures
+  every title as the reference does — sort title and term alike, one article dropped, its
+  own set of letters folded, bytes counted — but the reference picks its `limit` titles by
+  another distance, on the raw title with case kept, and can skip a closer one (`dune`: *Cube*
+  at 2 rather than *Dude* at 1). Ours are the closest by the distance shown: on 63 terms, never
+  farther, the same distance on every item both list. Ties follow the folded title, and a
+  term past 256 bytes is refused.
 - **Range filter operators need their `>` encoded.** `year>=2020` travels with a raw `>`, which
   is not a legal URI character: `hyper` rejects the request line with `400` before any handler
   runs. `year%3E=2020`, the `>` alone encoded, reaches the parser and works; the reference
@@ -689,6 +695,15 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   honored, `/hubs/search` ranked by the API's score and filling an empty film or series shelf
   through a person, and `/search` cut to 15 per kind in title order, as measured on 53 terms
   (`docs/spec-gaps.md`, *Relevance*).
+- ✅ **voice search and autocompletion**: `/hubs/search/voice` ranks every film and series —
+  or the kind `type` names — by edit distance to the term, by the measured rule
+  (`core::closest`: sort titles, one article, the reference's folded letters, bytes), shelves
+  per kind and `limit` across them; on the official API `closestTitles`, read in bands of
+  length from an index of folded titles (`item_folded_title`, written by `db::write` alone)
+  rather than the whole library. `/library/sections/{id}/autocomplete` completes titles and
+  the six tag fields by the reference's phrase-at-a-word rule (`core::completion`), with
+  `title.queryRange` in bytes, through `ItemFilterInput.titleCompletion` and
+  `Library.tags(completing:)`; the other fields answer `501` (`docs/spec-gaps.md`).
 
 ## Reference server
 

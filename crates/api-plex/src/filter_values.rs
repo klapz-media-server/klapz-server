@@ -226,7 +226,7 @@ struct GqlItemCount {
 }
 
 /// An `ItemFilterInput` with more fields set, null standing for an empty one.
-fn with_fields<const N: usize>(filter: Value, fields: [(&str, Value); N]) -> Value {
+pub(crate) fn with_fields<const N: usize>(filter: Value, fields: [(&str, Value); N]) -> Value {
     let mut object = match filter {
         Value::Object(object) => object,
         _ => async_graphql::indexmap::IndexMap::new(),

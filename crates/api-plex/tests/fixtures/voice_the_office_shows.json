@@ -1,0 +1,31 @@
+{
+  "MediaContainer": {
+    "size": 1,
+    "Hub": [
+      {
+        "distance": 0,
+        "hubKey": "/library/metadata/260220",
+        "title": "show",
+        "type": "show",
+        "hubIdentifier": "results.search.2",
+        "context": "hub.results.search",
+        "size": 1,
+        "more": false,
+        "style": "shelf",
+        "Metadata": [
+          {
+            "distance": 0,
+            "ratingKey": "260220",
+            "key": "/library/metadata/260220/children",
+            "type": "show",
+            "title": "The Office",
+            "titleSort": "Office",
+            "librarySectionTitle": "VF - Series",
+            "librarySectionID": 5,
+            "librarySectionKey": "/library/sections/5"
+          }
+        ]
+      }
+    ]
+  }
+}

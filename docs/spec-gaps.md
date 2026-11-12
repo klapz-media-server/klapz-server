@@ -1970,9 +1970,128 @@ Differences that remain, each knowingly:
   other match: `x` gives the two films and eight episodes titled *X*, entry for entry and
   score for score with the reference.
 
-`GET /hubs/search/voice` is not derived from it and stays `501`: it ranks every title by edit
-distance to the whole term (`dune` finds *Cube* at distance 2, `tom hanks` finds *Four Hands*),
-one shelf per kind named `results.search.1`, with `distance` and `hubKey`.
+`GET /hubs/search/voice` is not derived from it: see the next section.
+
+### Voice search, `/hubs/search/voice`
+
+A different search altogether: every title is ranked by its edit distance to the whole term,
+however far, so that what a voice assistant mishears still finds something (`dune` finds *Cube*
+at 2, `tom hanks` *Four Hands* at 4, `kaamelott` *Charlotte* at 5). Served through
+`closestTitles` on the official API (`core::closest`, `db::closest_store`).
+
+**The distance**, worked out on a thousand distances the reference published and checked on
+the 808 items both servers list in the comparisons below, which agree to the unit:
+
+- The term against each item's **sort title**, falling back to the title: *La Brea* is 5 from
+  `le bureau`, compared as `Brea`, where its title would give 3.
+- **One leading article leaves both sides**, from the reference's default list (the server
+  preference whose default is `the,das,der,a,an,el,la`, read from the binary): `the office` is
+  0 from *The Office*, `das office` and `la office` too, `le office` 3. Only one goes (`the the
+  office` is 4), it needs a word after it (`the` alone stays `the`), and leading spaces go with
+  it (` the  office` is 0); a tab is not a space (`the<TAB>office` is 4) and a trailing space
+  counts (`the office ` is 1). A sort title that kept its article loses it the same way: *La
+  défonce des animaux* is 11 from `le seigneur des anneaux`, compared as `défonce…`, and *La
+  Momie* 5 from `un homme`.
+- **Case folds for ASCII only, and a fixed set of letters folds to its base**, measured one by
+  one over U+00C0–U+024F and U+1E00–U+1EFF by replacing a letter of a title: every Latin-1
+  letter with a base (`ÉTÉ` is 1 from *Ève*), `ß` as `s`, the lower-case macrons `ā ē ī ō ū`
+  (not the capitals), the carons (`Č Ď Ě Ľ Ň Ř Š Ť Ž Ǎ Ǐ Ǒ Ǔ Ǧ Ǩ ǰ` and their small forms).
+  Nothing else in Latin Extended-A, -B or Additional folds: `boze cialo` is 4 from *Boże Ciało*.
+  Combining marks are dropped (`e` + U+0301 is `e`).
+- **What is left counts in bytes**: `鉄男` is 5 from `아랑`, `wall·e` 2 from *Wall-E*, `İ` 2
+  from `i`. The ten Latin-1 characters with no base — `Æ Ð Ø Þ æ ð ø þ × ÷` — count as one unit
+  each, equal only to themselves (`duneæ` is 1 from *Dune*, and `docteuræ` 1 from *Docteur?*).
+
+**Kinds and shelves.** By default films and series; `type=1`, `2`, `3`, `4` ranks films,
+series, seasons or episodes alone, a music or collection type nothing (`size="0"`). `limit`
+counts **across** the shelves, not per shelf as the spec says: `breaking bad` at the default 3
+is two series and one film. Each kind is a `Hub` with `title` and `type` its English word
+(`movie`, whatever the client's language), `hubIdentifier` `results.search.{type}`,
+`context="hub.results.search"`, `size`, `more="0"`, `style="shelf"`, `distance` its closest,
+and `hubKey` its items as one lookup. Shelves come closest first, films before series when
+they tie (`tom hanks`: both at 4). Items are `/library/search`'s, with `distance` first and the
+library attributes; a film without a summary carries `summary=""`. The container holds `size`,
+the number of shelves, and nothing else.
+
+**Parameters.** `query` absent or empty is `400`; a blank term is a term (` ` ranks the
+one-letter titles). `limit` defaults to 3, `0` answers an empty container, a non-number `400`,
+a negative number `500` on the reference and `400` here, and it is capped at 500. `type` that
+is not one number (`abc`, `1,2`) is `400`. `sectionId` is ignored, even `999`.
+
+**What differs, each knowingly:**
+
+- **The reference can skip a closer title.** Its SQL is `ORDER BY LEVENSHTEIN('<term>',
+  metadata_items.title) LIMIT n` (both strings are in the binary), a distance on the *raw*
+  title, case kept, that it then republishes on the folded sort title. So its `n` are the
+  closest by a measure other than the one it shows: for `the` it lists *Abe* at 2 and not *Ted*,
+  also 2 (`Ted` is 3 with its capital), and for `dune` at the default 3 *Cube* (2) rather than
+  *Dude* (1). An upper-case term picks other titles again (`LE MAL-AIMÉ`). Ours are the closest
+  by the distance published. On 63 terms at the default limit, 175 of 189 positions hold the same
+  distance and the other 14 a smaller one; at `limit=10`, 534 of 630 and 96; on episodes, 463 and
+  167. None is farther, and every item both list has the same distance on both.
+- **Ties.** Among titles at one distance the reference follows its scan; ours come in folded
+  title order, then by id (for the two *Breaking Bad*, the reference lists library 5's first).
+- **A term past 256 bytes is a `400`**, which the reference would rank: each title costs a
+  pass over the term.
+
+**Cost.** Ours reads the titles of about the term's length only, from an index of the folded
+titles and their lengths (`m0032_folded_title`): a distance is at least the difference of the
+lengths, so lengths are read in widening bands until the closest found are nearer than any band
+left. That bound is strong when the closest are near: `dune` reads 1,608 of the 22,337 films and
+series; it weakens as they get farther, since titles cluster around a dozen units: `breaking
+bad` 7,928, `kaamelott` (third match at 5) 13,745, a term near nothing 19,891. What is read is
+two columns of one covering index range per kind and side, measured by a bit-parallel distance;
+items are loaded for the page alone. The reference reads every item. On a debug build, `dune`
+answers in 77 ms where the reference takes 96, `kaamelott` in 121 against 81, `pilot` on
+episodes in 78 against 331.
+
+### Autocompletion, `/library/sections/{id}/autocomplete`
+
+What a filter field offers as it is typed into. One `{field}.query` parameter names the field and
+the text; `type` is required. Measured on films and series libraries of the reference:
+
+- **The rule.** The text is one phrase beginning a word: `dun` completes *Crocodile Dundee*, `first
+  sl` and `slam d` *The First Slam Dunk*, `dun ` nothing. A word begins after a space only — `aim`
+  does not complete *Le mal-aimé*, `homme` not *L'homme qui aimait les soucoupes volantes* — and a
+  space is matched as typed (` ` completes the titles holding two spaces, or starting with one).
+  Case does not count, `À TOUS` and `à tous` alike complete *À tous les garçons*; accents do, `aime`
+  completes *Mange, prie, aime* and not *C'est dur d'être aimé*. `%` and `_` are text. Only the
+  title is read: `dunkirk` does not complete *Dunkerque*, whose original title it is.
+- **Items.** `title` completes items, listed as `/all` lists them, in its order, with the other
+  listing filters applied (`year=2021` keeps one *Dune*), and each carries `title.queryRange`,
+  `first,last` in **bytes**, both included: *À tous les garçons que j'ai aimés* is `30,32` for
+  `aim`. The range is the first occurrence of the text anywhere in the title, by bytes with ASCII
+  case aside, not the word the match was made on: `d` completes *3 Billboards : Les Panneaux de la
+  vengeance* by `de` and is ranged `10,10`, the `d` of `Billboards`; a match on a capital outside
+  ASCII has no range (`à tous`). Unpaged on the reference (`d`: 2,723 films); windowed here, as
+  `/all` is.
+- **Tags.** `genre`, `country`, `actor`, `director`, `writer`, `producer` complete the tags the
+  library's items of `type` carry, by the same rule on the name (`hanks` and `tom h` complete Tom
+  Hanks), every credit counted, ordered by name, **100 at most** (`actor.query=a` answers
+  `totalSize="100"`). Each is a `Directory` with `id`, `filter` (`actor=469791`), `tag`, `tagType`,
+  and a person's `tagKey` and `thumb`.
+- **The container** is a "secondary" view: `allowSync="0"`, the library's `art` and `thumb`,
+  `content="secondary"`, `identifier`, `mediaTagPrefix`, `mediaTagVersion`, `title1` the library,
+  `viewGroup="secondary"`, `viewMode="65592"`.
+- **Refusals.** No `{field}.query`, an empty one, two of them, no `type` or one that is not a
+  number, an unknown field (`foo`) are `400`; an unknown library `404`. `decade`, `resolution`,
+  `audioLanguage` and `unwatched` answer `500` on the reference, a fault, and `400` here.
+
+Compared on 37 cases over four libraries: the totals agree on 30, 3,083 of 3,538 entries are
+listed on both sides, and of those 3,082 carry the same range. The rest is the live reference
+having moved since the import — a film renamed (*Arthur 3: la guerre des deux mondes*), actors
+added (Dan Jeannotte) — and two orders:
+
+- **Episodes** follow `/all`'s order for `type=4`, the episode's own title, where the reference
+  orders by series, season and episode, there as in its `/all`; so a window of episodes holds
+  other ones (`épisode`: 74 of the first 500 in common).
+- **Case outside ASCII** inside a phrase: storage lowers ASCII alone, and tries the text with
+  the initials of its words in upper case, so `à tous` and `les évadés` complete as on the
+  reference; a capital outside ASCII inside a word would not.
+
+`titleSort`, `originalTitle`, `studio`, `contentRating`, `summary`, `tagline` and `year`, which
+the reference completes as items (`year.query=19` by prefix), and `collection`, `label`, `mood`
+and `style`, which it completes as tags, answer `501` here.
 
 ### Live TV and DVR, with none configured
 

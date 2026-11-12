@@ -4,7 +4,9 @@
 //! binding would mean the layering has broken down.
 
 pub mod access_repository;
+mod closest_store;
 pub mod collection_repository;
+mod completion;
 pub mod entity;
 pub mod import;
 mod item_order;

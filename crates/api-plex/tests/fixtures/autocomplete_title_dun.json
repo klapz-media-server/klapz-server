@@ -1,0 +1,82 @@
+{
+  "MediaContainer": {
+    "size": 9,
+    "allowSync": false,
+    "art": "/:/resources/movie-fanart.jpg",
+    "content": "secondary",
+    "identifier": "com.plexapp.plugins.library",
+    "mediaTagPrefix": "/system/bundle/media/flags/",
+    "thumb": "/:/resources/movie.png",
+    "title1": "VF - Films",
+    "viewGroup": "secondary",
+    "viewMode": 65592,
+    "Metadata": [
+      {
+        "title.queryRange": "10,12",
+        "ratingKey": "323535",
+        "key": "/library/metadata/323535",
+        "type": "movie",
+        "title": "Crocodile Dundee"
+      },
+      {
+        "title.queryRange": "10,12",
+        "ratingKey": "323537",
+        "key": "/library/metadata/323537",
+        "type": "movie",
+        "title": "Crocodile Dundee II"
+      },
+      {
+        "title.queryRange": "10,12",
+        "ratingKey": "323536",
+        "key": "/library/metadata/323536",
+        "type": "movie",
+        "title": "Crocodile Dundee III"
+      },
+      {
+        "title.queryRange": "0,2",
+        "ratingKey": "470473",
+        "key": "/library/metadata/470473",
+        "type": "movie",
+        "title": "Dune"
+      },
+      {
+        "title.queryRange": "0,2",
+        "ratingKey": "440223",
+        "key": "/library/metadata/440223",
+        "type": "movie",
+        "title": "Dune : Deuxième partie",
+        "titleSort": "Dune : Deuxieme partie"
+      },
+      {
+        "title.queryRange": "0,2",
+        "ratingKey": "396710",
+        "key": "/library/metadata/396710",
+        "type": "movie",
+        "title": "Dune : Première partie",
+        "titleSort": "Dune : Premiere partie"
+      },
+      {
+        "title.queryRange": "0,2",
+        "ratingKey": "261034",
+        "key": "/library/metadata/261034",
+        "type": "movie",
+        "title": "Dunkerque"
+      },
+      {
+        "title.queryRange": "0,2",
+        "ratingKey": "541301",
+        "key": "/library/metadata/541301",
+        "type": "movie",
+        "title": "Dunston, panique au palace"
+      },
+      {
+        "title.queryRange": "15,17",
+        "ratingKey": "438966",
+        "key": "/library/metadata/438966",
+        "type": "movie",
+        "title": "The First Slam Dunk",
+        "titleSort": "First Slam Dunk"
+      }
+    ]
+  }
+}

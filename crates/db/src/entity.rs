@@ -13,6 +13,7 @@ pub mod collection_word;
 pub mod extension_account;
 pub mod item_external_id;
 pub mod item_field_lock;
+pub mod item_folded_title;
 pub mod item_marker;
 pub mod item_rating;
 pub mod item_tag;

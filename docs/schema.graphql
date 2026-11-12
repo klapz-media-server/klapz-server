@@ -293,6 +293,47 @@ input ClearPlaylistInput {
 	id: ID!
 }
 
+type ClosestTitle {
+	"""
+	The item.
+	"""
+	item: Item!
+	"""
+	How many edits — a character inserted, removed or replaced — turn the term into the
+	item's title, both read as `closestTitles` reads them. 0 is the title itself.
+	"""
+	distance: Int!
+}
+
+type ClosestTitleConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ClosestTitleEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ClosestTitle!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ClosestTitleEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: ClosestTitle!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
 type Collection implements Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this collection.
@@ -1990,6 +2031,16 @@ input ItemFilterInput {
 	"""
 	titleWordPrefix: String
 	"""
+	Keep only items whose title this text completes, as a search field offers while it
+	is typed into.
+	
+	The text is one phrase beginning a word of the title, a word beginning after a space:
+	`first sl` completes "The First Slam Dunk", `aim` does not complete "Le mal-aimé".
+	Case does not count and accents do, so `aime` does not complete "aimé". Only the
+	title is read, not the sort or original title. Empty text completes nothing.
+	"""
+	titleCompletion: String
+	"""
 	Keep only items with a version whose frame falls in this range: `{reaching: {width:
 	2880, height: 1540}}` for 4K.
 	
@@ -2511,6 +2562,10 @@ type Library implements Node {
 		List only the tags of the items this filter keeps.
 		"""
 		filter: ItemFilterInput,
+		"""
+		List only the tags whose name this text completes: one phrase beginning a word of the name, case aside and accents minded, as `ItemFilterInput.titleCompletion` reads a title. `tom h` and `hanks` both complete Tom Hanks.
+		"""
+		completing: String,
 		"""
 		Return tags after this cursor.
 		"""
@@ -5121,6 +5176,44 @@ type Query {
 		"""
 		last: Int
 	): TagUseConnection!
+	"""
+	Items whose title is closest to a term, closest first: what a voice assistant
+	searches with, since the words it hears are rarely the words of a title.
+	
+	Ranks by edit distance between the term and each item's sort title, falling back to
+	its title. Both are folded first: ASCII case, the accents of the Latin-1 letters, the
+	carons and the lower-case macrons; anything else counts for each byte of its UTF-8
+	form. One leading article is dropped from each (`the`, `das`, `der`, `a`, `an`, `el`,
+	`la`), so `the office` is 0 from "The Office", sorted as "Office". Every title is
+	ranked, however far: the distance says how good a match is. Ties follow by folded
+	title, then by id. A term is at most 256 bytes long.
+	"""
+	closestTitles(
+		"""
+		The term, as heard or typed.
+		"""
+		query: String!,
+		"""
+		The kinds of item to rank. Music kinds rank nothing.
+		"""
+		kinds: [ItemType!]!,
+		"""
+		Return matches after this cursor.
+		"""
+		after: String,
+		"""
+		Return matches before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many matches, the closest first.
+		"""
+		first: Int,
+		"""
+		Return at most this many matches from the far end: the farthest, which costs a pass over every title.
+		"""
+		last: Int
+	): ClosestTitleConnection!
 	"""
 	What is being played right now, oldest first. A session a player has stopped keeping
 	alive disappears by itself, and a terminated one at once.

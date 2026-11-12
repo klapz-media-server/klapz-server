@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 6 | 2.3 % |
-| `stub` | 86 | 33.1 % |
-| `partial` | 27 | 10.4 % |
-| `done` | 102 | 39.2 % |
+| `stub` | 84 | 32.3 % |
+| `partial` | 28 | 10.8 % |
+| `done` | 103 | 39.6 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 7 | 12 | 35 | 5 | 26 |
+| [Library](#library) | 85 | 7 | 13 | 34 | 5 | 26 |
 | [Hubs](#hubs) | 15 | 1 | 1 | 13 | 0 | 0 |
 | [Content](#content) | 13 | 2 | 3 | 8 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
@@ -54,7 +54,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Updater](#updater) | 3 | 2 | 0 | 1 | 0 | 0 |
 | [Activities](#activities) | 2 | 1 | 0 | 1 | 0 | 0 |
 | [Events](#events) | 2 | 0 | 0 | 2 | 0 | 0 |
-| [Search](#search) | 2 | 0 | 1 | 1 | 0 | 0 |
+| [Search](#search) | 2 | 1 | 1 | 0 | 0 | 0 |
 | [UltraBlur](#ultrablur) | 2 | 0 | 0 | 2 | 0 | 0 |
 | [Collections](#collections) | 1 | 1 | 0 | 0 | 0 | 0 |
 | [Rate](#rate) | 1 | 0 | 0 | 1 | 0 | 0 |
@@ -150,7 +150,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `deferred` | `PUT` | `/library/sections/{sectionId}/analyze` | admin | Analyze a section | scanner/analysis, separate binary |
 | `stub` | `GET` | `/library/sections/{sectionId}/audioCodec` | user | Get audio codecs in a section |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/audioLayout` | user | Get audio layouts in a section |  |
-| `stub` | `GET` | `/library/sections/{sectionId}/autocomplete` | user | Get autocompletions for search |  |
+| `partial` | `GET` | `/library/sections/{sectionId}/autocomplete` | user | Get autocompletions for search | `title` and the six tag fields, as measured: one phrase beginning a word (after a space only), case aside and accents minded, `title.queryRange` in bytes; tags capped at 100. `titleSort`, `originalTitle`, `studio`, `contentRating`, `summary`, `tagline`, `year`, `collection`, `label`, `mood`, `style` answer `501`. Official API: `ItemFilterInput.titleCompletion`, `Library.tags(completing:)`. |
 | `done` | `DELETE` | `/library/sections/{sectionId}/collection/{collectionId}` | admin | Delete a collection | As measured, `collectionId` is the collection's tag number (`index`), and the collection is emptied, not deleted: every item of that library leaves it. Another library's number answers `200` and changes nothing, one no library carries `404`. Through `clearCollection`. See spec-gaps.md. |
 | `done` | `GET` | `/library/sections/{sectionId}/collections` | user | Get collections in a section | In `/all`'s container, as `/all?type=18` answers too; by sort title (byte order, the reference's is numeric), `addedAt` or `updatedAt`, other sorts `501`. Always windowed, 500 at most without container parameters. Imported collections identical to the reference field for field, less artwork. See spec-gaps.md. |
 | `stub` | `GET` | `/library/sections/{sectionId}/common` | user | Get common fields for items |  |
@@ -468,7 +468,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `partial` | `GET` | `/hubs/search` | user | Search Hub | The reference's seventeen shelves; films, series and episodes ranked by the official API's `search` score (rung and audience rating, the reference's own values), actors, directors and genres through `searchTags`, collections through `collections(matching:)`, each cut to `limit` (3 by default). A film or series shelf no title fills lists the works of the actor and director the term names (`searchCredits`), `reason="actor"`. Word-prefix matching rather than the reference's fuzzy one. `sectionId` must name a library and narrows nothing, as on the reference. See `docs/spec-gaps.md`. |
-| `stub` | `GET` | `/hubs/search/voice` | user | Voice Search Hub | Not derived from `/hubs/search`: the reference ranks every title by edit distance to the whole term (`dune` finds `Cube` at distance 2), one shelf per kind with `distance` and `hubKey`, a different search altogether. |
+| `done` | `GET` | `/hubs/search/voice` | user | Voice Search Hub | Titles ranked by edit distance to the term, sort titles and term read alike (an article dropped, the reference's letters folded, bytes counted), `limit` across shelves, one shelf per kind; official API `closestTitles`. The reference pre-selects on its raw titles, case kept, and can skip a closer title: ours never ranks farther (`docs/spec-gaps.md`). |
 
 ## UltraBlur
 

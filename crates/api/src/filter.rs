@@ -187,6 +187,14 @@ pub struct ItemFilterInput {
     /// full-text search, because full-text indexing is the least portable feature across
     /// database engines and the engine is meant to stay swappable.
     pub title_word_prefix: Option<String>,
+    /// Keep only items whose title this text completes, as a search field offers while it
+    /// is typed into.
+    ///
+    /// The text is one phrase beginning a word of the title, a word beginning after a space:
+    /// `first sl` completes "The First Slam Dunk", `aim` does not complete "Le mal-aimé".
+    /// Case does not count and accents do, so `aime` does not complete "aimé". Only the
+    /// title is read, not the sort or original title. Empty text completes nothing.
+    pub title_completion: Option<String>,
     /// Keep only items with a version whose frame falls in this range: `{reaching: {width:
     /// 2880, height: 1540}}` for 4K.
     ///
@@ -340,6 +348,7 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
             title_word_prefix: input
                 .title_word_prefix
                 .filter(|text| !text.trim().is_empty()),
+            title_completion: input.title_completion,
             frame: input.frame.map(Into::into),
             tags,
             collections,
@@ -409,6 +418,7 @@ mod tests {
             content_rating: Some("fr/16".to_owned()),
             studio_contains: Some("HBO".to_owned()),
             title_word_prefix: Some("the".to_owned()),
+            title_completion: Some("first sl".to_owned()),
             frame: Some(FrameRangeInput {
                 reaching: Some(FrameSizeInput {
                     width: 2880,
@@ -443,6 +453,7 @@ mod tests {
         assert_eq!(filter.content_rating.as_deref(), Some("fr/16"));
         assert_eq!(filter.studio_contains.as_deref(), Some("HBO"));
         assert_eq!(filter.title_word_prefix.as_deref(), Some("the"));
+        assert_eq!(filter.title_completion.as_deref(), Some("first sl"));
         assert!(filter
             .frame
             .is_some_and(|range| range.contains(Some(3840), Some(1600))));

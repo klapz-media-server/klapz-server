@@ -8,7 +8,8 @@
 //! easy way, by inserting items directly and then matching nothing.
 //!
 //! So the words are derived here, from the values being written, and there is no path that
-//! inserts or edits an item without them. An edit rewrites the sort key the same way. Tags
+//! inserts or edits an item without them. An edit rewrites the sort key the same way, and the
+//! folded title the voice search compares (`m0032_folded_title`). Tags
 //! carry the same kind of index over their names, written the same way, and so do
 //! collections over their titles.
 
@@ -16,14 +17,14 @@ use std::collections::BTreeSet;
 
 use open_plex_core::edit::ItemField;
 use open_plex_core::metadata::{self, MetadataItem};
-use open_plex_core::search;
+use open_plex_core::{closest, search};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter,
 };
 
 use crate::entity::{
-    collection, collection_word, item_field_lock, item_title_key, item_title_word, metadata_item,
-    tag, tag_word,
+    collection, collection_word, item_field_lock, item_folded_title, item_title_key,
+    item_title_word, metadata_item, tag, tag_word,
 };
 
 /// Rows per statement.
@@ -32,7 +33,7 @@ use crate::entity::{
 /// rows stays comfortably under every engine's limit while keeping the round trips few.
 const WRITE_CHUNK: usize = 500;
 
-/// Inserts items, their title-word index and their title keys.
+/// Inserts items, their title-word index, their title keys and their folded titles.
 ///
 /// # Errors
 ///
@@ -45,6 +46,8 @@ pub async fn insert_items<C: ConnectionTrait>(
 ) -> Result<usize, DbErr> {
     let words: Vec<item_title_word::ActiveModel> = items.iter().flat_map(model_words).collect();
     let keys: Vec<item_title_key::ActiveModel> = items.iter().flat_map(model_keys).collect();
+    let folded: Vec<item_folded_title::ActiveModel> =
+        items.iter().filter_map(model_folded_title).collect();
 
     for chunk in items.chunks(WRITE_CHUNK) {
         metadata_item::Entity::insert_many(chunk.to_vec())
@@ -59,6 +62,11 @@ pub async fn insert_items<C: ConnectionTrait>(
     }
     for chunk in keys.chunks(WRITE_CHUNK) {
         item_title_key::Entity::insert_many(chunk.to_vec())
+            .exec(connection)
+            .await?;
+    }
+    for chunk in folded.chunks(WRITE_CHUNK) {
+        item_folded_title::Entity::insert_many(chunk.to_vec())
             .exec(connection)
             .await?;
     }
@@ -213,6 +221,20 @@ pub async fn update_item<C: ConnectionTrait>(
             .await?;
     }
 
+    let key = closest::title_key(item.title_sort.as_deref(), item.title.as_deref());
+    item_folded_title::Entity::update_many()
+        .col_expr(
+            item_folded_title::Column::FoldedLength,
+            sea_orm::sea_query::Expr::value(folded_length(&key)),
+        )
+        .col_expr(
+            item_folded_title::Column::FoldedTitle,
+            sea_orm::sea_query::Expr::value(key),
+        )
+        .filter(item_folded_title::Column::ItemId.eq(id))
+        .exec(connection)
+        .await?;
+
     item_field_lock::Entity::delete_many()
         .filter(item_field_lock::Column::ItemId.eq(id))
         .exec(connection)
@@ -323,6 +345,28 @@ fn title_keys(
             leading: ActiveValue::Set(key.leading),
         })
         .collect()
+}
+
+/// The folded title row for one item, read back off the model being written. `None` for a
+/// model missing the columns the row copies, which the insert itself will reject.
+fn model_folded_title(item: &metadata_item::ActiveModel) -> Option<item_folded_title::ActiveModel> {
+    let text = |value: &ActiveValue<Option<String>>| value.try_as_ref().cloned().flatten();
+    let key = closest::title_key(
+        text(&item.title_sort).as_deref(),
+        text(&item.title).as_deref(),
+    );
+    Some(item_folded_title::ActiveModel {
+        item_id: ActiveValue::Set(*item.id.try_as_ref()?),
+        library_section_id: ActiveValue::Set(*item.library_section_id.try_as_ref()?),
+        kind: ActiveValue::Set(item.kind.try_as_ref()?.clone()),
+        folded_length: ActiveValue::Set(folded_length(&key)),
+        folded_title: ActiveValue::Set(key),
+    })
+}
+
+/// A title's length as stored: a title no column could hold saturates rather than wraps.
+fn folded_length(key: &str) -> i32 {
+    i32::try_from(closest::key_length(key)).unwrap_or(i32::MAX)
 }
 
 fn title_words(

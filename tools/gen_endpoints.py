@@ -145,6 +145,9 @@ IMPLEMENTED = frozenset(
         "/library/sections/{sectionId}/collections",
         "/library/sections/{sectionId}/collection/{collectionId}",
         "/library/metadata/{ids}/prefs",
+        # Titles by edit distance (`voice_search.rs`), and completions (`autocomplete.rs`).
+        "/hubs/search/voice",
+        "/library/sections/{sectionId}/autocomplete",
     }
 )
 

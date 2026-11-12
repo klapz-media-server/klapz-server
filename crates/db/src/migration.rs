@@ -33,6 +33,7 @@ mod m0028_play_queue_edit;
 mod m0029_release_midnight;
 mod m0030_every_caller_a_user;
 mod m0031_title_key;
+mod m0032_folded_title;
 
 use sea_orm_migration::prelude::*;
 
@@ -73,6 +74,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0029_release_midnight::Migration),
             Box::new(m0030_every_caller_a_user::Migration),
             Box::new(m0031_title_key::Migration),
+            Box::new(m0032_folded_title::Migration),
         ]
     }
 }
