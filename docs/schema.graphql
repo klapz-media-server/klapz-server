@@ -3851,8 +3851,8 @@ type Mutation {
 	): StartStreamPayload!
 	"""
 	Ends a session for an owner: its stream stops at once, and its player learns why from
-	`PlaybackSession.termination` or `playbackTermination`, until it stops. For the
-	server's owners only.
+	`PlaybackSession.terminationReason`, listed under `playbackSessions(status: TERMINATED)`
+	until it stops. For the server's owners only.
 	"""
 	terminatePlaybackSession(
 		"""
@@ -4817,10 +4817,14 @@ type PlaybackSession implements Node {
 	"""
 	id: ID!
 	"""
-	Set once an owner has terminated the session: its stream is stopped, and the
-	session stays until its player stops or it expires, so that the player can learn why.
+	When an owner terminated the session. Its stream is stopped then, and the session
+	stays until its player stops or it expires, so that the player can learn why.
 	"""
-	termination: PlaybackTermination
+	terminatedAt: DateTime
+	"""
+	What the owner who terminated the session told the player, when it said anything.
+	"""
+	terminationReason: String
 	"""
 	The identifier the client chose for this playback.
 	"""
@@ -4918,6 +4922,21 @@ type PlaybackSessionEdge {
 }
 
 """
+Which sessions `playbackSessions` lists. Expired ones are in neither.
+"""
+enum PlaybackSessionStatus {
+	"""
+	Still playing.
+	"""
+	PLAYING
+	"""
+	Terminated by an owner: their stream is stopped, and they stay until their player
+	stops or they expire, so that the player can learn why.
+	"""
+	TERMINATED
+}
+
+"""
 How far along a playback is, as the player last reported it.
 """
 enum PlaybackStateType {
@@ -4933,20 +4952,6 @@ enum PlaybackStateType {
 	The player is waiting for data.
 	"""
 	BUFFERING
-}
-
-"""
-An owner ending a session.
-"""
-type PlaybackTermination {
-	"""
-	When it was terminated.
-	"""
-	terminatedAt: DateTime!
-	"""
-	What the owner told the player, when it said anything.
-	"""
-	reason: String
 }
 
 type Playlist implements Node {
@@ -5497,10 +5502,14 @@ type Query {
 		last: Int
 	): ClosestTitleConnection!
 	"""
-	What is being played right now, oldest first. A session a player has stopped keeping
-	alive disappears by itself, and a terminated one at once.
+	What is being played right now, oldest first, or what an owner terminated. A session
+	a player has stopped keeping alive disappears by itself.
 	"""
 	playbackSessions(
+		"""
+		Which sessions to list: those playing unless asked otherwise.
+		"""
+		status: PlaybackSessionStatus! = PLAYING,
 		"""
 		Return sessions after this cursor.
 		"""
@@ -5560,16 +5569,6 @@ type Query {
 		"""
 		offset: Int
 	): HistoryEntryConnection!
-	"""
-	Why an owner terminated one of the caller's playbacks, while its player has not
-	stopped: a player that finds its stream gone asks here.
-	"""
-	playbackTermination(
-		"""
-		The player's identifier for the whole playback.
-		"""
-		playbackId: String!
-	): PlaybackTermination
 	"""
 	The caller's own playlists. Empty for a request with no caller.
 	"""

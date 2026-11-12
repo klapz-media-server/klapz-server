@@ -11061,7 +11061,7 @@
             },
             {
               "name": "terminatePlaybackSession",
-              "description": "Ends a session for an owner: its stream stops at once, and its player learns why from\n`PlaybackSession.termination` or `playbackTermination`, until it stops. For the\nserver's owners only.",
+              "description": "Ends a session for an owner: its stream stops at once, and its player learns why from\n`PlaybackSession.terminationReason`, listed under `playbackSessions(status: TERMINATED)`\nuntil it stops. For the server's owners only.",
               "args": [
                 {
                   "name": "input",
@@ -14162,12 +14162,24 @@
               "deprecationReason": null
             },
             {
-              "name": "termination",
-              "description": "Set once an owner has terminated the session: its stream is stopped, and the\nsession stays until its player stops or it expires, so that the player can learn why.",
+              "name": "terminatedAt",
+              "description": "When an owner terminated the session. Its stream is stopped then, and the session\nstays until its player stops or it expires, so that the player can learn why.",
               "args": [],
               "type": {
-                "kind": "OBJECT",
-                "name": "PlaybackTermination",
+                "kind": "SCALAR",
+                "name": "DateTime",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "terminationReason",
+              "description": "What the owner who terminated the session told the player, when it said anything.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -14529,6 +14541,29 @@
         },
         {
           "kind": "ENUM",
+          "name": "PlaybackSessionStatus",
+          "description": "Which sessions `playbackSessions` lists. Expired ones are in neither.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "PLAYING",
+              "description": "Still playing.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TERMINATED",
+              "description": "Terminated by an owner: their stream is stopped, and they stay until their player\nstops or they expire, so that the player can learn why.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
           "name": "PlaybackStateType",
           "description": "How far along a playback is, as the player last reported it.",
           "fields": null,
@@ -14554,45 +14589,6 @@
               "deprecationReason": null
             }
           ],
-          "possibleTypes": null
-        },
-        {
-          "kind": "OBJECT",
-          "name": "PlaybackTermination",
-          "description": "An owner ending a session.",
-          "fields": [
-            {
-              "name": "terminatedAt",
-              "description": "When it was terminated.",
-              "args": [],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "SCALAR",
-                  "name": "DateTime",
-                  "ofType": null
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
-              "name": "reason",
-              "description": "What the owner told the player, when it said anything.",
-              "args": [],
-              "type": {
-                "kind": "SCALAR",
-                "name": "String",
-                "ofType": null
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            }
-          ],
-          "inputFields": null,
-          "interfaces": [],
-          "enumValues": null,
           "possibleTypes": null
         },
         {
@@ -16093,8 +16089,22 @@
             },
             {
               "name": "playbackSessions",
-              "description": "What is being played right now, oldest first. A session a player has stopped keeping\nalive disappears by itself, and a terminated one at once.",
+              "description": "What is being played right now, oldest first, or what an owner terminated. A session\na player has stopped keeping alive disappears by itself.",
               "args": [
+                {
+                  "name": "status",
+                  "description": "Which sessions to list: those playing unless asked otherwise.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "PlaybackSessionStatus",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": "PLAYING"
+                },
                 {
                   "name": "after",
                   "description": "Return sessions after this cursor.",
@@ -16241,33 +16251,6 @@
                   "name": "HistoryEntryConnection",
                   "ofType": null
                 }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
-            },
-            {
-              "name": "playbackTermination",
-              "description": "Why an owner terminated one of the caller's playbacks, while its player has not\nstopped: a player that finds its stream gone asks here.",
-              "args": [
-                {
-                  "name": "playbackId",
-                  "description": "The player's identifier for the whole playback.",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "SCALAR",
-                      "name": "String",
-                      "ofType": null
-                    }
-                  },
-                  "defaultValue": null
-                }
-              ],
-              "type": {
-                "kind": "OBJECT",
-                "name": "PlaybackTermination",
-                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null

@@ -1592,21 +1592,10 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
         }))
     }
 
-    async fn termination(
-        &self,
-        playback_id: &str,
-        now: i64,
-    ) -> Result<Option<crate::playback::Termination>, crate::playback::PlaybackError> {
-        Ok(self
-            .rows()
-            .iter()
-            .filter(|row| row.playback_id.as_deref() == Some(playback_id) && row.expires_at > now)
-            .find_map(|row| row.termination.clone()))
-    }
-
-    async fn active(
+    async fn sessions(
         &self,
         only: Option<crate::ids::UserId>,
+        status: crate::playback::SessionStatus,
         now: i64,
         _window: Window,
     ) -> Result<Page<crate::playback::PlaybackSession>, crate::playback::PlaybackError> {
@@ -1614,7 +1603,11 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
             items: self
                 .rows()
                 .iter()
-                .filter(|row| row.expires_at > now && row.termination.is_none())
+                .filter(|row| {
+                    row.expires_at > now
+                        && row.termination.is_some()
+                            == (status == crate::playback::SessionStatus::Terminated)
+                })
                 .filter(|row| only.is_none_or(|user| row.user == user))
                 .cloned()
                 .collect(),

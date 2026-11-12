@@ -11,7 +11,7 @@ use open_plex_core::page::Cursor;
 use open_plex_core::play_queue::PlayQueueChange;
 use open_plex_core::playback::{
     NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackSession, PlaybackState,
-    StreamDecision, Termination,
+    SessionStatus, StreamDecision,
 };
 use open_plex_core::{now_epoch, PartId, RatingKey};
 
@@ -93,21 +93,23 @@ impl From<StreamDecisionType> for StreamDecision {
     }
 }
 
-/// An owner ending a session.
-#[derive(Debug, Clone, SimpleObject)]
-#[graphql(name = "PlaybackTermination")]
-pub struct PlaybackTerminationObject {
-    /// When it was terminated.
-    pub terminated_at: DateTime,
-    /// What the owner told the player, when it said anything.
-    pub reason: Option<String>,
+/// Which sessions `playbackSessions` lists. Expired ones are in neither.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Enum)]
+#[graphql(name = "PlaybackSessionStatus")]
+pub enum PlaybackSessionStatusType {
+    /// Still playing.
+    #[default]
+    Playing,
+    /// Terminated by an owner: their stream is stopped, and they stay until their player
+    /// stops or they expire, so that the player can learn why.
+    Terminated,
 }
 
-impl From<Termination> for PlaybackTerminationObject {
-    fn from(termination: Termination) -> Self {
-        Self {
-            terminated_at: termination.at.into(),
-            reason: termination.reason,
+impl From<PlaybackSessionStatusType> for SessionStatus {
+    fn from(status: PlaybackSessionStatusType) -> Self {
+        match status {
+            PlaybackSessionStatusType::Playing => Self::Playing,
+            PlaybackSessionStatusType::Terminated => Self::Terminated,
         }
     }
 }
@@ -123,10 +125,21 @@ impl PlaybackSessionObject {
         ID(GlobalId::encode(PLAYBACK_TYPE, self.0.id))
     }
 
-    /// Set once an owner has terminated the session: its stream is stopped, and the
-    /// session stays until its player stops or it expires, so that the player can learn why.
-    async fn termination(&self) -> Option<PlaybackTerminationObject> {
-        self.0.termination.clone().map(Into::into)
+    /// When an owner terminated the session. Its stream is stopped then, and the session
+    /// stays until its player stops or it expires, so that the player can learn why.
+    async fn terminated_at(&self) -> Option<DateTime> {
+        self.0
+            .termination
+            .as_ref()
+            .map(|termination| termination.at.into())
+    }
+
+    /// What the owner who terminated the session told the player, when it said anything.
+    async fn termination_reason(&self) -> Option<&str> {
+        self.0
+            .termination
+            .as_ref()
+            .and_then(|termination| termination.reason.as_deref())
     }
 
     /// The identifier the client chose for this playback.
@@ -223,6 +236,7 @@ impl PlaybackSessionObject {
 
 pub(crate) async fn sessions(
     context: &Context<'_>,
+    status: PlaybackSessionStatusType,
     after: Option<String>,
     before: Option<String>,
     first: Option<i32>,
@@ -238,7 +252,7 @@ pub(crate) async fn sessions(
         |after, before, first, last| async move {
             let window = crate::schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?;
             let page = playback(context)?
-                .active(owner, now_epoch(), window)
+                .sessions(owner, status.into(), now_epoch(), window)
                 .await?;
             let mut connection = Connection::new(page.has_previous, page.has_next);
             connection
@@ -374,18 +388,6 @@ async fn terminate(
     })
 }
 
-/// The termination of one of the caller's playbacks, while its player has not stopped.
-pub(crate) async fn termination(
-    context: &Context<'_>,
-    playback_id: &str,
-) -> Result<Option<PlaybackTerminationObject>> {
-    let playback_id = crate::access::require_caller(context)?.session_key(playback_id);
-    Ok(playback(context)?
-        .termination(&playback_id, now_epoch())
-        .await?
-        .map(Into::into))
-}
-
 /// Changes to what is being played.
 #[derive(Debug, Default)]
 pub struct Mutation;
@@ -445,8 +447,8 @@ impl Mutation {
     }
 
     /// Ends a session for an owner: its stream stops at once, and its player learns why from
-    /// `PlaybackSession.termination` or `playbackTermination`, until it stops. For the
-    /// server's owners only.
+    /// `PlaybackSession.terminationReason`, listed under `playbackSessions(status: TERMINATED)`
+    /// until it stops. For the server's owners only.
     async fn terminate_playback_session(
         &self,
         context: &Context<'_>,

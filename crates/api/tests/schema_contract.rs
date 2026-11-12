@@ -1649,7 +1649,7 @@ async fn an_owner_terminates_a_session_which_its_player_can_still_read() {
 mutation Terminate($input: TerminatePlaybackSessionInput!) {
   terminatePlaybackSession(input: $input) {
     clientMutationId
-    session { key termination { reason } }
+    session { key terminationReason }
     userErrors { field code }
   }
 }";
@@ -1675,15 +1675,17 @@ mutation Terminate($input: TerminatePlaybackSessionInput!) {
     let payload = &data["terminatePlaybackSession"];
     assert_eq!(payload["clientMutationId"], "t1");
     assert_eq!(payload["userErrors"], serde_json::json!([]));
-    assert_eq!(payload["session"]["termination"]["reason"], "Bedtime");
+    assert_eq!(payload["session"]["terminationReason"], "Bedtime");
     assert_eq!(*engine.stopped.lock().unwrap(), ["u1000~k1"]);
 
     // No longer playing, but still there for its player to read.
     let read = format!(
         r#"{{
   playbackSessions(first: 10) {{ edges {{ node {{ key }} }} }}
-  playbackTermination(playbackId: "tab") {{ reason terminatedAt }}
-  node(id: "{}") {{ ... on PlaybackSession {{ termination {{ reason }} }} }}
+  terminated: playbackSessions(first: 10, status: TERMINATED) {{
+    edges {{ node {{ playbackId terminationReason terminatedAt }} }}
+  }}
+  node(id: "{}") {{ ... on PlaybackSession {{ terminationReason }} }}
 }}"#,
         session.as_str().unwrap()
     );
@@ -1691,8 +1693,11 @@ mutation Terminate($input: TerminatePlaybackSessionInput!) {
     assert!(response.errors.is_empty(), "{:?}", response.errors);
     let data = serde_json::to_value(response.data).unwrap();
     assert_eq!(data["playbackSessions"]["edges"], serde_json::json!([]));
-    assert_eq!(data["playbackTermination"]["reason"], "Bedtime");
-    assert_eq!(data["node"]["termination"]["reason"], "Bedtime");
+    let terminated = &data["terminated"]["edges"][0]["node"];
+    assert_eq!(terminated["playbackId"], "tab");
+    assert_eq!(terminated["terminationReason"], "Bedtime");
+    assert!(terminated["terminatedAt"].is_string());
+    assert_eq!(data["node"]["terminationReason"], "Bedtime");
 
     let touch = r#"mutation { touchPlaybackSession(key: "k1") }"#;
     let data = serde_json::to_value(run(as_owner(touch)).await.data).unwrap();
@@ -1712,13 +1717,13 @@ mutation Terminate($input: TerminatePlaybackSessionInput!) {
     assert_eq!(data["reportPlayback"], true);
     let data = serde_json::to_value(
         run(as_owner(
-            r#"{ playbackTermination(playbackId: "tab") { reason } }"#,
+            r"{ playbackSessions(status: TERMINATED) { edges { node { key } } } }",
         ))
         .await
         .data,
     )
     .unwrap();
-    assert_eq!(data["playbackTermination"], Value::Null);
+    assert_eq!(data["playbackSessions"]["edges"], serde_json::json!([]));
     assert_eq!(*engine.stopped.lock().unwrap(), ["u1000~k1", "u1000~k1"]);
 }
 

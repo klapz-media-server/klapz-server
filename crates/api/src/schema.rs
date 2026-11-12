@@ -417,11 +417,16 @@ impl Query {
         crate::closest::closest_titles(context, query, kinds, after, before, first, last).await
     }
 
-    /// What is being played right now, oldest first. A session a player has stopped keeping
-    /// alive disappears by itself, and a terminated one at once.
+    /// What is being played right now, oldest first, or what an owner terminated. A session
+    /// a player has stopped keeping alive disappears by itself.
     async fn playback_sessions(
         &self,
         context: &Context<'_>,
+        #[graphql(
+            desc = "Which sessions to list: those playing unless asked otherwise.",
+            default
+        )]
+        status: crate::playback::PlaybackSessionStatusType,
         #[graphql(desc = "Return sessions after this cursor.")] after: Option<String>,
         #[graphql(desc = "Return sessions before this cursor.")] before: Option<String>,
         #[graphql(desc = "Return at most this many sessions from the start of the range.")]
@@ -429,7 +434,7 @@ impl Query {
         #[graphql(desc = "Return at most this many sessions from the end of the range.")]
         last: Option<i32>,
     ) -> Result<crate::playback::PlaybackConnection> {
-        crate::playback::sessions(context, after, before, first, last).await
+        crate::playback::sessions(context, status, after, before, first, last).await
     }
 
     /// What was watched, one entry per viewing: each playback that reached 90% of the
@@ -466,16 +471,6 @@ impl Query {
             context, filter, order_by, direction, after, before, first, last, offset,
         )
         .await
-    }
-
-    /// Why an owner terminated one of the caller's playbacks, while its player has not
-    /// stopped: a player that finds its stream gone asks here.
-    async fn playback_termination(
-        &self,
-        context: &Context<'_>,
-        #[graphql(desc = "The player's identifier for the whole playback.")] playback_id: String,
-    ) -> Result<Option<crate::playback::PlaybackTerminationObject>> {
-        crate::playback::termination(context, &playback_id).await
     }
 
     /// The caller's own playlists. Empty for a request with no caller.

@@ -64,6 +64,15 @@ pub struct Termination {
     pub reason: Option<String>,
 }
 
+/// Which sessions a listing holds. Expired ones are in neither.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionStatus {
+    /// Still playing: not terminated.
+    Playing,
+    /// Terminated by an owner, and waiting for their player to hear of it.
+    Terminated,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaybackSession {
     pub id: i64,
@@ -135,18 +144,12 @@ pub trait PlaybackRepository: Send + Sync + std::fmt::Debug {
         now: i64,
     ) -> Result<Option<PlaybackSession>, PlaybackError>;
 
-    /// The termination of a playback whose player has not stopped yet.
-    async fn termination(
-        &self,
-        playback_id: &str,
-        now: i64,
-    ) -> Result<Option<Termination>, PlaybackError>;
-
-    /// The sessions playing: neither expired nor terminated, oldest first. `only` narrows it
-    /// to one user's.
-    async fn active(
+    /// The sessions not expired in one status, oldest first. `only` narrows it to one
+    /// user's.
+    async fn sessions(
         &self,
         only: Option<UserId>,
+        status: SessionStatus,
         now: i64,
         window: Window,
     ) -> Result<Page<PlaybackSession>, PlaybackError>;

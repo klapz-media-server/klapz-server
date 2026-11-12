@@ -4,8 +4,8 @@
 
 use open_plex_core::page::Window;
 use open_plex_core::playback::{
-    NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackState, StreamDecision,
-    SESSION_LIFETIME_SECONDS,
+    NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackState, SessionStatus,
+    StreamDecision, SESSION_LIFETIME_SECONDS,
 };
 use open_plex_core::{PartId, RatingKey};
 use open_plex_db::{connect, SqlPlaybackRepository};
@@ -38,9 +38,18 @@ fn session(key: &str) -> NewPlaybackSession {
 }
 
 async fn active_keys(repository: &SqlPlaybackRepository, now: i64) -> Vec<String> {
+    keys_in(repository, SessionStatus::Playing, now).await
+}
+
+async fn keys_in(
+    repository: &SqlPlaybackRepository,
+    status: SessionStatus,
+    now: i64,
+) -> Vec<String> {
     repository
-        .active(
+        .sessions(
             None,
+            status,
             now,
             Window::new(None, None, Some(10), None).expect("window"),
         )
@@ -165,28 +174,20 @@ async fn a_terminated_session_stops_playing_and_tells_its_player_why() {
         .is_none());
     let found = repository.session(id, later).await.expect("read");
     assert!(found.is_some_and(|session| session.termination.is_some()));
-    let told = repository
-        .termination("player", later)
-        .await
-        .expect("read")
-        .expect("termination");
-    assert_eq!(told.reason.as_deref(), Some("Bedtime"));
-    assert!(repository
-        .termination("other player", later)
-        .await
-        .expect("read")
-        .is_none());
+    assert_eq!(
+        keys_in(&repository, SessionStatus::Terminated, later).await,
+        ["a"]
+    );
 
     // A restart under the key does not lift it.
     repository
         .start(session("a"), later + 1)
         .await
         .expect("start");
-    assert!(repository
-        .termination("player", later + 1)
-        .await
-        .expect("read")
-        .is_some());
+    assert_eq!(
+        keys_in(&repository, SessionStatus::Terminated, later + 1).await,
+        ["a"]
+    );
 }
 
 #[tokio::test]

@@ -3,7 +3,7 @@
 use open_plex_core::page::{Page, Window, MAX_ITEMS};
 use open_plex_core::playback::{
     NewPlaybackSession, PlaybackError, PlaybackOutput, PlaybackRepository, PlaybackSession,
-    PlaybackState, StreamDecision, Termination, SESSION_LIFETIME_SECONDS,
+    PlaybackState, SessionStatus, StreamDecision, Termination, SESSION_LIFETIME_SECONDS,
 };
 use open_plex_core::{PartId, RatingKey, UserId};
 use sea_orm::sea_query::OnConflict;
@@ -267,29 +267,19 @@ impl PlaybackRepository for SqlPlaybackRepository {
             .map(to_domain))
     }
 
-    async fn termination(
-        &self,
-        playback_id: &str,
-        now: i64,
-    ) -> Result<Option<Termination>, PlaybackError> {
-        Ok(Entity::find()
-            .filter(Column::PlaybackId.eq(playback_id))
-            .filter(Column::ExpiresAt.gt(now))
-            .filter(Column::TerminatedAt.is_not_null())
-            .order_by(Column::TerminatedAt, Order::Desc)
-            .one(&self.connection)
-            .await
-            .map_err(storage)?
-            .and_then(|row| to_domain(row).termination))
-    }
-
-    async fn active(
+    async fn sessions(
         &self,
         only: Option<UserId>,
+        status: SessionStatus,
         now: i64,
         window: Window,
     ) -> Result<Page<PlaybackSession>, PlaybackError> {
-        let mut select = Entity::find().filter(live(now));
+        let mut select = Entity::find().filter(match status {
+            SessionStatus::Playing => live(now),
+            SessionStatus::Terminated => sea_orm::Condition::all()
+                .add(Column::ExpiresAt.gt(now))
+                .add(Column::TerminatedAt.is_not_null()),
+        });
         if let Some(user) = only {
             select = select.filter(Column::UserId.eq(user.get()));
         }

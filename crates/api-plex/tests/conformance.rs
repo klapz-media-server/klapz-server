@@ -2072,7 +2072,8 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
     use open_plex_core::now_epoch;
     use open_plex_core::page::Window;
     use open_plex_core::playback::{
-        NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackState, StreamDecision,
+        NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackState, SessionStatus,
+        StreamDecision,
     };
     use open_plex_core::testing::InMemoryPlayback;
 
@@ -2122,8 +2123,9 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
         .expect("start");
     let sessions = || async {
         playback
-            .active(
+            .sessions(
                 None,
+                SessionStatus::Playing,
                 now_epoch(),
                 Window::new(None, None, Some(10), None).expect("window"),
             )

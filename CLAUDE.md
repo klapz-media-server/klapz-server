@@ -618,7 +618,8 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
 - ✅ **the end of a session**: every end path converges on `core::lifecycle` (stream and row
   together, per-key locks, the sweep re-checking under them), reads of a native stream keep its
   session alive, Ctrl-C ends everything; `terminatePlaybackSession` and
-  `/status/sessions/terminate`, `playbackTermination` and the timeline's `terminationCode`, and
+  `/status/sessions/terminate`, the session's `terminatedAt` and `terminationReason`, listed by
+  `playbackSessions(status: TERMINATED)`, and the timeline's `terminationCode`, and
   `/status/sessions/background`, always empty;
 - ✅ **editing films, series and episodes**: `updateMovie`, `updateShow`, `updateEpisode` on the
   official API, for a library's admins and the owners, with per-field locks (`lock`,

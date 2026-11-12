@@ -32,13 +32,15 @@ mutation PlexReportViewing($input: ReportViewingInput!) {
 ";
 
 const SESSIONS: &str = r"
-query PlexTimelineSessions($playback: String!) {
+query PlexTimelineSessions {
   playbackSessions(first: 500) {
     edges {
       node { key playbackId videoDecision audioDecision videoBitrate audioBitrate width }
     }
   }
-  playbackTermination(playbackId: $playback) { reason }
+  terminated: playbackSessions(first: 500, status: TERMINATED) {
+    edges { node { playbackId terminationReason } }
+  }
 }
 ";
 
@@ -245,7 +247,7 @@ async fn timeline(
             if let (Some(termination), false) = (found.termination, reported == "STOPPED") {
                 body["terminationCode"] = json!(ADMIN_TERMINATION_CODE);
                 body["terminationText"] = json!(termination
-                    .reason
+                    .termination_reason
                     .filter(|reason| !reason.is_empty())
                     .unwrap_or_else(|| ADMIN_TERMINATION_TEXT.to_owned()));
             }
@@ -259,12 +261,24 @@ async fn timeline(
 #[serde(rename_all = "camelCase")]
 struct SessionsData {
     playback_sessions: GqlSessions,
-    playback_termination: Option<GqlTermination>,
+    terminated: GqlTerminations,
 }
 
 #[derive(Debug, Deserialize)]
+struct GqlTerminations {
+    edges: Vec<GqlTerminationEdge>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlTerminationEdge {
+    node: GqlTermination,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GqlTermination {
-    reason: Option<String>,
+    playback_id: Option<String>,
+    termination_reason: Option<String>,
 }
 
 /// Where a playback stands: its latest session playing, or an owner's termination of it.
@@ -299,10 +313,8 @@ struct GqlSession {
 /// Rows come oldest first, and the latest is the conversion the player is on. This only
 /// decorates the answer: failing to read it costs a report nothing.
 async fn playback_state(state: &PlexState, playback_id: &str) -> PlaybackFound {
-    let mut variables = Variables::default();
-    variables.insert(Name::new("playback"), Value::String(playback_id.to_owned()));
     let data: Result<SessionsData, ApiError> =
-        gql::execute(&state.schema, SESSIONS, variables).await;
+        gql::execute(&state.schema, SESSIONS, Variables::default()).await;
     let Ok(data) =
         data.map_err(|error| tracing::warn!(%error, "could not read the playback sessions"))
     else {
@@ -316,7 +328,14 @@ async fn playback_state(state: &PlexState, playback_id: &str) -> PlaybackFound {
             .rev()
             .map(|edge| edge.node)
             .find(|session| session.playback_id.as_deref() == Some(playback_id)),
-        termination: data.playback_termination,
+        // The latest termination, should a playback have been terminated twice.
+        termination: data
+            .terminated
+            .edges
+            .into_iter()
+            .rev()
+            .map(|edge| edge.node)
+            .find(|session| session.playback_id.as_deref() == Some(playback_id)),
     }
 }
 
