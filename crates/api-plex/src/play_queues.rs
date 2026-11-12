@@ -530,7 +530,7 @@ query PlexPlayQueue($id: ID!) {
 
 const CENTER_QUERY: &str = r"
 query PlexPlayQueueCenter($id: ID!) {
-  node(id: $id) { ... on PlayQueueEntry { queueId position } }
+  node(id: $id) { ... on PlayQueueEntry { queue { id } position } }
 }
 ";
 
@@ -586,8 +586,13 @@ struct CenterData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GqlCenter {
-    queue_id: Option<String>,
+    queue: Option<GqlNodeId>,
     position: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlNodeId {
+    id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -633,7 +638,12 @@ async fn entry_position(
     let data: CenterData = gql::execute(&state.schema, CENTER_QUERY, variables).await?;
     Ok(data
         .node
-        .filter(|entry| entry.queue_id.as_deref() == Some(queue_id))
+        .filter(|entry| {
+            entry
+                .queue
+                .as_ref()
+                .is_some_and(|queue| queue.id == queue_id)
+        })
         .and_then(|entry| entry.position))
 }
 

@@ -441,9 +441,9 @@ impl PlaylistEntryObject {
         self.0.added_at.into()
     }
 
-    /// The playlist it belongs to, as returned in `Playlist.id`.
-    async fn playlist_id(&self) -> ID {
-        ID(GlobalId::encode(PLAYLIST_TYPE, self.0.playlist.get()))
+    /// The playlist it belongs to.
+    async fn playlist(&self, context: &Context<'_>) -> Result<Option<PlaylistObject>> {
+        playlist_node(context, self.0.playlist.get()).await
     }
 
     /// What it plays. Null if the owner may no longer read it.

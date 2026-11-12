@@ -4666,9 +4666,9 @@ type PlayQueueEntry implements Node {
 	"""
 	id: ID!
 	"""
-	The queue this entry belongs to, as returned in `PlayQueue.id`.
+	The queue this entry belongs to.
 	"""
-	queueId: ID!
+	queue: PlayQueue
 	"""
 	Its place in the queue, from zero.
 	"""
@@ -5119,9 +5119,9 @@ type PlaylistEntry implements Node {
 	"""
 	addedAt: DateTime!
 	"""
-	The playlist it belongs to, as returned in `Playlist.id`.
+	The playlist it belongs to.
 	"""
-	playlistId: ID!
+	playlist: Playlist
 	"""
 	What it plays. Null if the owner may no longer read it.
 	"""

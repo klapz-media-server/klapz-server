@@ -878,7 +878,12 @@ struct EntryNodeData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GqlEntryPlaylist {
-    playlist_id: Option<String>,
+    playlist: Option<GqlEntryOwner>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlEntryOwner {
+    id: String,
 }
 
 /// An entry of this playlist, by the `playlistItemID` a client was given, or `404`: one of
@@ -895,11 +900,15 @@ async fn entry_of(
     let key: i64 = entry.parse().map_err(|_| ApiError::NotFound)?;
     let id = Value::String(GlobalId::encode(PLAYLIST_ENTRY_TYPE, key));
     let query = r"
-query PlexPlaylistEntry($id: ID!) { node(id: $id) { ... on PlaylistEntry { playlistId } } }
+query PlexPlaylistEntry($id: ID!) { node(id: $id) { ... on PlaylistEntry { playlist { id } } } }
 ";
     let data: EntryNodeData =
         gql::execute(&state.schema, query, variables([("id", id.clone())])).await?;
-    match data.node.and_then(|node| node.playlist_id) {
+    match data
+        .node
+        .and_then(|node| node.playlist)
+        .map(|owner| owner.id)
+    {
         Some(owner) if owner == playlist.id => Ok(id),
         _ => Err(ApiError::NotFound),
     }

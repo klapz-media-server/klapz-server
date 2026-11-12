@@ -206,9 +206,9 @@ impl PlayQueueEntryObject {
         ID(GlobalId::encode(PLAY_QUEUE_ENTRY_TYPE, self.0.id))
     }
 
-    /// The queue this entry belongs to, as returned in `PlayQueue.id`.
-    async fn queue_id(&self) -> ID {
-        ID(GlobalId::encode(PLAY_QUEUE_TYPE, self.0.queue))
+    /// The queue this entry belongs to.
+    async fn queue(&self, context: &Context<'_>) -> Result<Option<PlayQueueObject>> {
+        queue_node(context, self.0.queue).await
     }
 
     /// Its place in the queue, from zero.
