@@ -77,8 +77,10 @@ fn write_child(out: &mut String, key: &str, value: &Value) {
             for item in items {
                 if let Value::Object(fields) = item {
                     // An item keeps the long form even with no children, as the root does:
-                    // measured on a series and a playlist with nothing inside.
-                    write_element(out, element_name(key, fields), fields, key == "Metadata");
+                    // measured on a series and a playlist with nothing inside, and on an
+                    // empty shelf.
+                    let long_form = key == "Metadata" || key == "Hub";
+                    write_element(out, element_name(key, fields), fields, long_form);
                 }
             }
         }

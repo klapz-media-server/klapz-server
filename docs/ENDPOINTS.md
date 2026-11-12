@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 6 | 2.3 % |
-| `stub` | 86 | 33.1 % |
-| `partial` | 27 | 10.4 % |
-| `done` | 102 | 39.2 % |
+| `stub` | 80 | 30.8 % |
+| `partial` | 29 | 11.2 % |
+| `done` | 106 | 40.8 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -30,7 +30,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
 | [Library](#library) | 85 | 7 | 12 | 35 | 5 | 26 |
-| [Hubs](#hubs) | 15 | 1 | 1 | 13 | 0 | 0 |
+| [Hubs](#hubs) | 15 | 5 | 3 | 7 | 0 | 0 |
 | [Content](#content) | 13 | 2 | 3 | 8 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
 | [EPG](#epg) | 13 | 13 | 0 | 0 | 0 | 0 |
@@ -73,7 +73,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `done` | `GET` | `/hubs/home/recentlyAdded` | user | What a library, or every library of a kind, added lately | `type=1` films by date added, ties by arrival; `type=2` a series library's grouped entries, at most 50; anything else empty. The spec names it only in examples. See spec-gaps.md. |
 | `done` | `GET` | `/hubs/continueWatching/items` | user | Every item of the home Continue Watching shelf | Films in progress and next episodes, newest first, with `includedAt`. See spec-gaps.md. |
 | `done` | `GET` | `/hubs/home/continueWatching` | user | What was started | Films and episodes in progress, without the next episodes. |
-| `done` | `GET` | `/hubs/home/onDeck` | user | The next episodes | The episode after the one last watched in each series, without what was started. |
+| `done` | `GET` | `/hubs/home/onDeck` | user | The next episodes | Each series' episode, in progress or the one after the last watched; no films. See spec-gaps.md. |
 | `done` | `GET` | `/hubs/sections/{sectionId}/continueWatching/items` | user | Every item of a library's Continue Watching shelf | The library's films in progress or its series' next episodes. |
 | `done` | `GET` | `/:/progress` | user | Remember where a viewing stopped | Keeps a position past a minute with no check against the end, as the reference does; an unknown item is acknowledged. Not in the spec. |
 | `partial` | `GET` | `/library/sections/{sectionId}/{filter}` | user | The choices of one filter | Genres, countries, directors, writers, starring actors, producers, years, decades, content ratings, studios and resolutions, encoded as the reference encodes each. No `None` rating. Windowed at 500. See `docs/spec-gaps.md`. |
@@ -178,14 +178,14 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/hubs` | user | Get global hubs |  |
+| `partial` | `GET` | `/hubs` | user | Get global hubs | The reference's eight shelves in its order: started, on deck, recent films and series, empty music, photos and personal videos, the caller's playlists played last. `count` and `identifier` honored; `onlyTransient` and `includeStations` tolerated. See spec-gaps.md. |
 | `done` | `GET` | `/hubs/continueWatching` | user | Get the continue watching hub | Films in progress and, for each series, the episode in progress or the one after the last watched, newest first, within 16 weeks, every copy of a work listed; `count` honored. Next-episode rules identical to the reference on 14 measured cases. See spec-gaps.md. |
 | `stub` | `GET` | `/hubs/items` | user | Get a hub's items |  |
-| `stub` | `GET` | `/hubs/metadata/{metadataId}` | user | Get hubs for a section by metadata item |  |
-| `stub` | `GET` | `/hubs/metadata/{metadataId}/postplay` | user | Get postplay hubs |  |
-| `stub` | `GET` | `/hubs/metadata/{metadataId}/related` | user | Get related hubs |  |
-| `stub` | `GET` | `/hubs/popularInLibraries` | user | Get the popular in your libraries hub |  |
-| `stub` | `GET` | `/hubs/promoted` | user | Get the hubs which are promoted |  |
+| `done` | `GET` | `/hubs/metadata/{metadataId}` | user | Get hubs for a section by metadata item | An artist's four shelves for any item, keyed by its library, empty, as the reference answers; `>` encoded in a key. `404` for an unknown item. |
+| `done` | `GET` | `/hubs/metadata/{metadataId}/postplay` | user | Get postplay hubs | After an episode its series' Continue Watching entry (`tv.upnext`), else the library's (`tv.ondeck`); after a film the next of its first collection showing it, a shelf per collection, similar films. Same shelves and next film as the reference on 199 of 200 films, the rest snapshot drift. See spec-gaps.md. |
+| `partial` | `GET` | `/hubs/metadata/{metadataId}/related` | user | Get related hubs | `/library/metadata/{id}/related`'s shelves, in a container without the media tag attributes, as on the reference. |
+| `done` | `GET` | `/hubs/popularInLibraries` | user | Get the popular in your libraries hub | `404`, as the reference answers: the shelf counts other users' plays, and no other user's reach a user's own server. See spec-gaps.md. |
+| `done` | `GET` | `/hubs/promoted` | user | Get the hubs which are promoted | Started, on deck, every shown library's recently added shelf by title, hidden ones left out, the playlists. Library shelves identical to the reference on eight libraries. |
 | `partial` | `GET` | `/hubs/sections/{sectionId}` | user | Get section hubs | Continue watching (empty: nothing can be in progress), recently added — a film library's films, a series library's new episodes grouped into their season or series (same entries in the same order as the reference on four series libraries) — and recent playlists (empty) on `includeLibraryPlaylists=1`; titles in the client's `X-Plex-Language`, from the reference's 32 catalogs. Not served: shelves needing watch state or release-date and rating sorts. |
 | `stub` | `DELETE` | `/hubs/sections/{sectionId}/manage` | admin | Reset hubs to defaults |  |
 | `stub` | `GET` | `/hubs/sections/{sectionId}/manage` | admin | Get hubs |  |

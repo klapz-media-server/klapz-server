@@ -145,6 +145,13 @@ IMPLEMENTED = frozenset(
         "/library/sections/{sectionId}/collections",
         "/library/sections/{sectionId}/collection/{collectionId}",
         "/library/metadata/{ids}/prefs",
+        # The shelves at the end of a playback, under an item, and of the home screen.
+        "/hubs",
+        "/hubs/promoted",
+        "/hubs/popularInLibraries",
+        "/hubs/metadata/{metadataId}",
+        "/hubs/metadata/{metadataId}/postplay",
+        "/hubs/metadata/{metadataId}/related",
     }
 )
 
@@ -227,7 +234,7 @@ OFF_SPEC = (
         "/hubs/home/onDeck",
         "user",
         "The next episodes",
-        "The episode after the one last watched in each series, without what was started.",
+        "Each series' episode, in progress or the one after the last watched; no films. See spec-gaps.md.",
     ),
     (
         "done",

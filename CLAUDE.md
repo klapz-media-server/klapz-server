@@ -399,6 +399,11 @@ Places where we knowingly answer differently, each decided rather than overlooke
   `type` other than `bookmark` is a `400`, as is a bookmark on a series, which the reference
   keeps.
 
+- **Nothing is popular in a user's libraries.** The reference's "Popular in Your Libraries"
+  counts the plays of the server's other users; each user's server here receives no one
+  else's, so `/hubs/popularInLibraries` answers the `404` the reference gives an empty or
+  disabled shelf, and `/hubs` leaves it out, as the reference does.
+
 ### Data model
 
 - The real Plex database is a **reference, not a schema to clone**. We use it to understand how
@@ -617,8 +622,10 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   libraries come by title with films by title and series by id, and a tag or a person exists
   for a caller only when its libraries credit it. Same order as the reference on sixteen
   pages; the library holds no biography to import (`docs/spec-gaps.md`);
-- ⬜ a series library's "more in" a genre, whose genre follows the viewer's history by a rule
-  not found yet.
+- ✅ a series library's **"more in" a genre**: drawn evenly among the first four genres heading
+  the series the viewer watched last, each series giving its first genre — the four that came
+  up, and only those, in 260 draws over three of the reference's libraries
+  (`docs/spec-gaps.md`).
 - ✅ **search by shelves**, `/hubs/search`: the seventeen shelves of the reference, items
   through `search` and people and genres through `searchTags` on the official API, one entry per
   library carrying the tag, over a word index of tag names (`tag_word`, written by
@@ -669,6 +676,15 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   lookups, listings, `/children`, `/grandchildren`, `/allLeaves` and play queues with
   `includeMarkers=1`; the bookmark routes `POST`, `PUT` and `DELETE …/marker` as measured on the
   reference's test libraries). Detection (`…/intro`, `…/credits`) stays deferred.
+- ✅ **the end of a playback, and the home screen**: `/hubs/metadata/{id}/postplay` — after an
+  episode its series' Continue Watching entry, else the library's; after a film the next of
+  the first of its collections whose shelf shows it, a shelf per collection, similar films —
+  on the official API through `Episode.upNext` and `Movie.upNext(within:)`, which names its
+  collection; the same shelves and next film as the reference on 191 and 111 of 200 films, the
+  rest snapshot drift. `/hubs` and `/hubs/promoted` with the reference's shelves, an
+  episode in progress on deck as on the reference, the playlists played last;
+  `/hubs/metadata/{id}/related` and the empty music shelves of `/hubs/metadata/{id}`;
+  `/hubs/popularInLibraries` a `404`, as on the reference.
 
 ## Reference server
 

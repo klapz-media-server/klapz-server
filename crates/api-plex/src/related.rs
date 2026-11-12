@@ -37,6 +37,7 @@ pub fn router() -> Router<PlexState> {
     Router::new()
         .route("/library/metadata/{ids}/related", get(related))
         .route("/library/metadata/{ids}/similar", get(similar))
+        .route("/hubs/metadata/{metadataId}/related", get(hub_related))
 }
 
 const DEFAULT_SHELF: u32 = 6;
@@ -146,7 +147,7 @@ impl Params {
 }
 
 /// The path takes a list, as every `/library/metadata/{ids}` does; only the first is read.
-fn rating_key(ids: &str) -> Result<i64, ApiError> {
+pub(crate) fn rating_key(ids: &str) -> Result<i64, ApiError> {
     ids.split(',')
         .next()
         .and_then(|key| key.trim().parse().ok())
@@ -165,14 +166,16 @@ fn shelf_of(
     (items, size, available > count as usize, hub_key)
 }
 
+/// Similar items name their library, on `/similar` and on every shelf of them, where a
+/// person's shelf does not: captured on both.
 fn entries(edges: &[GqlItemEdge], language: Language) -> Vec<MetadataEntry> {
     edges
         .iter()
-        .filter_map(|edge: &GqlItemEdge| MetadataEntry::from_graphql(&edge.node, false, language))
+        .filter_map(|edge: &GqlItemEdge| MetadataEntry::from_graphql(&edge.node, true, language))
         .collect()
 }
 
-fn similar_shelf(
+pub(crate) fn similar_shelf(
     item: i64,
     is_film: bool,
     edges: &[GqlItemEdge],
@@ -303,6 +306,23 @@ impl PersonShelf {
     }
 }
 
+/// The same shelves under the hub tree, in a container that leaves out the media tag
+/// attributes, as the reference's does.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HubRelatedContainer {
+    size: u32,
+    allow_sync: bool,
+    identifier: &'static str,
+    #[serde(rename = "librarySectionID")]
+    library_section_id: i64,
+    library_section_title: String,
+    #[serde(rename = "librarySectionUUID")]
+    library_section_uuid: String,
+    #[serde(rename = "Hub", skip_serializing_if = "Vec::is_empty")]
+    hub: Vec<Hub>,
+}
+
 async fn related(
     _caller: Caller,
     client: ClientIdentity,
@@ -311,9 +331,57 @@ async fn related(
     Query(params): Query<Params>,
     format: ResponseFormat,
 ) -> Result<PlexResponse<RelatedContainer>, ApiError> {
-    let item = rating_key(&ids)?;
+    let (library, hubs) = related_shelves(&state, &ids, &params, Language::of(&client)).await?;
+    Ok(PlexResponse::new(
+        RelatedContainer {
+            size: u32::try_from(hubs.len()).unwrap_or(u32::MAX),
+            allow_sync: true,
+            identifier: LIBRARY_IDENTIFIER,
+            library_section_id: library.database_id(),
+            library_section_title: library.title,
+            library_section_uuid: library.uuid,
+            media_tag_prefix: MEDIA_TAG_PREFIX,
+            media_tag_version: MEDIA_TAG_VERSION,
+            hub: hubs,
+        },
+        format,
+    ))
+}
+
+/// `GET /hubs/metadata/{id}/related`: `/library/metadata/{id}/related`'s shelves, measured
+/// identical on the reference.
+async fn hub_related(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Path(id): Path<String>,
+    Query(params): Query<Params>,
+    format: ResponseFormat,
+) -> Result<PlexResponse<HubRelatedContainer>, ApiError> {
+    let (library, hubs) = related_shelves(&state, &id, &params, Language::of(&client)).await?;
+    Ok(PlexResponse::new(
+        HubRelatedContainer {
+            size: u32::try_from(hubs.len()).unwrap_or(u32::MAX),
+            allow_sync: true,
+            identifier: LIBRARY_IDENTIFIER,
+            library_section_id: library.database_id(),
+            library_section_title: library.title,
+            library_section_uuid: library.uuid,
+            hub: hubs,
+        },
+        format,
+    ))
+}
+
+/// The item's library and its shelves.
+async fn related_shelves(
+    state: &PlexState,
+    ids: &str,
+    params: &Params,
+    language: Language,
+) -> Result<(GqlLibraryRef, Vec<Hub>), ApiError> {
+    let item = rating_key(ids)?;
     let count = params.count(DEFAULT_SHELF);
-    let language = Language::of(&client);
 
     let mut variables = Variables::default();
     variables.insert(
@@ -378,24 +446,10 @@ async fn related(
                 identifier,
                 context,
             };
-            hubs.extend(shelf.hub(&state, section, item, count, language).await?);
+            hubs.extend(shelf.hub(state, section, item, count, language).await?);
         }
     }
-
-    Ok(PlexResponse::new(
-        RelatedContainer {
-            size: u32::try_from(hubs.len()).unwrap_or(u32::MAX),
-            allow_sync: true,
-            identifier: LIBRARY_IDENTIFIER,
-            library_section_id: section,
-            library_section_title: node.library.title.clone(),
-            library_section_uuid: node.library.uuid.clone(),
-            media_tag_prefix: MEDIA_TAG_PREFIX,
-            media_tag_version: MEDIA_TAG_VERSION,
-            hub: hubs,
-        },
-        format,
-    ))
+    Ok((node.library, hubs))
 }
 
 async fn similar(

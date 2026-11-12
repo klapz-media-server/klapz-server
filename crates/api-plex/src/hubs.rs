@@ -14,13 +14,11 @@
 //! - **Top of a genre** and **top of a person**, whose genre or person is drawn among the
 //!   library's.
 //! - **Start watching**, the series not begun; **rediscover**, the series watched between
-//!   five years and six weeks ago and not finished; **top unwatched** films and **top rated**
-//!   series, rated 7 or more by their audience; **recently watched** films or episodes.
+//!   five years and six weeks ago and not finished; **more in** a genre of the series
+//!   watched last; **top unwatched** films and **top rated** series, rated 7 or more by
+//!   their audience; **recently watched** films or episodes.
 //! - **Recent playlists**, empty, when the client asks for library playlists: there are
 //!   none.
-//!
-//! Left out: a series library's "more in" a genre. Its genre is not drawn evenly — four of 45
-//! in 120 draws, all genres of series watched lately, Drama never — by a rule not found yet.
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};
@@ -178,29 +176,7 @@ async fn section_hubs(
         ));
     }
 
-    let mut items: Vec<MetadataEntry> = library
-        .recently_added
-        .edges
-        .iter()
-        .filter_map(|edge| {
-            let mut item = MetadataEntry::from_graphql(&edge.node, true, language)?;
-            // The entry's time, which for a season gathered from a batch is its newest
-            // episode's rather than the season's own.
-            item.added_at = edge.added_at;
-            Some(item)
-        })
-        .collect();
-    if params.excludes_summary() {
-        for item in &mut items {
-            item.summary = None;
-        }
-    }
-    let shelf = RecentShelf {
-        section,
-        library_title: &library.title,
-        is_film_library,
-        more: library.recently_added.page_info.has_next_page,
-    };
+    let recent = recent_shelf(&library, section, params.excludes_summary(), language);
 
     let started = continue_watching(&state, Some(section), count).await?;
     let mut hubs = vec![continue_watching_shelf(
@@ -220,7 +196,7 @@ async fn section_hubs(
             hubs.push(listing_shelf(&state, section, &spec, &params, language).await?);
         }
     }
-    hubs.push(shelf.hub(items, language));
+    hubs.push(recent);
     for source in after {
         if let Some(spec) = source.spec(&state, section, prefix, language).await? {
             hubs.push(listing_shelf(&state, section, &spec, &params, language).await?);
@@ -346,6 +322,7 @@ const SERIES_SHELVES_BEFORE: &[ShelfSource] = &[ShelfSource::Fixed(&RECENTLY_AIR
 const SERIES_SHELVES_AFTER: &[ShelfSource] = &[
     ShelfSource::Fixed(&START_WATCHING),
     ShelfSource::Fixed(&REDISCOVER),
+    ShelfSource::MoreInGenre,
     ShelfSource::Fixed(&TOP_RATED_TV),
     ShelfSource::Fixed(&RECENTLY_WATCHED_EPISODES),
 ];
@@ -359,6 +336,8 @@ enum ShelfSource {
     TopInGenre,
     /// A film library's unwatched films by one of its directors, or with one of its actors.
     TopByPerson,
+    /// A series library's unfinished series of a genre the viewer watched last.
+    MoreInGenre,
 }
 
 /// One listing shelf, worded for one library and one language.
@@ -431,8 +410,143 @@ impl ShelfSource {
                     random: true,
                 }
             }),
+            Self::MoreInGenre => recent_genre(state, section)
+                .await?
+                .map(|(id, name)| ShelfSpec {
+                    identifier: format!("tv.moreingenre.{section}"),
+                    context: "hub.tv.moreingenre",
+                    kind: "show",
+                    title: named(catalog.more_in_genre, &name),
+                    query: format!("type=2&unwatchedLeaves=1&genre={id}"),
+                    random: true,
+                }),
         })
     }
+}
+
+/// How many of the genres heading the series watched last a "more in" shelf draws from.
+const RECENT_GENRES: usize = 4;
+
+/// How far down the series watched last the genres are looked for: a viewer who watched
+/// fifty series of one genre in a row has one genre to offer.
+const RECENT_SERIES: u32 = 50;
+
+/// The genre of a series library's "more in" shelf, `(id, name)`: drawn evenly among the
+/// first four genres heading the series the viewer watched last, newest first, each series
+/// giving its first genre and a repeat giving none. None when the viewer watched nothing
+/// there.
+///
+/// Measured on 260 draws over three libraries of the reference: in each, the genres that
+/// came up were exactly those, about as often each — Comedy, Fantasy, Animation, Reality
+/// from the five series watched last in one, Comedy, Drama, Crime, Action from the seven
+/// in another, where every one of them was finished but one and the five series alone
+/// would have given three.
+async fn recent_genre(state: &PlexState, section: i64) -> Result<Option<(i64, String)>, ApiError> {
+    let mut variables = Variables::default();
+    variables.insert(
+        Name::new("id"),
+        Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
+    );
+    variables.insert(Name::new("first"), Value::Number(RECENT_SERIES.into()));
+    let data: RecentGenresData =
+        gql::execute(&state.schema, RECENT_GENRES_QUERY, variables).await?;
+    let series = data
+        .node
+        .map(|library| library.items.edges)
+        .unwrap_or_default();
+    let mut genres = heading_genres(series.into_iter().map(|edge| edge.node));
+    let Some(choice) = usize::try_from(draw("tv.moreingenre"))
+        .ok()
+        .and_then(|drawn| drawn.checked_rem(genres.len()))
+    else {
+        return Ok(None);
+    };
+    let (id, name) = genres.swap_remove(choice);
+    Ok(Some((crate::container::decode_key(&id), name)))
+}
+
+/// The first genre of each series, newest viewed first, until [`RECENT_GENRES`] distinct
+/// ones: `(id, name)`. A series never viewed ends the list, as every one after it is.
+fn heading_genres(series: impl IntoIterator<Item = RecentGenresSeries>) -> Vec<(String, String)> {
+    let mut genres: Vec<(String, String)> = Vec::new();
+    for series in series {
+        if series
+            .watch_state
+            .and_then(|state| state.last_viewed_at)
+            .is_none()
+        {
+            break;
+        }
+        let first = series
+            .tags
+            .and_then(|tags| tags.genres.edges.into_iter().next());
+        if let Some(genre) = first {
+            if !genres.iter().any(|(id, _)| *id == genre.node.id) {
+                genres.push((genre.node.id, genre.node.name));
+            }
+        }
+        if genres.len() == RECENT_GENRES {
+            break;
+        }
+    }
+    genres
+}
+
+const RECENT_GENRES_QUERY: &str = r"
+query PlexRecentGenres($id: ID!, $first: Int!) {
+  node(id: $id) {
+    ... on Library {
+      items(first: $first, filter: { kind: SHOW }, orderBy: LAST_VIEWED_AT, direction: DESCENDING) {
+        edges {
+          node {
+            watchState { lastViewedAt }
+            ... on Show {
+              tags(includeEpisodes: false) { genres(first: 1) { edges { node { id name } } } }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+";
+
+#[derive(Debug, serde::Deserialize)]
+struct RecentGenresData {
+    node: Option<RecentGenresLibrary>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RecentGenresLibrary {
+    items: RecentGenresConnection,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RecentGenresConnection {
+    edges: Vec<RecentGenresEdge>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RecentGenresEdge {
+    node: RecentGenresSeries,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecentGenresSeries {
+    watch_state: Option<RecentGenresState>,
+    tags: Option<RecentGenresTags>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecentGenresState {
+    last_viewed_at: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RecentGenresTags {
+    genres: TagAtConnection,
 }
 
 /// A number for `purpose`, fixed for the shuffle's period: what each draw and each random
@@ -624,7 +738,7 @@ async fn listing_shelf(
 }
 
 /// The library and its `count` most recently added items, as the official API groups them.
-async fn recently_added(
+pub(crate) async fn recently_added(
     state: &PlexState,
     section: i64,
     count: u32,
@@ -674,7 +788,7 @@ fn continue_watching_shelf(
 }
 
 /// The shelf's items as one lookup, `/library/metadata/1,2,3`; none for an empty shelf.
-fn lookup_key(items: &[MetadataEntry]) -> Option<String> {
+pub(crate) fn lookup_key(items: &[MetadataEntry]) -> Option<String> {
     (!items.is_empty()).then(|| {
         let keys: Vec<&str> = items.iter().map(|item| item.rating_key.as_str()).collect();
         format!("/library/metadata/{}", keys.join(","))
@@ -682,16 +796,16 @@ fn lookup_key(items: &[MetadataEntry]) -> Option<String> {
 }
 
 /// Continue Watching as the official API answers it.
-struct Started {
-    edges: Vec<GqlContinueEdge>,
-    more: bool,
+pub(crate) struct Started {
+    pub(crate) edges: Vec<GqlContinueEdge>,
+    pub(crate) more: bool,
 }
 
 impl Started {
     /// The entries, each dated by the work behind it, which for a next episode is its
     /// series': the reference shows that date on an episode never played. `includedAt`
     /// repeats it, on the home shelf only.
-    fn entries(&self, language: Language, with_inclusion: bool) -> Vec<MetadataEntry> {
+    pub(crate) fn entries(&self, language: Language, with_inclusion: bool) -> Vec<MetadataEntry> {
         self.edges
             .iter()
             .filter_map(|edge| {
@@ -704,13 +818,20 @@ impl Started {
     }
 
     /// Only the entries listed for one reason: `IN_PROGRESS` or `UP_NEXT`.
-    fn only(mut self, reason: &str) -> Self {
+    pub(crate) fn only(mut self, reason: &str) -> Self {
         self.edges.retain(|edge| edge.reason == reason);
+        self
+    }
+
+    /// Only the series' entries, started or next: what the reference calls On Deck, where an
+    /// episode in progress is listed as well as under Continue Watching.
+    pub(crate) fn episodes(mut self) -> Self {
+        self.edges.retain(|edge| edge.node.plex_type() == "episode");
         self
     }
 }
 
-async fn continue_watching(
+pub(crate) async fn continue_watching(
     state: &PlexState,
     section: Option<i64>,
     count: u32,
@@ -801,7 +922,7 @@ async fn home_in_progress(
     ))
 }
 
-/// `GET /hubs/home/onDeck`: the next episodes, without what was started.
+/// `GET /hubs/home/onDeck`: each series' episode, in progress or next, without the films.
 async fn home_up_next(
     _caller: Caller,
     client: ClientIdentity,
@@ -810,7 +931,7 @@ async fn home_up_next(
 ) -> Result<PlexResponse<HubItems>, ApiError> {
     let started = continue_watching(&state, None, LIST_COUNT)
         .await?
-        .only("UP_NEXT");
+        .episodes();
     Ok(PlexResponse::new(
         HubItems::new(started.entries(Language::of(&client), false)),
         format,
@@ -951,7 +1072,7 @@ async fn home_recently_added(
 ///
 /// A series list is read whole, its fifty entries being what the total counts; a film list
 /// by window, its total being its libraries' films.
-async fn recent_entries(
+pub(crate) async fn recent_entries(
     state: &PlexState,
     kind: &str,
     section: Option<i64>,
@@ -1006,6 +1127,37 @@ async fn recent_entries(
         edges.truncate(usize::try_from(size).unwrap_or(usize::MAX));
     }
     Ok((edges, total))
+}
+
+/// A film or series library's "recently added" shelf, from what it added last.
+pub(crate) fn recent_shelf(
+    library: &GqlRecentlyAdded,
+    section: i64,
+    without_summary: bool,
+    language: Language,
+) -> Hub {
+    let items: Vec<MetadataEntry> = library
+        .recently_added
+        .edges
+        .iter()
+        .filter_map(|edge| {
+            let mut item = MetadataEntry::from_graphql(&edge.node, true, language)?;
+            // The entry's time, which for a season gathered from a batch is its newest
+            // episode's rather than the season's own.
+            item.added_at = edge.added_at;
+            if without_summary {
+                item.summary = None;
+            }
+            Some(item)
+        })
+        .collect();
+    RecentShelf {
+        section,
+        library_title: &library.title,
+        is_film_library: library.kind == "MOVIE",
+        more: library.recently_added.page_info.has_next_page,
+    }
+    .hub(items, language)
 }
 
 /// The "recently added" shelf, in the form the library's kind calls for.
@@ -1085,6 +1237,53 @@ mod tests {
             count: count.map(ToOwned::to_owned),
             ..HubParams::default()
         }
+    }
+
+    fn series(viewed: Option<&str>, genre: Option<(&str, &str)>) -> RecentGenresSeries {
+        RecentGenresSeries {
+            watch_state: Some(RecentGenresState {
+                last_viewed_at: viewed.map(ToOwned::to_owned),
+            }),
+            tags: Some(RecentGenresTags {
+                genres: TagAtConnection {
+                    edges: genre
+                        .map(|(id, name)| TagAtEdge {
+                            node: TagAtNode {
+                                id: id.to_owned(),
+                                name: name.to_owned(),
+                            },
+                        })
+                        .into_iter()
+                        .collect(),
+                },
+            }),
+        }
+    }
+
+    #[test]
+    fn the_genres_on_offer_head_the_series_watched_last() {
+        // The reference's French UHD series library, by when each series was last viewed:
+        // its "more in" shelf drew Comédie, Drame, Crime and Action, and nothing else.
+        let viewed = Some("2026-07-07T00:00:00Z");
+        let names: Vec<String> = heading_genres([
+            series(viewed, Some(("4025", "Comédie"))),
+            series(viewed, Some(("4023", "Drame"))),
+            series(viewed, Some(("4023", "Drame"))),
+            series(viewed, Some(("198", "Crime"))),
+            series(viewed, None),
+            series(viewed, Some(("4023", "Drame"))),
+            series(viewed, Some(("38", "Action"))),
+            series(viewed, Some(("4021", "Mystère"))),
+        ])
+        .into_iter()
+        .map(|(_, name)| name)
+        .collect();
+        assert_eq!(names, ["Comédie", "Drame", "Crime", "Action"]);
+    }
+
+    #[test]
+    fn series_never_viewed_offer_no_genre() {
+        assert!(heading_genres([series(None, Some(("58", "Comedy")))]).is_empty());
     }
 
     #[test]

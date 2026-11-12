@@ -1245,6 +1245,14 @@ type Episode implements Item & Node {
 		last: Int
 	): CollectionMembershipConnection!
 	"""
+	What to play once this episode ends: its series' entry in `continueWatching`, unless
+	that entry is this episode — one still in progress, or the next of a series whose
+	state has not moved yet. Not the episode after this one: every episode of a series
+	watched up to its fourth offers its fifth. Null without a caller, and for a series
+	not played in the last sixteen weeks or with nothing left to play.
+	"""
+	upNext: Episode
+	"""
 	Identifiers this item has at external metadata providers.
 	"""
 	externalIds(
@@ -3369,6 +3377,16 @@ type Movie implements Item & Node {
 		"""
 		last: Int
 	): CollectionMembershipConnection!
+	"""
+	The film to play once this one ends: the one after it by release date in the first
+	of its collections where one follows it, watched or not. Null when none does.
+	"""
+	upNext(
+		"""
+		Count a collection only when this film is among its first this many, as a shelf showing that many does; what follows it may be past them. Every collection when absent.
+		"""
+		within: Int
+	): UpNextInCollection
 	"""
 	Identifiers this item has at external metadata providers.
 	"""
@@ -7034,6 +7052,20 @@ type Transcoder {
 	How many video transcodes are running right now.
 	"""
 	activeVideoSessions: Int!
+}
+
+"""
+The film to play once another ends, and the collection it follows that one in.
+"""
+type UpNextInCollection {
+	"""
+	The film to play next.
+	"""
+	movie: Movie!
+	"""
+	The collection it follows the film in: the first of the film's where one does.
+	"""
+	collection: Collection!
 }
 
 """

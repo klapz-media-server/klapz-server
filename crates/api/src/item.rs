@@ -329,6 +329,19 @@ impl Movie {
         crate::collection::collections_of(context, self.0.id, (after, before, first, last)).await
     }
 
+    /// The film to play once this one ends: the one after it by release date in the first
+    /// of its collections where one follows it, watched or not. Null when none does.
+    async fn up_next(
+        &self,
+        context: &Context<'_>,
+        #[graphql(
+            desc = "Count a collection only when this film is among its first this many, as a shelf showing that many does; what follows it may be past them. Every collection when absent."
+        )]
+        within: Option<u32>,
+    ) -> Result<Option<crate::collection::UpNextInCollection>> {
+        crate::collection::next_film(context, &self.0, within).await
+    }
+
     /// Identifiers this item has at external metadata providers.
     async fn external_ids(
         &self,
@@ -1042,6 +1055,17 @@ impl Episode {
         last: Option<i32>,
     ) -> Result<MembershipConnection> {
         crate::collection::collections_of(context, self.0.id, (after, before, first, last)).await
+    }
+
+    /// What to play once this episode ends: its series' entry in `continueWatching`, unless
+    /// that entry is this episode — one still in progress, or the next of a series whose
+    /// state has not moved yet. Not the episode after this one: every episode of a series
+    /// watched up to its fourth offers its fifth. Null without a caller, and for a series
+    /// not played in the last sixteen weeks or with nothing left to play.
+    async fn up_next(&self, context: &Context<'_>) -> Result<Option<Self>> {
+        Ok(crate::watch::after_episode(context, &self.0)
+            .await?
+            .map(Self))
     }
 
     /// Identifiers this item has at external metadata providers.

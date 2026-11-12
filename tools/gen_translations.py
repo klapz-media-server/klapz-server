@@ -95,6 +95,20 @@ STRINGS = {
     "sdh": "SDH",
     "descriptive": "Descriptive",
     "external": "External",
+    # The shelves at the end of a playback, the home screen's, and an item's music shelves.
+    "up_next": "Up Next",
+    "up_next_in": "Up Next in {1}",
+    "on_deck": "On Deck",
+    "collection_shelf": "Collection{1} Collection",
+    "more_in_genre": "GenreMore in {1}",
+    "recently_added_movies": "Recently Added Movies",
+    "recently_added_tv": "Recently Added TV",
+    "recently_added_music": "Recently Added Music",
+    "recently_added_photos": "Recently Added Photos",
+    "recently_added_videos": "Recently Added Videos",
+    "most_played": "Most Played",
+    "most_popular_tracks": "Most Popular Tracks",
+    "music_videos": "Music Videos",
 }
 
 

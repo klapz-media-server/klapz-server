@@ -19,6 +19,7 @@ mod filter_values;
 pub mod gql;
 pub mod gql_items;
 mod history;
+mod home;
 mod hub_search;
 pub mod hubs;
 pub mod items;
@@ -37,6 +38,7 @@ mod play_queues;
 mod playback;
 mod playlists;
 pub mod plex_tv;
+mod postplay;
 pub mod prefs;
 pub mod providers;
 mod related;
@@ -119,6 +121,8 @@ pub fn router(state: PlexState) -> Router {
         .merge(playlists::router())
         .merge(collections::router())
         .merge(related::router())
+        .merge(postplay::router())
+        .merge(home::router())
         .merge(user_state::router())
         .merge(tracks::router())
         .merge(livetv::router())

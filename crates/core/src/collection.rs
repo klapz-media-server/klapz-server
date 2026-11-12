@@ -292,6 +292,30 @@ pub enum Destination {
     After(RatingKey),
 }
 
+/// What to offer once `item` ends, from the collections it is in, each listed by release
+/// date and given in the order the item joined them: the item after it in the first where
+/// one follows it. Answers which collection, by its index, and the item.
+///
+/// With `within`, a collection counts only when the item is among its first `within`, as
+/// on a shelf showing that many; what follows it may be past them. Measured on the
+/// reference's post-play shelf, which shows six: the seventh James Bond is offered nothing
+/// from the saga that lists it seventh, but the next one from a smaller collection, and the
+/// sixth Jurassic Park offers the seventh. A film last of its first collection is followed in
+/// its second, and one watched already is offered all the same.
+pub fn next_in_collections(
+    item: RatingKey,
+    collections: &[Vec<RatingKey>],
+    within: Option<usize>,
+) -> Option<(usize, RatingKey)> {
+    collections.iter().enumerate().find_map(|(index, members)| {
+        let at = members.iter().position(|member| *member == item)?;
+        if within.is_some_and(|within| at >= within) {
+            return None;
+        }
+        Some((index, *members.get(at + 1)?))
+    })
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CollectionError {
     #[error("no collection with id {0}")]
@@ -428,6 +452,49 @@ mod tests {
         assert_eq!(
             locked.locked,
             vec![CollectionField::Title, CollectionField::TitleSort]
+        );
+    }
+
+    fn keys(ids: &[i64]) -> Vec<RatingKey> {
+        ids.iter().copied().map(RatingKey::new).collect()
+    }
+
+    #[test]
+    fn the_next_film_is_found_in_the_first_collection_that_continues() {
+        // Measured on the reference: Terminator 2 offers Terminator 3 of "Terminator - Saga",
+        // and a film last of its first collection is followed in the second.
+        let item = RatingKey::new(2);
+        assert_eq!(
+            next_in_collections(item, &[keys(&[1, 2, 3]), keys(&[2, 4])], None),
+            Some((0, RatingKey::new(3)))
+        );
+        assert_eq!(
+            next_in_collections(item, &[keys(&[1, 2]), keys(&[2, 4])], None),
+            Some((1, RatingKey::new(4)))
+        );
+        assert_eq!(
+            next_in_collections(item, &[keys(&[1, 2]), keys(&[2])], None),
+            None
+        );
+        assert_eq!(next_in_collections(item, &[], None), None);
+    }
+
+    #[test]
+    fn a_film_past_the_shelf_is_followed_in_another_collection() {
+        let item = RatingKey::new(3);
+        let collections = [keys(&[1, 2, 3, 4]), keys(&[3, 5])];
+        assert_eq!(
+            next_in_collections(item, &collections, Some(2)),
+            Some((1, RatingKey::new(5)))
+        );
+        // The last one shown is followed by one that is not.
+        assert_eq!(
+            next_in_collections(item, &collections, Some(3)),
+            Some((0, RatingKey::new(4)))
+        );
+        assert_eq!(
+            next_in_collections(item, &[keys(&[1, 2, 3, 4])], Some(2)),
+            None
         );
     }
 
