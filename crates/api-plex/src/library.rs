@@ -337,8 +337,9 @@ async fn section_items(
 ///
 /// The reference answers it as `/all?type=` the leaves' type, measured identical in items,
 /// order and totals on 92 requests over four libraries, filters and sorts included; a `type`
-/// naming anything else finds nothing, a collection's 18 included. Only the container differs: no `librarySection*`
-/// trio, no `title2`, `allowSync` off, and no `Meta` whatever `includeMeta` says.
+/// naming anything else finds nothing, a collection's 18 included. Only the container differs:
+/// no `librarySection*` trio, no `title2`, `allowSync` off, and no `Meta` whatever
+/// `includeMeta` says.
 async fn section_leaves(
     _caller: Caller,
     client: ClientIdentity,
