@@ -66,6 +66,7 @@ IMPLEMENTED = frozenset(
         "/hubs/sections/{sectionId}",
         "/activities",
         "/photo/:/transcode",
+        "/{transcodeType}/:/transcode/universal/fallback",
         "/playQueues",
         "/playQueues/{playQueueId}",
         "/playQueues/{playQueueId}/items",

@@ -4913,6 +4913,190 @@
           "possibleTypes": null
         },
         {
+          "kind": "ENUM",
+          "name": "FallBackStreamErrorCode",
+          "description": "Why a conversion was not restarted.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "SESSION_NOT_FOUND",
+              "description": "No such session playing, or nothing converting for it: it ended, expired, was\nterminated, or sends its file as it is.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NO_FALLBACK",
+              "description": "The conversion already runs the most conservative way this server has.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "FallBackStreamInput",
+          "description": "A stream whose conversion its player cannot decode.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "session",
+              "description": "The stream's session, as returned in `StartStreamPayload.session.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "FallBackStreamPayload",
+          "description": "What `fallBackStream` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "The value the input carried.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "session",
+              "description": "The session, its conversion restarted, unless it could not be.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "PlaybackSession",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why the conversion was not restarted. Empty when it was.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "FallBackStreamUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "FallBackStreamUserError",
+          "description": "A problem with what was asked, as opposed to a failure of the server.",
+          "fields": [
+            {
+              "name": "field",
+              "description": "The input field at fault, as a path from the input's root.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "message",
+              "description": "What went wrong, for a person.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "code",
+              "description": "What went wrong, for a program.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "FallBackStreamErrorCode",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "OBJECT",
           "name": "Features",
           "description": "Optional behaviours a client may ask about before offering them.\n\nEvery field is true. open-plex has no paid tier, so there is nothing to report as\nunavailable — including the features Plex reserves for a subscription, such as offline\nsync, skipping intros, loudness levelling, Live TV and hardware transcoding.",
@@ -11115,6 +11299,37 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "StopStreamPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "fallBackStream",
+              "description": "Restarts a stream's conversion the more conservative way, under the same addresses, as a\nplayer asks when it cannot decode what it receives: from hardware to software, from HEVC\nto H.264. A sign of life for the session. This server's conversions all decode in\nsoftware and encode H.264 already, so a running one answers `NO_FALLBACK`.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The stream to restart.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "FallBackStreamInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "FallBackStreamPayload",
                   "ofType": null
                 }
               },

@@ -23,6 +23,10 @@ pub enum ApiError {
     Unauthorized,
     #[error("not implemented")]
     NotImplemented,
+    /// What the reference answers a transcoder fallback it cannot make: `412`, with the body of
+    /// its `500`.
+    #[error("precondition failed")]
+    PreconditionFailed,
     #[error("internal error")]
     Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
@@ -35,7 +39,15 @@ impl ApiError {
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::NotImplemented => StatusCode::NOT_IMPLEMENTED,
+            Self::PreconditionFailed => StatusCode::PRECONDITION_FAILED,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    fn body(&self) -> String {
+        match self {
+            Self::PreconditionFailed => error_html(StatusCode::INTERNAL_SERVER_ERROR),
+            _ => error_html(self.status()),
         }
     }
 }
@@ -83,7 +95,7 @@ impl IntoResponse for ApiError {
         (
             status,
             [(header::CONTENT_TYPE, HeaderValue::from_static("text/html"))],
-            error_html(status),
+            self.body(),
         )
             .into_response()
     }

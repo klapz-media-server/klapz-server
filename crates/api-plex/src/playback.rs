@@ -15,7 +15,7 @@ use axum::body::Body;
 use axum::extract::{Path, Query, Request, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use open_plex_api::item::ITEM_TYPE;
 use open_plex_api::media::FILE_TYPE;
@@ -50,6 +50,11 @@ pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
         .route("/video/:/transcode/universal/ping", get(ping))
         .route("/video/:/transcode/universal/stop", get(stop))
         .route("/video/:/transcode/universal/subtitles", get(subtitles))
+        // Any other method is the reference's `404`, as for a path it does not serve.
+        .route(
+            "/{transcodeType}/:/transcode/universal/fallback",
+            post(fall_back).fallback(|| async { ApiError::NotFound }),
+        )
         .route(
             "/library/parts/{partId}/{changestamp}/{filename}",
             get(part_file),
@@ -787,6 +792,83 @@ async fn stop(
     data.end_playback_session
         .then_some(StatusCode::OK)
         .ok_or(ApiError::NotFound)
+}
+
+const PLAYING: &str = r"
+query PlexPlaying {
+  playbackSessions(first: 500) { edges { node { id key } } }
+}
+";
+
+const FALL_BACK: &str = r"
+mutation PlexFallBack($input: FallBackStreamInput!) {
+  fallBackStream(input: $input) { userErrors { code } }
+}
+";
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlayingData {
+    playback_sessions: PlayingSessions,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlayingSessions {
+    edges: Vec<PlayingEdge>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlayingEdge {
+    node: PlayingSession,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlayingSession {
+    id: String,
+    key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FallBackData {
+    fall_back_stream: FallBackPayload,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FallBackPayload {
+    user_errors: Vec<GqlStreamError>,
+}
+
+/// `POST /{transcodeType}/:/transcode/universal/fallback`: the official API's `fallBackStream`
+/// for the conversion `session` names, whatever kind the path says, as on the reference.
+/// `session`, not the spec's `transcodeSessionId`: no `session` is `400`, an unknown one `404`,
+/// one that cannot fall back `412`.
+async fn fall_back(
+    _caller: Caller,
+    State(state): State<PlexState>,
+    Path(kind): Path<String>,
+    Query(params): Query<SessionParams>,
+) -> Result<StatusCode, ApiError> {
+    if !matches!(kind.as_str(), "video" | "music" | "audio" | "subtitles") {
+        return Err(ApiError::NotFound);
+    }
+    let key = params.session.ok_or(ApiError::BadRequest)?;
+    let playing: PlayingData = gql::execute(&state.schema, PLAYING, Variables::default()).await?;
+    let session = playing
+        .playback_sessions
+        .edges
+        .into_iter()
+        .map(|edge| edge.node)
+        .find(|session| session.key == key)
+        .ok_or(ApiError::NotFound)?;
+    let variables = Variables::from_json(json!({ "input": { "session": session.id } }));
+    let data: FallBackData = gql::execute(&state.schema, FALL_BACK, variables).await?;
+    match data.fall_back_stream.user_errors.first() {
+        None => Ok(StatusCode::OK),
+        Some(error) if error.code == "NO_FALLBACK" => Err(ApiError::PreconditionFailed),
+        Some(_) => Err(ApiError::NotFound),
+    }
 }
 
 #[cfg(test)]

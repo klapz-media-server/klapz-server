@@ -1666,6 +1666,71 @@ type ExternalIdEdge {
 }
 
 """
+Why a conversion was not restarted.
+"""
+enum FallBackStreamErrorCode {
+	"""
+	No such session playing, or nothing converting for it: it ended, expired, was
+	terminated, or sends its file as it is.
+	"""
+	SESSION_NOT_FOUND
+	"""
+	The conversion already runs the most conservative way this server has.
+	"""
+	NO_FALLBACK
+}
+
+"""
+A stream whose conversion its player cannot decode.
+"""
+input FallBackStreamInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The stream's session, as returned in `StartStreamPayload.session.id`.
+	"""
+	session: ID!
+}
+
+"""
+What `fallBackStream` did.
+"""
+type FallBackStreamPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The session, its conversion restarted, unless it could not be.
+	"""
+	session: PlaybackSession
+	"""
+	Why the conversion was not restarted. Empty when it was.
+	"""
+	userErrors: [FallBackStreamUserError!]!
+}
+
+"""
+A problem with what was asked, as opposed to a failure of the server.
+"""
+type FallBackStreamUserError {
+	"""
+	The input field at fault, as a path from the input's root.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program.
+	"""
+	code: FallBackStreamErrorCode!
+}
+
+"""
 Optional behaviours a client may ask about before offering them.
 
 Every field is true. open-plex has no paid tier, so there is nothing to report as
@@ -3869,6 +3934,18 @@ type Mutation {
 		"""
 		input: StopStreamInput!
 	): StopStreamPayload!
+	"""
+	Restarts a stream's conversion the more conservative way, under the same addresses, as a
+	player asks when it cannot decode what it receives: from hardware to software, from HEVC
+	to H.264. A sign of life for the session. This server's conversions all decode in
+	software and encode H.264 already, so a running one answers `NO_FALLBACK`.
+	"""
+	fallBackStream(
+		"""
+		The stream to restart.
+		"""
+		input: FallBackStreamInput!
+	): FallBackStreamPayload!
 	"""
 	Records a sign of life, pushing the session's expiry forward and keeping its stream
 	running. Whether it is still playing: false once it has ended, expired or been

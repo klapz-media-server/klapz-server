@@ -466,6 +466,18 @@ impl Mutation {
         crate::stream::stop_stream(context, input).await
     }
 
+    /// Restarts a stream's conversion the more conservative way, under the same addresses, as a
+    /// player asks when it cannot decode what it receives: from hardware to software, from HEVC
+    /// to H.264. A sign of life for the session. This server's conversions all decode in
+    /// software and encode H.264 already, so a running one answers `NO_FALLBACK`.
+    async fn fall_back_stream(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The stream to restart.")] input: crate::stream::FallBackStreamInput,
+    ) -> Result<crate::stream::FallBackStreamPayload> {
+        crate::stream::fall_back_stream(context, input).await
+    }
+
     /// Records a sign of life, pushing the session's expiry forward and keeping its stream
     /// running. Whether it is still playing: false once it has ended, expired or been
     /// terminated.

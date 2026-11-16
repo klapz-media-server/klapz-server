@@ -135,6 +135,17 @@ pub enum StreamError {
     Engine(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
+/// Why a conversion was not restarted the more conservative way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum FallbackRefusal {
+    /// Nothing converts under the key: no stream, a file sent as it is, or a process gone.
+    #[error("no conversion is running under this key")]
+    NoConversion,
+    /// The conversion already runs the most conservative way the engine has.
+    #[error("this conversion has nothing to fall back to")]
+    Exhausted,
+}
+
 #[async_trait::async_trait]
 pub trait StreamEngine: Send + Sync + std::fmt::Debug {
     /// Starts a stream, or keeps the one under the same key if it produces the same thing:
@@ -147,6 +158,15 @@ pub trait StreamEngine: Send + Sync + std::fmt::Debug {
 
     /// A sign of life for the stream under `key`. Whether there is one.
     fn touch(&self, key: &str) -> bool;
+
+    /// Restarts the conversion under `key` the more conservative way, under the same
+    /// addresses: from hardware to software, from HEVC to H.264. What a player asks for when
+    /// it cannot decode what it receives.
+    ///
+    /// # Errors
+    ///
+    /// No conversion under `key`, or none more conservative than the one running.
+    fn fall_back(&self, key: &str) -> Result<(), FallbackRefusal>;
 
     /// The keys of the streams nobody has asked anything of for the engine's idle limit, and
     /// of those whose conversion is gone.
