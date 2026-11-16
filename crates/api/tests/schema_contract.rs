@@ -2470,6 +2470,7 @@ async fn nobody_reads_nothing_from_any_entry_point() {
         format!(r#"{{ nodes(ids: ["{show}", "{library}"]) {{ id }} }}"#),
         r#"{ search(query: "simpsons") { edges { node { id } } } }"#.to_owned(),
         r#"{ searchTags(query: "dan") { edges { node { itemCount tag { id } } } } }"#.to_owned(),
+        "{ tags(kind: ACTOR) { totalCount edges { node { id } } } }".to_owned(),
         "{ libraries(first: 10) { edges { node { id } } } }".to_owned(),
         "{ recentlyAdded(kind: SHOW, first: 10) { edges { node { id } } } }".to_owned(),
         "{ continueWatching(first: 10) { edges { node { id } } } }".to_owned(),
@@ -3117,4 +3118,78 @@ async fn a_rating_off_the_scale_in_the_future_or_of_nothing_is_refused() {
     )
     .await;
     assert_eq!(code(&unread), "ITEM_NOT_FOUND");
+}
+
+#[tokio::test]
+async fn tags_of_a_kind_reach_episodes_and_only_the_callers_libraries() {
+    let schema = series_with_episodes();
+    let query = "{ tags(kind: DIRECTOR) { totalCount edges { node { name kind } } } }";
+    let data = run_on(&schema, query).await;
+    // Credited on the episodes alone, and listed all the same.
+    assert_eq!(data["tags"]["totalCount"], 1);
+    assert_eq!(data["tags"]["edges"][0]["node"]["name"], "David Silverman");
+    assert_eq!(data["tags"]["edges"][0]["node"]["kind"], "DIRECTOR");
+
+    // A user given the films alone sees no tag of the series.
+    let response = schema.execute(as_user(query)).await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    let data = response.data.into_json().unwrap();
+    assert_eq!(data["tags"]["totalCount"], 0);
+    assert_eq!(data["tags"]["edges"], serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn viewers_rank_everyone_for_an_owner_and_the_caller_alone_for_a_user() {
+    let schema = watchable();
+    let viewers = |id: i64, mine: bool| {
+        format!(
+            r#"{{ node(id: "{}") {{ ... on Movie {{ viewers(mine: {mine}) {{ edges {{ node {{ viewCount }} }} }} }} ... on Show {{ viewers(mine: {mine}) {{ edges {{ node {{ viewCount }} }} }} }} }} }}"#,
+            item_id(id)
+        )
+    };
+    let counts = |data: &Value| -> Vec<u64> {
+        data["node"]["viewers"]["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|edge| edge["node"]["viewCount"].as_u64().unwrap())
+            .collect()
+    };
+    // The owner marks the season, two episodes; the user marks Soul.
+    run_on(
+        &schema,
+        &format!(
+            r#"mutation {{ markWatched(id: "{}") {{ viewCount }} }}"#,
+            item_id(577_988)
+        ),
+    )
+    .await;
+    let marked = schema
+        .execute(as_user(&format!(
+            r#"mutation {{ markWatched(id: "{}") {{ viewCount }} }}"#,
+            item_id(577_986)
+        )))
+        .await;
+    assert!(marked.errors.is_empty(), "{:?}", marked.errors);
+
+    // The series counts its episodes; the owner sees the user's viewing of Soul.
+    assert_eq!(
+        counts(&run_on(&schema, &viewers(577_987, false)).await),
+        [2]
+    );
+    assert_eq!(
+        counts(&run_on(&schema, &viewers(577_986, false)).await),
+        [1]
+    );
+    assert!(counts(&run_on(&schema, &viewers(577_986, true)).await).is_empty());
+
+    let as_viewer = |query: String| {
+        let schema = schema.clone();
+        async move {
+            let response = schema.execute(as_user(&query)).await;
+            assert!(response.errors.is_empty(), "{:?}", response.errors);
+            response.data.into_json().unwrap()
+        }
+    };
+    assert_eq!(counts(&as_viewer(viewers(577_986, false)).await), [1]);
 }

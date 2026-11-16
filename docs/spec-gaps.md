@@ -682,6 +682,87 @@ the three library attributes after `titleSort`; what differs is what differs on 
 artwork, `Image` or `UltraBlurColors`, the part `key` without its timestamp) and the watch
 state of another account.
 
+### Every tag of a kind, `/library/tags`
+
+`GET /library/tags?type={n}` lists every tag of one Plex tag type the server holds, across
+libraries. Measured on the reference for every `type` from −1 to 64, 256 to 267 and 300 to 320,
+and 999:
+
+| Request | Reference | Here |
+| --- | --- | --- |
+| `type` absent, empty, `abc`, `8.5`, ` 8` (`+8` in a URL), `8x`, `99999999999` (past 32 bits), or `TYPE=8` | `400` | Same |
+| `type=08` | Read as 8 | Same |
+| `type=1&type=8` | The last one wins | Same |
+| A number naming no tag (`0`, `3`, `13`…`41`, `999`, `-1`) | `200`, `size="0"`, no `Directory` | Same, for every number but the six below and `2` |
+| `1` genre, `4` director, `5` writer, `6` actor, `7` producer, `8` country | Every tag of the type, **in id order** | Same, every tag an item of the caller's libraries carries |
+| `2` collection | 1,480 collection tags, some with `guid`, `summary`, `thumb`, `art` | `501`: a collection is an item here and has no tag |
+| `10`, `11` label, `12`, `42` optimizer targets (a `Tag` element with `MediaSettings` and `Device`, which Plex Web reads), `305`, `312`–`319` | The reference's internal tags: critics, labels, similar items, guids, rating images, networks… | Empty: nothing is kept as a tag of those kinds |
+| `sectionID`, `librarySectionID`, `section`, `sort`, `tag` | Ignored | Same |
+| Both container parameters | `totalSize`, `offset` and the two headers | Same |
+| One container parameter alone | Ignored | Same |
+
+The container holds `size`, `identifier`, `mediaTagPrefix` and `mediaTagVersion`, and one
+`Directory` per tag: `id`, `filter` (`director=162`), `tag`, `tagType`, then `tagKey` and `thumb`
+when the provider knows the person — the attributes of a person page, in that order.
+
+**A tag's name has its first letter capitalized when it is ASCII**, on every surface measured:
+the 31 tags of types 1 to 8 the source stores in lower case (`loundraw`, `deadmau5`, `dL Sams`,
+`iiTzTimmy`) come out as `Loundraw`, `Deadmau5`, `DL Sams`, `IiTzTimmy` here, on a person page
+and in a lookup alike, as a character's name does in `role`. The adapter now capitalizes tag
+names in lookups, listings, person pages and this list; no source tag starts with a lower-case
+letter outside ASCII, so that case is the character rule's, unmeasured for tags.
+
+**Implemented** on the official API as `tags(kind:)`: every tag of a kind carried by an item of
+the caller's libraries — a film, a series, a season or an episode, hidden libraries included —
+in the order the tags were recorded, with `totalCount`. Asked tag by tag whether something in
+the libraries carries it (the `(tag_id, item_id)` index), which pages the 240,346 actors in
+0.7 s on a debug build, where gathering every item first took four seconds a page.
+
+Deviations of ours. **A tag nothing carries is left out**, and so is one only libraries the
+caller cannot read carry; the reference lists every row of its `tags` table — 42 actors, one
+producer and 4 collections of the snapshot carry nothing. **The list is capped at 500** a page,
+as `/all` is, where the reference sends all 247,067 actors in one answer; an answer cut by the
+cap carries `totalSize` and `offset`, a whole one is the reference's attribute for attribute. A
+person has one portrait (see *Tags on an item*).
+
+Against the live reference, types 1, 4, 5, 7 and 8 whole and the first 20,000 actors: of
+72,160 tags listed, 70,822 identical, 1,066 differing by `thumb` alone (one portrait per person,
+and portraits the live server refreshed), one renamed since the snapshot, and 271 the live
+server no longer has; it holds 893 directors, writers and producers that the snapshot
+imported here does not. Genres and countries identical, 55 and 116 of 116.
+
+### Who watched an item, `/library/metadata/{id}/users/top`
+
+**The reference answers `404`** on every item tried: films, series, seasons and episodes, in
+the test libraries 27 and 28 (Soul, with viewings in its history; Bull) and in the main ones (the films and
+series its history counts most, watched by up to 76 accounts), with or without container
+parameters, in JSON and XML, and for a comma list or an unknown id. `PUT`, `POST` and `DELETE`
+are `404` too. The route is in its binary, beside `/related` and `/children`, with its query:
+
+```sql
+select account_id, count(*) as cnt from metadata_item_views
+join metadata_items on metadata_items.guid=metadata_item_views.{guid|parent_guid|grandparent_guid}
+where metadata_items.id=? group by account_id order by cnt desc
+```
+
+and the spec's `Account` with `id` and `globalViewCount`. So it counts the viewings of the
+work, every copy alike, a season's and a series' through their episodes, per account, most
+first. Whatever makes it refuse every video item could not be found; the server has no music
+library to try, and creating one is not ours to do on the reference.
+
+**Implemented** on the official API as `viewers` on films, series, seasons and episodes:
+`WorkViewer` nodes, each a `user` (null once deleted) and its `viewCount`, most viewings first
+then by user, over every copy of the work in the libraries the caller can read and, for a
+series or a season, the episodes below them. An owner sees every user, `mine: true` itself
+alone; a user only itself, as it reads only its own history.
+
+**A deviation of ours**: the Plex surface answers the spec's shape rather than `404`. Each user
+has a server of its own here, whose history is its own and published as `accountID` 1, so the
+list holds at most that account: `{"size":1,"Account":[{"id":1,"globalViewCount":3}]}`, or
+`size="0"` and no `Account` when the caller watched nothing of it. An unknown id, one the caller
+cannot read, a comma list or a non-number is a `404`. Any caller, not only an owner: on its own
+server every user is the owner the spec asks for.
+
 ### A library's shelves
 
 `GET /hubs/sections/{id}` answers up to eight shelves on the reference. Measured on a film

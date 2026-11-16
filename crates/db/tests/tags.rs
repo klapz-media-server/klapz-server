@@ -620,6 +620,55 @@ async fn lists_a_librarys_genres_once_each_by_name() {
 }
 
 #[tokio::test]
+async fn every_librarys_tags_list_in_the_order_they_were_recorded() {
+    let repository = repository().await;
+    let everywhere = [SectionId::new(FILMS), SectionId::new(SERIES)];
+    let ids = |page: &open_plex_core::Page<open_plex_core::Tag>| -> Vec<i64> {
+        page.items.iter().map(|tag| tag.id.get()).collect()
+    };
+
+    let actors = repository
+        .tags_in_libraries(&everywhere, TagKind::Actor, first(10))
+        .await
+        .unwrap();
+    assert_eq!(ids(&actors), [STATHAM, CASTELLANETA, STATHAM_HOMONYM]);
+    assert!(actors.items[0].person.is_some());
+    assert_eq!(
+        repository
+            .tag_count_in_libraries(&everywhere, TagKind::Actor)
+            .await
+            .unwrap(),
+        3
+    );
+
+    // Credited on an episode alone, and listed: every depth counts.
+    let directors = repository
+        .tags_in_libraries(&everywhere, TagKind::Director, first(10))
+        .await
+        .unwrap();
+    assert_eq!(ids(&directors), [SILVERMAN]);
+    let films_only = repository
+        .tags_in_libraries(&[SectionId::new(FILMS)], TagKind::Director, first(10))
+        .await
+        .unwrap();
+    assert!(films_only.items.is_empty());
+
+    let after = Window::new(Some(actors.items[0].recorded_cursor()), None, Some(1), None).unwrap();
+    let next = repository
+        .tags_in_libraries(&everywhere, TagKind::Actor, after)
+        .await
+        .unwrap();
+    assert_eq!(ids(&next), [CASTELLANETA]);
+    assert!(next.has_next);
+    let before = Window::new(None, Some(next.items[0].recorded_cursor()), None, Some(5)).unwrap();
+    let back = repository
+        .tags_in_libraries(&everywhere, TagKind::Actor, before)
+        .await
+        .unwrap();
+    assert_eq!(ids(&back), [STATHAM]);
+}
+
+#[tokio::test]
 async fn a_billing_limit_keeps_only_the_first_credits() {
     let repository = repository().await;
     // The Transporter bills Action, Crime, Thriller in that order.

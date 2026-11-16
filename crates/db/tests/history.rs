@@ -7,7 +7,7 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use open_plex_core::history::{
-    HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, NewViewing, ViewingKind,
+    HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, NewViewing, ViewerCount, ViewingKind,
 };
 use open_plex_core::page::{Direction, Window};
 use open_plex_core::watch::{WatchRepository, WatchState};
@@ -320,4 +320,72 @@ async fn deleting_an_entry_leaves_the_state_and_an_entry_goes_with_its_item() {
         .unwrap();
     let everyone = items(&repository, &HistoryQuery::of(HistoryScope::Everyone)).await;
     assert_eq!(everyone, vec![EPISODE_1, EPISODE_2, EPISODE_1]);
+}
+
+fn ranking(page: &open_plex_core::Page<ViewerCount>) -> Vec<(i64, u64)> {
+    page.items
+        .iter()
+        .map(|count| (count.viewer.get(), count.viewings))
+        .collect()
+}
+
+#[tokio::test]
+async fn ranks_viewers_by_viewings_counting_a_series_episodes() {
+    let (repository, _) = repository().await;
+    watch(&repository).await;
+    let page = |items: Vec<i64>, scope| {
+        let items: Vec<RatingKey> = items.into_iter().map(RatingKey::new).collect();
+        let repository = &repository;
+        async move { repository.viewers(&items, scope, first(10)).await.unwrap() }
+    };
+
+    // Soul: one viewing each, ties by user.
+    let soul = page(vec![SOUL], HistoryScope::Everyone).await;
+    assert_eq!(ranking(&soul), [(1, 1), (7, 1)]);
+    // The series and its season count the episodes' three viewings; an episode its own.
+    for parent in [SHOW, SEASON] {
+        assert_eq!(
+            ranking(&page(vec![parent], HistoryScope::Everyone).await),
+            [(1, 3)]
+        );
+    }
+    assert_eq!(
+        ranking(&page(vec![EPISODE_1], HistoryScope::Everyone).await),
+        [(1, 2)]
+    );
+    // Several copies add up, and a scope keeps one viewer.
+    let both = page(vec![SOUL, SHOW], HistoryScope::Everyone).await;
+    assert_eq!(ranking(&both), [(1, 4), (7, 1)]);
+    let theirs = page(vec![SOUL, SHOW], HistoryScope::Viewer(UserId::new(7))).await;
+    assert_eq!(ranking(&theirs), [(7, 1)]);
+    assert!(page(vec![SOUL], HistoryScope::Viewer(UserId::new(2)))
+        .await
+        .items
+        .is_empty());
+}
+
+#[tokio::test]
+async fn a_ranking_resumes_after_a_cursor_in_either_direction() {
+    let (repository, _) = repository().await;
+    watch(&repository).await;
+    let items = [RatingKey::new(SOUL), RatingKey::new(SHOW)];
+    let head = repository
+        .viewers(&items, HistoryScope::Everyone, first(1))
+        .await
+        .unwrap();
+    assert_eq!(ranking(&head), [(1, 4)]);
+    assert!(head.has_next);
+    let after = Window::new(Some(head.items[0].cursor()), None, Some(5), None).unwrap();
+    let tail = repository
+        .viewers(&items, HistoryScope::Everyone, after)
+        .await
+        .unwrap();
+    assert_eq!(ranking(&tail), [(7, 1)]);
+    assert!(!tail.has_next);
+    let before = Window::new(None, Some(tail.items[0].cursor()), None, Some(5)).unwrap();
+    let back = repository
+        .viewers(&items, HistoryScope::Everyone, before)
+        .await
+        .unwrap();
+    assert_eq!(ranking(&back), [(1, 4)]);
 }

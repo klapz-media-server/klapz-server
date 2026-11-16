@@ -8,6 +8,9 @@
 //! Measured on the reference: the listing holds what was played to the end (`viewType` 0)
 //! unless `type=1` asks for what was marked watched; entries come in the order written;
 //! the item's keys are on a listing and not on a lookup.
+//!
+//! `/library/metadata/{id}/users/top` ranks the accounts that watched an item, which on a
+//! server of one's own is the caller alone, as `accountID` 1, over `viewers(mine: true)`.
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};
@@ -33,6 +36,7 @@ pub fn router() -> Router<PlexState> {
             "/status/sessions/history/{history_id}",
             get(entry).delete(delete_entry),
         )
+        .route("/library/metadata/{ids}/users/top", get(top_users))
 }
 
 const ENTRY_FIELDS: &str = r"
@@ -83,6 +87,17 @@ query PlexHistoryItem($id: ID!) { node(id: $id) { id } }
 const DELETE: &str = r"
 mutation PlexDeleteHistoryEntry($input: DeleteHistoryEntryInput!) {
   deleteHistoryEntry(input: $input) { deletedEntryId }
+}
+";
+
+const TOP_USERS: &str = r"
+query PlexTopUsers($id: ID!) {
+  node(id: $id) {
+    ... on Movie { viewers(mine: true) { edges { node { viewCount } } } }
+    ... on Show { viewers(mine: true) { edges { node { viewCount } } } }
+    ... on Season { viewers(mine: true) { edges { node { viewCount } } } }
+    ... on Episode { viewers(mine: true) { edges { node { viewCount } } } }
+  }
 }
 ";
 
@@ -482,6 +497,81 @@ async fn entry(
     let body = EntryContainer {
         size: 1,
         metadata: vec![entry],
+    };
+    Ok(PlexResponse::new(body, format))
+}
+
+#[derive(Debug, Deserialize)]
+struct TopUsersData {
+    node: Option<GqlViewed>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlViewed {
+    viewers: Option<GqlViewers>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlViewers {
+    edges: Vec<GqlViewerEdge>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlViewerEdge {
+    node: GqlViewer,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlViewer {
+    view_count: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TopUsersContainer {
+    size: u32,
+    #[serde(rename = "Account", skip_serializing_if = "Vec::is_empty")]
+    account: Vec<TopAccount>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TopAccount {
+    id: i64,
+    global_view_count: u64,
+}
+
+/// `GET /library/metadata/{id}/users/top`: the caller's viewings of the work, as the only
+/// account of its server, or an empty container when it watched none. One item only, as
+/// the reference's query takes one; anything else is unknown.
+async fn top_users(
+    _caller: Caller,
+    State(state): State<PlexState>,
+    Path(ids): Path<String>,
+    format: ResponseFormat,
+) -> Result<PlexResponse<TopUsersContainer>, ApiError> {
+    let id: i64 = ids.parse().map_err(|_| ApiError::NotFound)?;
+    let mut variables = Variables::default();
+    variables.insert(
+        Name::new("id"),
+        Value::String(GlobalId::encode(ITEM_TYPE, id)),
+    );
+    let data: TopUsersData = gql::execute(&state.schema, TOP_USERS, variables).await?;
+    let viewers = data
+        .node
+        .and_then(|item| item.viewers)
+        .ok_or(ApiError::NotFound)?;
+    let account: Vec<TopAccount> = viewers
+        .edges
+        .into_iter()
+        .map(|edge| TopAccount {
+            id: OWNER_ACCOUNT,
+            global_view_count: edge.node.view_count,
+        })
+        .collect();
+    let body = TopUsersContainer {
+        size: u32::try_from(account.len()).unwrap_or(u32::MAX),
+        account,
     };
     Ok(PlexResponse::new(body, format))
 }

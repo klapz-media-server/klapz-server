@@ -56,6 +56,7 @@ pub mod sessions;
 mod stream_labels;
 pub mod stubs;
 mod subtitles;
+mod tags;
 mod timeline;
 mod tracks;
 pub mod translations;
@@ -139,6 +140,7 @@ pub fn router(state: PlexState) -> Router {
         .merge(livetv::router())
         .merge(music::router())
         .merge(people::router())
+        .merge(tags::router())
         .merge(markers::router())
         .merge(extras::router())
         .merge(ultrablur::router())

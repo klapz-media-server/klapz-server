@@ -215,6 +215,24 @@ impl Movie {
         crate::user_rating::rating_of(context, &self.0.guid).await
     }
 
+    /// Who watched the work, most viewings first, then by user: an owner sees every user,
+    /// a user only itself. Counts every copy the caller can read and, for a series or a
+    /// season, the episodes below them.
+    async fn viewers(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Only the caller, which for an owner leaves out everyone else.")]
+        mine: Option<bool>,
+        #[graphql(desc = "Return viewers after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return viewers before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many viewers from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many viewers from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<crate::history::WorkViewerConnection> {
+        crate::history::viewers_of(context, &self.0, mine, (after, before, first, last)).await
+    }
+
     /// The fields an editor locked, which a metadata refresh leaves as they are.
     pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
         crate::edit::locked_fields_of(context, self.0.id).await
@@ -476,6 +494,24 @@ impl Show {
     /// rated it, and without a caller.
     pub async fn user_rating(&self, context: &Context<'_>) -> Result<Option<UserRatingObject>> {
         crate::user_rating::rating_of(context, &self.0.guid).await
+    }
+
+    /// Who watched the work, most viewings first, then by user: an owner sees every user,
+    /// a user only itself. Counts every copy the caller can read and, for a series or a
+    /// season, the episodes below them.
+    async fn viewers(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Only the caller, which for an owner leaves out everyone else.")]
+        mine: Option<bool>,
+        #[graphql(desc = "Return viewers after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return viewers before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many viewers from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many viewers from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<crate::history::WorkViewerConnection> {
+        crate::history::viewers_of(context, &self.0, mine, (after, before, first, last)).await
     }
 
     /// The fields an editor locked, which a metadata refresh leaves as they are.
@@ -797,6 +833,24 @@ impl Season {
         crate::user_rating::rating_of(context, &self.0.guid).await
     }
 
+    /// Who watched the work, most viewings first, then by user: an owner sees every user,
+    /// a user only itself. Counts every copy the caller can read and, for a series or a
+    /// season, the episodes below them.
+    async fn viewers(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Only the caller, which for an owner leaves out everyone else.")]
+        mine: Option<bool>,
+        #[graphql(desc = "Return viewers after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return viewers before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many viewers from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many viewers from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<crate::history::WorkViewerConnection> {
+        crate::history::viewers_of(context, &self.0, mine, (after, before, first, last)).await
+    }
+
     /// The fields an editor locked, which a metadata refresh leaves as they are.
     pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
         crate::edit::locked_fields_of(context, self.0.id).await
@@ -1030,6 +1084,24 @@ impl Episode {
     /// rated it, and without a caller.
     pub async fn user_rating(&self, context: &Context<'_>) -> Result<Option<UserRatingObject>> {
         crate::user_rating::rating_of(context, &self.0.guid).await
+    }
+
+    /// Who watched the work, most viewings first, then by user: an owner sees every user,
+    /// a user only itself. Counts every copy the caller can read and, for a series or a
+    /// season, the episodes below them.
+    async fn viewers(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Only the caller, which for an owner leaves out everyone else.")]
+        mine: Option<bool>,
+        #[graphql(desc = "Return viewers after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return viewers before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many viewers from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many viewers from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<crate::history::WorkViewerConnection> {
+        crate::history::viewers_of(context, &self.0, mine, (after, before, first, last)).await
     }
 
     /// The fields an editor locked, which a metadata refresh leaves as they are.

@@ -476,7 +476,7 @@ impl TagEntry {
         Self {
             id,
             filter: id.map(|id| format!("{field}={id}")),
-            tag: tag.name.clone(),
+            tag: capitalized(&tag.name),
             tag_key: tag
                 .person
                 .as_ref()
@@ -495,9 +495,7 @@ impl TagEntry {
     pub(crate) fn from_cast_member(member: &GqlEdge<GqlTag>) -> Self {
         let mut entry = Self::from_graphql(&member.node, "actor", None);
         if entry.id.is_some() {
-            entry.role = Some(credited_character(
-                member.character.as_deref().unwrap_or(""),
-            ));
+            entry.role = Some(capitalized(member.character.as_deref().unwrap_or("")));
         }
         entry
     }
@@ -1217,13 +1215,15 @@ impl StreamEntry {
     }
 }
 
-/// A character's name as the reference publishes it: the first letter capitalized when it is
-/// ASCII, everything else untouched.
+/// A tag's name or a character's as the reference publishes it: the first letter capitalized
+/// when it is ASCII, everything else untouched.
 ///
-/// Measured on 25 credits the source stores in lower case, all capitalized on the way out —
-/// `actor` becomes `Actor` — while `čarodějobijec`, `министр` and `(uncredited)` come back as
-/// stored. The official API keeps the source text; this is presentation.
-fn credited_character(stored: &str) -> String {
+/// Measured on 25 characters the source stores in lower case, all capitalized on the way
+/// out — `actor` becomes `Actor` — while `čarodějobijec`, `министр` and `(uncredited)` come
+/// back as stored; and on the 31 tags of `/library/tags` stored in lower case (`loundraw`,
+/// `deadmau5`, `dL Sams`), which lookups and person pages capitalize alike. The official API
+/// keeps the source text; this is presentation.
+pub(crate) fn capitalized(stored: &str) -> String {
     let mut characters = stored.chars();
     match characters.next() {
         Some(first) if first.is_ascii_lowercase() => {
@@ -1346,13 +1346,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_characters_ascii_first_letter_is_capitalized_and_nothing_else() {
-        assert_eq!(credited_character("actor"), "Actor");
-        assert_eq!(credited_character("self - host"), "Self - host");
-        assert_eq!(credited_character("Frank Martin"), "Frank Martin");
-        assert_eq!(credited_character("čarodějobijec"), "čarodějobijec");
-        assert_eq!(credited_character("(uncredited)"), "(uncredited)");
-        assert_eq!(credited_character(""), "");
+    fn an_ascii_first_letter_is_capitalized_and_nothing_else() {
+        assert_eq!(capitalized("actor"), "Actor");
+        assert_eq!(capitalized("self - host"), "Self - host");
+        assert_eq!(capitalized("Frank Martin"), "Frank Martin");
+        assert_eq!(capitalized("čarodějobijec"), "čarodějobijec");
+        assert_eq!(capitalized("(uncredited)"), "(uncredited)");
+        assert_eq!(capitalized(""), "");
     }
 
     #[test]

@@ -419,6 +419,12 @@ impl Tag {
     pub fn name_cursor(&self) -> Cursor {
         Cursor::new(CursorKey::Text(self.name.clone()), self.id.get())
     }
+
+    /// The position of this tag in a list in the order tags were recorded, which is their
+    /// ids'.
+    pub const fn recorded_cursor(&self) -> Cursor {
+        Cursor::by_id(self.id.get())
+    }
 }
 
 /// A tag as attached to one item.
@@ -1142,6 +1148,26 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
     /// How many distinct tags [`MetadataRepository::tags_in`] would list.
     async fn tag_count_in(&self, query: &ItemQuery, scope: TagScope) -> Result<u64, MetadataError>;
 
+    /// One page of the tags of one kind carried by any item of these libraries, at any
+    /// depth, in the order they were recorded.
+    ///
+    /// Apart from [`MetadataRepository::tags_in`] because it spans whole libraries: asked
+    /// tag by tag whether something there carries it, the 240,000 actors of the reference
+    /// library page in milliseconds, where gathering every item first takes a second.
+    async fn tags_in_libraries(
+        &self,
+        sections: &[crate::ids::SectionId],
+        kind: TagKind,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError>;
+
+    /// How many tags [`MetadataRepository::tags_in_libraries`] would list.
+    async fn tag_count_in_libraries(
+        &self,
+        sections: &[crate::ids::SectionId],
+        kind: TagKind,
+    ) -> Result<u64, MetadataError>;
+
     /// One page of the distinct values a query's items hold in a field, absent ones left out.
     async fn values_in(
         &self,
@@ -1439,6 +1465,23 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
 
     async fn tag_count_in(&self, query: &ItemQuery, scope: TagScope) -> Result<u64, MetadataError> {
         (**self).tag_count_in(query, scope).await
+    }
+
+    async fn tags_in_libraries(
+        &self,
+        sections: &[crate::ids::SectionId],
+        kind: TagKind,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError> {
+        (**self).tags_in_libraries(sections, kind, window).await
+    }
+
+    async fn tag_count_in_libraries(
+        &self,
+        sections: &[crate::ids::SectionId],
+        kind: TagKind,
+    ) -> Result<u64, MetadataError> {
+        (**self).tag_count_in_libraries(sections, kind).await
     }
 
     async fn values_in(

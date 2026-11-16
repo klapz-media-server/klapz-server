@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use open_plex_core::history::{
-    HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, NewViewing, ViewingKind,
+    HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, NewViewing, ViewerCount, ViewingKind,
 };
 use open_plex_core::page::{Cursor, CursorKey, Page, Window};
 use open_plex_core::tracks::{SubtitleChoice, TrackChoice};
@@ -153,6 +153,73 @@ impl WatchRepository for SqlWatchRepository {
             .await
             .map_err(storage)?;
         Ok(deleted.rows_affected > 0)
+    }
+
+    async fn viewers(
+        &self,
+        items: &[RatingKey],
+        scope: HistoryScope,
+        window: Window,
+    ) -> Result<Page<ViewerCount>, WatchError> {
+        let viewer = || Expr::col((viewing_history::Entity, viewing_history::Column::Viewer));
+        let viewings = || Expr::col((viewing_history::Entity, viewing_history::Column::Id)).count();
+        let mut select = joined_history()
+            .select_only()
+            .column_as(viewer(), "viewer")
+            .column_as(viewings(), "viewings")
+            .filter(below_any(items));
+        if let HistoryScope::Viewer(only) = scope {
+            select = select.filter(viewing_history::Column::Viewer.eq(only.get()));
+        }
+        select = select.group_by(viewer());
+        // Most viewings first, then by user: "after" a cursor is fewer, or as many by a
+        // later user.
+        for (cursor, after) in [(&window.after, true), (&window.before, false)] {
+            let Some(cursor) = cursor else { continue };
+            let Some(CursorKey::Int(count)) = cursor.keys.first() else {
+                continue;
+            };
+            let (fewer, later) = if after {
+                (
+                    Expr::expr(viewings()).lt(*count),
+                    Expr::expr(viewer()).gt(cursor.id),
+                )
+            } else {
+                (
+                    Expr::expr(viewings()).gt(*count),
+                    Expr::expr(viewer()).lt(cursor.id),
+                )
+            };
+            select = select.having(
+                Condition::any().add(fewer).add(
+                    Condition::all()
+                        .add(Expr::expr(viewings()).eq(*count))
+                        .add(later),
+                ),
+            );
+        }
+        let (most, first_user) = if window.is_reversed() {
+            (Order::Asc, Order::Desc)
+        } else {
+            (Order::Desc, Order::Asc)
+        };
+        let rows: Vec<ViewerRow> = select
+            .order_by(viewings(), most)
+            .order_by(viewer(), first_user)
+            .offset(window.skip)
+            .limit(window.fetch_limit())
+            .into_model()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        let mut page = Page::from_overfetch(rows, &window).map(|row| ViewerCount {
+            viewer: UserId::new(row.viewer),
+            viewings: u64::try_from(row.viewings).unwrap_or(0),
+        });
+        if window.is_reversed() {
+            page.items.reverse();
+        }
+        Ok(page)
     }
 
     async fn watched_leaves(
@@ -602,25 +669,35 @@ fn joined_history() -> Select<viewing_history::Entity> {
         )
 }
 
+#[derive(Debug, FromQueryResult)]
+struct ViewerRow {
+    viewer: i64,
+    viewings: i64,
+}
+
+/// The entries of these items and of the episodes below them: a season's episodes are its
+/// children, a series' its grandchildren.
+fn below_any(items: &[RatingKey]) -> Condition {
+    let ids = || items.iter().map(|item| item.get());
+    let parent = || Expr::col((metadata_item::Entity, metadata_item::Column::ParentId));
+    let seasons = Query::select()
+        .column(metadata_item::Column::Id)
+        .from(metadata_item::Entity)
+        .and_where(metadata_item::Column::ParentId.is_in(ids()))
+        .to_owned();
+    Condition::any()
+        .add(viewing_history::Column::ItemId.is_in(ids()))
+        .add(parent().is_in(ids()))
+        .add(parent().in_subquery(seasons))
+}
+
 fn history_select(query: &HistoryQuery) -> Select<viewing_history::Entity> {
     let mut select = joined_history();
     if let HistoryScope::Viewer(viewer) = query.scope {
         select = select.filter(viewing_history::Column::Viewer.eq(viewer.get()));
     }
-    if let Some(item) = query.item.map(RatingKey::get) {
-        let parent = || Expr::col((metadata_item::Entity, metadata_item::Column::ParentId));
-        // A season's episodes are its children, a series' its grandchildren.
-        let seasons = Query::select()
-            .column(metadata_item::Column::Id)
-            .from(metadata_item::Entity)
-            .and_where(metadata_item::Column::ParentId.eq(item))
-            .to_owned();
-        select = select.filter(
-            Condition::any()
-                .add(viewing_history::Column::ItemId.eq(item))
-                .add(parent().eq(item))
-                .add(parent().in_subquery(seasons)),
-        );
+    if let Some(item) = query.item {
+        select = select.filter(below_any(&[item]));
     }
     if let Some(sections) = &query.sections {
         select = select.filter(

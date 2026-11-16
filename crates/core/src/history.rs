@@ -130,6 +130,27 @@ impl HistoryQuery {
     }
 }
 
+/// How many viewings one viewer has of a work.
+///
+/// What the reference's `/library/metadata/{id}/users/top` ranks, read from its binary: the
+/// viewings of every copy of the work, and of the episodes below it for a series or a season,
+/// counted per account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewerCount {
+    pub viewer: UserId,
+    pub viewings: u64,
+}
+
+impl ViewerCount {
+    /// Where this count stands in a ranking: most viewings first, then by user.
+    pub fn cursor(&self) -> Cursor {
+        Cursor::new(
+            CursorKey::Int(i64::try_from(self.viewings).unwrap_or(i64::MAX)),
+            self.viewer.get(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

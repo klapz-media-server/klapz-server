@@ -129,6 +129,9 @@ IMPLEMENTED = frozenset(
         # A tag and what carries it (`people.rs`).
         "/library/people/{personId}",
         "/library/people/{personId}/media",
+        # Every tag of a kind (`tags.rs`), and who watched an item (`history.rs`).
+        "/library/tags",
+        "/library/metadata/{ids}/users/top",
         # Playlists (`playlists.rs`), the optimizer's generator routes included.
         "/playlists",
         "/playlists/upload",

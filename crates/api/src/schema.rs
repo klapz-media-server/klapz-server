@@ -361,6 +361,30 @@ impl Query {
         crate::search::credited(context, query, kind, first).await
     }
 
+    /// Every tag of one kind that an item of the caller's libraries carries — a film, a
+    /// series, a season or an episode, hidden libraries included — in the order the tags
+    /// were first recorded. A tag nothing carries any more is left out, and so is one only
+    /// libraries the caller cannot read carry.
+    #[allow(clippy::too_many_arguments)]
+    async fn tags(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Which kind of tag to list.")] kind: crate::tag::TagType,
+        #[graphql(desc = "Return tags after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return tags before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many tags from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many tags from the end of the range.")] last: Option<
+            i32,
+        >,
+        #[graphql(
+            desc = "Discard this many tags before the page begins. Prefer cursors: an offset costs a traversal of every discarded row."
+        )]
+        offset: Option<u32>,
+    ) -> Result<crate::tag::TagListConnection> {
+        crate::tag::tags_of_kind(context, kind, (after, before, first, last), offset).await
+    }
+
     /// Genres and people whose name matches a search term, once per library carrying them.
     ///
     /// Matches as `search` does: every word of the term begins a word of the name, accents

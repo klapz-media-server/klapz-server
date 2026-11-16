@@ -12,7 +12,9 @@
 
 use std::collections::HashMap;
 
-use crate::history::{HistoryEntry, HistoryQuery, NewViewing, ViewingKind};
+use crate::history::{
+    HistoryEntry, HistoryQuery, HistoryScope, NewViewing, ViewerCount, ViewingKind,
+};
 use crate::ids::{HistoryId, PartId, RatingKey, SectionId, StreamId, UserId};
 use crate::metadata::{ItemKind, MetadataError, MetadataItem, MetadataRepository};
 use crate::page::{Page, Window};
@@ -142,6 +144,16 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
 
     /// Deletes one entry, leaving the watch state as it is. Whether there was one.
     async fn delete_history_entry(&self, id: HistoryId) -> Result<bool, WatchError>;
+
+    /// Who watched these items, and their episodes for a series or a season, ranked by
+    /// how many viewings each counts: most first, then by user. Only the viewers within
+    /// `scope`.
+    async fn viewers(
+        &self,
+        items: &[RatingKey],
+        scope: HistoryScope,
+        window: Window,
+    ) -> Result<Page<ViewerCount>, WatchError>;
 
     /// How many episodes below each series or season a viewer has watched to the end.
     async fn watched_leaves(
