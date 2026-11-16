@@ -25,6 +25,7 @@ use crate::marker::MarkerConnection;
 use crate::media::Version;
 use crate::node::GlobalId;
 use crate::tag::{external_ids_of, ratings_of, ExternalIdConnection, ItemTags, RatingConnection};
+use crate::user_rating::UserRatingObject;
 use crate::watch::WatchStateObject;
 use crate::DateTime;
 
@@ -92,6 +93,11 @@ const DEFAULT_PAGE_SIZE: u32 = 50;
         name = "watch_state",
         ty = "Option<WatchStateObject>",
         desc = "What the caller has watched of the work, shared by every copy of it. Null without a caller."
+    ),
+    field(
+        name = "user_rating",
+        ty = "Option<UserRatingObject>",
+        desc = "The caller's rating of the work, shared by every copy of it. Null when it has not rated it, and without a caller."
     ),
     field(
         name = "locked_fields",
@@ -194,6 +200,12 @@ impl Movie {
     /// caller.
     pub async fn watch_state(&self, context: &Context<'_>) -> Result<Option<WatchStateObject>> {
         crate::watch::state_of(context, &self.0.guid).await
+    }
+
+    /// The caller's rating of the work, shared by every copy of it. Null when it has not
+    /// rated it, and without a caller.
+    pub async fn user_rating(&self, context: &Context<'_>) -> Result<Option<UserRatingObject>> {
+        crate::user_rating::rating_of(context, &self.0.guid).await
     }
 
     /// The fields an editor locked, which a metadata refresh leaves as they are.
@@ -425,6 +437,12 @@ impl Show {
     /// caller.
     pub async fn watch_state(&self, context: &Context<'_>) -> Result<Option<WatchStateObject>> {
         crate::watch::state_of(context, &self.0.guid).await
+    }
+
+    /// The caller's rating of the work, shared by every copy of it. Null when it has not
+    /// rated it, and without a caller.
+    pub async fn user_rating(&self, context: &Context<'_>) -> Result<Option<UserRatingObject>> {
+        crate::user_rating::rating_of(context, &self.0.guid).await
     }
 
     /// The fields an editor locked, which a metadata refresh leaves as they are.
@@ -714,6 +732,12 @@ impl Season {
         crate::watch::state_of(context, &self.0.guid).await
     }
 
+    /// The caller's rating of the work, shared by every copy of it. Null when it has not
+    /// rated it, and without a caller.
+    pub async fn user_rating(&self, context: &Context<'_>) -> Result<Option<UserRatingObject>> {
+        crate::user_rating::rating_of(context, &self.0.guid).await
+    }
+
     /// The fields an editor locked, which a metadata refresh leaves as they are.
     pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
         crate::edit::locked_fields_of(context, self.0.id).await
@@ -921,6 +945,12 @@ impl Episode {
     /// caller.
     pub async fn watch_state(&self, context: &Context<'_>) -> Result<Option<WatchStateObject>> {
         crate::watch::state_of(context, &self.0.guid).await
+    }
+
+    /// The caller's rating of the work, shared by every copy of it. Null when it has not
+    /// rated it, and without a caller.
+    pub async fn user_rating(&self, context: &Context<'_>) -> Result<Option<UserRatingObject>> {
+        crate::user_rating::rating_of(context, &self.0.guid).await
     }
 
     /// The fields an editor locked, which a metadata refresh leaves as they are.

@@ -7,6 +7,7 @@ use open_plex_core::history::{
 };
 use open_plex_core::page::{Cursor, CursorKey, Page, Window};
 use open_plex_core::tracks::{SubtitleChoice, TrackChoice};
+use open_plex_core::user_rating::{RatingRecord, UserRating};
 use open_plex_core::watch::{
     Viewing, WatchError, WatchRepository, WatchState, VIEWING_LIFETIME_SECONDS,
 };
@@ -18,7 +19,9 @@ use sea_orm::{
     TransactionTrait,
 };
 
-use crate::entity::{metadata_item, track_choice, viewing, viewing_history, watch_state};
+use crate::entity::{
+    metadata_item, track_choice, user_rating, viewing, viewing_history, watch_state,
+};
 
 #[derive(Debug, Clone)]
 pub struct SqlWatchRepository {
@@ -376,6 +379,63 @@ impl WatchRepository for SqlWatchRepository {
                 track_choice::Column::SubtitleOff,
             ])
             .to_owned(),
+        )
+        .exec(&self.connection)
+        .await
+        .map_err(storage)?;
+        Ok(())
+    }
+
+    async fn ratings(
+        &self,
+        viewer: UserId,
+        guids: &[String],
+    ) -> Result<Vec<(String, RatingRecord)>, WatchError> {
+        if guids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = user_rating::Entity::find()
+            .filter(user_rating::Column::Viewer.eq(viewer.get()))
+            .filter(user_rating::Column::Guid.is_in(guids.iter().cloned()))
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        rows.into_iter()
+            .map(|row| {
+                // Written through `UserRating` alone, so a value off the scale is a corrupted
+                // row rather than a rating to show.
+                let rating = row
+                    .rating
+                    .map(UserRating::new)
+                    .transpose()
+                    .map_err(|error| WatchError::Storage(Box::new(error)))?;
+                Ok((
+                    row.guid,
+                    RatingRecord {
+                        rating,
+                        at: row.rated_at,
+                    },
+                ))
+            })
+            .collect()
+    }
+
+    async fn save_rating(
+        &self,
+        viewer: UserId,
+        guid: &str,
+        record: RatingRecord,
+    ) -> Result<(), WatchError> {
+        user_rating::Entity::insert(user_rating::ActiveModel {
+            viewer: ActiveValue::Set(viewer.get()),
+            guid: ActiveValue::Set(guid.to_owned()),
+            rating: ActiveValue::Set(record.rating.map(UserRating::get)),
+            rated_at: ActiveValue::Set(record.at),
+        })
+        .on_conflict(
+            OnConflict::columns([user_rating::Column::Viewer, user_rating::Column::Guid])
+                .update_columns([user_rating::Column::Rating, user_rating::Column::RatedAt])
+                .to_owned(),
         )
         .exec(&self.connection)
         .await

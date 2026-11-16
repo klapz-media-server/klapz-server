@@ -7,7 +7,7 @@ use open_plex_core::edit::CalendarDate;
 use open_plex_core::metadata::{ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataRepository};
 use open_plex_core::page::{Direction, Window};
 use open_plex_core::{SectionId, UserId};
-use open_plex_db::entity::{library_section, media, metadata_item, watch_state};
+use open_plex_db::entity::{library_section, media, metadata_item, user_rating, watch_state};
 use open_plex_db::write;
 use open_plex_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
@@ -201,6 +201,25 @@ async fn seed(connection: &DatabaseConnection) {
         .exec(connection)
         .await
         .expect("watch state");
+
+    // User 1 rated Alien and Eraserhead alike and Casablanca lower, and cleared Brazil; user 7
+    // rated Dune only.
+    let rated = |viewer: i64, item: i64, rating: Option<f64>| user_rating::ActiveModel {
+        viewer: ActiveValue::Set(viewer),
+        guid: ActiveValue::Set(format!("plex://movie/{item}")),
+        rating: ActiveValue::Set(rating),
+        rated_at: ActiveValue::Set(1),
+    };
+    user_rating::Entity::insert_many([
+        rated(1, 1, Some(8.0)),
+        rated(1, 5, Some(8.0)),
+        rated(1, 3, Some(5.0)),
+        rated(1, 2, None),
+        rated(7, 4, Some(9.0)),
+    ])
+    .exec(connection)
+    .await
+    .expect("ratings");
 }
 
 async fn repository() -> SqlMetadataRepository {
@@ -377,6 +396,36 @@ async fn orders_by_when_this_viewer_last_played() {
     // A caller with no watch state has played nothing: every film ties, in title order.
     assert_order(
         ItemSort::LastViewedAt(None),
+        Direction::Descending,
+        &["Alien", "Brazil", "Casablanca", "Dune", "Eraserhead"],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn orders_by_this_viewers_rating_unrated_first_and_ties_by_title() {
+    // Measured on the reference: unrated first ascending, last descending, and ties in the
+    // same order both ways. A cleared rating is no rating.
+    assert_order(
+        ItemSort::UserRating(Some(UserId::new(1))),
+        Direction::Ascending,
+        &["Brazil", "Dune", "Casablanca", "Alien", "Eraserhead"],
+    )
+    .await;
+    assert_order(
+        ItemSort::UserRating(Some(UserId::new(1))),
+        Direction::Descending,
+        &["Alien", "Eraserhead", "Casablanca", "Brazil", "Dune"],
+    )
+    .await;
+    assert_order(
+        ItemSort::UserRating(Some(UserId::new(7))),
+        Direction::Descending,
+        &["Dune", "Alien", "Brazil", "Casablanca", "Eraserhead"],
+    )
+    .await;
+    assert_order(
+        ItemSort::UserRating(None),
         Direction::Descending,
         &["Alien", "Brazil", "Casablanca", "Dune", "Eraserhead"],
     )

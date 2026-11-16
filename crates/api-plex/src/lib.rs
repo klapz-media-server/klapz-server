@@ -44,6 +44,7 @@ pub mod plex_tv;
 mod postplay;
 pub mod prefs;
 pub mod providers;
+mod rate;
 mod related;
 mod resolution;
 pub mod response;
@@ -144,8 +145,8 @@ pub fn router(state: PlexState) -> Router {
         // default rules. Our own parameters use the `{name}` form, which is unaffected.
         .without_v07_checks();
 
-    let routes = scrobble::add_routes(timeline::add_routes(playback::add_routes(
-        photo::add_routes(prefs::add_routes(routes)),
+    let routes = rate::add_routes(scrobble::add_routes(timeline::add_routes(
+        playback::add_routes(photo::add_routes(prefs::add_routes(routes))),
     )));
 
     // Added last so a real handler registered above always wins over its stub.

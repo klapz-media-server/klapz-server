@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 6 | 2.3 % |
-| `stub` | 71 | 27.3 % |
+| `stub` | 70 | 26.9 % |
 | `partial` | 31 | 11.9 % |
-| `done` | 113 | 43.5 % |
+| `done` | 114 | 43.8 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -57,7 +57,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Search](#search) | 2 | 1 | 1 | 0 | 0 | 0 |
 | [UltraBlur](#ultrablur) | 2 | 0 | 0 | 2 | 0 | 0 |
 | [Collections](#collections) | 1 | 1 | 0 | 0 | 0 | 0 |
-| [Rate](#rate) | 1 | 0 | 0 | 1 | 0 | 0 |
+| [Rate](#rate) | 1 | 1 | 0 | 0 | 0 | 0 |
 
 ## Outside the spec
 
@@ -487,4 +487,4 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `PUT` | `/:/rate` | user | Rate an item |  |
+| `done` | `PUT` | `/:/rate` | user | Rate an item | Also `GET`, `POST` and `DELETE`, as the reference. The caller's rating of the work, through `rateItem`: any kind, every copy at once, no parent adding up its children; `rating=-1` clears, `ratedAt` dates the change and an older one is ignored. `400` for a missing or malformed parameter or a future `ratedAt`, then `404` for a foreign provider or an unknown item. A rating off the scale (above 10, a negative other than `-1`) is a `400` where the reference keeps it. Published as `userRating` (one decimal) and `lastRatedAt`; `userRating` filters and sorts `/all`. See spec-gaps.md. |

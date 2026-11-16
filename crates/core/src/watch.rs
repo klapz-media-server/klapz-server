@@ -17,6 +17,7 @@ use crate::ids::{HistoryId, PartId, RatingKey, SectionId, UserId};
 use crate::metadata::{ItemKind, MetadataError, MetadataItem, MetadataRepository};
 use crate::page::{Page, Window};
 use crate::tracks::TrackChoice;
+use crate::user_rating::RatingRecord;
 
 /// A position kept, at the least. Shorter ones are taken for a false start.
 pub const MINIMUM_PROGRESS_MS: i64 = 60_000;
@@ -188,6 +189,22 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
         viewer: UserId,
         file: PartId,
         choice: TrackChoice,
+    ) -> Result<(), WatchError>;
+
+    /// The last change a viewer made to its rating of these works, a clearing included. A
+    /// work never rated is absent.
+    async fn ratings(
+        &self,
+        viewer: UserId,
+        guids: &[String],
+    ) -> Result<Vec<(String, RatingRecord)>, WatchError>;
+
+    /// Records a change to a viewer's rating of a work, replacing the one held.
+    async fn save_rating(
+        &self,
+        viewer: UserId,
+        guid: &str,
+        record: RatingRecord,
     ) -> Result<(), WatchError>;
 }
 

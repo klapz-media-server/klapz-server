@@ -32,6 +32,7 @@ pub mod search;
 pub mod server;
 pub mod stream;
 pub mod tag;
+pub mod user_rating;
 pub mod watch;
 
 pub use account::{Sessions, SESSION_COOKIE};

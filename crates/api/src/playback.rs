@@ -568,6 +568,17 @@ impl Mutation {
         crate::watch::keep_watch_position(context, &id, position_ms).await
     }
 
+    /// Rates a film, a series, a season or an episode for the caller, or clears its rating.
+    /// The rating is the work's, shared by every copy of it, and nothing adds it up: a series
+    /// is rated on its own, whatever its episodes are.
+    async fn rate_item(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The rating to give.")] input: crate::user_rating::RateItemInput,
+    ) -> Result<crate::user_rating::RateItemPayload> {
+        crate::user_rating::rate_item(context, input).await
+    }
+
     /// Deletes one viewing from a history: the caller's own, or anyone's for an owner.
     /// What was watched stays as it is, as on the reference.
     async fn delete_history_entry(

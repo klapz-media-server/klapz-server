@@ -4,8 +4,9 @@
 
 use open_plex_core::metadata::{ItemFilter, ItemKind, ItemQuery, MetadataRepository};
 use open_plex_core::page::Window;
+use open_plex_core::user_rating::RatingCondition;
 use open_plex_core::{SectionId, UserId};
-use open_plex_db::entity::{library_section, metadata_item, watch_state};
+use open_plex_db::entity::{library_section, metadata_item, user_rating, watch_state};
 use open_plex_db::write;
 use open_plex_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
@@ -114,6 +115,23 @@ async fn seed(connection: &DatabaseConnection) {
     .exec(connection)
     .await
     .expect("watch state");
+
+    // Soul rated 8 and Coco 6, Luca's rating cleared; another viewer rated Onward.
+    let rated = |viewer: i64, item: i64, rating: Option<f64>| user_rating::ActiveModel {
+        viewer: ActiveValue::Set(viewer),
+        guid: ActiveValue::Set(format!("plex://movie/{item}")),
+        rating: ActiveValue::Set(rating),
+        rated_at: ActiveValue::Set(1),
+    };
+    user_rating::Entity::insert_many([
+        rated(1, 1, Some(8.0)),
+        rated(1, 2, Some(6.0)),
+        rated(1, 3, None),
+        rated(7, 4, Some(9.0)),
+    ])
+    .exec(connection)
+    .await
+    .expect("ratings");
 }
 
 async fn titles(filter: ItemFilter) -> Vec<String> {
@@ -252,4 +270,86 @@ async fn a_last_viewed_range_keeps_what_was_played_within_it() {
         ..films(VIEWER)
     };
     assert!(titles(earlier).await.is_empty());
+}
+
+fn rated(condition: RatingCondition) -> ItemFilter {
+    ItemFilter {
+        user_rating: Some(condition),
+        ..films(VIEWER)
+    }
+}
+
+#[tokio::test]
+async fn a_rating_filter_keeps_the_unrated_out_of_every_comparison() {
+    assert_eq!(
+        titles(rated(RatingCondition {
+            any_of: vec![8.0],
+            ..RatingCondition::default()
+        }))
+        .await,
+        ["Soul"]
+    );
+    // `userRating=-1`: a cleared rating and another viewer's are none of the caller's.
+    assert_eq!(
+        titles(rated(RatingCondition {
+            unrated: Some(true),
+            ..RatingCondition::default()
+        }))
+        .await,
+        ["Luca", "Onward"]
+    );
+    assert_eq!(
+        titles(rated(RatingCondition {
+            any_of: vec![6.0],
+            unrated: Some(true),
+            ..RatingCondition::default()
+        }))
+        .await,
+        ["Coco", "Luca", "Onward"]
+    );
+    assert_eq!(
+        titles(rated(RatingCondition {
+            none_of: vec![8.0],
+            ..RatingCondition::default()
+        }))
+        .await,
+        ["Coco"]
+    );
+    assert_eq!(
+        titles(rated(RatingCondition {
+            at_most: Some(8.0),
+            above: Some(6.0),
+            ..RatingCondition::default()
+        }))
+        .await,
+        ["Soul"]
+    );
+    assert_eq!(
+        titles(rated(RatingCondition {
+            unrated: Some(false),
+            ..RatingCondition::default()
+        }))
+        .await,
+        ["Coco", "Soul"]
+    );
+}
+
+#[tokio::test]
+async fn a_caller_with_no_watch_state_has_rated_nothing() {
+    let unrated = ItemFilter {
+        user_rating: Some(RatingCondition {
+            unrated: Some(true),
+            ..RatingCondition::default()
+        }),
+        ..films(None)
+    };
+    assert_eq!(titles(unrated).await, ["Coco", "Luca", "Onward", "Soul"]);
+    let at_least = ItemFilter {
+        user_rating: Some(RatingCondition {
+            at_least: Some(0.0),
+            ..RatingCondition::default()
+        }),
+        ..films(None)
+    };
+    assert!(titles(at_least).await.is_empty());
 }

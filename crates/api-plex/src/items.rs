@@ -173,6 +173,9 @@ pub struct MetadataEntry {
     pub parent_index: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audience_rating: Option<f64>,
+    /// The caller's own rating, to one decimal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_rating: Option<f64>,
     /// How many times the caller watched it to the end; absent when never.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view_count: Option<u32>,
@@ -181,6 +184,9 @@ pub struct MetadataEntry {
     pub view_offset: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_viewed_at: Option<i64>,
+    /// When the caller rated it, which the reference publishes after `lastViewedAt`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_rated_at: Option<i64>,
     /// When an item entered the home Continue Watching shelf, which is when it was last
     /// played. Only there.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -932,6 +938,8 @@ impl MetadataEntry {
             index: item.number,
             rating: item.rating.map(one_decimal),
             audience_rating: item.audience_rating.map(one_decimal),
+            // Rounded as the other ratings are: 7.26 is 7.3 and 7.24 is 7.2 there too.
+            user_rating: item.user_rating.map(|rating| one_decimal(rating.value)),
             parent_rating_key: item.parent_rating_key(),
             grandparent_rating_key: item.grandparent_rating_key(),
             // Derived from the keys above: a client follows these to walk up the hierarchy.
@@ -947,6 +955,7 @@ impl MetadataEntry {
             view_count,
             view_offset,
             last_viewed_at,
+            last_rated_at: item.user_rating.map(|rating| rating.rated_at),
             included_at: None,
             year: item.year,
             // Only a season falls back to its series' year, and only when it has none: the

@@ -321,3 +321,55 @@ async fn repository_with_a_file() -> (SqlWatchRepository, open_plex_core::PartId
         open_plex_core::PartId::new(5),
     )
 }
+
+#[tokio::test]
+async fn a_rating_is_the_viewers_and_a_clearing_keeps_its_time() {
+    use open_plex_core::user_rating::{rate, RateOutcome, RatingRecord, UserRating};
+    let repository = repository().await;
+    let viewer = UserId::new(1);
+    let seven = UserRating::new(7.26).unwrap();
+    assert_eq!(
+        rate(&repository, viewer, "g", Some(seven), 100, 1_000)
+            .await
+            .unwrap(),
+        RateOutcome::Rated
+    );
+    assert_eq!(
+        repository.ratings(viewer, &["g".to_owned()]).await.unwrap(),
+        [(
+            "g".to_owned(),
+            RatingRecord {
+                rating: Some(seven),
+                at: 100
+            }
+        )]
+    );
+    // Another viewer has rated nothing.
+    assert!(repository
+        .ratings(UserId::new(7), &["g".to_owned()])
+        .await
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        rate(&repository, viewer, "g", None, 200, 1_000)
+            .await
+            .unwrap(),
+        RateOutcome::Cleared
+    );
+    assert_eq!(
+        rate(&repository, viewer, "g", Some(seven), 150, 1_000)
+            .await
+            .unwrap(),
+        RateOutcome::Superseded
+    );
+    assert_eq!(
+        repository.ratings(viewer, &["g".to_owned()]).await.unwrap(),
+        [(
+            "g".to_owned(),
+            RatingRecord {
+                rating: None,
+                at: 200
+            }
+        )]
+    );
+}

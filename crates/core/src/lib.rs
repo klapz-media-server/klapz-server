@@ -29,6 +29,7 @@ pub mod similar;
 pub mod slug;
 pub mod stream;
 pub mod tracks;
+pub mod user_rating;
 pub mod watch;
 
 #[cfg(any(test, feature = "testing"))]

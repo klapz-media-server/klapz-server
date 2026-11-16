@@ -4117,6 +4117,18 @@
               "deprecationReason": null
             },
             {
+              "name": "userRating",
+              "description": "The caller's rating of the work, shared by every copy of it. Null when it has not\nrated it, and without a caller.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "UserRating",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "lockedFields",
               "description": "The fields an editor locked, which a metadata refresh leaves as they are.",
               "args": [],
@@ -6023,6 +6035,18 @@
               "deprecationReason": null
             },
             {
+              "name": "userRating",
+              "description": "The caller's rating of the work, shared by every copy of it. Null when it has not rated it, and without a caller.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "UserRating",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "lockedFields",
               "description": "The fields an editor locked, which a metadata refresh leaves as they are.",
               "args": [],
@@ -6704,6 +6728,16 @@
                 "ofType": null
               },
               "defaultValue": null
+            },
+            {
+              "name": "userRating",
+              "description": "Keep only items by the caller's rating of them.",
+              "type": {
+                "kind": "INPUT_OBJECT",
+                "name": "UserRatingFilterInput",
+                "ofType": null
+              },
+              "defaultValue": null
             }
           ],
           "interfaces": null,
@@ -6763,6 +6797,12 @@
             {
               "name": "LAST_VIEWED_AT",
               "description": "By when the caller last played the item. A caller without watch state has played nothing.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "USER_RATING",
+              "description": "By the caller's rating of the item. An item it has not rated has no value, and a caller without watch state has rated nothing.",
               "isDeprecated": false,
               "deprecationReason": null
             },
@@ -10456,6 +10496,18 @@
               "deprecationReason": null
             },
             {
+              "name": "userRating",
+              "description": "The caller's rating of the work, shared by every copy of it. Null when it has not\nrated it, and without a caller.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "UserRating",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "lockedFields",
               "description": "The fields an editor locked, which a metadata refresh leaves as they are.",
               "args": [],
@@ -11376,6 +11428,37 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "WatchState",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "rateItem",
+              "description": "Rates a film, a series, a season or an episode for the caller, or clears its rating.\nThe rating is the work's, shared by every copy of it, and nothing adds it up: a series\nis rated on its own, whatever its episodes are.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The rating to give.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "RateItemInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "RateItemPayload",
                   "ofType": null
                 }
               },
@@ -16726,6 +16809,244 @@
           "possibleTypes": null
         },
         {
+          "kind": "ENUM",
+          "name": "RateItemErrorCode",
+          "description": "Why `rateItem` refused.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "ITEM_NOT_FOUND",
+              "description": "No item the caller may read has this id.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "OFF_THE_SCALE",
+              "description": "The rating is not from 0 to 10.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IN_THE_FUTURE",
+              "description": "The change is dated after the present.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "RateItemInput",
+          "description": "A rating to give a film, a series, a season or an episode, or to clear.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "itemId",
+              "description": "The item, as returned in its `id`. The rating is the work's: every copy of it shares\nit.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "rating",
+              "description": "From 0 to 10. Null, or absent, clears the caller's rating.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "ratedAt",
+              "description": "When the change was made, for a client that rated while it could not reach the server.\nNow when absent. A change dated before the caller's last one is ignored, so that a late\none does not undo a newer rating or clearing.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "DateTime",
+                "ofType": null
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "RateItemPayload",
+          "description": "What `rateItem` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "As given in the input.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "item",
+              "description": "The item rated, unless the request was refused.",
+              "args": [],
+              "type": {
+                "kind": "INTERFACE",
+                "name": "Item",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userRating",
+              "description": "The caller's rating after the change: null when cleared, or when the request was\nrefused.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "UserRating",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "applied",
+              "description": "Whether the change was made. False when it was older than the caller's last one, when\nthere was no rating to clear, and when the request was refused.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why the request was refused. Empty on success.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "RateItemUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "RateItemUserError",
+          "description": "A request `rateItem` refused, and where in the input the reason lies.",
+          "fields": [
+            {
+              "name": "field",
+              "description": "The path to the input field at fault.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "message",
+              "description": "What went wrong, for a person to read.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "code",
+              "description": "What went wrong, for a program to branch on.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "RateItemErrorCode",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "OBJECT",
           "name": "Rating",
           "description": null,
@@ -17704,6 +18025,18 @@
               "deprecationReason": null
             },
             {
+              "name": "userRating",
+              "description": "The caller's rating of the work, shared by every copy of it. Null when it has not\nrated it, and without a caller.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "UserRating",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "lockedFields",
               "description": "The fields an editor locked, which a metadata refresh leaves as they are.",
               "args": [],
@@ -18668,6 +19001,18 @@
               "type": {
                 "kind": "OBJECT",
                 "name": "WatchState",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userRating",
+              "description": "The caller's rating of the work, shared by every copy of it. Null when it has not\nrated it, and without a caller.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "UserRating",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -23660,6 +24005,146 @@
           ],
           "inputFields": null,
           "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "UserRating",
+          "description": null,
+          "fields": [
+            {
+              "name": "value",
+              "description": "From 0 to 10, at the precision it was given. Plex's stars are halves of the scale:\nthree and a half stars is 7.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Float",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ratedAt",
+              "description": "When the caller rated it: when the rating reached the server, unless the client dated\nit.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "DateTime",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "UserRatingFilterInput",
+          "description": "Keeps items by the caller's rating, out of ten. Every field given must hold. Each\ncomparison keeps rated items only: an item the caller has not rated, or whose rating it\ncleared, has no value to compare.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "anyOf",
+              "description": "Keep items rated one of these, or, with `unrated` true, not rated at all.",
+              "type": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "Float",
+                    "ofType": null
+                  }
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "unrated",
+              "description": "True keeps the items not rated, with those rated one of `anyOf` when it is given; false\nkeeps the items rated.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "noneOf",
+              "description": "Keep items rated, and none of these.",
+              "type": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "Float",
+                    "ofType": null
+                  }
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "atLeast",
+              "description": "Keep items rated this or more.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "above",
+              "description": "Keep items rated more than this.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "atMost",
+              "description": "Keep items rated this or less.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "below",
+              "description": "Keep items rated less than this.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
           "enumValues": null,
           "possibleTypes": null
         },

@@ -5164,3 +5164,114 @@ async fn a_play_queue_carries_the_markers_a_player_skips_by() {
     let (_, _, plain) = marker_request(&app, "GET", &format!("/playQueues/{queue}"), None).await;
     assert!(!plain.contains("<Marker"), "{plain}");
 }
+
+const RATE: &str = "/:/rate?identifier=com.plexapp.plugins.library";
+
+/// The scalar attributes of an item, in order.
+fn attribute_names(item: &Value) -> Vec<String> {
+    item.as_object()
+        .unwrap()
+        .iter()
+        .filter(|(_, value)| !value.is_array() && !value.is_object())
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_rating_is_published_on_lookups_and_listings_as_the_reference_does() {
+    let app = editing_app(open_plex_core::testing::owner());
+    assert_eq!(
+        put_status(&app, &format!("{RATE}&key=577986&rating=9.5")).await,
+        (StatusCode::OK, Some("text/html".to_owned()))
+    );
+    let film = film_after(&app).await;
+    assert_eq!(film["userRating"], 9.5);
+    assert!(film["lastRatedAt"].as_i64().unwrap() > 1_794_000_000);
+    // Captured on the reference after rating it 9.5: `librarySectionKey, subtype, summary,
+    // userRating, lastRatedAt, thumb`. This copy has no subtype, summary or poster.
+    let names = attribute_names(&film);
+    let rated = names.iter().position(|name| name == "userRating").unwrap();
+    assert_eq!(names[rated + 1], "lastRatedAt", "{names:?}");
+    assert_eq!(names[rated - 1], "librarySectionKey", "{names:?}");
+
+    // A series is rated on its own, and its listing says so; one decimal, as on the reference.
+    put_status(&app, &format!("{RATE}&key=577987&rating=7.26")).await;
+    let listing = json_from(&app, "/library/sections/28/all").await;
+    assert_eq!(listing["MediaContainer"]["Metadata"][0]["userRating"], 7.3);
+    let season = json_from(&app, "/library/metadata/577987/children").await;
+    let season = &season["MediaContainer"]["Metadata"][0];
+    assert!(season.get("userRating").is_none(), "{season}");
+
+    // `8.0` in XML, as the reference writes it.
+    put_status(&app, &format!("{RATE}&key=577986&rating=8")).await;
+    let (_, xml) = get_from(app.clone(), "/library/metadata/577986", None).await;
+    assert!(xml.contains(" userRating=\"8.0\" lastRatedAt=\""), "{xml}");
+
+    // An older change is ignored; `-1` clears, and both attributes go.
+    put_status(
+        &app,
+        &format!("{RATE}&key=577986&rating=2&ratedAt=1600000000"),
+    )
+    .await;
+    assert_eq!(film_after(&app).await["userRating"], 8.0);
+    put_status(&app, &format!("{RATE}&key=577986&rating=-1")).await;
+    let film = film_after(&app).await;
+    assert!(film.get("userRating").is_none(), "{film}");
+    assert!(film.get("lastRatedAt").is_none(), "{film}");
+}
+
+#[tokio::test]
+async fn a_rating_is_refused_as_the_reference_refuses_it() {
+    let app = editing_app(open_plex_core::testing::owner());
+    for (uri, status) in [
+        (format!("{RATE}&key=577986"), StatusCode::BAD_REQUEST),
+        (
+            format!("{RATE}&key=577986&rating=abc"),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!("{RATE}&key=577986&rating=4&ratedAt=1900000000"),
+            StatusCode::BAD_REQUEST,
+        ),
+        // Before the item, as on the reference.
+        (
+            format!("{RATE}&key=999&rating=4&ratedAt=1900000000"),
+            StatusCode::BAD_REQUEST,
+        ),
+        // Kept by the reference, off the scale here.
+        (
+            format!("{RATE}&key=577986&rating=11"),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!("{RATE}&key=577986&rating=-5"),
+            StatusCode::BAD_REQUEST,
+        ),
+        (format!("{RATE}&key=999&rating=4"), StatusCode::NOT_FOUND),
+        (
+            "/:/rate?identifier=tv.plex.provider.discover&key=577986&rating=4".to_owned(),
+            StatusCode::NOT_FOUND,
+        ),
+    ] {
+        assert_eq!(put_status(&app, &uri).await.0, status, "{uri}");
+    }
+    // `GET`, as the reference answers it too.
+    let (status, _) = get_from(app.clone(), &format!("{RATE}&key=577986&rating=6"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(film_after(&app).await["userRating"], 6.0);
+}
+
+#[tokio::test]
+async fn a_listing_sorts_and_filters_by_the_callers_rating() {
+    let app = editing_app(open_plex_core::testing::owner());
+    for uri in [
+        "/library/sections/27/all?sort=userRating:desc",
+        "/library/sections/27/all?userRating=-1",
+        "/library/sections/27/all?userRating%3E=5&userRating%3C%3C=9",
+    ] {
+        let (status, body) = get_from(app.clone(), uri, Some("application/json")).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+    }
+    let (status, _) = get_from(app, "/library/sections/27/all?userRating=abc", None).await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+}

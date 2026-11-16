@@ -891,6 +891,10 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
             tokio::spawn,
         ))
         .data(DataLoader::new(
+            crate::user_rating::UserRatingLoader::new(Arc::clone(&watch)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
             crate::watch::WatchedLeavesLoader::new(watch),
             tokio::spawn,
         ))

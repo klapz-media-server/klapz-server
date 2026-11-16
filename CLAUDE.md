@@ -417,6 +417,10 @@ Places where we knowingly answer differently, each decided rather than overlooke
   `type` other than `bookmark` is a `400`, as is a bookmark on a series, which the reference
   keeps.
 
+- **A rating is from 0 to 10.** The reference keeps whatever `/:/rate` is sent — 11, 100,
+  `inf` — and nulls the rating on a negative other than `-1`; we refuse all of these `400`, as
+  the spec bounds `rating` to ten (`docs/spec-gaps.md`).
+
 - **Nothing is popular in a user's libraries.** The reference's "Popular in Your Libraries"
   counts the plays of the server's other users; each user's server here receives no one
   else's, so `/hubs/popularInLibraries` answers the `404` the reference gives an empty or
@@ -730,6 +734,15 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `/library/sections/{id}/common`, what a set of items shares — fields, tags, collections and
   locks, aggregated in storage (`Library.common`, `ItemFilterInput.ids`) — element for element
   the reference's on films, series and episodes (`docs/spec-gaps.md`).
+- ✅ **a viewer's rating**: `PUT /:/rate`, the caller's own rating of a work out of ten — any
+  kind, every copy at once, nothing added up from children — kept per viewer and `guid` in a
+  table of our own (`user_rating`, migration `m0034`) with the time of the last change, so that
+  an older change, a clearing included, is ignored (`core::user_rating`). On the official API
+  `Item.userRating` and `rateItem` (`userErrors`), and `ItemFilterInput.userRating` and the
+  `USER_RATING` order; on the Plex surface `userRating` to one decimal and `lastRatedAt` wherever
+  an item is published, and `userRating` filtering and sorting `/all` by the reference's rules
+  (`=-1` for no rating, every comparison leaving the unrated out). Not imported, like the watch
+  state (`docs/spec-gaps.md`).
 
 ## Reference server
 
