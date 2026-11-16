@@ -36,6 +36,7 @@ mod m0031_title_key;
 mod m0032_folded_title;
 mod m0033_extras;
 mod m0034_user_rating;
+mod m0035_ultrablur;
 
 use sea_orm_migration::prelude::*;
 
@@ -79,6 +80,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0032_folded_title::Migration),
             Box::new(m0033_extras::Migration),
             Box::new(m0034_user_rating::Migration),
+            Box::new(m0035_ultrablur::Migration),
         ]
     }
 }

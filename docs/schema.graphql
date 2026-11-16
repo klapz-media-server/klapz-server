@@ -982,6 +982,31 @@ type ContinueWatchingEdge {
 }
 
 """
+The four colors a client blends into the blurred backdrop it draws behind an item, drawn
+from the item's background art: its season's or its series' when it has none, its poster
+when none of them has any.
+"""
+type CornerColors {
+	"""
+	The top-left corner's color, sRGB as `#rrggbb`. Darker than the others, for the text
+	usually laid over it.
+	"""
+	topLeft: String!
+	"""
+	The top-right corner's color, sRGB as `#rrggbb`.
+	"""
+	topRight: String!
+	"""
+	The bottom-right corner's color, sRGB as `#rrggbb`.
+	"""
+	bottomRight: String!
+	"""
+	The bottom-left corner's color, sRGB as `#rrggbb`.
+	"""
+	bottomLeft: String!
+}
+
+"""
 A collection to create: of chosen items, or smart with a rule.
 """
 input CreateCollectionInput {
@@ -1439,6 +1464,11 @@ type Episode implements Item & Node {
 		"""
 		last: Int
 	): ExtraConnection!
+	"""
+	The four colors of the blurred backdrop a client draws behind it, drawn from its
+	background art. Null when its art was never analysed.
+	"""
+	cornerColors: CornerColors
 	"""
 	Where its intro, credits and commercials are, and the places the caller bookmarked in
 	it, in the order they were added.
@@ -2243,6 +2273,10 @@ interface Item {
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
+	"""
+	The four colors of the blurred backdrop a client draws behind it, drawn from its background art. Null when its art was never analysed.
+	"""
+	cornerColors: CornerColors
 }
 
 type ItemConnection {
@@ -3928,6 +3962,11 @@ type Movie implements Item & Node {
 	when it has none, whatever other extras it has.
 	"""
 	primaryExtra: Extra
+	"""
+	The four colors of the blurred backdrop a client draws behind it, drawn from its
+	background art. Null when its art was never analysed.
+	"""
+	cornerColors: CornerColors
 	"""
 	Where its intro, credits and commercials are, and the places the caller bookmarked in
 	it, in the order they were added.
@@ -6522,6 +6561,11 @@ type Season implements Item & Node {
 		last: Int
 	): ExtraConnection!
 	"""
+	The four colors of the blurred backdrop a client draws behind it, drawn from its
+	background art. Null when its art was never analysed.
+	"""
+	cornerColors: CornerColors
+	"""
 	When the item's metadata last changed.
 	"""
 	updatedAt: DateTime!
@@ -6863,6 +6907,11 @@ type Show implements Item & Node {
 	when it has none, whatever other extras it has.
 	"""
 	primaryExtra: Extra
+	"""
+	The four colors of the blurred backdrop a client draws behind it, drawn from its
+	background art. Null when its art was never analysed.
+	"""
+	cornerColors: CornerColors
 	"""
 	When the item's metadata last changed.
 	"""

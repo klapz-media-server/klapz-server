@@ -167,6 +167,9 @@ IMPLEMENTED = frozenset(
         "/hubs/metadata/{metadataId}",
         "/hubs/metadata/{metadataId}/postplay",
         "/hubs/metadata/{metadataId}/related",
+        # A backdrop's colors, and their gradient (`ultrablur.rs`).
+        "/services/ultrablur/colors",
+        "/services/ultrablur/image",
     }
 )
 

@@ -823,6 +823,14 @@ pub fn metadata<'a>(context: &Context<'a>) -> Result<&'a Arc<dyn MetadataReposit
     Ok(&context.data::<ApiContext>()?.metadata)
 }
 
+/// A loader whose batches run as tasks of their own.
+fn loader<T: async_graphql::dataloader::Loader<K>, K>(batcher: T) -> DataLoader<T>
+where
+    K: Send + Sync + std::hash::Hash + Eq + Clone + 'static,
+{
+    DataLoader::new(batcher, tokio::spawn)
+}
+
 /// Builds the schema with its context and loaders attached.
 pub fn build_schema(context: ApiContext) -> ApiSchema {
     let library = Arc::clone(&context.library);
@@ -833,95 +841,54 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
 
     Schema::build(Query, crate::playback::Mutation, EmptySubscription)
         .data(context)
-        .data(DataLoader::new(
-            RootsLoader::new(Arc::clone(&library)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(LibraryLoader::new(library), tokio::spawn))
-        .data(DataLoader::new(
-            ItemLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            crate::loader::LockedFieldsLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            crate::marker::MarkersLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            crate::extra::ExtrasLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            crate::extra::ExtraVersionsLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            VersionsLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            FilesLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            StreamsLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            ChildCountLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            LeafCountLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            TagsLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            CreditsBelowLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            crate::loader::PersonCreditsLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            ExternalIdsLoader::new(Arc::clone(&metadata)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(RatingsLoader::new(metadata), tokio::spawn))
-        .data(DataLoader::new(
-            crate::watch::WatchStateLoader::new(Arc::clone(&watch)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            crate::watch::TrackChoiceLoader::new(Arc::clone(&watch)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            crate::user_rating::UserRatingLoader::new(Arc::clone(&watch)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            crate::watch::WatchedLeavesLoader::new(watch),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            crate::playlist::PlaylistTotalsLoader::new(playlists),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            crate::collection::CollectionTotalsLoader::new(Arc::clone(&collections)),
-            tokio::spawn,
-        ))
-        .data(DataLoader::new(
-            crate::collection::MembershipsLoader::new(collections),
-            tokio::spawn,
-        ))
+        .data(loader(RootsLoader::new(Arc::clone(&library))))
+        .data(loader(LibraryLoader::new(library)))
+        .data(loader(ItemLoader::new(Arc::clone(&metadata))))
+        .data(loader(crate::loader::LockedFieldsLoader::new(Arc::clone(
+            &metadata,
+        ))))
+        .data(loader(crate::backdrop::CornerColorsLoader::new(
+            Arc::clone(&metadata),
+        )))
+        .data(loader(crate::marker::MarkersLoader::new(Arc::clone(
+            &metadata,
+        ))))
+        .data(loader(crate::extra::ExtrasLoader::new(Arc::clone(
+            &metadata,
+        ))))
+        .data(loader(crate::extra::ExtraVersionsLoader::new(Arc::clone(
+            &metadata,
+        ))))
+        .data(loader(VersionsLoader::new(Arc::clone(&metadata))))
+        .data(loader(FilesLoader::new(Arc::clone(&metadata))))
+        .data(loader(StreamsLoader::new(Arc::clone(&metadata))))
+        .data(loader(ChildCountLoader::new(Arc::clone(&metadata))))
+        .data(loader(LeafCountLoader::new(Arc::clone(&metadata))))
+        .data(loader(TagsLoader::new(Arc::clone(&metadata))))
+        .data(loader(CreditsBelowLoader::new(Arc::clone(&metadata))))
+        .data(loader(crate::loader::PersonCreditsLoader::new(Arc::clone(
+            &metadata,
+        ))))
+        .data(loader(ExternalIdsLoader::new(Arc::clone(&metadata))))
+        .data(loader(RatingsLoader::new(metadata)))
+        .data(loader(crate::watch::WatchStateLoader::new(Arc::clone(
+            &watch,
+        ))))
+        .data(loader(crate::watch::TrackChoiceLoader::new(Arc::clone(
+            &watch,
+        ))))
+        .data(loader(crate::user_rating::UserRatingLoader::new(
+            Arc::clone(&watch),
+        )))
+        .data(loader(crate::watch::WatchedLeavesLoader::new(watch)))
+        .data(loader(crate::playlist::PlaylistTotalsLoader::new(
+            playlists,
+        )))
+        .data(loader(crate::collection::CollectionTotalsLoader::new(
+            Arc::clone(&collections),
+        )))
+        .data(loader(crate::collection::MembershipsLoader::new(
+            collections,
+        )))
         .finish()
 }

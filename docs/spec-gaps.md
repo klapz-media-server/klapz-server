@@ -406,7 +406,7 @@ parents across the French and English series libraries.
 | Episode attribute order | `grandparentKey` and `parentKey` come **before** the `librarySection*` trio in a lookup, where a film puts the trio right after `titleSort`. The earlier ordering had the trio first. |
 
 Still missing on these items, all pre-existing gaps: artwork (`thumb`, `art`, `parentThumb`,
-`grandparentArt`, `Image`, `UltraBlurColors`), tags (`Director`, `Writer`, `Role`), `parentSlug`
+`grandparentArt`, `Image`), tags (`Director`, `Writer`, `Role`), `parentSlug`
 and `grandparentSlug`, `audienceRatingImage`, `chapterSource`, `Part.key`, `videoProfile`, and
 the per-stream detail (`languageTag`, `displayTitle`, `bitDepth`, …). One divergence surfaced by
 the comparison and not yet fixed: `Stream.language` publishes the tag (`en`) where the
@@ -797,6 +797,82 @@ Against the reference on the avatar Plex Web requests: identical status, content
 header, dimensions and pixel format across seven size and format combinations; the bytes
 differ, the encoders being different. Converted with the `image` crate, a JPEG comes out 20 to 60%
 larger than the reference's at the same quality, and a PNG about 10%.
+
+### A backdrop's colors (UltraBlur)
+
+Plex Web 4.162 never calls `/services/ultrablur/*`: it draws its backdrop itself, a WebGL
+blend of four corner colors (fallbacks `#333333`, `#202020`, `#262626`, `#1c1c1c`), from the
+item's `UltraBlurColors` or colors it extracts in the browser. Other clients call the routes.
+
+**On items.** The reference's analysis (`UltraBlurProcessor`) stores four colors per item in
+`extra_data` (`pv:ultraBlurTopLeft`, `…TopRight`, `…BottomRight`, `…BottomLeft`, six lowercase
+hex digits, always the four together) for 18,278 films, 3,992 series, 9,629 seasons, 138,666
+episodes and 732 collections. It draws them from the item's `art`, else its parent's or
+grandparent's, else its own `thumb` (read in the binary). Lookups, listings and shelves publish
+them as `UltraBlurColors`, right after `Media` and `Image` and before `Genre`: an **object** in
+JSON, attributes `topLeft`, `topRight`, `bottomRight`, `bottomLeft` in that order. On 160 random
+items of four kinds, 154 publish exactly the stored values; the other six differ by the
+snapshot's age. Imported into `item_corner_colors` (one row per item, `0xRRGGBB` integers),
+published on films, series, seasons and episodes; collections keep theirs unimported.
+
+**`GET /services/ultrablur/colors?url=`.** No `url` is `400`; a `url` the reference cannot read
+— an empty one, `garbage`, a library image missing from its bundles — `404`; an image without a
+color left after the white filter `500`. It fetches any absolute URL, its own loopback included,
+and resolves relative ones against itself. The answer is `{"MediaContainer":{"size":1,
+"UltraBlurColors":[{…}]}}`, an **array** here, `<UltraBlurColors …/>` in XML. The algorithm, read
+from the binary and reproduced:
+
+1. decode with OpenCV (three channels: alpha dropped, not blended); above 3840×2160 pixels,
+   scale down by `sqrt(8294400 / pixels)`, bilinear;
+2. cut into four quarters of `width/2` × `height/2` (an odd last row or column is ignored);
+3. per quarter, a palette by Leptonica's modified median cut as `quantize.js` runs it — every
+   fifth pixel, pixels above 250 on all three channels skipped, 5 bits per channel, 10 colors —
+   with two quirks of Plex's port: the second pass counts its colors from one rather than from
+   its boxes, and a cut whose upper half is empty walks back to the first non-empty slice without
+   reading the counts ahead. A cut that leaves a box empty keeps it, as its center color: why a
+   flat image still gets four distinct corners (black gives `0d0202`, `030403`, `0d0202`,
+   `030403`);
+4. per palette color, Okhsl and Oklab (Ottosson's code, in `float`; the Oklab used for distances
+   is of the *encoded* values, not of linear light), and a score: `1.5 × dark + place + 3 ×
+   saturated + 3 × apart − 2 × green − 2 × muddy − 2 × washed`, each a band worth 100 inside and
+   falling linearly outside — `dark` lightness 0 to 0.4 (0 at 0.7), `place` the palette rank (100
+   first, 0 last), `saturated` saturation 0.6 to 1 (0 at 0.2), `apart` the Oklab distance from the
+   corner chosen before, 0.05 to 0.1 (0 at 0 and 1; 100 for the first corner), `green` hue 80° to
+   120° (±10°), `muddy` the mean of hue 40° to 70° (±10°) and saturation 0.2 to 0.6 (0.1 either
+   side) when both are non-zero, `washed` the mean of lightness 0.5 to 1 (0 at 0.3) and saturation
+   0 to 0.2 (0 at 0.4) when both are non-zero;
+5. the corners in the order top left (lightness capped at 0.2), top right and bottom left (0.4,
+   apart from top left), bottom right (0.4, apart from bottom left); the best score wins, the
+   earliest on a tie; a saturation strictly between 0.2 and 0.6 becomes 0.6; back to sRGB,
+   clamped, truncated, written `{:02x}{:02x}{:02x}`.
+
+Measured on 420 images served to the reference from a local web server: identical on all 269
+PNGs (149 of Plex's own graphics, 120 synthetic), and on all 151 JPEGs once given the pixels
+libjpeg-turbo decodes. Our JPEG decoder (`zune-jpeg`, through `image`) rounds differently, and a
+pixel crossing a 5-bit boundary changes a palette: 34 of 150 photos of people from
+`metadata-static.plex.tv` identical, 390 of 604 corners, 532 within 2 per channel, the rest
+another palette color (up to 130 apart). Matching would take a libjpeg binding, which the image
+policy rules out.
+
+**`GET /services/ultrablur/image`.** A PNG, RGB 8-bit, `Cache-Control: no-cache`.
+`width` and `height` default to 1920 and 1080 each on its own; the **area** is bounded at
+3840×2160 (4000×100 and 4096×2025 are drawn, 4096×2026 is `400`), a value that is not an unsigned
+integer is `400`, zero is `500`. `noise` is `0` or `1` (default), anything else `400`. The four
+colors are required unless `url` is given, which draws the colors `/colors` would read (`500` when
+it cannot). Each pixel starts black and is blended, per channel in `float` and truncated after
+each step, towards bottom left, bottom right, top right and top left in that order, by `1 − d`,
+`d` the distance to that corner with the axes divided by 95% of the image's sides; past `d = 1` the
+weight is negative and pushes away from the color. Noise shifts `x` and `y` together by an integer
+drawn uniformly in `±width/48`, per pixel. Without noise, ours is pixel-identical to the
+reference at 97×61, 320×240 and 1920×1080; with it, the pixels differ (different random draws,
+mean difference 1.3 per channel at 1920×1080) and the mean color agrees to 0.01.
+
+We differ on purpose in four places. A remote image is fetched from Plex's hosts over TLS only, as
+`/photo/:/transcode` does (`403` otherwise). A relative `url` answers only for an item's art,
+`/library/metadata/{id}/art[/{stamp}]`, with the colors stored for the item, since this server
+serves no artwork; any other relative address is `404`. A color the reference's `sscanf` cannot
+read (`zzzzzz`, `#3f280a`, `3f28`) draws whatever was left on its stack; here it is `400`. Our
+noise is drawn from a fixed seed, so an image is the same on every request.
 
 ### Playing a file
 

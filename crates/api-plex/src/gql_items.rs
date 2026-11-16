@@ -68,6 +68,7 @@ fragment Shared on Item {
   userRating { value ratedAt }
   ... on Movie { primaryExtra { id } }
   ... on Show { primaryExtra { id } }
+  cornerColors { topLeft topRight bottomRight bottomLeft }
 }
 
 fragment VersionFields on MediaVersion {
@@ -871,6 +872,7 @@ pub struct GqlItem {
     pub locked_fields: Vec<String>,
     /// Asked for on `includeMarkers=1` only.
     pub markers: GqlConnection<GqlMarker>,
+    pub corner_colors: Option<GqlCornerColors>,
     /// A film's or a series' first trailer.
     pub primary_extra: Option<GqlTrackRef>,
     /// Asked for on `includeExtras=1` only, and then present even when empty.
@@ -904,6 +906,16 @@ impl GqlExtra {
     pub fn database_id(&self) -> i64 {
         database_id(&self.id)
     }
+}
+
+/// A backdrop's colors, each `#rrggbb`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlCornerColors {
+    pub top_left: String,
+    pub top_right: String,
+    pub bottom_right: String,
+    pub bottom_left: String,
 }
 
 /// A marker, as `MarkerFields` selects it.

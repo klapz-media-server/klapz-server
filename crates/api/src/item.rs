@@ -16,6 +16,7 @@ use open_plex_core::metadata::{ItemKind, MetadataItem};
 use open_plex_core::page::{Cursor, MAX_ITEMS};
 use open_plex_core::RatingKey;
 
+use crate::backdrop::CornerColorsObject;
 use crate::collection::MembershipConnection;
 use crate::cursor::OpaqueCursor;
 use crate::edit::ItemFieldType;
@@ -104,6 +105,11 @@ const DEFAULT_PAGE_SIZE: u32 = 50;
         name = "locked_fields",
         ty = "Vec<ItemFieldType>",
         desc = "The fields an editor locked, which a metadata refresh leaves as they are."
+    ),
+    field(
+        name = "corner_colors",
+        ty = "Option<CornerColorsObject>",
+        desc = "The four colors of the blurred backdrop a client draws behind it, drawn from its background art. Null when its art was never analysed."
     )
 )]
 pub enum Item {
@@ -232,6 +238,12 @@ impl Movie {
     /// when it has none, whatever other extras it has.
     async fn primary_extra(&self, context: &Context<'_>) -> Result<Option<ExtraObject>> {
         crate::extra::primary_extra_of(context, self.0.id).await
+    }
+
+    /// The four colors of the blurred backdrop a client draws behind it, drawn from its
+    /// background art. Null when its art was never analysed.
+    pub async fn corner_colors(&self, context: &Context<'_>) -> Result<Option<CornerColorsObject>> {
+        crate::backdrop::corner_colors_of(context, self.0.id).await
     }
 
     /// Where its intro, credits and commercials are, and the places the caller bookmarked in
@@ -489,6 +501,12 @@ impl Show {
     /// when it has none, whatever other extras it has.
     async fn primary_extra(&self, context: &Context<'_>) -> Result<Option<ExtraObject>> {
         crate::extra::primary_extra_of(context, self.0.id).await
+    }
+
+    /// The four colors of the blurred backdrop a client draws behind it, drawn from its
+    /// background art. Null when its art was never analysed.
+    pub async fn corner_colors(&self, context: &Context<'_>) -> Result<Option<CornerColorsObject>> {
+        crate::backdrop::corner_colors_of(context, self.0.id).await
     }
 
     /// When the item's metadata last changed.
@@ -798,6 +816,12 @@ impl Season {
         crate::extra::extras_of(context, self.0.id, after, before, first, last).await
     }
 
+    /// The four colors of the blurred backdrop a client draws behind it, drawn from its
+    /// background art. Null when its art was never analysed.
+    pub async fn corner_colors(&self, context: &Context<'_>) -> Result<Option<CornerColorsObject>> {
+        crate::backdrop::corner_colors_of(context, self.0.id).await
+    }
+
     /// When the item's metadata last changed.
     pub async fn updated_at(&self, _context: &Context<'_>) -> Result<DateTime> {
         Ok(self.0.updated_at.into())
@@ -1025,6 +1049,12 @@ impl Episode {
         last: Option<i32>,
     ) -> Result<ExtraConnection> {
         crate::extra::extras_of(context, self.0.id, after, before, first, last).await
+    }
+
+    /// The four colors of the blurred backdrop a client draws behind it, drawn from its
+    /// background art. Null when its art was never analysed.
+    pub async fn corner_colors(&self, context: &Context<'_>) -> Result<Option<CornerColorsObject>> {
+        crate::backdrop::corner_colors_of(context, self.0.id).await
     }
 
     /// Where its intro, credits and commercials are, and the places the caller bookmarked in

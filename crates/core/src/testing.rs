@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::backdrop::CornerColors;
 use crate::collection::{
     Collection, CollectionCondition, CollectionEdit, CollectionEntry, CollectionError,
     CollectionQuery, CollectionRef, CollectionRepository, CollectionSort, CollectionTotals,
@@ -128,6 +129,7 @@ pub struct InMemoryMetadata {
     tags: Vec<ItemTag>,
     external_ids: Vec<ExternalId>,
     ratings: Vec<Rating>,
+    corner_colors: Vec<(RatingKey, CornerColors)>,
     /// What a collection filter reads, shared with the collections' own store.
     collections: Option<std::sync::Arc<std::sync::Mutex<CollectionStore>>>,
 }
@@ -146,8 +148,16 @@ impl InMemoryMetadata {
             tags: Vec::new(),
             external_ids: Vec::new(),
             ratings: Vec::new(),
+            corner_colors: Vec::new(),
             collections: None,
         }
+    }
+
+    /// Gives items their backdrop colors, as an import would.
+    #[must_use]
+    pub fn with_corner_colors(mut self, corner_colors: Vec<(RatingKey, CornerColors)>) -> Self {
+        self.corner_colors = corner_colors;
+        self
     }
 
     /// Reads collection filters from these collections, as storage reads its own tables.
@@ -1146,6 +1156,18 @@ impl MetadataRepository for InMemoryMetadata {
         items: &[RatingKey],
     ) -> Result<Vec<(RatingKey, ItemField)>, MetadataError> {
         Ok(locked(&self.locked_fields)
+            .iter()
+            .filter(|(item, _)| items.contains(item))
+            .copied()
+            .collect())
+    }
+
+    async fn corner_colors(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<(RatingKey, CornerColors)>, MetadataError> {
+        Ok(self
+            .corner_colors
             .iter()
             .filter(|(item, _)| items.contains(item))
             .copied()

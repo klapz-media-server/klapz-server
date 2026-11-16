@@ -16,8 +16,9 @@ use serde::Serialize;
 use crate::language::Language;
 
 use crate::gql_items::{
-    GqlCollectionTag, GqlConnection, GqlEdge, GqlExternalId, GqlItem, GqlLibraryRef, GqlMarker,
-    GqlPart, GqlProfiled, GqlRating, GqlStream, GqlTag, GqlVersion, GqlWatchState,
+    GqlCollectionTag, GqlConnection, GqlCornerColors, GqlEdge, GqlExternalId, GqlItem,
+    GqlLibraryRef, GqlMarker, GqlPart, GqlProfiled, GqlRating, GqlStream, GqlTag, GqlVersion,
+    GqlWatchState,
 };
 use crate::stream_labels;
 
@@ -220,6 +221,10 @@ pub struct MetadataEntry {
     pub primary_extra_key: Option<String>,
     #[serde(rename = "Media", skip_serializing_if = "Vec::is_empty")]
     pub media: Vec<MediaEntry>,
+    /// Right after the media, where the reference puts it after its `Image` elements. An
+    /// object in JSON, an element in XML.
+    #[serde(rename = "UltraBlurColors", skip_serializing_if = "Option::is_none")]
+    pub ultra_blur_colors: Option<UltraBlurColors>,
     #[serde(rename = "Genre", skip_serializing_if = "Vec::is_empty")]
     pub genre: Vec<TagEntry>,
     #[serde(rename = "Country", skip_serializing_if = "Vec::is_empty")]
@@ -275,6 +280,29 @@ pub struct MarkerEntry {
     pub is_final: bool,
     #[serde(rename = "Attributes")]
     pub attributes: MarkerAttributes,
+}
+
+/// A backdrop's four colors as Plex writes them: six lowercase hex digits, no `#`, clockwise
+/// from the top left.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UltraBlurColors {
+    pub top_left: String,
+    pub top_right: String,
+    pub bottom_right: String,
+    pub bottom_left: String,
+}
+
+impl UltraBlurColors {
+    pub fn from_graphql(colors: &GqlCornerColors) -> Self {
+        let bare = |css: &str| css.trim_start_matches('#').to_owned();
+        Self {
+            top_left: bare(&colors.top_left),
+            top_right: bare(&colors.top_right),
+            bottom_right: bare(&colors.bottom_right),
+            bottom_left: bare(&colors.bottom_left),
+        }
+    }
 }
 
 /// What Plex calls a marker's attributes, in the order it writes them: alphabetical.
@@ -907,7 +935,7 @@ impl MetadataEntry {
         let (view_count, view_offset, last_viewed_at) = watched(item.watch_state);
         let rating_key = item.database_id()?;
         let kind = item.plex_type();
-        let library = item.library.as_ref();
+        let library = item.library.as_ref().filter(|_| with_library);
 
         Some(Self {
             rating_key: rating_key.to_string(),
@@ -933,15 +961,9 @@ impl MetadataEntry {
                 .title_sort
                 .clone()
                 .filter(|sort| Some(sort) != item.title.as_ref()),
-            library_section_title: with_library
-                .then(|| library.map(|l| l.title.clone()))
-                .flatten(),
-            library_section_id: with_library
-                .then(|| library.map(GqlLibraryRef::database_id))
-                .flatten(),
-            library_section_key: with_library
-                .then(|| library.map(|l| format!("/library/sections/{}", l.database_id())))
-                .flatten(),
+            library_section_title: library.map(|l| l.title.clone()),
+            library_section_id: library.map(GqlLibraryRef::database_id),
+            library_section_key: library.map(|l| format!("/library/sections/{}", l.database_id())),
             original_title: item.original_title.clone(),
             content_rating: item.content_rating.clone(),
             content_rating_age: item.content_rating_age,
@@ -992,6 +1014,10 @@ impl MetadataEntry {
                 .iter()
                 .map(|version| MediaEntry::from_graphql(version, language))
                 .collect(),
+            ultra_blur_colors: item
+                .corner_colors
+                .as_ref()
+                .map(UltraBlurColors::from_graphql),
             genre: TagEntry::all(&item.tags.genres, "genre"),
             country: TagEntry::all(&item.tags.countries, "country"),
             guids: GuidEntry::all(&item.external_ids),
