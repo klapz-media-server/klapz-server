@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use open_plex_core::backdrop::{CornerColors, Rgb};
 use open_plex_core::closest::{ClosestTitles, TitleMatch};
 use open_plex_core::collection::{CollectionCondition, CollectionRef};
 use open_plex_core::common::CommonFields;
@@ -37,9 +38,9 @@ use sea_orm::{
 
 use crate::closest_store;
 use crate::entity::{
-    collection, collection_entry, item_external_id, item_field_lock, item_rating, item_tag,
-    item_title_key, item_title_word, media, media_part, media_stream, metadata_item, person,
-    stream_dolby_vision, stream_loudness, tag, tag_word, watch_state,
+    collection, collection_entry, item_corner_colors, item_external_id, item_field_lock,
+    item_rating, item_tag, item_title_key, item_title_word, media, media_part, media_stream,
+    metadata_item, person, stream_dolby_vision, stream_loudness, tag, tag_word, watch_state,
 };
 use crate::item_order::{ItemOrder, SearchRanking};
 use crate::marker_store;
@@ -1720,6 +1721,34 @@ impl MetadataRepository for SqlMetadataRepository {
                     tracing::warn!(field = row.field, "unknown locked field in storage");
                 }
                 Some((RatingKey::new(row.item_id), field?))
+            })
+            .collect())
+    }
+
+    async fn corner_colors(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<(RatingKey, CornerColors)>, MetadataError> {
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = item_corner_colors::Entity::find()
+            .filter(item_corner_colors::Column::ItemId.is_in(items.iter().map(|id| id.get())))
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        // Written from six hex digits, so always inside 24 bits.
+        let color = |packed: i32| Rgb::from_packed(packed.unsigned_abs());
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let colors = CornerColors {
+                    top_left: color(row.top_left),
+                    top_right: color(row.top_right),
+                    bottom_right: color(row.bottom_right),
+                    bottom_left: color(row.bottom_left),
+                };
+                (RatingKey::new(row.item_id), colors)
             })
             .collect())
     }

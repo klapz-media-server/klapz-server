@@ -10,6 +10,7 @@
 
 pub mod access;
 pub mod account;
+pub mod backdrop;
 pub mod closest;
 pub mod collection;
 pub mod common;

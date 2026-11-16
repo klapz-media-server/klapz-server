@@ -6,6 +6,7 @@
 pub mod access;
 pub mod account;
 pub mod auth;
+pub mod backdrop;
 pub mod closest;
 pub mod collection;
 pub mod common;

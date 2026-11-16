@@ -5,6 +5,7 @@
 //! keeps what is only Plex's: parameter names, status codes, and a PNG labelled `image/jpeg`.
 
 pub mod adapt;
+mod backdrop;
 mod convert;
 pub mod media;
 pub mod plan;
@@ -16,6 +17,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::{AcquireError, OnceCell, Semaphore};
+
+pub use backdrop::{CornerColors, Rgb, MAX_PIXELS as MAX_BACKDROP_PIXELS};
 
 /// Images being fetched and converted at once. Each one holds a blocking thread and up to
 /// 16 MiB of source, and a client controls how many it asks for.
@@ -183,6 +186,53 @@ impl Transcoder {
         let bytes = source::fetch(client, url).await?;
 
         tokio::task::spawn_blocking(move || convert::convert(&bytes, &request))
+            .await
+            .map_err(TranscodeError::Worker)?
+    }
+
+    /// Fetches an image and draws its backdrop's four corner colors from it.
+    ///
+    /// # Errors
+    ///
+    /// As [`Transcoder::convert_image`] for the source; [`TranscodeError::UnusableSize`] for
+    /// an image too small or too white to have colors.
+    pub async fn corner_colors(&self, source: &str) -> Result<CornerColors, TranscodeError> {
+        let url = source::remote_url(source)?;
+        let _slot = self
+            .slots
+            .acquire()
+            .await
+            .map_err(TranscodeError::ShuttingDown)?;
+        let client = self
+            .client
+            .get_or_try_init(|| async { source::client() })
+            .await?;
+        let bytes = source::fetch(client, url).await?;
+
+        tokio::task::spawn_blocking(move || backdrop::corner_colors(&bytes))
+            .await
+            .map_err(TranscodeError::Worker)?
+    }
+
+    /// The gradient of four corner colors, as a PNG of at most [`MAX_BACKDROP_PIXELS`].
+    ///
+    /// # Errors
+    ///
+    /// [`TranscodeError::UnusableSize`] for an empty or oversized image.
+    pub async fn backdrop(
+        &self,
+        colors: CornerColors,
+        width: u32,
+        height: u32,
+        noise: bool,
+    ) -> Result<Vec<u8>, TranscodeError> {
+        // Up to 25 MB of pixels each: held to the same few at once as conversions.
+        let _slot = self
+            .slots
+            .acquire()
+            .await
+            .map_err(TranscodeError::ShuttingDown)?;
+        tokio::task::spawn_blocking(move || backdrop::gradient(colors, width, height, noise))
             .await
             .map_err(TranscodeError::Worker)?
     }

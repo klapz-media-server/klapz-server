@@ -65,6 +65,7 @@ fragment Shared on Item {
   updatedAt
   library { id title uuid kind }
   watchState { viewCount offsetMs lastViewedAt }
+  cornerColors { topLeft topRight bottomRight bottomLeft }
 }
 
 fragment VersionFields on MediaVersion {
@@ -835,6 +836,17 @@ pub struct GqlItem {
     pub locked_fields: Vec<String>,
     /// Asked for on `includeMarkers=1` only.
     pub markers: GqlConnection<GqlMarker>,
+    pub corner_colors: Option<GqlCornerColors>,
+}
+
+/// A backdrop's colors, each `#rrggbb`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlCornerColors {
+    pub top_left: String,
+    pub top_right: String,
+    pub bottom_right: String,
+    pub bottom_left: String,
 }
 
 /// A marker, as `MarkerFields` selects it.

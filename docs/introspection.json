@@ -2800,6 +2800,81 @@
           "possibleTypes": null
         },
         {
+          "kind": "OBJECT",
+          "name": "CornerColors",
+          "description": "The four colors a client blends into the blurred backdrop it draws behind an item, drawn\nfrom the item's background art: its season's or its series' when it has none, its poster\nwhen none of them has any.",
+          "fields": [
+            {
+              "name": "topLeft",
+              "description": "The top-left corner's color, sRGB as `#rrggbb`. Darker than the others, for the text\nusually laid over it.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "topRight",
+              "description": "The top-right corner's color, sRGB as `#rrggbb`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "bottomRight",
+              "description": "The bottom-right corner's color, sRGB as `#rrggbb`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "bottomLeft",
+              "description": "The bottom-left corner's color, sRGB as `#rrggbb`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "INPUT_OBJECT",
           "name": "CreateCollectionInput",
           "description": "A collection to create: of chosen items, or smart with a rule.",
@@ -4136,6 +4211,18 @@
                     }
                   }
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cornerColors",
+              "description": "The four colors of the blurred backdrop a client draws behind it, drawn from its\nbackground art. Null when its art was never analysed.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "CornerColors",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -6042,6 +6129,18 @@
                     }
                   }
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cornerColors",
+              "description": "The four colors of the blurred backdrop a client draws behind it, drawn from its background art. Null when its art was never analysed.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "CornerColors",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -10475,6 +10574,18 @@
                     }
                   }
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cornerColors",
+              "description": "The four colors of the blurred backdrop a client draws behind it, drawn from its\nbackground art. Null when its art was never analysed.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "CornerColors",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -17728,6 +17839,18 @@
               "deprecationReason": null
             },
             {
+              "name": "cornerColors",
+              "description": "The four colors of the blurred backdrop a client draws behind it, drawn from its\nbackground art. Null when its art was never analysed.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "CornerColors",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "updatedAt",
               "description": "When the item's metadata last changed.",
               "args": [],
@@ -18693,6 +18816,18 @@
                     }
                   }
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cornerColors",
+              "description": "The four colors of the blurred backdrop a client draws behind it, drawn from its\nbackground art. Null when its art was never analysed.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "CornerColors",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null

@@ -1270,6 +1270,12 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
         items: &[RatingKey],
     ) -> Result<Vec<(RatingKey, ItemField)>, MetadataError>;
 
+    /// The backdrop colors of those of these items that have them, in no particular order.
+    async fn corner_colors(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<(RatingKey, crate::backdrop::CornerColors)>, MetadataError>;
+
     /// Applies an edit to an item, with everything it derives, in one transaction.
     ///
     /// `ItemNotFound` for an item that is not of the kind the edit was checked against.
@@ -1534,6 +1540,13 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         items: &[RatingKey],
     ) -> Result<Vec<(RatingKey, ItemField)>, MetadataError> {
         (**self).locked_fields(items).await
+    }
+
+    async fn corner_colors(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<(RatingKey, crate::backdrop::CornerColors)>, MetadataError> {
+        (**self).corner_colors(items).await
     }
 
     async fn edit_item(&self, id: RatingKey, edit: &ItemEdit) -> Result<Edited, MetadataError> {

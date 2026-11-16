@@ -27,8 +27,8 @@ const MAX_OUTPUT_SIDE: u32 = 8192;
 /// Where the reference's default falls on its own scale: between its 50 and its 90.
 const DEFAULT_JPEG_QUALITY: u8 = 75;
 
-struct SourceImage {
-    pixels: DynamicImage,
+pub(crate) struct SourceImage {
+    pub(crate) pixels: DynamicImage,
     is_png: bool,
 }
 
@@ -51,7 +51,7 @@ pub(crate) fn convert(
 }
 
 /// Decodes `bytes`, upright: EXIF orientation is applied.
-fn decode(bytes: &[u8]) -> Result<SourceImage, TranscodeError> {
+pub(crate) fn decode(bytes: &[u8]) -> Result<SourceImage, TranscodeError> {
     let reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|_| TranscodeError::Undecodable)?;

@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 6 | 2.3 % |
-| `stub` | 71 | 27.3 % |
-| `partial` | 31 | 11.9 % |
-| `done` | 113 | 43.5 % |
+| `stub` | 69 | 26.5 % |
+| `partial` | 32 | 12.3 % |
+| `done` | 114 | 43.8 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -55,7 +55,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Activities](#activities) | 2 | 1 | 0 | 1 | 0 | 0 |
 | [Events](#events) | 2 | 0 | 0 | 2 | 0 | 0 |
 | [Search](#search) | 2 | 1 | 1 | 0 | 0 | 0 |
-| [UltraBlur](#ultrablur) | 2 | 0 | 0 | 2 | 0 | 0 |
+| [UltraBlur](#ultrablur) | 2 | 1 | 1 | 0 | 0 | 0 |
 | [Collections](#collections) | 1 | 1 | 0 | 0 | 0 | 0 |
 | [Rate](#rate) | 1 | 0 | 0 | 1 | 0 | 0 |
 
@@ -474,8 +474,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 
 | Status | Method | Path | Scope | Description | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `stub` | `GET` | `/services/ultrablur/colors` | user | Get UltraBlur Colors |  |
-| `stub` | `GET` | `/services/ultrablur/image` | user | Get UltraBlur Image |  |
+| `partial` | `GET` | `/services/ultrablur/colors` | user | Get UltraBlur Colors | The reference's algorithm, from its binary: identical on 269 of 269 PNGs and on every JPEG once decoded as libjpeg-turbo does; our JPEG decoder rounds differently, 34 of 150 photos identical (390 of 604 corners). Remote images from Plex's hosts over TLS only; an item's `/art` answers its stored colors; any other local address `404`. See spec-gaps.md. |
+| `done` | `GET` | `/services/ultrablur/image` | user | Get UltraBlur Image | Pixel-identical to the reference without noise at 97×61, 320×240 and 1920×1080; the noise is ours, seeded. Area capped at 3840×2160, `url` honored as `/colors` reads it. Hex colors that do not parse are `400`. See spec-gaps.md. |
 
 ## Collections
 

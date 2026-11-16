@@ -417,6 +417,14 @@ Places where we knowingly answer differently, each decided rather than overlooke
   `type` other than `bookmark` is a `400`, as is a bookmark on a series, which the reference
   keeps.
 
+- **A backdrop's colors are read from Plex's hosts or from storage, nothing else.** The
+  reference's `/services/ultrablur/colors` and `/image` fetch any `url`, its own loopback
+  included; ours fetch over TLS from `plex.tv` hosts only (`403` otherwise), answer an item's
+  `/library/metadata/{id}/art` with the colors its analysis stored, since no artwork is served,
+  and `404` any other local address. The algorithm is the reference's, from its binary, exact on
+  PNGs; JPEGs decode differently in `zune-jpeg`, so 34 of 150 photos match exactly. A color the
+  reference's `sscanf` cannot read draws stack garbage there and is a `400` here; our noise is
+  seeded, so an image never changes (`docs/spec-gaps.md`).
 - **Nothing is popular in a user's libraries.** The reference's "Popular in Your Libraries"
   counts the plays of the server's other users; each user's server here receives no one
   else's, so `/hubs/popularInLibraries` answers the `404` the reference gives an empty or
@@ -730,6 +738,14 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `/library/sections/{id}/common`, what a set of items shares — fields, tags, collections and
   locks, aggregated in storage (`Library.common`, `ItemFilterInput.ids`) — element for element
   the reference's on films, series and episodes (`docs/spec-gaps.md`).
+- ✅ **backdrop colors (UltraBlur)**: the four corner colors the reference's analysis stored,
+  imported from `extra_data` into `item_corner_colors` (170,565 items) and published as
+  `UltraBlurColors` on every item and as `cornerColors` on the official API; and the reference's
+  own algorithm, read from its binary, in the transcoder (`transcoder::backdrop`: a median-cut
+  palette per quarter, Okhsl scoring, the gradient over black) — identical on 269 of 269 PNGs,
+  and on every JPEG once decoded as libjpeg-turbo decodes it. `/services/ultrablur/colors`
+  binds onto it for Plex's hosts and onto storage for an item's art; `/image` draws the
+  gradient, pixel-identical without noise, its area capped at 3840×2160 (`docs/spec-gaps.md`).
 
 ## Reference server
 

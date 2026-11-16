@@ -11,6 +11,7 @@ pub mod collection;
 pub mod collection_entry;
 pub mod collection_word;
 pub mod extension_account;
+pub mod item_corner_colors;
 pub mod item_external_id;
 pub mod item_field_lock;
 pub mod item_folded_title;

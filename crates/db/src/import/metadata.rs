@@ -26,7 +26,8 @@ use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait, Sta
 use super::analysis::Analysis;
 use super::{collections, markers, source_error, tags, ImportError, PlexRow, SOURCE_PAGE};
 use crate::entity::{
-    media, media_part, media_stream, metadata_item, stream_dolby_vision, stream_loudness,
+    item_corner_colors, media, media_part, media_stream, metadata_item, stream_dolby_vision,
+    stream_loudness,
 };
 use crate::write;
 
@@ -51,6 +52,8 @@ pub struct MetadataSummary {
     pub title_words: usize,
     /// Fields locked against a metadata refresh, one per item and field.
     pub locked_fields: usize,
+    /// Items with the four colors of their backdrop.
+    pub corner_colors: usize,
     pub media: usize,
     pub files: usize,
     pub streams: usize,
@@ -88,12 +91,14 @@ pub async fn import(
         summary.orphans += imported.orphans;
         summary.title_words += imported.words;
         summary.locked_fields += imported.locks;
+        summary.corner_colors += imported.corner_colors;
         tracing::info!(
             kind,
             written = imported.written,
             orphans = imported.orphans,
             words = imported.words,
             locks = imported.locks,
+            corner_colors = imported.corner_colors,
             "imported items"
         );
     }
@@ -144,9 +149,10 @@ struct ImportedItems {
     /// Rows the title index gained.
     words: usize,
     locks: usize,
+    corner_colors: usize,
 }
 
-/// Imports one kind of item, with its searchable words and its locks.
+/// Imports one kind of item, with its searchable words, its locks and its backdrop colors.
 async fn import_items(
     destination: &DatabaseConnection,
     source: &DatabaseConnection,
@@ -162,6 +168,7 @@ async fn import_items(
         orphans: 0,
         words: 0,
         locks: 0,
+        corner_colors: 0,
     };
 
     loop {
@@ -172,7 +179,7 @@ async fn import_items(
                     "SELECT id, library_section_id, parent_id, guid, title, title_sort, \
                      original_title, summary, tagline, studio, content_rating, \
                      content_rating_age, \"index\", year, originally_available_at, duration, \
-                     rating, audience_rating, added_at, updated_at, user_fields \
+                     rating, audience_rating, added_at, updated_at, user_fields, extra_data \
                      FROM metadata_items WHERE metadata_type = {metadata_type} \
                      AND library_section_id IS NOT NULL \
                      ORDER BY id LIMIT {SOURCE_PAGE} OFFSET {offset}"
@@ -188,6 +195,7 @@ async fn import_items(
 
         let mut batch = Vec::with_capacity(rows.len());
         let mut locks = Vec::new();
+        let mut colors = Vec::new();
         for row in &rows {
             let id: i64 = row.plex_get("id")?;
             let parent_id: Option<i64> = row.plex_opt("parent_id");
@@ -213,6 +221,8 @@ async fn import_items(
                         .map(|field| (id, field)),
                 );
             }
+            let extra = Analysis::parse(row.plex_text("extra_data").as_deref());
+            colors.extend(corner_colors(&extra).map(|corners| corner_colors_row(id, corners)));
 
             batch.push(metadata_item::ActiveModel {
                 id: ActiveValue::Set(id),
@@ -254,9 +264,48 @@ async fn import_items(
         imported.words += write::insert_items(destination, batch).await?;
         imported.locks += locks.len();
         write::insert_locks(destination, locks).await?;
+        imported.corner_colors += colors.len();
+        for chunk in colors.chunks(WRITE_CHUNK) {
+            item_corner_colors::Entity::insert_many(chunk.to_vec())
+                .exec(destination)
+                .await?;
+        }
     }
 
     Ok(imported)
+}
+
+fn corner_colors_row(
+    item: i64,
+    [top_left, top_right, bottom_right, bottom_left]: [i32; 4],
+) -> item_corner_colors::ActiveModel {
+    item_corner_colors::ActiveModel {
+        item_id: ActiveValue::Set(item),
+        top_left: ActiveValue::Set(top_left),
+        top_right: ActiveValue::Set(top_right),
+        bottom_right: ActiveValue::Set(bottom_right),
+        bottom_left: ActiveValue::Set(bottom_left),
+    }
+}
+
+/// The backdrop colors the reference's `UltraBlurProcessor` packs into `extra_data`, top left
+/// first and clockwise, as `0xRRGGBB`: all four, or none when one is missing or is not six
+/// hex digits.
+fn corner_colors(extra: &Analysis) -> Option<[i32; 4]> {
+    let mut corners = [0; 4];
+    for (corner, key) in corners.iter_mut().zip([
+        "pv:ultraBlurTopLeft",
+        "pv:ultraBlurTopRight",
+        "pv:ultraBlurBottomRight",
+        "pv:ultraBlurBottomLeft",
+    ]) {
+        let hex = extra.text(key)?;
+        if hex.len() != 6 || !hex.bytes().all(|digit| digit.is_ascii_hexdigit()) {
+            return None;
+        }
+        *corner = i32::from_str_radix(&hex, 16).ok()?;
+    }
+    Some(corners)
 }
 
 /// The fields an item's `user_fields` locks, `lockedFields=1|2|9` among its `&`-separated
@@ -627,6 +676,31 @@ const fn stream_kind(stream_type: i32) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_the_four_backdrop_colors_or_none() {
+        let packed = |extra: &str| corner_colors(&Analysis::parse(Some(extra)));
+        // Item 21812 of the reference, the hex case aside.
+        assert_eq!(
+            packed(
+                r#"{"pv:ultraBlurBottomLeft":"8f461d","pv:ultraBlurBottomRight":"58421c","pv:ultraBlurChangestamp":"189731385","pv:ultraBlurTopLeft":"1a2c53","pv:ultraBlurTopRight":"81502B"}"#
+            ),
+            Some([0x001a_2c53, 0x0081_502b, 0x0058_421c, 0x008f_461d])
+        );
+        assert_eq!(
+            packed(
+                r#"{"pv:ultraBlurTopLeft":"1a2c53","pv:ultraBlurTopRight":"81502b","pv:ultraBlurBottomRight":"58421c"}"#
+            ),
+            None
+        );
+        assert_eq!(
+            packed(
+                r#"{"pv:ultraBlurBottomLeft":"+8f461","pv:ultraBlurBottomRight":"58421c","pv:ultraBlurTopLeft":"1a2c53","pv:ultraBlurTopRight":"81502b"}"#
+            ),
+            None
+        );
+        assert_eq!(packed("{}"), None);
+    }
 
     #[test]
     fn reads_the_locks_plex_packs_into_user_fields() {

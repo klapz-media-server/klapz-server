@@ -842,6 +842,10 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
             tokio::spawn,
         ))
         .data(DataLoader::new(
+            crate::backdrop::CornerColorsLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
             crate::marker::MarkersLoader::new(Arc::clone(&metadata)),
             tokio::spawn,
         ))
