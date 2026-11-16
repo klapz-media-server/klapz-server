@@ -183,6 +183,52 @@ reference's items, and every list is the reference's. The one approximation is i
 it counts a class by the frame as stored, so a portrait video could list a class one step
 off, a case 71 versions of 99,911 present.
 
+### A library's categories, `/library/sections/{id}/categories`
+
+The spec calls it "Set section categories" and documents a `GET` with no parameter but the
+section. Measured on the ten film and series libraries of the reference and on genres given
+to the show of test library 28 (and taken away again):
+
+- **The list is the library's genres**, the entries of `/genre` in the same order (by name),
+  each a `Directory` with `thumb`, `type="directory"`, `key="/library/sections/{id}/all?genre={tagId}"`
+  and `title`, and nothing else. A library without genres (27 and 28 as they stand) lists
+  none. The container is a `secondary` view — `content`, `viewGroup`, `title2=""`,
+  `viewMode=65592`, `nocache` on a series library — with a `Meta` block of one `Type`,
+  `key` the view itself, `type="directory"`, `title="Categories"`, `active`, written in XML
+  in the long form (`<Type …>
+</Type>`) although it holds nothing.
+- **Whole unless both container parameters are sent**, then `size`, `totalSize`, `offset` and
+  the two headers, as on `/filters`. Every other parameter — `type`, `genre`, `year`,
+  `unwatched`, `sort`, an unknown one — changes nothing on the reference, and nothing here.
+  An unknown section and a non-numeric one are `404`.
+- **`blendColor`**, read from the binary and measured on every tile (335 in ten libraries, and
+  six sets of genres on library 28): the thirteen genres the reference ships a
+  `category-art` image for — `action` `2B717E`, `animation` `347431`, `comedy` `51284C`,
+  `crime` `33486E`, `documentary` `884624`, `drama` `846E49`, `history` `37397A`, `horror`
+  `7A281A`, `musical` `3B8265`, `romance` `892959`, `science-fiction` `673E8B`, `thriller`
+  `57222B`, `western` `704A23` — keep their color, matched in lower case with spaces as
+  hyphens (`Science Fiction` and `Science-Fiction` alike). Every other genre takes the next
+  of `494616`, `91293D`, `4C561B`, `883E7D`, `8B6122`, `8B4D43`, `23533C` in turn, by
+  ascending tag id over the whole library, so a window shows the colors the whole list does.
+  Adventure (tag 122) is the lowest such genre in every library measured, which makes it look
+  named: on library 28 without it, Fantasy takes `494616`. Whether the reference matches a
+  name's case was not measured, since its tags merge names case-insensitively.
+- **`thumb`** is `/photo/:/transcode?blendColor=…&width=2560&height=1440&url=…`. The `url` is
+  the background art of one of the genre's items: the query in the binary keeps the items with a
+  `user_art_url`, those not already shown by a genre of lower id (`metadata_items.id not in
+  (…)`), and takes the highest `audience_rating`; 40 of 41 tiles of a film library name
+  distinct items, a genre whose items are all taken repeating one. A genre none of whose items
+  has art gets `/:/resources/category-art/animation.png` — that file, whatever the genre, as
+  library 28's show without art showed, encoded `%2F%3A%2Fresources%2Fcategory-art%2Fanimation%2Epng`.
+
+**Where we differ.** This server keeps no artwork (`user_art_url` is not imported), so every
+tile has the fallback the reference gives a genre without art: identical to the reference on
+library 28, attribute for attribute in JSON and byte for byte in XML; on a library with art,
+the colors, keys, titles and order are the reference's and the `url` is the fallback rather
+than an item's art. `/photo/:/transcode` refuses both a relative `url` and `blendColor`
+(`501`), so the tile's image does not open here yet. The list is `Library.tags(kind: GENRE)`
+on the official API; the color and the image are presentation, chosen in the adapter.
+
 ### Watch state
 
 Measured on the reference's own test library, never on the owner's: each rule below is a

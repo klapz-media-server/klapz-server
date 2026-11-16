@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 6 | 2.3 % |
-| `stub` | 65 | 25.0 % |
+| `stub` | 64 | 24.6 % |
 | `partial` | 32 | 12.3 % |
-| `done` | 118 | 45.4 % |
+| `done` | 119 | 45.8 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -31,7 +31,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | --- | --: | --: | --: | --: | --: | --: |
 | [Library](#library) | 85 | 15 | 14 | 25 | 5 | 26 |
 | [Hubs](#hubs) | 15 | 5 | 3 | 7 | 0 | 0 |
-| [Content](#content) | 13 | 2 | 3 | 8 | 0 | 0 |
+| [Content](#content) | 13 | 3 | 3 | 7 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
 | [EPG](#epg) | 13 | 13 | 0 | 0 | 0 | 0 |
 | [Library Playlists](#library-playlists) | 13 | 12 | 1 | 0 | 0 | 0 |
@@ -205,7 +205,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `partial` | `GET` | `/library/sections/{sectionId}/all` | user | Get items in the section | Items, media and files through the GraphQL schema; zero field differences against the reference on shared items. `includeMeta=1` publishes the filters and sorts it honors. Filters: `title` (word prefix), `year`, `decade`, `contentRating`, `studio`, `resolution` — exact totals on 11 of 12 probes; `genre`, `country`, `director`, `writer`, `actor`, `producer` by id or name, comma for OR, repeat for AND — exact totals on 16 probes. `collection` by tag number or title, as `genre`. Any other advertised filter (`label`, …) answers 501 rather than being dropped. `type=18` lists the library's collections. Tags in the listing form: first 2 or 3 names per kind, derived from the tags rather than from the reference's stale cache. Gaps: artwork, view state, audio/videoProfile. Sort collation and range operators — see spec-gaps.md. |
 | `stub` | `GET` | `/library/sections/{sectionId}/allLeaves` | user | Set section leaves |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/arts` | user | Set section artwork |  |
-| `stub` | `GET` | `/library/sections/{sectionId}/categories` | user | Set section categories |  |
+| `done` | `GET` | `/library/sections/{sectionId}/categories` | user | Set section categories | The library's genres by name (`Library.tags(kind: GENRE)`), each a `Directory` opening `/all?genre={id}`, under a `Meta` type naming the view; whole unless both container parameters are sent, every other parameter ignored, as on the reference. `blendColor` by the reference's rule — a fixed color for 14 genre names, the others a 7-color cycle by tag id — identical on 335 of 335 tiles of ten libraries. `thumb` is the reference's fallback for a genre without background art, since no artwork is kept here. See spec-gaps.md. |
 | `stub` | `GET` | `/library/sections/{sectionId}/cluster` | user | Set section clusters |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/computePath` | user | Similar tracks to transition from one to another |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/location` | user | Get all folder locations |  |

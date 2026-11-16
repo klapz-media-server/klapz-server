@@ -66,7 +66,7 @@ pub struct MenuContainer<T> {
 
 /// The window the client asked for, which needs both parameters, as everywhere on the
 /// reference.
-fn window(pairs: &[(String, String)]) -> Option<(usize, usize)> {
+pub(crate) fn window(pairs: &[(String, String)]) -> Option<(usize, usize)> {
     let value = |name: &str| {
         pairs
             .iter()

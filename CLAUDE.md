@@ -445,6 +445,10 @@ Places where we knowingly answer differently, each decided rather than overlooke
   already decodes in software and encodes H.264, so `fallBackStream` answers `NO_FALLBACK` and
   `/universal/fallback` the `412` the reference gives its own software conversions. Its success
   could not be measured: the reference has hardware transcoding off (`docs/spec-gaps.md`).
+- **A category's tile shows no item's art.** The reference draws each genre's tile from the
+  background art of its best-rated item not already shown; this server keeps no artwork, so
+  every tile names the image the reference uses for a genre without art,
+  `category-art/animation.png`, with the reference's own color (`docs/spec-gaps.md`).
 
 ### Data model
 
@@ -787,6 +791,13 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   and on every JPEG once decoded as libjpeg-turbo decodes it. `/services/ultrablur/colors`
   binds onto it for Plex's hosts and onto storage for an item's art; `/image` draws the
   gradient, pixel-identical without noise, its area capped at 3840×2160 (`docs/spec-gaps.md`).
+- ✅ **categories**, `/library/sections/{id}/categories`: a library's genres as tiles, from
+  `Library.tags(kind: GENRE)`, each opening `/all?genre=`; whole unless both container
+  parameters are sent, other parameters ignored, as on the reference. `blendColor` by the rule
+  read from its binary and measured on 335 tiles of ten libraries, all identical — thirteen
+  named genres keep a color, the others take a seven-color cycle by tag id — and the
+  fallback image for a genre without art as `thumb`; identical to the reference, JSON and XML,
+  on a test library without art (`docs/spec-gaps.md`).
 
 ## Reference server
 
