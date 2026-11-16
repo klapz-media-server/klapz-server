@@ -1440,6 +1440,33 @@ type Episode implements Item & Node {
 	"""
 	userRating: UserRating
 	"""
+	Who watched the work, most viewings first, then by user: an owner sees every user,
+	a user only itself. Counts every copy the caller can read and, for a series or a
+	season, the episodes below them.
+	"""
+	viewers(
+		"""
+		Only the caller, which for an owner leaves out everyone else.
+		"""
+		mine: Boolean,
+		"""
+		Return viewers after this cursor.
+		"""
+		after: String,
+		"""
+		Return viewers before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many viewers from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many viewers from the end of the range.
+		"""
+		last: Int
+	): WorkViewerConnection!
+	"""
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
@@ -3933,6 +3960,33 @@ type Movie implements Item & Node {
 	"""
 	userRating: UserRating
 	"""
+	Who watched the work, most viewings first, then by user: an owner sees every user,
+	a user only itself. Counts every copy the caller can read and, for a series or a
+	season, the episodes below them.
+	"""
+	viewers(
+		"""
+		Only the caller, which for an owner leaves out everyone else.
+		"""
+		mine: Boolean,
+		"""
+		Return viewers after this cursor.
+		"""
+		after: String,
+		"""
+		Return viewers before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many viewers from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many viewers from the end of the range.
+		"""
+		last: Int
+	): WorkViewerConnection!
+	"""
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
@@ -5771,6 +5825,38 @@ type Query {
 		first: Int
 	): CreditedItemConnection!
 	"""
+	Every tag of one kind that an item of the caller's libraries carries — a film, a
+	series, a season or an episode, hidden libraries included — in the order the tags
+	were first recorded. A tag nothing carries any more is left out, and so is one only
+	libraries the caller cannot read carry.
+	"""
+	tags(
+		"""
+		Which kind of tag to list.
+		"""
+		kind: TagType!,
+		"""
+		Return tags after this cursor.
+		"""
+		after: String,
+		"""
+		Return tags before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many tags from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many tags from the end of the range.
+		"""
+		last: Int,
+		"""
+		Discard this many tags before the page begins. Prefer cursors: an offset costs a traversal of every discarded row.
+		"""
+		offset: Int
+	): TagListConnection!
+	"""
 	Genres and people whose name matches a search term, once per library carrying them.
 	
 	Matches as `search` does: every word of the term begins a word of the name, accents
@@ -6536,6 +6622,33 @@ type Season implements Item & Node {
 	"""
 	userRating: UserRating
 	"""
+	Who watched the work, most viewings first, then by user: an owner sees every user,
+	a user only itself. Counts every copy the caller can read and, for a series or a
+	season, the episodes below them.
+	"""
+	viewers(
+		"""
+		Only the caller, which for an owner leaves out everyone else.
+		"""
+		mine: Boolean,
+		"""
+		Return viewers after this cursor.
+		"""
+		after: String,
+		"""
+		Return viewers before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many viewers from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many viewers from the end of the range.
+		"""
+		last: Int
+	): WorkViewerConnection!
+	"""
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
@@ -6877,6 +6990,33 @@ type Show implements Item & Node {
 	rated it, and without a caller.
 	"""
 	userRating: UserRating
+	"""
+	Who watched the work, most viewings first, then by user: an owner sees every user,
+	a user only itself. Counts every copy the caller can read and, for a series or a
+	season, the episodes below them.
+	"""
+	viewers(
+		"""
+		Only the caller, which for an owner leaves out everyone else.
+		"""
+		mine: Boolean,
+		"""
+		Return viewers after this cursor.
+		"""
+		after: String,
+		"""
+		Return viewers before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many viewers from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many viewers from the end of the range.
+		"""
+		last: Int
+	): WorkViewerConnection!
 	"""
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
@@ -7812,6 +7952,39 @@ input TagFilterInput {
 	both.
 	"""
 	names: [String!]
+}
+
+type TagListConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [TagListEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Tag!]!
+	"""
+	How many tags the list holds in all, across every page.
+	"""
+	totalCount: Int!
+}
+
+"""
+An edge in a connection.
+"""
+type TagListEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Tag!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 """
@@ -8865,6 +9038,47 @@ type WatchState {
 	season, when any of its episodes was.
 	"""
 	lastViewedAt: DateTime
+}
+
+type WorkViewer {
+	"""
+	Who watched. Null once that user is deleted.
+	"""
+	user: User
+	"""
+	How many viewings the user counts of the work: of every copy the caller can read,
+	and of the episodes below them for a series or a season.
+	"""
+	viewCount: Int!
+}
+
+type WorkViewerConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [WorkViewerEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [WorkViewer!]!
+}
+
+"""
+An edge in a connection.
+"""
+type WorkViewerEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: WorkViewer!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type YearConnection {

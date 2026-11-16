@@ -57,7 +57,7 @@ fn stub(methods: u8) -> MethodRouter<PlexState> {
     router
 }
 
-/// The 68 stub operations, across 56 paths.
+/// The 66 stub operations, across 54 paths.
 const STUBS: &[(&str, u8)] = &[
     ("/:/eventsource/notifications", verb::GET),
     ("/:/prefs/get", verb::GET),
@@ -105,7 +105,6 @@ const STUBS: &[(&str, u8)] = &[
     ("/library/metadata/{ids}/nearest", verb::GET),
     ("/library/metadata/{ids}/subtitles", verb::GET),
     ("/library/metadata/{ids}/tree", verb::GET),
-    ("/library/metadata/{ids}/users/top", verb::GET),
     (
         "/library/metadata/{ids}/{element}",
         verb::POST | verb::PUT | verb::DELETE,
@@ -133,7 +132,6 @@ const STUBS: &[(&str, u8)] = &[
     ("/library/sections/{sectionId}/nearest", verb::GET),
     ("/library/streams/{streamId}/levels", verb::GET),
     ("/library/streams/{streamId}/loudness", verb::GET),
-    ("/library/tags", verb::GET),
     ("/log", verb::POST | verb::PUT),
     ("/log/networked", verb::POST),
     ("/media/providers/{provider}", verb::DELETE),
@@ -147,7 +145,7 @@ const STUBS: &[(&str, u8)] = &[
     ),
 ];
 
-/// Adds 68 stub operations across 56 paths.
+/// Adds 66 stub operations across 54 paths.
 pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
     STUBS.iter().fold(router, |router, (path, methods)| {
         router.route(path, stub(*methods))

@@ -220,6 +220,36 @@ impl SqlMetadataRepository {
             .filter(tag::Column::Id.in_subquery(attachments))
     }
 
+    /// The tags of one kind something in these libraries carries, asked tag by tag: the
+    /// `(tag_id, item_id)` index answers each, where gathering every item first would read
+    /// the whole library.
+    fn tags_of_libraries(sections: &[SectionId], kind: TagKind) -> Select<tag::Entity> {
+        let carried = Query::select()
+            .expr(Expr::val(1))
+            .from(item_tag::Entity)
+            .inner_join(
+                metadata_item::Entity,
+                Expr::col((metadata_item::Entity, metadata_item::Column::Id))
+                    .equals((item_tag::Entity, item_tag::Column::ItemId)),
+            )
+            .and_where(
+                Expr::col((item_tag::Entity, item_tag::Column::TagId))
+                    .equals((tag::Entity, tag::Column::Id)),
+            )
+            .and_where(
+                Expr::col((
+                    metadata_item::Entity,
+                    metadata_item::Column::LibrarySectionId,
+                ))
+                .is_in(sections.iter().map(|section| section.get())),
+            )
+            .to_owned();
+        tag::Entity::find()
+            .select_only()
+            .filter(tag::Column::Kind.eq(tag::kind_name(kind)))
+            .filter(Expr::exists(carried))
+    }
+
     /// The distinct values a query's items hold in a column of their own, absent ones left
     /// out.
     fn values_held(
@@ -1430,6 +1460,61 @@ impl MetadataRepository for SqlMetadataRepository {
 
     async fn tag_count_in(&self, query: &ItemQuery, scope: TagScope) -> Result<u64, MetadataError> {
         Self::tags_carried(query, scope)
+            .column(tag::Column::Id)
+            .count(&self.connection)
+            .await
+            .map_err(storage)
+    }
+
+    async fn tags_in_libraries(
+        &self,
+        sections: &[SectionId],
+        kind: TagKind,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError> {
+        let id = || Expr::col((tag::Entity, tag::Column::Id));
+        let mut select = Self::tags_of_libraries(sections, kind);
+        if let Some(after) = &window.after {
+            select = select.filter(id().gt(after.id));
+        }
+        if let Some(before) = &window.before {
+            select = select.filter(id().lt(before.id));
+        }
+        let order = if window.is_reversed() {
+            Order::Desc
+        } else {
+            Order::Asc
+        };
+        let rows = with_tag_columns(select)
+            .join(JoinType::LeftJoin, tag::Relation::Person.def())
+            .order_by(tag::Column::Id, order)
+            .offset(window.skip)
+            .limit(window.fetch_limit())
+            .into_model::<TagRow>()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        let mut page = Page::from_overfetch(rows, &window);
+        if window.is_reversed() {
+            page.items.reverse();
+        }
+        Ok(Page {
+            items: page
+                .items
+                .into_iter()
+                .filter_map(TagRow::into_tag)
+                .collect(),
+            has_previous: page.has_previous,
+            has_next: page.has_next,
+        })
+    }
+
+    async fn tag_count_in_libraries(
+        &self,
+        sections: &[SectionId],
+        kind: TagKind,
+    ) -> Result<u64, MetadataError> {
+        Self::tags_of_libraries(sections, kind)
             .column(tag::Column::Id)
             .count(&self.connection)
             .await

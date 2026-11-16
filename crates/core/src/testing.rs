@@ -1033,6 +1033,25 @@ impl MetadataRepository for InMemoryMetadata {
         ))
     }
 
+    async fn tags_in_libraries(
+        &self,
+        sections: &[SectionId],
+        kind: TagKind,
+        window: Window,
+    ) -> Result<Page<Tag>, MetadataError> {
+        let mut tags = self.library_tags(sections, kind);
+        tags.sort_by_key(|tag| tag.id);
+        Ok(windowed(tags, &window, Tag::recorded_cursor))
+    }
+
+    async fn tag_count_in_libraries(
+        &self,
+        sections: &[SectionId],
+        kind: TagKind,
+    ) -> Result<u64, MetadataError> {
+        Ok(self.library_tags(sections, kind).len() as u64)
+    }
+
     async fn tag_count_in(&self, query: &ItemQuery, scope: TagScope) -> Result<u64, MetadataError> {
         Ok(self.distinct_tags(query, scope).len() as u64)
     }
@@ -1430,6 +1449,20 @@ impl InMemoryMetadata {
     ///
     /// Children are ordered by position, where the cursor is the id alone, so only the
     /// offset and the limit apply — mirroring SQL `OFFSET` after `ORDER BY`.
+    fn library_tags(&self, sections: &[SectionId], kind: TagKind) -> Vec<Tag> {
+        let query = ItemQuery::across(sections.to_vec()).filtered(crate::metadata::ItemFilter {
+            depth: crate::metadata::ItemDepth::All,
+            ..crate::metadata::ItemFilter::default()
+        });
+        self.distinct_tags(
+            &query,
+            TagScope {
+                kind,
+                billed_within: None,
+            },
+        )
+    }
+
     fn distinct_tags(&self, query: &ItemQuery, scope: TagScope) -> Vec<Tag> {
         let items: Vec<RatingKey> = self.matching(query).iter().map(|item| item.id).collect();
         let mut tags: Vec<Tag> = Vec::new();
@@ -2632,6 +2665,41 @@ impl crate::watch::WatchRepository for InMemoryWatch {
         let count = history.len();
         history.retain(|entry| entry.id != id);
         Ok(history.len() < count)
+    }
+
+    /// Windows by position only, as `history` does.
+    async fn viewers(
+        &self,
+        items: &[RatingKey],
+        scope: crate::history::HistoryScope,
+        window: Window,
+    ) -> Result<Page<crate::history::ViewerCount>, crate::watch::WatchError> {
+        let parent_of = |id: RatingKey| self.items.iter().find(|item| item.id == id)?.parent_id;
+        let mut counts: Vec<crate::history::ViewerCount> = Vec::new();
+        for entry in Self::lock(&self.history).iter() {
+            let in_scope = match scope {
+                crate::history::HistoryScope::Everyone => true,
+                crate::history::HistoryScope::Viewer(viewer) => entry.viewer == viewer,
+            };
+            let mut lineage = std::iter::successors(Some(entry.item), |id| parent_of(*id));
+            if !in_scope || !lineage.any(|id| items.contains(&id)) {
+                continue;
+            }
+            match counts.iter_mut().find(|count| count.viewer == entry.viewer) {
+                Some(count) => count.viewings += 1,
+                None => counts.push(crate::history::ViewerCount {
+                    viewer: entry.viewer,
+                    viewings: 1,
+                }),
+            }
+        }
+        counts.sort_by(|a, b| b.viewings.cmp(&a.viewings).then(a.viewer.cmp(&b.viewer)));
+        let rows = counts
+            .into_iter()
+            .skip(usize::try_from(window.skip).unwrap_or(usize::MAX))
+            .take(usize::try_from(window.fetch_limit()).unwrap_or(usize::MAX))
+            .collect();
+        Ok(Page::from_overfetch(rows, &window))
     }
 
     async fn watched_leaves(

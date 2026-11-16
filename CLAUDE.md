@@ -440,6 +440,15 @@ Places where we knowingly answer differently, each decided rather than overlooke
   counts the plays of the server's other users; each user's server here receives no one
   else's, so `/hubs/popularInLibraries` answers the `404` the reference gives an empty or
   disabled shelf, and `/hubs` leaves it out, as the reference does.
+- **Who watched an item is answered, where the reference answers `404`.**
+  `/library/metadata/{id}/users/top` is `404` on every film, series, season and episode of the
+  reference, though its binary counts each account's viewings of the work; ours answers the
+  spec's `Account` list with the caller alone, `accountID` 1 on its own server, through
+  `viewers` on the official API, where an owner sees every user (`docs/spec-gaps.md`).
+- **`/library/tags` lists what the caller's libraries carry.** The reference lists every row of
+  its `tags` table of a type, unpaged; ours leaves out a tag nothing readable carries, pages by
+  500, answers `type=2` (collections, which have no tag here) `501` and its internal types
+  (labels, networks, guids…) empty (`docs/spec-gaps.md`).
 - **A transcoder fallback is always refused.** On the reference it restarts a hardware or HEVC
   conversion in software and H.264 (its binary and the spec say so); every conversion here
   already decodes in software and encodes H.264, so `fallBackStream` answers `NO_FALLBACK` and
@@ -787,6 +796,14 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   and on every JPEG once decoded as libjpeg-turbo decodes it. `/services/ultrablur/colors`
   binds onto it for Plex's hosts and onto storage for an item's art; `/image` draws the
   gradient, pixel-identical without noise, its area capped at 3840×2160 (`docs/spec-gaps.md`).
+- ✅ **every tag of a kind, and who watched an item**: `/library/tags` over the official API's
+  `tags(kind:)` — the six kinds by Plex's numbers, every depth, id order, as measured on every
+  `type` and on 72,160 tags against the live reference (70,822 identical, the rest portraits
+  and snapshot drift), asked tag by tag through the `(tag_id, item_id)` index; tag names with
+  an ASCII first letter capitalized in lookups, listings and person pages too, as measured.
+  `viewers` on films, series, seasons and episodes (`WatchRepository::viewers`, the binary's
+  counting rule: every copy of the work, a series' and a season's episodes), and
+  `/library/metadata/{id}/users/top` bound onto it (`docs/spec-gaps.md`).
 
 ## Reference server
 

@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 6 | 2.3 % |
-| `stub` | 65 | 25.0 % |
-| `partial` | 32 | 12.3 % |
-| `done` | 118 | 45.4 % |
+| `stub` | 63 | 24.2 % |
+| `partial` | 33 | 12.7 % |
+| `done` | 119 | 45.8 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 15 | 14 | 25 | 5 | 26 |
+| [Library](#library) | 85 | 16 | 15 | 23 | 5 | 26 |
 | [Hubs](#hubs) | 15 | 5 | 3 | 7 | 0 | 0 |
 | [Content](#content) | 13 | 2 | 3 | 8 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
@@ -124,7 +124,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `GET` | `/library/metadata/{ids}/subtitles` | admin | Add subtitles |  |
 | `stub` | `GET` | `/library/metadata/{ids}/tree` | user | Get metadata items as a tree |  |
 | `deferred` | `PUT` | `/library/metadata/{ids}/unmatch` | admin | Unmatch a metadata item | scanner/analysis, separate binary |
-| `stub` | `GET` | `/library/metadata/{ids}/users/top` | admin | Get metadata top users |  |
+| `done` | `GET` | `/library/metadata/{ids}/users/top` | admin | Get metadata top users | The reference answers `404` on every video item; ours answers the spec's shape for the caller's own viewings of the work as `accountID` 1 (`viewers` on the official API). A deliberate divergence. See spec-gaps.md. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/voiceActivity` | admin | Detect voice activity | scanner/analysis, separate binary |
 | `stub` | `DELETE` | `/library/metadata/{ids}/{element}` | user | Delete an item's artwork, theme, etc |  |
 | `stub` | `POST` | `/library/metadata/{ids}/{element}` | user | Set an item's artwork, theme, etc |  |
@@ -172,7 +172,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `todo` | `PUT` | `/library/streams/{streamId}.{ext}` | user | Set a stream offset | needs a hand-written handler: two parameters in segment `{streamId}.{ext}` |
 | `stub` | `GET` | `/library/streams/{streamId}/levels` | user | Get loudness about a stream in json |  |
 | `stub` | `GET` | `/library/streams/{streamId}/loudness` | user | Get loudness about a stream |  |
-| `stub` | `GET` | `/library/tags` | user | Get all library tags of a type |  |
+| `partial` | `GET` | `/library/tags` | user | Get all library tags of a type | Genres, countries and the four credits in id order, as measured, over `tags(kind:)`; tags nothing readable carries left out, 500 a page. Collections (`type=2`) `501`; the reference's internal types empty. See spec-gaps.md. |
 
 ## Hubs
 

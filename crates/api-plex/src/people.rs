@@ -140,7 +140,7 @@ struct MediaContainer {
 }
 
 /// The listing filter selecting a kind of tag, and Plex's `tag_type` for it.
-fn wire_kind(kind: &str) -> Option<(&'static str, u8)> {
+pub(crate) fn wire_kind(kind: &str) -> Option<(&'static str, u8)> {
     Some(match kind {
         "GENRE" => ("genre", 1),
         "DIRECTOR" => ("director", 4),
@@ -185,7 +185,7 @@ async fn person(
             directory: [PersonDirectory {
                 id,
                 filter: format!("{field}={id}"),
-                tag: tag.name,
+                tag: crate::items::capitalized(&tag.name),
                 tag_type,
                 tag_key: person.provider_key,
                 thumb: person.thumb_url,

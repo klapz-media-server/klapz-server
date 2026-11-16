@@ -5359,3 +5359,169 @@ async fn a_listing_sorts_and_filters_by_the_callers_rating() {
     let (status, _) = get_from(app, "/library/sections/27/all?userRating=abc", None).await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
 }
+
+#[tokio::test]
+async fn library_tags_lists_a_kind_across_libraries_in_id_order() {
+    let body = listing("/library/tags?type=4").await;
+    let container = &body["MediaContainer"];
+    // Complete, so unpaged: no `totalSize`, as the reference answers a list it holds whole.
+    assert_eq!(
+        keys_of(container),
+        [
+            "size",
+            "identifier",
+            "mediaTagPrefix",
+            "mediaTagVersion",
+            "Directory"
+        ]
+    );
+    assert_eq!(container["size"], 2);
+    let directors = container["Directory"].as_array().unwrap();
+    // The film's director, then an episode's: every depth counts.
+    assert_eq!(directors[0]["id"], 623_027);
+    assert_eq!(directors[1]["id"], 705_517);
+    // The captured order of a director's attributes.
+    assert_eq!(
+        keys_of(&directors[0]),
+        ["id", "filter", "tag", "tagType", "tagKey", "thumb"]
+    );
+    assert_eq!(directors[0]["filter"], "director=623027");
+    assert_eq!(directors[0]["tag"], "Corey Yuen");
+    assert_eq!(directors[0]["tagType"], 4);
+    assert_eq!(directors[0]["tagKey"], "5d77682d103a2d001f565d0f");
+
+    // A country, captured: no person, so no `tagKey` or `thumb`.
+    let (status, xml) = get_from(items_app(), "/library/tags?type=8", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        xml.contains(r#"<Directory id="10097" filter="country=10097" tag="France" tagType="8" />"#),
+        "{xml}"
+    );
+}
+
+#[tokio::test]
+async fn library_tags_reads_its_type_as_the_reference_does() {
+    let status = |uri: &'static str| async move { get_from(items_app(), uri, None).await.0 };
+    for uri in [
+        "/library/tags",
+        "/library/tags?type=",
+        "/library/tags?type=abc",
+        "/library/tags?type=8.5",
+        "/library/tags?type=%208",
+        "/library/tags?type=99999999999",
+        "/library/tags?TYPE=8",
+    ] {
+        assert_eq!(status(uri).await, StatusCode::BAD_REQUEST, "{uri}");
+    }
+    // Collections are items here, with no tag to list.
+    assert_eq!(
+        status("/library/tags?type=2").await,
+        StatusCode::NOT_IMPLEMENTED
+    );
+
+    // The last `type` wins, and leading zeros read.
+    let countries = listing("/library/tags?type=1&type=08").await;
+    assert_eq!(countries["MediaContainer"]["Directory"][0]["tagType"], 8);
+
+    // A type with no tag, captured with `type=3`, `999` and `-1` alike.
+    let none = r#"{"MediaContainer":{"size":0,"identifier":"com.plexapp.plugins.library","mediaTagPrefix":"/system/bundle/media/flags/","mediaTagVersion":1791210760}}"#;
+    for kind in [0, 3, 11, 999, -1] {
+        assert_eq!(
+            listing(&format!("/library/tags?type={kind}")).await,
+            with_our_flag_bundle(none),
+            "{kind}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn library_tags_pages_with_both_container_parameters() {
+    let (status, _, paging, body) = call(
+        &items_app(),
+        "GET",
+        "/library/tags?type=6&X-Plex-Container-Start=1&X-Plex-Container-Size=2",
+        Some("application/json"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let body: Value = serde_json::from_str(&body).unwrap();
+    let container = &body["MediaContainer"];
+    assert_eq!(container["size"], 2);
+    assert_eq!(container["totalSize"], 4);
+    assert_eq!(container["offset"], 1);
+    let ids: Vec<&Value> = container["Directory"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|actor| &actor["id"])
+        .collect();
+    assert_eq!(ids, [480_672, 603_622]);
+    assert!(paging.contains(&("x-plex-container-start".to_owned(), "1".to_owned())));
+    assert!(paging.contains(&("x-plex-container-total-size".to_owned(), "4".to_owned())));
+
+    // One parameter alone pages nothing, as on the reference.
+    let whole = listing("/library/tags?type=6&X-Plex-Container-Size=2").await;
+    assert_eq!(whole["MediaContainer"]["size"], 4);
+    assert!(whole["MediaContainer"].get("totalSize").is_none());
+}
+
+#[tokio::test]
+async fn library_tags_leaves_out_what_only_another_users_libraries_carry() {
+    // The user reads the films alone: the episode's director is nobody it can see.
+    let app = app_as_user(9, LibraryRole::Viewer);
+    let (status, body) = get_from(app, "/library/tags?type=4", Some("application/json")).await;
+    assert_eq!(status, StatusCode::OK);
+    let body: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(body["MediaContainer"]["size"], 1);
+    assert_eq!(body["MediaContainer"]["Directory"][0]["id"], 623_027);
+}
+
+#[tokio::test]
+async fn top_users_names_the_caller_as_its_servers_account() {
+    let app = watched_app().await;
+    let json = |uri: &'static str| {
+        let app = app.clone();
+        async move {
+            let (status, _, _, body) = call(&app, "GET", uri, Some("application/json")).await;
+            assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+            serde_json::from_str::<Value>(&body).unwrap()
+        }
+    };
+    assert_eq!(
+        json("/library/metadata/100/users/top").await,
+        serde_json::json!({"MediaContainer": {"size": 1, "Account": [{"id": 1, "globalViewCount": 1}]}})
+    );
+    // A series and its season count their episodes' viewings.
+    for uri in [
+        "/library/metadata/200/users/top",
+        "/library/metadata/201/users/top",
+    ] {
+        assert_eq!(
+            json(uri).await["MediaContainer"]["Account"][0]["globalViewCount"],
+            1,
+            "{uri}"
+        );
+    }
+    // Nothing watched: an empty container.
+    assert_eq!(
+        json("/library/metadata/205/users/top").await,
+        serde_json::json!({"MediaContainer": {"size": 0}})
+    );
+
+    let (_, _, _, xml) = call(&app, "GET", "/library/metadata/100/users/top", None).await;
+    assert!(
+        xml.contains(r#"<Account id="1" globalViewCount="1" />"#),
+        "{xml}"
+    );
+    for uri in [
+        "/library/metadata/999/users/top",
+        "/library/metadata/100,202/users/top",
+        "/library/metadata/abc/users/top",
+    ] {
+        assert_eq!(
+            call(&app, "GET", uri, None).await.0,
+            StatusCode::NOT_FOUND,
+            "{uri}"
+        );
+    }
+}

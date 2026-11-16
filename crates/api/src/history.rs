@@ -11,8 +11,9 @@
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
 use open_plex_core::history::{
-    HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, ViewingKind,
+    HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, ViewerCount, ViewingKind,
 };
+use open_plex_core::metadata::MetadataItem;
 use open_plex_core::{HistoryId, RatingKey, SectionId, UserId};
 
 use crate::cursor::OpaqueCursor;
@@ -287,6 +288,78 @@ pub(crate) async fn viewing_history(
                     HistoryEntryObject(entry),
                 )
             }));
+            Ok::<_, async_graphql::Error>(connection)
+        },
+    )
+    .await
+}
+
+/// A user who watched a work, and how many times.
+#[derive(Debug, Clone, Copy)]
+pub struct WorkViewerObject(ViewerCount);
+
+#[Object(name = "WorkViewer")]
+impl WorkViewerObject {
+    /// Who watched. Null once that user is deleted.
+    async fn user(&self, context: &Context<'_>) -> Result<Option<crate::access::UserObject>> {
+        crate::access::user_node(context, self.0.viewer.get()).await
+    }
+
+    /// How many viewings the user counts of the work: of every copy the caller can read,
+    /// and of the episodes below them for a series or a season.
+    async fn view_count(&self) -> u64 {
+        self.0.viewings
+    }
+}
+
+/// A page of the users who watched a work, most viewings first.
+pub type WorkViewerConnection =
+    Connection<OpaqueCursor, WorkViewerObject, EmptyFields, EmptyFields>;
+
+/// Who watched an item's work, most viewings first: everyone for an owner, unless `mine`;
+/// the caller alone otherwise, since a user reads no one else's history.
+pub(crate) async fn viewers_of(
+    context: &Context<'_>,
+    item: &MetadataItem,
+    mine: Option<bool>,
+    (after, before, first, last): (Option<String>, Option<String>, Option<i32>, Option<i32>),
+) -> Result<WorkViewerConnection> {
+    let scope = crate::access::caller(context).map(|caller| {
+        if caller.is_owner() && !mine.unwrap_or(false) {
+            HistoryScope::Everyone
+        } else {
+            HistoryScope::Viewer(caller.user)
+        }
+    });
+    let guid = item.guid.clone();
+    query(
+        after,
+        before,
+        first,
+        last,
+        |after, before, first, last| async move {
+            let Some(scope) = scope else {
+                return Ok(Connection::new(false, false));
+            };
+            let window = crate::schema::window_for(after, before, first, last, DEFAULT_PAGE_SIZE)?;
+            let visible = crate::access::visible_sections(context);
+            let copies: Vec<RatingKey> = crate::schema::metadata(context)?
+                .items_by_guid(&[guid], visible.as_deref())
+                .await?
+                .into_iter()
+                .map(|copy| copy.id)
+                .collect();
+            let page = context
+                .data::<ApiContext>()?
+                .watch
+                .viewers(&copies, scope, window)
+                .await?;
+            let mut connection = Connection::new(page.has_previous, page.has_next);
+            connection.edges.extend(
+                page.items
+                    .into_iter()
+                    .map(|count| Edge::new(OpaqueCursor(count.cursor()), WorkViewerObject(count))),
+            );
             Ok::<_, async_graphql::Error>(connection)
         },
     )

@@ -476,6 +476,98 @@ pub(crate) async fn search_tags(
     .await
 }
 
+/// What a list of every tag of a kind says beyond its tags.
+#[derive(Debug, Clone)]
+pub struct TagListTotal {
+    sections: Vec<SectionId>,
+    kind: TagKind,
+}
+
+#[Object]
+impl TagListTotal {
+    /// How many tags the list holds in all, across every page.
+    async fn total_count(&self, context: &Context<'_>) -> Result<u64> {
+        Ok(schema::metadata(context)?
+            .tag_count_in_libraries(&self.sections, self.kind)
+            .await?)
+    }
+}
+
+/// Names the connection apart from `TagConnection`, whose edges describe an attachment to
+/// an item.
+#[derive(Debug)]
+pub struct TagListConnectionName;
+
+impl ConnectionNameType for TagListConnectionName {
+    fn type_name<T: OutputType>() -> String {
+        "TagListConnection".to_owned()
+    }
+}
+
+#[derive(Debug)]
+pub struct TagListEdgeName;
+
+impl EdgeNameType for TagListEdgeName {
+    fn type_name<T: OutputType>() -> String {
+        "TagListEdge".to_owned()
+    }
+}
+
+/// A page of every tag of a kind.
+pub type TagListConnection = Connection<
+    OpaqueCursor,
+    TagObject,
+    TagListTotal,
+    EmptyFields,
+    TagListConnectionName,
+    TagListEdgeName,
+>;
+
+/// Every tag of one kind carried by an item of the caller's libraries, at any depth and
+/// hidden libraries included, in the order the tags were first recorded.
+pub(crate) async fn tags_of_kind(
+    context: &Context<'_>,
+    kind: TagType,
+    (after, before, first, last): (Option<String>, Option<String>, Option<i32>, Option<i32>),
+    offset: Option<u32>,
+) -> Result<TagListConnection> {
+    let sections: Vec<SectionId> = libraries_in_view(context)
+        .await?
+        .into_iter()
+        .map(|library| library.id)
+        .collect();
+    let kind = TagKind::from(kind);
+    let skip = u64::from(offset.unwrap_or(0));
+    query(
+        after,
+        before,
+        first,
+        last,
+        |after, before, first, last| async move {
+            let window = schema::window_for(after, before, first, last, schema::DEFAULT_PAGE_SIZE)?
+                .skipping(skip);
+            let page = schema::metadata(context)?
+                .tags_in_libraries(&sections, kind, window)
+                .await?;
+            let mut connection = Connection::with_additional_fields(
+                page.has_previous,
+                page.has_next,
+                TagListTotal {
+                    sections: sections.clone(),
+                    kind,
+                },
+            );
+            connection.edges.extend(
+                page.items
+                    .into_iter()
+                    .map(|tag| Edge::new(OpaqueCursor(tag.recorded_cursor()), TagObject(tag))),
+            );
+            Ok::<_, async_graphql::Error>(connection)
+        },
+    )
+    .await
+}
+
 /// What a tag's attachment to one item says beyond the tag itself.
 #[derive(Debug, Clone, SimpleObject)]
 pub struct Attachment {
