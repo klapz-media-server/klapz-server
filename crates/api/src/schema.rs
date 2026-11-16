@@ -880,6 +880,9 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
         .data(loader(crate::user_rating::UserRatingLoader::new(
             Arc::clone(&watch),
         )))
+        .data(loader(crate::sidecar::SubtitleOffsetLoader::new(
+            Arc::clone(&watch),
+        )))
         .data(loader(crate::watch::WatchedLeavesLoader::new(watch)))
         .data(loader(crate::playlist::PlaylistTotalsLoader::new(
             playlists,

@@ -13,8 +13,8 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    extension_account, library_permission, track_choice, user_extension, user_password,
-    user_rating, users, viewing, viewing_history, watch_state,
+    extension_account, library_permission, subtitle_offset, track_choice, user_extension,
+    user_password, user_rating, users, viewing, viewing_history, watch_state,
 };
 
 #[derive(Debug, Clone)]
@@ -390,6 +390,11 @@ impl AccessRepository for SqlAccessRepository {
             .map_err(storage)?;
         user_rating::Entity::delete_many()
             .filter(user_rating::Column::Viewer.eq(id.get()))
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
+        subtitle_offset::Entity::delete_many()
+            .filter(subtitle_offset::Column::Viewer.eq(id.get()))
             .exec(&transaction)
             .await
             .map_err(storage)?;

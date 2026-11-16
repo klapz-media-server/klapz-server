@@ -300,7 +300,7 @@ fn pick(tracks: Vec<MediaStream>, id: Option<StreamId>) -> Option<Track> {
 ///
 /// Splits on both `/` and `\`: the separator belongs to the machine that scanned the
 /// library, not to the one answering the request.
-fn filename_of(path: &str) -> &str {
+pub(crate) fn filename_of(path: &str) -> &str {
     path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
 
@@ -360,6 +360,18 @@ impl Track {
     /// Whether the track lives in a separate file next to the media rather than inside it.
     async fn is_external(&self) -> bool {
         self.0.external_path.is_some()
+    }
+
+    /// The file a subtitle kept apart from its media lives in, and its text. Null for a track
+    /// inside the media.
+    async fn sidecar(&self) -> Option<crate::sidecar::SidecarFile> {
+        crate::sidecar::SidecarFile::of(&self.0)
+    }
+
+    /// The offset the caller set on this subtitle with `setSubtitleOffset`, in milliseconds,
+    /// for its player to apply. 0 when it set none, and on a video or audio track.
+    async fn offset_ms(&self, context: &Context<'_>) -> Result<i32> {
+        crate::sidecar::offset_of(context, self.0.id).await
     }
 
     /// The name the file gives the track, often a release tag: `VFF AC3 5.1 @448kb`. Empty

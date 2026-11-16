@@ -7,6 +7,7 @@
 
 use crate::metadata::MediaStream;
 use crate::playback::{PlaybackOutput, StreamDecision};
+use crate::sidecar::{SidecarError, SidecarSource};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamProtocol {
@@ -177,4 +178,21 @@ pub trait StreamEngine: Send + Sync + std::fmt::Debug {
 
     /// Stops every stream, and returns once their processes have exited.
     async fn stop_all(&self);
+
+    /// The content of a sidecar subtitle, provided it lies within its library and beside its
+    /// media.
+    ///
+    /// # Errors
+    ///
+    /// [`SidecarError::Missing`] for a file that is not there or not where it may be,
+    /// [`SidecarError::TooLarge`] past what a subtitle can weigh.
+    async fn read_sidecar(&self, sidecar: &SidecarSource) -> Result<Vec<u8>, SidecarError>;
+
+    /// Deletes a sidecar subtitle's file, under the same conditions as reading it. A file
+    /// already gone is not an error.
+    ///
+    /// # Errors
+    ///
+    /// [`SidecarError::Missing`] for a file not where a sidecar may be, an I/O failure.
+    async fn remove_sidecar(&self, sidecar: &SidecarSource) -> Result<(), SidecarError>;
 }

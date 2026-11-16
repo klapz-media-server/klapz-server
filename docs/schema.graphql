@@ -1341,6 +1341,39 @@ type DeletePlaylistPayload {
 }
 
 """
+A subtitle file to delete.
+"""
+input DeleteSidecarInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The subtitle, as returned in `MediaStream.id`. It must be a file of its own
+	(`MediaStream.sidecar`).
+	"""
+	trackId: ID!
+}
+
+"""
+What `deleteSidecar` did.
+"""
+type DeleteSidecarPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The subtitle deleted, as it was returned in `MediaStream.id`. Null when refused.
+	"""
+	deletedTrackId: ID
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [SubtitleUserError!]!
+}
+
+"""
 What `deleteUser` did.
 """
 type DeleteUserPayload {
@@ -3699,6 +3732,16 @@ type MediaStream implements Node {
 	"""
 	isExternal: Boolean!
 	"""
+	The file a subtitle kept apart from its media lives in, and its text. Null for a track
+	inside the media.
+	"""
+	sidecar: SidecarFile
+	"""
+	The offset the caller set on this subtitle with `setSubtitleOffset`, in milliseconds,
+	for its player to apply. 0 when it set none, and on a video or audio track.
+	"""
+	offsetMs: Int!
+	"""
 	The name the file gives the track, often a release tag: `VFF AC3 5.1 @448kb`. Empty
 	when the file writes an empty name, null when it writes none.
 	"""
@@ -4315,6 +4358,27 @@ type Mutation {
 		"""
 		input: RateItemInput!
 	): RateItemPayload!
+	"""
+	Sets the offset the caller's player shifts a subtitle by, inside its media or a file
+	of its own. The offset is the caller's, on this one track.
+	"""
+	setSubtitleOffset(
+		"""
+		The subtitle and its offset.
+		"""
+		input: SetSubtitleOffsetInput!
+	): SetSubtitleOffsetPayload!
+	"""
+	Deletes a subtitle kept in a file of its own: the file, from disk when it is on this
+	machine where a sidecar of its media may be, and the track. For the library's admins
+	and the server's owners.
+	"""
+	deleteSidecar(
+		"""
+		The subtitle to delete.
+		"""
+		input: DeleteSidecarInput!
+	): DeleteSidecarPayload!
 	"""
 	Deletes one viewing from a history: the caller's own, or anyone's for an owner.
 	What was watched stays as it is, as on the reference.
@@ -6823,6 +6887,43 @@ input SetLibraryPermissionInput {
 }
 
 """
+An offset to shift a subtitle by.
+"""
+input SetSubtitleOffsetInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The subtitle, as returned in `MediaStream.id`: one inside its media or a file of its
+	own.
+	"""
+	trackId: ID!
+	"""
+	In milliseconds, for the caller's player to apply. 0 removes the offset.
+	"""
+	offsetMs: Int!
+}
+
+"""
+What `setSubtitleOffset` did.
+"""
+type SetSubtitleOffsetPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The subtitle, with its new offset. Null when the request was refused.
+	"""
+	track: MediaStream
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [SubtitleUserError!]!
+}
+
+"""
 A server role to give a user.
 """
 input SetUserRoleInput {
@@ -7148,6 +7249,29 @@ type ShowStats {
 	How many of its episodes the caller has watched to the end. Zero without a caller.
 	"""
 	watchedEpisodeCount: Int!
+}
+
+type SidecarFile {
+	"""
+	The file's path, as the library was scanned. Null for a subtitle downloaded into the
+	reference server's own storage, which was not imported.
+	"""
+	path: String
+	"""
+	The last segment of `path`.
+	"""
+	filename: String
+	"""
+	Whether the subtitle was downloaded from a provider rather than found beside the media.
+	"""
+	isDownloaded: Boolean!
+	"""
+	The subtitle's text, as UTF-8: as written when the file is UTF-8, byte-order mark
+	included, and read as Windows-1252 otherwise. Null when this server does not hold it:
+	a downloaded subtitle, or a file that is not on this machine or not where a sidecar of
+	its media may be — within its library, in the media's directory or below.
+	"""
+	text: String
 }
 
 """
@@ -7690,6 +7814,47 @@ enum SubtitleDeliveryType {
 	As ASS text beside the stream, for the player to draw. DASH only.
 	"""
 	TEXT
+}
+
+"""
+Why a subtitle mutation refused.
+"""
+enum SubtitleErrorCode {
+	"""
+	No track the caller may read has this id.
+	"""
+	TRACK_NOT_FOUND
+	"""
+	The track is a video or an audio track.
+	"""
+	NOT_A_SUBTITLE
+	"""
+	The subtitle is inside the media file, not a file of its own.
+	"""
+	NOT_A_SIDECAR
+	"""
+	The caller may read the library but not change it: only its admins and the server's
+	owners delete a subtitle.
+	"""
+	NOT_ALLOWED
+}
+
+"""
+A request a subtitle mutation refused, and where in the input the reason lies.
+"""
+type SubtitleUserError {
+	"""
+	The path to the input field at fault.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person to read.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program to branch on.
+	"""
+	code: SubtitleErrorCode!
 }
 
 type Tag implements Node {

@@ -30,12 +30,13 @@ use axum::Router;
 use futures_util::StreamExt as _;
 use open_plex_core::lifecycle::{Lifecycle, SessionLocks};
 use open_plex_core::playback::{PlaybackOutput, PlaybackRepository, StreamDecision};
+use open_plex_core::sidecar::{SidecarError, SidecarSource};
 use open_plex_core::stream::{
     Delivery, FallbackRefusal, StartedStream, StreamEngine, StreamError, StreamOrder,
     StreamProtocol, StreamQuality, StreamTrack, SubtitleOutput,
 };
 use open_plex_transcoder::adapt;
-use open_plex_transcoder::media::resolve_within;
+use open_plex_transcoder::media::{read_sidecar, resolve_sidecar, resolve_within};
 use open_plex_transcoder::plan::{
     plan_ladder, Adaptation, AudioAction, Ladder, Limits, StreamPlan, StreamSource, Track,
     VideoAction,
@@ -453,6 +454,35 @@ impl StreamEngine for Streams {
     async fn stop_all(&self) {
         self.entries().clear();
         self.transcoder.stop_all_sessions().await;
+    }
+
+    async fn read_sidecar(&self, sidecar: &SidecarSource) -> Result<Vec<u8>, SidecarError> {
+        let file = resolve_sidecar(&sidecar.path, &sidecar.media_path, &sidecar.roots)
+            .await
+            .map_err(sidecar_error)?;
+        read_sidecar(&file).await.map_err(sidecar_error)
+    }
+
+    async fn remove_sidecar(&self, sidecar: &SidecarSource) -> Result<(), SidecarError> {
+        let file = match resolve_sidecar(&sidecar.path, &sidecar.media_path, &sidecar.roots).await {
+            Ok(file) => file,
+            Err(TranscodeError::MissingFile) => return Ok(()),
+            Err(error) => return Err(sidecar_error(error)),
+        };
+        match tokio::fs::remove_file(&file).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(SidecarError::Io(error)),
+        }
+    }
+}
+
+fn sidecar_error(error: TranscodeError) -> SidecarError {
+    match error {
+        TranscodeError::SidecarTooLarge => SidecarError::TooLarge,
+        TranscodeError::Io(error) => SidecarError::Io(error),
+        // Not there, or not where it may be: either way there is no sidecar to open.
+        _ => SidecarError::Missing,
     }
 }
 

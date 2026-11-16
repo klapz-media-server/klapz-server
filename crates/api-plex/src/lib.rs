@@ -55,6 +55,7 @@ mod search;
 pub mod sessions;
 mod stream_labels;
 pub mod stubs;
+mod subtitles;
 mod timeline;
 mod tracks;
 pub mod translations;
@@ -141,6 +142,7 @@ pub fn router(state: PlexState) -> Router {
         .merge(markers::router())
         .merge(extras::router())
         .merge(ultrablur::router())
+        .merge(subtitles::router())
         // Plex has paths whose segments literally start with a colon — `/:/prefs`,
         // `/:/timeline`, `/photo/:/transcode`. Axum 0.8 rejects those by default as a guard
         // against its own older `:param` syntax.

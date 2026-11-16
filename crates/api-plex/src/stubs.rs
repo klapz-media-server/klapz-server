@@ -57,7 +57,7 @@ fn stub(methods: u8) -> MethodRouter<PlexState> {
     router
 }
 
-/// The 66 stub operations, across 54 paths.
+/// The 65 stub operations, across 53 paths.
 const STUBS: &[(&str, u8)] = &[
     ("/:/eventsource/notifications", verb::GET),
     ("/:/prefs/get", verb::GET),
@@ -103,7 +103,6 @@ const STUBS: &[(&str, u8)] = &[
     ("/library/metadata/{ids}/index", verb::PUT),
     ("/library/metadata/{ids}/media/{mediaItem}", verb::DELETE),
     ("/library/metadata/{ids}/nearest", verb::GET),
-    ("/library/metadata/{ids}/subtitles", verb::GET),
     ("/library/metadata/{ids}/tree", verb::GET),
     ("/library/metadata/{ids}/users/top", verb::GET),
     (
@@ -145,7 +144,7 @@ const STUBS: &[(&str, u8)] = &[
     ),
 ];
 
-/// Adds 66 stub operations across 54 paths.
+/// Adds 65 stub operations across 53 paths.
 pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
     STUBS.iter().fold(router, |router, (path, methods)| {
         router.route(path, stub(*methods))
@@ -153,9 +152,6 @@ pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
 }
 
 // Not routable as written, and needing real handlers regardless:
-//   GET /library/streams/{streamId}.{ext} — two parameters in segment `{streamId}.{ext}`
-//   PUT /library/streams/{streamId}.{ext} — two parameters in segment `{streamId}.{ext}`
-//   DELETE /library/streams/{streamId}.{ext} — two parameters in segment `{streamId}.{ext}`
 //   GET /tv.plex.providers.epg.{identifier}:{deviceId}/grid — two parameters in segment `tv.plex.providers.epg.{identifier}:{deviceId}`
 //   GET /tv.plex.providers.epg.{identifier}:{deviceId}/lineups/dvr/channels — two parameters in segment `tv.plex.providers.epg.{identifier}:{deviceId}`
 //   GET /tv.plex.providers.epg.{identifier}:{deviceId}/watchnow — two parameters in segment `tv.plex.providers.epg.{identifier}:{deviceId}`

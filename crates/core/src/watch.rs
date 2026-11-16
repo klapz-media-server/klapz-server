@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 
 use crate::history::{HistoryEntry, HistoryQuery, NewViewing, ViewingKind};
-use crate::ids::{HistoryId, PartId, RatingKey, SectionId, UserId};
+use crate::ids::{HistoryId, PartId, RatingKey, SectionId, StreamId, UserId};
 use crate::metadata::{ItemKind, MetadataError, MetadataItem, MetadataRepository};
 use crate::page::{Page, Window};
 use crate::tracks::TrackChoice;
@@ -189,6 +189,22 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
         viewer: UserId,
         file: PartId,
         choice: TrackChoice,
+    ) -> Result<(), WatchError>;
+
+    /// The offsets a viewer shifts these subtitles by, in milliseconds. A subtitle it never
+    /// shifted is absent.
+    async fn subtitle_offsets(
+        &self,
+        viewer: UserId,
+        tracks: &[StreamId],
+    ) -> Result<Vec<(StreamId, i32)>, WatchError>;
+
+    /// Records the offset a viewer shifts a subtitle by, 0 deleting it.
+    async fn set_subtitle_offset(
+        &self,
+        viewer: UserId,
+        track: StreamId,
+        offset_ms: i32,
     ) -> Result<(), WatchError>;
 
     /// The last change a viewer made to its rating of these works, a clearing included. A

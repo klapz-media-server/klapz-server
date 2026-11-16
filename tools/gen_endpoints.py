@@ -174,6 +174,9 @@ IMPLEMENTED = frozenset(
         "/services/ultrablur/image",
         # A library's films or episodes, `/all` for its leaves (`library.rs`).
         "/library/sections/{sectionId}/allLeaves",
+        # Subtitle files and the search of online ones (`subtitles.rs`).
+        "/library/streams/{streamId}.{ext}",
+        "/library/metadata/{ids}/subtitles",
     }
 )
 

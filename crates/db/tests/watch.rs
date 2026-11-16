@@ -264,6 +264,13 @@ async fn a_track_choice_is_kept_per_viewer_and_file_and_an_empty_one_forgotten()
 
 /// The seeded library, with one file for an episode: a choice of tracks belongs to a file.
 async fn repository_with_a_file() -> (SqlWatchRepository, open_plex_core::PartId) {
+    (
+        SqlWatchRepository::new(connection_with_a_file().await),
+        open_plex_core::PartId::new(5),
+    )
+}
+
+async fn connection_with_a_file() -> DatabaseConnection {
     use open_plex_db::entity::{media, media_part};
 
     let connection = open_plex_db::connect("sqlite::memory:")
@@ -316,10 +323,76 @@ async fn repository_with_a_file() -> (SqlWatchRepository, open_plex_core::PartId
     .exec(&connection)
     .await
     .unwrap();
-    (
-        SqlWatchRepository::new(connection),
-        open_plex_core::PartId::new(5),
-    )
+    connection
+}
+
+#[tokio::test]
+async fn a_subtitle_offset_is_the_viewers_and_goes_with_its_track() {
+    use open_plex_core::metadata::MetadataRepository;
+    use open_plex_core::StreamId;
+    use open_plex_db::entity::media_stream;
+
+    let connection = connection_with_a_file().await;
+    media_stream::Entity::insert(media_stream::ActiveModel {
+        id: ActiveValue::Set(8),
+        media_part_id: ActiveValue::Set(5),
+        kind: ActiveValue::Set("subtitle".to_owned()),
+        position: ActiveValue::Set(0),
+        codec: ActiveValue::Set(Some("srt".to_owned())),
+        external_path: ActiveValue::Set(Some("file:///media/e.fr.srt".to_owned())),
+        is_default: ActiveValue::Set(false),
+        is_forced: ActiveValue::Set(false),
+        has_closed_captions: ActiveValue::Set(false),
+        has_separate_fields: ActiveValue::Set(false),
+        has_hdr10_plus: ActiveValue::Set(false),
+        is_embedded_in_video: ActiveValue::Set(false),
+        is_original: ActiveValue::Set(false),
+        is_dub: ActiveValue::Set(false),
+        is_commentary: ActiveValue::Set(false),
+        is_hearing_impaired: ActiveValue::Set(false),
+        is_visual_impaired: ActiveValue::Set(false),
+        has_header_compression: ActiveValue::Set(false),
+        ..Default::default()
+    })
+    .exec(&connection)
+    .await
+    .unwrap();
+    let watch = SqlWatchRepository::new(connection.clone());
+    let track = StreamId::new(8);
+    watch
+        .set_subtitle_offset(UserId::new(1), track, -1200)
+        .await
+        .unwrap();
+    watch
+        .set_subtitle_offset(UserId::new(3), track, 300)
+        .await
+        .unwrap();
+    watch
+        .set_subtitle_offset(UserId::new(1), track, 40)
+        .await
+        .unwrap();
+    let read = |viewer| {
+        let watch = &watch;
+        async move {
+            watch
+                .subtitle_offsets(viewer, &[track, StreamId::new(404)])
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(read(UserId::new(1)).await, [(track, 40)]);
+    assert_eq!(read(UserId::new(3)).await, [(track, 300)]);
+    watch
+        .set_subtitle_offset(UserId::new(3), track, 0)
+        .await
+        .unwrap();
+    assert!(read(UserId::new(3)).await.is_empty());
+
+    let metadata = open_plex_db::SqlMetadataRepository::new(connection);
+    assert!(metadata.delete_stream(track).await.unwrap());
+    assert!(!metadata.delete_stream(track).await.unwrap());
+    assert!(metadata.stream(track).await.unwrap().is_none());
+    assert!(read(UserId::new(1)).await.is_empty());
 }
 
 #[tokio::test]

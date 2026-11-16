@@ -1,0 +1,67 @@
+[
+ {
+  "id": 12262675,
+  "streamType": 3,
+  "selected": true,
+  "default": true,
+  "forced": true,
+  "codec": "srt",
+  "index": 2,
+  "language": "Français",
+  "languageTag": "fr",
+  "languageCode": "fra",
+  "title": "French (Forced)",
+  "displayTitle": "Français Forced",
+  "extendedDisplayTitle": "French (Forced) (Français SRT)"
+ },
+ {
+  "id": 12262676,
+  "streamType": 3,
+  "codec": "srt",
+  "index": 3,
+  "language": "Français",
+  "languageTag": "fr",
+  "languageCode": "fra",
+  "title": "French",
+  "displayTitle": "Français",
+  "extendedDisplayTitle": "French (Français SRT)"
+ },
+ {
+  "id": 12262677,
+  "streamType": 3,
+  "codec": "srt",
+  "index": 4,
+  "language": "Français",
+  "languageTag": "fr",
+  "languageCode": "fra",
+  "title": "French (SDH)",
+  "displayTitle": "Français",
+  "extendedDisplayTitle": "French (SDH) (Français SRT)"
+ },
+ {
+  "id": 12265847,
+  "key": "/library/streams/12265847",
+  "streamType": 3,
+  "file": "C:\\Media\\TEST\\Soul.2020.MULTi.TRUEFRENCH.1080p.WEB.H264-EXTREME_wWw.Extreme-Down.Video.de.srt",
+  "codec": "srt",
+  "language": "Deutsch",
+  "languageTag": "de",
+  "languageCode": "deu",
+  "format": "srt",
+  "displayTitle": "Deutsch",
+  "extendedDisplayTitle": "Deutsch (SRT External)"
+ },
+ {
+  "id": 12265848,
+  "key": "/library/streams/12265848",
+  "streamType": 3,
+  "file": "C:\\Media\\TEST\\Soul.2020.MULTi.TRUEFRENCH.1080p.WEB.H264-EXTREME_wWw.Extreme-Down.Video.it.ass",
+  "codec": "ass",
+  "language": "Italiano",
+  "languageTag": "it",
+  "languageCode": "ita",
+  "format": "ass",
+  "displayTitle": "Italiano",
+  "extendedDisplayTitle": "Italiano (ASS External)"
+ }
+]

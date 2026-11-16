@@ -30,6 +30,72 @@ pub async fn resolve_within(path: &str, roots: &[String]) -> Result<PathBuf, Tra
     Err(TranscodeError::OutsideLibrary)
 }
 
+/// The most a sidecar subtitle is read up to. A film's subtitles weigh some hundred
+/// kilobytes; a file past this is not one, and is not read into memory.
+pub const MAX_SIDECAR_BYTES: u64 = 16 * 1024 * 1024;
+
+/// The real location of a sidecar subtitle of `media`: a file within one of the library
+/// `roots`, in the media's directory or below it — where the scanner looks for sidecars — and
+/// not the media itself, which a deletion must never reach.
+///
+/// # Errors
+///
+/// [`TranscodeError::MissingFile`] when it does not exist or is not a file,
+/// [`TranscodeError::OutsideLibrary`] when it is not where a sidecar of the media may be.
+pub async fn resolve_sidecar(
+    path: &str,
+    media: &str,
+    roots: &[String],
+) -> Result<PathBuf, TranscodeError> {
+    let file = resolve_within(path, roots).await?;
+    let is_file = tokio::fs::metadata(&file)
+        .await
+        .is_ok_and(|metadata| metadata.is_file());
+    if !is_file {
+        return Err(TranscodeError::MissingFile);
+    }
+    let media = Path::new(media);
+    let directory = match media.parent() {
+        Some(directory) => tokio::fs::canonicalize(directory)
+            .await
+            .map_err(|_| TranscodeError::OutsideLibrary)?,
+        None => return Err(TranscodeError::OutsideLibrary),
+    };
+    let is_the_media = tokio::fs::canonicalize(media)
+        .await
+        .is_ok_and(|media| media == file);
+    if file.starts_with(&directory) && !is_the_media {
+        Ok(file)
+    } else {
+        Err(TranscodeError::OutsideLibrary)
+    }
+}
+
+/// A sidecar's content, which [`resolve_sidecar`] found.
+///
+/// # Errors
+///
+/// [`TranscodeError::SidecarTooLarge`] past [`MAX_SIDECAR_BYTES`], [`TranscodeError::Io`]
+/// when it cannot be read.
+pub async fn read_sidecar(file: &Path) -> Result<Vec<u8>, TranscodeError> {
+    use tokio::io::AsyncReadExt as _;
+
+    let opened = tokio::fs::File::open(file)
+        .await
+        .map_err(TranscodeError::Io)?;
+    let mut content = Vec::new();
+    // One byte past the limit tells a file at the limit from a larger one.
+    opened
+        .take(MAX_SIDECAR_BYTES + 1)
+        .read_to_end(&mut content)
+        .await
+        .map_err(TranscodeError::Io)?;
+    if content.len() as u64 > MAX_SIDECAR_BYTES {
+        return Err(TranscodeError::SidecarTooLarge);
+    }
+    Ok(content)
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -89,6 +155,60 @@ mod tests {
         )
         .await;
         assert!(matches!(outcome, Err(TranscodeError::OutsideLibrary)));
+    }
+
+    #[tokio::test]
+    async fn finds_a_sidecar_beside_its_media_or_below() {
+        let scratch = Scratch::new("sidecar");
+        std::fs::create_dir_all(scratch.0.join("movies").join("Subs")).unwrap();
+        std::fs::write(scratch.0.join("movies").join("film.fr.srt"), b"1").unwrap();
+        std::fs::write(
+            scratch.0.join("movies").join("Subs").join("film.en.srt"),
+            b"2",
+        )
+        .unwrap();
+        let roots = [scratch.text("movies")];
+        let media = scratch.text("movies/film.mkv");
+        let beside = resolve_sidecar(&scratch.text("movies/film.fr.srt"), &media, &roots)
+            .await
+            .unwrap();
+        assert_eq!(read_sidecar(&beside).await.unwrap(), b"1");
+        let below = resolve_sidecar(&scratch.text("movies/Subs/film.en.srt"), &media, &roots)
+            .await
+            .unwrap();
+        assert_eq!(read_sidecar(&below).await.unwrap(), b"2");
+    }
+
+    #[tokio::test]
+    async fn refuses_a_sidecar_that_is_the_media_or_elsewhere() {
+        let scratch = Scratch::new("not-sidecar");
+        std::fs::create_dir_all(scratch.0.join("movies").join("other")).unwrap();
+        std::fs::write(scratch.0.join("movies").join("other").join("b.srt"), b"x").unwrap();
+        let roots = [scratch.text("movies")];
+        let media = scratch.text("movies/other/../film.mkv");
+        // The media itself: a deletion through it would take the film.
+        let itself = resolve_sidecar(&scratch.text("movies/film.mkv"), &media, &roots).await;
+        assert!(matches!(itself, Err(TranscodeError::OutsideLibrary)));
+        // Another film's directory, beside the media's.
+        let media = scratch.text("movies/other/a.mkv");
+        let elsewhere = resolve_sidecar(&scratch.text("movies/film.mkv"), &media, &roots).await;
+        assert!(matches!(elsewhere, Err(TranscodeError::OutsideLibrary)));
+        // Outside every library, though beside the media.
+        let outside = resolve_sidecar(
+            &scratch.text("secret.txt"),
+            &scratch.text("film.mkv"),
+            &roots,
+        )
+        .await;
+        assert!(matches!(outside, Err(TranscodeError::OutsideLibrary)));
+        // A directory is no file.
+        let directory = resolve_sidecar(
+            &scratch.text("movies/other"),
+            &scratch.text("movies/a.mkv"),
+            &roots,
+        )
+        .await;
+        assert!(matches!(directory, Err(TranscodeError::MissingFile)));
     }
 
     #[tokio::test]

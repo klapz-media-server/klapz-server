@@ -436,6 +436,16 @@ Places where we knowingly answer differently, each decided rather than overlooke
   PNGs; JPEGs decode differently in `zune-jpeg`, so 34 of 150 photos match exactly. A color the
   reference's `sscanf` cannot read draws stack garbage there and is a `400` here; our noise is
   seeded, so an image never changes (`docs/spec-gaps.md`).
+- **A subtitle file is served as UTF-8 plain text.** The reference sends a sidecar's bytes as
+  written, typed `text/html`, and converts to UTF-8 only when `encoding` is given; ours is
+  always UTF-8 (a file that is not is read as Windows-1252), `text/plain` with `nosniff`,
+  because subtitle markup served as a page of this origin would run with the viewer's session.
+  A sidecar is read and deleted only within its library and in its media's directory or below,
+  never the media itself; subtitles the reference downloaded into its blob storage were not
+  imported and answer `404` (`docs/spec-gaps.md`).
+- **The search of online subtitles finds nothing.** The reference asks OpenSubtitles through
+  Plex's service; there is no provider here, so `/library/metadata/{ids}/subtitles` answers the
+  reference's own empty result after its checks, and downloading a result has no route.
 - **Nothing is popular in a user's libraries.** The reference's "Popular in Your Libraries"
   counts the plays of the server's other users; each user's server here receives no one
   else's, so `/hubs/popularInLibraries` answers the `404` the reference gives an empty or
@@ -807,6 +817,17 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   also `/all?type=4`'s default now, and so autocompletion's and a listing's play queue's: every
   series' episode order identical to the reference on four whole libraries (4,002 series), the
   remaining positions the collation of series titles (`docs/spec-gaps.md`).
+
+- ✅ **subtitle files**: a sidecar's file, read through the media engine from the path its track
+  stores and only where a sidecar of its media may be (`transcoder::media::resolve_sidecar`);
+  each viewer's offset on a subtitle, per track (`subtitle_offset`, migration `m0036`); and
+  deleting a sidecar with its file. On the official API `MediaStream.sidecar` (`path`,
+  `filename`, `isDownloaded`, `text`), `MediaStream.offsetMs`, `setSubtitleOffset` and
+  `deleteSidecar` (`userErrors`, library admins and owners); on the Plex surface `GET`, `PUT
+  ?offset=` and `DELETE /library/streams/{streamId}.{ext}`, `key`, `file` and `offset` on
+  `Stream`, and `/library/metadata/{ids}/subtitles` answering the reference's empty search, all
+  as measured on the reference's test film with sidecars put beside it (`docs/spec-gaps.md`).
+  `tools/seed_test_library.py` records the subtitle files beside each file as sidecars.
 
 ## Reference server
 

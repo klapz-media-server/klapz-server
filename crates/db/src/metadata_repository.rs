@@ -1377,6 +1377,15 @@ impl MetadataRepository for SqlMetadataRepository {
             .map_err(storage)
     }
 
+    async fn delete_stream(&self, id: StreamId) -> Result<bool, MetadataError> {
+        // Its analyses and the viewers' offsets go with it, by cascade.
+        let deleted = media_stream::Entity::delete_by_id(id.get())
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(deleted.rows_affected > 0)
+    }
+
     async fn tags_in(
         &self,
         query: &ItemQuery,

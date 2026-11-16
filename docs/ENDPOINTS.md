@@ -18,10 +18,10 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `todo` | 6 | 2.3 % |
-| `stub` | 63 | 24.2 % |
-| `partial` | 32 | 12.3 % |
-| `done` | 120 | 46.2 % |
+| `todo` | 3 | 1.2 % |
+| `stub` | 62 | 23.8 % |
+| `partial` | 34 | 13.1 % |
+| `done` | 122 | 46.9 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 15 | 14 | 25 | 5 | 26 |
+| [Library](#library) | 85 | 17 | 16 | 24 | 2 | 26 |
 | [Hubs](#hubs) | 15 | 5 | 3 | 7 | 0 | 0 |
 | [Content](#content) | 13 | 4 | 3 | 6 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
@@ -121,7 +121,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `partial` | `GET` | `/library/metadata/{ids}/related` | user | Get related items | A film: similar films (approximate ranking), its director and two first-billed actors, the last two matching the reference on 59 of 60 films. A series: similar series only. Not served: collection and `external.*` shelves, a series' network and cast shelves. |
 | `partial` | `GET` | `/library/metadata/{ids}/similar` | user | Get similar items | Same container as the reference; the ranking is an approximation. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/split` | admin | Split a metadata item | scanner/analysis, separate binary |
-| `stub` | `GET` | `/library/metadata/{ids}/subtitles` | admin | Add subtitles |  |
+| `partial` | `GET` | `/library/metadata/{ids}/subtitles` | admin | Add subtitles | The search of online subtitles. No provider here: the empty container the reference answers when OpenSubtitles finds nothing, after its checks — `language` required, two letters and an optional region (`400`; the reference fails a three-letter code `500`), one film or episode (`404`), `mediaItemID` one of its versions (`404`). Library admins and owners. The `PUT` that downloads a result has no route. See spec-gaps.md. |
 | `stub` | `GET` | `/library/metadata/{ids}/tree` | user | Get metadata items as a tree |  |
 | `deferred` | `PUT` | `/library/metadata/{ids}/unmatch` | admin | Unmatch a metadata item | scanner/analysis, separate binary |
 | `stub` | `GET` | `/library/metadata/{ids}/users/top` | admin | Get metadata top users |  |
@@ -167,9 +167,9 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `done` | `GET` | `/library/sections/{sectionId}/sorts` | user | Get a section sorts | One type's `Sort` list from the `Meta` block, unmarked: 9 of 9 on a film library, 7 of 8, 1 of 2 and 6 of 7 on a series' types, the reference's entries attribute for attribute. |
 | `done` | `GET` | `/library/sections/{sectionId}/subtitleCodec` | user | Get subtitle codecs in a section | The distinct values every track of every version of the library holds, in byte order, key percent-encoded once and no `fastKey`, as measured; a series library lists its episodes' whatever `type` says. Identical to the reference on ten libraries. Each value filters `/all` (`subtitleCodec=`, a comma `OR`, `!=` for none, repeated `AND`): 780 of 782 totals identical over every value of four libraries, the two others 3 episodes' sidecar subtitles the snapshot predates. Through `Library.trackValues`. Always windowed, as every choice list here. See spec-gaps.md. |
 | `done` | `GET` | `/library/sections/{sectionId}/videoCodec` | user | Get video codecs in a section | The distinct values every track of every version of the library holds, in byte order, key percent-encoded once and no `fastKey`, as measured; a series library lists its episodes' whatever `type` says. Identical to the reference on ten libraries. Each value filters `/all` (`videoCodec=`, a comma `OR`, `!=` for none, repeated `AND`): 780 of 782 totals identical over every value of four libraries, the two others 3 episodes' sidecar subtitles the snapshot predates. Through `Library.trackValues`. Always windowed, as every choice list here. See spec-gaps.md. |
-| `todo` | `DELETE` | `/library/streams/{streamId}.{ext}` | user | Delete a stream | needs a hand-written handler: two parameters in segment `{streamId}.{ext}` |
-| `todo` | `GET` | `/library/streams/{streamId}.{ext}` | user | Get a stream | needs a hand-written handler: two parameters in segment `{streamId}.{ext}` |
-| `todo` | `PUT` | `/library/streams/{streamId}.{ext}` | user | Set a stream offset | needs a hand-written handler: two parameters in segment `{streamId}.{ext}` |
+| `done` | `DELETE` | `/library/streams/{streamId}.{ext}` | user | Delete a stream | A sidecar: its file from disk, where a sidecar of its media may be, and its track (`deleteSidecar`). Measured: an extension or an id that is no number `400`, an unknown id `404`, a track inside the media `403`. Library admins and owners (`403` otherwise). See spec-gaps.md. |
+| `partial` | `GET` | `/library/streams/{streamId}.{ext}` | user | Get a stream | A sidecar's file (`MediaStream.sidecar.text`), with no extension or its format's in any case, one `Range` honored; a track inside the media `501`, another extension `404`. Served as UTF-8 always, where the reference sends the bytes as written unless `encoding` is given, and typed `text/plain` rather than `text/html`. Downloaded subtitles (`blob://`) were not imported: `404`. See spec-gaps.md. |
+| `done` | `PUT` | `/library/streams/{streamId}.{ext}` | user | Set a stream offset | The caller's offset on a subtitle, in milliseconds (`setSubtitleOffset`), published as `offset` and removed by `0`. Measured: no `offset` changes nothing, an extension, an unknown id or a value that is no 32-bit integer `400`; an audio or video track `200`, publishing nothing. See spec-gaps.md. |
 | `stub` | `GET` | `/library/streams/{streamId}/levels` | user | Get loudness about a stream in json |  |
 | `stub` | `GET` | `/library/streams/{streamId}/loudness` | user | Get loudness about a stream |  |
 | `stub` | `GET` | `/library/tags` | user | Get all library tags of a type |  |

@@ -591,6 +591,28 @@ impl Mutation {
         crate::user_rating::rate_item(context, input).await
     }
 
+    /// Sets the offset the caller's player shifts a subtitle by, inside its media or a file
+    /// of its own. The offset is the caller's, on this one track.
+    async fn set_subtitle_offset(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The subtitle and its offset.")]
+        input: crate::sidecar::SetSubtitleOffsetInput,
+    ) -> Result<crate::sidecar::SetSubtitleOffsetPayload> {
+        crate::sidecar::set_offset(context, input).await
+    }
+
+    /// Deletes a subtitle kept in a file of its own: the file, from disk when it is on this
+    /// machine where a sidecar of its media may be, and the track. For the library's admins
+    /// and the server's owners.
+    async fn delete_sidecar(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The subtitle to delete.")] input: crate::sidecar::DeleteSidecarInput,
+    ) -> Result<crate::sidecar::DeleteSidecarPayload> {
+        crate::sidecar::delete_sidecar(context, input).await
+    }
+
     /// Deletes one viewing from a history: the caller's own, or anyone's for an owner.
     /// What was watched stays as it is, as on the reference.
     async fn delete_history_entry(
