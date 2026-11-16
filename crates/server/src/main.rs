@@ -264,6 +264,7 @@ async fn run_import(
         markers = summary.markers.markers,
         collections = summary.collections.collections,
         collection_entries = summary.collections.entries,
+        extras = summary.extras.extras,
         orphans = summary.orphans,
         "import complete"
     );

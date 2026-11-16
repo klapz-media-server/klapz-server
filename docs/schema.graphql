@@ -1414,6 +1414,27 @@ type Episode implements Item & Node {
 	"""
 	lockedFields: [ItemField!]!
 	"""
+	Its trailers, deleted scenes, interviews and featurettes, by position then id.
+	"""
+	extras(
+		"""
+		Return extras after this cursor.
+		"""
+		after: String,
+		"""
+		Return extras before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many extras from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many extras from the end of the range.
+		"""
+		last: Int
+	): ExtraConnection!
+	"""
 	Where its intro, credits and commercials are, and the places the caller bookmarked in
 	it, in the order they were added.
 	"""
@@ -1663,6 +1684,150 @@ type ExternalIdEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+type Extra implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this extra.
+	"""
+	id: ID!
+	"""
+	The film, series, season or episode it comes with.
+	"""
+	item: Item
+	"""
+	What it is.
+	"""
+	kind: ExtraKind!
+	"""
+	Its place among its item's extras, which are listed by it.
+	"""
+	position: Int
+	"""
+	Its identity at its source: a metadata provider's asset (`iva://…`), or the URL of a
+	file beside its item (`file://…`).
+	"""
+	guid: String!
+	"""
+	Display title.
+	"""
+	title: String
+	"""
+	The title it sorts by, when the source gives one.
+	"""
+	titleSort: String
+	"""
+	Synopsis.
+	"""
+	summary: String
+	"""
+	Release year.
+	"""
+	year: Int
+	"""
+	Release date, as its midnight UTC.
+	"""
+	releasedOn: DateTime
+	"""
+	Runtime in milliseconds.
+	"""
+	durationMs: Int
+	"""
+	When the library gained it. Null when the source does not say.
+	"""
+	addedAt: DateTime
+	"""
+	When its metadata last changed. Null when it never did, as for every extra a provider
+	supplied to the reference library.
+	"""
+	updatedAt: DateTime
+	"""
+	Its encodings: one per bitrate for a provider's stream, one for a file.
+	"""
+	versions: [MediaVersion!]!
+}
+
+type ExtraConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ExtraEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Extra!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ExtraEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Extra!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+What an extra is.
+"""
+enum ExtraKind {
+	"""
+	A trailer or a teaser. The first one is the item's `primaryExtra`.
+	"""
+	TRAILER
+	"""
+	A scene cut from the final edit.
+	"""
+	DELETED_SCENE
+	"""
+	An interview with the cast or the crew.
+	"""
+	INTERVIEW
+	"""
+	A music video.
+	"""
+	MUSIC_VIDEO
+	"""
+	A making-of.
+	"""
+	BEHIND_THE_SCENES
+	"""
+	A scene or a sample of the work itself.
+	"""
+	SCENE
+	"""
+	A music video recorded live.
+	"""
+	LIVE_MUSIC_VIDEO
+	"""
+	A music video showing the lyrics.
+	"""
+	LYRIC_MUSIC_VIDEO
+	"""
+	A concert.
+	"""
+	CONCERT
+	"""
+	A short documentary about the work.
+	"""
+	FEATURETTE
+	"""
+	A short film.
+	"""
+	SHORT
+	"""
+	Anything else.
+	"""
+	OTHER
 }
 
 """
@@ -3298,13 +3463,19 @@ type MediaFile implements Node {
 	"""
 	position: Int!
 	"""
-	Absolute path on the server's filesystem.
+	Absolute path on the server's filesystem. Empty for a file a provider streams.
 	
 	Reference data: it tells a caller where the media actually lives, which is what makes
 	the library auditable from outside. It is not an input — playback addresses a file by
 	`id`, and no endpoint accepts a path from a client.
 	"""
 	path: String!
+	"""
+	Where a metadata provider streams the file from, relative to the server that
+	imported it: the trailers the reference's provider supplied, as
+	`/services/iva/assets/…`. Null for a file of the library. This server streams none.
+	"""
+	streamUrl: String
 	"""
 	Last segment of `path`, without its directories.
 	
@@ -3644,6 +3815,32 @@ type Movie implements Item & Node {
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
+	"""
+	Its trailers, deleted scenes, interviews and featurettes, by position then id.
+	"""
+	extras(
+		"""
+		Return extras after this cursor.
+		"""
+		after: String,
+		"""
+		Return extras before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many extras from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many extras from the end of the range.
+		"""
+		last: Int
+	): ExtraConnection!
+	"""
+	The trailer a player plays as this one's: the first trailer among its extras. Null
+	when it has none, whatever other extras it has.
+	"""
+	primaryExtra: Extra
 	"""
 	Where its intro, credits and commercials are, and the places the caller bookmarked in
 	it, in the order they were added.
@@ -6100,6 +6297,27 @@ type Season implements Item & Node {
 	"""
 	lockedFields: [ItemField!]!
 	"""
+	Its trailers, deleted scenes, interviews and featurettes, by position then id.
+	"""
+	extras(
+		"""
+		Return extras after this cursor.
+		"""
+		after: String,
+		"""
+		Return extras before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many extras from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many extras from the end of the range.
+		"""
+		last: Int
+	): ExtraConnection!
+	"""
 	When the item's metadata last changed.
 	"""
 	updatedAt: DateTime!
@@ -6410,6 +6628,32 @@ type Show implements Item & Node {
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
+	"""
+	Its trailers, deleted scenes, interviews and featurettes, by position then id.
+	"""
+	extras(
+		"""
+		Return extras after this cursor.
+		"""
+		after: String,
+		"""
+		Return extras before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many extras from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many extras from the end of the range.
+		"""
+		last: Int
+	): ExtraConnection!
+	"""
+	The trailer a player plays as this one's: the first trailer among its extras. Null
+	when it has none, whatever other extras it has.
+	"""
+	primaryExtra: Extra
 	"""
 	When the item's metadata last changed.
 	"""

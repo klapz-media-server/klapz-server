@@ -1,0 +1,204 @@
+{
+  "MediaContainer": {
+    "size": 2,
+    "identifier": "com.plexapp.plugins.library",
+    "mediaTagPrefix": "/system/bundle/media/flags/",
+    "mediaTagVersion": 1791210760,
+    "Metadata": [
+      {
+        "ratingKey": "578611",
+        "key": "/library/metadata/578611",
+        "guid": "file:///D:/Media/Probe%20Show/Trailers/Show%20Trailer.mkv",
+        "type": "clip",
+        "title": "Show Trailer",
+        "summary": "",
+        "index": 1,
+        "thumb": "/library/metadata/578611/thumb/1794839067",
+        "art": "",
+        "subtype": "trailer",
+        "duration": 15023,
+        "addedAt": 1794839067,
+        "updatedAt": 1794839067,
+        "extraType": 1,
+        "Media": [
+          {
+            "id": 5567622,
+            "duration": 15023,
+            "bitrate": 102,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572837,
+                "key": "/library/parts/5572837/0/file.mkv",
+                "duration": 15023,
+                "file": "D:\\Media\\Probe Show\\Trailers\\Show Trailer.mkv",
+                "size": 191176,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265843,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 102,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265844,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Show Trailer",
+            "type": "coverPoster",
+            "url": "/library/metadata/578611/thumb/1794839067"
+          }
+        ]
+      },
+      {
+        "ratingKey": "578612",
+        "key": "/library/metadata/578612",
+        "guid": "file:///D:/Media/Probe%20Show/Featurettes/Show%20Featurette.mkv",
+        "type": "clip",
+        "title": "Show Featurette",
+        "summary": "",
+        "index": 2,
+        "thumb": "/library/metadata/578612/thumb/1794839067",
+        "art": "",
+        "subtype": "featurette",
+        "duration": 16023,
+        "addedAt": 1794839067,
+        "updatedAt": 1794839067,
+        "extraType": 10,
+        "Media": [
+          {
+            "id": 5567623,
+            "duration": 16023,
+            "bitrate": 102,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572838,
+                "key": "/library/parts/5572838/0/file.mkv",
+                "duration": 16023,
+                "file": "D:\\Media\\Probe Show\\Featurettes\\Show Featurette.mkv",
+                "size": 203574,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265845,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 102,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265846,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Show Featurette",
+            "type": "coverPoster",
+            "url": "/library/metadata/578612/thumb/1794839067"
+          }
+        ]
+      }
+    ]
+  }
+}

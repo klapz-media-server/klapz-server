@@ -48,6 +48,7 @@ IMPLEMENTED = frozenset(
         "/library/metadata/{ids}",
         "/library/metadata/{ids}/marker",
         "/library/metadata/{ids}/marker/{marker}",
+        "/library/metadata/{ids}/extras",
         # Singular. The spec declares only the plural form, which a real server 404s;
         # listed so the stub generator does not register a second route on this path.
         "/library/sections/{sectionId}/firstCharacter",

@@ -16,6 +16,7 @@ pub mod common;
 pub mod cursor;
 pub mod date_time;
 pub mod edit;
+pub mod extra;
 pub mod filter;
 pub mod history;
 pub mod item;

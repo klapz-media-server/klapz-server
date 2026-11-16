@@ -16,9 +16,10 @@ use crate::collection::{
 };
 use crate::common::{CommonFields, Shared, SharedTag};
 use crate::edit::{ItemEdit, ItemField};
+use crate::extra::Extra;
 use crate::ids::{
-    CollectionId, MarkerId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId, RatingKey,
-    SectionId, StreamId, TagId,
+    CollectionId, ExtraId, MarkerId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId,
+    RatingKey, SectionId, StreamId, TagId,
 };
 use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use crate::marker::{Marker, NewMarker};
@@ -121,6 +122,9 @@ pub struct InMemoryMetadata {
     versions: Vec<MediaVersion>,
     files: Vec<MediaFile>,
     streams: Vec<MediaStream>,
+    extras: Vec<Extra>,
+    /// Apart from `versions`, which are an item's own: an extra's name its item too.
+    extra_versions: Vec<(ExtraId, MediaVersion)>,
     tags: Vec<ItemTag>,
     external_ids: Vec<ExternalId>,
     ratings: Vec<Rating>,
@@ -137,6 +141,8 @@ impl InMemoryMetadata {
             versions: Vec::new(),
             files: Vec::new(),
             streams: Vec::new(),
+            extras: Vec::new(),
+            extra_versions: Vec::new(),
             tags: Vec::new(),
             external_ids: Vec::new(),
             ratings: Vec::new(),
@@ -271,6 +277,23 @@ impl InMemoryMetadata {
         self.versions = versions;
         self.files = files;
         self.streams = streams;
+        self
+    }
+
+    /// Attaches extras with their media, as an import would. Their files and tracks join the
+    /// items', which storage looks up alike.
+    #[must_use]
+    pub fn with_extras(
+        mut self,
+        extras: Vec<Extra>,
+        versions: Vec<(ExtraId, MediaVersion)>,
+        files: Vec<MediaFile>,
+        streams: Vec<MediaStream>,
+    ) -> Self {
+        self.extras = extras;
+        self.extra_versions = versions;
+        self.files.extend(files);
+        self.streams.extend(streams);
         self
     }
 
@@ -773,7 +796,12 @@ impl MetadataRepository for InMemoryMetadata {
     }
 
     async fn version(&self, id: MediaId) -> Result<Option<MediaVersion>, MetadataError> {
-        Ok(self.versions.iter().find(|item| item.id == id).cloned())
+        Ok(self
+            .versions
+            .iter()
+            .chain(self.extra_versions.iter().map(|(_, version)| version))
+            .find(|item| item.id == id)
+            .cloned())
     }
 
     async fn file(&self, id: PartId) -> Result<Option<MediaFile>, MetadataError> {
@@ -1212,6 +1240,33 @@ impl MetadataRepository for InMemoryMetadata {
         let before = markers.len();
         markers.retain(|marker| marker.id != id);
         Ok(markers.len() < before)
+    }
+
+    async fn extras(&self, items: &[RatingKey]) -> Result<Vec<Extra>, MetadataError> {
+        let mut extras: Vec<Extra> = self
+            .extras
+            .iter()
+            .filter(|extra| items.contains(&extra.item))
+            .cloned()
+            .collect();
+        extras.sort_by_key(|extra| (extra.item, extra.position, extra.id));
+        Ok(extras)
+    }
+
+    async fn extra(&self, id: ExtraId) -> Result<Option<Extra>, MetadataError> {
+        Ok(self.extras.iter().find(|extra| extra.id == id).cloned())
+    }
+
+    async fn extra_versions(
+        &self,
+        extras: &[ExtraId],
+    ) -> Result<Vec<(ExtraId, MediaVersion)>, MetadataError> {
+        Ok(self
+            .extra_versions
+            .iter()
+            .filter(|(extra, _)| extras.contains(extra))
+            .cloned()
+            .collect())
     }
 
     async fn common_fields(&self, query: &ItemQuery) -> Result<CommonFields, MetadataError> {

@@ -417,6 +417,14 @@ Places where we knowingly answer differently, each decided rather than overlooke
   `type` other than `bookmark` is a `400`, as is a bookmark on a series, which the reference
   keeps.
 
+- **Extras are listed to everyone.** The reference hides the trailers its metadata provider
+  supplied from an account without a subscription — every extra of the reference library — and
+  names a film's first trailer only by `hasPremiumPrimaryExtra`. We list them on `/extras` and in
+  `Extras`, each as the reference looks it up, and name the first trailer as `primaryExtraKey`
+  on films as on series. The provider's address is published as imported and answers `404`
+  here; `POST /library/metadata/{ids}/extras`, which fetches a URL the client names, is refused
+  `403` (`docs/spec-gaps.md`).
+
 - **Nothing is popular in a user's libraries.** The reference's "Popular in Your Libraries"
   counts the plays of the server's other users; each user's server here receives no one
   else's, so `/hubs/popularInLibraries` answers the `404` the reference gives an empty or
@@ -730,6 +738,17 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `/library/sections/{id}/common`, what a set of items shares — fields, tags, collections and
   locks, aggregated in storage (`Library.common`, `ItemFilterInput.ids`) — element for element
   the reference's on films, series and episodes (`docs/spec-gaps.md`).
+- ✅ **extras**: trailers, deleted scenes, interviews and featurettes, imported from Plex's type-12
+  clips and `metadata_relations` (30,141 extras, 85,640 versions, 171,280 tracks; the 70 of kind
+  `-1` left out) into tables of our own (`extra`, `extra_media`, `extra_track`, migration
+  `m0033`). On the official API `Movie.extras`, `Show.extras`, `Season.extras`,
+  `Episode.extras`, `primaryExtra` on films and series, and `Extra` as a node whose versions are
+  `MediaVersion`s, their files and tracks found where an item's are (`MediaFile.streamUrl` for a
+  provider's stream). On the Plex surface `GET /library/metadata/{ids}/extras`, `Extras` on
+  `includeExtras=1` and `primaryExtraKey`, as measured with local extras of every kind on the
+  test libraries; the provider's trailers, which the reference lists to no account without a
+  subscription, as it looks each up: 230 of 264 compared identical, the rest one `primaryGuid`
+  (`docs/spec-gaps.md`).
 
 ## Reference server
 

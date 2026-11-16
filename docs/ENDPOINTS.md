@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 6 | 2.3 % |
-| `stub` | 71 | 27.3 % |
+| `stub` | 69 | 26.5 % |
 | `partial` | 31 | 11.9 % |
-| `done` | 113 | 43.5 % |
+| `done` | 115 | 44.2 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -29,7 +29,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 13 | 14 | 27 | 5 | 26 |
+| [Library](#library) | 85 | 15 | 14 | 25 | 5 | 26 |
 | [Hubs](#hubs) | 15 | 5 | 3 | 7 | 0 | 0 |
 | [Content](#content) | 13 | 2 | 3 | 8 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
@@ -103,8 +103,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `deferred` | `PUT` | `/library/metadata/{ids}/analyzeLoudness` | admin | Detect loudness of audio streams | scanner/analysis, separate binary |
 | `deferred` | `PUT` | `/library/metadata/{ids}/chapterThumbs` | admin | Generate thumbs of chapters for an item | scanner/analysis, separate binary |
 | `deferred` | `PUT` | `/library/metadata/{ids}/credits` | admin | Credit detect a metadata item | scanner/analysis, separate binary |
-| `stub` | `GET` | `/library/metadata/{ids}/extras` | user | Get an item's extras |  |
-| `stub` | `POST` | `/library/metadata/{ids}/extras` | user | Add to an item's extras |  |
+| `done` | `GET` | `/library/metadata/{ids}/extras` | user | Get an item's extras | The item's own extras, by position then id, for a film, a series, a season or an episode, through `Movie.extras` and its kin; `extraType` and `sort` change nothing, both container parameters window it; a list or an unknown id `404`, an extra's own `400`. Local extras as captured on the test libraries; the provider's trailers, which the reference lists only to a subscriber, as it looks each up. Artwork left out, as on items. See spec-gaps.md. |
+| `done` | `POST` | `/library/metadata/{ids}/extras` | user | Add to an item's extras | Refused `403` after the reference's own checks (`404` for an unknown item, `400` without `url` or `title` and for an extra): its `url` is a path or an address to fetch, and no endpoint takes one. The reference answers `404` for every address measured. See spec-gaps.md. |
 | `stub` | `GET` | `/library/metadata/{ids}/file` | user | Get a file from a metadata or media bundle |  |
 | `stub` | `PUT` | `/library/metadata/{ids}/index` | admin | Start BIF generation of an item |  |
 | `deferred` | `PUT` | `/library/metadata/{ids}/intro` | admin | Intro detect an item | scanner/analysis, separate binary |
@@ -200,7 +200,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | --- | --- | --- | --- | --- | --- |
 | `partial` | `GET` | `/library/collections/{collectionId}/composite/{updatedAt}` | user | Get a collection's image | Always `404`: no image is drawn, artwork not being served, and the reference answered `404` for every composite asked of it (test libraries and an imported collection). The address is published as the reference publishes it. |
 | `done` | `GET` | `/library/collections/{collectionId}/items` | user | Get items in a collection | The items in a listing form naming their library, as `/children` answers; in the collection's order (release date, title or custom) or its rule's. Paged by both container parameters. Item gaps as on `/all`. See spec-gaps.md. |
-| `partial` | `GET` | `/library/metadata/{ids}` | user | Get a metadata item | Items, media and files, served through the GraphQL schema. Zero field differences against the reference on shared items. Seasons are named at read time (`Season N`, `Specials`) and carry their series' guid, studio and year; episodes carry their season's and series' guids and titles. Genres, countries and credits with ids, filters, provider keys and portraits; `Guid` and `Rating`. 355 of 420 sampled items identical: 44 live metadata newer than the snapshot, 21 a credit's portrait (one per person here, one per credit on the reference). Gaps: artwork, view state, `Part.key`, audio/videoProfile (and the `audioCodec` composition that needs them), slug, chapterSource, extras, `Stream.language` as a name rather than a tag. Sort collation differs — see spec-gaps.md. Carries `Stream`, which a listing omits, with the audio track that plays marked `selected`; no subtitle is, as no choice is recorded. |
+| `partial` | `GET` | `/library/metadata/{ids}` | user | Get a metadata item | Items, media and files, served through the GraphQL schema. Zero field differences against the reference on shared items. Seasons are named at read time (`Season N`, `Specials`) and carry their series' guid, studio and year; episodes carry their season's and series' guids and titles. Genres, countries and credits with ids, filters, provider keys and portraits; `Guid` and `Rating`. 355 of 420 sampled items identical: 44 live metadata newer than the snapshot, 21 a credit's portrait (one per person here, one per credit on the reference). `Extras` on `includeExtras=1`, `primaryExtraKey` on films and series. Gaps: artwork, view state, `Part.key`, audio/videoProfile (and the `audioCodec` composition that needs them), slug, chapterSource, `hasPremiumPrimaryExtra`/`hasPremiumExtras`, `Stream.language` as a name rather than a tag. Sort collation differs — see spec-gaps.md. Carries `Stream`, which a listing omits, with the audio track that plays marked `selected`; no subtitle is, as no choice is recorded. |
 | `done` | `GET` | `/library/sections/{sectionId}/albums` | user | Set section albums | Empty: no music is held. The official API is asked for albums and has none; container captured on the reference's film and series libraries. Always windowed, like `/all`. |
 | `partial` | `GET` | `/library/sections/{sectionId}/all` | user | Get items in the section | Items, media and files through the GraphQL schema; zero field differences against the reference on shared items. `includeMeta=1` publishes the filters and sorts it honors. Filters: `title` (word prefix), `year`, `decade`, `contentRating`, `studio`, `resolution` — exact totals on 11 of 12 probes; `genre`, `country`, `director`, `writer`, `actor`, `producer` by id or name, comma for OR, repeat for AND — exact totals on 16 probes. `collection` by tag number or title, as `genre`. Any other advertised filter (`label`, …) answers 501 rather than being dropped. `type=18` lists the library's collections. Tags in the listing form: first 2 or 3 names per kind, derived from the tags rather than from the reference's stale cache. Gaps: artwork, view state, audio/videoProfile. Sort collation and range operators — see spec-gaps.md. |
 | `stub` | `GET` | `/library/sections/{sectionId}/allLeaves` | user | Set section leaves |  |
