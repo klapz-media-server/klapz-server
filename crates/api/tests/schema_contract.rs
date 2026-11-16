@@ -1632,6 +1632,65 @@ mutation Stop($input: StopStreamInput!) {
 }
 
 #[tokio::test]
+async fn a_conversion_falls_back_only_for_its_own_player_and_never_here() {
+    let schema = streamable(Arc::new(open_plex_core::testing::StubStreams::default()));
+    let started = start(
+        &schema,
+        serde_json::json!({ "file": GlobalId::encode("MediaFile", 910), "key": "k1" }),
+    )
+    .await;
+    let fall_back = r"
+mutation FallBack($input: FallBackStreamInput!) {
+  fallBackStream(input: $input) { clientMutationId session { key } userErrors { field code } }
+}";
+    let run = |request: async_graphql::Request, session: &Value| {
+        let input =
+            serde_json::json!({ "input": { "clientMutationId": "f1", "session": session } });
+        let request = request.variables(async_graphql::Variables::from_json(input));
+        let schema = &schema;
+        async move {
+            let response = schema.execute(request).await;
+            assert!(response.errors.is_empty(), "{:?}", response.errors);
+            serde_json::to_value(response.data).unwrap()["fallBackStream"].clone()
+        }
+    };
+    let refused = |code: &str| {
+        serde_json::json!({
+            "clientMutationId": "f1",
+            "session": null,
+            "userErrors": [{ "field": ["input", "session"], "code": code }],
+        })
+    };
+    let session = started["session"]["id"].clone();
+
+    assert_eq!(
+        run(as_owner(fall_back), &session).await,
+        refused("NO_FALLBACK")
+    );
+    // Another user's session does not exist for it.
+    assert_eq!(
+        run(as_user(fall_back), &session).await,
+        refused("SESSION_NOT_FOUND")
+    );
+    let item = Value::String(GlobalId::encode("Item", 900));
+    assert_eq!(
+        run(as_owner(fall_back), &item).await,
+        refused("SESSION_NOT_FOUND")
+    );
+
+    let stop = r"mutation Stop($input: StopStreamInput!) { stopStream(input: $input) { stopped } }";
+    let input = serde_json::json!({ "input": { "session": session } });
+    let response = schema
+        .execute(as_owner(stop).variables(async_graphql::Variables::from_json(input)))
+        .await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    assert_eq!(
+        run(as_owner(fall_back), &session).await,
+        refused("SESSION_NOT_FOUND")
+    );
+}
+
+#[tokio::test]
 async fn an_owner_terminates_a_session_which_its_player_can_still_read() {
     let engine = Arc::new(open_plex_core::testing::StubStreams::default());
     let schema = streamable(Arc::clone(&engine));

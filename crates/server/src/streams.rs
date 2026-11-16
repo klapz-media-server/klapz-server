@@ -31,8 +31,8 @@ use futures_util::StreamExt as _;
 use open_plex_core::lifecycle::{Lifecycle, SessionLocks};
 use open_plex_core::playback::{PlaybackOutput, PlaybackRepository, StreamDecision};
 use open_plex_core::stream::{
-    Delivery, StartedStream, StreamEngine, StreamError, StreamOrder, StreamProtocol, StreamQuality,
-    StreamTrack, SubtitleOutput,
+    Delivery, FallbackRefusal, StartedStream, StreamEngine, StreamError, StreamOrder,
+    StreamProtocol, StreamQuality, StreamTrack, SubtitleOutput,
 };
 use open_plex_transcoder::adapt;
 use open_plex_transcoder::media::resolve_within;
@@ -414,6 +414,16 @@ impl StreamEngine for Streams {
             }
         }
         self.transcoder.ping_session(key) || known
+    }
+
+    /// Every conversion here decodes in software and encodes H.264, which is where a fallback
+    /// leads: there is never a more conservative way to restart one.
+    fn fall_back(&self, key: &str) -> Result<(), FallbackRefusal> {
+        Err(if self.transcoder.has_session(key) {
+            FallbackRefusal::Exhausted
+        } else {
+            FallbackRefusal::NoConversion
+        })
     }
 
     fn idle(&self) -> Vec<String> {

@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 use crate::playback::{
     NewPlaybackSession, PlaybackError, PlaybackRepository, PlaybackSession, PlaybackState,
 };
-use crate::stream::{StartedStream, StreamEngine, StreamError, StreamOrder};
+use crate::stream::{FallbackRefusal, StartedStream, StreamEngine, StreamError, StreamOrder};
 
 /// One lock per session key, held while that key's stream and row change.
 #[derive(Debug, Default)]
@@ -47,6 +47,14 @@ pub enum StartError {
     /// The key names a session an owner terminated, which its player has not stopped yet.
     #[error("this session was terminated")]
     Terminated,
+    #[error(transparent)]
+    Storage(#[from] PlaybackError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum FallbackError {
+    #[error(transparent)]
+    Refused(#[from] FallbackRefusal),
     #[error(transparent)]
     Storage(#[from] PlaybackError),
 }
@@ -163,6 +171,21 @@ impl Lifecycle<'_> {
         Ok(alive)
     }
 
+    /// Restarts a session's conversion the more conservative way, which is a sign of life for
+    /// the session. A session that no longer plays — ended, expired, terminated — has no
+    /// conversion to restart.
+    ///
+    /// # Errors
+    ///
+    /// The engine's refusal, or the storage's failure.
+    pub async fn fall_back(&self, key: &str, now: i64) -> Result<(), FallbackError> {
+        let _held = self.locks.lock(key).await;
+        if !self.sessions.touch(key, now).await? {
+            return Err(FallbackRefusal::NoConversion.into());
+        }
+        Ok(self.streams.fall_back(key)?)
+    }
+
     /// Records where a player stands, which is a sign of life for each of its sessions and
     /// their streams. Whether the playback had any.
     ///
@@ -264,6 +287,7 @@ mod tests {
         stopped: Mutex<Vec<String>>,
         touched: Mutex<Vec<String>>,
         replaces: Mutex<Vec<String>>,
+        fallen_back: Mutex<Vec<String>>,
     }
 
     impl Engine {
@@ -304,6 +328,14 @@ mod tests {
             self.touched.lock().unwrap().push(key.to_owned());
             self.idle.lock().unwrap().remove(key);
             self.is_running(key)
+        }
+
+        fn fall_back(&self, key: &str) -> Result<(), FallbackRefusal> {
+            if !self.is_running(key) {
+                return Err(FallbackRefusal::NoConversion);
+            }
+            self.fallen_back.lock().unwrap().push(key.to_owned());
+            Ok(())
         }
 
         fn idle(&self) -> Vec<String> {
@@ -480,6 +512,31 @@ mod tests {
         // The player stopping removes it.
         assert!(fixture.lifecycle().end_playback("tab").await.unwrap());
         assert!(!fixture.has_row("a").await);
+    }
+
+    #[tokio::test]
+    async fn only_a_session_still_playing_has_its_conversion_fall_back() {
+        let fixture = Fixture::new();
+        fixture.start("a", NOW).await;
+        fixture.lifecycle().fall_back("a", NOW + 1).await.unwrap();
+        assert_eq!(*fixture.engine.fallen_back.lock().unwrap(), ["a"]);
+
+        fixture
+            .lifecycle()
+            .terminate("a", None, NOW + 2)
+            .await
+            .unwrap();
+        let refused = fixture.lifecycle().fall_back("a", NOW + 3).await;
+        assert!(matches!(
+            refused,
+            Err(FallbackError::Refused(FallbackRefusal::NoConversion))
+        ));
+        let unknown = fixture.lifecycle().fall_back("b", NOW + 3).await;
+        assert!(matches!(
+            unknown,
+            Err(FallbackError::Refused(FallbackRefusal::NoConversion))
+        ));
+        assert_eq!(fixture.engine.fallen_back.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]

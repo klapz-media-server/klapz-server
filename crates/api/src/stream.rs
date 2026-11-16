@@ -5,11 +5,11 @@
 //! it records is the stream's identity: `stopStream` names it.
 
 use async_graphql::{Context, Enum, InputObject, Result, SimpleObject, ID};
-use open_plex_core::lifecycle::StartError;
+use open_plex_core::lifecycle::{FallbackError, StartError};
 use open_plex_core::playback::{NewPlaybackSession, PlaybackOutput, StreamDecision};
 use open_plex_core::stream::{
-    Delivery, StartedStream, StreamError, StreamLimits, StreamOrder, StreamProtocol, StreamQuality,
-    StreamSource, StreamTrack, SubtitleOutput,
+    Delivery, FallbackRefusal, StartedStream, StreamError, StreamLimits, StreamOrder,
+    StreamProtocol, StreamQuality, StreamSource, StreamTrack, SubtitleOutput,
 };
 use open_plex_core::tracks::selected_tracks;
 use open_plex_core::{now_epoch, MediaStream, PartId, RatingKey, StreamKind};
@@ -282,6 +282,47 @@ pub struct StopStreamPayload {
     pub stopped: bool,
 }
 
+/// A stream whose conversion its player cannot decode.
+#[derive(Debug, InputObject)]
+pub struct FallBackStreamInput {
+    /// Echoed back in the payload, for the client to match the two.
+    pub client_mutation_id: Option<String>,
+    /// The stream's session, as returned in `StartStreamPayload.session.id`.
+    pub session: ID,
+}
+
+/// Why a conversion was not restarted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum FallBackStreamErrorCode {
+    /// No such session playing, or nothing converting for it: it ended, expired, was
+    /// terminated, or sends its file as it is.
+    SessionNotFound,
+    /// The conversion already runs the most conservative way this server has.
+    NoFallback,
+}
+
+/// A problem with what was asked, as opposed to a failure of the server.
+#[derive(Debug, Clone, SimpleObject)]
+pub struct FallBackStreamUserError {
+    /// The input field at fault, as a path from the input's root.
+    pub field: Vec<String>,
+    /// What went wrong, for a person.
+    pub message: String,
+    /// What went wrong, for a program.
+    pub code: FallBackStreamErrorCode,
+}
+
+/// What `fallBackStream` did.
+#[derive(Debug, SimpleObject)]
+pub struct FallBackStreamPayload {
+    /// The value the input carried.
+    pub client_mutation_id: Option<String>,
+    /// The session, its conversion restarted, unless it could not be.
+    pub session: Option<PlaybackSessionObject>,
+    /// Why the conversion was not restarted. Empty when it was.
+    pub user_errors: Vec<FallBackStreamUserError>,
+}
+
 fn decoded(id: &ID, type_name: &str) -> Option<i64> {
     GlobalId::decode(id)
         .ok()
@@ -521,5 +562,51 @@ pub(crate) async fn stop_stream(
     Ok(StopStreamPayload {
         client_mutation_id: input.client_mutation_id,
         stopped,
+    })
+}
+
+pub(crate) async fn fall_back_stream(
+    context: &Context<'_>,
+    input: FallBackStreamInput,
+) -> Result<FallBackStreamPayload> {
+    let caller = crate::access::require_caller(context)?;
+    let api = context.data::<ApiContext>()?;
+    let now = now_epoch();
+    let session = match decoded(&input.session, crate::playback::PLAYBACK_TYPE) {
+        Some(id) => api.playback.session(id, now).await?,
+        None => None,
+    };
+    let refusal = match session.filter(|session| caller.owns(session.user)) {
+        Some(session) => match api.lifecycle().fall_back(&session.key, now).await {
+            Ok(()) => {
+                return Ok(FallBackStreamPayload {
+                    client_mutation_id: input.client_mutation_id,
+                    session: Some(PlaybackSessionObject(session)),
+                    user_errors: Vec::new(),
+                });
+            }
+            Err(FallbackError::Refused(refusal)) => refusal,
+            Err(FallbackError::Storage(error)) => return Err(error.into()),
+        },
+        None => FallbackRefusal::NoConversion,
+    };
+    let (code, message) = match refusal {
+        FallbackRefusal::NoConversion => (
+            FallBackStreamErrorCode::SessionNotFound,
+            "no such session converting",
+        ),
+        FallbackRefusal::Exhausted => (
+            FallBackStreamErrorCode::NoFallback,
+            "this conversion has nothing to fall back to",
+        ),
+    };
+    Ok(FallBackStreamPayload {
+        client_mutation_id: input.client_mutation_id,
+        session: None,
+        user_errors: vec![FallBackStreamUserError {
+            field: vec!["input".to_owned(), "session".to_owned()],
+            message: message.to_owned(),
+            code,
+        }],
     })
 }

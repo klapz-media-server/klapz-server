@@ -2720,6 +2720,11 @@ impl crate::stream::StreamEngine for StubStreams {
         false
     }
 
+    /// As the server's engine answers: every conversion is already the one a fallback leads to.
+    fn fall_back(&self, _key: &str) -> Result<(), crate::stream::FallbackRefusal> {
+        Err(crate::stream::FallbackRefusal::Exhausted)
+    }
+
     fn idle(&self) -> Vec<String> {
         Vec::new()
     }

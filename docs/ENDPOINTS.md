@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 6 | 2.3 % |
-| `stub` | 71 | 27.3 % |
+| `stub` | 70 | 26.9 % |
 | `partial` | 31 | 11.9 % |
-| `done` | 113 | 43.5 % |
+| `done` | 114 | 43.8 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -42,7 +42,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | [Play Queue](#play-queue) | 9 | 8 | 1 | 0 | 0 | 0 |
 | [Status](#status) | 6 | 4 | 2 | 0 | 0 | 0 |
 | [Butler](#butler) | 5 | 0 | 0 | 5 | 0 | 0 |
-| [Transcoder](#transcoder) | 5 | 0 | 4 | 1 | 0 | 0 |
+| [Transcoder](#transcoder) | 5 | 1 | 4 | 0 | 0 | 0 |
 | [General](#general) | 4 | 2 | 0 | 2 | 0 | 0 |
 | [Live TV](#live-tv) | 4 | 4 | 0 | 0 | 0 | 0 |
 | [Provider](#provider) | 4 | 1 | 0 | 1 | 1 | 1 |
@@ -370,7 +370,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | --- | --- | --- | --- | --- | --- |
 | `partial` | `GET` | `/photo/:/transcode` | user | Transcode an image | Images hosted on `plex.tv` (account avatars): same size, encoding and headers as the reference. Library artwork and image effects answer `501`; any other host `403`. |
 | `partial` | `GET` | `/{transcodeType}/:/transcode/universal/decision` | user | Make a decision on media playback | Video only. Direct Play, Direct Stream and H.264 re-encoded under `maxVideoBitrate`, over HLS or DASH, with the decisions the reference gives; `501` for video of another codec and for `protocol=http`. |
-| `stub` | `POST` | `/{transcodeType}/:/transcode/universal/fallback` | user | Manually trigger a transcoder fallback |  |
+| `done` | `POST` | `/{transcodeType}/:/transcode/universal/fallback` | user | Manually trigger a transcoder fallback | The official API's `fallBackStream`. Reads `session`, not the spec's `transcodeSessionId`, for any of the four kinds: none `400`, an unknown one `404`, a running conversion `412` under the reference's `500` page, since every conversion here decodes in software and encodes H.264, as the reference answers its own; other methods `404`. See spec-gaps.md. |
 | `partial` | `GET` | `/{transcodeType}/:/transcode/universal/start.*` | user | Start A Transcoding Session | Video, Direct Stream, over HLS or DASH, started through the official API's `startStream` and answered with a `307` to the stream's own address (`/streams/{id}/manifest.mpd` or `master.m3u8`, with its secret), whose segments carry the secret too. HLS is the reference's fake VOD playlist, predicted from the duration; DASH its static manifest. A far seek restarts the process at the target segment (`-ss`, `-segment_start_number`, as the reference logs it), and a new session under the same `X-Plex-Session-Identifier` replaces the last. The reference's command lines; video copied, or re-encoded to H.264 under `maxVideoBitrate` along the reference's measured ladder; audio copied or converted to AAC. `autoAdjustQuality=1` is the official API's server-adaptive quality: one representation, whose rung the server lowers and raises by timing its segment deliveries. Same `501`s as the decision. |
 | `partial` | `GET` | `/{transcodeType}/:/transcode/universal/subtitles` | user | Transcode subtitles | Video, DASH, a text subtitle: the stream's ASS script, sent as the process converts it, on a response that stays open. The reference serves it without `X-Plex-Client-Identifier` despite the spec, but refuses a request with no resolvable client profile (`X-Plex-Platform`) — see spec-gaps.md. |
 

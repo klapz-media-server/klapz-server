@@ -421,6 +421,11 @@ Places where we knowingly answer differently, each decided rather than overlooke
   counts the plays of the server's other users; each user's server here receives no one
   else's, so `/hubs/popularInLibraries` answers the `404` the reference gives an empty or
   disabled shelf, and `/hubs` leaves it out, as the reference does.
+- **A transcoder fallback is always refused.** On the reference it restarts a hardware or HEVC
+  conversion in software and H.264 (its binary and the spec say so); every conversion here
+  already decodes in software and encodes H.264, so `fallBackStream` answers `NO_FALLBACK` and
+  `/universal/fallback` the `412` the reference gives its own software conversions. Its success
+  could not be measured: the reference has hardware transcoding off (`docs/spec-gaps.md`).
 
 ### Data model
 
@@ -730,6 +735,11 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `/library/sections/{id}/common`, what a set of items shares — fields, tags, collections and
   locks, aggregated in storage (`Library.common`, `ItemFilterInput.ids`) — element for element
   the reference's on films, series and episodes (`docs/spec-gaps.md`).
+- ✅ **transcoder fallback**: `POST /{transcodeType}/:/transcode/universal/fallback` over the
+  official API's `fallBackStream` (`StreamEngine::fall_back`, under the session's lock through
+  `core::lifecycle`), with the reference's measured answers: `session` rather than the spec's
+  `transcodeSessionId`, any of the four kinds, `400` without it, `404` for an unknown one, `412`
+  under its `500` page for a running conversion, `404` for other methods (`docs/spec-gaps.md`).
 
 ## Reference server
 

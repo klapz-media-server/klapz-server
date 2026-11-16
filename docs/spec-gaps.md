@@ -1517,6 +1517,43 @@ session and a dead process both answer `404` within 0.1 s; it cannot read its fi
 chunk that is merely late could not be timed. The hold is a deliberate choice against retry loops.
 Playlists and manifests are not held.
 
+### Falling back
+
+The spec describes `POST /{transcodeType}/:/transcode/universal/fallback` as "a transcoder
+fallback, ex: HEVC to h.264 or hw to sw", taking `transcodeSessionId`. No client in `files/`
+calls it: Plex Web falls back by itself, restarting the playback without direct play or with
+`directStream=0` (`Direct Play failed … Attempting to fallback`, `Video transcode failed …`).
+The reference's binary registers `/universal/fallback` beside `ping` and `stop`, reads `session`,
+logs `Got a transcode session fallback without a valid session ID.`, keeps `canFallback` on its
+transcode sessions and logs `Transcoder: session %s indicated fallback to software decoding`; it
+also formats `/video/:/transcode/universal/fallback?session=%s` itself, next to its recorder's
+decisions. A fallback is therefore a restart of a hardware or HEVC conversion in software and
+H.264, asked by whoever sees it fail.
+
+Measured on the reference, on Soul (library 27), a copy over DASH and a re-encode over HLS:
+
+| Request | Answer |
+| --- | --- |
+| no `session`, or only `transcodeSessionId` | `400` |
+| `session=` or an unknown session | `404`, with the log line above |
+| a running conversion | `412`, whose body is the `500` page (`Internal Server Error`, 109 bytes) |
+| the same under `/music`, `/audio`, `/subtitles` | as under `/video`: the kind is not looked at |
+| `/photo/:/…/fallback` | `404` |
+| `GET`, `PUT`, `DELETE` | `404`, known session or not, without the log line: no such route |
+| no token | `401`: not a callback of the transcoder's |
+
+Both conversions had `transcodeHwRequested=false`: the reference transcodes in software, and
+`412` is its answer for a conversion with nothing to fall back to. The session was left as it
+was — same key, same `timeStamp`, still answering `ping`. What a successful fallback answers could
+not be measured, since it needs the hardware transcoding the reference has off, and its
+preferences are not ours to change.
+
+Ours is the official API's `fallBackStream`, applied by the stream engine (`StreamEngine::
+fall_back`) under the session's lock, and a sign of life for the session. Every conversion here
+decodes in software and encodes H.264, so a running one answers `NO_FALLBACK`, bound to the `412`
+above, and a session gone or sending its file as it is `SESSION_NOT_FOUND`, a `404`. Same
+answers as the reference on every row of the table, checked on a conversion of Soul here.
+
 ### Streams at addresses of their own
 
 **Divergence.** The reference answers `start.mpd` and `start.m3u8` with its manifest, whose

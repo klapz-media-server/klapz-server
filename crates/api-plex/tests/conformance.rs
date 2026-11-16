@@ -4675,6 +4675,85 @@ async fn ping_and_stop_answer_from_the_official_api() {
 }
 
 #[tokio::test]
+async fn a_fallback_is_refused_as_the_reference_refuses_a_software_conversion() {
+    let (app, _, _) = playing("conversion", None).await;
+    let fallback =
+        |kind: &str, query: &str| format!("/{kind}/:/transcode/universal/fallback{query}");
+
+    // Measured on the reference, which reads `session` and not the spec's `transcodeSessionId`.
+    for (method, uri, expected) in [
+        ("POST", fallback("video", ""), StatusCode::BAD_REQUEST),
+        ("POST", fallback("music", ""), StatusCode::BAD_REQUEST),
+        (
+            "POST",
+            fallback("video", "?transcodeSessionId=conversion"),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "POST",
+            fallback("video", "?session="),
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "POST",
+            fallback("video", "?session=nope"),
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "POST",
+            fallback("photo", "?session=conversion"),
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "GET",
+            fallback("video", "?session=conversion"),
+            StatusCode::NOT_FOUND,
+        ),
+        ("GET", fallback("video", ""), StatusCode::NOT_FOUND),
+        (
+            "PUT",
+            fallback("video", "?session=conversion"),
+            StatusCode::NOT_FOUND,
+        ),
+        // Whatever kind the path names.
+        (
+            "POST",
+            fallback("subtitles", "?session=conversion"),
+            StatusCode::PRECONDITION_FAILED,
+        ),
+    ] {
+        assert_eq!(
+            send(app.clone(), method, &uri).await,
+            expected,
+            "{method} {uri}"
+        );
+    }
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(fallback("video", "?session=conversion"))
+        .header("X-Plex-Token", TOKEN)
+        .header("Accept", "application/json")
+        .body(Body::empty())
+        .expect("request builds");
+    let response = app.clone().oneshot(request).await.expect("router responds");
+    assert_eq!(response.status(), StatusCode::PRECONDITION_FAILED);
+    assert_eq!(response.headers()["content-type"], "text/html");
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    // The reference's `500` page, 109 bytes, under its `412`.
+    assert_eq!(
+        body,
+        "<html><head><title>Internal Server Error</title></head><body><h1>500 Internal Server Error</h1></body></html>"
+    );
+
+    // The session plays on.
+    let ping = "/video/:/transcode/universal/ping?session=conversion";
+    assert_eq!(send(app, "GET", ping).await, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn background_tasks_answer_the_empty_container_the_reference_sends_when_idle() {
     // Captured on the reference with no optimizer or download running, in both formats.
     let (status, _, body) = get("/status/sessions/background", Some("application/json")).await;
