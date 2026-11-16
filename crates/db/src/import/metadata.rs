@@ -188,7 +188,7 @@ async fn import_items(
                     "SELECT id, library_section_id, parent_id, guid, title, title_sort, \
                      original_title, summary, tagline, studio, content_rating, \
                      content_rating_age, \"index\", year, originally_available_at, duration, \
-                     rating, audience_rating, added_at, updated_at, user_fields, extra_data \
+                     rating, audience_rating, added_at, updated_at, refreshed_at, user_fields, extra_data \
                      FROM metadata_items WHERE metadata_type = {metadata_type} \
                      AND library_section_id IS NOT NULL \
                      ORDER BY id LIMIT {SOURCE_PAGE} OFFSET {offset}"
@@ -264,6 +264,7 @@ async fn import_items(
                 audience_rating: ActiveValue::Set(row.plex_opt("audience_rating")),
                 added_at: ActiveValue::Set(row.plex_opt("added_at").unwrap_or(0)),
                 updated_at: ActiveValue::Set(row.plex_opt("updated_at").unwrap_or(0)),
+                refreshed_at: ActiveValue::Set(row.plex_opt("refreshed_at")),
             });
             item_ids.insert(id);
         }
@@ -456,7 +457,7 @@ async fn import_parts(
                 sea_orm::DbBackend::Sqlite,
                 format!(
                     "SELECT id, media_item_id, \"index\", file, size, duration, created_at, \
-                     updated_at, extra_data FROM media_parts ORDER BY id \
+                     updated_at, hash, open_subtitle_hash, extra_data FROM media_parts ORDER BY id \
                      LIMIT {SOURCE_PAGE} OFFSET {offset}"
                 ),
             ))
@@ -498,6 +499,8 @@ async fn import_parts(
                 ),
                 packet_length: ActiveValue::Set(analysis.int("ma:packetLength")),
                 has_chapter_text_stream: ActiveValue::Set(analysis.flag("ma:hasChapterTextStream")),
+                content_hash: ActiveValue::Set(row.plex_text("hash")),
+                open_subtitles_hash: ActiveValue::Set(row.plex_text("open_subtitle_hash")),
             });
             written.insert(id);
         }
@@ -636,6 +639,7 @@ fn stream_row(
         is_hearing_impaired: ActiveValue::Set(analysis.flag("ma:hearingImpaired")),
         is_visual_impaired: ActiveValue::Set(analysis.flag("ma:visualImpaired")),
         has_header_compression: ActiveValue::Set(analysis.flag("ma:headerCompression")),
+        required_bandwidths: ActiveValue::Set(analysis.text("ma:requiredBandwidths")),
     }
 }
 

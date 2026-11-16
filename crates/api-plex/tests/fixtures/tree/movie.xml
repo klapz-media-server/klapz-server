@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MediaContainer size="1" identifier="com.plexapp.plugins.library" mediaTagPrefix="/system/bundle/media/flags/" mediaTagVersion="1791210760">
+<MetadataItem id="577986" title="Soul.2020.MULTi.TRUEFRENCH.1080p.WEB.H264-EXTREME_wWw.Extreme-Down.Video" guid="tv.plex.agents.none://577986" parentTitle="" instanceRatingKey="" index="1" originallyAvailableAt="" addedAt="1610176426" refreshedAt="1794847311">
+<MediaItem id="5566046">
+<MediaPart id="5571261" file="/media/test/Soul.2020.MULTi.TRUEFRENCH.1080p.WEB.H264-EXTREME_wWw.Extreme-Down.Video.mkv" size="5825269622" openSubtitleHash="eaa2ddfe303480ac" hash="c2cb3f6268c66d2165c099525b92b7765d26de44" duration="6031568">
+<MediaStream id="12262673" index="0" type="2" channels="6" codec="eac3" language="fr" audioChannelLayout="5.1(side)" requiredBandwidths="256,256,256,256,256,256,256,256" samplingRate="48000" title="French" />
+<MediaStream id="12262674" index="1" type="2" channels="6" codec="eac3" language="en" audioChannelLayout="5.1(side)" profile="dolby digital plus + dolby atmos" requiredBandwidths="768,768,768,768,768,768,768,768" samplingRate="48000" title="English" />
+<MediaStream id="12262675" index="2" type="3" codec="srt" language="fr" requiredBandwidths="1,1,1,1,1,1,1,1" title="French (Forced)" />
+<MediaStream id="12262676" index="3" type="3" codec="srt" language="fr" requiredBandwidths="1,1,1,1,1,1,1,1" title="French" />
+<MediaStream id="12262677" index="4" type="3" codec="srt" language="fr" requiredBandwidths="1,1,1,1,1,1,1,1" title="French (SDH)" />
+<MediaStream id="12262678" index="5" type="1" codec="h264" language="en" bitDepth="8" chromaLocation="left" chromaSubsampling="4:2:0" codedHeight="1088" codedWidth="1920" colorPrimaries="bt709" colorRange="tv" colorSpace="bt709" colorTrc="bt709" frameRate="23.976" hasScalingMatrix="0" height="1080" level="40" profile="high" refFrames="4" requiredBandwidths="10639,9885,9182,9033,9033,9033,9033,9033" scanType="progressive" width="1920" />
+</MediaPart>
+</MediaItem>
+</MetadataItem>
+</MediaContainer>

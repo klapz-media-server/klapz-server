@@ -84,6 +84,7 @@ fn item(id: i64, section: i64, kind: ItemKind, guid: &str, title: &str) -> Metad
         audience_rating: None,
         added_at: 1_794_839_063,
         updated_at: 1_794_839_065,
+        refreshed_at: None,
     }
 }
 
@@ -197,6 +198,8 @@ impl Stored {
                 ..FileLayout::default()
             },
             stream_url: streamed.then(|| text(part, "key").unwrap()),
+            content_hash: None,
+            open_subtitles_hash: None,
         });
         for track in tracks {
             self.streams.push(stream(part_id, track));
@@ -252,6 +255,7 @@ fn stream(file: PartId, track: &Value) -> MediaStream {
             loudness: None,
         }),
         subtitle: None,
+        required_bandwidths: Vec::new(),
     }
 }
 

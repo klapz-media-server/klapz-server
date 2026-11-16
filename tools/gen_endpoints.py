@@ -49,6 +49,8 @@ IMPLEMENTED = frozenset(
         "/library/metadata/{ids}/marker",
         "/library/metadata/{ids}/marker/{marker}",
         "/library/metadata/{ids}/extras",
+        "/library/metadata/{ids}/nearest",
+        "/library/metadata/{ids}/tree",
         # Singular. The spec declares only the plural form, which a real server 404s;
         # listed so the stub generator does not register a second route on this path.
         "/library/sections/{sectionId}/firstCharacter",
@@ -126,6 +128,7 @@ IMPLEMENTED = frozenset(
         "/media/subscriptions/{subscriptionId}/move",
         # A music library's albums, of which there are none (`music.rs`).
         "/library/sections/{sectionId}/albums",
+        "/library/sections/{sectionId}/nearest",
         # A tag and what carries it (`people.rs`).
         "/library/people/{personId}",
         "/library/people/{personId}/media",

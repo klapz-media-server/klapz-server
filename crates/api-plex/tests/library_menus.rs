@@ -101,6 +101,7 @@ impl Item {
             audience_rating: None,
             added_at: 0,
             updated_at: 0,
+            refreshed_at: None,
         }
     }
 }
@@ -183,6 +184,8 @@ fn tracks(
             duration_ms: None,
             layout: FileLayout::default(),
             stream_url: None,
+            content_hash: None,
+            open_subtitles_hash: None,
         });
         let audio = kind == StreamKind::Audio;
         media.2.push(MediaStream {
@@ -209,6 +212,7 @@ fn tracks(
                 loudness: None,
             }),
             subtitle: None,
+            required_bandwidths: Vec::new(),
         });
     }
     media

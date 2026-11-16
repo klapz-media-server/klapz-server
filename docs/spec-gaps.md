@@ -2590,6 +2590,66 @@ Where we answer otherwise, on purpose:
 TV shows in a client depends on `/media/providers`, which, as on the reference, carries no guide
 provider.
 
+### An item as a tree, `/library/metadata/{ids}/tree`
+
+The reference writes its own rows nearly as it stores them, not the listing vocabulary:
+`MetadataItem`, `MediaItem`, `MediaPart`, `MediaStream`. Measured on the test libraries' film
+and series (byte for byte in both formats, `tests/fixtures/tree`), on films of the real library
+with several versions, several parts, Dolby Vision, HDR10+, loudness and forced subtitles, on a
+series of two seasons, a sidecar subtitle, a collection and a trailer.
+
+- **One number, exactly.** The path takes a list, unknown numbers are dropped, and what remains
+  must be one: `21824,999999999` is the tree of 21824, `21824,58158` a `404` (same library or
+  not), `21824,21824` a `404` too, as is a list naming nothing. Numbers are not trimmed
+  (`%2021824` is a `404`); a trailing comma is ignored.
+- **Roots.** A film, a series and a season are the roots of their own tree. An episode is not:
+  its tree starts at its series and holds the one season and the one episode leading to it.
+- **`parentTitle`** is the same on every element of a tree: the title of the root's parent. A
+  season's tree carries its series' title throughout, its episodes included; a series' and an
+  episode's carry `""`.
+- **`MetadataItem`**: `id`, `title` (`""` for a season), `guid`, `parentTitle`,
+  `instanceRatingKey` (always `""`), `index` (1 for every film and series of the reference),
+  `originallyAvailableAt` (`""` when none), `addedAt`, `refreshedAt` (`-1` when never). Both
+  times are shifted by the reference's system UTC offset: 3600 s earlier than the same item's
+  `addedAt` on a lookup and than storage, measured in November in Paris on 4,070 values,
+  winter and summer dates alike. We publish them unshifted, as every other endpoint does. A
+  collection has `index` the number of the tag it gathers, `absoluteIndex="1"`, `refreshedAt="-1"`,
+  and keeps the long form, `<MetadataItem …>` then `</MetadataItem>`, with nothing inside. In
+  JSON every value is a number but the texts.
+- **Children**, in this order: seasons by number, episodes by number, then a series' eight
+  preferences as `Setting` elements — only when the requesting account holds a state of the
+  series (a row of `metadata_item_settings`, whatever it says: on 60 series, the 8 with one and
+  none of the 52 without; asking for its lookup, prefs or children first changes nothing).
+  Here: when the caller has watched any of it, stopped in it, or rated it. The settings are (`episodeSort`, the two
+  auto-deletion policies, `flattenSeasons`, `showOrdering`, `audioLanguage`, `subtitleLanguage`,
+  `subtitleMode`): labels in English for every `X-Plex-Language`, the language choices named in
+  the reference's system language (French) and ordered by those names. A season's tree has no
+  `Setting`, nor an episode's season.
+- **`MediaItem`** carries its `id` alone; **`MediaPart`** `metadataType="4"` on an episode's file
+  and nowhere else, `id`, `file`, `size`, `openSubtitleHash`, `hash`, `duration` (`""` and `-1`
+  where the reference has none, on a provider's trailer).
+- **`MediaStream`**: `id`, `index` (absent on a sidecar file), `type` (1, 2, 3), `url` (a
+  sidecar's `file://` address), `channels`, `codec`, `language` as stored — `en` for every track
+  of some films whatever their title says, `fr-CA` — then every key of the track's analysis,
+  its `ma:` and `ln:` prefixes dropped, sorted byte-wise (`DOVIBLCompatID` … `HDR10PlusPresent`
+  before `audioChannelLayout`), each value a string as stored: `frameRate` to three decimals,
+  loudness to two, flags `"1"` (`hasScalingMatrix`, `anamorphic` and the four `DOVI…Present`
+  `"0"` too), `requiredBandwidths` the eight kilobit counts. The `bitrate`, `default` and
+  `forced` columns are not written, nor is an empty value (a track named `""` has no `title`).
+  Tracks sharing an index, captions carried in the video beside it, follow their ids.
+  `requiredBandwidths` can hold `2147483647` for a buffer no bandwidth fills, which the
+  official API carries as a `Float` of bits per second.
+
+Compared with the reference on 225 items of the real library — 120 films, 15 series, 15
+seasons, 60 episodes and the cases above — once the time shift is set aside: 196 identical,
+and what differs elsewhere is `refreshedAt` moved on since the import (123 values), the series'
+`Setting` on 30 trees whose account state is not imported, and one OpenSubtitles download.
+Reproduced from what was imported, which the tree needed three more of: `refreshed_at`, the
+two digests of a file, and each track's `requiredBandwidths` (migration `m0038`). Left out: the
+keys an OpenSubtitles download adds to its track (`providerTitle`, `score`, `sourceKey`,
+`transient`, `userID`, `perfectMatch`; 608 tracks), `absoluteIndex` on the 7 films that have one, and a trailer's tree, since a trailer is
+not looked up by number here (`404`).
+
 ### Music, held nowhere
 
 This server imports no music: a music section is copied as an empty library (`type="artist"`),
@@ -2608,6 +2668,24 @@ A music library's `/hubs/sections/{id}` has no shelf here; Plex's would be a mus
 own, and there is nothing to fill them. Not measured: the reference has no such library. A
 `type` the official API has no kind for, a photo (13) for one, still places no filter on `/all`,
 where the reference answers empty.
+
+A track's sonic neighbors, `/library/metadata/{ids}/nearest` and
+`/library/sections/{id}/nearest`, measured on the same libraries:
+
+| Request | Reference | Here |
+| --- | --- | --- |
+| `/library/metadata/{ids}/nearest` where no number names anything (`999999999`, `abc`, `0`, ` 21824`) | `404`, before any parameter is read | Same |
+| … where one number names something, a film, series, episode, collection or trailer, among unknown ones or not | `403` | Same, but for a trailer, which this server does not look up by number (`404`) |
+| … with `limit` or `excludeParentID`/`excludeGrandparentID` not an integer (`abc`, `1.5`, empty), or `maxDistance` not a number | `400`; `limit=-5` and `maxDistance=1e3` pass | Same |
+| `/library/sections/{id}/nearest` for an unknown library (`999`, `abc`, `0`) | `404`, before any parameter is read | Same |
+| … without `type`, or with a `type` not an integer (`abc`, empty, `1.0`) | `400` | Same |
+| … without `values`, or with an element not a number (`a`, `1x`, ` 1`) | `400`; empty elements are skipped (`1,,2`), an empty list passes, `1e3` and `-2` are numbers, the count is not checked | Same |
+| … with `limit` not an integer or `maxDistance` not a number | `400` | Same |
+| Anything else, any `type`, on a film or series library | `403` | Same |
+
+Whether the `403` means "not music" or a subscription the account lacks could not be told
+apart, and a music library could not be measured. Here every library answers it: none holds an
+analysed track.
 
 ### Sort collation
 

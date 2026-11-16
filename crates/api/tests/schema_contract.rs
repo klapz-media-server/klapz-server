@@ -146,6 +146,7 @@ fn item(
         audience_rating: None,
         added_at: 0,
         updated_at: 0,
+        refreshed_at: None,
     }
 }
 
@@ -1448,6 +1449,7 @@ fn track(
         video: None,
         audio: None,
         subtitle: None,
+        required_bandwidths: Vec::new(),
     }
 }
 
@@ -1479,6 +1481,8 @@ fn streamable(engine: Arc<open_plex_core::testing::StubStreams>) -> ApiSchema {
         duration_ms: Some(6_031_568),
         layout: open_plex_core::metadata::FileLayout::default(),
         stream_url: None,
+        content_hash: None,
+        open_subtitles_hash: None,
     };
     let tracks = vec![
         track(920, StreamKind::Video, 0, "h264"),

@@ -37,6 +37,7 @@ fn item(id: i64, kind: &str, parent: Option<i64>, title: &str) -> metadata_item:
         audience_rating: ActiveValue::Set(None),
         added_at: ActiveValue::Set(0),
         updated_at: ActiveValue::Set(0),
+        refreshed_at: ActiveValue::Set(None),
     }
 }
 

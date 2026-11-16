@@ -1496,6 +1496,11 @@ type Episode implements Item & Node {
 	"""
 	updatedAt: DateTime!
 	"""
+	When the item's metadata was last refreshed from its metadata agent. Null when it
+	never was.
+	"""
+	refreshedAt: DateTime
+	"""
 	The library this item belongs to.
 	
 	The same work present in two libraries is two distinct items with two ids — 78% of
@@ -2257,6 +2262,10 @@ interface Item {
 	When the item's metadata last changed.
 	"""
 	updatedAt: DateTime!
+	"""
+	When the item's metadata was last refreshed from its metadata agent. Null when it never was.
+	"""
+	refreshedAt: DateTime
 	"""
 	The library this item belongs to. The same work present in two libraries is two distinct items with two ids.
 	"""
@@ -3609,6 +3618,17 @@ type MediaFile implements Node {
 	"""
 	durationMs: Int
 	"""
+	The SHA-1 the scanner computed over the file's contents, in hex: two copies of one
+	file share it. Null when the scanner computed none.
+	"""
+	contentHash: String
+	"""
+	The file's `OpenSubtitles` hash, in hex — its size plus the 64-bit sums of its first and
+	last 64 KiB — which subtitle services find a file by. Null when the scanner computed
+	none.
+	"""
+	openSubtitlesHash: String
+	"""
 	Whether the file embeds a cover image.
 	"""
 	hasThumbnail: Boolean!
@@ -3689,6 +3709,13 @@ type MediaStream implements Node {
 	"""
 	isExternal: Boolean!
 	"""
+	Where an external track's file is, as the scanner recorded it: a `file://` URL. Null
+	for a track inside the media file.
+	
+	Reference data, as `MediaFile.path` is: no endpoint accepts it back.
+	"""
+	externalUrl: String
+	"""
 	The name the file gives the track, often a release tag: `VFF AC3 5.1 @448kb`. Empty
 	when the file writes an empty name, null when it writes none.
 	"""
@@ -3707,6 +3734,15 @@ type MediaStream implements Node {
 	Bits per sample.
 	"""
 	bitDepth: Int
+	"""
+	The bandwidth, in bits per second, the track needs to play without stalling, for each
+	of the buffer sizes the analysis tried, from the smallest: a larger buffer absorbs
+	more of the peaks. Empty when the track was never analysed that far.
+	
+	Floats holding whole numbers: the analysis writes `2147483647` kilobits for a buffer
+	that no bandwidth fills, which in bits exceeds an `Int`.
+	"""
+	requiredBandwidths: [Float!]!
 	"""
 	What the file says the track is for, beyond its language.
 	"""
@@ -3993,6 +4029,11 @@ type Movie implements Item & Node {
 	When the item's metadata last changed.
 	"""
 	updatedAt: DateTime!
+	"""
+	When the item's metadata was last refreshed from its metadata agent. Null when it
+	never was.
+	"""
+	refreshedAt: DateTime
 	"""
 	The library this item belongs to.
 	
@@ -6570,6 +6611,11 @@ type Season implements Item & Node {
 	"""
 	updatedAt: DateTime!
 	"""
+	When the item's metadata was last refreshed from its metadata agent. Null when it
+	never was.
+	"""
+	refreshedAt: DateTime
+	"""
 	The library this item belongs to.
 	
 	The same work present in two libraries is two distinct items with two ids — 78% of
@@ -6916,6 +6962,11 @@ type Show implements Item & Node {
 	When the item's metadata last changed.
 	"""
 	updatedAt: DateTime!
+	"""
+	When the item's metadata was last refreshed from its metadata agent. Null when it
+	never was.
+	"""
+	refreshedAt: DateTime
 	"""
 	The library this item belongs to.
 	

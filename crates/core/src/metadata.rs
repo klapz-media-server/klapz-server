@@ -78,6 +78,8 @@ pub struct MetadataItem {
     pub audience_rating: Option<f64>,
     pub added_at: i64,
     pub updated_at: i64,
+    /// When the metadata was last refreshed from its agent. `None` for an item never refreshed.
+    pub refreshed_at: Option<i64>,
 }
 
 /// One encoding of an item.
@@ -143,6 +145,12 @@ pub struct MediaFile {
     /// Where a provider streams the file from: the trailers the reference's metadata provider
     /// supplies. `None` for a file of the library.
     pub stream_url: Option<String>,
+    /// The SHA-1 the scanner computed over the file's contents, in hex: two copies of one
+    /// file share it.
+    pub content_hash: Option<String>,
+    /// The `OpenSubtitles` hash, in hex: the file's size plus the 64-bit sums of its first and
+    /// last 64 KiB, what subtitle services find a file by.
+    pub open_subtitles_hash: Option<String>,
 }
 
 /// How a file is laid out, as its analysis found it.
@@ -202,6 +210,9 @@ pub struct MediaStream {
     pub audio: Option<AudioAnalysis>,
     /// Set on a subtitle track, and only there.
     pub subtitle: Option<SubtitleAnalysis>,
+    /// Kilobits per second the track needs to play without stalling, one per buffer size
+    /// from the smallest, as the analysis found them. Empty when it never measured them.
+    pub required_bandwidths: Vec<i32>,
 }
 
 /// What a file says a track is for, beyond its language.

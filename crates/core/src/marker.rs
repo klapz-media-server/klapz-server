@@ -256,6 +256,7 @@ mod tests {
             audience_rating: None,
             added_at: 0,
             updated_at: 0,
+            refreshed_at: None,
         }
     }
 

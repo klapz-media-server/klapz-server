@@ -26,6 +26,10 @@ pub struct Model {
     /// The transport packet size of an MPEG-TS file: 188, or 192 for Blu-ray's M2TS.
     pub packet_length: Option<i32>,
     pub has_chapter_text_stream: bool,
+    /// The scanner's SHA-1 of the file's contents, in hex.
+    pub content_hash: Option<String>,
+    /// The file's `OpenSubtitles` hash, in hex.
+    pub open_subtitles_hash: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

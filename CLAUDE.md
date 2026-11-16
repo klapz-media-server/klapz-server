@@ -440,6 +440,14 @@ Places where we knowingly answer differently, each decided rather than overlooke
   counts the plays of the server's other users; each user's server here receives no one
   else's, so `/hubs/popularInLibraries` answers the `404` the reference gives an empty or
   disabled shelf, and `/hubs` leaves it out, as the reference does.
+- **An item's tree tells its times as stored.** The reference's `/library/metadata/{id}/tree`
+  shifts `addedAt` and `refreshedAt` by its system's UTC offset (an hour earlier, measured in
+  Paris in November), unlike every other endpoint; ours are unshifted. A series' eight
+  preferences, which it writes for an account holding a state of the series, stand at their
+  defaults since none is kept here, the language choices named in French as the reference's
+  system names them. A trailer has no tree (`404`): it is not looked up by number here.
+- **Nothing has sonic neighbors.** Both `nearest` routes answer the reference's `403` for what
+  is not an analysed track, music libraries included, which the reference could not show.
 - **A transcoder fallback is always refused.** On the reference it restarts a hardware or HEVC
   conversion in software and H.264 (its binary and the spec say so); every conversion here
   already decodes in software and encodes H.264, so `fallBackStream` answers `NO_FALLBACK` and
@@ -787,6 +795,14 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   and on every JPEG once decoded as libjpeg-turbo decodes it. `/services/ultrablur/colors`
   binds onto it for Plex's hosts and onto storage for an item's art; `/image` draws the
   gradient, pixel-identical without noise, its area capped at 3840×2160 (`docs/spec-gaps.md`).
+- ✅ **an item as a tree**, `/library/metadata/{ids}/tree`: the reference's rows nearly as stored
+  (`MetadataItem` → `MediaItem` → `MediaPart` → `MediaStream`, a track's analysis under its own
+  keys in byte order), one number of the list exactly, a season rooting its own tree and an
+  episode the branch from its series, by the rules measured on films, series, seasons, episodes
+  and a collection; byte for byte on the test libraries. The three things it needed imported
+  (migration `m0038`) are on the official API: `Item.refreshedAt`, `MediaFile.contentHash` and
+  `openSubtitlesHash`, `MediaStream.requiredBandwidths`, and `MediaStream.externalUrl` for a
+  sidecar. Both `nearest` routes answer as the reference does without music (`docs/spec-gaps.md`).
 
 ## Reference server
 

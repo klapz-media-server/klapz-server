@@ -95,6 +95,7 @@ mod tests {
             video: None,
             audio: None,
             subtitle: None,
+            required_bandwidths: Vec::new(),
         }
     }
 

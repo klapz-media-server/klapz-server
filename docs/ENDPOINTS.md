@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 6 | 2.3 % |
-| `stub` | 65 | 25.0 % |
-| `partial` | 32 | 12.3 % |
-| `done` | 118 | 45.4 % |
+| `stub` | 62 | 23.8 % |
+| `partial` | 33 | 12.7 % |
+| `done` | 120 | 46.2 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -29,9 +29,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 15 | 14 | 25 | 5 | 26 |
+| [Library](#library) | 85 | 16 | 15 | 23 | 5 | 26 |
 | [Hubs](#hubs) | 15 | 5 | 3 | 7 | 0 | 0 |
-| [Content](#content) | 13 | 2 | 3 | 8 | 0 | 0 |
+| [Content](#content) | 13 | 3 | 3 | 7 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
 | [EPG](#epg) | 13 | 13 | 0 | 0 | 0 | 0 |
 | [Library Playlists](#library-playlists) | 13 | 12 | 1 | 0 | 0 | 0 |
@@ -115,14 +115,14 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `deferred` | `PUT` | `/library/metadata/{ids}/matches` | admin | Get metadata matches for an item | scanner/analysis, separate binary |
 | `stub` | `DELETE` | `/library/metadata/{ids}/media/{mediaItem}` | admin | Delete a media item |  |
 | `deferred` | `PUT` | `/library/metadata/{ids}/merge` | admin | Merge a metadata item | scanner/analysis, separate binary |
-| `stub` | `GET` | `/library/metadata/{ids}/nearest` | user | Get nearest tracks to metadata item |  |
+| `done` | `GET` | `/library/metadata/{ids}/nearest` | user | Get nearest tracks to metadata item | Nothing is a track here: `403` once a number names something, `404` when none does, `400` for an unreadable `limit`, `maxDistance` or exclusion, as measured on the reference's film and series libraries (`docs/spec-gaps.md`). |
 | `partial` | `PUT` | `/library/metadata/{ids}/prefs` | admin | Set metadata preferences | A collection's `collectionMode` (`-1`–`2`) and `collectionSort` (`0`–`2`), any other name or value `400`; an item's preferences `501`. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/refresh` | admin | Refresh a metadata item | scanner/analysis, separate binary |
 | `partial` | `GET` | `/library/metadata/{ids}/related` | user | Get related items | A film: similar films (approximate ranking), its director and two first-billed actors, the last two matching the reference on 59 of 60 films. A series: similar series only. Not served: collection and `external.*` shelves, a series' network and cast shelves. |
 | `partial` | `GET` | `/library/metadata/{ids}/similar` | user | Get similar items | Same container as the reference; the ranking is an approximation. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/split` | admin | Split a metadata item | scanner/analysis, separate binary |
 | `stub` | `GET` | `/library/metadata/{ids}/subtitles` | admin | Add subtitles |  |
-| `stub` | `GET` | `/library/metadata/{ids}/tree` | user | Get metadata items as a tree |  |
+| `partial` | `GET` | `/library/metadata/{ids}/tree` | user | Get metadata items as a tree | Films, series, seasons, episodes and collections: byte for byte on the test libraries, 196 of 225 real items identical, the rest snapshot drift. Times unshifted where the reference subtracts its UTC offset. Not served: a trailer's tree (`404`, no trailer is looked up by number) and the keys an OpenSubtitles download adds to its track (`docs/spec-gaps.md`). |
 | `deferred` | `PUT` | `/library/metadata/{ids}/unmatch` | admin | Unmatch a metadata item | scanner/analysis, separate binary |
 | `stub` | `GET` | `/library/metadata/{ids}/users/top` | admin | Get metadata top users |  |
 | `deferred` | `PUT` | `/library/metadata/{ids}/voiceActivity` | admin | Detect voice activity | scanner/analysis, separate binary |
@@ -210,7 +210,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `GET` | `/library/sections/{sectionId}/computePath` | user | Similar tracks to transition from one to another |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/location` | user | Get all folder locations |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/moment` | user | Set section moments |  |
-| `stub` | `GET` | `/library/sections/{sectionId}/nearest` | user | The nearest audio tracks |  |
+| `done` | `GET` | `/library/sections/{sectionId}/nearest` | user | The nearest audio tracks | No library holds an analysed track: `403` once `type` and `values` are readable, `400` otherwise, `404` for an unknown library, as measured; a music library could not be (`docs/spec-gaps.md`). |
 
 ## Devices
 

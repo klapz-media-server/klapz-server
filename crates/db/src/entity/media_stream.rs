@@ -71,6 +71,9 @@ pub struct Model {
     pub is_hearing_impaired: bool,
     pub is_visual_impaired: bool,
     pub has_header_compression: bool,
+    /// Kilobits per second the analysis found the track needs, one per buffer size from the
+    /// smallest, joined by commas as the source writes them.
+    pub required_bandwidths: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -75,6 +75,7 @@ fn item(
         audience_rating: ActiveValue::Set(None),
         added_at: ActiveValue::Set(0),
         updated_at: ActiveValue::Set(0),
+        refreshed_at: ActiveValue::Set(None),
     }
 }
 

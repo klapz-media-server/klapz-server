@@ -230,6 +230,19 @@ impl File {
         self.0.duration_ms
     }
 
+    /// The SHA-1 the scanner computed over the file's contents, in hex: two copies of one
+    /// file share it. Null when the scanner computed none.
+    async fn content_hash(&self) -> Option<&str> {
+        self.0.content_hash.as_deref()
+    }
+
+    /// The file's `OpenSubtitles` hash, in hex — its size plus the 64-bit sums of its first and
+    /// last 64 KiB — which subtitle services find a file by. Null when the scanner computed
+    /// none.
+    async fn open_subtitles_hash(&self) -> Option<&str> {
+        self.0.open_subtitles_hash.as_deref()
+    }
+
     /// Whether the file embeds a cover image.
     async fn has_thumbnail(&self) -> bool {
         self.0.layout.has_thumbnail
@@ -362,6 +375,14 @@ impl Track {
         self.0.external_path.is_some()
     }
 
+    /// Where an external track's file is, as the scanner recorded it: a `file://` URL. Null
+    /// for a track inside the media file.
+    ///
+    /// Reference data, as `MediaFile.path` is: no endpoint accepts it back.
+    async fn external_url(&self) -> Option<&str> {
+        self.0.external_path.as_deref()
+    }
+
     /// The name the file gives the track, often a release tag: `VFF AC3 5.1 @448kb`. Empty
     /// when the file writes an empty name, null when it writes none.
     async fn title(&self) -> Option<&str> {
@@ -385,6 +406,20 @@ impl Track {
     /// Bits per sample.
     async fn bit_depth(&self) -> Option<i32> {
         self.0.bit_depth
+    }
+
+    /// The bandwidth, in bits per second, the track needs to play without stalling, for each
+    /// of the buffer sizes the analysis tried, from the smallest: a larger buffer absorbs
+    /// more of the peaks. Empty when the track was never analysed that far.
+    ///
+    /// Floats holding whole numbers: the analysis writes `2147483647` kilobits for a buffer
+    /// that no bandwidth fills, which in bits exceeds an `Int`.
+    async fn required_bandwidths(&self) -> Vec<f64> {
+        self.0
+            .required_bandwidths
+            .iter()
+            .map(|kilobits| f64::from(*kilobits) * 1000.0)
+            .collect()
     }
 
     /// What the file says the track is for, beyond its language.

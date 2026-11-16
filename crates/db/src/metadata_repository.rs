@@ -2364,6 +2364,7 @@ fn to_domain(row: metadata_item::Model) -> MetadataItem {
         audience_rating: row.audience_rating,
         added_at: row.added_at,
         updated_at: row.updated_at,
+        refreshed_at: row.refreshed_at,
     }
 }
 
@@ -2402,6 +2403,8 @@ fn to_file(row: media_part::Model) -> MediaFile {
             has_chapter_text_stream: row.has_chapter_text_stream,
         },
         stream_url: None,
+        content_hash: row.content_hash,
+        open_subtitles_hash: row.open_subtitles_hash,
     }
 }
 
@@ -2491,7 +2494,22 @@ fn to_track(
         video,
         audio,
         subtitle,
+        required_bandwidths: row
+            .required_bandwidths
+            .as_deref()
+            .map(parse_bandwidths)
+            .unwrap_or_default(),
     }
+}
+
+/// The source's comma-joined kilobit counts. A malformed list is no list: half of one would
+/// pair values with the wrong buffer sizes.
+fn parse_bandwidths(stored: &str) -> Vec<i32> {
+    stored
+        .split(',')
+        .map(str::parse)
+        .collect::<Result<Vec<i32>, _>>()
+        .unwrap_or_default()
 }
 
 /// `None` for a value this build does not know, rather than a guess.
