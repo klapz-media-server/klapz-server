@@ -27,6 +27,7 @@ pub mod playback;
 pub mod playlist;
 pub mod recent;
 pub mod search;
+pub mod sidecar;
 pub mod similar;
 pub mod slug;
 pub mod stream;

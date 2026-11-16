@@ -2,7 +2,8 @@
 
 The file scanner is out of scope, and the imported library points at files that exist on
 another machine, so nothing imported can be played here. This gives playback something real:
-one film per file, with its tracks read by ffprobe.
+one film per file, with its tracks read by ffprobe and the subtitle files beside it
+(`Film.fr.srt`, `Film.ass`) as sidecars, their location written as the reference writes it.
 
 Development only. It writes straight to the tables, so these films are absent from the title
 word index, whose only proper writer is `db::write::insert_items`: they list but do not search.
@@ -24,6 +25,7 @@ SECTION_TITLE = "Test"
 VIDEO_SUFFIXES = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".webm"}
 LANGUAGES = {"fre": "fr", "fra": "fr", "eng": "en", "ger": "de", "deu": "de", "spa": "es", "ita": "it"}
 STREAM_KINDS = {"video", "audio", "subtitle"}
+SIDECAR_SUFFIXES = {".srt", ".ass", ".ssa", ".vtt", ".smi"}
 
 
 def next_id(database: sqlite3.Connection, table: str) -> int:
@@ -38,12 +40,32 @@ def remove(database: sqlite3.Connection) -> None:
     items = "select id from metadata_item where library_section_id=?"
     media = f"select id from media where metadata_item_id in ({items})"
     parts = f"select id from media_part where media_id in ({media})"
+    streams = f"select id from media_stream where media_part_id in ({parts})"
+    # Foreign keys are off in sqlite3 by default: what cascades in the server is deleted here.
+    database.execute(f"delete from subtitle_offset where media_stream_id in ({streams})", (section,))
     database.execute(f"delete from media_stream where media_part_id in ({parts})", (section,))
     database.execute(f"delete from media_part where media_id in ({media})", (section,))
     database.execute(f"delete from media where metadata_item_id in ({items})", (section,))
     database.execute("delete from metadata_item where library_section_id=?", (section,))
     database.execute("delete from section_root where section_id=?", (section,))
     database.execute("delete from library_section where id=?", (section,))
+
+
+def sidecars(media: Path) -> list[tuple[Path, str | None]]:
+    """The subtitle files beside a media file, with the language their name gives."""
+    found = []
+    for path in sorted(media.parent.iterdir()):
+        if path.suffix.lower() not in SIDECAR_SUFFIXES or not path.name.startswith(media.stem + "."):
+            continue
+        middle = path.name[len(media.stem) + 1 : -len(path.suffix)]
+        language = middle if 2 <= len(middle) <= 3 and middle.isalpha() else None
+        found.append((path, LANGUAGES.get(language, language)))
+    return found
+
+
+def file_url(path: Path) -> str:
+    """The location the reference stores for a sidecar: a `file://` URL, spaces escaped."""
+    return "file:///" + path.as_posix().lstrip("/").replace("%", "%25").replace(" ", "%20")
 
 
 def probe(path: Path) -> dict:
@@ -159,6 +181,15 @@ def seed(database: sqlite3.Connection, directory: Path) -> None:
                  *measured.values()),
             )
             seen.add(kind)
+        for sidecar, language in sidecars(path):
+            codec = sidecar.suffix[1:].lower()
+            database.execute(
+                "insert into media_stream (id, media_part_id, kind, position, codec, language,"
+                " is_default, is_forced, external_path, subtitle_format)"
+                " values (?,?,'subtitle',0,?,?,0,0,?,?)",
+                (next_id(database, "media_stream"), part, codec, language, file_url(sidecar), codec),
+            )
+            print(f"  sidecar {sidecar.name}")
         print(f"item {item}, part {part}: {[(s['codec_type'], s['codec_name']) for s in streams]}")
 
 

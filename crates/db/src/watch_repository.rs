@@ -20,7 +20,8 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    metadata_item, track_choice, user_rating, viewing, viewing_history, watch_state,
+    metadata_item, subtitle_offset, track_choice, user_rating, viewing, viewing_history,
+    watch_state,
 };
 
 #[derive(Debug, Clone)]
@@ -378,6 +379,61 @@ impl WatchRepository for SqlWatchRepository {
                 track_choice::Column::SubtitleStreamId,
                 track_choice::Column::SubtitleOff,
             ])
+            .to_owned(),
+        )
+        .exec(&self.connection)
+        .await
+        .map_err(storage)?;
+        Ok(())
+    }
+
+    async fn subtitle_offsets(
+        &self,
+        viewer: UserId,
+        tracks: &[StreamId],
+    ) -> Result<Vec<(StreamId, i32)>, WatchError> {
+        if tracks.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = subtitle_offset::Entity::find()
+            .filter(
+                subtitle_offset::Column::MediaStreamId
+                    .is_in(tracks.iter().map(|track| track.get())),
+            )
+            .filter(subtitle_offset::Column::Viewer.eq(viewer.get()))
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| (StreamId::new(row.media_stream_id), row.offset_ms))
+            .collect())
+    }
+
+    async fn set_subtitle_offset(
+        &self,
+        viewer: UserId,
+        track: StreamId,
+        offset_ms: i32,
+    ) -> Result<(), WatchError> {
+        if offset_ms == 0 {
+            subtitle_offset::Entity::delete_by_id((track.get(), viewer.get()))
+                .exec(&self.connection)
+                .await
+                .map_err(storage)?;
+            return Ok(());
+        }
+        subtitle_offset::Entity::insert(subtitle_offset::ActiveModel {
+            media_stream_id: ActiveValue::Set(track.get()),
+            viewer: ActiveValue::Set(viewer.get()),
+            offset_ms: ActiveValue::Set(offset_ms),
+        })
+        .on_conflict(
+            OnConflict::columns([
+                subtitle_offset::Column::MediaStreamId,
+                subtitle_offset::Column::Viewer,
+            ])
+            .update_column(subtitle_offset::Column::OffsetMs)
             .to_owned(),
         )
         .exec(&self.connection)

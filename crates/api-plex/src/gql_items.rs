@@ -113,6 +113,8 @@ fragment TrackFields on MediaStream {
   isDefault
   isForced
   isExternal
+  sidecar { path }
+  offsetMs
   title
   streamIdentifier
   profile
@@ -1267,6 +1269,8 @@ pub struct GqlStream {
     pub is_default: bool,
     pub is_forced: bool,
     pub is_external: bool,
+    pub sidecar: Option<GqlSidecar>,
+    pub offset_ms: i32,
     pub title: Option<String>,
     pub stream_identifier: Option<i32>,
     pub profile: Option<String>,
@@ -1275,6 +1279,12 @@ pub struct GqlStream {
     pub video: Option<GqlVideo>,
     pub audio: Option<GqlAudio>,
     pub subtitle: Option<GqlSubtitle>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct GqlSidecar {
+    pub path: Option<String>,
 }
 
 #[allow(

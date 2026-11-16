@@ -116,8 +116,8 @@ Where ours differ, all measured:
 
 - **Downloaded subtitles** read `(Français SRT OpenSubtitles)` on the reference, which names
   the provider from the `at:` keys; we import none of them and write `Externe`. A sidecar
-  subtitle also carries `key` and `file` there, and no `index`; we omit `index` too, and the
-  `key` waits for a `/library/streams/{id}` route.
+  subtitle also carries `key` and `file` there, and no `index`; so does ours (see *Subtitle
+  files*).
 - **`zh-Hant`** reads `Chinois (Taïwan)`: ICU completes a script into its likely region, which
   the tables here do not carry.
 - **XML writes `frameRate="25.0"`** where the reference writes `25.000`, the stored text: the
@@ -1025,6 +1025,107 @@ two outputs it does so for most of its announcements, which the reference answer
 Answering only once the body has arrived, as we did, held both sides: the first announcement
 passed and the rest, the DASH manifest included, never arrived. Callbacks are now answered on
 their head and read after.
+
+### Subtitle files
+
+Measured on the reference's test film (library 27), with an `.de.srt`, an `.it.ass` and a
+Latin-1 `.es.srt` put beside it, a rescan, and everything taken away afterwards. The spec
+declares one path, `/library/streams/{streamId}.{ext}`; the binary routes
+`/streams/:streamID(\d+).:ext(.*)?` and `/streams/:streamID`.
+
+**On a lookup.** A sidecar is a `Stream` with `key="/library/streams/{id}"` after `id`, `file`
+(its path, native separators) before `codec`, `format` among the analysis keys, and no
+`index`. A subtitle the reference downloaded (`blob://`) carries `key` but no `file`. An
+offset is `offset` (a JSON number) after the analysis keys and before `displayTitle`, on
+embedded subtitles as on sidecars.
+
+**`GET`.**
+
+| Request | Reference |
+| --- | --- |
+| `/library/streams/{id}`, `.srt` on an `srt`, `.SRT`, `.` alone, `012265847.srt` | `200`, the file's bytes as written |
+| `.vtt`, `.ass`, `.txt`, `.xyz` on an `srt`; `.srt.srt`; `.srt` on an `ass` | `404` |
+| a track inside the media: subtitle, audio, video, any extension | `501` |
+| an unknown id, `abc.srt` | `404` |
+| `format=vtt`, `format=ass`, `autoAdjustSubtitle=1` | ignored: the file as written |
+| `encoding=` anything (`utf-8`, `iso-8859-1`) | the text converted to UTF-8: 1,433 Latin-1 bytes become 1,450 |
+| `Range: bytes=0-9`, `bytes=100-` | `206` with `Content-Range`, and two `Content-Length` headers, one of them the whole file's |
+| `HEAD` | `200`, headers only |
+| a sidecar whose file was removed | `404` |
+| `POST` | `404` |
+
+The answer is typed `text/html`, with no charset.
+
+Ours does the same, through `MediaStream.sidecar.text` on the official API, except:
+
+- **Always UTF-8.** The official API's `text` is a string, so a file not in UTF-8 is read as
+  Windows-1252 and served converted, with or without `encoding` — what the reference sends
+  when `encoding` is given. A UTF-8 file is served byte for byte, byte-order mark included.
+- **`text/plain; charset=utf-8` and `nosniff`**, not `text/html`: a subtitle is text a
+  stranger may have written, and served as a page of this origin, where a browser holds the
+  session cookie, its markup would run.
+- **One `Content-Length`**, and a range past the end, or several, answered whole.
+- **Downloaded subtitles** (`blob://`, `media://`, 612 in the reference database) keep their
+  content in the reference's blob database, which was not imported: `404`.
+- A sidecar is read only within its library and in its media's directory or below, where the
+  scanner finds sidecars, and never when it is the media itself: a stored path anywhere else
+  answers `404` (`transcoder::media::resolve_sidecar`). Image subtitles (`idx`/`sub`) are not
+  served: the content is text.
+
+**`PUT ?offset=`.** The offset is in milliseconds, as Plex Web sets it (`PUT {stream.key}
+?offset=`, in steps of 50 ms). The reference keeps it per account
+(`media_stream_settings.extra_data`, `at:offset`), and in `media_streams.extra_data` too.
+
+| Request | Reference |
+| --- | --- |
+| `offset=500`, `-1200`, `%2B40` on a sidecar or an embedded subtitle | `200`, published as `offset` |
+| `offset=0` | `200`, `offset` no longer published (`at:offset=0` stays stored) |
+| no `offset` | `200`, nothing changes |
+| no `offset`, unknown id | `400` |
+| `offset=abc`, `12.5`, empty, `99999999999` | `400` |
+| any extension, `.` alone included | `400` |
+| an unknown id, `abc` | `400` |
+| on an audio track | `200`, published nowhere |
+
+Ours keeps the offset per viewer and per track (`subtitle_offset`, migration `m0037`), on the
+official API's `setSubtitleOffset` and `MediaStream.offsetMs`; on audio and video the mutation
+refuses `NOT_A_SUBTITLE` and the binding answers `200`. Not measured: whether the reference
+applies the offset to a conversion's subtitles; ours does not, the player does.
+
+**`DELETE`.** The spec limits it to downloaded subtitles and to sidecars "when media deletion
+is enabled", a server setting the reference has on.
+
+| Request | Reference |
+| --- | --- |
+| a sidecar | `200`; the track is gone, and **its file is deleted from disk** |
+| the same again | `404` |
+| any extension (`.ass` on an `ass`) | `400` |
+| `abc` | `400` |
+| a subtitle inside the media | `403`, nothing changes |
+
+Ours deletes the file and the track (`deleteSidecar`), for a library's admins and the owners
+(`403` for a viewer), there being no setting to consult; a file not on this machine, or not
+where a sidecar of its media may be, is left alone and the track forgotten. A downloaded
+subtitle's track goes alone. Whether the reference deletes a file outside its media's
+directory could not be measured without risking one.
+
+**`GET /library/metadata/{ids}/subtitles`**, which the spec calls "Add subtitles", is the
+search Plex Web's "Search…" opens (`language`, `hearingImpaired`, `forced`, `mediaItemID`):
+
+| Request | Reference |
+| --- | --- |
+| `language=fr`, `fr-FR`, `en` on the film | 10 transient `Stream`s from OpenSubtitles (`providerTitle`, `score`, `sourceKey`), keyed `/library/streams/{id}` but answering `404` there |
+| `language=zu` | `200`, `size="0"`, `identifier`, `mediaTagPrefix`, `mediaTagVersion` |
+| no `language` | `400` |
+| `language=` empty, `fra`, `French`, `qqq` | `500` |
+| a season, a series, two ids, an unknown id | `404` |
+| `mediaItemID` not a version of the item | `404` |
+
+Downloading a result is a `PUT` on the same path with the result's `key` (Plex Web). The
+search goes to a third party through Plex's service, under the account's token. Ours answers
+the reference's empty result after the same checks, a malformed language `400` rather than
+`500`: there is no subtitle provider here, and a fetch for the client would hand a third
+party what the server holds. The `PUT` has no route.
 
 ### Play queues
 

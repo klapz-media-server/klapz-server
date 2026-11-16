@@ -39,6 +39,7 @@ pub mod playlist_entry;
 pub mod section_root;
 pub mod stream_dolby_vision;
 pub mod stream_loudness;
+pub mod subtitle_offset;
 pub mod tag;
 pub mod tag_word;
 pub mod track_choice;

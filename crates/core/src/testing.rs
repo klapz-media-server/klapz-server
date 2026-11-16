@@ -122,7 +122,7 @@ pub struct InMemoryMetadata {
     markers: std::sync::Mutex<Vec<Marker>>,
     versions: Vec<MediaVersion>,
     files: Vec<MediaFile>,
-    streams: Vec<MediaStream>,
+    streams: std::sync::Mutex<Vec<MediaStream>>,
     extras: Vec<Extra>,
     /// Apart from `versions`, which are an item's own: an extra's name its item too.
     extra_versions: Vec<(ExtraId, MediaVersion)>,
@@ -142,7 +142,7 @@ impl InMemoryMetadata {
             markers: std::sync::Mutex::default(),
             versions: Vec::new(),
             files: Vec::new(),
-            streams: Vec::new(),
+            streams: std::sync::Mutex::default(),
             extras: Vec::new(),
             extra_versions: Vec::new(),
             tags: Vec::new(),
@@ -265,16 +265,23 @@ impl InMemoryMetadata {
     }
 
     /// Every track of every version of an item.
-    fn tracks_of(&self, item: RatingKey) -> impl Iterator<Item = &MediaStream> {
-        self.versions
+    fn tracks_of(&self, item: RatingKey) -> Vec<MediaStream> {
+        let files: Vec<PartId> = self
+            .versions
             .iter()
-            .filter(move |version| version.item_id == item)
+            .filter(|version| version.item_id == item)
             .flat_map(|version| {
                 self.files
                     .iter()
                     .filter(|file| file.version_id == version.id)
             })
-            .flat_map(|file| self.streams.iter().filter(|track| track.file_id == file.id))
+            .map(|file| file.id)
+            .collect();
+        locked(&self.streams)
+            .iter()
+            .filter(|track| files.contains(&track.file_id))
+            .cloned()
+            .collect()
     }
 
     #[must_use]
@@ -286,7 +293,7 @@ impl InMemoryMetadata {
     ) -> Self {
         self.versions = versions;
         self.files = files;
-        self.streams = streams;
+        *locked(&self.streams) = streams;
         self
     }
 
@@ -303,7 +310,7 @@ impl InMemoryMetadata {
         self.extras = extras;
         self.extra_versions = versions;
         self.files.extend(files);
-        self.streams.extend(streams);
+        locked(&self.streams).extend(streams);
         self
     }
 
@@ -389,7 +396,7 @@ impl InMemoryMetadata {
             .filter(|item| {
                 (filter.ids.is_empty() || filter.ids.contains(&item.id))
                     && (filter.tracks.iter())
-                        .all(|condition| condition.holds(self.tracks_of(item.id)))
+                        .all(|condition| condition.holds(&self.tracks_of(item.id)))
             })
             .filter(|item| {
                 filter
@@ -801,8 +808,7 @@ impl MetadataRepository for InMemoryMetadata {
     }
 
     async fn streams_for(&self, files: &[PartId]) -> Result<Vec<MediaStream>, MetadataError> {
-        Ok(self
-            .streams
+        Ok(locked(&self.streams)
             .iter()
             .filter(|stream| files.contains(&stream.file_id))
             .cloned()
@@ -823,7 +829,17 @@ impl MetadataRepository for InMemoryMetadata {
     }
 
     async fn stream(&self, id: StreamId) -> Result<Option<MediaStream>, MetadataError> {
-        Ok(self.streams.iter().find(|item| item.id == id).cloned())
+        Ok(locked(&self.streams)
+            .iter()
+            .find(|item| item.id == id)
+            .cloned())
+    }
+
+    async fn delete_stream(&self, id: StreamId) -> Result<bool, MetadataError> {
+        let mut streams = locked(&self.streams);
+        let before = streams.len();
+        streams.retain(|stream| stream.id != id);
+        Ok(streams.len() != before)
     }
 
     async fn items_sharing_tags(
@@ -1471,6 +1487,7 @@ impl InMemoryMetadata {
                         .collect(),
                     ValueField::Track(track_field) => self
                         .tracks_of(item.id)
+                        .iter()
                         .filter_map(|track| track_field.of(track))
                         .map(|value| FieldValue::Text(value.to_owned()))
                         .collect(),
@@ -2478,6 +2495,7 @@ pub struct InMemoryWatch {
     choices: std::sync::Mutex<Vec<(crate::ids::UserId, PartId, crate::tracks::TrackChoice)>>,
     history: std::sync::Mutex<Vec<crate::history::HistoryEntry>>,
     ratings: std::sync::Mutex<Vec<(crate::ids::UserId, String, crate::user_rating::RatingRecord)>>,
+    offsets: std::sync::Mutex<Vec<(crate::ids::UserId, crate::ids::StreamId, i32)>>,
 }
 
 impl InMemoryWatch {
@@ -2489,6 +2507,7 @@ impl InMemoryWatch {
             choices: std::sync::Mutex::new(Vec::new()),
             history: std::sync::Mutex::new(Vec::new()),
             ratings: std::sync::Mutex::new(Vec::new()),
+            offsets: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -2740,6 +2759,32 @@ impl crate::watch::WatchRepository for InMemoryWatch {
         Ok(())
     }
 
+    async fn subtitle_offsets(
+        &self,
+        viewer: crate::ids::UserId,
+        tracks: &[crate::ids::StreamId],
+    ) -> Result<Vec<(crate::ids::StreamId, i32)>, crate::watch::WatchError> {
+        Ok(Self::lock(&self.offsets)
+            .iter()
+            .filter(|(who, track, _)| *who == viewer && tracks.contains(track))
+            .map(|(_, track, offset)| (*track, *offset))
+            .collect())
+    }
+
+    async fn set_subtitle_offset(
+        &self,
+        viewer: crate::ids::UserId,
+        track: crate::ids::StreamId,
+        offset_ms: i32,
+    ) -> Result<(), crate::watch::WatchError> {
+        let mut offsets = Self::lock(&self.offsets);
+        offsets.retain(|(who, held, _)| !(*who == viewer && *held == track));
+        if offset_ms != 0 {
+            offsets.push((viewer, track, offset_ms));
+        }
+        Ok(())
+    }
+
     async fn ratings(
         &self,
         viewer: crate::ids::UserId,
@@ -2772,6 +2817,8 @@ pub struct StubStreams {
     pub started: std::sync::Mutex<Vec<crate::stream::StreamOrder>>,
     /// The keys it was asked to stop, in order.
     pub stopped: std::sync::Mutex<Vec<String>>,
+    /// Sidecar files by path, as a disk would hold them; removing one takes it out.
+    pub sidecars: std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>,
 }
 
 impl StubStreams {
@@ -2841,6 +2888,29 @@ impl crate::stream::StreamEngine for StubStreams {
     }
 
     async fn stop_all(&self) {}
+
+    async fn read_sidecar(
+        &self,
+        sidecar: &crate::sidecar::SidecarSource,
+    ) -> Result<Vec<u8>, crate::sidecar::SidecarError> {
+        self.sidecars
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&sidecar.path)
+            .cloned()
+            .ok_or(crate::sidecar::SidecarError::Missing)
+    }
+
+    async fn remove_sidecar(
+        &self,
+        sidecar: &crate::sidecar::SidecarSource,
+    ) -> Result<(), crate::sidecar::SidecarError> {
+        self.sidecars
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&sidecar.path);
+        Ok(())
+    }
 }
 
 /// Playlists held in memory, over the items whose libraries and durations they read.

@@ -170,6 +170,9 @@ IMPLEMENTED = frozenset(
         # A backdrop's colors, and their gradient (`ultrablur.rs`).
         "/services/ultrablur/colors",
         "/services/ultrablur/image",
+        # Subtitle files and the search of online ones (`subtitles.rs`).
+        "/library/streams/{streamId}.{ext}",
+        "/library/metadata/{ids}/subtitles",
     }
 )
 

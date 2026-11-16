@@ -350,6 +350,20 @@ mod tests {
         async fn stop_all(&self) {
             self.running.lock().unwrap().clear();
         }
+
+        async fn read_sidecar(
+            &self,
+            _sidecar: &crate::sidecar::SidecarSource,
+        ) -> Result<Vec<u8>, crate::sidecar::SidecarError> {
+            Err(crate::sidecar::SidecarError::Missing)
+        }
+
+        async fn remove_sidecar(
+            &self,
+            _sidecar: &crate::sidecar::SidecarSource,
+        ) -> Result<(), crate::sidecar::SidecarError> {
+            Ok(())
+        }
     }
 
     fn order(key: &str) -> StreamOrder {

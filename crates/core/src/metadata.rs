@@ -1202,6 +1202,9 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
     /// One track by id, for a Relay refetch.
     async fn stream(&self, id: StreamId) -> Result<Option<MediaStream>, MetadataError>;
 
+    /// Forgets a track: a sidecar subtitle whose file is deleted. Whether there was one.
+    async fn delete_stream(&self, id: StreamId) -> Result<bool, MetadataError>;
+
     /// Every tag of several items, in billing order within each item and kind.
     ///
     /// The order *across* kinds is unspecified: a consumer groups by kind, and promising one
@@ -1510,6 +1513,10 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
 
     async fn stream(&self, id: StreamId) -> Result<Option<MediaStream>, MetadataError> {
         (**self).stream(id).await
+    }
+
+    async fn delete_stream(&self, id: StreamId) -> Result<bool, MetadataError> {
+        (**self).delete_stream(id).await
     }
 
     async fn tags_for(&self, items: &[RatingKey]) -> Result<Vec<ItemTag>, MetadataError> {

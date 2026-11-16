@@ -91,6 +91,8 @@ pub enum TranscodeError {
     MissingFile,
     #[error("the file is outside every library")]
     OutsideLibrary,
+    #[error("the file is too large to be a subtitle")]
+    SidecarTooLarge,
     #[error("the video would have to be converted")]
     VideoNeedsTranscoding,
     /// An image subtitle, which the process overlays rather than draws, or no fonts to draw

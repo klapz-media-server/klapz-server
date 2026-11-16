@@ -605,6 +605,9 @@ pub struct PartEntry {
 #[serde(rename_all = "camelCase")]
 pub struct StreamEntry {
     pub id: i64,
+    /// A sidecar's address, `/library/streams/{id}`, which serves its file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     /// 1 video, 2 audio, 3 subtitle — Plex's numbering, which clients switch on.
     pub stream_type: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -613,6 +616,9 @@ pub struct StreamEntry {
     pub default: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forced: Option<bool>,
+    /// A sidecar's path; absent for a downloaded subtitle, which has none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codec: Option<String>,
     /// Absent for a sidecar file, which is no track of the media's.
@@ -631,6 +637,9 @@ pub struct StreamEntry {
     pub language_code: Option<String>,
     #[serde(flatten)]
     pub analysis: StreamAnalysis,
+    /// The caller's offset on a subtitle, in milliseconds; absent when it set none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<i32>,
     pub display_title: String,
     pub extended_display_title: String,
 }
@@ -1178,6 +1187,9 @@ impl StreamEntry {
             .map(|tag| stream_labels::language(tag, language));
         Self {
             id: stream.database_id(),
+            key: stream
+                .is_external
+                .then(|| format!("/library/streams/{}", stream.database_id())),
             stream_type: match stream.kind.as_str() {
                 "VIDEO" => 1,
                 "AUDIO" => 2,
@@ -1186,6 +1198,10 @@ impl StreamEntry {
             selected: None,
             default: stream.is_default.then_some(true),
             forced: stream.is_forced.then_some(true),
+            file: stream
+                .sidecar
+                .as_ref()
+                .and_then(|sidecar| sidecar.path.clone()),
             codec: stream.codec.clone(),
             index: (!stream.is_external).then_some(stream.position),
             channels: stream.channels,
@@ -1194,6 +1210,7 @@ impl StreamEntry {
             language_tag: named.as_ref().map(|label| label.tag.clone()),
             language_code: named.map(|label| label.code),
             analysis: StreamAnalysis::from_graphql(stream),
+            offset: (stream.offset_ms != 0).then_some(stream.offset_ms),
             display_title: labels.display,
             extended_display_title: labels.extended,
         }
@@ -1285,10 +1302,12 @@ mod tests {
     fn stream(id: i64, stream_type: u8) -> StreamEntry {
         StreamEntry {
             id,
+            key: None,
             stream_type,
             selected: None,
             default: None,
             forced: None,
+            file: None,
             codec: None,
             index: Some(0),
             channels: None,
@@ -1297,6 +1316,7 @@ mod tests {
             language_tag: None,
             language_code: None,
             analysis: super::StreamAnalysis::default(),
+            offset: None,
             display_title: String::new(),
             extended_display_title: String::new(),
         }
