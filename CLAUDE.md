@@ -787,6 +787,15 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   and on every JPEG once decoded as libjpeg-turbo decodes it. `/services/ultrablur/colors`
   binds onto it for Plex's hosts and onto storage for an item's art; `/image` draws the
   gradient, pixel-identical without noise, its area capped at 3840×2160 (`docs/spec-gaps.md`).
+- ✅ **a library's leaves**, `GET /library/sections/{id}/allLeaves`: its films or its episodes,
+  `/all?type=` the leaves' type as measured on the reference (92 requests, filters and sorts
+  included), under `/all`'s container without the library's identity, `title2` or `Meta`; a
+  `type` naming no leaf kind is empty. On the official API `ItemFilterInput.depth: LEAVES`
+  (a `kind` narrows it rather than replacing it) and `ItemOrder.SERIES`, the episodes' default
+  order — series sort title, season, episode, release date, each absent one last — which is
+  also `/all?type=4`'s default now, and so autocompletion's and a listing's play queue's: every
+  series' episode order identical to the reference on four whole libraries (4,002 series), the
+  remaining positions the collation of series titles (`docs/spec-gaps.md`).
 
 ## Reference server
 

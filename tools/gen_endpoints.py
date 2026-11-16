@@ -170,6 +170,8 @@ IMPLEMENTED = frozenset(
         # A backdrop's colors, and their gradient (`ultrablur.rs`).
         "/services/ultrablur/colors",
         "/services/ultrablur/image",
+        # A library's films or episodes, `/all` for its leaves (`library.rs`).
+        "/library/sections/{sectionId}/allLeaves",
     }
 )
 

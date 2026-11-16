@@ -19,9 +19,9 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 6 | 2.3 % |
-| `stub` | 65 | 25.0 % |
+| `stub` | 64 | 24.6 % |
 | `partial` | 32 | 12.3 % |
-| `done` | 118 | 45.4 % |
+| `done` | 119 | 45.8 % |
 | `deferred` | 39 | 15.0 % |
 | **Total** | **260** | |
 
@@ -31,7 +31,7 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | --- | --: | --: | --: | --: | --: | --: |
 | [Library](#library) | 85 | 15 | 14 | 25 | 5 | 26 |
 | [Hubs](#hubs) | 15 | 5 | 3 | 7 | 0 | 0 |
-| [Content](#content) | 13 | 2 | 3 | 8 | 0 | 0 |
+| [Content](#content) | 13 | 3 | 3 | 7 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
 | [EPG](#epg) | 13 | 13 | 0 | 0 | 0 | 0 |
 | [Library Playlists](#library-playlists) | 13 | 12 | 1 | 0 | 0 | 0 |
@@ -203,7 +203,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `partial` | `GET` | `/library/metadata/{ids}` | user | Get a metadata item | Items, media and files, served through the GraphQL schema. Zero field differences against the reference on shared items. Seasons are named at read time (`Season N`, `Specials`) and carry their series' guid, studio and year; episodes carry their season's and series' guids and titles. Genres, countries and credits with ids, filters, provider keys and portraits; `Guid` and `Rating`. 355 of 420 sampled items identical: 44 live metadata newer than the snapshot, 21 a credit's portrait (one per person here, one per credit on the reference). `Extras` on `includeExtras=1`, `primaryExtraKey` on films and series. Gaps: artwork, view state, `Part.key`, audio/videoProfile (and the `audioCodec` composition that needs them), slug, chapterSource, `hasPremiumPrimaryExtra`/`hasPremiumExtras`, `Stream.language` as a name rather than a tag. Sort collation differs — see spec-gaps.md. Carries `Stream`, which a listing omits, with the audio track that plays marked `selected`; no subtitle is, as no choice is recorded. |
 | `done` | `GET` | `/library/sections/{sectionId}/albums` | user | Set section albums | Empty: no music is held. The official API is asked for albums and has none; container captured on the reference's film and series libraries. Always windowed, like `/all`. |
 | `partial` | `GET` | `/library/sections/{sectionId}/all` | user | Get items in the section | Items, media and files through the GraphQL schema; zero field differences against the reference on shared items. `includeMeta=1` publishes the filters and sorts it honors. Filters: `title` (word prefix), `year`, `decade`, `contentRating`, `studio`, `resolution` — exact totals on 11 of 12 probes; `genre`, `country`, `director`, `writer`, `actor`, `producer` by id or name, comma for OR, repeat for AND — exact totals on 16 probes. `collection` by tag number or title, as `genre`. Any other advertised filter (`label`, …) answers 501 rather than being dropped. `type=18` lists the library's collections. Tags in the listing form: first 2 or 3 names per kind, derived from the tags rather than from the reference's stale cache. Gaps: artwork, view state, audio/videoProfile. Sort collation and range operators — see spec-gaps.md. |
-| `stub` | `GET` | `/library/sections/{sectionId}/allLeaves` | user | Set section leaves |  |
+| `done` | `GET` | `/library/sections/{sectionId}/allLeaves` | user | Set section leaves | A library's films or episodes: `/all?type=` the leaves' type, filters and sorts included, over `Library.items(filter: {depth: LEAVES})`, by series, season and episode by default (`orderBy: SERIES`). Identical to the reference in items, order and totals on 92 requests over four libraries, and in every series' episode order on four whole libraries (4,002 series); positions differ only by series-title collation. Container as captured: no `librarySection*`, no `title2`, `allowSync=0`, no `Meta`. A `type` naming no leaf kind is empty, as there (`type=18` lists collections on the reference). |
 | `stub` | `GET` | `/library/sections/{sectionId}/arts` | user | Set section artwork |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/categories` | user | Set section categories |  |
 | `stub` | `GET` | `/library/sections/{sectionId}/cluster` | user | Set section clusters |  |

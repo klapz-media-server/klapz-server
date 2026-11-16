@@ -907,6 +907,100 @@ async fn an_explicit_type_reaches_past_the_top_level() {
 }
 
 #[tokio::test]
+async fn a_series_librarys_leaves_are_its_episodes_under_a_bare_container() {
+    let body = listing("/library/sections/5/allLeaves").await;
+    let container = &body["MediaContainer"];
+    let episodes = container["Metadata"].as_array().expect("episodes");
+    assert_eq!(episodes.len(), 3);
+    assert!(episodes.iter().all(|item| item["type"] == "episode"));
+    // As captured on the reference's test library 28: `/all`'s container without the
+    // library's identity or the view's title, and `allowSync` off.
+    let mut attributes = container.as_object().expect("container").clone();
+    attributes.remove("Metadata");
+    assert_eq!(
+        Value::Object(attributes),
+        serde_json::json!({
+            "size": 3,
+            "totalSize": 3,
+            "offset": 0,
+            "allowSync": false,
+            "art": "/:/resources/show-fanart.jpg",
+            "identifier": "com.plexapp.plugins.library",
+            "mediaTagPrefix": "/system/bundle/media/flags/",
+            "mediaTagVersion": 0,
+            "nocache": true,
+            "thumb": "/:/resources/show.png",
+            "title1": "VF - Series",
+            "viewGroup": "show",
+            "viewMode": 65_592
+        })
+    );
+    // Items as `/all?type=4` lists them, the library stated on the container alone.
+    let all = listing("/library/sections/5/all?type=4").await;
+    assert_eq!(container["Metadata"], all["MediaContainer"]["Metadata"]);
+}
+
+#[tokio::test]
+async fn a_film_librarys_leaves_are_its_films() {
+    let body = listing("/library/sections/4/allLeaves").await;
+    let container = &body["MediaContainer"];
+    assert_eq!(container["viewGroup"], "movie");
+    assert!(container.get("nocache").is_none(), "{container}");
+    assert!(container.get("librarySectionID").is_none(), "{container}");
+    let all = listing("/library/sections/4/all").await;
+    assert_eq!(container["Metadata"], all["MediaContainer"]["Metadata"]);
+}
+
+#[tokio::test]
+async fn a_type_narrows_a_librarys_leaves_rather_than_replacing_them() {
+    // The reference answers `type=2` on a series library's leaves, and `type=4` on a film
+    // library's, with an empty container rather than the series or the films.
+    for uri in [
+        "/library/sections/5/allLeaves?type=2",
+        "/library/sections/5/allLeaves?type=3",
+        "/library/sections/4/allLeaves?type=4",
+        "/library/sections/4/allLeaves?type=13",
+        "/library/sections/5/allLeaves?type=99",
+    ] {
+        let body = listing(uri).await;
+        assert_eq!(body["MediaContainer"]["totalSize"], 0, "{uri}");
+        assert!(body["MediaContainer"].get("Metadata").is_none(), "{uri}");
+    }
+    let episodes = listing("/library/sections/5/allLeaves?type=4").await;
+    assert_eq!(episodes["MediaContainer"]["totalSize"], 3);
+}
+
+#[tokio::test]
+async fn a_librarys_leaves_window_and_refuse_what_all_refuses() {
+    let body =
+        listing("/library/sections/5/allLeaves?X-Plex-Container-Start=1&X-Plex-Container-Size=1")
+            .await;
+    let container = &body["MediaContainer"];
+    assert_eq!(container["size"], 1);
+    assert_eq!(container["offset"], 1);
+    assert_eq!(container["totalSize"], 3);
+    // `includeMeta` adds nothing here, on the reference too.
+    let meta = listing("/library/sections/5/allLeaves?includeMeta=1").await;
+    assert!(meta["MediaContainer"].get("Meta").is_none());
+
+    let (status, _) = get_from(items_app(), "/library/sections/5/allLeaves?sort=year", None).await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+    let (status, _) = get_from(items_app(), "/library/sections/99/allLeaves", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_librarys_leaves_are_named_after_their_kind_in_xml() {
+    let (status, xml) = get_from(items_app(), "/library/sections/5/allLeaves", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        xml.contains("<MediaContainer size=\"3\" totalSize=\"3\" offset=\"0\" allowSync=\"0\""),
+        "{xml}"
+    );
+    assert!(xml.contains("<Video ratingKey=\"202\""), "{xml}");
+}
+
+#[tokio::test]
 async fn a_listing_names_each_element_after_its_kind_in_xml() {
     // JSON puts every item under `Metadata`; XML names the element after what the item is.
     let (_, films) = get_from(items_app(), "/library/sections/4/all", None).await;
@@ -1879,6 +1973,10 @@ async fn a_user_reads_what_it_was_given() {
             .0,
         StatusCode::OK
     );
+    assert_eq!(
+        user_get("/library/sections/4/allLeaves").await.0,
+        StatusCode::OK
+    );
 }
 
 #[tokio::test]
@@ -1888,6 +1986,7 @@ async fn what_a_user_was_not_given_does_not_exist() {
         "/library/metadata/200/children",
         "/library/metadata/200/grandchildren",
         "/library/sections/5/all?X-Plex-Container-Start=0&X-Plex-Container-Size=10",
+        "/library/sections/5/allLeaves",
         "/library/sections/5/prefs",
         "/hubs/sections/5",
     ] {

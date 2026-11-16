@@ -2113,14 +2113,49 @@ ones tie.
 Where ours differ:
 
 - **A sort we cannot honor answers `501`**, as a filter does: `unviewedLeafCount`, the series and
-  season orders of seasons and episodes (`show.titleSort,index…`), and a list of fields, which
-  is how the reference states tiebreakers. Its `year`, `viewCount` or `title` work there and are
+  season orders of seasons and episodes when asked for by name (`show.titleSort,index…`), and a
+  list of fields, which is how the reference states tiebreakers. The episodes' order is honored
+  as their default, though (*A library's leaves*). Its `year`, `viewCount` or `title` work there and are
   refused here; an unknown field is a `500` there.
 - **`random` keeps one order for ten minutes.** The reference reshuffles on every request, so a
   client paging a random list meets some items twice and never sees others. Ours is a shuffle
   seeded by the clock's ten-minute period, so the pages of one browse agree; the official API
   takes the seed as an argument.
 - **`lastViewedAt` is the caller's own**, like all watch state; a visitor's list is in title order.
+
+### A library's leaves, `/library/sections/{id}/allLeaves`
+
+The spec names it "Set section leaves" and says nothing else. On the reference it is `/all` with
+`type=` the library's leaves — `4` on a series library, `1` on a film library — measured
+identical in items, order and `totalSize` on 92 requests over two film and two series libraries:
+the default order, `sort=` by title, date added, release date, rating, last viewed and duration
+(not `random`, which reshuffles), and the filters `year`, `decade`, `title`, `contentRating`, `resolution`, `unwatched`, `studio`, `genre`,
+`audioCodec`, `show.title`. Captured on the test libraries 27 and 28 and on four others:
+
+| Behavior | Detail |
+| --- | --- |
+| Container | `/all`'s without the library's identity or the view's title: `size`, `totalSize`, `offset` (when windowed), `allowSync="0"`, `art`, `identifier`, `mediaTagPrefix`, `mediaTagVersion`, `nocache="1"` on a series library only, `thumb`, `title1` the library, `viewGroup` the library's (`show` for episodes), `viewMode="65592"`. No `librarySection*` trio, no `title2`. |
+| Items | Element for element `/all?type=` the leaves' type: the library is stated on neither the container nor the items, and a series' `studio` is not copied onto its episodes as `/library/metadata/{id}/allLeaves` does. XML names them after their kind (`<Video>`). |
+| `type` | Narrows the leaves rather than replacing them: `type=2` or `3` on a series library, `type=4` on a film library, and any number naming no kind (`0`, `13`, `99`, `-1`) answer an empty container. `type=18` on a film library lists its collections (1,118); here it is empty. A `type` that is not a number is a `500` there and is ignored here, as on `/all`. |
+| `includeMeta=1` | Adds nothing. |
+| Unknown library | `404`, a number or not. |
+| Paging | As `/all`: the two headers and `totalSize`/`offset` only when both container parameters are sent. We always window. |
+
+**The episodes' default order** is the one the reference's `Meta` states for the episode type,
+`show.titleSort,season.index:nullsLast,episode.index:nullsLast,episode.originallyAvailableAt:nullsLast,episode.titleSort,episode.id`,
+and the same on `/all?type=4`. Measured over every episode of four libraries (138,948): series
+are not kept together, so two series sharing a sort title (*Good Doctor* and *The Good Doctor*)
+interleave episode by episode; ties on both numbers follow the release date (0 of 472 tied pairs
+out of order, where the id, the series and the title put 191 to 256 out in one library). On the official
+API this is `orderBy: SERIES`, and `depth: LEAVES` is the leaves; a film follows its title under
+that order, so a film library's leaves are in title order.
+
+Against ours, over the same four libraries: the order of each series' episodes is identical for
+all 4,002 series, and 127,292 of 138,948 episodes stand at the same position; the rest is the
+collation of series titles (*Sort collation*) — `#blackAF` and *2 Broke Girls* open the
+reference's list, and *Avatar : Le Dernier Maitre de l'air* ties with its lower-case namesake
+there. Fields differ as `/all`'s do on the same items: artwork, `Part.key`, the watch state, which
+is not imported, and what changed on the live reference since the import.
 
 ### The shelves under an item
 
@@ -2539,9 +2574,9 @@ listed on both sides, and of those 3,082 carry the same range. The rest is the l
 having moved since the import — a film renamed (*Arthur 3: la guerre des deux mondes*), actors
 added (Dan Jeannotte) — and two orders:
 
-- **Episodes** follow `/all`'s order for `type=4`, the episode's own title, where the reference
-  orders by series, season and episode, there as in its `/all`; so a window of episodes holds
-  other ones (`épisode`: 74 of the first 500 in common).
+- **Episodes** follow `/all`'s order for `type=4`, by series, season and episode as on the
+  reference since `/library/sections/{id}/allLeaves` (*A library's leaves*); they followed the
+  episode's own title when this was measured (`épisode`: 74 of the first 500 in common).
 - **Case outside ASCII** inside a phrase: storage lowers ASCII alone, and tries the text with
   the initials of its words in upper case, so `à tous` and `les évadés` complete as on the
   reference; a capital outside ASCII inside a word would not.

@@ -84,6 +84,12 @@ impl SqlMetadataRepository {
         if filter.top_level_only() {
             select = select.filter(metadata_item::Column::ParentId.is_null());
         }
+        if filter.leaves_only() {
+            select = select.filter(
+                metadata_item::Column::Kind
+                    .is_in([kind_name(ItemKind::Movie), kind_name(ItemKind::Episode)]),
+            );
+        }
         if let Some(from) = filter.year_from {
             select = select.filter(metadata_item::Column::Year.gte(from));
         }

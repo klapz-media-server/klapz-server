@@ -2311,6 +2311,11 @@ enum ItemDepthInput {
 	Every item in the library, at any depth, side by side.
 	"""
 	ALL
+	"""
+	Items with nothing below them: the films of a film library, the episodes of a series
+	library. A `kind` narrows this rather than replacing it, so `SHOW` finds nothing.
+	"""
+	LEAVES
 }
 
 """
@@ -2463,8 +2468,9 @@ input ItemFilterInput {
 	"""
 	Keep only items of this kind.
 	
-	Overrides `depth`, because naming a kind is already a statement about depth: asking
-	for episodes and getting nothing because episodes have parents would be obtuse.
+	Overrides the default depth, because naming a kind is already a statement about depth:
+	asking for episodes and getting nothing because episodes have parents would be obtuse.
+	Under `LEAVES` both hold.
 	"""
 	kind: ItemType
 	"""
@@ -2634,6 +2640,10 @@ enum ItemOrder {
 	By when a series' episodes were added: a series ranks by its first episode ascending, by its latest descending.
 	"""
 	EPISODE_ADDED_AT
+	"""
+	Episodes by series, season and episode: the series' sort title, the season's number, the episode's, its release date — each absent one last ascending — then the episode's own title. Anything else follows its title, as under `TITLE`.
+	"""
+	SERIES
 	"""
 	Shuffled, by the `seed` argument: the same seed gives the same order, so pages follow one another.
 	"""

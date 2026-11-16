@@ -12,14 +12,20 @@
 
 use open_plex_core::metadata::{ItemKind, ItemQuery, ItemSort, MetadataError, SearchOrder};
 use open_plex_core::page::{Cursor, CursorKey, Direction};
-use sea_orm::sea_query::{Alias, CaseStatement, Expr, Func, NullOrdering, Query, SimpleExpr};
+use sea_orm::sea_query::{
+    Alias, CaseStatement, Expr, Func, JoinType, NullOrdering, Query, SimpleExpr,
+};
 use sea_orm::{Condition, Order, QueryFilter, QueryOrder, QueryResult, QuerySelect, Select};
 
 use crate::entity::{media, metadata_item, watch_state};
 use crate::metadata_repository::kind_name;
 
-/// The column the leading value is read back from.
-const KEY_COLUMN: &str = "order_key";
+/// The columns the leading values are read back from, one per value.
+const KEY_COLUMNS: [&str; 4] = ["order_key", "order_key_1", "order_key_2", "order_key_3"];
+
+/// What an absent season or episode number, or release date, is read as in
+/// [`ItemSort::Episodes`]: past every real one, so that absence sorts last there.
+const ABSENT_LAST: i64 = i64::MAX;
 
 /// A Mersenne prime above every id, the modulus of the shuffle.
 const SHUFFLE_MODULUS: i64 = 2_147_483_647;
@@ -29,6 +35,7 @@ const SHUFFLE_MODULUS: i64 = 2_147_483_647;
 enum KeyType {
     Int,
     Real,
+    Text,
 }
 
 #[derive(Debug, Clone)]
@@ -58,8 +65,8 @@ enum Ties {
 /// How a listing is ordered.
 #[derive(Debug, Clone)]
 pub(crate) struct ItemOrder {
-    /// The ordering's own value; `None` orders by title.
-    leading: Option<Leading>,
+    /// The ordering's own values, compared in turn; none orders by title.
+    leading: Vec<Leading>,
     ties: Ties,
     direction: Direction,
 }
@@ -73,24 +80,24 @@ impl ItemOrder {
             nullable,
         };
         let leading = match sort {
-            ItemSort::Title => None,
+            ItemSort::Title => Vec::new(),
             ItemSort::AddedAt | ItemSort::Arrival => {
-                Some(column(metadata_item::Column::AddedAt, KeyType::Int, false))
+                vec![column(metadata_item::Column::AddedAt, KeyType::Int, false)]
             }
-            ItemSort::ReleasedOn => Some(column(
+            ItemSort::ReleasedOn => vec![column(
                 metadata_item::Column::ReleasedOn,
                 KeyType::Int,
                 true,
-            )),
-            ItemSort::Rating => Some(column(metadata_item::Column::Rating, KeyType::Real, true)),
-            ItemSort::AudienceRating => Some(column(
+            )],
+            ItemSort::Rating => vec![column(metadata_item::Column::Rating, KeyType::Real, true)],
+            ItemSort::AudienceRating => vec![column(
                 metadata_item::Column::AudienceRating,
                 KeyType::Real,
                 true,
-            )),
-            ItemSort::Duration => Some(version_extreme(media::Column::DurationMs, direction)),
-            ItemSort::Height => Some(version_extreme(media::Column::Height, direction)),
-            ItemSort::LastViewedAt(viewer) => Some(Leading {
+            )],
+            ItemSort::Duration => vec![version_extreme(media::Column::DurationMs, direction)],
+            ItemSort::Height => vec![version_extreme(media::Column::Height, direction)],
+            ItemSort::LastViewedAt(viewer) => vec![Leading {
                 expr: viewer.map_or_else(
                     || Expr::value(Option::<i64>::None),
                     |viewer| {
@@ -115,27 +122,28 @@ impl ItemOrder {
                 ),
                 key_type: KeyType::Int,
                 nullable: true,
-            }),
-            ItemSort::UserRating(viewer) => Some(Leading {
+            }],
+            ItemSort::UserRating(viewer) => vec![Leading {
                 expr: crate::metadata_repository::viewer_rating(viewer),
                 key_type: KeyType::Real,
                 nullable: true,
-            }),
-            ItemSort::EpisodeAddedAt => Some(Leading {
+            }],
+            ItemSort::EpisodeAddedAt => vec![Leading {
                 expr: episode_added_at(direction),
                 key_type: KeyType::Int,
                 nullable: true,
-            }),
-            ItemSort::Shuffled(seed) => Some(Leading {
+            }],
+            ItemSort::Episodes => episode_keys(),
+            ItemSort::Shuffled(seed) => vec![Leading {
                 expr: shuffled(seed),
                 key_type: KeyType::Int,
                 nullable: false,
-            }),
-            ItemSort::Filmography => Some(Leading {
+            }],
+            ItemSort::Filmography => vec![Leading {
                 expr: library_rank(&query.sections),
                 key_type: KeyType::Int,
                 nullable: false,
-            }),
+            }],
         };
         let ties = match sort {
             ItemSort::Arrival => Ties::Arrival,
@@ -156,30 +164,32 @@ impl ItemOrder {
             descending,
             nullable: false,
         };
-        match &self.leading {
-            None => vec![
+        if self.leading.is_empty() {
+            return vec![
                 column(metadata_item::Column::SortKey, descending),
                 column(metadata_item::Column::Id, descending),
-            ],
-            Some(leading) => {
-                let mut terms = vec![Term {
-                    expr: leading.expr.clone(),
-                    descending,
-                    nullable: leading.nullable,
-                }];
-                match self.ties {
-                    Ties::Title => terms.push(column(metadata_item::Column::SortKey, false)),
-                    Ties::TitleExceptSeries => terms.push(Term {
-                        expr: title_except_series(),
-                        descending: false,
-                        nullable: false,
-                    }),
-                    Ties::Arrival => {}
-                }
-                terms.push(column(metadata_item::Column::Id, false));
-                terms
-            }
+            ];
         }
+        let mut terms: Vec<Term> = self
+            .leading
+            .iter()
+            .map(|leading| Term {
+                expr: leading.expr.clone(),
+                descending,
+                nullable: leading.nullable,
+            })
+            .collect();
+        match self.ties {
+            Ties::Title => terms.push(column(metadata_item::Column::SortKey, false)),
+            Ties::TitleExceptSeries => terms.push(Term {
+                expr: title_except_series(),
+                descending: false,
+                nullable: false,
+            }),
+            Ties::Arrival => {}
+        }
+        terms.push(column(metadata_item::Column::Id, false));
+        terms
     }
 
     /// Restricts `select` to the rows past `cursor`: after it, or before it.
@@ -198,8 +208,8 @@ impl ItemOrder {
         mut select: Select<metadata_item::Entity>,
         reversed: bool,
     ) -> Select<metadata_item::Entity> {
-        if let Some(leading) = &self.leading {
-            select = select.column_as(leading.expr.clone(), KEY_COLUMN);
+        for (leading, alias) in self.leading.iter().zip(KEY_COLUMNS) {
+            select = select.column_as(leading.expr.clone(), alias);
         }
         sort_terms(&self.terms(), select, reversed)
     }
@@ -211,18 +221,20 @@ impl ItemOrder {
         item: &metadata_item::Model,
     ) -> Result<Cursor, sea_orm::DbErr> {
         let sort_key = CursorKey::Text(item.sort_key.clone());
-        let Some(leading) = &self.leading else {
+        if self.leading.is_empty() {
             return Ok(Cursor::new(sort_key, item.id));
-        };
-        let value = match leading.key_type {
-            KeyType::Int => row
-                .try_get::<Option<i64>>("", KEY_COLUMN)?
-                .map(CursorKey::Int),
-            KeyType::Real => row
-                .try_get::<Option<f64>>("", KEY_COLUMN)?
-                .map(CursorKey::Real),
-        };
-        let mut keys = vec![value.unwrap_or(CursorKey::Absent)];
+        }
+        let mut keys = Vec::with_capacity(self.leading.len() + 1);
+        for (leading, alias) in self.leading.iter().zip(KEY_COLUMNS) {
+            let value = match leading.key_type {
+                KeyType::Int => row.try_get::<Option<i64>>("", alias)?.map(CursorKey::Int),
+                KeyType::Real => row.try_get::<Option<f64>>("", alias)?.map(CursorKey::Real),
+                KeyType::Text => row
+                    .try_get::<Option<String>>("", alias)?
+                    .map(CursorKey::Text),
+            };
+            keys.push(value.unwrap_or(CursorKey::Absent));
+        }
         match self.ties {
             Ties::TitleExceptSeries if item.kind == kind_name(ItemKind::Show) => {
                 keys.push(CursorKey::Text(String::new()));
@@ -416,6 +428,82 @@ fn library_rank(sections: &[open_plex_core::SectionId]) -> SimpleExpr {
     }
     rank.finally(Expr::val(i64::try_from(sections.len()).unwrap_or(i64::MAX)))
         .into()
+}
+
+/// The values [`ItemSort::Episodes`] leads with: the series' sort key, the season's number, the
+/// episode's, its release date.
+///
+/// Only an episode has them; anything else reads its own sort key and nothing after, so that
+/// it falls into title order. An absent number or date reads as [`ABSENT_LAST`] rather than
+/// `NULL`, because absence sorts last here and first everywhere else.
+fn episode_keys() -> Vec<Leading> {
+    let season = Alias::new("season");
+    let series = Alias::new("series");
+    let own = |column: metadata_item::Column| Expr::col((metadata_item::Entity, column));
+    let is_episode = || own(metadata_item::Column::Kind).eq(kind_name(ItemKind::Episode));
+    let of_season = |column: metadata_item::Column| {
+        scalar(
+            Query::select()
+                .column((season.clone(), column))
+                .from_as(metadata_item::Entity, season.clone())
+                .and_where(
+                    Expr::col((season.clone(), metadata_item::Column::Id))
+                        .equals((metadata_item::Entity, metadata_item::Column::ParentId)),
+                )
+                .to_owned(),
+        )
+    };
+    let series_key = scalar(
+        Query::select()
+            .column((series.clone(), metadata_item::Column::SortKey))
+            .from_as(metadata_item::Entity, series.clone())
+            .join_as(
+                JoinType::InnerJoin,
+                metadata_item::Entity,
+                season.clone(),
+                Expr::col((season.clone(), metadata_item::Column::ParentId))
+                    .equals((series.clone(), metadata_item::Column::Id)),
+            )
+            .and_where(
+                Expr::col((season.clone(), metadata_item::Column::Id))
+                    .equals((metadata_item::Entity, metadata_item::Column::ParentId)),
+            )
+            .to_owned(),
+    );
+    let last_when_absent = |value: SimpleExpr| -> SimpleExpr {
+        CaseStatement::new()
+            .case(
+                is_episode(),
+                Func::coalesce([value, Expr::val(ABSENT_LAST).into()]),
+            )
+            .finally(Expr::val(ABSENT_LAST))
+            .into()
+    };
+    vec![
+        Leading {
+            expr: CaseStatement::new()
+                .case(is_episode(), series_key)
+                .finally(own(metadata_item::Column::SortKey))
+                .into(),
+            key_type: KeyType::Text,
+            nullable: false,
+        },
+        Leading {
+            expr: last_when_absent(of_season(metadata_item::Column::Position)),
+            key_type: KeyType::Int,
+            nullable: false,
+        },
+        Leading {
+            expr: last_when_absent(own(metadata_item::Column::Position).into()),
+            key_type: KeyType::Int,
+            nullable: false,
+        },
+        Leading {
+            expr: last_when_absent(own(metadata_item::Column::ReleasedOn).into()),
+            key_type: KeyType::Int,
+            nullable: false,
+        },
+    ]
 }
 
 /// The sort key, or an empty one for a series, so that series tie and fall to their ids.
