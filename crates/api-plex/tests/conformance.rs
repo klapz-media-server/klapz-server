@@ -497,6 +497,7 @@ fn avatar_audio() -> MediaStream {
             loudness: None,
         }),
         subtitle: None,
+        required_bandwidths: Vec::new(),
     }
 }
 
@@ -571,6 +572,8 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
         duration_ms: Some(9_890_048),
         layout: FileLayout::default(),
         stream_url: None,
+        content_hash: None,
+        open_subtitles_hash: None,
     };
 
     let (external_ids, ratings) = references();
@@ -795,6 +798,7 @@ fn item(id: i64, section: i64, kind: ItemKind, parent: Option<i64>, title: &str)
         audience_rating: None,
         added_at: 1_500_000_000,
         updated_at: 1_600_000_000,
+        refreshed_at: None,
     }
 }
 

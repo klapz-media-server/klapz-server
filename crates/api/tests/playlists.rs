@@ -60,6 +60,7 @@ fn item(id: i64, section: i64, kind: ItemKind, title: &str, duration_ms: i64) ->
         audience_rating: None,
         added_at: 0,
         updated_at: 0,
+        refreshed_at: None,
     }
 }
 

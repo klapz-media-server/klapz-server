@@ -38,6 +38,7 @@ mod m0033_extras;
 mod m0034_user_rating;
 mod m0035_ultrablur;
 mod m0036_subtitle_offset;
+mod m0037_tree_fields;
 
 use sea_orm_migration::prelude::*;
 
@@ -83,6 +84,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0034_user_rating::Migration),
             Box::new(m0035_ultrablur::Migration),
             Box::new(m0036_subtitle_offset::Migration),
+            Box::new(m0037_tree_fields::Migration),
         ]
     }
 }

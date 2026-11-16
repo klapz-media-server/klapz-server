@@ -65,6 +65,7 @@ fn item(id: i64, section: i64, kind: ItemKind, parent: Option<i64>, title: &str)
         audience_rating: None,
         added_at: 1_610_180_026,
         updated_at: 1_794_332_579,
+        refreshed_at: None,
     }
 }
 

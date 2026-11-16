@@ -51,6 +51,7 @@ fn item(
         audience_rating: ActiveValue::Set(None),
         added_at: ActiveValue::Set(0),
         updated_at: ActiveValue::Set(0),
+        refreshed_at: ActiveValue::Set(None),
     }
 }
 
@@ -111,6 +112,8 @@ fn file(id: i64, version: i64) -> media_part::ActiveModel {
         updated_at: ActiveValue::Set(0),
         has_thumbnail: ActiveValue::Set(false),
         has_chapter_text_stream: ActiveValue::Set(false),
+        content_hash: ActiveValue::Set(None),
+        open_subtitles_hash: ActiveValue::Set(None),
         ..Default::default()
     }
 }
@@ -141,6 +144,7 @@ fn track(
         is_hearing_impaired: ActiveValue::Set(false),
         is_visual_impaired: ActiveValue::Set(false),
         has_header_compression: ActiveValue::Set(false),
+        required_bandwidths: ActiveValue::Set(None),
         ..Default::default()
     }
 }

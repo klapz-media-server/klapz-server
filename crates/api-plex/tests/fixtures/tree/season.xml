@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MediaContainer size="1" identifier="com.plexapp.plugins.library" mediaTagPrefix="/system/bundle/media/flags/" mediaTagVersion="1791210760">
+<MetadataItem id="577988" title="" guid="tv.plex.agents.none://577988" parentTitle="Bull" instanceRatingKey="" index="5" originallyAvailableAt="" addedAt="1794227575" refreshedAt="1794317262">
+<MetadataItem id="578173" title="Episode 1" guid="tv.plex.agents.none://578173" parentTitle="Bull" instanceRatingKey="" index="1" originallyAvailableAt="2021-04-30" addedAt="1794317260" refreshedAt="1794835553">
+<MediaItem id="5566505">
+<MediaPart metadataType="4" id="5571720" file="/media/test/Bull.2016.S05E01.FRENCH.720p.WEB.H264-FREAMON.mkv" size="989630229" openSubtitleHash="84af7a8426a039b5" hash="26c23ba303ef7c749c5576d8617a445ab1ec2f07" duration="2467160">
+<MediaStream id="12263594" index="0" type="1" codec="h264" language="en" bitDepth="8" chromaLocation="left" chromaSubsampling="4:2:0" codedHeight="720" codedWidth="1280" colorPrimaries="bt709" colorRange="tv" colorSpace="bt709" colorTrc="bt709" frameRate="25.000" hasScalingMatrix="0" height="720" level="31" profile="high" refFrames="2" requiredBandwidths="3128,3127,3127,3127,3127,3127,3127,3127" scanType="progressive" width="1280" />
+<MediaStream id="12263595" index="1" type="2" channels="2" codec="aac" language="fr" audioChannelLayout="stereo" profile="lc" requiredBandwidths="97,97,97,97,97,97,97,97" samplingRate="48000" title="French" />
+<MediaStream id="12263596" index="2" type="3" codec="srt" language="fr" requiredBandwidths="1,1,1,1,1,1,1,1" title="French" />
+</MediaPart>
+</MediaItem>
+</MetadataItem>
+<MetadataItem id="577990" title="" guid="tv.plex.agents.none://577990" parentTitle="Bull" instanceRatingKey="" index="2" originallyAvailableAt="" addedAt="1620464501" refreshedAt="1794835543">
+<MediaItem id="5566048">
+<MediaPart metadataType="4" id="5571263" file="/media/test/Bull.2016.S05E02.FRENCH.720p.WEB.H264-FREAMON.mkv" size="993492845" openSubtitleHash="8c520a28fdf25816" hash="783404f18d8389b302e415544bdc022e157a97bc" duration="2467480">
+<MediaStream id="12262682" index="0" type="1" codec="h264" language="en" bitDepth="8" chromaLocation="left" chromaSubsampling="4:2:0" codedHeight="720" codedWidth="1280" colorPrimaries="bt709" colorRange="tv" colorSpace="bt709" colorTrc="bt709" frameRate="25.000" hasScalingMatrix="0" height="720" level="31" profile="high" refFrames="2" requiredBandwidths="3139,3139,3139,3139,3139,3139,3139,3139" scanType="progressive" width="1280" />
+<MediaStream id="12262683" index="1" type="2" channels="2" codec="aac" language="fr" audioChannelLayout="stereo" profile="lc" requiredBandwidths="97,97,97,97,97,97,97,97" samplingRate="48000" title="French" />
+<MediaStream id="12262684" index="2" type="3" codec="srt" language="fr" requiredBandwidths="1,1,1,1,1,1,1,1" title="French" />
+</MediaPart>
+</MediaItem>
+</MetadataItem>
+</MetadataItem>
+</MediaContainer>

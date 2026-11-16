@@ -62,6 +62,7 @@ async fn repository() -> (SqlMetadataRepository, DatabaseConnection) {
             audience_rating: ActiveValue::Set(None),
             added_at: ActiveValue::Set(1_610_180_026),
             updated_at: ActiveValue::Set(1_794_332_579),
+            refreshed_at: ActiveValue::Set(None),
         }],
     )
     .await

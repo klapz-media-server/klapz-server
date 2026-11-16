@@ -35,6 +35,8 @@ pub struct Model {
     pub audience_rating: Option<f64>,
     pub added_at: i64,
     pub updated_at: i64,
+    /// When the metadata was last refreshed from its agent, in Unix seconds.
+    pub refreshed_at: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

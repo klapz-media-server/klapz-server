@@ -125,6 +125,8 @@ fn to_file(row: extra_media::Model) -> MediaFile {
             ..FileLayout::default()
         },
         stream_url: row.stream_url,
+        content_hash: None,
+        open_subtitles_hash: None,
     }
 }
 
@@ -156,6 +158,7 @@ fn to_track(row: extra_track::Model, file: PartId) -> MediaStream {
         }),
         audio: (kind == StreamKind::Audio).then(AudioAnalysis::default),
         subtitle: None,
+        required_bandwidths: Vec::new(),
     }
 }
 

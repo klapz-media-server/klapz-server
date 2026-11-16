@@ -87,6 +87,11 @@ const DEFAULT_PAGE_SIZE: u32 = 50;
         desc = "When the item's metadata last changed."
     ),
     field(
+        name = "refreshed_at",
+        ty = "Option<DateTime>",
+        desc = "When the item's metadata was last refreshed from its metadata agent. Null when it never was."
+    ),
+    field(
         name = "library",
         ty = "Option<Library>",
         desc = "The library this item belongs to. The same work present in two libraries is two distinct items with two ids."
@@ -282,6 +287,12 @@ impl Movie {
     /// When the item's metadata last changed.
     pub async fn updated_at(&self, _context: &Context<'_>) -> Result<DateTime> {
         Ok(self.0.updated_at.into())
+    }
+
+    /// When the item's metadata was last refreshed from its metadata agent. Null when it
+    /// never was.
+    pub async fn refreshed_at(&self, _context: &Context<'_>) -> Result<Option<DateTime>> {
+        Ok(self.0.refreshed_at.map(DateTime::from))
     }
 
     /// The library this item belongs to.
@@ -548,6 +559,12 @@ impl Show {
     /// When the item's metadata last changed.
     pub async fn updated_at(&self, _context: &Context<'_>) -> Result<DateTime> {
         Ok(self.0.updated_at.into())
+    }
+
+    /// When the item's metadata was last refreshed from its metadata agent. Null when it
+    /// never was.
+    pub async fn refreshed_at(&self, _context: &Context<'_>) -> Result<Option<DateTime>> {
+        Ok(self.0.refreshed_at.map(DateTime::from))
     }
 
     /// The library this item belongs to.
@@ -881,6 +898,12 @@ impl Season {
         Ok(self.0.updated_at.into())
     }
 
+    /// When the item's metadata was last refreshed from its metadata agent. Null when it
+    /// never was.
+    pub async fn refreshed_at(&self, _context: &Context<'_>) -> Result<Option<DateTime>> {
+        Ok(self.0.refreshed_at.map(DateTime::from))
+    }
+
     /// The library this item belongs to.
     ///
     /// The same work present in two libraries is two distinct items with two ids — 78% of
@@ -1147,6 +1170,12 @@ impl Episode {
     /// When the item's metadata last changed.
     pub async fn updated_at(&self, _context: &Context<'_>) -> Result<DateTime> {
         Ok(self.0.updated_at.into())
+    }
+
+    /// When the item's metadata was last refreshed from its metadata agent. Null when it
+    /// never was.
+    pub async fn refreshed_at(&self, _context: &Context<'_>) -> Result<Option<DateTime>> {
+        Ok(self.0.refreshed_at.map(DateTime::from))
     }
 
     /// The library this item belongs to.

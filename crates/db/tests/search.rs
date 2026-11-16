@@ -127,6 +127,7 @@ fn model(seed: &Seed) -> metadata_item::ActiveModel {
         audience_rating: ActiveValue::Set(seed.audience_rating),
         added_at: ActiveValue::Set(0),
         updated_at: ActiveValue::Set(0),
+        refreshed_at: ActiveValue::Set(None),
     }
 }
 

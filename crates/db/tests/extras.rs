@@ -44,6 +44,7 @@ fn item(id: i64) -> metadata_item::ActiveModel {
         audience_rating: ActiveValue::Set(None),
         added_at: ActiveValue::Set(0),
         updated_at: ActiveValue::Set(0),
+        refreshed_at: ActiveValue::Set(None),
     }
 }
 
@@ -272,6 +273,8 @@ async fn an_extras_files_and_tracks_are_found_where_an_items_are() {
         optimized_for_streaming: ActiveValue::Set(None),
         packet_length: ActiveValue::Set(None),
         has_chapter_text_stream: ActiveValue::Set(false),
+        content_hash: ActiveValue::Set(None),
+        open_subtitles_hash: ActiveValue::Set(None),
     })
     .exec(&connection)
     .await

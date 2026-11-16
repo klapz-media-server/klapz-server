@@ -85,6 +85,7 @@ fn item(
         audience_rating: None,
         added_at: 1_794_320_860,
         updated_at: 1_794_320_862,
+        refreshed_at: None,
     }
 }
 

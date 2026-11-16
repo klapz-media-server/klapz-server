@@ -82,8 +82,9 @@ fn write_child(out: &mut String, key: &str, value: &Value) {
                 if let Value::Object(fields) = item {
                     // An item keeps the long form even with no children, as the root does:
                     // measured on a series and a playlist with nothing inside, on an empty
-                    // shelf, and on the filterless `Meta` type of `/categories`.
-                    let long_form = matches!(key, "Metadata" | "Hub" | "Type");
+                    // shelf, on the filterless `Meta` type of `/categories`, and on a
+                    // collection's tree.
+                    let long_form = matches!(key, "Metadata" | "Hub" | "Type" | "MetadataItem");
                     write_element(out, element_name(key, fields), fields, long_form);
                 }
             }

@@ -37,6 +37,7 @@ mod markers;
 mod menus;
 pub mod meta;
 mod music;
+mod nearest;
 mod people;
 pub mod photo;
 mod play_queues;
@@ -60,6 +61,7 @@ mod tags;
 mod timeline;
 mod tracks;
 pub mod translations;
+mod tree;
 mod ultrablur;
 pub mod updater;
 mod user_state;
@@ -137,8 +139,10 @@ pub fn router(state: PlexState) -> Router {
         .merge(home::router())
         .merge(user_state::router())
         .merge(tracks::router())
+        .merge(tree::router())
         .merge(livetv::router())
         .merge(music::router())
+        .merge(nearest::router())
         .merge(people::router())
         .merge(tags::router())
         .merge(markers::router())

@@ -4531,6 +4531,18 @@
               "deprecationReason": null
             },
             {
+              "name": "refreshedAt",
+              "description": "When the item's metadata was last refreshed from its metadata agent. Null when it\nnever was.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "DateTime",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "library",
               "description": "The library this item belongs to.\n\nThe same work present in two libraries is two distinct items with two ids — 78% of\nmovies here have such a twin, because libraries can share a scanned folder.",
               "args": [],
@@ -6905,6 +6917,18 @@
                   "name": "DateTime",
                   "ofType": null
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "refreshedAt",
+              "description": "When the item's metadata was last refreshed from its metadata agent. Null when it never was.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "DateTime",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -10490,6 +10514,30 @@
               "deprecationReason": null
             },
             {
+              "name": "contentHash",
+              "description": "The SHA-1 the scanner computed over the file's contents, in hex: two copies of one\nfile share it. Null when the scanner computed none.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "openSubtitlesHash",
+              "description": "The file's `OpenSubtitles` hash, in hex — its size plus the 64-bit sums of its first and\nlast 64 KiB — which subtitle services find a file by. Null when the scanner computed\nnone.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "hasThumbnail",
               "description": "Whether the file embeds a cover image.",
               "args": [],
@@ -10795,6 +10843,18 @@
               "deprecationReason": null
             },
             {
+              "name": "externalUrl",
+              "description": "Where an external track's file is, as the scanner recorded it: a `file://` URL. Null\nfor a track inside the media file.\n\nReference data, as `MediaFile.path` is: no endpoint accepts it back.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "title",
               "description": "The name the file gives the track, often a release tag: `VFF AC3 5.1 @448kb`. Empty\nwhen the file writes an empty name, null when it writes none.",
               "args": [],
@@ -10838,6 +10898,30 @@
                 "kind": "SCALAR",
                 "name": "Int",
                 "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "requiredBandwidths",
+              "description": "The bandwidth, in bits per second, the track needs to play without stalling, for each\nof the buffer sizes the analysis tried, from the smallest: a larger buffer absorbs\nmore of the peaks. Empty when the track was never analysed that far.\n\nFloats holding whole numbers: the analysis writes `2147483647` kilobits for a buffer\nthat no bandwidth fills, which in bits exceeds an `Int`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "Float",
+                      "ofType": null
+                    }
+                  }
+                }
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -11711,6 +11795,18 @@
                   "name": "DateTime",
                   "ofType": null
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "refreshedAt",
+              "description": "When the item's metadata was last refreshed from its metadata agent. Null when it\nnever was.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "DateTime",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -19503,6 +19599,18 @@
               "deprecationReason": null
             },
             {
+              "name": "refreshedAt",
+              "description": "When the item's metadata was last refreshed from its metadata agent. Null when it\nnever was.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "DateTime",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "library",
               "description": "The library this item belongs to.\n\nThe same work present in two libraries is two distinct items with two ids — 78% of\nmovies here have such a twin, because libraries can share a scanned folder.",
               "args": [],
@@ -20736,6 +20844,18 @@
                   "name": "DateTime",
                   "ofType": null
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "refreshedAt",
+              "description": "When the item's metadata was last refreshed from its metadata agent. Null when it\nnever was.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "DateTime",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null

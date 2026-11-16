@@ -50,6 +50,7 @@ fn row(row: &Row<'_>) -> metadata_item::ActiveModel {
         audience_rating: ActiveValue::Set(None),
         added_at: ActiveValue::Set(0),
         updated_at: ActiveValue::Set(0),
+        refreshed_at: ActiveValue::Set(None),
     }
 }
 

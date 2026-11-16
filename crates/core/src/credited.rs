@@ -196,6 +196,7 @@ mod tests {
             audience_rating: Some(rating),
             added_at,
             updated_at: added_at,
+            refreshed_at: None,
         }
     }
 

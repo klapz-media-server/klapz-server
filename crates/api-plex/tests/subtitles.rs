@@ -77,6 +77,7 @@ fn track(id: i64, kind: StreamKind, position: i32, codec: &str, language: &str) 
         video: None,
         audio: None,
         subtitle: (kind == StreamKind::Subtitle).then(SubtitleAnalysis::default),
+        required_bandwidths: Vec::new(),
     }
 }
 
@@ -136,6 +137,7 @@ fn metadata() -> InMemoryMetadata {
         audience_rating: None,
         added_at: 1_794_839_063,
         updated_at: 1_794_839_065,
+        refreshed_at: None,
     };
     let version = MediaVersion {
         id: MediaId::new(VERSION),
@@ -162,6 +164,8 @@ fn metadata() -> InMemoryMetadata {
         duration_ms: None,
         layout: FileLayout::default(),
         stream_url: None,
+        content_hash: None,
+        open_subtitles_hash: None,
     };
     InMemoryMetadata::new(vec![soul]).with_media(vec![version], vec![file], streams())
 }
