@@ -317,6 +317,7 @@ impl InMemoryMetadata {
             .filter(|_| !filter.kind_not_held)
             .filter(|item| filter.kind.is_none_or(|kind| item.kind == kind))
             .filter(|item| !filter.top_level_only() || item.parent_id.is_none())
+            .filter(|item| !filter.leaves_only() || item.kind.is_playable())
             .filter(|item| {
                 filter
                     .year_from

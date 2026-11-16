@@ -8,7 +8,7 @@ use open_plex_api::item::ITEM_TYPE;
 use open_plex_api::library::LIBRARY_TYPE;
 use open_plex_api::GlobalId;
 use open_plex_core::page::MAX_ITEMS;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::auth::Caller;
 use crate::children;
@@ -17,16 +17,17 @@ use crate::container::{kind_rank, LibraryKind, SectionDirectory, SectionsContain
 use crate::error::ApiError;
 use crate::gql;
 use crate::gql_items::{
-    with_shared_fragments, GqlItemEdge, ItemsByIdData, SectionItemsData, ITEMS_BY_ID_QUERY,
-    SECTION_ITEMS_QUERY,
+    with_shared_fragments, GqlItemEdge, GqlLibraryItems, ItemsByIdData, SectionItemsData,
+    ITEMS_BY_ID_QUERY, SECTION_ITEMS_QUERY,
 };
 use crate::gql_items::{GqlItem, GqlLibraryRef};
 use crate::items::{
     CharacterDirectory, CharactersContainer, ItemsContainer, MetadataEntry, SearchContainer,
-    SearchEntry,
+    SearchEntry, ViewStyle, GRID_VIEW_MODE, LIBRARY_IDENTIFIER, MEDIA_TAG_PREFIX,
+    MEDIA_TAG_VERSION,
 };
 use crate::language::Language;
-use crate::listing;
+use crate::listing::{self, ListingRequest};
 use crate::response::{PlexResponse, ResponseFormat};
 use crate::PlexState;
 
@@ -58,6 +59,10 @@ pub fn router() -> Router<PlexState> {
         )
         // Singular, and not in the spec in that form: the declared
         // `firstCharacters` 404s on a real server.
+        .route(
+            "/library/sections/{sectionId}/allLeaves",
+            get(section_leaves),
+        )
         .route(
             "/library/sections/{sectionId}/firstCharacter",
             get(first_character),
@@ -313,45 +318,10 @@ async fn section_items(
             .await?
             .into_response());
     }
-    let request = listing::parse(&pairs)?;
     let language = Language::of(&client);
+    let (library, request) = section_page(&state, section, &pairs, Depth::Library).await?;
     let offset = request.start;
-    // Capped rather than honored as given: `MAX_ITEMS` is the ceiling every window in this
-    // project respects, and a listing is where an uncapped count would hurt most.
-    let first = request.size.unwrap_or(DEFAULT_LISTING_SIZE).min(MAX_ITEMS);
-    let (order_by, direction) = request.ordering();
-
-    let mut variables = Variables::default();
-    variables.insert(
-        Name::new("id"),
-        Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
-    );
-    variables.insert(Name::new("first"), Value::Number(first.into()));
-    variables.insert(Name::new("offset"), Value::Number(offset.into()));
-    variables.insert(Name::new("orderBy"), Value::Enum(Name::new(order_by)));
-    variables.insert(Name::new("direction"), Value::Enum(Name::new(direction)));
-    variables.insert(Name::new("seed"), Value::Number(shuffle_seed().into()));
-    variables.insert(
-        Name::new("filter"),
-        request.filters.to_graphql(item_type(request.kind)),
-    );
-    variables.insert(
-        Name::new("markers"),
-        Value::Boolean(crate::markers::requested(&pairs)),
-    );
-
-    let data: SectionItemsData =
-        gql::execute(&state.schema, &SECTION_ITEMS_QUERY, variables).await?;
-    // A null `node` means no library carries that id. 404 rather than an empty listing: a
-    // client told "zero items" would cache an empty library.
-    let library = data.node.ok_or(ApiError::NotFound)?;
-
-    let items = library
-        .items
-        .edges
-        .iter()
-        .filter_map(|edge| MetadataEntry::from_graphql(&edge.node, false, language))
-        .collect();
+    let items = entries(&library, language);
     let total = library.stats.item_count;
     let mut body = ItemsContainer::new(&library.as_ref(), items, offset, total);
     if pairs
@@ -364,6 +334,149 @@ async fn section_items(
     Ok(PlexResponse::new(body, format)
         .paged(offset, total)
         .into_response())
+}
+
+/// `GET /library/sections/{sectionId}/allLeaves` — everything in a library that has nothing
+/// below it: its films, or its episodes.
+///
+/// The reference answers it as `/all?type=` the leaves' type, measured identical in items,
+/// order and totals on 92 requests over four libraries, filters and sorts included; a `type`
+/// naming anything else finds nothing, a collection's 18 included. Only the container differs:
+/// no `librarySection*` trio, no `title2`, `allowSync` off, and no `Meta` whatever
+/// `includeMeta` says.
+async fn section_leaves(
+    _caller: Caller,
+    client: ClientIdentity,
+    State(state): State<PlexState>,
+    Path(section): Path<i64>,
+    Query(pairs): Query<Vec<(String, String)>>,
+    format: ResponseFormat,
+) -> Result<PlexResponse<LeavesContainer>, ApiError> {
+    let (library, request) = section_page(&state, section, &pairs, Depth::Leaves).await?;
+    let offset = request.start;
+    // A type number naming no kind the official API has names none of the leaves: the
+    // reference lists nothing for 0, 13 or 99, where `/all` here lists everything.
+    let names_nothing = request.kind.is_some() && item_type(request.kind).is_none();
+    let (items, total) = if names_nothing {
+        (Vec::new(), 0)
+    } else {
+        (
+            entries(&library, Language::of(&client)),
+            library.stats.item_count,
+        )
+    };
+    let style = ViewStyle::for_kind(&library.kind);
+    let body = LeavesContainer {
+        size: u32::try_from(items.len()).unwrap_or(u32::MAX),
+        total_size: total,
+        offset,
+        allow_sync: false,
+        art: style.art,
+        identifier: LIBRARY_IDENTIFIER,
+        media_tag_prefix: MEDIA_TAG_PREFIX,
+        media_tag_version: MEDIA_TAG_VERSION,
+        nocache: (library.kind == "SHOW").then_some(true),
+        thumb: style.thumb,
+        title1: library.title,
+        view_group: style.view_group,
+        view_mode: GRID_VIEW_MODE,
+        metadata: items,
+    };
+    Ok(PlexResponse::new(body, format).paged(offset, total))
+}
+
+/// Response body for `GET /library/sections/{id}/allLeaves`: `/all`'s container without the
+/// library's identity or the view's title. `nocache` is a series library's only, as on `/all`
+/// there. Windowed always, as every listing here is.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeavesContainer {
+    pub size: u32,
+    pub total_size: u64,
+    pub offset: u64,
+    pub allow_sync: bool,
+    pub art: &'static str,
+    pub identifier: &'static str,
+    pub media_tag_prefix: &'static str,
+    pub media_tag_version: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nocache: Option<bool>,
+    pub thumb: &'static str,
+    pub title1: String,
+    pub view_group: &'static str,
+    pub view_mode: u32,
+    #[serde(rename = "Metadata", skip_serializing_if = "Vec::is_empty")]
+    pub metadata: Vec<MetadataEntry>,
+}
+
+/// Which part of a library a listing reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Depth {
+    /// `/all`: the top level, or the kind `type` names.
+    Library,
+    /// `/allLeaves`: the films or the episodes, narrowed further by `type`.
+    Leaves,
+}
+
+/// One window of a library's items, as the request's container parameters, filters and sort
+/// ask for it.
+async fn section_page(
+    state: &PlexState,
+    section: i64,
+    pairs: &[(String, String)],
+    depth: Depth,
+) -> Result<(GqlLibraryItems, ListingRequest), ApiError> {
+    let request = listing::parse(pairs)?;
+    // Capped rather than honored as given: `MAX_ITEMS` is the ceiling every window in this
+    // project respects, and a listing is where an uncapped count would hurt most.
+    let first = request.size.unwrap_or(DEFAULT_LISTING_SIZE).min(MAX_ITEMS);
+    let (order_by, direction) = match depth {
+        Depth::Library => request.ordering(),
+        Depth::Leaves => request.leaves_ordering(),
+    };
+    let mut filter = request.filters.to_graphql(item_type(request.kind));
+    if depth == Depth::Leaves {
+        let mut fields = match filter {
+            Value::Object(fields) => fields,
+            _ => async_graphql::indexmap::IndexMap::new(),
+        };
+        fields.insert(Name::new("depth"), Value::Enum(Name::new("LEAVES")));
+        filter = Value::Object(fields);
+    }
+
+    let mut variables = Variables::default();
+    variables.insert(
+        Name::new("id"),
+        Value::String(GlobalId::encode(LIBRARY_TYPE, section)),
+    );
+    variables.insert(Name::new("first"), Value::Number(first.into()));
+    variables.insert(Name::new("offset"), Value::Number(request.start.into()));
+    variables.insert(Name::new("orderBy"), Value::Enum(Name::new(order_by)));
+    variables.insert(Name::new("direction"), Value::Enum(Name::new(direction)));
+    variables.insert(Name::new("seed"), Value::Number(shuffle_seed().into()));
+    variables.insert(Name::new("filter"), filter);
+    variables.insert(
+        Name::new("markers"),
+        Value::Boolean(crate::markers::requested(pairs)),
+    );
+
+    let data: SectionItemsData =
+        gql::execute(&state.schema, &SECTION_ITEMS_QUERY, variables).await?;
+    // A null `node` means no library carries that id. 404 rather than an empty listing: a
+    // client told "zero items" would cache an empty library.
+    let library = data.node.ok_or(ApiError::NotFound)?;
+    Ok((library, request))
+}
+
+/// The page's items as a listing publishes them: the library is stated once, on the
+/// container.
+fn entries(library: &GqlLibraryItems, language: Language) -> Vec<MetadataEntry> {
+    library
+        .items
+        .edges
+        .iter()
+        .filter_map(|edge| MetadataEntry::from_graphql(&edge.node, false, language))
+        .collect()
 }
 
 /// `GET /library/metadata/{ids}` — one or more items by identifier.

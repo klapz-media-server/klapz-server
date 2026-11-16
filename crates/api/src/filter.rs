@@ -70,6 +70,9 @@ pub enum ItemDepthInput {
     TopLevel,
     /// Every item in the library, at any depth, side by side.
     All,
+    /// Items with nothing below them: the films of a film library, the episodes of a series
+    /// library. A `kind` narrows this rather than replacing it, so `SHOW` finds nothing.
+    Leaves,
 }
 
 impl From<ItemDepthInput> for ItemDepth {
@@ -77,6 +80,7 @@ impl From<ItemDepthInput> for ItemDepth {
         match depth {
             ItemDepthInput::TopLevel => Self::TopLevel,
             ItemDepthInput::All => Self::All,
+            ItemDepthInput::Leaves => Self::Leaves,
         }
     }
 }
@@ -112,6 +116,8 @@ pub enum ItemOrder {
     UserRating,
     /// By when a series' episodes were added: a series ranks by its first episode ascending, by its latest descending.
     EpisodeAddedAt,
+    /// Episodes by series, season and episode: the series' sort title, the season's number, the episode's, its release date — each absent one last ascending — then the episode's own title. Anything else follows its title, as under `TITLE`.
+    Series,
     /// Shuffled, by the `seed` argument: the same seed gives the same order, so pages follow one another.
     Random,
 }
@@ -130,6 +136,7 @@ impl ItemOrder {
             Self::LastViewedAt => ItemSort::LastViewedAt(viewer),
             Self::UserRating => ItemSort::UserRating(viewer),
             Self::EpisodeAddedAt => ItemSort::EpisodeAddedAt,
+            Self::Series => ItemSort::Episodes,
             Self::Random => ItemSort::Shuffled(seed),
         }
     }
@@ -161,8 +168,9 @@ impl From<SortDirection> for Direction {
 pub struct ItemFilterInput {
     /// Keep only items of this kind.
     ///
-    /// Overrides `depth`, because naming a kind is already a statement about depth: asking
-    /// for episodes and getting nothing because episodes have parents would be obtuse.
+    /// Overrides the default depth, because naming a kind is already a statement about depth:
+    /// asking for episodes and getting nothing because episodes have parents would be obtuse.
+    /// Under `LEAVES` both hold.
     pub kind: Option<ItemType>,
     /// How deep to look. Defaults to the library's top level.
     pub depth: Option<ItemDepthInput>,

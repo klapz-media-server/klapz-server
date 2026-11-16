@@ -798,6 +798,15 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   named genres keep a color, the others take a seven-color cycle by tag id — and the
   fallback image for a genre without art as `thumb`; identical to the reference, JSON and XML,
   on a test library without art (`docs/spec-gaps.md`).
+- ✅ **a library's leaves**, `GET /library/sections/{id}/allLeaves`: its films or its episodes,
+  `/all?type=` the leaves' type as measured on the reference (92 requests, filters and sorts
+  included), under `/all`'s container without the library's identity, `title2` or `Meta`; a
+  `type` naming no leaf kind is empty. On the official API `ItemFilterInput.depth: LEAVES`
+  (a `kind` narrows it rather than replacing it) and `ItemOrder.SERIES`, the episodes' default
+  order — series sort title, season, episode, release date, each absent one last — which is
+  also `/all?type=4`'s default now, and so autocompletion's and a listing's play queue's: every
+  series' episode order identical to the reference on four whole libraries (4,002 series), the
+  remaining positions the collation of series titles (`docs/spec-gaps.md`).
 
 ## Reference server
 

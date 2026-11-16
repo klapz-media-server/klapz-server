@@ -57,7 +57,7 @@ fn stub(methods: u8) -> MethodRouter<PlexState> {
     router
 }
 
-/// The 67 stub operations, across 55 paths.
+/// The 66 stub operations, across 54 paths.
 const STUBS: &[(&str, u8)] = &[
     ("/:/eventsource/notifications", verb::GET),
     ("/:/prefs/get", verb::GET),
@@ -71,34 +71,16 @@ const STUBS: &[(&str, u8)] = &[
     ("/downloadQueue/{queueId}/item/{itemId}/decision", verb::GET),
     ("/downloadQueue/{queueId}/item/{itemId}/media", verb::GET),
     ("/downloadQueue/{queueId}/items", verb::GET),
-    (
-        "/downloadQueue/{queueId}/items/{itemId}",
-        verb::GET | verb::DELETE,
-    ),
-    (
-        "/downloadQueue/{queueId}/items/{itemId}/restart",
-        verb::POST,
-    ),
+    ("/downloadQueue/{queueId}/items/{itemId}", verb::GET | verb::DELETE),
+    ("/downloadQueue/{queueId}/items/{itemId}/restart", verb::POST),
     ("/hubs/items", verb::GET),
-    (
-        "/hubs/sections/{sectionId}/manage",
-        verb::GET | verb::POST | verb::DELETE,
-    ),
+    ("/hubs/sections/{sectionId}/manage", verb::GET | verb::POST | verb::DELETE),
     ("/hubs/sections/{sectionId}/manage/move", verb::PUT),
-    (
-        "/hubs/sections/{sectionId}/manage/{identifier}",
-        verb::PUT | verb::DELETE,
-    ),
+    ("/hubs/sections/{sectionId}/manage/{identifier}", verb::PUT | verb::DELETE),
     ("/library/all", verb::GET),
     ("/library/file", verb::POST),
-    (
-        "/library/media/{mediaId}/chapterImages/{chapter}",
-        verb::GET,
-    ),
-    (
-        "/library/metadata/augmentations/{augmentationId}",
-        verb::GET,
-    ),
+    ("/library/media/{mediaId}/chapterImages/{chapter}", verb::GET),
+    ("/library/metadata/augmentations/{augmentationId}", verb::GET),
     ("/library/metadata/{ids}/file", verb::GET),
     ("/library/metadata/{ids}/index", verb::PUT),
     ("/library/metadata/{ids}/media/{mediaItem}", verb::DELETE),
@@ -106,24 +88,14 @@ const STUBS: &[(&str, u8)] = &[
     ("/library/metadata/{ids}/subtitles", verb::GET),
     ("/library/metadata/{ids}/tree", verb::GET),
     ("/library/metadata/{ids}/users/top", verb::GET),
-    (
-        "/library/metadata/{ids}/{element}",
-        verb::POST | verb::PUT | verb::DELETE,
-    ),
+    ("/library/metadata/{ids}/{element}", verb::POST | verb::PUT | verb::DELETE),
     ("/library/metadata/{ids}/{element}/{timestamp}", verb::GET),
     ("/library/randomArtwork", verb::GET),
     ("/library/sections/prefs", verb::GET),
-    (
-        "/library/sections/{sectionId}",
-        verb::GET | verb::PUT | verb::DELETE,
-    ),
-    ("/library/sections/{sectionId}/allLeaves", verb::GET),
+    ("/library/sections/{sectionId}", verb::GET | verb::PUT | verb::DELETE),
     ("/library/sections/{sectionId}/arts", verb::GET),
     ("/library/sections/{sectionId}/cluster", verb::GET),
-    (
-        "/library/sections/{sectionId}/composite/{updatedAt}",
-        verb::GET,
-    ),
+    ("/library/sections/{sectionId}/composite/{updatedAt}", verb::GET),
     ("/library/sections/{sectionId}/computePath", verb::GET),
     ("/library/sections/{sectionId}/emptyTrash", verb::PUT),
     ("/library/sections/{sectionId}/firstCharacters", verb::GET),
@@ -140,17 +112,16 @@ const STUBS: &[(&str, u8)] = &[
     ("/security/token", verb::POST),
     ("/updater/apply", verb::PUT),
     ("/{transcodeType}/:/transcode/universal/decision", verb::GET),
-    (
-        "/{transcodeType}/:/transcode/universal/subtitles",
-        verb::GET,
-    ),
+    ("/{transcodeType}/:/transcode/universal/subtitles", verb::GET),
 ];
 
-/// Adds 67 stub operations across 55 paths.
+/// Adds 66 stub operations across 54 paths.
 pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
-    STUBS.iter().fold(router, |router, (path, methods)| {
-        router.route(path, stub(*methods))
-    })
+    STUBS
+        .iter()
+        .fold(router, |router, (path, methods)| {
+            router.route(path, stub(*methods))
+        })
 }
 
 // Not routable as written, and needing real handlers regardless:

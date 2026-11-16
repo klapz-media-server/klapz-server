@@ -250,9 +250,23 @@ pub struct ListingRequest {
 }
 
 impl ListingRequest {
-    /// The official API's order and direction: the title ascending when no sort was asked.
+    /// The official API's order and direction when no sort was asked: episodes by series,
+    /// season and episode, anything else by title, as the reference orders each by default.
     pub fn ordering(&self) -> (&'static str, &'static str) {
-        self.sort.map_or(("TITLE", "ASCENDING"), |sort| {
+        let default = if self.kind == Some(4) {
+            "SERIES"
+        } else {
+            "TITLE"
+        };
+        self.sort.map_or((default, "ASCENDING"), |sort| {
+            (sort.order, sort.direction())
+        })
+    }
+
+    /// The order of a library's leaves, `/allLeaves`, which defaults to the episodes' order
+    /// whatever `type` says: films follow their titles under it all the same.
+    pub fn leaves_ordering(&self) -> (&'static str, &'static str) {
+        self.sort.map_or(("SERIES", "ASCENDING"), |sort| {
             (sort.order, sort.direction())
         })
     }

@@ -651,6 +651,13 @@ pub enum ItemSort {
     /// By when a series' episodes were added: its first ascending, its latest descending,
     /// the way [`ItemSort::Duration`] ranks versions.
     EpisodeAddedAt,
+    /// Episodes by series, season and episode: the series' sort title, the season's number,
+    /// the episode's, its release date — each absent one last — then its own sort title.
+    /// Anything that is not an episode follows its own title. The reference's default for
+    /// episodes, which its `Meta` states as
+    /// `show.titleSort,season.index:nullsLast,episode.index:nullsLast,`
+    /// `episode.originallyAvailableAt:nullsLast,episode.titleSort,episode.id`.
+    Episodes,
     /// A shuffle: the same seed gives the same order, which lets pages agree.
     Shuffled(u32),
     /// Library by library, in the order [`ItemQuery::sections`] lists them; within one, films
@@ -801,6 +808,11 @@ impl ItemFilter {
     pub const fn top_level_only(&self) -> bool {
         matches!(self.depth, ItemDepth::TopLevel) && self.kind.is_none()
     }
+
+    /// Whether to restrict the listing to items with nothing below them.
+    pub const fn leaves_only(&self) -> bool {
+        matches!(self.depth, ItemDepth::Leaves)
+    }
 }
 
 /// How deep into a library's hierarchy a listing reaches.
@@ -816,6 +828,11 @@ pub enum ItemDepth {
     TopLevel,
     /// Every item in the library, at any depth.
     All,
+    /// Items that have nothing below them: the films of a film library, the episodes of a
+    /// series library. Unlike the top level, a named kind narrows this rather than replacing
+    /// it, so asking for the leaves' series finds none — as the reference answers
+    /// `/library/sections/{id}/allLeaves?type=2`.
+    Leaves,
 }
 
 /// One letter of a library's A–Z jump bar, with how many items fall under it.
