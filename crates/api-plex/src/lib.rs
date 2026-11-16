@@ -10,6 +10,7 @@ pub mod activities;
 pub mod auth;
 mod autocomplete;
 pub mod capabilities;
+mod categories;
 pub mod children;
 pub mod client;
 mod collections;

@@ -71,6 +71,10 @@ pub fn router() -> Router<PlexState> {
             get(crate::menus::sorts),
         )
         .route(
+            "/library/sections/{sectionId}/categories",
+            get(crate::categories::categories),
+        )
+        .route(
             "/library/sections/{sectionId}/common",
             get(crate::common::common),
         )

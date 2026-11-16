@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MediaContainer size="5" allowSync="0" art="/:/resources/show-fanart.jpg" content="secondary" identifier="com.plexapp.plugins.library" mediaTagPrefix="/system/bundle/media/flags/" mediaTagVersion="1791210760" nocache="1" thumb="/:/resources/show.png" title1="open-plex tests series" title2="" viewGroup="secondary" viewMode="65592">
+<Meta>
+<Type key="/library/sections/28/categories" type="directory" title="Categories" active="1">
+</Type>
+</Meta>
+<Directory thumb="/photo/:/transcode?blendColor=2B717E&amp;width=2560&amp;height=1440&amp;url=%2F%3A%2Fresources%2Fcategory-art%2Fanimation%2Epng" type="directory" key="/library/sections/28/all?genre=38" title="Action" />
+<Directory thumb="/photo/:/transcode?blendColor=51284C&amp;width=2560&amp;height=1440&amp;url=%2F%3A%2Fresources%2Fcategory-art%2Fanimation%2Epng" type="directory" key="/library/sections/28/all?genre=58" title="Comedy" />
+<Directory thumb="/photo/:/transcode?blendColor=494616&amp;width=2560&amp;height=1440&amp;url=%2F%3A%2Fresources%2Fcategory-art%2Fanimation%2Epng" type="directory" key="/library/sections/28/all?genre=123" title="Fantasy" />
+<Directory thumb="/photo/:/transcode?blendColor=91293D&amp;width=2560&amp;height=1440&amp;url=%2F%3A%2Fresources%2Fcategory-art%2Fanimation%2Epng" type="directory" key="/library/sections/28/all?genre=988939" title="Kung Fu" />
+<Directory thumb="/photo/:/transcode?blendColor=4C561B&amp;width=2560&amp;height=1440&amp;url=%2F%3A%2Fresources%2Fcategory-art%2Fanimation%2Epng" type="directory" key="/library/sections/28/all?genre=988940" title="Zorglub" />
+</MediaContainer>

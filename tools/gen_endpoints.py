@@ -144,6 +144,8 @@ IMPLEMENTED = frozenset(
         "/library/sections/{sectionId}/filters",
         "/library/sections/{sectionId}/sorts",
         "/library/sections/{sectionId}/common",
+        # A library's genres as tiles (`categories.rs`).
+        "/library/sections/{sectionId}/categories",
         "/library/sections/{sectionId}/videoCodec",
         "/library/sections/{sectionId}/audioCodec",
         "/library/sections/{sectionId}/audioLayout",
