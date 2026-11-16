@@ -19,6 +19,7 @@ use open_plex_core::RatingKey;
 use crate::collection::MembershipConnection;
 use crate::cursor::OpaqueCursor;
 use crate::edit::ItemFieldType;
+use crate::extra::{ExtraConnection, ExtraObject};
 use crate::library::Library;
 use crate::loader::{ChildCountLoader, ItemLoader, LeafCountLoader, LibraryLoader, VersionsLoader};
 use crate::marker::MarkerConnection;
@@ -211,6 +212,26 @@ impl Movie {
     /// The fields an editor locked, which a metadata refresh leaves as they are.
     pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
         crate::edit::locked_fields_of(context, self.0.id).await
+    }
+
+    /// Its trailers, deleted scenes, interviews and featurettes, by position then id.
+    async fn extras(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return extras after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return extras before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many extras from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many extras from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<ExtraConnection> {
+        crate::extra::extras_of(context, self.0.id, after, before, first, last).await
+    }
+
+    /// The trailer a player plays as this one's: the first trailer among its extras. Null
+    /// when it has none, whatever other extras it has.
+    async fn primary_extra(&self, context: &Context<'_>) -> Result<Option<ExtraObject>> {
+        crate::extra::primary_extra_of(context, self.0.id).await
     }
 
     /// Where its intro, credits and commercials are, and the places the caller bookmarked in
@@ -448,6 +469,26 @@ impl Show {
     /// The fields an editor locked, which a metadata refresh leaves as they are.
     pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
         crate::edit::locked_fields_of(context, self.0.id).await
+    }
+
+    /// Its trailers, deleted scenes, interviews and featurettes, by position then id.
+    async fn extras(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return extras after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return extras before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many extras from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many extras from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<ExtraConnection> {
+        crate::extra::extras_of(context, self.0.id, after, before, first, last).await
+    }
+
+    /// The trailer a player plays as this one's: the first trailer among its extras. Null
+    /// when it has none, whatever other extras it has.
+    async fn primary_extra(&self, context: &Context<'_>) -> Result<Option<ExtraObject>> {
+        crate::extra::primary_extra_of(context, self.0.id).await
     }
 
     /// When the item's metadata last changed.
@@ -743,6 +784,20 @@ impl Season {
         crate::edit::locked_fields_of(context, self.0.id).await
     }
 
+    /// Its trailers, deleted scenes, interviews and featurettes, by position then id.
+    async fn extras(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return extras after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return extras before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many extras from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many extras from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<ExtraConnection> {
+        crate::extra::extras_of(context, self.0.id, after, before, first, last).await
+    }
+
     /// When the item's metadata last changed.
     pub async fn updated_at(&self, _context: &Context<'_>) -> Result<DateTime> {
         Ok(self.0.updated_at.into())
@@ -956,6 +1011,20 @@ impl Episode {
     /// The fields an editor locked, which a metadata refresh leaves as they are.
     pub async fn locked_fields(&self, context: &Context<'_>) -> Result<Vec<ItemFieldType>> {
         crate::edit::locked_fields_of(context, self.0.id).await
+    }
+
+    /// Its trailers, deleted scenes, interviews and featurettes, by position then id.
+    async fn extras(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return extras after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return extras before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many extras from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many extras from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<ExtraConnection> {
+        crate::extra::extras_of(context, self.0.id, after, before, first, last).await
     }
 
     /// Where its intro, credits and commercials are, and the places the caller bookmarked in

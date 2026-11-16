@@ -1201,6 +1201,109 @@ Every populated column of a marker's `taggings` row, and where it goes:
 | `id` | 217,863 | not kept: our ids are our own |
 | `thumb_url` | 0 | — |
 
+### Extras: trailers, deleted scenes, featurettes
+
+**How the reference keeps them.** An extra is a metadata item of `metadata_type` 12 outside any
+library (`library_section_id` null), tied to the item it comes with by a `metadata_relations`
+row (`metadata_item_id` the item, `related_metadata_item_id` the extra), its kind in its packed
+`extra_data` (`ex:extraType=1`) and repeated as the relation's `relation_type`; the two
+disagree on 2 of 30,183 rows, and the item's is the one its lookup publishes. 30,260 clips in the
+reference library, 30,253 of them linked, every linked one an Internet Video Archive stream its
+metadata provider supplied (`guid` `iva://…`): by relation 24,659 trailers, 4,915 behind the
+scenes, 423 scenes, 186 interviews, and 70 of kind `-1`, which no client names and we leave out. Each has one
+version per bitrate (85,963 versions, 3 for most), one part per version without exception, its
+address packed in the part's `extra_data` (`at:key=/services/iva/assets/200752/video.mp4?…`),
+and a video and an audio track whose sizes are packed in the track's. An item has 50 extras at
+most. A local extra is the same row with a file: a part with a path and a full analysis.
+
+**The reference lists none of the provider's to an account without a subscription.** On 60
+items of the snapshot carrying 1 to 50 extras, `/extras` answered `size="0"` every time, and a
+lookup's `Extras` is empty; `/library/metadata/{extra}` answers each one, with
+`premium="1"` on its versions. A series still names its first one as `primaryExtraKey` (59 of 59
+series with a trailer); a film does not (0 of 180), and both carry `hasPremiumPrimaryExtra="1"`
+instead, and `hasPremiumExtras="1"` on 15 of the 19 with another kind. There is no paywall here:
+we list them, each entry as the reference looks it up, and name a film's first trailer as a
+series'. `hasPremiumPrimaryExtra` and `hasPremiumExtras` are not published.
+
+**The rules,** measured on the test libraries with local extras of every kind beside a film, a
+series, a season and an episode (every one removed afterwards):
+
+| Request | Reference | Here |
+| --- | --- | --- |
+| `GET /library/metadata/{id}/extras` | The item's own extras, by `index` then id (`order by related_items.index`, as its binary queries): a series lists its own, not its seasons', and a season or an episode its own | Same, an extra without a position first |
+| `extraType=1`, `5`, `1,2`, `99`, `trailer`; `type=12`; `sort=title`; `includeExtraTypes` | Change nothing | Same |
+| `X-Plex-Container-Start` and `-Size` together | A window, with `totalSize`, `offset` and the two paging headers; either alone ignored | Same |
+| A list of ids, an unknown number, `abc` | `404` | Same |
+| An extra's own extras | `400` | Same |
+| `?includeExtras=1` on a lookup | `Extras size="n"` last, after `Location`, on every item of the lookup, `size="0"` (long XML form) for an item without | Same |
+| `includeExtras=0`, `2`, `true`; on `/all`, `/children` | No `Extras` | Same |
+| `primaryExtraKey` | The first trailer's key, after the last attribute, on films and series in lookups, listings and `/search`; absent with no trailer, whatever other extras there are | Same |
+| `extrasPrefixCount=0…5` on `POST /playQueues` of a film with three trailers | Changes nothing | Same |
+
+The entry is a `clip`: `ratingKey`, `key`, `guid`, `type`, `title`, `titleSort` (when it differs),
+`summary` (always, empty without one), `index`, `year`, `primaryGuid` (the item's `guid`, on 246
+of 280 provider extras looked up, every one of an item Plex's agent matched, and on none of the
+local extras of an unmatched film), `subtype` (`trailer`, `deletedScene`, `interview`, `musicVideo`, `behindTheScenes`,
+`sceneOrSample`, `liveMusicVideo`, `lyricMusicVideo`, `concert`, `featurette`, `short`, `other`),
+`duration` (the first version's, as an item's: the reference publishes one on 63 of 264 trailers
+whose own row has none), `originallyAvailableAt`, `addedAt` and `updatedAt` (when set),
+`extraType` (1 to 12 in that order), then `Media` with its `Part` and `Stream` elements; the container carries `size` and the
+library identifier only. In a lookup's `Extras` the same, without `art`. A provider's version
+carries `optimizedForStreaming="1"` and `protocol` (its container) when its own flag is set,
+`premium="1"`, a part keyed by the provider's address with no `file`, and the part's own
+`optimizedForStreaming` when that is what the source set: 59,557 versions have the first, 26,406
+parts the second. Local extras number their parts `/library/parts/{id}/0/file.{ext}` as here.
+A track's language is named in the client's `X-Plex-Language`, and with none in itself
+(`Français`, `English`): ours falls back to English, as on items.
+
+**Compared field by field** (`/extras` of 150 imported items against the reference's lookup of
+each extra, artwork aside, `X-Plex-Language: en` on both): 264 extras, 33 more no longer on the
+reference; after the two rules above, the one difference left is `primaryGuid` on 34. What
+decides it is in no column of the snapshot — not the clip's, its media's or its relation's: we
+publish it on every extra of an item with a `plex://` guid.
+
+Where we differ: artwork (`thumb`, `art`, `Image`) is left out, as on items. A provider's part
+lists `key` before `duration`, where the reference writes it after `container`. A local extra's
+tracks keep codec, language, channels, bitrate and size from the import, not the rest of their
+analysis, which no extra of the reference library has. The provider's address is published as
+imported and answers `404` here: this server streams no provider's trailer, and the extras of
+the imported library are no more playable than its files. `/library/metadata/{extra}`, which the
+reference answers, is a `404`: an extra is no item.
+
+**Adding one.** `POST /library/metadata/{ids}/extras?url=&title=&extraType=`: the reference
+answers `404` for an unknown item, then `400` without `url` or `title` (an empty title passes)
+and for an extra, then `404` for every address measured, a remote `http://` file and a local
+`file://` one, adding nothing. Here the same checks, then `403`: the `url` is a path or an address
+to fetch, and no endpoint takes one from a client.
+
+**The official API** has `Movie.extras`, `Show.extras`, `Season.extras`, `Episode.extras` (a
+connection, by position then id), `Movie.primaryExtra` and `Show.primaryExtra`, and `Extra` as a
+node with `kind`, its item and `versions`, which are `MediaVersion`s: their files and tracks
+refetch like an item's, by whoever reads the item. `MediaFile.streamUrl` holds the provider's
+address. Nothing writes an extra.
+
+Every populated column of a linked extra's rows, and where it goes:
+
+| Column | Populated | Here |
+| --- | --: | --- |
+| `metadata_relations.metadata_item_id` | 30,253 | `extra.item_id`; an item not imported leaves it out |
+| `metadata_relations.relation_type` | 30,183 | the kind, where `extra_data` names none |
+| `metadata_items.id`, `guid`, `title`, `index` | 30,253 | `id`, `guid`, `title`, `position` |
+| `title_sort` | 30,253 | `title_sort`; differs from the title on 5,562 |
+| `extra_data` `ex:extraType` | 30,253 | `kind`; `-1` left out |
+| `duration`, `year`, `originally_available_at` | 21,451, 17,442, 17,442 | `duration_ms`, `year`, `released_on` |
+| `added_at`, `updated_at` | 29,390, 862 | `added_at` (0 when absent), `updated_at` |
+| `user_thumb_url`, `user_art_url` | 30,095, 5 | not kept: artwork is not served |
+| `media_item_count`, `created_at`, `hash`, `changed_at`, `resources_changed_at` | 30,253 to 25,703 | not kept: counters and stamps published nowhere |
+| `media_items` `width`, `height`, `display_aspect_ratio`, `duration`, `container`, codecs | 85,963 | `extra_media` |
+| `media_items.bitrate` | 82,052 | `bitrate` |
+| `media_items.optimized_for_streaming`, `extra_data` `ma:protocol` | 59,557 | `optimized_for_streaming`; the protocol is the container on every row |
+| `media_items.display_offset` | 38,085 | not kept: published nowhere |
+| `media_parts.id`, `duration` | 85,963 | `part_id`, the version's duration |
+| `media_parts.extra_data` `at:key`, `ma:optimizedForStreaming` | 85,963, 26,406 | `stream_url`, `file_optimized_for_streaming` |
+| `media_streams` `stream_type_id`, `index`, `codec`, `channels`, `bitrate`, `language` | 171,926 to 71,416 | `extra_track` |
+| `media_streams.extra_data` `ma:width`, `ma:height` | 85,963 | `width`, `height` |
+
 ### Collections
 
 Measured on the reference with collections of its test libraries 27 (Soul) and 28 (Bull, its

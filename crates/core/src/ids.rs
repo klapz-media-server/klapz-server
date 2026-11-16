@@ -89,6 +89,13 @@ numeric_id! {
 }
 
 numeric_id! {
+    /// Identifies an extra: a trailer, a deleted scene, an interview that comes with an item.
+    /// Numbered with the items, as on the reference, where an extra is a metadata item of its
+    /// own.
+    ExtraId
+}
+
+numeric_id! {
     /// Identifies a collection. Numbered with the items, as on the reference, where a
     /// collection is looked up at `/library/metadata/{id}` like any item.
     CollectionId

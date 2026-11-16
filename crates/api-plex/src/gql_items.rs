@@ -45,7 +45,7 @@ use crate::language::Language;
 ///
 /// `Markers` is selected only when a request carries `includeMarkers=1`, through the
 /// `$markers` variable each query spreading it declares, false by default: the reference
-/// publishes them on request alone.
+/// publishes them on request alone. `Extras` likewise, on `includeExtras=1` and `$extras`.
 ///
 /// `VersionFields` stops short of `files` so each query can select its own depth: a listing
 /// takes the files, a lookup takes the tracks inside them. The alternative — one fragment per
@@ -66,6 +66,8 @@ fragment Shared on Item {
   library { id title uuid kind }
   watchState { viewCount offsetMs lastViewedAt }
   userRating { value ratedAt }
+  ... on Movie { primaryExtra { id } }
+  ... on Show { primaryExtra { id } }
 }
 
 fragment VersionFields on MediaVersion {
@@ -291,6 +293,36 @@ fragment Markers on Item {
   }
   ... on Episode {
     markers(first: 500) @include(if: $markers) { edges { node { ...MarkerFields } } }
+  }
+}
+
+fragment Extras on Item {
+  ... on Movie { extras(first: 500) @include(if: $extras) { edges { node { ...ExtraFields } } } }
+  ... on Show { extras(first: 500) @include(if: $extras) { edges { node { ...ExtraFields } } } }
+  ... on Season { extras(first: 500) @include(if: $extras) { edges { node { ...ExtraFields } } } }
+  ... on Episode { extras(first: 500) @include(if: $extras) { edges { node { ...ExtraFields } } } }
+}
+
+fragment ExtraFields on Extra {
+  id
+  kind
+  guid
+  title
+  titleSort
+  summary
+  position
+  year
+  releasedOn
+  durationMs
+  addedAt
+  updatedAt
+  versions {
+    ...VersionFields
+    files {
+      ...FileFields
+      streamUrl
+      streams { ...TrackFields }
+    }
   }
 }
 
@@ -648,11 +680,12 @@ pub struct GqlForwardPageInfo {
 pub static ITEMS_BY_ID_QUERY: LazyLock<String> = LazyLock::new(|| {
     with_shared_fragments(
         r"
-query PlexItems($ids: [ID!]!, $markers: Boolean = false) {
+query PlexItems($ids: [ID!]!, $markers: Boolean = false, $extras: Boolean = false) {
   items: nodes(ids: $ids) {
     ...Shared
     ...References
     ...Markers
+    ...Extras
     ... on Item { lockedFields }
     ... on Movie {
       originalTitle
@@ -838,6 +871,39 @@ pub struct GqlItem {
     pub locked_fields: Vec<String>,
     /// Asked for on `includeMarkers=1` only.
     pub markers: GqlConnection<GqlMarker>,
+    /// A film's or a series' first trailer.
+    pub primary_extra: Option<GqlTrackRef>,
+    /// Asked for on `includeExtras=1` only, and then present even when empty.
+    pub extras: Option<GqlConnection<GqlExtra>>,
+}
+
+/// An extra, as `ExtraFields` selects it.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GqlExtra {
+    pub id: String,
+    /// `TRAILER`, `DELETED_SCENE`, `BEHIND_THE_SCENES`…
+    pub kind: String,
+    pub guid: String,
+    pub title: Option<String>,
+    pub title_sort: Option<String>,
+    pub summary: Option<String>,
+    pub position: Option<i32>,
+    pub year: Option<i32>,
+    #[serde(deserialize_with = "crate::gql::date_time::optional_calendar_date")]
+    pub released_on: Option<String>,
+    pub duration_ms: Option<i64>,
+    #[serde(deserialize_with = "crate::gql::date_time::optional_seconds")]
+    pub added_at: Option<i64>,
+    #[serde(deserialize_with = "crate::gql::date_time::optional_seconds")]
+    pub updated_at: Option<i64>,
+    pub versions: Vec<GqlVersion>,
+}
+
+impl GqlExtra {
+    pub fn database_id(&self) -> i64 {
+        database_id(&self.id)
+    }
 }
 
 /// A marker, as `MarkerFields` selects it.
@@ -1155,6 +1221,8 @@ pub struct GqlPart {
     pub streams: Vec<GqlStream>,
     pub selected_audio: Option<GqlTrackRef>,
     pub selected_subtitle: Option<GqlTrackRef>,
+    /// Where a provider streams an extra's file from; asked for on extras only.
+    pub stream_url: Option<String>,
 }
 
 impl GqlPart {

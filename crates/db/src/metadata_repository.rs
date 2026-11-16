@@ -11,6 +11,7 @@ use open_plex_core::closest::{ClosestTitles, TitleMatch};
 use open_plex_core::collection::{CollectionCondition, CollectionRef};
 use open_plex_core::common::CommonFields;
 use open_plex_core::edit::{ItemEdit, ItemField};
+use open_plex_core::extra::Extra;
 use open_plex_core::marker::{Marker, NewMarker};
 use open_plex_core::metadata::{
     first_character_bucket, AudioAnalysis, ColorDescription, CreditRef, DolbyVision, Edited,
@@ -26,7 +27,7 @@ use open_plex_core::search::{self, Rung};
 use open_plex_core::similar::TagOverlap;
 use open_plex_core::user_rating::RatingCondition;
 use open_plex_core::{
-    MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
+    ExtraId, MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
 };
 use sea_orm::sea_query::{Alias, CaseStatement, Expr, Func, IntoIden, Query, SimpleExpr};
 use sea_orm::QueryTrait;
@@ -42,6 +43,7 @@ use crate::entity::{
     item_title_key, item_title_word, media, media_part, media_stream, metadata_item, person,
     stream_dolby_vision, stream_loudness, tag, tag_word, user_rating, watch_state,
 };
+use crate::extra_store;
 use crate::item_order::{ItemOrder, SearchRanking};
 use crate::marker_store;
 use crate::write;
@@ -1286,7 +1288,20 @@ impl MetadataRepository for SqlMetadataRepository {
             .await
             .map_err(storage)?;
 
-        Ok(rows.into_iter().map(to_file).collect())
+        let mut files: Vec<MediaFile> = rows.into_iter().map(to_file).collect();
+        // Only versions the items' tables lack can be an extra's: a page of items costs no
+        // second query.
+        let unfound: Vec<MediaId> = versions
+            .iter()
+            .copied()
+            .filter(|version| !files.iter().any(|file| file.version_id == *version))
+            .collect();
+        files.extend(
+            extra_store::files(&self.connection, &unfound)
+                .await
+                .map_err(storage)?,
+        );
+        Ok(files)
     }
 
     async fn streams_for(&self, files: &[PartId]) -> Result<Vec<MediaStream>, MetadataError> {
@@ -1301,23 +1316,44 @@ impl MetadataRepository for SqlMetadataRepository {
             .await
             .map_err(storage)?;
 
-        self.with_analyses(rows).await
+        let mut streams = self.with_analyses(rows).await?;
+        let unfound: Vec<PartId> = files
+            .iter()
+            .copied()
+            .filter(|file| !streams.iter().any(|stream| stream.file_id == *file))
+            .collect();
+        streams.extend(
+            extra_store::streams(&self.connection, &unfound)
+                .await
+                .map_err(storage)?,
+        );
+        Ok(streams)
     }
 
     async fn version(&self, id: MediaId) -> Result<Option<MediaVersion>, MetadataError> {
-        Ok(media::Entity::find_by_id(id.get())
+        if let Some(row) = media::Entity::find_by_id(id.get())
             .one(&self.connection)
             .await
             .map_err(storage)?
-            .map(to_version))
+        {
+            return Ok(Some(to_version(row)));
+        }
+        extra_store::version(&self.connection, id)
+            .await
+            .map_err(storage)
     }
 
     async fn file(&self, id: PartId) -> Result<Option<MediaFile>, MetadataError> {
-        Ok(media_part::Entity::find_by_id(id.get())
+        if let Some(row) = media_part::Entity::find_by_id(id.get())
             .one(&self.connection)
             .await
             .map_err(storage)?
-            .map(to_file))
+        {
+            return Ok(Some(to_file(row)));
+        }
+        extra_store::file(&self.connection, id)
+            .await
+            .map_err(storage)
     }
 
     async fn stream(&self, id: StreamId) -> Result<Option<MediaStream>, MetadataError> {
@@ -1325,7 +1361,12 @@ impl MetadataRepository for SqlMetadataRepository {
             .all(&self.connection)
             .await
             .map_err(storage)?;
-        Ok(self.with_analyses(rows).await?.into_iter().next())
+        if let Some(stream) = self.with_analyses(rows).await?.into_iter().next() {
+            return Ok(Some(stream));
+        }
+        extra_store::stream(&self.connection, id)
+            .await
+            .map_err(storage)
     }
 
     async fn tags_in(
@@ -1861,6 +1902,27 @@ impl MetadataRepository for SqlMetadataRepository {
             .await
             .map_err(storage)
     }
+
+    async fn extras(&self, items: &[RatingKey]) -> Result<Vec<Extra>, MetadataError> {
+        extra_store::extras(&self.connection, items)
+            .await
+            .map_err(storage)
+    }
+
+    async fn extra(&self, id: ExtraId) -> Result<Option<Extra>, MetadataError> {
+        extra_store::extra(&self.connection, id)
+            .await
+            .map_err(storage)
+    }
+
+    async fn extra_versions(
+        &self,
+        extras: &[ExtraId],
+    ) -> Result<Vec<(ExtraId, MediaVersion)>, MetadataError> {
+        extra_store::versions(&self.connection, extras)
+            .await
+            .map_err(storage)
+    }
 }
 
 /// Selects a tag and its person, as [`TagRow`] reads them back. The person's name is
@@ -2234,7 +2296,7 @@ pub(crate) fn parse_kind(stored: &str) -> ItemKind {
     }
 }
 
-fn parse_stream_kind(stored: &str) -> StreamKind {
+pub(crate) fn parse_stream_kind(stored: &str) -> StreamKind {
     match stored {
         "audio" => StreamKind::Audio,
         "subtitle" => StreamKind::Subtitle,
@@ -2309,6 +2371,7 @@ fn to_file(row: media_part::Model) -> MediaFile {
             packet_length: row.packet_length,
             has_chapter_text_stream: row.has_chapter_text_stream,
         },
+        stream_url: None,
     }
 }
 

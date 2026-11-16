@@ -214,6 +214,10 @@ pub struct MetadataEntry {
     pub child_count: Option<u64>,
     pub added_at: i64,
     pub updated_at: i64,
+    /// A film's or a series' first trailer, which a client plays as its trailer. The last
+    /// attribute, wherever the item is listed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_extra_key: Option<String>,
     #[serde(rename = "Media", skip_serializing_if = "Vec::is_empty")]
     pub media: Vec<MediaEntry>,
     #[serde(rename = "Genre", skip_serializing_if = "Vec::is_empty")]
@@ -240,9 +244,12 @@ pub struct MetadataEntry {
     /// film's listing and its lookup.
     #[serde(rename = "Marker", skip_serializing_if = "Vec::is_empty")]
     pub marker: Vec<MarkerEntry>,
-    /// The locked fields, last of all, and on a lookup only: a listing carries none.
+    /// The locked fields, on a lookup only: a listing carries none.
     #[serde(rename = "Field", skip_serializing_if = "Vec::is_empty")]
     pub field: Vec<FieldEntry>,
+    /// On a lookup with `includeExtras=1` only, last of all, and then even when empty.
+    #[serde(rename = "Extras", skip_serializing_if = "Option::is_none")]
+    pub extras: Option<crate::extras::ExtrasEntry>,
 }
 
 /// A marker: an intro, credits or a commercial, the work's, or the caller's bookmark.
@@ -514,6 +521,13 @@ pub struct MediaEntry {
     pub has_64bit_offsets: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_profile: Option<String>,
+    /// How a provider serves an extra it streams: its container, when that is laid out for
+    /// streaming.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<String>,
+    /// Set on the versions of an extra a provider streams.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub premium: Option<bool>,
     #[serde(rename = "Part", skip_serializing_if = "Vec::is_empty")]
     pub part: Vec<PartEntry>,
 }
@@ -531,7 +545,9 @@ pub struct PartEntry {
     pub key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<i64>,
-    /// Absolute path on the server's filesystem, as Plex publishes it.
+    /// Absolute path on the server's filesystem, as Plex publishes it. Absent for an extra a
+    /// provider streams, which is on no disk.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub file: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<i64>,
@@ -997,6 +1013,8 @@ impl MetadataEntry {
             producer: TagEntry::all(&item.tags.producers, "producer"),
             marker: MarkerEntry::all(&item.markers),
             field: FieldEntry::all(&item.locked_fields),
+            primary_extra_key: crate::extras::primary_extra_key(item),
+            extras: crate::extras::ExtrasEntry::embedded(item, language),
         })
     }
 }
@@ -1025,7 +1043,7 @@ fn watched(state: Option<GqlWatchState>) -> (Option<u32>, Option<i64>, Option<i6
 }
 
 impl MediaEntry {
-    fn from_graphql(version: &GqlVersion, language: Language) -> Self {
+    pub(crate) fn from_graphql(version: &GqlVersion, language: Language) -> Self {
         let first_file = version.files.first();
         Self {
             id: version.database_id(),
@@ -1049,6 +1067,8 @@ impl MediaEntry {
             audio_profile: profile_of(version.primary_audio.as_ref()),
             has_64bit_offsets: first_file.and_then(|file| file.has_64bit_offsets),
             video_profile: profile_of(version.primary_video.as_ref()),
+            protocol: None,
+            premium: None,
             part: version
                 .files
                 .iter()

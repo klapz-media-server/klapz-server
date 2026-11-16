@@ -14,8 +14,8 @@
 //! corrupt references.
 //!
 //! Tags, people, external identifiers and ratings come next, see [`super::tags`]; then
-//! markers, see [`super::markers`]. Collections come last, since their members are items;
-//! see [`super::collections`].
+//! markers, see [`super::markers`]. Collections come next, since their members are items;
+//! see [`super::collections`]. Extras come last, see [`super::extras`].
 
 use std::collections::HashSet;
 
@@ -24,7 +24,7 @@ use open_plex_core::metadata::{self, ItemKind};
 use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 
 use super::analysis::Analysis;
-use super::{collections, markers, source_error, tags, ImportError, PlexRow, SOURCE_PAGE};
+use super::{collections, extras, markers, source_error, tags, ImportError, PlexRow, SOURCE_PAGE};
 use crate::entity::{
     media, media_part, media_stream, metadata_item, stream_dolby_vision, stream_loudness,
 };
@@ -57,6 +57,7 @@ pub struct MetadataSummary {
     pub tags: tags::TagSummary,
     pub markers: markers::MarkerSummary,
     pub collections: collections::CollectionSummary,
+    pub extras: extras::ExtraSummary,
     /// Rows skipped because the parent they reference does not exist.
     pub orphans: usize,
 }
@@ -132,6 +133,14 @@ pub async fn import(
         smart_skipped = summary.collections.smart_skipped,
         orphan_memberships = summary.collections.orphan_memberships,
         "imported collections"
+    );
+    summary.extras = extras::import(destination, source, source_path, &item_ids).await?;
+    tracing::info!(
+        extras = summary.extras.extras,
+        versions = summary.extras.versions,
+        tracks = summary.extras.tracks,
+        skipped = summary.extras.skipped,
+        "imported extras"
     );
 
     Ok(summary)

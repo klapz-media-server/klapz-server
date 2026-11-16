@@ -182,6 +182,7 @@ fn tracks(
             size_bytes: None,
             duration_ms: None,
             layout: FileLayout::default(),
+            stream_url: None,
         });
         let audio = kind == StreamKind::Audio;
         media.2.push(MediaStream {

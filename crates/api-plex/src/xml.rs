@@ -72,7 +72,11 @@ fn write_element(out: &mut String, name: &str, fields: &Map<String, Value>, long
 
 fn write_child(out: &mut String, key: &str, value: &Value) {
     match value {
-        Value::Object(fields) => write_element(out, element_name(key, fields), fields, false),
+        // An item's `Extras` keeps the long form when empty, as measured on a film and a
+        // series with none.
+        Value::Object(fields) => {
+            write_element(out, element_name(key, fields), fields, key == "Extras");
+        }
         Value::Array(items) => {
             for item in items {
                 if let Value::Object(fields) = item {

@@ -397,6 +397,10 @@ async fn items_by_id(
         Name::new("markers"),
         Value::Boolean(crate::markers::requested(&pairs)),
     );
+    variables.insert(
+        Name::new("extras"),
+        Value::Boolean(crate::extras::requested(&pairs)),
+    );
 
     let data: ItemsByIdData = gql::execute(&state.schema, &ITEMS_BY_ID_QUERY, variables).await?;
     // A number no item carries may be a collection's: the two share the numbering.

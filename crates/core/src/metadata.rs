@@ -1,8 +1,9 @@
 //! Library contents: items, their media, and the queries bindings run against them.
 
 use crate::edit::{ItemEdit, ItemField};
+use crate::extra::Extra;
 use crate::ids::{
-    MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
+    ExtraId, MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
 };
 use crate::marker::{Marker, NewMarker};
 use crate::page::{Cursor, CursorKey, Direction, Page, Window};
@@ -133,10 +134,15 @@ pub struct MediaFile {
     /// Published by both surfaces, as Plex does. What that does *not* change: playback still
     /// resolves a file from its id and never from a client-supplied path. A path the server
     /// hands out is reference data; a path a client hands back is an attack surface.
+    ///
+    /// Empty for a file a provider streams, which is on no disk of the server's.
     pub path: String,
     pub size_bytes: Option<i64>,
     pub duration_ms: Option<i64>,
     pub layout: FileLayout,
+    /// Where a provider streams the file from: the trailers the reference's metadata provider
+    /// supplies. `None` for a file of the library.
+    pub stream_url: Option<String>,
 }
 
 /// How a file is laid out, as its analysis found it.
@@ -1181,11 +1187,13 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
 
     async fn versions_for(&self, items: &[RatingKey]) -> Result<Vec<MediaVersion>, MetadataError>;
 
+    /// The files of these versions, an item's or an extra's.
     async fn files_for(&self, versions: &[MediaId]) -> Result<Vec<MediaFile>, MetadataError>;
 
+    /// The tracks of these files, an item's or an extra's.
     async fn streams_for(&self, files: &[PartId]) -> Result<Vec<MediaStream>, MetadataError>;
 
-    /// One encoding by id, for a Relay refetch.
+    /// One encoding by id, an item's or an extra's, for a Relay refetch.
     async fn version(&self, id: MediaId) -> Result<Option<MediaVersion>, MetadataError>;
 
     /// One file by id, for a Relay refetch and for resolving a path before playback.
@@ -1312,6 +1320,22 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
         &self,
         query: &ItemQuery,
     ) -> Result<crate::common::CommonFields, MetadataError>;
+
+    /// The extras of these items, each item's by position then id, an extra without a
+    /// position first.
+    ///
+    /// Unwindowed: bounded by the items, 50 extras at most on one of the reference's.
+    async fn extras(&self, items: &[RatingKey]) -> Result<Vec<Extra>, MetadataError>;
+
+    /// One extra, for a Relay refetch.
+    async fn extra(&self, id: ExtraId) -> Result<Option<Extra>, MetadataError>;
+
+    /// The versions of these extras, each extra's by id. Their files and tracks come through
+    /// [`files_for`](Self::files_for) and [`streams_for`](Self::streams_for), as an item's do.
+    async fn extra_versions(
+        &self,
+        extras: &[ExtraId],
+    ) -> Result<Vec<(ExtraId, MediaVersion)>, MetadataError>;
 }
 
 /// An item after an edit, with its locks.
@@ -1574,6 +1598,21 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
         query: &ItemQuery,
     ) -> Result<crate::common::CommonFields, MetadataError> {
         (**self).common_fields(query).await
+    }
+
+    async fn extras(&self, items: &[RatingKey]) -> Result<Vec<Extra>, MetadataError> {
+        (**self).extras(items).await
+    }
+
+    async fn extra(&self, id: ExtraId) -> Result<Option<Extra>, MetadataError> {
+        (**self).extra(id).await
+    }
+
+    async fn extra_versions(
+        &self,
+        extras: &[ExtraId],
+    ) -> Result<Vec<(ExtraId, MediaVersion)>, MetadataError> {
+        (**self).extra_versions(extras).await
     }
 }
 

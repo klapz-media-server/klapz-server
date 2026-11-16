@@ -105,6 +105,8 @@ pub enum Node {
     Person(PersonObject),
     /// An item's intro, credits or commercial, or a place the caller bookmarked.
     Marker(crate::marker::MarkerObject),
+    /// A trailer, a deleted scene or a featurette that comes with an item.
+    Extra(crate::extra::ExtraObject),
 }
 
 /// Default page size when the client requests neither end of a range.
@@ -195,6 +197,9 @@ impl Query {
             crate::marker::MARKER_TYPE => Ok(crate::marker::marker_node(context, global.key)
                 .await?
                 .map(Node::Marker)),
+            crate::extra::EXTRA_TYPE => Ok(crate::extra::extra_node(context, global.key)
+                .await?
+                .map(Node::Extra)),
             crate::playlist::PLAYLIST_TYPE => {
                 Ok(crate::playlist::playlist_node(context, global.key)
                     .await?
@@ -843,6 +848,14 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
         ))
         .data(DataLoader::new(
             crate::marker::MarkersLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            crate::extra::ExtrasLoader::new(Arc::clone(&metadata)),
+            tokio::spawn,
+        ))
+        .data(DataLoader::new(
+            crate::extra::ExtraVersionsLoader::new(Arc::clone(&metadata)),
             tokio::spawn,
         ))
         .data(DataLoader::new(

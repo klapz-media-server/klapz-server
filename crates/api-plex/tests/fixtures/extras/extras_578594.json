@@ -1,0 +1,980 @@
+{
+  "MediaContainer": {
+    "size": 10,
+    "identifier": "com.plexapp.plugins.library",
+    "mediaTagPrefix": "/system/bundle/media/flags/",
+    "mediaTagVersion": 1791210760,
+    "Metadata": [
+      {
+        "ratingKey": "578595",
+        "key": "/library/metadata/578595",
+        "guid": "file:///D:/Media/Extras%20Probe%20(2019)/Extras%20Probe%20(2019)-trailer.mkv",
+        "type": "clip",
+        "title": "Extras Probe (2019)",
+        "summary": "",
+        "index": 1,
+        "thumb": "/library/metadata/578595/thumb/1794839064",
+        "art": "/library/metadata/578594/art/1794839065",
+        "subtype": "trailer",
+        "duration": 3023,
+        "addedAt": 1794839064,
+        "updatedAt": 1794839064,
+        "extraType": 1,
+        "Media": [
+          {
+            "id": 5567608,
+            "duration": 3023,
+            "bitrate": 108,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572823,
+                "key": "/library/parts/5572823/0/file.mkv",
+                "duration": 3023,
+                "file": "D:\\Media\\Extras Probe (2019)\\Extras Probe (2019)-trailer.mkv",
+                "size": 40868,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265815,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 108,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265816,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Extras Probe (2019)",
+            "type": "coverPoster",
+            "url": "/library/metadata/578595/thumb/1794839064"
+          }
+        ]
+      },
+      {
+        "ratingKey": "578596",
+        "key": "/library/metadata/578596",
+        "guid": "file:///D:/Media/Extras%20Probe%20(2019)/Trailers/Probe%20Trailer%20A.mkv",
+        "type": "clip",
+        "title": "Probe Trailer A",
+        "summary": "",
+        "index": 2,
+        "thumb": "/library/metadata/578596/thumb/1794839064",
+        "art": "/library/metadata/578594/art/1794839065",
+        "subtype": "trailer",
+        "duration": 5023,
+        "addedAt": 1794839064,
+        "updatedAt": 1794839064,
+        "extraType": 1,
+        "Media": [
+          {
+            "id": 5567609,
+            "duration": 5023,
+            "bitrate": 104,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572824,
+                "key": "/library/parts/5572824/0/file.mkv",
+                "duration": 5023,
+                "file": "D:\\Media\\Extras Probe (2019)\\Trailers\\Probe Trailer A.mkv",
+                "size": 65514,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265817,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 104,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265818,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Probe Trailer A",
+            "type": "coverPoster",
+            "url": "/library/metadata/578596/thumb/1794839064"
+          }
+        ]
+      },
+      {
+        "ratingKey": "578597",
+        "key": "/library/metadata/578597",
+        "guid": "file:///D:/Media/Extras%20Probe%20(2019)/Trailers/Probe%20Trailer%20B.mkv",
+        "type": "clip",
+        "title": "Probe Trailer B",
+        "summary": "",
+        "index": 3,
+        "thumb": "/library/metadata/578597/thumb/1794839064",
+        "art": "/library/metadata/578594/art/1794839065",
+        "subtype": "trailer",
+        "duration": 4023,
+        "addedAt": 1794839064,
+        "updatedAt": 1794839064,
+        "extraType": 1,
+        "Media": [
+          {
+            "id": 5567610,
+            "duration": 4023,
+            "bitrate": 106,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572825,
+                "key": "/library/parts/5572825/0/file.mkv",
+                "duration": 4023,
+                "file": "D:\\Media\\Extras Probe (2019)\\Trailers\\Probe Trailer B.mkv",
+                "size": 53224,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265819,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 106,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265820,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Probe Trailer B",
+            "type": "coverPoster",
+            "url": "/library/metadata/578597/thumb/1794839064"
+          }
+        ]
+      },
+      {
+        "ratingKey": "578598",
+        "key": "/library/metadata/578598",
+        "guid": "file:///D:/Media/Extras%20Probe%20(2019)/Deleted%20Scenes/Cut%20Scene.mkv",
+        "type": "clip",
+        "title": "Cut Scene",
+        "summary": "",
+        "index": 4,
+        "thumb": "/library/metadata/578598/thumb/1794839065",
+        "art": "/library/metadata/578594/art/1794839065",
+        "subtype": "deletedScene",
+        "duration": 7023,
+        "addedAt": 1794839064,
+        "updatedAt": 1794839065,
+        "extraType": 2,
+        "Media": [
+          {
+            "id": 5567611,
+            "duration": 7023,
+            "bitrate": 103,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572826,
+                "key": "/library/parts/5572826/0/file.mkv",
+                "duration": 7023,
+                "file": "D:\\Media\\Extras Probe (2019)\\Deleted Scenes\\Cut Scene.mkv",
+                "size": 90032,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265821,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 103,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265822,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Cut Scene",
+            "type": "coverPoster",
+            "url": "/library/metadata/578598/thumb/1794839065"
+          }
+        ]
+      },
+      {
+        "ratingKey": "578599",
+        "key": "/library/metadata/578599",
+        "guid": "file:///D:/Media/Extras%20Probe%20(2019)/Interviews/Director%20Talk.mkv",
+        "type": "clip",
+        "title": "Director Talk",
+        "summary": "",
+        "index": 5,
+        "thumb": "/library/metadata/578599/thumb/1794839065",
+        "art": "/library/metadata/578594/art/1794839065",
+        "subtype": "interview",
+        "duration": 8023,
+        "addedAt": 1794839064,
+        "updatedAt": 1794839065,
+        "extraType": 3,
+        "Media": [
+          {
+            "id": 5567612,
+            "duration": 8023,
+            "bitrate": 102,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572827,
+                "key": "/library/parts/5572827/0/file.mkv",
+                "duration": 8023,
+                "file": "D:\\Media\\Extras Probe (2019)\\Interviews\\Director Talk.mkv",
+                "size": 102230,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265823,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 102,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265824,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Director Talk",
+            "type": "coverPoster",
+            "url": "/library/metadata/578599/thumb/1794839065"
+          }
+        ]
+      },
+      {
+        "ratingKey": "578600",
+        "key": "/library/metadata/578600",
+        "guid": "file:///D:/Media/Extras%20Probe%20(2019)/Behind%20The%20Scenes/Making%20Of.mkv",
+        "type": "clip",
+        "title": "Making Of",
+        "summary": "",
+        "index": 6,
+        "thumb": "/library/metadata/578600/thumb/1794839065",
+        "art": "/library/metadata/578594/art/1794839065",
+        "subtype": "behindTheScenes",
+        "duration": 6023,
+        "addedAt": 1794839064,
+        "updatedAt": 1794839065,
+        "extraType": 5,
+        "Media": [
+          {
+            "id": 5567613,
+            "duration": 6023,
+            "bitrate": 103,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572828,
+                "key": "/library/parts/5572828/0/file.mkv",
+                "duration": 6023,
+                "file": "D:\\Media\\Extras Probe (2019)\\Behind The Scenes\\Making Of.mkv",
+                "size": 77810,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265825,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 103,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265826,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Making Of",
+            "type": "coverPoster",
+            "url": "/library/metadata/578600/thumb/1794839065"
+          }
+        ]
+      },
+      {
+        "ratingKey": "578601",
+        "key": "/library/metadata/578601",
+        "guid": "file:///D:/Media/Extras%20Probe%20(2019)/Scenes/Opening%20Scene.mkv",
+        "type": "clip",
+        "title": "Opening",
+        "summary": "",
+        "index": 7,
+        "thumb": "/library/metadata/578601/thumb/1794839065",
+        "art": "/library/metadata/578594/art/1794839065",
+        "subtype": "sceneOrSample",
+        "duration": 10023,
+        "addedAt": 1794839064,
+        "updatedAt": 1794839065,
+        "extraType": 6,
+        "Media": [
+          {
+            "id": 5567614,
+            "duration": 10023,
+            "bitrate": 101,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572829,
+                "key": "/library/parts/5572829/0/file.mkv",
+                "duration": 10023,
+                "file": "D:\\Media\\Extras Probe (2019)\\Scenes\\Opening Scene.mkv",
+                "size": 126904,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265827,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 101,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265828,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Opening",
+            "type": "coverPoster",
+            "url": "/library/metadata/578601/thumb/1794839065"
+          }
+        ]
+      },
+      {
+        "ratingKey": "578602",
+        "key": "/library/metadata/578602",
+        "guid": "file:///D:/Media/Extras%20Probe%20(2019)/Featurettes/Feature%20One.mkv",
+        "type": "clip",
+        "title": "Feature One",
+        "summary": "",
+        "index": 8,
+        "thumb": "/library/metadata/578602/thumb/1794839065",
+        "art": "/library/metadata/578594/art/1794839065",
+        "subtype": "featurette",
+        "duration": 9023,
+        "addedAt": 1794839064,
+        "updatedAt": 1794839065,
+        "extraType": 10,
+        "Media": [
+          {
+            "id": 5567615,
+            "duration": 9023,
+            "bitrate": 102,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572830,
+                "key": "/library/parts/5572830/0/file.mkv",
+                "duration": 9023,
+                "file": "D:\\Media\\Extras Probe (2019)\\Featurettes\\Feature One.mkv",
+                "size": 114740,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265829,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 102,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265830,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Feature One",
+            "type": "coverPoster",
+            "url": "/library/metadata/578602/thumb/1794839065"
+          }
+        ]
+      },
+      {
+        "ratingKey": "578603",
+        "key": "/library/metadata/578603",
+        "guid": "file:///D:/Media/Extras%20Probe%20(2019)/Shorts/Short%20One.mkv",
+        "type": "clip",
+        "title": "Short One",
+        "summary": "",
+        "index": 9,
+        "thumb": "/library/metadata/578603/thumb/1794839065",
+        "art": "/library/metadata/578594/art/1794839065",
+        "subtype": "short",
+        "duration": 11023,
+        "addedAt": 1794839064,
+        "updatedAt": 1794839065,
+        "extraType": 11,
+        "Media": [
+          {
+            "id": 5567616,
+            "duration": 11023,
+            "bitrate": 103,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572831,
+                "key": "/library/parts/5572831/0/file.mkv",
+                "duration": 11023,
+                "file": "D:\\Media\\Extras Probe (2019)\\Shorts\\Short One.mkv",
+                "size": 141938,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265831,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 103,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265832,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Short One",
+            "type": "coverPoster",
+            "url": "/library/metadata/578603/thumb/1794839065"
+          }
+        ]
+      },
+      {
+        "ratingKey": "578604",
+        "key": "/library/metadata/578604",
+        "guid": "file:///D:/Media/Extras%20Probe%20(2019)/Other/Other%20One.mkv",
+        "type": "clip",
+        "title": "Other One",
+        "summary": "",
+        "index": 10,
+        "thumb": "/library/metadata/578604/thumb/1794839065",
+        "art": "/library/metadata/578594/art/1794839065",
+        "subtype": "other",
+        "duration": 12023,
+        "addedAt": 1794839064,
+        "updatedAt": 1794839065,
+        "extraType": 12,
+        "Media": [
+          {
+            "id": 5567617,
+            "duration": 12023,
+            "bitrate": 103,
+            "width": 320,
+            "height": 180,
+            "aspectRatio": 1.78,
+            "audioChannels": 1,
+            "audioCodec": "aac",
+            "videoCodec": "h264",
+            "videoResolution": "sd",
+            "container": "mkv",
+            "videoFrameRate": "24p",
+            "audioProfile": "lc",
+            "videoProfile": "high",
+            "Part": [
+              {
+                "id": 5572832,
+                "key": "/library/parts/5572832/0/file.mkv",
+                "duration": 12023,
+                "file": "D:\\Media\\Extras Probe (2019)\\Other\\Other One.mkv",
+                "size": 154467,
+                "audioProfile": "lc",
+                "container": "mkv",
+                "videoProfile": "high",
+                "Stream": [
+                  {
+                    "id": 12265833,
+                    "streamType": 1,
+                    "codec": "h264",
+                    "index": 0,
+                    "bitrate": 103,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "bitDepth": 8,
+                    "chromaLocation": "left",
+                    "chromaSubsampling": "4:2:0",
+                    "codedHeight": 192,
+                    "codedWidth": 320,
+                    "colorRange": "tv",
+                    "frameRate": 24.0,
+                    "hasScalingMatrix": false,
+                    "height": 180,
+                    "level": 12,
+                    "profile": "high",
+                    "refFrames": 4,
+                    "scanType": "progressive",
+                    "width": 320,
+                    "displayTitle": "SD",
+                    "extendedDisplayTitle": "SD (H.264)"
+                  },
+                  {
+                    "id": 12265834,
+                    "streamType": 2,
+                    "selected": true,
+                    "codec": "aac",
+                    "index": 1,
+                    "channels": 1,
+                    "language": "English",
+                    "languageTag": "en",
+                    "languageCode": "eng",
+                    "audioChannelLayout": "mono",
+                    "profile": "lc",
+                    "samplingRate": 44100,
+                    "displayTitle": "English (AAC Mono)",
+                    "extendedDisplayTitle": "English (AAC Mono)"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "Image": [
+          {
+            "alt": "Other One",
+            "type": "coverPoster",
+            "url": "/library/metadata/578604/thumb/1794839065"
+          }
+        ]
+      }
+    ]
+  }
+}

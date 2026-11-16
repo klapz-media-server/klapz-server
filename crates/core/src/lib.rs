@@ -12,6 +12,7 @@ pub mod common;
 pub mod completion;
 pub mod credited;
 pub mod edit;
+pub mod extra;
 pub mod history;
 pub mod identity;
 pub mod ids;
@@ -41,8 +42,8 @@ pub use identity::{
     now_epoch, ServerCapabilities, ServerFeatures, ServerIdentity, TranscoderCapabilities,
 };
 pub use ids::{
-    CollectionId, HistoryId, MarkerId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId,
-    RatingKey, SectionId, StreamId, TagId, UserId,
+    CollectionId, ExtraId, HistoryId, MarkerId, MediaId, PartId, PersonId, PlaylistEntryId,
+    PlaylistId, RatingKey, SectionId, StreamId, TagId, UserId,
 };
 pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot};
 pub use metadata::{

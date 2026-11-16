@@ -195,13 +195,20 @@ impl File {
         self.0.position
     }
 
-    /// Absolute path on the server's filesystem.
+    /// Absolute path on the server's filesystem. Empty for a file a provider streams.
     ///
     /// Reference data: it tells a caller where the media actually lives, which is what makes
     /// the library auditable from outside. It is not an input — playback addresses a file by
     /// `id`, and no endpoint accepts a path from a client.
     async fn path(&self) -> &str {
         &self.0.path
+    }
+
+    /// Where a metadata provider streams the file from, relative to the server that
+    /// imported it: the trailers the reference's provider supplied, as
+    /// `/services/iva/assets/…`. Null for a file of the library. This server streams none.
+    async fn stream_url(&self) -> Option<&str> {
+        self.0.stream_url.as_deref()
     }
 
     /// Last segment of `path`, without its directories.

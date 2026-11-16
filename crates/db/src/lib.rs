@@ -9,6 +9,7 @@ pub mod collection_repository;
 mod common_fields;
 mod completion;
 pub mod entity;
+mod extra_store;
 pub mod import;
 mod item_order;
 mod marker_store;

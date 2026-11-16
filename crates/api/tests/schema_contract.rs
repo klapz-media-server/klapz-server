@@ -1478,6 +1478,7 @@ fn streamable(engine: Arc<open_plex_core::testing::StubStreams>) -> ApiSchema {
         size_bytes: None,
         duration_ms: Some(6_031_568),
         layout: open_plex_core::metadata::FileLayout::default(),
+        stream_url: None,
     };
     let tracks = vec![
         track(920, StreamKind::Video, 0, "h264"),

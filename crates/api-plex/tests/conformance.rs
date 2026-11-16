@@ -470,6 +470,36 @@ async fn capabilities_encode_booleans_per_format() {
 // ---------------------------------------------------------------------------------------
 
 /// A catalog with one film library and one series library, each with contents.
+/// Avatar's DTS track.
+fn avatar_audio() -> MediaStream {
+    MediaStream {
+        id: StreamId::new(920),
+        file_id: PartId::new(910),
+        kind: StreamKind::Audio,
+        position: 1,
+        codec: Some("dca".to_owned()),
+        // The source stores BCP 47 tags.
+        language: Some("fr".to_owned()),
+        channels: Some(6),
+        bitrate: Some(1_536_000),
+        is_default: true,
+        is_forced: false,
+        external_path: None,
+        title: None,
+        stream_identifier: None,
+        profile: Some("dts".to_owned()),
+        bit_depth: None,
+        traits: TrackTraits::default(),
+        video: None,
+        audio: Some(AudioAnalysis {
+            sampling_rate: Some(48_000),
+            channel_layout: Some("5.1(side)".to_owned()),
+            loudness: None,
+        }),
+        subtitle: None,
+    }
+}
+
 fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
     let films = section_with_uuid(
         4,
@@ -540,32 +570,7 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
         size_bytes: Some(8_534_980_661),
         duration_ms: Some(9_890_048),
         layout: FileLayout::default(),
-    };
-    let stream = MediaStream {
-        id: StreamId::new(920),
-        file_id: PartId::new(910),
-        kind: StreamKind::Audio,
-        position: 1,
-        codec: Some("dca".to_owned()),
-        // The source stores BCP 47 tags.
-        language: Some("fr".to_owned()),
-        channels: Some(6),
-        bitrate: Some(1_536_000),
-        is_default: true,
-        is_forced: false,
-        external_path: None,
-        title: None,
-        stream_identifier: None,
-        profile: Some("dts".to_owned()),
-        bit_depth: None,
-        traits: TrackTraits::default(),
-        video: None,
-        audio: Some(AudioAnalysis {
-            sampling_rate: Some(48_000),
-            channel_layout: Some("5.1(side)".to_owned()),
-            loudness: None,
-        }),
-        subtitle: None,
+        stream_url: None,
     };
 
     let (external_ids, ratings) = references();
@@ -574,7 +579,7 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
         InMemoryMetadata::new(vec![
             avatar, barbarella, show, season, episode, half_loop, untitled, hello,
         ])
-        .with_media(vec![version], vec![file], vec![stream])
+        .with_media(vec![version], vec![file], vec![avatar_audio()])
         .with_tags(tags())
         .with_references(external_ids, ratings),
     )
