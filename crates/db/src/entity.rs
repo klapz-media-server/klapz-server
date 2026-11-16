@@ -40,6 +40,7 @@ pub mod tag_word;
 pub mod track_choice;
 pub mod user_extension;
 pub mod user_password;
+pub mod user_rating;
 pub mod users;
 pub mod viewing;
 pub mod viewing_history;

@@ -7,6 +7,7 @@ use open_plex_core::metadata::{
     TrackField as DomainTrackField,
 };
 use open_plex_core::page::{Direction, MAX_ITEMS};
+use open_plex_core::user_rating::RatingCondition;
 use open_plex_core::{CollectionId, RatingKey, UserId};
 
 use crate::tag::{TagFilterError, TagFilterInput};
@@ -107,6 +108,8 @@ pub enum ItemOrder {
     Height,
     /// By when the caller last played the item. A caller without watch state has played nothing.
     LastViewedAt,
+    /// By the caller's rating of the item. An item it has not rated has no value, and a caller without watch state has rated nothing.
+    UserRating,
     /// By when a series' episodes were added: a series ranks by its first episode ascending, by its latest descending.
     EpisodeAddedAt,
     /// Shuffled, by the `seed` argument: the same seed gives the same order, so pages follow one another.
@@ -125,6 +128,7 @@ impl ItemOrder {
             Self::Duration => ItemSort::Duration,
             Self::Height => ItemSort::Height,
             Self::LastViewedAt => ItemSort::LastViewedAt(viewer),
+            Self::UserRating => ItemSort::UserRating(viewer),
             Self::EpisodeAddedAt => ItemSort::EpisodeAddedAt,
             Self::Random => ItemSort::Shuffled(seed),
         }
@@ -228,6 +232,51 @@ pub struct ItemFilterInput {
     pub last_viewed_from: Option<DateTime>,
     /// Keep only items the caller last played at or before this time.
     pub last_viewed_to: Option<DateTime>,
+    /// Keep only items by the caller's rating of them.
+    pub user_rating: Option<UserRatingFilterInput>,
+}
+
+/// Keeps items by the caller's rating, out of ten. Every field given must hold. Each
+/// comparison keeps rated items only: an item the caller has not rated, or whose rating it
+/// cleared, has no value to compare.
+#[derive(Debug, Clone, Default, InputObject)]
+pub struct UserRatingFilterInput {
+    /// Keep items rated one of these, or, with `unrated` true, not rated at all.
+    pub any_of: Option<Vec<f64>>,
+    /// True keeps the items not rated, with those rated one of `anyOf` when it is given; false
+    /// keeps the items rated.
+    pub unrated: Option<bool>,
+    /// Keep items rated, and none of these.
+    pub none_of: Option<Vec<f64>>,
+    /// Keep items rated this or more.
+    pub at_least: Option<f64>,
+    /// Keep items rated more than this.
+    pub above: Option<f64>,
+    /// Keep items rated this or less.
+    pub at_most: Option<f64>,
+    /// Keep items rated less than this.
+    pub below: Option<f64>,
+}
+
+impl TryFrom<UserRatingFilterInput> for RatingCondition {
+    type Error = FilterError;
+
+    fn try_from(input: UserRatingFilterInput) -> Result<Self, Self::Error> {
+        let any_of = input.any_of.unwrap_or_default();
+        let none_of = input.none_of.unwrap_or_default();
+        if any_of.len() > TagCondition::MAX_VALUES || none_of.len() > TagCondition::MAX_VALUES {
+            return Err(FilterError::RatingValueCount);
+        }
+        Ok(Self {
+            any_of,
+            unrated: input.unrated,
+            none_of,
+            at_least: input.at_least,
+            above: input.above,
+            at_most: input.at_most,
+            below: input.below,
+        })
+    }
 }
 
 /// Keeps items in at least one of the collections named. Name them by id, by the number
@@ -363,6 +412,11 @@ pub enum FilterError {
     TrackValueCount,
     #[error("an item filter names between one and {MAX_ITEMS} items")]
     ItemCount,
+    #[error(
+        "a rating filter names at most {} values of each kind",
+        TagCondition::MAX_VALUES
+    )]
+    RatingValueCount,
     #[error("not an item id")]
     NotAnItem,
 }
@@ -459,6 +513,10 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
             episodes_started: input.any_episode_started,
             last_viewed_from: input.last_viewed_from.map(DateTime::unix_seconds),
             last_viewed_to: input.last_viewed_to.map(DateTime::unix_seconds),
+            user_rating: input
+                .user_rating
+                .map(RatingCondition::try_from)
+                .transpose()?,
             // The caller's, which only the resolver knows.
             viewer: None,
         })
@@ -549,6 +607,12 @@ mod tests {
             any_episode_started: Some(false),
             last_viewed_from: Some(DateTime::from_unix_seconds(1_700_000_000)),
             last_viewed_to: None,
+            user_rating: Some(UserRatingFilterInput {
+                any_of: Some(vec![8.0]),
+                unrated: Some(true),
+                below: Some(9.5),
+                ..UserRatingFilterInput::default()
+            }),
         };
         let filter = ItemFilter::try_from(input).unwrap();
         assert_eq!(filter.kind, Some(ItemKind::Show));
@@ -578,6 +642,15 @@ mod tests {
         assert_eq!(filter.episodes_started, Some(false));
         assert_eq!(filter.last_viewed_from, Some(1_700_000_000));
         assert_eq!(filter.ids, vec![RatingKey::new(46_616)]);
+        assert_eq!(
+            filter.user_rating,
+            Some(RatingCondition {
+                any_of: vec![8.0],
+                unrated: Some(true),
+                below: Some(9.5),
+                ..RatingCondition::default()
+            })
+        );
         assert_eq!(
             filter.tracks,
             vec![TrackCondition {

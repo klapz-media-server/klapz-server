@@ -65,6 +65,7 @@ fragment Shared on Item {
   updatedAt
   library { id title uuid kind }
   watchState { viewCount offsetMs lastViewedAt }
+  userRating { value ratedAt }
 }
 
 fragment VersionFields on MediaVersion {
@@ -824,6 +825,8 @@ pub struct GqlItem {
     pub season_stats: Option<GqlSeasonStats>,
     /// The caller's: null for a caller with none.
     pub watch_state: Option<GqlWatchState>,
+    /// The caller's: null when it has not rated the work.
+    pub user_rating: Option<GqlUserRating>,
     pub versions: Vec<GqlVersion>,
     pub tags: GqlItemTags,
     /// The collections it is in: the first one's title in a listing, all of them in a
@@ -1076,6 +1079,14 @@ pub struct GqlShowStats {
     pub episode_count: u64,
     #[serde(default)]
     pub watched_episode_count: u64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlUserRating {
+    pub value: f64,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
+    pub rated_at: i64,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]

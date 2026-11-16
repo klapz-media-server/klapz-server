@@ -3017,3 +3017,103 @@ async fn an_add_refuses_what_a_marker_cannot_be() {
     .await;
     assert_eq!(on_a_series["userErrors"][0]["code"], "NOT_PLAYABLE");
 }
+
+async fn rate(schema: &ApiSchema, request: async_graphql::Request) -> Value {
+    let response = schema.execute(request).await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    serde_json::to_value(response.data).unwrap()["rateItem"].clone()
+}
+
+fn rate_item(id: &str, rating: &str, rated_at: Option<&str>) -> String {
+    let rated_at = rated_at.map_or_else(String::new, |at| format!(r#", ratedAt: "{at}""#));
+    format!(
+        r#"mutation {{ rateItem(input: {{ clientMutationId: "m", itemId: "{id}", rating: {rating}{rated_at} }}) {{
+            clientMutationId applied item {{ id }} userRating {{ value ratedAt }} userErrors {{ field code }}
+        }} }}"#
+    )
+}
+
+#[tokio::test]
+async fn a_rating_is_the_callers_and_a_later_change_wins() {
+    let schema = watchable();
+    let series = item_id(577_987);
+    let rated = rate(
+        &schema,
+        as_owner(rate_item(&series, "7.26", Some("2026-11-01T10:00:00Z"))),
+    )
+    .await;
+    assert_eq!(rated["clientMutationId"], "m");
+    assert_eq!(rated["applied"], true);
+    assert_eq!(rated["item"]["id"], series.as_str());
+    // The measurement, not the one decimal Plex shows.
+    assert_eq!(
+        rated["userRating"],
+        serde_json::json!({ "value": 7.26, "ratedAt": "2026-11-01T10:00:00Z" })
+    );
+
+    // An older change leaves the rating as it is.
+    let older = rate(
+        &schema,
+        as_owner(rate_item(&series, "4", Some("2026-10-01T10:00:00Z"))),
+    )
+    .await;
+    assert_eq!(older["applied"], false);
+    assert_eq!(older["userRating"]["value"], 7.26);
+
+    // Nothing adds up: the season below holds no rating of its own.
+    let read = |id: String| {
+        format!(r#"{{ node(id: "{id}") {{ ... on Item {{ userRating {{ value }} }} }} }}"#)
+    };
+    let season = run_on(&schema, &read(item_id(577_988))).await;
+    assert_eq!(season["node"]["userRating"], Value::Null);
+    // Another user has rated nothing.
+    let theirs = schema
+        .execute(as_user_with_id(
+            &GlobalId::encode("User", 9),
+            &read(item_id(577_986)),
+        ))
+        .await;
+    let theirs = serde_json::to_value(theirs.data).unwrap();
+    assert!(
+        theirs["node"].is_null() || theirs["node"]["userRating"].is_null(),
+        "{theirs}"
+    );
+
+    let cleared = rate(&schema, as_owner(rate_item(&series, "null", None))).await;
+    assert_eq!(cleared["applied"], true);
+    assert_eq!(cleared["userRating"], Value::Null);
+    let again = rate(&schema, as_owner(rate_item(&series, "null", None))).await;
+    assert_eq!(again["applied"], false);
+}
+
+#[tokio::test]
+async fn a_rating_off_the_scale_in_the_future_or_of_nothing_is_refused() {
+    let schema = watchable();
+    let soul = item_id(577_986);
+    let code = |payload: &Value| payload["userErrors"][0]["code"].clone();
+    let off = rate(&schema, as_owner(rate_item(&soul, "11", None))).await;
+    assert_eq!(code(&off), "OFF_THE_SCALE");
+    assert_eq!(
+        off["userErrors"][0]["field"],
+        serde_json::json!(["input", "rating"])
+    );
+    assert_eq!(off["applied"], false);
+    let future = rate(
+        &schema,
+        as_owner(rate_item(&soul, "5", Some("2999-01-01T00:00:00Z"))),
+    )
+    .await;
+    assert_eq!(code(&future), "IN_THE_FUTURE");
+    // The value and the date before the item, as the reference checks them.
+    let unknown = item_id(999);
+    let both = rate(&schema, as_owner(rate_item(&unknown, "-1", None))).await;
+    assert_eq!(code(&both), "OFF_THE_SCALE");
+    let missing = rate(&schema, as_owner(rate_item(&unknown, "5", None))).await;
+    assert_eq!(code(&missing), "ITEM_NOT_FOUND");
+    let unread = rate(
+        &schema,
+        as_user_with_id(&GlobalId::encode("User", 9), &rate_item(&soul, "5", None)),
+    )
+    .await;
+    assert_eq!(code(&unread), "ITEM_NOT_FOUND");
+}

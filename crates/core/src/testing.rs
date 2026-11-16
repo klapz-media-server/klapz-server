@@ -330,11 +330,15 @@ impl InMemoryMetadata {
                     .is_none_or(|from| item.audience_rating.is_some_and(|rating| rating >= from))
             })
             // This fake holds no watch state, so it answers as storage does a caller with
-            // none: nothing watched, nothing in progress, no episode begun.
+            // none: nothing watched, nothing in progress, no episode begun, nothing rated.
             .filter(|_| {
                 filter.watched != Some(true)
                     && filter.in_progress != Some(true)
                     && filter.episodes_started != Some(true)
+                    && filter
+                        .user_rating
+                        .as_ref()
+                        .is_none_or(|condition| condition.holds(None))
             })
             .filter(|item| {
                 // Every item with an episode below it has one unwatched.
@@ -2396,6 +2400,7 @@ pub struct InMemoryWatch {
     viewings: std::sync::Mutex<Vec<(crate::ids::UserId, String, crate::watch::Viewing, i64)>>,
     choices: std::sync::Mutex<Vec<(crate::ids::UserId, PartId, crate::tracks::TrackChoice)>>,
     history: std::sync::Mutex<Vec<crate::history::HistoryEntry>>,
+    ratings: std::sync::Mutex<Vec<(crate::ids::UserId, String, crate::user_rating::RatingRecord)>>,
 }
 
 impl InMemoryWatch {
@@ -2406,6 +2411,7 @@ impl InMemoryWatch {
             viewings: std::sync::Mutex::new(Vec::new()),
             choices: std::sync::Mutex::new(Vec::new()),
             history: std::sync::Mutex::new(Vec::new()),
+            ratings: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -2654,6 +2660,30 @@ impl crate::watch::WatchRepository for InMemoryWatch {
         if !choice.is_empty() {
             choices.push((viewer, file, choice));
         }
+        Ok(())
+    }
+
+    async fn ratings(
+        &self,
+        viewer: crate::ids::UserId,
+        guids: &[String],
+    ) -> Result<Vec<(String, crate::user_rating::RatingRecord)>, crate::watch::WatchError> {
+        Ok(Self::lock(&self.ratings)
+            .iter()
+            .filter(|(who, guid, _)| *who == viewer && guids.contains(guid))
+            .map(|(_, guid, record)| (guid.clone(), *record))
+            .collect())
+    }
+
+    async fn save_rating(
+        &self,
+        viewer: crate::ids::UserId,
+        guid: &str,
+        record: crate::user_rating::RatingRecord,
+    ) -> Result<(), crate::watch::WatchError> {
+        let mut ratings = Self::lock(&self.ratings);
+        ratings.retain(|(who, held, _)| !(*who == viewer && held == guid));
+        ratings.push((viewer, guid.to_owned(), record));
         Ok(())
     }
 }

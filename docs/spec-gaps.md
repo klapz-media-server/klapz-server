@@ -225,6 +225,60 @@ Where ours differ:
 - **History is not imported.** The reference keeps 458,724 watch rows for 283 accounts, and
   the importer copies no account, so nothing ties them to a user here.
 
+### A viewer's rating, `/:/rate`
+
+Measured on the reference's test libraries 27 and 28 — a film, a series, its season and two
+episodes — each rating read back on the item and in its row of `metadata_item_settings`, and
+every rating cleared again afterwards.
+
+- **The rating is the viewer's and the work's.** It lives beside the watch state, one row per
+  account and `guid` with a `rating` column; of the works the reference's owner rated, ten are
+  held by several libraries and rated once for all of them. Every kind can be rated — film,
+  series, season, episode — and **nothing adds up**: a series rated 4 over episodes rated 8
+  says 4, and a series not rated says nothing whatever its episodes are.
+- **`rating` is kept as sent and published to one decimal**: 7.26 shows as 7.3, 7.25 as 7.3,
+  7.24 as 7.2, 0.04 as 0.0 (the row holds a 32-bit float). XML writes `userRating="8.0"`. Plex
+  Web sends 1 to 10 — a star is 2 — and `-1` for no stars.
+- **`rating=-1` clears** the rating, `-1.0` alike, and records when (`pv:unratedAt` in the row's
+  `extra_data`); both `userRating` and `lastRatedAt` then leave the item. Clearing a rating
+  that is not there changes nothing.
+- **`ratedAt` dates the change**, now when absent, and **a change older than the last one is
+  ignored**, answered `200` all the same: a rating dated before the one held, or before the
+  rating was cleared, leaves it as it is; the same second replaces it. Never rated, any date is
+  taken, and `lastRatedAt` is that date.
+- **Refusals**: `400` without `identifier`, `key` or `rating`, for a `rating` that is no
+  number (`abc`, empty, `3,5`), and for a `ratedAt` that is no integer, `0`, or in the future —
+  all before anything else, an unknown key included. Then `404` for any `identifier` but
+  `com.plexapp.plugins.library` (empty and `tv.plex.provider.metadata` included), and for an
+  unknown or non-positive `key`. A `key` that is no number, or a list, fails with a `500`.
+  Success is an empty `200` typed `text/html`, on `PUT`, `GET`, `POST` and `DELETE` alike.
+- **On an item**, `userRating` follows `audienceRating` and comes before `viewCount` and
+  `viewOffset`; `lastRatedAt` follows `lastViewedAt`, before `year`. Both are on lookups,
+  listings, `/children`, `/allLeaves`, `/grandchildren`, the recently-added lists, Continue
+  Watching, the library shelves and the search shelves — wherever the item is.
+- **`userRating` filters and sorts `/all`**, though the `Meta` menus offer neither: the type's
+  `Field` list names it (`userRating`, `show.userRating`, `episode.userRating`, subtype
+  `rating`), and Plex Web's table view sorts its rating column by it. `=` takes a comma list in
+  which `-1` stands for no rating (`=8,-1` lists the episode rated 8 and the three unrated);
+  `!=` a comma list; `>=` and `<=` are inclusive, `>>=` and `<<=` strict. **Every comparison but
+  that `-1` leaves the unrated out**: `!=8`, `<=8`, `>=-1` and `!=-1` list rated items only.
+  Equality is exact: `=8.0` matches 8, `=7.99999` nothing. The sort puts the unrated first
+  ascending and last descending, ties in the same order both ways.
+
+Where ours differ:
+
+- **A rating off the scale is refused** with a `400`. The reference keeps 11 and 100 and
+  publishes them, takes `0x5` as 5, `1e1` as 10, stores `inf` (published `null`) and `nan`, and
+  on a negative other than `-1` nulls the rating while keeping `lastRatedAt`. The spec bounds
+  `rating` to 0–10, and so do we.
+- **A negative `ratedAt` is a `400`**, like `0`; the reference takes it as a very old change.
+- **A `key` that is no number is a `404`**, as for a scrobble, where the reference fails `500`.
+- **A second `userRating=` or `!=`, or the same comparison twice, answers `501`** rather than
+  being combined; the reference takes `=8&=8`. `userRating=abc` is a `501` where the reference
+  fails `500`. The `show.` and `episode.` forms the `Field` list names are not read.
+- **Ratings are not imported**, for the reason the watch state is not: the importer copies no
+  account. The reference holds 942 ratings for its accounts, all whole numbers from 1 to 10.
+
 ### Viewing history
 
 `/status/sessions/history/all`, `/status/sessions/history/{historyId}` and its `DELETE`,

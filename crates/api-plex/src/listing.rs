@@ -20,11 +20,13 @@ use open_plex_api::tag::TAG_TYPE;
 use open_plex_api::{date_time, GlobalId};
 use open_plex_core::edit::CalendarDate;
 use open_plex_core::metadata::TagCondition;
+use open_plex_core::user_rating::RatingCondition;
 
 /// Filters the reference advertises, captured from its `Meta/Type/Filter` declarations for
-/// films, series and episodes, and the fields its shelves filter on without advertising them
+/// films, series and episodes, the fields its shelves filter on without advertising them
 /// (`audienceRating`, `lastViewedAt`, `originallyAvailableAt`, `viewCount`, `viewOffset`,
-/// `viewedOrInProgressLeafCount`).
+/// `viewedOrInProgressLeafCount`), and `userRating`, which it publishes as a `Field` of its
+/// advanced filters and honors on `/all`.
 ///
 /// Membership in this list is what separates "a filter we have not implemented" from "a
 /// parameter that is none of our business". Every entry we cannot translate is refused.
@@ -60,6 +62,7 @@ const KNOWN_FILTERS: &[&str] = &[
     "unmatched",
     "unwatched",
     "unwatchedLeaves",
+    "userRating",
     "videoCodec",
     "viewCount",
     "viewOffset",
@@ -105,6 +108,7 @@ pub const SORTS: &[(&str, &str)] = &[
     ("duration", "DURATION"),
     ("mediaHeight", "HEIGHT"),
     ("lastViewedAt", "LAST_VIEWED_AT"),
+    ("userRating", "USER_RATING"),
     ("episode.addedAt", "EPISODE_ADDED_AT"),
     ("random", "RANDOM"),
 ];
@@ -186,6 +190,10 @@ enum Operator {
     Differs,
     AtLeast,
     AtMost,
+    /// `>>=`, strictly greater.
+    Above,
+    /// `<<=`, strictly less.
+    Below,
 }
 
 /// Splits `year>=` into the field and its operator.
@@ -197,6 +205,8 @@ fn split_operator(key: &str) -> (&str, Option<Operator>) {
     for (suffix, operator) in [
         (">=", Operator::AtLeast),
         ("<=", Operator::AtMost),
+        (">>", Operator::Above),
+        ("<<", Operator::Below),
         (">", Operator::AtLeast),
         ("<", Operator::AtMost),
         ("!", Operator::Differs),
@@ -276,6 +286,8 @@ pub struct Filters {
     pub last_viewed_from: Option<i64>,
     pub last_viewed_to: Option<i64>,
     pub audience_rating_from: Option<f64>,
+    /// Every `userRating` parameter, gathered into one condition.
+    pub user_rating: Option<RatingCondition>,
 }
 
 /// One tag parameter: `genre=38,Crime` is one filter with an id and a name.
@@ -466,6 +478,9 @@ impl Filters {
         {
             set("audienceRatingFrom", Value::Number(rating));
         }
+        if let Some(condition) = &self.user_rating {
+            set("userRating", rating_to_graphql(condition));
+        }
         for (name, value) in [
             ("watched", self.watched),
             ("inProgress", self.in_progress),
@@ -567,6 +582,14 @@ pub fn parse(pairs: &[(String, String)]) -> Result<ListingRequest, ListingError>
                 values,
                 negated: operator == Operator::Differs,
             });
+            continue;
+        }
+        if field == "userRating" {
+            let condition = request
+                .filters
+                .user_rating
+                .get_or_insert_with(Default::default);
+            add_rating_condition(condition, operator, value)?;
             continue;
         }
         if (field, operator) == ("collection", Operator::Equals) {
@@ -686,6 +709,95 @@ fn apply(
         _ => return Err(unsupported()),
     }
     Ok(())
+}
+
+/// Adds one `userRating` parameter to the condition, by the rules measured on the reference:
+/// `=` takes a comma list in which `-1` stands for no rating, `!=` a comma list, and the four
+/// comparisons one value each. Every value but that `-1` keeps rated items only. One parameter
+/// of each operator: a second is refused rather than guessed at.
+fn add_rating_condition(
+    condition: &mut RatingCondition,
+    operator: Operator,
+    value: &str,
+) -> Result<(), ListingError> {
+    let unsupported = || ListingError::UnsupportedFilter("userRating".to_owned());
+    let values = value
+        .split(',')
+        .map(|part| part.parse::<f64>().ok().filter(|value| value.is_finite()))
+        .collect::<Option<Vec<f64>>>()
+        .ok_or_else(unsupported)?;
+    if values.len() > TagCondition::MAX_VALUES {
+        return Err(ListingError::TooManyValues {
+            field: "userRating".to_owned(),
+            count: values.len(),
+        });
+    }
+    let bound = |slot: &mut Option<f64>| match values.as_slice() {
+        [value] if slot.is_none() => {
+            *slot = Some(*value);
+            Ok(())
+        }
+        _ => Err(unsupported()),
+    };
+    match operator {
+        Operator::Equals if condition.any_of.is_empty() && condition.unrated.is_none() => {
+            for value in &values {
+                #[allow(
+                    clippy::float_cmp,
+                    reason = "-1 is a sentinel sent exactly, never a computed value"
+                )]
+                if *value == -1.0 {
+                    condition.unrated = Some(true);
+                } else {
+                    condition.any_of.push(*value);
+                }
+            }
+            Ok(())
+        }
+        Operator::Differs if condition.none_of.is_empty() => {
+            condition.none_of = values;
+            Ok(())
+        }
+        Operator::AtLeast => bound(&mut condition.at_least),
+        Operator::Above => bound(&mut condition.above),
+        Operator::AtMost => bound(&mut condition.at_most),
+        Operator::Below => bound(&mut condition.below),
+        Operator::Equals | Operator::Differs => Err(unsupported()),
+    }
+}
+
+/// The condition as the schema's `UserRatingFilterInput`.
+fn rating_to_graphql(condition: &RatingCondition) -> Value {
+    let numbers = |values: &[f64]| {
+        Value::List(
+            values
+                .iter()
+                .filter_map(|value| async_graphql::Number::from_f64(*value))
+                .map(Value::Number)
+                .collect(),
+        )
+    };
+    let mut fields = async_graphql::indexmap::IndexMap::new();
+    if !condition.any_of.is_empty() {
+        fields.insert(Name::new("anyOf"), numbers(&condition.any_of));
+    }
+    if let Some(unrated) = condition.unrated {
+        fields.insert(Name::new("unrated"), Value::Boolean(unrated));
+    }
+    if !condition.none_of.is_empty() {
+        fields.insert(Name::new("noneOf"), numbers(&condition.none_of));
+    }
+    for (name, bound) in [
+        ("atLeast", condition.at_least),
+        ("above", condition.above),
+        ("atMost", condition.at_most),
+        ("below", condition.below),
+    ] {
+        if let Some(number) = bound.and_then(async_graphql::Number::from_f64) {
+            fields.insert(Name::new(name), Value::Number(number));
+        }
+    }
+    Value::Object(fields)
 }
 
 const SECONDS_PER_DAY: i64 = 86_400;
@@ -1009,6 +1121,9 @@ mod tests {
             sort("episode.addedAt:desc").unwrap(),
             ("EPISODE_ADDED_AT", true)
         );
+        // Not in the reference's menus, but honored there, and what Plex Web's table view
+        // sorts its rating column by.
+        assert_eq!(sort("userRating:desc").unwrap(), ("USER_RATING", true));
         // Refused rather than answered in title order: a field we do not order by, one
         // spelt in another case, and a list of tiebreakers.
         for value in [
@@ -1308,5 +1423,81 @@ mod tests {
         // Nothing set and no kind: null rather than an empty object, so the schema applies
         // its own default.
         assert_eq!(Filters::default().to_graphql(None), Value::Null);
+    }
+
+    fn rating(query: &[(&str, &str)]) -> RatingCondition {
+        parse(&pairs(query))
+            .expect("honored")
+            .filters
+            .user_rating
+            .expect("a rating condition")
+    }
+
+    #[test]
+    fn reads_the_rating_filter_as_the_reference_does() {
+        // `=` is a comma list where -1 stands for no rating: `=8,-1` lists the episode rated 8
+        // and the three unrated.
+        assert_eq!(
+            rating(&[("userRating", "8,-1")]),
+            RatingCondition {
+                any_of: vec![8.0],
+                unrated: Some(true),
+                ..RatingCondition::default()
+            }
+        );
+        // `!=-1` is kept as it is: no rating equals -1, and an exclusion keeps rated items.
+        assert_eq!(
+            rating(&[("userRating!", "7,-1")]),
+            RatingCondition {
+                none_of: vec![7.0, -1.0],
+                ..RatingCondition::default()
+            }
+        );
+        // A raw `>=` arrives as `userRating>` and is inclusive; `>>=` and `<<=` are strict.
+        assert_eq!(
+            rating(&[
+                ("userRating>", "5"),
+                ("userRating<<", "9"),
+                ("userRating>>", "1")
+            ]),
+            RatingCondition {
+                at_least: Some(5.0),
+                below: Some(9.0),
+                above: Some(1.0),
+                ..RatingCondition::default()
+            }
+        );
+    }
+
+    #[test]
+    fn a_rating_filter_we_cannot_read_is_refused() {
+        // The reference fails with a `500` on `abc` and on an empty value.
+        for query in [
+            [("userRating", "abc"), ("type", "4")],
+            [("userRating", ""), ("type", "4")],
+            [("userRating>", "4,5"), ("type", "4")],
+            [("userRating", "nan"), ("type", "4")],
+            [("userRating", "8"), ("userRating", "8")],
+            [("userRating<", "8"), ("userRating<", "9")],
+        ] {
+            assert!(
+                matches!(
+                    parse(&pairs(&query)),
+                    Err(ListingError::UnsupportedFilter(field)) if field == "userRating"
+                ),
+                "{query:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rating_filter_renders_as_the_schema_input() {
+        let filters = parse(&pairs(&[("userRating", "-1"), ("userRating<", "6.5")]))
+            .unwrap()
+            .filters;
+        assert_eq!(
+            filters.to_graphql(None).to_string(),
+            "{userRating: {unrated: true, atMost: 6.5}}"
+        );
     }
 }

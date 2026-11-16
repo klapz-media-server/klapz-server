@@ -24,6 +24,7 @@ use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
 use open_plex_core::search::{self, Rung};
 use open_plex_core::similar::TagOverlap;
+use open_plex_core::user_rating::RatingCondition;
 use open_plex_core::{
     MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
 };
@@ -39,7 +40,7 @@ use crate::closest_store;
 use crate::entity::{
     collection, collection_entry, item_external_id, item_field_lock, item_rating, item_tag,
     item_title_key, item_title_word, media, media_part, media_stream, metadata_item, person,
-    stream_dolby_vision, stream_loudness, tag, tag_word, watch_state,
+    stream_dolby_vision, stream_loudness, tag, tag_word, user_rating, watch_state,
 };
 use crate::item_order::{ItemOrder, SearchRanking};
 use crate::marker_store;
@@ -142,6 +143,9 @@ impl SqlMetadataRepository {
             select = select.filter(in_collection(condition));
         }
         select = select.filter(watch_conditions(filter));
+        if let Some(condition) = &filter.user_rating {
+            select = select.filter(rating_condition(filter.viewer, condition));
+        }
         if let Some(from) = filter.released_from {
             select = select.filter(metadata_item::Column::ReleasedOn.gte(from));
         }
@@ -743,6 +747,67 @@ fn watch_conditions(filter: &ItemFilter) -> Condition {
         ));
     }
     condition
+}
+
+/// The viewer's rating of the item in the row, NULL when it has none: never rated, cleared,
+/// or a caller with no watch state.
+pub(crate) fn viewer_rating(viewer: Option<UserId>) -> SimpleExpr {
+    let Some(viewer) = viewer else {
+        return Expr::value(Option::<f64>::None);
+    };
+    SimpleExpr::SubQuery(
+        None,
+        Box::new(
+            Query::select()
+                .column(user_rating::Column::Rating)
+                .from(user_rating::Entity)
+                .and_where(
+                    Expr::col((user_rating::Entity, user_rating::Column::Viewer)).eq(viewer.get()),
+                )
+                .and_where(
+                    Expr::col((user_rating::Entity, user_rating::Column::Guid))
+                        .equals((metadata_item::Entity, metadata_item::Column::Guid)),
+                )
+                .to_owned()
+                .into_sub_query_statement(),
+        ),
+    )
+}
+
+/// [`RatingCondition::holds`], in SQL. A comparison with NULL is never true, which is what
+/// keeps the unrated out of every exclusion and bound.
+fn rating_condition(viewer: Option<UserId>, condition: &RatingCondition) -> Condition {
+    let rating = || Expr::expr(viewer_rating(viewer));
+    let mut all = Condition::all();
+    if !condition.any_of.is_empty() || condition.unrated == Some(true) {
+        let mut any = Condition::any();
+        if !condition.any_of.is_empty() {
+            any = any.add(rating().is_in(condition.any_of.iter().copied()));
+        }
+        if condition.unrated == Some(true) {
+            any = any.add(rating().is_null());
+        }
+        all = all.add(any);
+    }
+    if condition.unrated == Some(false) || condition.requires_rating() {
+        all = all.add(rating().is_not_null());
+    }
+    if !condition.none_of.is_empty() {
+        all = all.add(rating().is_not_in(condition.none_of.iter().copied()));
+    }
+    if let Some(bound) = condition.at_least {
+        all = all.add(rating().gte(bound));
+    }
+    if let Some(bound) = condition.above {
+        all = all.add(rating().gt(bound));
+    }
+    if let Some(bound) = condition.at_most {
+        all = all.add(rating().lte(bound));
+    }
+    if let Some(bound) = condition.below {
+        all = all.add(rating().lt(bound));
+    }
+    all
 }
 
 /// `condition`, or its negation.

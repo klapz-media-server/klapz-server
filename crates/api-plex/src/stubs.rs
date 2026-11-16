@@ -57,11 +57,10 @@ fn stub(methods: u8) -> MethodRouter<PlexState> {
     router
 }
 
-/// The 73 stub operations, across 60 paths.
+/// The 72 stub operations, across 59 paths.
 const STUBS: &[(&str, u8)] = &[
     ("/:/eventsource/notifications", verb::GET),
     ("/:/prefs/get", verb::GET),
-    ("/:/rate", verb::PUT),
     ("/:/websocket/notifications", verb::GET),
     ("/activities/{activityId}", verb::DELETE),
     ("/butler", verb::GET | verb::POST | verb::DELETE),
@@ -72,34 +71,16 @@ const STUBS: &[(&str, u8)] = &[
     ("/downloadQueue/{queueId}/item/{itemId}/decision", verb::GET),
     ("/downloadQueue/{queueId}/item/{itemId}/media", verb::GET),
     ("/downloadQueue/{queueId}/items", verb::GET),
-    (
-        "/downloadQueue/{queueId}/items/{itemId}",
-        verb::GET | verb::DELETE,
-    ),
-    (
-        "/downloadQueue/{queueId}/items/{itemId}/restart",
-        verb::POST,
-    ),
+    ("/downloadQueue/{queueId}/items/{itemId}", verb::GET | verb::DELETE),
+    ("/downloadQueue/{queueId}/items/{itemId}/restart", verb::POST),
     ("/hubs/items", verb::GET),
-    (
-        "/hubs/sections/{sectionId}/manage",
-        verb::GET | verb::POST | verb::DELETE,
-    ),
+    ("/hubs/sections/{sectionId}/manage", verb::GET | verb::POST | verb::DELETE),
     ("/hubs/sections/{sectionId}/manage/move", verb::PUT),
-    (
-        "/hubs/sections/{sectionId}/manage/{identifier}",
-        verb::PUT | verb::DELETE,
-    ),
+    ("/hubs/sections/{sectionId}/manage/{identifier}", verb::PUT | verb::DELETE),
     ("/library/all", verb::GET),
     ("/library/file", verb::POST),
-    (
-        "/library/media/{mediaId}/chapterImages/{chapter}",
-        verb::GET,
-    ),
-    (
-        "/library/metadata/augmentations/{augmentationId}",
-        verb::GET,
-    ),
+    ("/library/media/{mediaId}/chapterImages/{chapter}", verb::GET),
+    ("/library/metadata/augmentations/{augmentationId}", verb::GET),
     ("/library/metadata/{ids}/extras", verb::GET | verb::POST),
     ("/library/metadata/{ids}/file", verb::GET),
     ("/library/metadata/{ids}/index", verb::PUT),
@@ -108,25 +89,16 @@ const STUBS: &[(&str, u8)] = &[
     ("/library/metadata/{ids}/subtitles", verb::GET),
     ("/library/metadata/{ids}/tree", verb::GET),
     ("/library/metadata/{ids}/users/top", verb::GET),
-    (
-        "/library/metadata/{ids}/{element}",
-        verb::POST | verb::PUT | verb::DELETE,
-    ),
+    ("/library/metadata/{ids}/{element}", verb::POST | verb::PUT | verb::DELETE),
     ("/library/metadata/{ids}/{element}/{timestamp}", verb::GET),
     ("/library/randomArtwork", verb::GET),
     ("/library/sections/prefs", verb::GET),
-    (
-        "/library/sections/{sectionId}",
-        verb::GET | verb::PUT | verb::DELETE,
-    ),
+    ("/library/sections/{sectionId}", verb::GET | verb::PUT | verb::DELETE),
     ("/library/sections/{sectionId}/allLeaves", verb::GET),
     ("/library/sections/{sectionId}/arts", verb::GET),
     ("/library/sections/{sectionId}/categories", verb::GET),
     ("/library/sections/{sectionId}/cluster", verb::GET),
-    (
-        "/library/sections/{sectionId}/composite/{updatedAt}",
-        verb::GET,
-    ),
+    ("/library/sections/{sectionId}/composite/{updatedAt}", verb::GET),
     ("/library/sections/{sectionId}/computePath", verb::GET),
     ("/library/sections/{sectionId}/emptyTrash", verb::PUT),
     ("/library/sections/{sectionId}/firstCharacters", verb::GET),
@@ -145,17 +117,16 @@ const STUBS: &[(&str, u8)] = &[
     ("/services/ultrablur/image", verb::GET),
     ("/updater/apply", verb::PUT),
     ("/{transcodeType}/:/transcode/universal/decision", verb::GET),
-    (
-        "/{transcodeType}/:/transcode/universal/subtitles",
-        verb::GET,
-    ),
+    ("/{transcodeType}/:/transcode/universal/subtitles", verb::GET),
 ];
 
-/// Adds 73 stub operations across 60 paths.
+/// Adds 72 stub operations across 59 paths.
 pub fn add_routes(router: Router<PlexState>) -> Router<PlexState> {
-    STUBS.iter().fold(router, |router, (path, methods)| {
-        router.route(path, stub(*methods))
-    })
+    STUBS
+        .iter()
+        .fold(router, |router, (path, methods)| {
+            router.route(path, stub(*methods))
+        })
 }
 
 // Not routable as written, and needing real handlers regardless:

@@ -1410,6 +1410,11 @@ type Episode implements Item & Node {
 	"""
 	watchState: WatchState
 	"""
+	The caller's rating of the work, shared by every copy of it. Null when it has not
+	rated it, and without a caller.
+	"""
+	userRating: UserRating
+	"""
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
@@ -2066,6 +2071,10 @@ interface Item {
 	"""
 	watchState: WatchState
 	"""
+	The caller's rating of the work, shared by every copy of it. Null when it has not rated it, and without a caller.
+	"""
+	userRating: UserRating
+	"""
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
@@ -2369,6 +2378,10 @@ input ItemFilterInput {
 	Keep only items the caller last played at or before this time.
 	"""
 	lastViewedTo: DateTime
+	"""
+	Keep only items by the caller's rating of them.
+	"""
+	userRating: UserRatingFilterInput
 }
 
 """
@@ -2414,6 +2427,10 @@ enum ItemOrder {
 	By when the caller last played the item. A caller without watch state has played nothing.
 	"""
 	LAST_VIEWED_AT
+	"""
+	By the caller's rating of the item. An item it has not rated has no value, and a caller without watch state has rated nothing.
+	"""
+	USER_RATING
 	"""
 	By when a series' episodes were added: a series ranks by its first episode ascending, by its latest descending.
 	"""
@@ -3706,6 +3723,11 @@ type Movie implements Item & Node {
 	"""
 	watchState: WatchState
 	"""
+	The caller's rating of the work, shared by every copy of it. Null when it has not
+	rated it, and without a caller.
+	"""
+	userRating: UserRating
+	"""
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
@@ -4036,6 +4058,17 @@ type Mutation {
 		"""
 		positionMs: Int!
 	): WatchState!
+	"""
+	Rates a film, a series, a season or an episode for the caller, or clears its rating.
+	The rating is the work's, shared by every copy of it, and nothing adds it up: a series
+	is rated on its own, whatever its episodes are.
+	"""
+	rateItem(
+		"""
+		The rating to give.
+		"""
+		input: RateItemInput!
+	): RateItemPayload!
 	"""
 	Deletes one viewing from a history: the caller's own, or anyone's for an owner.
 	What was watched stays as it is, as on the reference.
@@ -5832,6 +5865,95 @@ type Query {
 	): LibraryConnection!
 }
 
+"""
+Why `rateItem` refused.
+"""
+enum RateItemErrorCode {
+	"""
+	No item the caller may read has this id.
+	"""
+	ITEM_NOT_FOUND
+	"""
+	The rating is not from 0 to 10.
+	"""
+	OFF_THE_SCALE
+	"""
+	The change is dated after the present.
+	"""
+	IN_THE_FUTURE
+}
+
+"""
+A rating to give a film, a series, a season or an episode, or to clear.
+"""
+input RateItemInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The item, as returned in its `id`. The rating is the work's: every copy of it shares
+	it.
+	"""
+	itemId: ID!
+	"""
+	From 0 to 10. Null, or absent, clears the caller's rating.
+	"""
+	rating: Float
+	"""
+	When the change was made, for a client that rated while it could not reach the server.
+	Now when absent. A change dated before the caller's last one is ignored, so that a late
+	one does not undo a newer rating or clearing.
+	"""
+	ratedAt: DateTime
+}
+
+"""
+What `rateItem` did.
+"""
+type RateItemPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The item rated, unless the request was refused.
+	"""
+	item: Item
+	"""
+	The caller's rating after the change: null when cleared, or when the request was
+	refused.
+	"""
+	userRating: UserRating
+	"""
+	Whether the change was made. False when it was older than the caller's last one, when
+	there was no rating to clear, and when the request was refused.
+	"""
+	applied: Boolean!
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [RateItemUserError!]!
+}
+
+"""
+A request `rateItem` refused, and where in the input the reason lies.
+"""
+type RateItemUserError {
+	"""
+	The path to the input field at fault.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person to read.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program to branch on.
+	"""
+	code: RateItemErrorCode!
+}
+
 type Rating {
 	"""
 	The provider: `imdb`, `rottentomatoes` or `themoviedb` in the reference library.
@@ -6173,6 +6295,11 @@ type Season implements Item & Node {
 	"""
 	watchState: WatchState
 	"""
+	The caller's rating of the work, shared by every copy of it. Null when it has not
+	rated it, and without a caller.
+	"""
+	userRating: UserRating
+	"""
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
@@ -6483,6 +6610,11 @@ type Show implements Item & Node {
 	caller.
 	"""
 	watchState: WatchState
+	"""
+	The caller's rating of the work, shared by every copy of it. Null when it has not
+	rated it, and without a caller.
+	"""
+	userRating: UserRating
 	"""
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
@@ -8223,6 +8355,56 @@ type UserPayload {
 	Why it could not. Empty when it was.
 	"""
 	userErrors: [AccountUserError!]!
+}
+
+type UserRating {
+	"""
+	From 0 to 10, at the precision it was given. Plex's stars are halves of the scale:
+	three and a half stars is 7.
+	"""
+	value: Float!
+	"""
+	When the caller rated it: when the rating reached the server, unless the client dated
+	it.
+	"""
+	ratedAt: DateTime!
+}
+
+"""
+Keeps items by the caller's rating, out of ten. Every field given must hold. Each
+comparison keeps rated items only: an item the caller has not rated, or whose rating it
+cleared, has no value to compare.
+"""
+input UserRatingFilterInput {
+	"""
+	Keep items rated one of these, or, with `unrated` true, not rated at all.
+	"""
+	anyOf: [Float!]
+	"""
+	True keeps the items not rated, with those rated one of `anyOf` when it is given; false
+	keeps the items rated.
+	"""
+	unrated: Boolean
+	"""
+	Keep items rated, and none of these.
+	"""
+	noneOf: [Float!]
+	"""
+	Keep items rated this or more.
+	"""
+	atLeast: Float
+	"""
+	Keep items rated more than this.
+	"""
+	above: Float
+	"""
+	Keep items rated this or less.
+	"""
+	atMost: Float
+	"""
+	Keep items rated less than this.
+	"""
+	below: Float
 }
 
 type VideoAnalysis {

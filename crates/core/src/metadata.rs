@@ -639,6 +639,9 @@ pub enum ItemSort {
     /// By when this viewer last played it. `None`, a caller with no watch state, has
     /// played nothing.
     LastViewedAt(Option<UserId>),
+    /// By this viewer's rating of it. `None`, a caller with no watch state, has rated
+    /// nothing.
+    UserRating(Option<UserId>),
     /// By when a series' episodes were added: its first ascending, its latest descending,
     /// the way [`ItemSort::Duration`] ranks versions.
     EpisodeAddedAt,
@@ -737,6 +740,8 @@ pub struct ItemFilter {
     pub last_viewed_from: Option<i64>,
     /// Keeps only items the viewer last played at or before this time.
     pub last_viewed_to: Option<i64>,
+    /// Keeps only items the viewer rated, or did not rate, as the condition says.
+    pub user_rating: Option<crate::user_rating::RatingCondition>,
     /// Whose watch state the filters above read. `None`, a caller with no watch state, has
     /// watched nothing and has nothing in progress.
     pub viewer: Option<UserId>,

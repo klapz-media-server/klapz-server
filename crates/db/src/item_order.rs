@@ -116,6 +116,11 @@ impl ItemOrder {
                 key_type: KeyType::Int,
                 nullable: true,
             }),
+            ItemSort::UserRating(viewer) => Some(Leading {
+                expr: crate::metadata_repository::viewer_rating(viewer),
+                key_type: KeyType::Real,
+                nullable: true,
+            }),
             ItemSort::EpisodeAddedAt => Some(Leading {
                 expr: episode_added_at(direction),
                 key_type: KeyType::Int,

@@ -83,6 +83,7 @@ IMPLEMENTED = frozenset(
         "/:/timeline",
         "/:/scrobble",
         "/:/unscrobble",
+        "/:/rate",
         "/hubs/continueWatching",
         "/library/parts/{partId}",
         # Live TV and DVR, answered as a server with none configured (`livetv.rs`).
