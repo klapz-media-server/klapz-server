@@ -8,11 +8,18 @@ license.workspace = true
 [[bin]]
 name = "open-plex-scanner"
 path = "src/main.rs"
+required-features = ["engine"]
+
+[features]
+# The commands themselves. Without it the crate is only the report's types, which the server
+# depends on to read what the binary prints.
+engine = ["dep:rusty-chromaprint"]
+default = ["engine"]
 
 [dependencies]
 # Chromaprint's algorithm in Rust, so that intro fingerprints need no second binary beside
 # ffmpeg: Plex's Fingerprinter is Chromaprint's `fpcalc`.
-rusty-chromaprint = "0.3"
+rusty-chromaprint = { version = "0.3", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

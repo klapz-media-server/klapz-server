@@ -1737,6 +1737,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "jsonwebtoken",
+ "open-plex-scanner",
  "serde",
  "sha2",
  "thiserror",

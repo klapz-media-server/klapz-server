@@ -3,8 +3,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::engine::{input, output_directory, probe, produced, run, ScanError, Tools};
 use crate::report::{FileRole, Produced, TrackKind};
-use crate::{input, output_directory, probe, produced, run, ScanError, Tools};
 
 /// Writes subtitle `track` into `out` as `stream-{track}.{extension}`. Text formats are copied
 /// as they are muxed, except MP4's `mov_text`, which no file format holds and becomes `SubRip`;

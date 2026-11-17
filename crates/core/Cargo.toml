@@ -9,6 +9,8 @@ license.workspace = true
 argon2.workspace = true
 async-trait.workspace = true
 jsonwebtoken.workspace = true
+# The analysis report the scanner prints, which the scan stores; only its types.
+open-plex-scanner.workspace = true
 serde.workspace = true
 sha2.workspace = true
 thiserror.workspace = true

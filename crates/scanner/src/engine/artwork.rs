@@ -3,8 +3,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::engine::{input, output_directory, probe, produced, run, seconds, ScanError, Tools};
 use crate::report::{FileRole, Produced, ProducedFile, TrackKind};
-use crate::{input, output_directory, probe, produced, run, seconds, ScanError, Tools};
 
 /// Chapters past this get no thumbnails: a file declaring thousands is broken or hostile,
 /// and each costs a decode.

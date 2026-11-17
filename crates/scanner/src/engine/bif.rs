@@ -5,8 +5,8 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::engine::{input, output_directory, produced, run, ScanError, Tools};
 use crate::report::{FileRole, Produced};
-use crate::{input, output_directory, produced, run, ScanError, Tools};
 
 const MAGIC: [u8; 8] = [0x89, 0x42, 0x49, 0x46, 0x0D, 0x0A, 0x1A, 0x0A];
 const HEADER_LENGTH: usize = 64;

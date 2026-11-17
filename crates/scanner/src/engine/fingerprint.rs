@@ -6,8 +6,8 @@ use std::process::Command;
 
 use rusty_chromaprint::{Configuration, Fingerprinter};
 
+use crate::engine::{input, loudness, probe, seconds, ScanError, Streaming, Tools};
 use crate::report::Fingerprint;
-use crate::{input, loudness, probe, seconds, ScanError, Streaming, Tools};
 
 /// Chromaprint works on mono audio at this rate; ffmpeg resamples to it, as `fpcalc` does.
 const SAMPLE_RATE: u32 = 11_025;

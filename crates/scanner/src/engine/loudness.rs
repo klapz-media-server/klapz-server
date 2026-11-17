@@ -3,8 +3,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::engine::{input, probe, ScanError, Tools};
 use crate::report::{Loudness, TrackKind};
-use crate::{input, probe, ScanError, Tools};
 
 /// Measures one audio track whole, decoding it: the first one when `track` is `None`.
 ///
@@ -38,7 +38,7 @@ pub fn loudness(tools: &Tools, path: &Path, track: Option<u32>) -> Result<Loudne
     if !output.status.success() {
         return Err(ScanError::Unreadable {
             tool: "ffmpeg",
-            message: crate::last_lines(&output.stderr),
+            message: crate::engine::last_lines(&output.stderr),
         });
     }
     summary(&stderr, track).ok_or_else(|| ScanError::Output {

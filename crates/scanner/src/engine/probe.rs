@@ -7,11 +7,11 @@ use std::process::Command;
 
 use serde::Deserialize;
 
+use crate::engine::{hashes, input, mp4, run, ScanError, Streaming, Tools};
 use crate::report::{
     Analysis, Attachment, AudioTrack, Chapter, DeepAnalysis, Disposition, DolbyVision,
     MeasuredTrack, Track, TrackKind, VideoTrack,
 };
-use crate::{hashes, input, mp4, run, ScanError, Streaming, Tools};
 
 /// Reads what the file declares; with `deep`, also every packet's size, which measures each
 /// track's real bitrate (the reference's deep analysis: demuxed, not decoded).
