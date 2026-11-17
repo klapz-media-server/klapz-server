@@ -35,6 +35,7 @@ fn main() {
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     });
     // `@specifiedBy` is left out by default, and `DateTime` names the specification it follows.
     let options = async_graphql::SDLExportOptions::new().include_specified_by();

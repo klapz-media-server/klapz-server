@@ -20,7 +20,7 @@ use crate::filter::{ItemFilterInput, ItemOrder, SortDirection, TrackField};
 use crate::item::{Item, ItemConnection};
 use crate::loader::{ItemLoader, RootsLoader};
 use crate::node::GlobalId;
-use crate::schema::{self, DEFAULT_PAGE_SIZE};
+use crate::schema::{self, ApiContext, DEFAULT_PAGE_SIZE};
 use crate::tag::{TagObject, TagType};
 use crate::DateTime;
 
@@ -218,6 +218,15 @@ impl Library {
     pub const fn cursor(&self) -> Cursor {
         Cursor::by_id(self.section.id.get())
     }
+
+    pub(crate) const fn section_id(&self) -> SectionId {
+        self.section.id
+    }
+
+    /// Whether this server scans libraries of this kind: films and series.
+    pub(crate) const fn is_scannable(&self) -> bool {
+        matches!(self.section.kind, SectionKind::Movie | SectionKind::Show)
+    }
 }
 
 // Doc comments on these resolvers are the published schema descriptions, so a Rust
@@ -278,6 +287,18 @@ impl Library {
     /// has been.
     async fn scanned_at(&self) -> Option<DateTime> {
         self.section.scanned_at.map(DateTime::from)
+    }
+
+    /// Whether a scan of this library is running now (`scanLibrary`).
+    #[allow(
+        clippy::unused_async,
+        reason = "async-graphql requires resolvers taking a context to be async"
+    )]
+    async fn scanning(&self, context: &Context<'_>) -> Result<bool> {
+        Ok(context
+            .data::<ApiContext>()?
+            .scans
+            .is_running(self.section.id))
     }
 
     /// Monotonic counter that advances whenever the library's contents change.

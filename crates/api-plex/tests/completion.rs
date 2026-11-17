@@ -177,6 +177,7 @@ fn app() -> axum::Router {
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     });
     router(PlexState::new(identity, schema))
         .layer(axum::Extension(open_plex_core::testing::owner()))

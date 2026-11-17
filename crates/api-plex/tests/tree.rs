@@ -273,6 +273,7 @@ async fn schema(played_bull: bool) -> ApiSchema {
         watch: std::sync::Arc::new(watch),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     })
 }
 

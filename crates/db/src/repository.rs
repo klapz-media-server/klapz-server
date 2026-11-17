@@ -8,7 +8,10 @@ use open_plex_core::library::{
 };
 use open_plex_core::page::{Page, Window};
 use open_plex_core::SectionId;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
+    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+};
 
 use crate::entity::{library_section, section_root};
 
@@ -143,4 +146,82 @@ fn parse_kind(stored: &str) -> SectionKind {
 
 fn storage(error: sea_orm::DbErr) -> LibraryError {
     LibraryError::Storage(Box::new(error))
+}
+
+/// A library to create, with the directories it scans.
+#[derive(Debug, Clone)]
+pub struct NewLibrary {
+    pub kind: SectionKind,
+    pub title: String,
+    /// BCP 47, such as `fr-FR`.
+    pub language: String,
+    pub roots: Vec<String>,
+}
+
+/// Creates a library and its roots, numbered past the highest ids, as an import would have
+/// left them. Roots are paths of the server's own choosing — the command line, never a client
+/// (`CLAUDE.md`: no endpoint accepts a path).
+///
+/// # Errors
+///
+/// Fails if a statement fails; nothing is written then.
+pub async fn create_library(
+    connection: &DatabaseConnection,
+    library: NewLibrary,
+) -> Result<SectionId, DbErr> {
+    let transaction = connection.begin().await?;
+    let now = open_plex_core::now_epoch();
+    let next_section = library_section::Entity::find()
+        .select_only()
+        .column_as(library_section::Column::Id.max(), "id")
+        .into_tuple::<Option<i64>>()
+        .one(&transaction)
+        .await?
+        .flatten()
+        .unwrap_or(0)
+        + 1;
+    let next_root = section_root::Entity::find()
+        .select_only()
+        .column_as(section_root::Column::Id.max(), "id")
+        .into_tuple::<Option<i64>>()
+        .one(&transaction)
+        .await?
+        .flatten()
+        .unwrap_or(0)
+        + 1;
+    library_section::ActiveModel {
+        id: ActiveValue::Set(next_section),
+        kind: ActiveValue::Set(
+            match library.kind {
+                SectionKind::Movie => "movie",
+                SectionKind::Show => "show",
+                SectionKind::Artist => "artist",
+                SectionKind::Photo => "photo",
+            }
+            .to_owned(),
+        ),
+        title_sort: ActiveValue::Set(None),
+        title: ActiveValue::Set(library.title),
+        language: ActiveValue::Set(library.language),
+        uuid: ActiveValue::Set(uuid::Uuid::new_v4().to_string()),
+        created_at: ActiveValue::Set(now),
+        updated_at: ActiveValue::Set(now),
+        scanned_at: ActiveValue::Set(None),
+        content_changed_at: ActiveValue::Set(0),
+        hidden: ActiveValue::Set(false),
+    }
+    .insert(&transaction)
+    .await?;
+    for (id, path) in (next_root..).zip(library.roots) {
+        section_root::ActiveModel {
+            id: ActiveValue::Set(id),
+            section_id: ActiveValue::Set(next_section),
+            path: ActiveValue::Set(path),
+            created_at: ActiveValue::Set(now),
+        }
+        .insert(&transaction)
+        .await?;
+    }
+    transaction.commit().await?;
+    Ok(SectionId::new(next_section))
 }

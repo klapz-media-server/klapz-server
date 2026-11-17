@@ -59,6 +59,7 @@ fn schema() -> ApiSchema {
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     })
 }
 
@@ -98,6 +99,7 @@ fn searchable() -> ApiSchema {
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     })
 }
 
@@ -568,6 +570,7 @@ fn series_with_episodes() -> ApiSchema {
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     })
 }
 
@@ -1220,6 +1223,7 @@ fn watchable() -> ApiSchema {
         watch: Arc::new(open_plex_core::testing::InMemoryWatch::over(items)),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     })
 }
 
@@ -1520,6 +1524,7 @@ fn streamable(engine: Arc<open_plex_core::testing::StubStreams>) -> ApiSchema {
         watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: engine,
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     })
 }
 
@@ -1863,6 +1868,7 @@ fn editable() -> ApiSchema {
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     })
 }
 
@@ -2571,6 +2577,7 @@ fn filmography() -> ApiSchema {
         playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
         collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     })
 }
 
@@ -2710,6 +2717,7 @@ fn markable() -> ApiSchema {
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     })
 }
 

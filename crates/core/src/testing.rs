@@ -3699,3 +3699,29 @@ pub fn owner() -> crate::Principal {
         server_identifier: None,
     }
 }
+
+/// A [`ScanControl`](crate::scan::ScanControl) that runs nothing, recording what it was asked
+/// to start.
+#[derive(Debug, Default)]
+pub struct RecordedScans {
+    pub started: std::sync::Mutex<Vec<crate::scan::ScanRequest>>,
+}
+
+#[async_trait::async_trait]
+impl crate::scan::ScanControl for RecordedScans {
+    async fn start(&self, request: crate::scan::ScanRequest) -> Result<(), crate::scan::ScanError> {
+        self.started
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(request);
+        Ok(())
+    }
+
+    fn cancel(&self, _section: SectionId) -> bool {
+        false
+    }
+
+    fn is_running(&self, _section: SectionId) -> bool {
+        false
+    }
+}

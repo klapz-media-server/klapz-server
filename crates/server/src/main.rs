@@ -5,9 +5,12 @@
 //! is to call one function.
 
 mod admin;
+mod analyzer;
 mod auth;
 mod callbacks;
+mod commands;
 mod cors;
+mod files;
 mod graphql;
 mod remote_tokens;
 mod streams;
@@ -27,6 +30,7 @@ use open_plex_core::lifecycle::SessionLocks;
 use open_plex_core::metadata::MetadataRepository;
 use open_plex_core::play_queue::PlayQueueRepository;
 use open_plex_core::playback::PlaybackRepository;
+use open_plex_core::scan::BackgroundScans;
 use open_plex_core::{LibraryRepository, ServerCapabilities, ServerIdentity};
 use open_plex_db::{
     import, SqlAccessRepository, SqlLibraryRepository, SqlMetadataRepository,
@@ -63,17 +67,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("OPENPLEX_DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_owned());
     let connection = open_plex_db::connect(&database_url).await?;
 
-    // `import <path>` seeds the database and exits; anything else starts the server.
-    let mut arguments = std::env::args().skip(1);
-    if arguments.next().as_deref() == Some("import") {
-        let source = arguments
-            .next()
-            .ok_or("usage: open-plex-server import <plex.db>")?;
-        return run_import(&connection, &PathBuf::from(source)).await;
+    // `import`, `library` and `scan` do their job and exit; anything else starts the server.
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    match arguments.split_first() {
+        Some((command, rest)) if command == "import" => {
+            let source = rest
+                .first()
+                .ok_or("usage: open-plex-server import <plex.db>")?;
+            return run_import(&connection, &PathBuf::from(source)).await;
+        }
+        Some((command, rest)) if command == "library" => {
+            return commands::library(&connection, rest).await;
+        }
+        Some((command, rest)) if command == "scan" => {
+            return commands::scan(&connection, rest).await
+        }
+        _ => {}
     }
 
     let library: Arc<dyn LibraryRepository> =
         Arc::new(SqlLibraryRepository::new(connection.clone()));
+    let scanned_library = Arc::clone(&library);
+    let scan_connection = connection.clone();
     let play_queues: Arc<dyn PlayQueueRepository> =
         Arc::new(SqlPlayQueueRepository::new(connection.clone()));
     let playback: Arc<dyn PlaybackRepository> =
@@ -109,6 +124,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         watch: Arc::new(SqlWatchRepository::new(connection)),
         streams: Arc::clone(&streams) as Arc<dyn open_plex_core::stream::StreamEngine>,
         session_locks: locks,
+        scans: Arc::new(BackgroundScans::new(commands::scanner(
+            &scan_connection,
+            Arc::clone(&scanned_library),
+        ))),
     });
     tokio::spawn(publish_paired_servers(
         Arc::clone(&users),

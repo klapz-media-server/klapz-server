@@ -613,6 +613,27 @@ impl Mutation {
         crate::sidecar::delete_sidecar(context, input).await
     }
 
+    /// Starts scanning a library in the background: new files become items, changed ones are
+    /// analyzed again, and what is gone is removed — unless its whole folder cannot be
+    /// reached, which keeps it. For the library's admins and the server's owners.
+    async fn scan_library(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The library to scan.")] input: crate::scan::ScanLibraryInput,
+    ) -> Result<crate::scan::ScanLibraryPayload> {
+        crate::scan::scan_library(context, input).await
+    }
+
+    /// Asks a library's running scan to stop. What it already wrote stays.
+    async fn cancel_library_scan(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The library whose scan to stop.")]
+        input: crate::scan::CancelLibraryScanInput,
+    ) -> Result<crate::scan::CancelLibraryScanPayload> {
+        crate::scan::cancel_library_scan(context, input).await
+    }
+
     /// Deletes one viewing from a history: the caller's own, or anyone's for an owner.
     /// What was watched stays as it is, as on the reference.
     async fn delete_history_entry(

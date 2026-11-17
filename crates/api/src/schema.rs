@@ -46,6 +46,7 @@ pub struct ApiContext {
     pub streams: Arc<dyn open_plex_core::stream::StreamEngine>,
     /// Shared with whatever else ends sessions outside a request: the sweep, the stream routes.
     pub session_locks: Arc<open_plex_core::lifecycle::SessionLocks>,
+    pub scans: Arc<dyn open_plex_core::scan::ScanControl>,
 }
 
 impl ApiContext {

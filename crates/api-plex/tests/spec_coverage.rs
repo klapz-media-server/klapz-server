@@ -130,6 +130,7 @@ fn app() -> axum::Router {
         watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     });
 
     // A principal is attached directly: authentication lives in the `server` crate, and this

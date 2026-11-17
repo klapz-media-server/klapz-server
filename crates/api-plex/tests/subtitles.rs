@@ -217,6 +217,7 @@ impl Server {
             watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
             streams: Arc::clone(&disk) as Arc<dyn open_plex_core::stream::StreamEngine>,
             session_locks: Arc::default(),
+            scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
         });
         Self { schema, disk }
     }

@@ -96,6 +96,7 @@ fn schema() -> ApiSchema {
         streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
         collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     })
 }
 

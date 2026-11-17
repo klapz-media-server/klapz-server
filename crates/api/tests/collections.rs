@@ -108,6 +108,7 @@ fn schema() -> ApiSchema {
         watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
         streams: Arc::new(open_plex_core::testing::StubStreams::default()),
         session_locks: Arc::default(),
+        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
     })
 }
 

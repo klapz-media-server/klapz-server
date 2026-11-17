@@ -163,6 +163,10 @@ pub trait LibraryFiles: Send + Sync + std::fmt::Debug {
     /// The path a part records for `file`, what the API publishes as the file's location.
     fn stored_path(&self, root: &str, file: &RelativePath) -> String;
 
+    /// The file a recorded path names under `root`, the inverse of [`Self::stored_path`]:
+    /// `None` when it is not below `root`.
+    fn relative_path(&self, root: &str, stored: &str) -> Option<RelativePath>;
+
     /// Where a media tool reads `file`.
     async fn locate(&self, root: &str, file: &RelativePath) -> Result<FileLocation, FilesError>;
 }

@@ -7,6 +7,7 @@
 //!
 //! [`LibraryFiles`]: crate::files::LibraryFiles
 
+mod control;
 pub mod layout;
 mod walk;
 
@@ -15,6 +16,7 @@ use open_plex_scanner::report::Analysis;
 use crate::files::{FileLocation, RelativePath};
 use crate::ids::{MediaId, PartId, RatingKey, SectionId};
 
+pub use control::{BackgroundScans, ScanControl};
 pub use walk::{scan_section, ScanOutcome, ScanRequest, Scanner};
 
 #[derive(Debug, thiserror::Error)]
