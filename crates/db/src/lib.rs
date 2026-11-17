@@ -19,6 +19,7 @@ pub mod play_queue_repository;
 pub mod playback_repository;
 pub mod playlist_repository;
 pub mod repository;
+pub mod scan_repository;
 mod tracks;
 pub mod watch_repository;
 pub mod write;
@@ -34,6 +35,7 @@ pub use play_queue_repository::SqlPlayQueueRepository;
 pub use playback_repository::SqlPlaybackRepository;
 pub use playlist_repository::SqlPlaylistRepository;
 pub use repository::SqlLibraryRepository;
+pub use scan_repository::SqlScanRepository;
 pub use watch_repository::SqlWatchRepository;
 
 /// Opens a connection pool and brings the schema up to date.
