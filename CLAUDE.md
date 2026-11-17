@@ -48,9 +48,9 @@ without them saying so.
 - **Scanning is being brought in, split as Plex splits it.** Walking libraries, deciding what
   changed, matching and storing belong to the server, as they run inside Plex Media Server;
   reading a file's content belongs to `open-plex-scanner`, a separate binary, as Plex leaves it
-  to `Plex Media Scanner`, its Fingerprinter and its Transcoder. Until the server drives it, the
-  endpoints of scanning, matching and analysis stay `deferred` in `docs/ENDPOINTS.md`. How Plex
-  does each part is in `docs/scanner/` (`discovery.md`, `matching.md`, `analysis.md`).
+  to `Plex Media Scanner`, its Fingerprinter and its Transcoder. The endpoints of matching and
+  of analysis on demand stay `deferred` in `docs/ENDPOINTS.md` until they exist. How Plex does
+  each part is in `docs/scanner/` (`discovery.md`, `matching.md`, `analysis.md`).
 - **No feature behind a paywall.** No Plex Pass, no Plex Ninja: everything Plex reserves for a
   subscription (hardware transcoding, sync, skip intro, Live TV/DVR, loudness analysis…) ships in
   the base version. In code this means no `if subscription` branch, no `premium` flag, no
@@ -129,6 +129,21 @@ without them saying so.
   go and deletes the row, under a per-key lock (`SessionLocks`, shared by the schema, the stream
   routes and the sweep). An automatic end checks its reason again under the lock. Every sign of
   life counts for both; a read of `/streams/{id}/…` counts at most every 30 seconds.
+- **Library files are reached through one port, `core::files::LibraryFiles`.** A root is a
+  string its backend understands and everything below it a `RelativePath`, which cannot climb
+  out of its root; the scan never builds a filesystem path. `server::files::LocalFiles` is the
+  one backend today, so that a library on a share or in object storage later is a new backend,
+  not a new scan. What a tool reads is a `FileLocation` the backend hands out.
+- **A scan runs in the server, one per library, in the background.** `core::scan` walks with
+  the reference's skip rule (a directory whose media files kept their names, sizes and
+  modification times is not looked at again), reuses a known path, groups new files by the
+  measured naming rules (`scan::layout`), analyzes them through `MediaAnalyzer` — the scanner
+  binary, two at a time, ten minutes at most each — and writes through `ScanRepository`, whose
+  items go through `db::write` like every other. What is gone is removed, unless its whole root
+  cannot be reached: an unmounted disk is not an empty library. `BackgroundScans` keeps one scan
+  per library and cancels between files.
+- **A library's roots are set on the command line only** (`open-plex-server library add`),
+  because no endpoint accepts a path: creating a library is not on the API yet.
 - **HTTP authentication lives in `server`**, because both surfaces share it. It attaches a
   `Principal`, which is always a user; each surface then enforces roles in its own idiom
   (`Caller`/`AdminCaller` extractors on the Plex side, request data on the GraphQL side).
@@ -484,6 +499,13 @@ Places where we knowingly answer differently, each decided rather than overlooke
   already decodes in software and encodes H.264, so `fallBackStream` answers `NO_FALLBACK` and
   `/universal/fallback` the `412` the reference gives its own software conversions. Its success
   could not be measured: the reference has hardware transcoding off (`docs/spec-gaps.md`).
+- **A scan request names no path, and `force` rescans nothing.** `path=` on
+  `/library/sections/{id}/refresh`, a partial scan of a directory the client names, answers `403`:
+  no endpoint takes a path. `force=1` on the reference refreshes every item's metadata and still
+  skips unchanged directories; without an agent, it changes nothing here. `force` on the
+  official API's `scanLibrary` analyzes every file again. New items carry `local://{id}` and the
+  title and year their names give, as the reference's do before an agent runs; a renamed file is
+  a new item, where the reference finds it again by size and hash.
 - **A category's tile shows no item's art.** The reference draws each genre's tile from the
   background art of its best-rated item not already shown; this server keeps no artwork, so
   every tile names the image the reference uses for a genre without art,
@@ -558,6 +580,7 @@ OPENPLEX_ADMIN_PASSWORD='a long passphrase' cargo run -p open-plex-server
 | `OPENPLEX_TRANSCODER` | `ffmpeg` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases, kept locally under `.work/ffmpeg-plex/<version>/`. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `OPENPLEX_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
 | `OPENPLEX_FFPROBE` | `ffprobe` | The ffprobe the scanner reads files with. ffmpeg-plex is built without one (`--disable-ffprobe`), so a stock build serves for now. |
+| `OPENPLEX_SCANNER` | `open-plex-scanner` beside the server's executable | The scanner binary a library scan runs on each new or changed file. |
 | `OPENPLEX_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which Plex's own binary needs. The rebuilt one has them built in and needs none. |
 
 The imported library's files live on another machine, so nothing imported can be played here.
@@ -565,8 +588,11 @@ The imported library's files live on another machine, so nothing imported can be
 publishes its new address to plex.tv through `moveExtension`, signed in as `admin`, with the
 server running; it refuses a loopback origin, where the transcoder's callbacks answer without a
 token.
-`python tools/seed_test_library.py DIRECTORY` adds a folder of real files as a `Test` library
-(`--remove` takes it out); `python tools/capture_transcoder.py` studies the transcoder alone.
+`open-plex-server library add --kind movie|show --title TITLE ROOT...` creates a library over
+directories of this machine, and `open-plex-server scan ID [--force]` scans it without serving
+(a running server scans on `scanLibrary` or `/library/sections/{id}/refresh`); this supersedes
+`python tools/seed_test_library.py DIRECTORY`, which writes a `Test` library straight to the
+tables; `python tools/capture_transcoder.py` studies the transcoder alone.
 To import again into a database the server has written to, `python tools/reimport.py`, server
 stopped: the importer replaces every library, and with them the history, track choices,
 locks and collections made here and the seeded libraries; the script backs the database up,
@@ -882,8 +908,17 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   apart), EBU R 128 loudness, subtitle tracks extracted, chapter frames, and poster and backdrop
   frames at a quarter, half and three quarters (720×405 and 1280×720 for 16:9, as the
   reference's) with the covers a file carries. Not yet: the three sequence-header fields ffprobe
-  misreports (`trace_headers`), `requiredBandwidths`, credits detection, and the server side —
-  walking, matching, storage and the routes.
+  misreports (`trace_headers`), `requiredBandwidths`, credits detection.
+- 🚧 **library scans in the server**: libraries walked through `LibraryFiles` (local disks for
+  now), files grouped into films, series, seasons and episodes by the reference's measured
+  naming rules (`CleanName`, stacking, versions, the 18 episode patterns, dates, sidecars,
+  `.plexignore`), analyzed by the scanner and stored through `SqlScanRepository` in the
+  importer's own vocabulary, so a scanned film reads as an imported one on both surfaces (the
+  test film's tracks, bitrates and labels as the reference's). On the official API
+  `scanLibrary`, `cancelLibraryScan`, `Library.scanning`; on the Plex surface the four
+  `/refresh` operations. Not yet: matching and metadata, finding a renamed or moved file again
+  by size and hash, adding a version to an item already stored, a multi-episode file on every
+  episode it holds, local extras and artwork, generated images, scan activities.
 
 ## Reference server
 

@@ -69,26 +69,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // `import`, `library` and `scan` do their job and exit; anything else starts the server.
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    match arguments.split_first() {
-        Some((command, rest)) if command == "import" => {
-            let source = rest
-                .first()
-                .ok_or("usage: open-plex-server import <plex.db>")?;
-            return run_import(&connection, &PathBuf::from(source)).await;
-        }
-        Some((command, rest)) if command == "library" => {
-            return commands::library(&connection, rest).await;
-        }
-        Some((command, rest)) if command == "scan" => {
-            return commands::scan(&connection, rest).await
-        }
-        _ => {}
+    if let Some(done) = run_command(&connection, &arguments).await {
+        return done;
     }
 
     let library: Arc<dyn LibraryRepository> =
         Arc::new(SqlLibraryRepository::new(connection.clone()));
-    let scanned_library = Arc::clone(&library);
-    let scan_connection = connection.clone();
+    let scans = BackgroundScans::new(commands::scanner(&connection, Arc::clone(&library)));
     let play_queues: Arc<dyn PlayQueueRepository> =
         Arc::new(SqlPlayQueueRepository::new(connection.clone()));
     let playback: Arc<dyn PlaybackRepository> =
@@ -124,10 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         watch: Arc::new(SqlWatchRepository::new(connection)),
         streams: Arc::clone(&streams) as Arc<dyn open_plex_core::stream::StreamEngine>,
         session_locks: locks,
-        scans: Arc::new(BackgroundScans::new(commands::scanner(
-            &scan_connection,
-            Arc::clone(&scanned_library),
-        ))),
+        scans: Arc::new(scans),
     });
     tokio::spawn(publish_paired_servers(
         Arc::clone(&users),
@@ -261,6 +245,24 @@ async fn clear_stale_sessions(
         );
     }
     Ok(())
+}
+
+/// A job the command line names, run to its end; `None` when it names none and the server is to
+/// start.
+async fn run_command(
+    connection: &open_plex_db::DatabaseConnection,
+    arguments: &[String],
+) -> Option<Result<(), Box<dyn std::error::Error>>> {
+    let (command, rest) = arguments.split_first()?;
+    Some(match command.as_str() {
+        "import" => match rest.first() {
+            Some(source) => run_import(connection, &PathBuf::from(source)).await,
+            None => Err("usage: open-plex-server import <plex.db>".into()),
+        },
+        "library" => commands::library(connection, rest).await,
+        "scan" => commands::scan(connection, rest).await,
+        _ => return None,
+    })
 }
 
 async fn run_import(

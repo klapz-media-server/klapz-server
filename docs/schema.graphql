@@ -266,6 +266,38 @@ type AudioAnalysis {
 }
 
 """
+A library whose scan to stop.
+"""
+input CancelLibraryScanInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The library, as returned in `Library.id`.
+	"""
+	libraryId: ID!
+}
+
+"""
+What `cancelLibraryScan` did.
+"""
+type CancelLibraryScanPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	Whether a scan was running and was asked to stop. It stops after the file it is on.
+	"""
+	cancelled: Boolean!
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [ScanUserError!]!
+}
+
+"""
 A collection of chosen items to empty.
 """
 input ClearCollectionInput {
@@ -2976,6 +3008,10 @@ type Library implements Node {
 	"""
 	scannedAt: DateTime
 	"""
+	Whether a scan of this library is running now (`scanLibrary`).
+	"""
+	scanning: Boolean!
+	"""
 	Monotonic counter that advances whenever the library's contents change.
 	
 	A string rather than an `Int` because the value exceeds 32 bits, which is the width
@@ -4474,6 +4510,26 @@ type Mutation {
 		"""
 		input: DeleteSidecarInput!
 	): DeleteSidecarPayload!
+	"""
+	Starts scanning a library in the background: new files become items, changed ones are
+	analyzed again, and what is gone is removed — unless its whole folder cannot be
+	reached, which keeps it. For the library's admins and the server's owners.
+	"""
+	scanLibrary(
+		"""
+		The library to scan.
+		"""
+		input: ScanLibraryInput!
+	): ScanLibraryPayload!
+	"""
+	Asks a library's running scan to stop. What it already wrote stays.
+	"""
+	cancelLibraryScan(
+		"""
+		The library whose scan to stop.
+		"""
+		input: CancelLibraryScanInput!
+	): CancelLibraryScanPayload!
 	"""
 	Deletes one viewing from a history: the caller's own, or anyone's for an owner.
 	What was watched stays as it is, as on the reference.
@@ -6672,6 +6728,79 @@ enum Scan {
 	Alternating fields of odd and even lines.
 	"""
 	INTERLACED
+}
+
+"""
+Why a scan request was refused.
+"""
+enum ScanErrorCode {
+	"""
+	No library the caller administers carries this id.
+	"""
+	LIBRARY_NOT_FOUND
+	"""
+	A scan of this library is already running.
+	"""
+	ALREADY_RUNNING
+	"""
+	Music and photo libraries are not scanned by this server.
+	"""
+	UNSUPPORTED_KIND
+}
+
+"""
+A library to scan.
+"""
+input ScanLibraryInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The library, as returned in `Library.id`.
+	"""
+	libraryId: ID!
+	"""
+	Analyze every file again, as if none had been seen. By default a directory whose files
+	kept their names, sizes and modification times is skipped.
+	"""
+	force: Boolean! = false
+}
+
+"""
+What `scanLibrary` did.
+"""
+type ScanLibraryPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The library, now being scanned. Null when the request was refused.
+	"""
+	library: Library
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [ScanUserError!]!
+}
+
+"""
+A request a scan mutation refused, and where in the input the reason lies.
+"""
+type ScanUserError {
+	"""
+	The path to the input field at fault.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person to read.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program to branch on.
+	"""
+	code: ScanErrorCode!
 }
 
 """

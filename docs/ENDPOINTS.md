@@ -21,15 +21,15 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | `todo` | 3 | 1.2 % |
 | `stub` | 57 | 21.9 % |
 | `partial` | 36 | 13.8 % |
-| `done` | 125 | 48.1 % |
-| `deferred` | 39 | 15.0 % |
+| `done` | 129 | 49.6 % |
+| `deferred` | 35 | 13.5 % |
 | **Total** | **260** | |
 
 ## By domain
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 19 | 18 | 20 | 2 | 26 |
+| [Library](#library) | 85 | 23 | 18 | 20 | 2 | 22 |
 | [Hubs](#hubs) | 15 | 5 | 3 | 7 | 0 | 0 |
 | [Content](#content) | 13 | 5 | 3 | 5 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
@@ -140,9 +140,9 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `stub` | `GET` | `/library/randomArtwork` | user | Get random artwork |  |
 | `done` | `GET` | `/library/sections/all` | user | Get library sections (main Media Provider Only) | Alias of `/library/sections` (not in spec). Byte-identical to reference apart from `contentChangedAt`, whose value differs only because the imported snapshot predates the live server |
 | `todo` | `POST` | `/library/sections/all` | admin | Add a library section |  |
-| `deferred` | `DELETE` | `/library/sections/all/refresh` | admin | Stop refresh | scanner/analysis, separate binary |
+| `done` | `DELETE` | `/library/sections/all/refresh` | admin | Stop refresh | `cancelLibraryScan` on every library the caller administers. |
 | `stub` | `GET` | `/library/sections/prefs` | admin | Get section prefs |  |
-| `deferred` | `POST` | `/library/sections/refresh` | admin | Refresh all sections | scanner/analysis, separate binary |
+| `done` | `POST` | `/library/sections/refresh` | admin | Refresh all sections | `scanLibrary` on every library the caller administers, music and photos skipped. |
 | `stub` | `DELETE` | `/library/sections/{sectionId}` | admin | Delete a library section |  |
 | `stub` | `GET` | `/library/sections/{sectionId}` | user | Get a library section by id |  |
 | `stub` | `PUT` | `/library/sections/{sectionId}` | admin | Edit a library section |  |
@@ -162,8 +162,8 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `deferred` | `DELETE` | `/library/sections/{sectionId}/intros` | admin | Delete section intro markers | scanner/analysis, separate binary |
 | `partial` | `GET` | `/library/sections/{sectionId}/prefs` | user | Get section prefs | The two settings Plex Web looks up by name, at their defaults; identical to the reference on those. The other 15 or 16 are about scanning and matching. |
 | `todo` | `PUT` | `/library/sections/{sectionId}/prefs` | admin | Set section prefs |  |
-| `deferred` | `DELETE` | `/library/sections/{sectionId}/refresh` | admin | Cancel section refresh | scanner/analysis, separate binary |
-| `deferred` | `POST` | `/library/sections/{sectionId}/refresh` | admin | Refresh section | scanner/analysis, separate binary |
+| `done` | `DELETE` | `/library/sections/{sectionId}/refresh` | admin | Cancel section refresh | `cancelLibraryScan`: the running scan stops after its current file; `200` whether one was running or not. |
+| `done` | `POST` | `/library/sections/{sectionId}/refresh` | admin | Refresh section | `scanLibrary`: answers `200` at once and scans in the background (the reference's `GET` too), a running scan coalesces the request, `force=1` changes nothing (a metadata refresh there, without an agent here), `path=` is `403`: no endpoint takes a path. |
 | `done` | `GET` | `/library/sections/{sectionId}/sorts` | user | Get a section sorts | One type's `Sort` list from the `Meta` block, unmarked: 9 of 9 on a film library, 7 of 8, 1 of 2 and 6 of 7 on a series' types, the reference's entries attribute for attribute. |
 | `done` | `GET` | `/library/sections/{sectionId}/subtitleCodec` | user | Get subtitle codecs in a section | The distinct values every track of every version of the library holds, in byte order, key percent-encoded once and no `fastKey`, as measured; a series library lists its episodes' whatever `type` says. Identical to the reference on ten libraries. Each value filters `/all` (`subtitleCodec=`, a comma `OR`, `!=` for none, repeated `AND`): 780 of 782 totals identical over every value of four libraries, the two others 3 episodes' sidecar subtitles the snapshot predates. Through `Library.trackValues`. Always windowed, as every choice list here. See spec-gaps.md. |
 | `done` | `GET` | `/library/sections/{sectionId}/videoCodec` | user | Get video codecs in a section | The distinct values every track of every version of the library holds, in byte order, key percent-encoded once and no `fastKey`, as measured; a series library lists its episodes' whatever `type` says. Identical to the reference on ten libraries. Each value filters `/all` (`videoCodec=`, a comma `OR`, `!=` for none, repeated `AND`): 780 of 782 totals identical over every value of four libraries, the two others 3 episodes' sidecar subtitles the snapshot predates. Through `Library.trackValues`. Always windowed, as every choice list here. See spec-gaps.md. |

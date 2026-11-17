@@ -168,13 +168,13 @@ mod tests {
     #[tokio::test]
     async fn lists_files_and_directories() {
         let scratch = Scratch::new("list");
-        let files = LocalFiles;
+        let local = LocalFiles;
         let films = RelativePath::parse("Films").unwrap();
-        let entries = files.list(&scratch.root(), &films).await.unwrap();
+        let entries = local.list(&scratch.root(), &films).await.unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].kind, EntryKind::Directory);
         let soul = films.join("Soul (2020)").unwrap();
-        let entries = files.list(&scratch.root(), &soul).await.unwrap();
+        let entries = local.list(&scratch.root(), &soul).await.unwrap();
         assert_eq!((entries[0].name.as_str(), entries[0].size), ("Soul.mkv", 5));
     }
 
