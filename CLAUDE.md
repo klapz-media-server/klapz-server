@@ -45,9 +45,12 @@ without them saying so.
 
 - **Server only** for now. No client, and no stand-in for `plex.tv`: pairing talks to the real
   one.
-- **The file scanner is out of scope.** On Plex it is a separate binary (`Plex Media Scanner`).
-  Endpoints that only drive it — scanning, matching, media analysis — are marked `deferred` in
-  `docs/ENDPOINTS.md` (37 of 260 operations).
+- **Scanning is being brought in, split as Plex splits it.** Walking libraries, deciding what
+  changed, matching and storing belong to the server, as they run inside Plex Media Server;
+  reading a file's content belongs to `open-plex-scanner`, a separate binary, as Plex leaves it
+  to `Plex Media Scanner`, its Fingerprinter and its Transcoder. Until the server drives it, the
+  endpoints of scanning, matching and analysis stay `deferred` in `docs/ENDPOINTS.md`. How Plex
+  does each part is in `docs/scanner/` (`discovery.md`, `matching.md`, `analysis.md`).
 - **No feature behind a paywall.** No Plex Pass, no Plex Ninja: everything Plex reserves for a
   subscription (hardware transcoding, sync, skip intro, Live TV/DVR, loudness analysis…) ships in
   the base version. In code this means no `if subscription` branch, no `premium` flag, no
@@ -156,6 +159,15 @@ without them saying so.
   address space. Images are the exception, by the repo owner's decision: `/photo/:/transcode`
   converts in process with the `image` crate, memory-safe decoders on a format allowlist, because
   two processes per thumbnail cost more than the work.
+- **The scanner is a command line over one file, and keeps nothing.** `open-plex-scanner
+  <command> [options] -- <file>`: `probe [--deep]`, `hashes`, `loudness`, `fingerprint`,
+  `subtitles`, `bif`, `chapter-thumbs`, `artwork`. It prints one JSON report on standard output
+  (`open_plex_scanner::report`, the same types the server reads back, versioned), writes the
+  files it makes into an `--out` directory the server created and owns, creates no directory
+  and overwrites nothing, and exits `3` when the media is at fault, `2` on bad usage. It
+  decodes nothing itself — ffprobe and ffmpeg-plex do, as its children — reaches no network
+  and holds no state: what to redo, and where results go, is the server's. The file comes after
+  `--` and reaches the tools as `file:…`, so no name is read as an option or a protocol.
 
 ### Access rights
 
@@ -545,6 +557,7 @@ OPENPLEX_ADMIN_PASSWORD='a long passphrase' cargo run -p open-plex-server
 | `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
 | `OPENPLEX_TRANSCODER` | `ffmpeg` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases, kept locally under `.work/ffmpeg-plex/<version>/`. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `OPENPLEX_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
+| `OPENPLEX_FFPROBE` | `ffprobe` | The ffprobe the scanner reads files with. ffmpeg-plex is built without one (`--disable-ffprobe`), so a stock build serves for now. |
 | `OPENPLEX_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which Plex's own binary needs. The rebuilt one has them built in and needs none. |
 
 The imported library's files live on another machine, so nothing imported can be played here.
@@ -860,6 +873,17 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   (migration `m0037`) are on the official API: `Item.refreshedAt`, `MediaFile.contentHash` and
   `openSubtitlesHash`, `MediaStream.requiredBandwidths`, and `MediaStream.externalUrl` for a
   sidecar. Both `nearest` routes answer as the reference does without music (`docs/spec-gaps.md`).
+- 🚧 **the scanner's file half**, `open-plex-scanner`, measured against the reference on the
+  test files: the analysis (every track field ffprobe gives, chapters with generic titles
+  cleared, MP4 layout, MPEG-TS packet length; `--deep` measures each track's rate over every
+  packet, the video's equal to Matroska's `BPS`), the OpenSubtitles hash (identical), the BIF
+  (header and index identical, frames re-encoded by a newer libavcodec, 58 dB apart), Chromaprint
+  fingerprints in process (9,841 of 9,945 values equal to Plex's Fingerprinter, 0.03 % of bits
+  apart), EBU R 128 loudness, subtitle tracks extracted, chapter frames, and poster and backdrop
+  frames at a quarter, half and three quarters (720×405 and 1280×720 for 16:9, as the
+  reference's) with the covers a file carries. Not yet: the three sequence-header fields ffprobe
+  misreports (`trace_headers`), `requiredBandwidths`, credits detection, and the server side —
+  walking, matching, storage and the routes.
 
 ## Reference server
 

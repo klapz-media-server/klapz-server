@@ -1,0 +1,21 @@
+[package]
+name = "open-plex-scanner"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "open-plex-scanner"
+path = "src/main.rs"
+
+[dependencies]
+# Chromaprint's algorithm in Rust, so that intro fingerprints need no second binary beside
+# ffmpeg: Plex's Fingerprinter is Chromaprint's `fpcalc`.
+rusty-chromaprint = "0.3"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

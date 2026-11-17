@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/db", "crates/api", "crates/transcoder", "crates/api-plex", "crates/server"]
+members = ["crates/core", "crates/db", "crates/api", "crates/transcoder", "crates/api-plex", "crates/server", "crates/scanner"]
 resolver = "2"
 
 [workspace.package]
@@ -13,6 +13,7 @@ open-plex-db = { path = "crates/db" }
 open-plex-api = { path = "crates/api" }
 open-plex-api-plex = { path = "crates/api-plex" }
 open-plex-transcoder = { path = "crates/transcoder" }
+open-plex-scanner = { path = "crates/scanner" }
 
 async-graphql = { version = "7", features = ["dataloader"] }
 base64 = "0.22"
