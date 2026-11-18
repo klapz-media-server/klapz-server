@@ -28,20 +28,28 @@ use crate::report;
 #[derive(Debug, Clone)]
 pub struct Tools {
     pub ffmpeg: PathBuf,
-    pub ffprobe: PathBuf,
+    /// A separate ffprobe. Without one, ffmpeg-plex's own runs as `ffmpeg -probe`.
+    pub ffprobe: Option<PathBuf>,
 }
 
 impl Tools {
-    /// `OPENPLEX_TRANSCODER`, the ffmpeg the server streams with, and `OPENPLEX_FFPROBE`; each
-    /// found on `PATH` when unset.
+    /// `OPENPLEX_TRANSCODER`, the ffmpeg the server streams with, found on `PATH` when unset,
+    /// and `OPENPLEX_FFPROBE`.
     pub fn from_env() -> Self {
-        let tool = |variable: &str, default: &str| {
-            std::env::var_os(variable).map_or_else(|| PathBuf::from(default), PathBuf::from)
-        };
         Self {
-            ffmpeg: tool("OPENPLEX_TRANSCODER", "ffmpeg"),
-            ffprobe: tool("OPENPLEX_FFPROBE", "ffprobe"),
+            ffmpeg: std::env::var_os("OPENPLEX_TRANSCODER")
+                .map_or_else(|| PathBuf::from("ffmpeg"), PathBuf::from),
+            ffprobe: std::env::var_os("OPENPLEX_FFPROBE").map(PathBuf::from),
         }
+    }
+
+    fn ffprobe(&self) -> Command {
+        if let Some(ffprobe) = &self.ffprobe {
+            return Command::new(ffprobe);
+        }
+        let mut command = Command::new(&self.ffmpeg);
+        command.arg("-probe");
+        command
     }
 }
 

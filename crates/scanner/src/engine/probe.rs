@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::Command;
 
 use serde::Deserialize;
 
@@ -57,7 +56,8 @@ pub fn probe(tools: &Tools, path: &Path, deep: bool) -> Result<Analysis, ScanErr
 pub(crate) fn duration_ms(tools: &Tools, path: &Path) -> Result<Option<u64>, ScanError> {
     let output = run(
         "ffprobe",
-        Command::new(&tools.ffprobe)
+        tools
+            .ffprobe()
             .args([
                 "-v",
                 "error",
@@ -77,7 +77,8 @@ pub(crate) fn duration_ms(tools: &Tools, path: &Path) -> Result<Option<u64>, Sca
 pub(crate) fn tracks(tools: &Tools, path: &Path) -> Result<Vec<Track>, ScanError> {
     let output = run(
         "ffprobe",
-        Command::new(&tools.ffprobe)
+        tools
+            .ffprobe()
             .args([
                 "-v",
                 "error",
@@ -95,7 +96,8 @@ pub(crate) fn tracks(tools: &Tools, path: &Path) -> Result<Vec<Track>, ScanError
 pub(crate) fn chapters_of(tools: &Tools, path: &Path) -> Result<Vec<Chapter>, ScanError> {
     let output = run(
         "ffprobe",
-        Command::new(&tools.ffprobe)
+        tools
+            .ffprobe()
             .args([
                 "-v",
                 "error",
@@ -113,7 +115,8 @@ pub(crate) fn chapters_of(tools: &Tools, path: &Path) -> Result<Vec<Chapter>, Sc
 fn ffprobe(tools: &Tools, path: &Path) -> Result<Probed, ScanError> {
     let output = run(
         "ffprobe",
-        Command::new(&tools.ffprobe)
+        tools
+            .ffprobe()
             .args([
                 "-v",
                 "error",
@@ -143,7 +146,8 @@ fn measure_packets(
 ) -> Result<DeepAnalysis, ScanError> {
     let mut child = Streaming::spawn(
         "ffprobe",
-        Command::new(&tools.ffprobe)
+        tools
+            .ffprobe()
             .args([
                 "-v",
                 "error",
