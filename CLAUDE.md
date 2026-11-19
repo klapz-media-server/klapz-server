@@ -509,7 +509,7 @@ Places where we knowingly answer differently, each decided rather than overlooke
   a new item, where the reference finds it again by size and hash.
 - **A file's name gives its one untagged audio track a French dub.** The repo owner's rule: when
   a file has a single audio track and it carries no language, a whole word of the file's name
-  sets one — `VFQ` `fr-CA`, `VFF`, `VFI` and `FRENCH` `fr-FR`, `VFQ` winning over the others —
+  sets one — `VFQ` `fr-CA`, `VFF`, `VFI`, `FRENCH` and `TRUEFRENCH` `fr-FR`, `VFQ` winning over the others —
   where the reference leaves the track without a language. A tag, or a second audio track,
   turns it off (`db::scan_repository::analysis::dub_language`).
 - **A category's tile shows no item's art.** The reference draws each genre's tile from the

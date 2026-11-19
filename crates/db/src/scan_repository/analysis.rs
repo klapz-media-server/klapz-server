@@ -119,8 +119,9 @@ pub(super) fn container(format_name: &str, path: &str) -> Option<String> {
 }
 
 /// The French dub a release names, for a file whose one audio track carries no language: `VFQ`
-/// is Quebec's (`fr-CA`), `VFF`, `VFI` and `FRENCH` France's (`fr-FR`), and `VFQ` wins when a
-/// name gives both. The repo owner's rule: the reference leaves such a track without a language.
+/// is Quebec's (`fr-CA`), `VFF`, `VFI`, `FRENCH` and `TRUEFRENCH` France's (`fr-FR`), and `VFQ`
+/// wins when a name gives both. The repo owner's rule: the reference leaves such a track
+/// without a language.
 fn dub_language(path: &str) -> Option<&'static str> {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
@@ -132,7 +133,7 @@ fn dub_language(path: &str) -> Option<&'static str> {
         if word.eq_ignore_ascii_case("vfq") {
             return Some("fr-CA");
         }
-        france |= ["vff", "vfi", "french"]
+        france |= ["vff", "vfi", "french", "truefrench"]
             .iter()
             .any(|dub| word.eq_ignore_ascii_case(dub));
     }
@@ -560,8 +561,11 @@ mod tests {
             Some("fr-FR")
         );
         assert_eq!(dub_language("Film.FRENCH.VFQ.mkv"), Some("fr-CA"));
+        assert_eq!(
+            dub_language("Soul.2020.TRUEFRENCH.1080p.mkv"),
+            Some("fr-FR")
+        );
         // A whole word only, and the file's name only.
-        assert_eq!(dub_language("Soul.2020.TRUEFRENCH.1080p.mkv"), None);
         assert_eq!(dub_language("Frenchie.2019.mkv"), None);
         assert_eq!(dub_language("/VFQ/Film.2020.mkv"), None);
         assert_eq!(dub_language("Film.2020.vfq"), None);
