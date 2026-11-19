@@ -19,6 +19,7 @@ use open_plex_core::metadata;
 use open_plex_core::scan::{
     KnownPart, NewItem, NewMedia, NewPart, ScanError, ScanRepository, ShowKey,
 };
+use open_plex_scanner::report::Analysis;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection,
@@ -559,7 +560,7 @@ fn part_row(file: &NewPart, media: i64, id: i64, position: i32) -> media_part::M
         path: file.path.clone(),
         size_bytes: i64::try_from(file.size).ok(),
         duration_ms: analysis
-            .and_then(|analysis| analysis.duration_ms)
+            .and_then(Analysis::measured_duration_ms)
             .and_then(|duration| i64::try_from(duration).ok()),
         // The reference keeps the file's time in both.
         created_at: file.modified_at,
@@ -624,7 +625,7 @@ fn version_duration(version: &NewMedia) -> Option<i64> {
     summed(version.parts.iter().map(|part| {
         part.analysis
             .as_ref()
-            .and_then(|analysis| analysis.duration_ms)
+            .and_then(Analysis::measured_duration_ms)
             .and_then(|duration| i64::try_from(duration).ok())
     }))
 }

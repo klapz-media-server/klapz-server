@@ -154,7 +154,14 @@ Audio: `ma:samplingRate`, `ma:audioChannelLayout` (`5.1(side)`, `stereo`: ffprob
 typed columns in `media_stream` and `stream_dolby_vision`.
 
 **Conclusion (measured):** ffprobe from ffmpeg-plex, plus `trace_headers` for three SPS fields,
-reproduces every per-track value of the normal analysis on the test files. Two `media_items`
+reproduces every per-track value of the normal analysis on the test files. The SPS figures are
+H.264's alone: over the reference's library, every video track of another codec (HEVC, AV1,
+MPEG-4, MPEG-2, VC-1, VP9…, 39,297 tracks) stores `ma:refFrames` 1, no `ma:hasScalingMatrix`,
+and a coded size equal to its size or rounded up to 8, 16 or 32 (HEVC: 1036 → 1040), which is
+ffprobe's `coded_width` and `coded_height` for those decoders (**inferred**: no such file
+among the test files). ffprobe 8.1 no longer prints `refs` at all. A tag `BPS` gives a
+subtitle its rate (Bull: 77); `BPS-eng`, which an older mkvmerge wrote on Soul, is not read,
+and Soul's subtitles had no rate before their deep analysis (**measured**). Two `media_items`
 values differ by origin: `bitrate` is the container's, and the video track's `bitrate` is
 `format.bit_rate` minus the audio tracks' declared bitrates (Soul: 7726375 − 256000 − 768000
 = 6702375, stored exactly). Bull's video track stored the format bitrate itself (3208969),
@@ -205,7 +212,21 @@ The transcoder decides whether to copy the video by comparing a client's bandwid
 `requiredBandwidths` (`docs/spec-gaps.md`, *Quality follows a fixed ladder*; **binary**:
 *Cannot direct play this item. Required bandwidth is not known and only {2}kbps is available.*).
 
-**Not reproduced.** The buffer sizes behind the eight values were not found. On Soul, video
+**The measured rates (reproduced, measured on the three test files).** Each track's rate, and the
+media's, is its packets' bytes × 8 divided by the time **all** the packets span — the earliest
+start (presentation time, else decoding time) to the latest end (start plus duration) — and
+truncated. The span replaces the duration too: Soul's packets end at 6031.567 s, its header says
+6031.568, and its forced deep analysis rewrote the media's and the part's `duration` to 6031567.
+A track measured at 0 (Soul's forced subtitles: ten packets, 318 bytes) stores no rate. Every
+value the reference stored then matches ours: Soul 7723977, audio 255977 and 767936, subtitles
+none, 69 and 80, video 6699911; Bull E01 3206539, 3110461, 96000, 76; E02 3218631, 3122539,
+96000, 91. Dividing by the container's duration instead puts Soul's video one unit off.
+
+Soul's state before (`ma:deepAnalysisVersion` 6, yet the declared rates) was a normal analysis
+rewriting the tracks after the deep one, which the version then kept from running again
+(**inferred** from the tracks' `updated_at`, later than the deep analysis).
+
+**Not reproduced.** The buffer sizes behind the eight `requiredBandwidths` values were not found. On Soul, video
 stored `10639,9885,9182,9033,9033,9033,9033,9033` against an average of 6700 kbps; neither a
 startup-delay model (`max_t S(t)/(t+d)`), nor sliding windows, nor a leaky bucket of fixed size
 (`max_t (S(t)−B)/t`) gives a sequence that levels off at 9033 for the five largest buffers. Our
@@ -474,8 +495,8 @@ breaks between 25 and 600 s). No Live TV here, so out of scope with the DVR.
 
 | Output | With | Status |
 | --- | --- | --- |
-| Track and container fields of the analysis | `ffprobe` (ffmpeg-plex) + `trace_headers` for `refFrames`, `codedHeight`, `hasScalingMatrix` | measured identical on the test files |
-| Track bitrates of deep analysis | packet sizes from `ffprobe -show_entries packet` | matches Matroska's `BPS` (3110461) |
+| Track and container fields of the analysis | `ffprobe` (ffmpeg-plex) + `trace_headers` for H.264's `refFrames`, `codedWidth`, `codedHeight`, `hasScalingMatrix` | identical on the test files, every `Media`, `Part` and `Stream` field of a lookup |
+| Rates and duration of deep analysis | packet sizes and times from `ffprobe -show_entries packet` | identical on the test files |
 | `requiredBandwidths` | packet sizes | rule unknown |
 | GoP file | packet flags and sizes | format known, not compared |
 | OpenSubtitles hash | 128 KiB read | exact |
@@ -514,6 +535,10 @@ breaks between 25 and 600 s). No Live TV here, so out of scope with the DVR.
 
 ## Left changed on the reference
 
+- Film 577986 (Soul, section 27), 2026-11-19: forced deep analysis (`--analyze-deeply --force
+  --item 577986`) rewrote its track `bitrate`s to the measured ones (video 6702375 → 6699911,
+  audio 256000 → 255977 and 768000 → 767936, subtitles → none, 69, 80), the media's
+  (7726375 → 7723977) and its `duration` (6031568 → 6031567).
 - Episode 578173 (section 28): forced deep analysis rewrote its track `bitrate`s (video 3208969 →
   3110461, subtitle 77 → 76), the media `bitrate` (3208969 → 3206539), the tracks' `updated_at`
   and its `GoP-0.xml` (same content); analysis bumped `changed_at`. Its `index-sd.bif` was

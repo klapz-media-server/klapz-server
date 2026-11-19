@@ -7,6 +7,7 @@ mod hashes;
 mod loudness;
 mod mp4;
 mod probe;
+mod sequence_header;
 mod subtitles;
 
 use std::ffi::OsString;

@@ -2,8 +2,8 @@
 //! reads with.
 //!
 //! The analyses are the scanner's own reports on the reference's test files (`fixtures/scan`),
-//! and the values asserted are the ones `docs/scanner/analysis.md` measured the reference
-//! storing for those same files.
+//! deep ones as a scan makes them, and the values asserted are the ones
+//! `docs/scanner/analysis.md` measured the reference storing for those same files.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::float_cmp)]
 
@@ -84,13 +84,17 @@ fn part(path: &str, analysis: Option<Analysis>, sidecars: Vec<NewSidecar>) -> Ne
 }
 
 fn soul() -> NewItem {
+    soul_with(probe("soul"))
+}
+
+fn soul_with(analysis: Analysis) -> NewItem {
     NewItem::Movie {
         title: "Soul".to_owned(),
         year: Some(2020),
         versions: vec![NewMedia {
             parts: vec![part(
                 "C:\\Films\\Soul (2020)\\Soul.mkv",
-                Some(probe("soul")),
+                Some(analysis),
                 vec![NewSidecar {
                     path: "C:\\Films\\Soul (2020)\\Soul.fre.forced.srt".to_owned(),
                     codec: "srt".to_owned(),
@@ -143,7 +147,8 @@ async fn a_scanned_film_reads_back_as_the_reference_stored_it() {
     assert_eq!(item.year, Some(2020));
     assert_eq!(item.guid, format!("local://{}", key.get()));
     assert_eq!(item.added_at, NOW);
-    assert_eq!(item.duration_ms, Some(6_031_568));
+    // The packets' span, which the deep analysis stores over the header's 6031568.
+    assert_eq!(item.duration_ms, Some(6_031_567));
 
     let listed = metadata
         .items(
@@ -167,8 +172,9 @@ async fn a_scanned_film_reads_back_as_the_reference_stored_it() {
         panic!("one version expected: {versions:?}")
     };
     assert_eq!(version.container.as_deref(), Some("mkv"));
-    assert_eq!(version.bitrate, Some(7_726_375));
-    assert_eq!(version.duration_ms, Some(6_031_568));
+    // Every packet's bytes over the 6031.567 s they span, as the deep analysis measured it.
+    assert_eq!(version.bitrate, Some(7_723_977));
+    assert_eq!(version.duration_ms, Some(6_031_567));
     assert_eq!((version.width, version.height), (Some(1920), Some(1080)));
     assert_eq!(version.aspect_ratio, Some(1.777_777_791_023_254_4));
     assert_eq!(version.frame_rate, Some(23.976_024_627_685_547));
@@ -206,7 +212,7 @@ async fn a_scanned_films_tracks_carry_the_reference_vocabulary() {
 
     let video = &tracks[5];
     assert_eq!(video.position, 5);
-    assert_eq!(video.bitrate, Some(6_702_375));
+    assert_eq!(video.bitrate, Some(6_699_911));
     // A Matroska video track without a language is Matroska's default.
     assert_eq!(video.language.as_deref(), Some("en"));
     assert_eq!(video.profile.as_deref(), Some("high"));
@@ -219,11 +225,18 @@ async fn a_scanned_films_tracks_carry_the_reference_vocabulary() {
     assert_eq!(analysis.color.range.as_deref(), Some("tv"));
     assert_eq!(analysis.color.transfer.as_deref(), Some("bt709"));
     assert_eq!(analysis.pixel_aspect_ratio, None);
+    // From the sequence header, where ffprobe says 1080 and one reference frame.
+    assert_eq!(
+        (analysis.coded_width, analysis.coded_height),
+        (Some(1920), Some(1088))
+    );
+    assert_eq!(analysis.ref_frames, Some(4));
+    assert_eq!(analysis.has_scaling_matrix, Some(false));
 
     let french = &tracks[0];
     assert_eq!(french.codec.as_deref(), Some("eac3"));
     assert_eq!(french.language.as_deref(), Some("fr"));
-    assert_eq!(french.bitrate, Some(256_000));
+    assert_eq!(french.bitrate, Some(255_977));
     assert_eq!(french.channels, Some(6));
     assert!(french.is_default);
     let sound = french.audio.as_ref().unwrap();
@@ -231,7 +244,7 @@ async fn a_scanned_films_tracks_carry_the_reference_vocabulary() {
     assert_eq!(sound.sampling_rate, Some(48_000));
     let english = &tracks[1];
     assert_eq!(english.language.as_deref(), Some("en"));
-    assert_eq!(english.bitrate, Some(768_000));
+    assert_eq!(english.bitrate, Some(767_936));
     assert_eq!(
         english.profile.as_deref(),
         Some("dolby digital plus + dolby atmos")
@@ -242,7 +255,9 @@ async fn a_scanned_films_tracks_carry_the_reference_vocabulary() {
     assert_eq!(forced.language.as_deref(), Some("fr"));
     assert_eq!(forced.title.as_deref(), Some("French (Forced)"));
     assert!(forced.is_forced && forced.is_default);
-    assert_eq!(tracks[3].bitrate, Some(70));
+    // Ten packets, 318 bytes: a measured 0, which the reference stores as no rate.
+    assert_eq!(forced.bitrate, None);
+    assert_eq!(tracks[3].bitrate, Some(69));
 
     let sidecar = &tracks[6];
     assert_eq!(
@@ -304,14 +319,17 @@ async fn episodes_share_the_show_and_season_they_make() {
     assert_eq!(listed.items.len(), 1);
     assert_eq!(listed.items[0].item.id, show.id);
 
-    // Bull's AAC declares no rate in its header: the video keeps the container's, the audio
-    // and subtitle the rates their muxer tagged.
     let tracks = tracks_of(&metadata, first.id).await;
-    assert_eq!(tracks[0].bitrate, Some(3_208_969));
-    assert_eq!(tracks[0].video.as_deref().unwrap().frame_rate, Some(25.0));
+    assert_eq!(tracks[0].bitrate, Some(3_110_461));
+    let video = tracks[0].video.as_deref().unwrap();
+    assert_eq!(video.frame_rate, Some(25.0));
+    assert_eq!(
+        (video.coded_width, video.coded_height, video.ref_frames),
+        (Some(1280), Some(720), Some(2))
+    );
     assert_eq!(tracks[1].bitrate, Some(96_000));
     assert_eq!(tracks[1].profile.as_deref(), Some("lc"));
-    assert_eq!(tracks[2].bitrate, Some(77));
+    assert_eq!(tracks[2].bitrate, Some(76));
 
     // An unanalysed file is listed with its file and no track.
     let versions = metadata.versions_for(&[second.id]).await.unwrap();
@@ -319,6 +337,41 @@ async fn episodes_share_the_show_and_season_they_make() {
     let files = metadata.files_for(&[versions[0].id]).await.unwrap();
     assert_eq!(files[0].size_bytes, Some(1_000));
     assert!(tracks_of(&metadata, second.id).await.is_empty());
+}
+
+/// The rates the reference stores before its deep analysis runs, which a scan falls back on
+/// when its own cannot finish.
+#[tokio::test]
+async fn without_a_deep_analysis_rates_are_the_declared_ones() {
+    let (_, scan, metadata) = seeded().await;
+    let mut analysis = probe("soul");
+    analysis.deep = None;
+    let film = scan
+        .add_item(FILMS, soul_with(analysis), NOW)
+        .await
+        .unwrap();
+    let versions = metadata.versions_for(&[film]).await.unwrap();
+    assert_eq!(versions[0].bitrate, Some(7_726_375));
+    assert_eq!(versions[0].duration_ms, Some(6_031_568));
+    let tracks = tracks_of(&metadata, film).await;
+    // The container's rate less the audio's declared ones.
+    assert_eq!(tracks[5].bitrate, Some(6_702_375));
+    assert_eq!(tracks[0].bitrate, Some(256_000));
+    // Soul's subtitles are tagged `BPS-eng`, which the reference does not read.
+    assert_eq!(tracks[3].bitrate, None);
+
+    let mut analysis = probe("bull_s05e01");
+    analysis.deep = None;
+    let episode = scan
+        .add_item(SERIES, bull(1, Some(analysis)), NOW)
+        .await
+        .unwrap();
+    // Bull's AAC declares no rate in its header: the video keeps the container's, the audio
+    // and subtitle the rates their muxer tagged.
+    let tracks = tracks_of(&metadata, episode).await;
+    assert_eq!(tracks[0].bitrate, Some(3_208_969));
+    assert_eq!(tracks[1].bitrate, Some(96_000));
+    assert_eq!(tracks[2].bitrate, Some(77));
 }
 
 #[tokio::test]

@@ -72,6 +72,16 @@ pub struct Analysis {
     pub deep: Option<DeepAnalysis>,
 }
 
+impl Analysis {
+    /// The packets' span when a deep analysis measured one, else the container's duration.
+    pub fn measured_duration_ms(&self) -> Option<u64> {
+        self.deep
+            .as_ref()
+            .and_then(|deep| deep.duration_ms)
+            .or(self.duration_ms)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TrackKind {
@@ -144,6 +154,9 @@ pub struct VideoTrack {
     pub coded_width: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coded_height: Option<u32>,
+    /// H.264 only: what its sequence parameter set says, where ffprobe's figures differ.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sequence_header: Option<SequenceHeader>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub level: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -174,6 +187,19 @@ pub struct VideoTrack {
     pub closed_captions: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dolby_vision: Option<DolbyVision>,
+}
+
+/// An H.264 sequence parameter set, as `trace_headers` reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SequenceHeader {
+    /// In whole macroblocks, before cropping: 1088 for a 1080-line picture.
+    pub coded_width: u32,
+    pub coded_height: u32,
+    /// `max_num_ref_frames`: how many pictures the encoder allowed itself to predict from.
+    pub ref_frames: u32,
+    /// `seq_scaling_matrix_present_flag`.
+    pub has_scaling_matrix: bool,
 }
 
 /// The Dolby Vision configuration record, from the stream's side data.
@@ -230,7 +256,12 @@ pub struct Chapter {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeepAnalysis {
-    /// Every packet's bytes over the duration, in bits per second.
+    /// The time the packets span, from the first one's start to the last one's end, which the
+    /// reference stores as the duration once it has measured it: 6031567 for Soul, whose
+    /// header says 6031568.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    /// Every packet's bytes over that span, in bits per second.
     pub bitrate: u64,
     pub tracks: Vec<MeasuredTrack>,
 }

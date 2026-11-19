@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::engine::{hashes, input, mp4, run, ScanError, Streaming, Tools};
+use crate::engine::{hashes, input, mp4, run, sequence_header, ScanError, Streaming, Tools};
 use crate::report::{
     Analysis, Attachment, AudioTrack, Chapter, DeepAnalysis, Disposition, DolbyVision,
     MeasuredTrack, Track, TrackKind, VideoTrack,
@@ -45,6 +45,14 @@ pub fn probe(tools: &Tools, path: &Path, deep: bool) -> Result<Analysis, ScanErr
     }
     if analysis.container == "mpegts" {
         analysis.packet_length = transport_packet_length(path);
+    }
+    for track in &mut analysis.tracks {
+        if track.codec.as_deref() != Some("h264") || track.disposition.attached_picture {
+            continue;
+        }
+        if let Some(video) = &mut track.video {
+            video.sequence_header = sequence_header::read(tools, path, track.index);
+        }
     }
     if deep {
         analysis.deep = Some(measure_packets(tools, path, duration_ms)?);
@@ -152,33 +160,41 @@ fn measure_packets(
                 "-v",
                 "error",
                 "-show_entries",
-                "packet=stream_index,size",
+                "packet=stream_index,pts_time,dts_time,duration_time,size",
                 "-of",
-                "csv=p=0",
+                "compact=p=0",
                 "-i",
             ])
             .arg(input(path)),
     )?;
     let mut totals: BTreeMap<u32, (u64, u64)> = BTreeMap::new();
+    let mut span = Span::default();
     for line in BufReader::new(child.stdout()?).lines() {
         let line = line.map_err(|error| ScanError::Output {
             tool: "ffprobe",
             message: error.to_string(),
         })?;
-        let mut fields = line.trim().split(',');
-        let (Some(index), Some(size)) = (fields.next(), fields.next()) else {
+        let Some(packet) = Packet::parse(&line) else {
             continue;
         };
-        let (Ok(index), Ok(size)) = (index.parse::<u32>(), size.parse::<u64>()) else {
-            continue;
-        };
-        let total = totals.entry(index).or_default();
+        let total = totals.entry(packet.stream).or_default();
         total.0 += 1;
-        total.1 += size;
+        total.1 += packet.size;
+        if let Some(start) = packet.start_us {
+            span.cover(start, start + packet.duration_us.unwrap_or(0));
+        }
     }
     child.finish()?;
-    let rate = |bytes: u64| match duration_ms {
-        Some(ms) if ms > 0 => bytes.saturating_mul(8_000) / ms,
+    // The reference divides by the time the packets cover, not by the container's duration:
+    // Soul's last video packet ends at 6031.567 s where its header says 6031.568, and every
+    // rate it stored is the truncated quotient by the former.
+    let measured_us = span.length_us();
+    let span_us = measured_us.or_else(|| duration_ms.map(|ms| ms.saturating_mul(1000)));
+    let rate = |bytes: u64| match span_us {
+        Some(us) if us > 0 => {
+            let bits = u128::from(bytes) * 8_000_000;
+            u64::try_from(bits / u128::from(us)).unwrap_or(u64::MAX)
+        }
         _ => 0,
     };
     let tracks: Vec<MeasuredTrack> = totals
@@ -191,9 +207,83 @@ fn measure_packets(
         })
         .collect();
     Ok(DeepAnalysis {
+        duration_ms: measured_us.map(|us| us / 1000),
         bitrate: rate(tracks.iter().map(|track| track.bytes).sum()),
         tracks,
     })
+}
+
+/// One line of `-show_entries packet=… -of compact=p=0`: `stream_index=0|pts_time=…|…`.
+#[derive(Debug, PartialEq)]
+struct Packet {
+    stream: u32,
+    size: u64,
+    /// The presentation time, or the decoding time for a packet that has none.
+    start_us: Option<i64>,
+    duration_us: Option<i64>,
+}
+
+impl Packet {
+    fn parse(line: &str) -> Option<Self> {
+        let field = |name: &str| {
+            line.trim().split('|').find_map(|pair| {
+                let (key, value) = pair.split_once('=')?;
+                (key == name).then_some(value)
+            })
+        };
+        Some(Self {
+            stream: field("stream_index")?.parse().ok()?,
+            size: field("size")?.parse().ok()?,
+            start_us: field("pts_time")
+                .and_then(microseconds)
+                .or_else(|| field("dts_time").and_then(microseconds)),
+            duration_us: field("duration_time").and_then(microseconds),
+        })
+    }
+}
+
+/// The earliest start and the latest end seen among the packets.
+#[derive(Debug, Default)]
+struct Span {
+    covered: Option<(i64, i64)>,
+}
+
+impl Span {
+    fn cover(&mut self, start: i64, end: i64) {
+        self.covered = Some(match self.covered {
+            Some((first, last)) => (first.min(start), last.max(end)),
+            None => (start, end),
+        });
+    }
+
+    fn length_us(&self) -> Option<u64> {
+        let (first, last) = self.covered?;
+        u64::try_from(last - first)
+            .ok()
+            .filter(|length| *length > 0)
+    }
+}
+
+/// ffprobe's seconds, `-0.042000` or `6031.567000`, in whole microseconds: read as decimals,
+/// since a float would put a rate one unit off.
+fn microseconds(seconds: &str) -> Option<i64> {
+    let (negative, digits) = match seconds.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, seconds),
+    };
+    let (whole, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+    if whole.is_empty() || !whole.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    if !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let mut micros = whole.parse::<i64>().ok()?.checked_mul(1_000_000)?;
+    for (position, digit) in fraction.bytes().take(6).enumerate() {
+        let weight = 10_i64.pow(5 - u32::try_from(position).ok()?);
+        micros = micros.checked_add(i64::from(digit - b'0') * weight)?;
+    }
+    Some(if negative { -micros } else { micros })
 }
 
 /// 188 bytes, or 192 for the timecoded packets of Blu-ray's M2TS, told by where the sync
@@ -226,14 +316,9 @@ fn track(stream: &Stream) -> Option<Track> {
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.clone())
     };
-    // Matroska writes its statistics per language, `BPS-eng`, when the muxer was told one.
-    let tagged_bitrate = stream
-        .tags
-        .iter()
-        .find(|(key, _)| {
-            key.eq_ignore_ascii_case("BPS") || key.to_ascii_uppercase().starts_with("BPS-")
-        })
-        .and_then(|(_, value)| integer(value));
+    // Not `BPS-eng`, the name an older mkvmerge gave the same statistic: the reference reads
+    // `BPS` alone, and left Soul's subtitles, tagged that way, without a rate.
+    let tagged_bitrate = tag("BPS").as_deref().and_then(integer);
     let flag = |name: &str| {
         stream
             .disposition
@@ -255,6 +340,7 @@ fn track(stream: &Stream) -> Option<Track> {
         height: stream.height.unwrap_or(0),
         coded_width: stream.coded_width.filter(|width| *width > 0),
         coded_height: stream.coded_height.filter(|height| *height > 0),
+        sequence_header: None,
         level: stream.level.filter(|level| *level >= 0),
         pixel_format: stream.pix_fmt.clone(),
         bit_depth: stream
@@ -506,6 +592,39 @@ mod tests {
         assert_eq!(named[1].title.as_deref(), Some("Credits"));
         assert_eq!(named[0].title.as_deref(), Some("Chapter 1"));
         assert_eq!(named[1].index, 2);
+    }
+
+    #[test]
+    fn reads_packet_lines_with_their_times_in_microseconds() {
+        assert_eq!(
+            Packet::parse("stream_index=5|pts_time=6031.525000|dts_time=6031.483000|duration_time=0.042000|size=31337
+"),
+            Some(Packet {
+                stream: 5,
+                size: 31_337,
+                start_us: Some(6_031_525_000),
+                duration_us: Some(42_000),
+            })
+        );
+        let subtitle = Packet::parse(
+            "stream_index=2|pts_time=N/A|dts_time=-0.042000|duration_time=N/A|size=12",
+        )
+        .unwrap();
+        assert_eq!(subtitle.start_us, Some(-42_000));
+        assert_eq!(subtitle.duration_us, None);
+        assert_eq!(Packet::parse("stream_index=2|size=N/A"), None);
+        assert_eq!(microseconds("2467.16"), Some(2_467_160_000));
+        assert_eq!(microseconds("1e3"), None);
+    }
+
+    #[test]
+    fn spans_from_the_first_start_to_the_last_end() {
+        let mut span = Span::default();
+        assert_eq!(span.length_us(), None);
+        span.cover(32_616_000, 32_700_000);
+        span.cover(0, 42_000);
+        span.cover(6_031_525_000, 6_031_567_000);
+        assert_eq!(span.length_us(), Some(6_031_567_000));
     }
 
     #[test]

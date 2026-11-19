@@ -1,6 +1,6 @@
 //! Media analysis by the scanner binary: one process per file, never more than a few at once.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -65,6 +65,9 @@ fn failed(failure: ScannerFailure) -> AnalyzeError {
 
 #[async_trait::async_trait]
 impl MediaAnalyzer for ScannerProcess {
+    /// The deep analysis, as the reference's tracks end up stored: rates measured over every
+    /// packet. It reads the whole file, so when it cannot finish, the headers alone still make
+    /// the item.
     async fn analyze(&self, file: &FileLocation) -> Result<Analysis, AnalyzeError> {
         let FileLocation::Local(path) = file;
         let _permit = self
@@ -72,8 +75,20 @@ impl MediaAnalyzer for ScannerProcess {
             .acquire()
             .await
             .map_err(|_| failed(ScannerFailure::Status("the analyzer is closed".to_owned())))?;
+        match self.probe(&["probe", "--deep", "--"], path).await {
+            Ok(analysis) => Ok(analysis),
+            Err(error) => {
+                tracing::warn!(%error, "deep analysis failed, reading the headers alone");
+                self.probe(&["probe", "--"], path).await
+            }
+        }
+    }
+}
+
+impl ScannerProcess {
+    async fn probe(&self, arguments: &[&str], path: &Path) -> Result<Analysis, AnalyzeError> {
         let child = Command::new(&self.binary)
-            .args(["probe", "--"])
+            .args(arguments)
             .arg(path)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

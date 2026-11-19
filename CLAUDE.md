@@ -138,7 +138,8 @@ without them saying so.
   the reference's skip rule (a directory whose media files kept their names, sizes and
   modification times is not looked at again), reuses a known path, groups new files by the
   measured naming rules (`scan::layout`), analyzes them through `MediaAnalyzer` — the scanner
-  binary, two at a time, ten minutes at most each — and writes through `ScanRepository`, whose
+  binary's deep analysis, which reads every packet, falling back to the headers alone when it
+  cannot finish, two at a time, ten minutes at most each — and writes through `ScanRepository`, whose
   items go through `db::write` like every other. What is gone is removed, unless its whole root
   cannot be reached: an unmounted disk is not an empty library. `BackgroundScans` keeps one scan
   per library and cancels between files.
@@ -907,8 +908,11 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   fingerprints in process (9,841 of 9,945 values equal to Plex's Fingerprinter, 0.03 % of bits
   apart), EBU R 128 loudness, subtitle tracks extracted, chapter frames, and poster and backdrop
   frames at a quarter, half and three quarters (720×405 and 1280×720 for 16:9, as the
-  reference's) with the covers a file carries. Not yet: the three sequence-header fields ffprobe
-  misreports (`trace_headers`), `requiredBandwidths`, credits detection.
+  reference's) with the covers a file carries; H.264's coded size, reference frames and scaling
+  matrix from its sequence header (`trace_headers`), and the deep analysis' rates and duration
+  over the time the packets span, as the reference measures them. A scanned file's lookup is the
+  reference's field for field on `Media`, `Part` and `Stream` for the three test files. Not yet:
+  `requiredBandwidths`, chapters stored, credits detection.
 - 🚧 **library scans in the server**: libraries walked through `LibraryFiles` (local disks for
   now), files grouped into films, series, seasons and episodes by the reference's measured
   naming rules (`CleanName`, stacking, versions, the 18 episode patterns, dates, sidecars,

@@ -7,7 +7,7 @@
 //! the test files (`docs/scanner/analysis.md`, §1).
 
 use open_plex_core::scan::NewSidecar;
-use open_plex_scanner::report::{Analysis, DolbyVision, Track, TrackKind};
+use open_plex_scanner::report::{Analysis, DolbyVision, Track, TrackKind, VideoTrack};
 
 use crate::entity::{media_stream, stream_dolby_vision};
 
@@ -213,6 +213,7 @@ pub(super) fn track_rows(analysis: &Analysis, part: i64, first_id: i64) -> Vec<T
                 // Matroska's default language, which its muxers leave unwritten.
                 .or_else(|| (matroska && track.kind == TrackKind::Video).then(|| "en".to_owned()));
             let picture = track.video.as_ref();
+            let coded = picture.and_then(|picture| coding(track, picture));
             let sound = track.audio.as_ref();
             let disposition = track.disposition;
             // Written only for pixels that are not square, as the reference writes it.
@@ -242,16 +243,13 @@ pub(super) fn track_rows(analysis: &Analysis, part: i64, first_id: i64) -> Vec<T
                     .and_then(|depth| i32::try_from(depth).ok()),
                 width: picture.and_then(|picture| i32::try_from(picture.width).ok()),
                 height: picture.and_then(|picture| i32::try_from(picture.height).ok()),
-                // ffprobe reports the cropped size and its own count of reference frames,
-                // where the reference reads the sequence header (1088, not 1080): left unknown
-                // rather than stored wrong.
-                coded_width: None,
-                coded_height: None,
+                coded_width: coded.map(|coded| coded.width),
+                coded_height: coded.map(|coded| coded.height),
                 frame_rate: picture
                     .and_then(|picture| picture.frame_rate)
                     .map(|rate| (rate * 1000.0).round() / 1000.0),
                 level: picture.and_then(|picture| picture.level),
-                ref_frames: None,
+                ref_frames: coded.map(|coded| coded.ref_frames),
                 scan_type: picture
                     .and_then(|picture| scan_type(picture.field_order.as_deref()?))
                     .map(ToOwned::to_owned),
@@ -263,7 +261,7 @@ pub(super) fn track_rows(analysis: &Analysis, part: i64, first_id: i64) -> Vec<T
                 color_space: picture.and_then(|picture| picture.color_space.clone()),
                 color_primaries: picture.and_then(|picture| picture.color_primaries.clone()),
                 color_transfer: picture.and_then(|picture| picture.color_transfer.clone()),
-                has_scaling_matrix: None,
+                has_scaling_matrix: coded.and_then(|coded| coded.has_scaling_matrix),
                 is_anamorphic: sample_aspect.map(|_| true),
                 pixel_aspect_ratio: sample_aspect.map(ToOwned::to_owned),
                 // The reference keeps a FourCC for the legacy containers that carry one.
@@ -299,24 +297,61 @@ pub(super) fn track_rows(analysis: &Analysis, part: i64, first_id: i64) -> Vec<T
         .collect()
 }
 
-/// A track's rate: measured over every packet when a deep analysis ran, else as its header
-/// declares it. Without either, the main video takes what the container's rate leaves, and
-/// audio and subtitles the rate their muxer tagged — Bull's AAC declares none and the reference
-/// stored its tagged 96000.
+/// A track's rate: measured over every packet when a deep analysis ran, and then nothing else,
+/// a rate of 0 included (Soul's forced subtitles: ten packets, 318 bytes, no rate stored).
+/// Otherwise as its header declares it; without that, the main video takes what the
+/// container's rate leaves, and audio and subtitles the rate their muxer tagged — Bull's AAC
+/// declares none and the reference stored its tagged 96000.
 fn track_bitrate(analysis: &Analysis, track: &Track) -> Option<u64> {
-    let measured = analysis.deep.as_ref().and_then(|deep| {
-        deep.tracks
+    if let Some(deep) = &analysis.deep {
+        return deep
+            .tracks
             .iter()
             .find(|measured| measured.index == track.index)
             .map(|measured| measured.bitrate)
-    });
-    let declared = track.bitrate.filter(|rate| *rate > 0);
-    measured.or(declared).or_else(|| match track.kind {
-        TrackKind::Video if main_video(analysis).map(|main| main.index) == Some(track.index) => {
-            video_bitrate_fallback(analysis)
-        }
-        TrackKind::Video => None,
-        _ => track.tagged_bitrate.filter(|rate| *rate > 0),
+            .filter(|rate| *rate > 0);
+    }
+    track
+        .bitrate
+        .filter(|rate| *rate > 0)
+        .or_else(|| match track.kind {
+            TrackKind::Video
+                if main_video(analysis).map(|main| main.index) == Some(track.index) =>
+            {
+                video_bitrate_fallback(analysis)
+            }
+            TrackKind::Video => None,
+            _ => track.tagged_bitrate.filter(|rate| *rate > 0),
+        })
+}
+
+/// How a video track was coded, as the reference stores it.
+#[derive(Debug, Clone, Copy)]
+struct Coding {
+    width: i32,
+    height: i32,
+    ref_frames: i32,
+    has_scaling_matrix: Option<bool>,
+}
+
+/// H.264's from its sequence header, unknown without one, since ffprobe's cropped size would be
+/// stored wrong; any other codec's size as ffprobe reports it, with the one reference frame the
+/// reference stores for every such track (39,297 of 39,297 in its library).
+fn coding(track: &Track, picture: &VideoTrack) -> Option<Coding> {
+    if track.codec.as_deref() == Some("h264") {
+        let header = picture.sequence_header?;
+        return Some(Coding {
+            width: i32::try_from(header.coded_width).ok()?,
+            height: i32::try_from(header.coded_height).ok()?,
+            ref_frames: i32::try_from(header.ref_frames).ok()?,
+            has_scaling_matrix: Some(header.has_scaling_matrix),
+        });
+    }
+    Some(Coding {
+        width: i32::try_from(picture.coded_width?).ok()?,
+        height: i32::try_from(picture.coded_height?).ok()?,
+        ref_frames: 1,
+        has_scaling_matrix: None,
     })
 }
 
