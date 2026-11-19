@@ -587,7 +587,7 @@ async fn add_tracks<C: ConnectionTrait>(
     let embedded = file
         .analysis
         .as_ref()
-        .map(|analysis| analysis::track_rows(analysis, part, ids.stream))
+        .map(|analysis| analysis::track_rows(analysis, &file.path, part, ids.stream))
         .unwrap_or_default();
     ids.stream += i64::try_from(embedded.len()).unwrap_or(i64::MAX);
     let mut streams = Vec::with_capacity(embedded.len() + file.sidecars.len());

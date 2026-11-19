@@ -507,6 +507,11 @@ Places where we knowingly answer differently, each decided rather than overlooke
   official API's `scanLibrary` analyzes every file again. New items carry `local://{id}` and the
   title and year their names give, as the reference's do before an agent runs; a renamed file is
   a new item, where the reference finds it again by size and hash.
+- **A file's name gives its one untagged audio track a French dub.** The repo owner's rule: when
+  a file has a single audio track and it carries no language, a whole word of the file's name
+  sets one — `VFQ` `fr-CA`, `VFF`, `VFI` and `FRENCH` `fr-FR`, `VFQ` winning over the others —
+  where the reference leaves the track without a language. A tag, or a second audio track,
+  turns it off (`db::scan_repository::analysis::dub_language`).
 - **A category's tile shows no item's art.** The reference draws each genre's tile from the
   background art of its best-rated item not already shown; this server keeps no artwork, so
   every tile names the image the reference uses for a genre without art,

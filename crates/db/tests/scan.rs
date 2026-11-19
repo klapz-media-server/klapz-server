@@ -374,6 +374,92 @@ async fn without_a_deep_analysis_rates_are_the_declared_ones() {
     assert_eq!(tracks[2].bitrate, Some(77));
 }
 
+fn film_at(path: &str, analysis: Analysis) -> NewItem {
+    NewItem::Movie {
+        title: "Le Film".to_owned(),
+        year: Some(2020),
+        versions: vec![NewMedia {
+            parts: vec![part(path, Some(analysis), Vec::new())],
+        }],
+    }
+}
+
+fn untagged_audio(mut analysis: Analysis) -> Analysis {
+    for track in &mut analysis.tracks {
+        if track.kind == open_plex_scanner::report::TrackKind::Audio {
+            track.language = None;
+        }
+    }
+    analysis
+}
+
+#[tokio::test]
+async fn a_lone_untagged_audio_track_takes_the_dub_its_file_name_gives() {
+    let (_, scan, metadata) = seeded().await;
+    let quebec = scan
+        .add_item(
+            FILMS,
+            film_at(
+                "D:\\Films\\Le.Film.2020.VFQ.1080p.mkv",
+                untagged_audio(probe("bull_s05e01")),
+            ),
+            NOW,
+        )
+        .await
+        .unwrap();
+    let tracks = tracks_of(&metadata, quebec).await;
+    assert_eq!(tracks[1].kind, StreamKind::Audio);
+    assert_eq!(tracks[1].language.as_deref(), Some("fr-CA"));
+    // The subtitle is not the audio, and keeps its own tag.
+    assert_eq!(tracks[2].language.as_deref(), Some("fr"));
+
+    let france = scan
+        .add_item(
+            FILMS,
+            film_at(
+                "D:\\Films\\Le.Film.2020.VFF.1080p.mkv",
+                untagged_audio(probe("bull_s05e01")),
+            ),
+            NOW,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        tracks_of(&metadata, france).await[1].language.as_deref(),
+        Some("fr-FR")
+    );
+
+    // A tagged track keeps its tag, and two untagged ones say nothing of which is which.
+    let tagged = scan
+        .add_item(
+            FILMS,
+            film_at("D:\\Films\\Le.Film.2020.VFQ.mkv", probe("bull_s05e01")),
+            NOW,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        tracks_of(&metadata, tagged).await[1].language.as_deref(),
+        Some("fr")
+    );
+    let two = scan
+        .add_item(
+            FILMS,
+            film_at(
+                "D:\\Films\\Le.Film.2020.MULTi.VFQ.mkv",
+                untagged_audio(probe("soul")),
+            ),
+            NOW,
+        )
+        .await
+        .unwrap();
+    let tracks = tracks_of(&metadata, two).await;
+    assert_eq!(
+        (tracks[0].language.as_ref(), tracks[1].language.as_ref()),
+        (None, None)
+    );
+}
+
 #[tokio::test]
 async fn known_parts_are_the_ones_under_the_prefix() {
     let (_, scan, _) = seeded().await;

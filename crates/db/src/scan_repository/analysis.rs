@@ -118,6 +118,27 @@ pub(super) fn container(format_name: &str, path: &str) -> Option<String> {
     Some(name.to_owned())
 }
 
+/// The French dub a release names, for a file whose one audio track carries no language: `VFQ`
+/// is Quebec's (`fr-CA`), `VFF`, `VFI` and `FRENCH` France's (`fr-FR`), and `VFQ` wins when a
+/// name gives both. The repo owner's rule: the reference leaves such a track without a language.
+fn dub_language(path: &str) -> Option<&'static str> {
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+    let words = stem
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty());
+    let mut france = false;
+    for word in words {
+        if word.eq_ignore_ascii_case("vfq") {
+            return Some("fr-CA");
+        }
+        france |= ["vff", "vfi", "french"]
+            .iter()
+            .any(|dub| word.eq_ignore_ascii_case(dub));
+    }
+    france.then_some("fr-FR")
+}
+
 fn extension(path: &str) -> &str {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     name.rsplit_once('.').map_or("", |(_, extension)| extension)
@@ -194,10 +215,37 @@ pub(super) struct TrackRows {
     pub dolby_vision: Option<stream_dolby_vision::Model>,
 }
 
+/// A track's language as tagged; else Matroska's default for its video, which muxers leave
+/// unwritten, and the dub its file's name gives for a file's one audio track.
+fn track_language(analysis: &Analysis, track: &Track, path: &str) -> Option<String> {
+    if let Some(tagged) = track.language.as_deref().and_then(language) {
+        return Some(tagged);
+    }
+    match track.kind {
+        TrackKind::Video if analysis.container.starts_with("matroska") => Some("en".to_owned()),
+        TrackKind::Audio => {
+            let audio = analysis
+                .tracks
+                .iter()
+                .filter(|other| other.kind == TrackKind::Audio)
+                .count();
+            (audio == 1)
+                .then(|| dub_language(path))
+                .flatten()
+                .map(ToOwned::to_owned)
+        }
+        _ => None,
+    }
+}
+
 /// The rows of a file's tracks, numbered from `first_id`. Attachments and data tracks have no
 /// row: the reference keeps video, audio and subtitles only.
-pub(super) fn track_rows(analysis: &Analysis, part: i64, first_id: i64) -> Vec<TrackRows> {
-    let matroska = analysis.container.starts_with("matroska");
+pub(super) fn track_rows(
+    analysis: &Analysis,
+    path: &str,
+    part: i64,
+    first_id: i64,
+) -> Vec<TrackRows> {
     let avi = analysis.container == "avi";
     analysis
         .tracks
@@ -206,12 +254,7 @@ pub(super) fn track_rows(analysis: &Analysis, part: i64, first_id: i64) -> Vec<T
         .zip(first_id..)
         .map(|((track, kind), id)| {
             let bitrate = track_bitrate(analysis, track);
-            let language = track
-                .language
-                .as_deref()
-                .and_then(language)
-                // Matroska's default language, which its muxers leave unwritten.
-                .or_else(|| (matroska && track.kind == TrackKind::Video).then(|| "en".to_owned()));
+            let language = track_language(analysis, track, path);
             let picture = track.video.as_ref();
             let coded = picture.and_then(|picture| coding(track, picture));
             let sound = track.audio.as_ref();
@@ -502,6 +545,26 @@ mod tests {
         assert_eq!(container("mpegts", "a.ts").as_deref(), Some("mpegts"));
         assert_eq!(container("avi", "a.avi").as_deref(), Some("avi"));
         assert_eq!(container("", "a.avi"), None);
+    }
+
+    #[test]
+    fn a_release_name_tells_which_french_dub_it_carries() {
+        assert_eq!(
+            dub_language(r"D:\Films\Le Film.2020.VFQ.1080p.mkv"),
+            Some("fr-CA")
+        );
+        assert_eq!(dub_language("/films/Le.Film.2020.vff.mkv"), Some("fr-FR"));
+        assert_eq!(dub_language("Le Film [VFI] 2020.mkv"), Some("fr-FR"));
+        assert_eq!(
+            dub_language("Bull.2016.S05E01.FRENCH.720p.WEB.H264-FREAMON.mkv"),
+            Some("fr-FR")
+        );
+        assert_eq!(dub_language("Film.FRENCH.VFQ.mkv"), Some("fr-CA"));
+        // A whole word only, and the file's name only.
+        assert_eq!(dub_language("Soul.2020.TRUEFRENCH.1080p.mkv"), None);
+        assert_eq!(dub_language("Frenchie.2019.mkv"), None);
+        assert_eq!(dub_language("/VFQ/Film.2020.mkv"), None);
+        assert_eq!(dub_language("Film.2020.vfq"), None);
     }
 
     #[test]

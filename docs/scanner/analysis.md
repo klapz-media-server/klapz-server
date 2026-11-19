@@ -161,7 +161,9 @@ and a coded size equal to its size or rounded up to 8, 16 or 32 (HEVC: 1036 → 
 ffprobe's `coded_width` and `coded_height` for those decoders (**inferred**: no such file
 among the test files). ffprobe 8.1 no longer prints `refs` at all. A tag `BPS` gives a
 subtitle its rate (Bull: 77); `BPS-eng`, which an older mkvmerge wrote on Soul, is not read,
-and Soul's subtitles had no rate before their deep analysis (**measured**). Two `media_items`
+and Soul's subtitles had no rate before their deep analysis (**measured**). An audio track
+without a language tag is stored without one; ours takes the French dub the file's name gives
+when it is the file's only audio track, a deliberate divergence (`CLAUDE.md`). Two `media_items`
 values differ by origin: `bitrate` is the container's, and the video track's `bitrate` is
 `format.bit_rate` minus the audio tracks' declared bitrates (Soul: 7726375 − 256000 − 768000
 = 6702375, stored exactly). Bull's video track stored the format bitrate itself (3208969),
