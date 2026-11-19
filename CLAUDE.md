@@ -17,6 +17,7 @@ with the repo owner happens in French.
 | `docs/wire-format.md` | Authoritative per-field JSON type map and element tables, from live captures. **Generated**: `PLEX_TOKEN=... python tools/capture_plex.py`. |
 | `docs/spec-gaps.md` | Where the spec and the reference server disagree: omissions, wrong paths, aliases, and every undocumented behavior we reproduce. Hand-verified. |
 | `tools/gen_language_names.py` | Language and region names from CLDR 39, the data of the ICU 69 the reference ships. Generates `crates/api-plex/src/language_names.rs`. |
+| `tools/capture_scan_samples.py` | ffprobe's output for sample files of the reference's library, with the rows the reference stored for them: the fixtures `crates/db/tests/scan_samples.rs` replays through the scan and compares column for column. |
 | `tools/compare_items.py` | Field-by-field diff of our listings and lookups against the reference, aligned by `ratingKey` so ordering and field fidelity stay separate questions. |
 | `docs/endpoint-probe.md` | Which spec `GET` operations the reference server answers. **Generated**: `PLEX_TOKEN=... python tools/probe_endpoints.py`. |
 | `files/` | A complete Plex Media Server install for Windows (233 MB) — binaries, bundled web app, plug-in framework, transcoder profiles. For reverse engineering. |

@@ -1,0 +1,62 @@
+{
+ "media": {
+  "width": 640,
+  "height": 360,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 901951,
+  "container": "flv",
+  "video_codec": "h264",
+  "audio_codec": "aac",
+  "audio_channels": 2,
+  "frames_per_second": 25.0,
+  "duration": 301525
+ },
+ "part": {
+  "size": 33995109,
+  "duration": 301525,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 2,
+   "index": 0,
+   "codec": "aac",
+   "channels": 2,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:profile": "he-aac",
+    "ma:samplingRate": "48000"
+   }
+  },
+  {
+   "stream_type_id": 1,
+   "index": 1,
+   "codec": "h264",
+   "bitrate": 901951,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "368",
+    "ma:codedWidth": "640",
+    "ma:colorPrimaries": "bt470bg",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt470bg",
+    "ma:colorTrc": "bt470bg",
+    "ma:frameRate": "25.000",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "360",
+    "ma:level": "51",
+    "ma:profile": "high",
+    "ma:refFrames": "2",
+    "ma:scanType": "progressive",
+    "ma:width": "640"
+   }
+  }
+ ],
+ "rates": "declared"
+}

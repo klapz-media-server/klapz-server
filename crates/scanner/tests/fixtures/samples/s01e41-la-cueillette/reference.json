@@ -1,0 +1,63 @@
+{
+ "media": {
+  "width": 704,
+  "height": 396,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 908199,
+  "container": "mpegts",
+  "video_codec": "h264",
+  "audio_codec": "aac",
+  "audio_channels": 2,
+  "frames_per_second": 25.0,
+  "duration": 190040
+ },
+ "part": {
+  "size": 21574316,
+  "duration": 190040,
+  "analysis": {
+   "ma:packetLength": "188"
+  }
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "h264",
+   "bitrate": 835522,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "400",
+    "ma:codedWidth": "704",
+    "ma:frameRate": "25.000",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "396",
+    "ma:level": "31",
+    "ma:profile": "main",
+    "ma:refFrames": "4",
+    "ma:scanType": "progressive",
+    "ma:streamIdentifier": "256",
+    "ma:width": "704"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "aac",
+   "channels": 2,
+   "bitrate": 72677,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:profile": "lc",
+    "ma:samplingRate": "48000",
+    "ma:streamIdentifier": "257"
+   }
+  }
+ ],
+ "rates": "declared"
+}

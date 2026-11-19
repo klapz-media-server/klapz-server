@@ -1,0 +1,111 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1080,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 1884038,
+  "container": "mkv",
+  "video_codec": "h264",
+  "audio_codec": "eac3",
+  "audio_channels": 6,
+  "frames_per_second": 23.976024627685547,
+  "duration": 64544
+ },
+ "part": {
+  "size": 15200424,
+  "duration": 64544,
+  "analysis": {
+   "ma:hasThumbnail": "1"
+  }
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "h264",
+   "language": "en",
+   "bitrate": 1244038,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1088",
+    "ma:codedWidth": "1920",
+    "ma:frameRate": "23.976",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "1080",
+    "ma:level": "40",
+    "ma:profile": "main",
+    "ma:refFrames": "3",
+    "ma:scanType": "progressive",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "eac3",
+   "language": "fr",
+   "channels": 6,
+   "bitrate": 640000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:samplingRate": "48000",
+    "ma:title": "français"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "aac",
+   "language": "en",
+   "channels": 2,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:profile": "he-aac",
+    "ma:samplingRate": "48000",
+    "ma:title": "anglais [VO]"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 3,
+   "codec": "ass",
+   "language": "en",
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "English (CC)"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 4,
+   "codec": "ass",
+   "language": "fr",
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "French"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 5,
+   "codec": "ass",
+   "language": "fr",
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "French (Forced Narrative)"
+   }
+  }
+ ],
+ "rates": "declared"
+}

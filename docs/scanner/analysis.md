@@ -156,6 +156,15 @@ Measured on 38 sample files chosen to cover every container, codec and layout of
   `advanced simple`, and PCM's is its sample format, `pcm_s16le`.
 - MPEG-2's coded size is its picture size (720×576), which ffprobe states only after decoding.
 - `ma:hasChapterTextStream`: an MP4 with a data track tagged `text`.
+- `ma:streamIdentifier` is the container's number for the track, ffprobe's `id`: an MP4 track
+  ID, an MPEG-TS PID (`0x44` is 68). An AVI's is its index, which ffprobe 8.1 no longer
+  reports, and 0 is never stored (6,230 first AVI tracks without one, 6,606 later ones with
+  their index); Matroska has none. MP4s without one are those never analyzed (version 0).
+
+`tools/capture_scan_samples.py` keeps each sample's ffprobe output, H.264 trace, layout and the
+reference's stored rows under `crates/scanner/tests/fixtures/samples`; `crates/db/tests/
+scan_samples.rs` replays them through the parser and the scan's storage and compares every
+column and `ma:` key with the reference's, its few known differences listed with their reason.
 - The Plex surface adds `timeStamp="1"` to a part of 192-byte packets.
 
 Other video keys in the library: `ma:title` (30,935), `ma:streamIdentifier` (8,846),

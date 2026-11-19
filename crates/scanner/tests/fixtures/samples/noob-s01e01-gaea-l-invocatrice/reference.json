@@ -1,0 +1,56 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1080,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 2644525,
+  "container": "mkv",
+  "video_codec": "vp9",
+  "audio_codec": "vorbis",
+  "audio_channels": 2,
+  "frames_per_second": 25.0,
+  "duration": 216704
+ },
+ "part": {
+  "size": 71634896,
+  "duration": 216704,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "vp9",
+   "language": "en",
+   "bitrate": 2644525,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1080",
+    "ma:codedWidth": "1920",
+    "ma:colorRange": "tv",
+    "ma:frameRate": "25.000",
+    "ma:height": "1080",
+    "ma:profile": "profile 0",
+    "ma:refFrames": "1",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "vorbis",
+   "language": "en",
+   "channels": 2,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:samplingRate": "44100"
+   }
+  }
+ ],
+ "rates": "declared"
+}

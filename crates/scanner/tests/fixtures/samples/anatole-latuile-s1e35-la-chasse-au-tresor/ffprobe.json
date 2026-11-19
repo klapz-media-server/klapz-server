@@ -1,0 +1,165 @@
+{
+ "streams": [
+  {
+   "index": 0,
+   "codec_name": "h264",
+   "codec_long_name": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+   "profile": "Main",
+   "codec_type": "video",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "mime_codec_string": "avc1.4d401f",
+   "width": 720,
+   "height": 576,
+   "coded_width": 720,
+   "coded_height": 576,
+   "has_b_frames": 2,
+   "sample_aspect_ratio": "64:45",
+   "display_aspect_ratio": "16:9",
+   "pix_fmt": "yuv420p",
+   "level": 31,
+   "color_range": "tv",
+   "color_space": "smpte170m",
+   "color_transfer": "bt709",
+   "color_primaries": "bt470bg",
+   "chroma_location": "left",
+   "field_order": "progressive",
+   "is_avc": "true",
+   "nal_length_size": "4",
+   "r_frame_rate": "25/1",
+   "avg_frame_rate": "25/1",
+   "time_base": "1/1000",
+   "start_pts": 101,
+   "start_time": "0.101000",
+   "bits_per_raw_sample": "8",
+   "extradata_size": 48,
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "eng",
+    "languageISO639": "eng",
+    "DURATION": "00:12:36.501000000"
+   }
+  },
+  {
+   "index": 1,
+   "codec_name": "aac",
+   "codec_long_name": "AAC (Advanced Audio Coding)",
+   "profile": "LC",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "mime_codec_string": "mp4a.40.2",
+   "sample_fmt": "fltp",
+   "sample_rate": "48000",
+   "channels": 2,
+   "channel_layout": "stereo",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "extradata_size": 5,
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fre",
+    "languageISO639": "fre",
+    "title": "Stereo",
+    "DURATION": "00:12:36.437000000"
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "id": 1,
+   "time_base": "1/1000000000",
+   "start": 80000000,
+   "start_time": "0.080000",
+   "end": 21200000000,
+   "end_time": "21.200000",
+   "tags": {
+    "title": "Chapter 1"
+   }
+  },
+  {
+   "id": 2,
+   "time_base": "1/1000000000",
+   "start": 21200000000,
+   "start_time": "21.200000",
+   "end": 751280000000,
+   "end_time": "751.280000",
+   "tags": {
+    "title": "Chapter 2"
+   }
+  },
+  {
+   "id": 3,
+   "time_base": "1/1000000000",
+   "start": 751280000000,
+   "start_time": "751.280000",
+   "end": 756440000000,
+   "end_time": "756.440000",
+   "tags": {
+    "title": "Chapter 3"
+   }
+  }
+ ],
+ "format": {
+  "filename": "Anatole Latuile S1E35 - La chasse au trésor.mkv",
+  "nb_streams": 2,
+  "nb_programs": 0,
+  "nb_stream_groups": 0,
+  "format_name": "matroska,webm",
+  "format_long_name": "Matroska / WebM",
+  "start_time": "0.000000",
+  "duration": "756.501000",
+  "size": "64713088",
+  "bit_rate": "684341",
+  "probe_score": 100,
+  "tags": {
+   "creation_time": "2019-09-21T15:13:57.000000Z",
+   "ENCODER": "Lavf58.20.100"
+  }
+ }
+}

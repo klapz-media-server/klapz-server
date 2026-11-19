@@ -1,0 +1,255 @@
+{
+ "streams": [
+  {
+   "index": 0,
+   "codec_name": "hevc",
+   "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+   "profile": "Main 10",
+   "codec_type": "video",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "width": 1920,
+   "height": 1080,
+   "coded_width": 1920,
+   "coded_height": 1080,
+   "has_b_frames": 2,
+   "sample_aspect_ratio": "1:1",
+   "display_aspect_ratio": "16:9",
+   "pix_fmt": "yuv420p10le",
+   "level": 123,
+   "color_range": "tv",
+   "color_space": "bt709",
+   "color_transfer": "bt709",
+   "color_primaries": "bt709",
+   "chroma_location": "left",
+   "view_ids_available": "",
+   "view_pos_available": "",
+   "r_frame_rate": "24000/1001",
+   "avg_frame_rate": "24000/1001",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "extradata_size": 2594,
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "eng",
+    "languageISO639": "eng",
+    "BPS": "2061157",
+    "DURATION": "00:23:51.430000000",
+    "NUMBER_OF_FRAMES": "34320",
+    "NUMBER_OF_BYTES": "368800334",
+    "_STATISTICS_WRITING_APP": "mkvmerge v66.0.0 ('Josie') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2023-11-26 21:24:31",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 1,
+   "codec_name": "flac",
+   "codec_long_name": "FLAC (Free Lossless Audio Codec)",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "mime_codec_string": "flac",
+   "sample_fmt": "s16",
+   "sample_rate": "48000",
+   "channels": 2,
+   "channel_layout": "stereo",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "bits_per_raw_sample": "16",
+   "extradata_size": 34,
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "ja",
+    "languageISO639": "jpn",
+    "title": "Stereo",
+    "BPS": "634796",
+    "DURATION": "00:23:51.360000000",
+    "NUMBER_OF_FRAMES": "14910",
+    "NUMBER_OF_BYTES": "113577755",
+    "_STATISTICS_WRITING_APP": "mkvmerge v66.0.0 ('Josie') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2023-11-26 21:24:31",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 2,
+   "codec_name": "ass",
+   "codec_long_name": "ASS (Advanced SSA) subtitle",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 1431430,
+   "duration": "1431.430000",
+   "extradata_size": 885,
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fr",
+    "languageISO639": "fre",
+    "BPS": "128",
+    "DURATION": "00:23:49.220000000",
+    "NUMBER_OF_FRAMES": "368",
+    "NUMBER_OF_BYTES": "22951",
+    "_STATISTICS_WRITING_APP": "mkvmerge v66.0.0 ('Josie') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2023-11-26 21:24:31",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "id": 4787549689788679111,
+   "time_base": "1/1000000000",
+   "start": 0,
+   "start_time": "0.000000",
+   "end": 50050000000,
+   "end_time": "50.050000",
+   "tags": {
+    "title": "Chapter 1"
+   }
+  },
+  {
+   "id": 5300532131838701161,
+   "time_base": "1/1000000000",
+   "start": 50050000000,
+   "start_time": "50.050000",
+   "end": 140015000000,
+   "end_time": "140.015000",
+   "tags": {
+    "title": "Chapter 2"
+   }
+  },
+  {
+   "id": -2856938102093939578,
+   "time_base": "1/1000000000",
+   "start": 140015000000,
+   "start_time": "140.015000",
+   "end": 874999000000,
+   "end_time": "874.999000",
+   "tags": {
+    "title": "Chapter 3"
+   }
+  },
+  {
+   "id": 6094976243876736301,
+   "time_base": "1/1000000000",
+   "start": 874999000000,
+   "start_time": "874.999000",
+   "end": 1310017000000,
+   "end_time": "1310.017000",
+   "tags": {
+    "title": "Chapter 4"
+   }
+  },
+  {
+   "id": 3699697825556158981,
+   "time_base": "1/1000000000",
+   "start": 1310017000000,
+   "start_time": "1310.017000",
+   "end": 1399982000000,
+   "end_time": "1399.982000",
+   "tags": {
+    "title": "Chapter 5"
+   }
+  },
+  {
+   "id": -3030045124257080264,
+   "time_base": "1/1000000000",
+   "start": 1399982000000,
+   "start_time": "1399.982000",
+   "end": 1431389000000,
+   "end_time": "1431.389000",
+   "tags": {
+    "title": "Chapter 6"
+   }
+  }
+ ],
+ "format": {
+  "filename": "[Xspitfire911] Boku No Hero Academia S06E16 BDRIP 1080p X265 10bit VOSTFR.mkv",
+  "nb_streams": 3,
+  "nb_programs": 0,
+  "nb_stream_groups": 0,
+  "format_name": "matroska,webm",
+  "format_long_name": "Matroska / WebM",
+  "start_time": "0.000000",
+  "duration": "1431.430000",
+  "size": "482728179",
+  "bit_rate": "2697879",
+  "probe_score": 100,
+  "tags": {
+   "creation_time": "2023-11-26T21:24:31.000000Z",
+   "ENCODER": "Lavf60.16.100"
+  }
+ }
+}

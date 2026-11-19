@@ -1,0 +1,730 @@
+{
+ "streams": [
+  {
+   "index": 0,
+   "codec_name": "hevc",
+   "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+   "profile": "Main 10",
+   "codec_type": "video",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "width": 3840,
+   "height": 1608,
+   "coded_width": 3840,
+   "coded_height": 1608,
+   "has_b_frames": 2,
+   "sample_aspect_ratio": "1:1",
+   "display_aspect_ratio": "160:67",
+   "pix_fmt": "yuv420p10le",
+   "level": 153,
+   "color_range": "tv",
+   "color_space": "bt2020nc",
+   "color_transfer": "smpte2084",
+   "color_primaries": "bt2020",
+   "chroma_location": "topleft",
+   "view_ids_available": "",
+   "view_pos_available": "",
+   "r_frame_rate": "24000/1001",
+   "avg_frame_rate": "24000/1001",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "extradata_size": 129,
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "eng",
+    "languageISO639": "eng",
+    "BPS": "5777412",
+    "DURATION": "01:55:55.949000000",
+    "NUMBER_OF_FRAMES": "166776",
+    "NUMBER_OF_BYTES": "5023423507",
+    "_STATISTICS_WRITING_APP": "mkvmerge v86.0 ('Winter') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2024-08-11 09:16:02",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   },
+   "side_data_list": [
+    {
+     "side_data_type": "DOVI configuration record",
+     "dv_version_major": 1,
+     "dv_version_minor": 0,
+     "dv_profile": 8,
+     "dv_level": 6,
+     "rpu_present_flag": 1,
+     "el_present_flag": 0,
+     "bl_present_flag": 1,
+     "dv_bl_signal_compatibility_id": 1,
+     "dv_md_compression": "none"
+    }
+   ]
+  },
+  {
+   "index": 1,
+   "codec_name": "eac3",
+   "codec_long_name": "ATSC A/52B (AC-3, E-AC-3)",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "mime_codec_string": "ec-3",
+   "sample_fmt": "fltp",
+   "sample_rate": "48000",
+   "channels": 8,
+   "channel_layout": "7.1",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "dmix_mode": "0",
+   "ltrt_cmixlev": "0.000000",
+   "ltrt_surmixlev": "0.000000",
+   "loro_cmixlev": "0.000000",
+   "loro_surmixlev": "0.000000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "bit_rate": "768000",
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fr",
+    "languageISO639": "fre",
+    "title": "FR VFF : DDP 7.1",
+    "BPS": "768000",
+    "DURATION": "01:55:55.968000000",
+    "NUMBER_OF_FRAMES": "217374",
+    "NUMBER_OF_BYTES": "667772928",
+    "_STATISTICS_WRITING_APP": "mkvmerge v86.0 ('Winter') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2024-08-11 09:16:02",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 2,
+   "codec_name": "truehd",
+   "codec_long_name": "TrueHD",
+   "profile": "Dolby TrueHD + Dolby Atmos",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "sample_fmt": "s32",
+   "sample_rate": "48000",
+   "channels": 8,
+   "channel_layout": "7.1",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "bits_per_raw_sample": "24",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "en",
+    "title": "ENG VO : TrueHD 7.1 Atmos",
+    "BPS": "2505567",
+    "DURATION": "01:55:55.950000000",
+    "NUMBER_OF_FRAMES": "8347139",
+    "NUMBER_OF_BYTES": "2178575114",
+    "_STATISTICS_WRITING_APP": "mkvmerge v86.0 ('Winter') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2024-08-11 09:16:02",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 3,
+   "codec_name": "subrip",
+   "codec_long_name": "SubRip subtitle",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 6955968,
+   "duration": "6955.968000",
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 1,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fr",
+    "languageISO639": "fre",
+    "title": "FR Forced : SRT",
+    "BPS": "0",
+    "DURATION": "01:55:05.941000000",
+    "NUMBER_OF_FRAMES": "12",
+    "NUMBER_OF_BYTES": "384",
+    "_STATISTICS_WRITING_APP": "mkvmerge v86.0 ('Winter') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2024-08-11 09:16:02",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 4,
+   "codec_name": "subrip",
+   "codec_long_name": "SubRip subtitle",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 6955968,
+   "duration": "6955.968000",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fr",
+    "languageISO639": "fre",
+    "title": "FR Full : SRT",
+    "BPS": "43",
+    "DURATION": "01:55:05.983000000",
+    "NUMBER_OF_FRAMES": "1243",
+    "NUMBER_OF_BYTES": "37658",
+    "_STATISTICS_WRITING_APP": "mkvmerge v86.0 ('Winter') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2024-08-11 09:16:02",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 5,
+   "codec_name": "subrip",
+   "codec_long_name": "SubRip subtitle",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 6955968,
+   "duration": "6955.968000",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "en",
+    "title": "ENG Full : SRT",
+    "BPS": "65",
+    "DURATION": "01:54:46.546000000",
+    "NUMBER_OF_FRAMES": "1893",
+    "NUMBER_OF_BYTES": "56557",
+    "_STATISTICS_WRITING_APP": "mkvmerge v86.0 ('Winter') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2024-08-11 09:16:02",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 6,
+   "codec_name": "hdmv_pgs_subtitle",
+   "codec_long_name": "HDMV Presentation Graphic Stream subtitles",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 6955968,
+   "duration": "6955.968000",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 1,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fr",
+    "languageISO639": "fre",
+    "title": "FR Forced : PGS",
+    "BPS": "299",
+    "DURATION": "01:55:05.941000000",
+    "NUMBER_OF_FRAMES": "24",
+    "NUMBER_OF_BYTES": "258581",
+    "_STATISTICS_WRITING_APP": "mkvmerge v86.0 ('Winter') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2024-08-11 09:16:02",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 7,
+   "codec_name": "hdmv_pgs_subtitle",
+   "codec_long_name": "HDMV Presentation Graphic Stream subtitles",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 6955968,
+   "duration": "6955.968000",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fr",
+    "languageISO639": "fre",
+    "title": "FR Full : PGS",
+    "BPS": "28519",
+    "DURATION": "01:55:05.983000000",
+    "NUMBER_OF_FRAMES": "2486",
+    "NUMBER_OF_BYTES": "24619570",
+    "_STATISTICS_WRITING_APP": "mkvmerge v86.0 ('Winter') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2024-08-11 09:16:02",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 8,
+   "codec_name": "hdmv_pgs_subtitle",
+   "codec_long_name": "HDMV Presentation Graphic Stream subtitles",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 6955968,
+   "duration": "6955.968000",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 1,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "en",
+    "title": "ENG Full SDH : PGS",
+    "BPS": "44569",
+    "DURATION": "01:55:10.278000000",
+    "NUMBER_OF_FRAMES": "3246",
+    "NUMBER_OF_BYTES": "38498706",
+    "_STATISTICS_WRITING_APP": "mkvmerge v86.0 ('Winter') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC": "2024-08-11 09:16:02",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "id": -5893453149533066570,
+   "time_base": "1/1000000000",
+   "start": 0,
+   "start_time": "0.000000",
+   "end": 352227000000,
+   "end_time": "352.227000",
+   "tags": {
+    "title": "Chapitre 01"
+   }
+  },
+  {
+   "id": -3919298653294785312,
+   "time_base": "1/1000000000",
+   "start": 352227000000,
+   "start_time": "352.227000",
+   "end": 611694000000,
+   "end_time": "611.694000",
+   "tags": {
+    "title": "Chapitre 02"
+   }
+  },
+  {
+   "id": -6888646799115260113,
+   "time_base": "1/1000000000",
+   "start": 611694000000,
+   "start_time": "611.694000",
+   "end": 926509000000,
+   "end_time": "926.509000",
+   "tags": {
+    "title": "Chapitre 03"
+   }
+  },
+  {
+   "id": -5428142104352236365,
+   "time_base": "1/1000000000",
+   "start": 926509000000,
+   "start_time": "926.509000",
+   "end": 1207206000000,
+   "end_time": "1207.206000",
+   "tags": {
+    "title": "Chapitre 04"
+   }
+  },
+  {
+   "id": -7302743272563156149,
+   "time_base": "1/1000000000",
+   "start": 1207206000000,
+   "start_time": "1207.206000",
+   "end": 1494618000000,
+   "end_time": "1494.618000",
+   "tags": {
+    "title": "Chapitre 05"
+   }
+  },
+  {
+   "id": 6461172939538211451,
+   "time_base": "1/1000000000",
+   "start": 1494618000000,
+   "start_time": "1494.618000",
+   "end": 1900065000000,
+   "end_time": "1900.065000",
+   "tags": {
+    "title": "Chapitre 06"
+   }
+  },
+  {
+   "id": -4132504233959628955,
+   "time_base": "1/1000000000",
+   "start": 1900065000000,
+   "start_time": "1900.065000",
+   "end": 2464003000000,
+   "end_time": "2464.003000",
+   "tags": {
+    "title": "Chapitre 07"
+   }
+  },
+  {
+   "id": -9017867123389522278,
+   "time_base": "1/1000000000",
+   "start": 2464003000000,
+   "start_time": "2464.003000",
+   "end": 2864945000000,
+   "end_time": "2864.945000",
+   "tags": {
+    "title": "Chapitre 08"
+   }
+  },
+  {
+   "id": 395896063751917530,
+   "time_base": "1/1000000000",
+   "start": 2864945000000,
+   "start_time": "2864.945000",
+   "end": 3236358000000,
+   "end_time": "3236.358000",
+   "tags": {
+    "title": "Chapitre 09"
+   }
+  },
+  {
+   "id": -1720820736202977915,
+   "time_base": "1/1000000000",
+   "start": 3236358000000,
+   "start_time": "3236.358000",
+   "end": 3511174000000,
+   "end_time": "3511.174000",
+   "tags": {
+    "title": "Chapitre 10"
+   }
+  },
+  {
+   "id": -6702933587846413197,
+   "time_base": "1/1000000000",
+   "start": 3511174000000,
+   "start_time": "3511.174000",
+   "end": 3959497000000,
+   "end_time": "3959.497000",
+   "tags": {
+    "title": "Chapitre 11"
+   }
+  },
+  {
+   "id": -8701237945750993114,
+   "time_base": "1/1000000000",
+   "start": 3959497000000,
+   "start_time": "3959.497000",
+   "end": 4303758000000,
+   "end_time": "4303.758000",
+   "tags": {
+    "title": "Chapitre 12"
+   }
+  },
+  {
+   "id": 4870718453563270314,
+   "time_base": "1/1000000000",
+   "start": 4303758000000,
+   "start_time": "4303.758000",
+   "end": 4564435000000,
+   "end_time": "4564.435000",
+   "tags": {
+    "title": "Chapitre 13"
+   }
+  },
+  {
+   "id": 3531883825277058628,
+   "time_base": "1/1000000000",
+   "start": 4564435000000,
+   "start_time": "4564.435000",
+   "end": 4996575000000,
+   "end_time": "4996.575000",
+   "tags": {
+    "title": "Chapitre 14"
+   }
+  },
+  {
+   "id": -819962437959510481,
+   "time_base": "1/1000000000",
+   "start": 4996575000000,
+   "start_time": "4996.575000",
+   "end": 5307552000000,
+   "end_time": "5307.552000",
+   "tags": {
+    "title": "Chapitre 15"
+   }
+  },
+  {
+   "id": -8048856399355106574,
+   "time_base": "1/1000000000",
+   "start": 5307552000000,
+   "start_time": "5307.552000",
+   "end": 5643471000000,
+   "end_time": "5643.471000",
+   "tags": {
+    "title": "Chapitre 16"
+   }
+  },
+  {
+   "id": 6755953575305215299,
+   "time_base": "1/1000000000",
+   "start": 5643471000000,
+   "start_time": "5643.471000",
+   "end": 5992236000000,
+   "end_time": "5992.236000",
+   "tags": {
+    "title": "Chapitre 17"
+   }
+  },
+  {
+   "id": 7254335692084450202,
+   "time_base": "1/1000000000",
+   "start": 5992236000000,
+   "start_time": "5992.236000",
+   "end": 6248826000000,
+   "end_time": "6248.826000",
+   "tags": {
+    "title": "Chapitre 18"
+   }
+  },
+  {
+   "id": -5840958264187325957,
+   "time_base": "1/1000000000",
+   "start": 6248826000000,
+   "start_time": "6248.826000",
+   "end": 6510129000000,
+   "end_time": "6510.129000",
+   "tags": {
+    "title": "Chapitre 19"
+   }
+  },
+  {
+   "id": 439232991130839273,
+   "time_base": "1/1000000000",
+   "start": 6510129000000,
+   "start_time": "6510.129000",
+   "end": 6955699000000,
+   "end_time": "6955.699000",
+   "tags": {
+    "title": "Chapitre 20"
+   }
+  },
+  {
+   "id": -6618141450514317588,
+   "time_base": "1/1000000000",
+   "start": 6955699000000,
+   "start_time": "6955.699000",
+   "end": 6955968000000,
+   "end_time": "6955.968000",
+   "tags": {
+    "title": "Chapitre 21"
+   }
+  }
+ ],
+ "format": {
+  "filename": "The.Bikeriders.2023.Hybrid.MULTi.VFF.2160p.10bit.4KLight.DV.HDR.BluRay.TrueHD.7.1.Atmos.x265-QTZ-Wawacity.ing.mkv",
+  "nb_streams": 9,
+  "nb_programs": 0,
+  "nb_stream_groups": 0,
+  "format_name": "matroska,webm",
+  "format_long_name": "Matroska / WebM",
+  "start_time": "0.000000",
+  "duration": "6955.968000",
+  "size": "7962733763",
+  "bit_rate": "9157872",
+  "probe_score": 100,
+  "tags": {
+   "title": "The Bikeriders (2023) Hybrid MULTi VFF 2160p 10bit 4KLight DV HDR BluRay TrueHD 7.1 Atmos x265-QTZ",
+   "encoder": "libebml v1.4.5 + libmatroska v1.7.1",
+   "creation_time": "2024-08-11T09:16:02.000000Z"
+  }
+ }
+}

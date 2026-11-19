@@ -1,0 +1,59 @@
+{
+ "media": {
+  "width": 512,
+  "height": 384,
+  "display_aspect_ratio": 1.3333333730697632,
+  "bitrate": 803777,
+  "container": "mkv",
+  "video_codec": "mpeg4",
+  "audio_codec": "mp3",
+  "audio_channels": 2,
+  "frames_per_second": 29.969999313354492,
+  "duration": 53053
+ },
+ "part": {
+  "size": 5330352,
+  "duration": 53053,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "mpeg4",
+   "language": "en",
+   "bitrate": 707777,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codecID": "XVID",
+    "ma:codedHeight": "384",
+    "ma:codedWidth": "512",
+    "ma:frameRate": "29.970",
+    "ma:height": "384",
+    "ma:level": "5",
+    "ma:profile": "advanced simple",
+    "ma:refFrames": "1",
+    "ma:width": "512"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "mp3",
+   "language": "en",
+   "channels": 2,
+   "bitrate": 96000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:samplingRate": "44100"
+   }
+  }
+ ],
+ "rates": "declared"
+}

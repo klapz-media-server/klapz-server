@@ -1,0 +1,66 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1080,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 20559240,
+  "container": "mkv",
+  "video_codec": "h264",
+  "audio_codec": "dca",
+  "audio_channels": 2,
+  "frames_per_second": 25.0,
+  "duration": 50040
+ },
+ "part": {
+  "size": 128598047,
+  "duration": 50040,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "h264",
+   "language": "en",
+   "bitrate": 20559240,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1088",
+    "ma:codedWidth": "1920",
+    "ma:colorPrimaries": "bt709",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt709",
+    "ma:colorTrc": "bt709",
+    "ma:frameRate": "25.000",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "1080",
+    "ma:level": "41",
+    "ma:profile": "high",
+    "ma:refFrames": "4",
+    "ma:scanType": "interlaced",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "dca",
+   "language": "fr",
+   "channels": 2,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:bitDepth": "16",
+    "ma:profile": "ma",
+    "ma:samplingRate": "48000",
+    "ma:title": "Stéréo"
+   }
+  }
+ ],
+ "rates": "declared"
+}

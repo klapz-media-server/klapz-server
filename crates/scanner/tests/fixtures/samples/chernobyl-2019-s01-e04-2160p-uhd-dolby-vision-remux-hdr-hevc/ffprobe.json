@@ -1,0 +1,393 @@
+{
+ "streams": [
+  {
+   "index": 0,
+   "codec_name": "hevc",
+   "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+   "profile": "Main 10",
+   "codec_type": "video",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "width": 3840,
+   "height": 2160,
+   "coded_width": 3840,
+   "coded_height": 2160,
+   "has_b_frames": 3,
+   "sample_aspect_ratio": "1:1",
+   "display_aspect_ratio": "16:9",
+   "pix_fmt": "yuv420p10le",
+   "level": 153,
+   "color_range": "tv",
+   "color_space": "bt2020nc",
+   "color_transfer": "smpte2084",
+   "color_primaries": "bt2020",
+   "chroma_location": "topleft",
+   "view_ids_available": "",
+   "view_pos_available": "",
+   "r_frame_rate": "24000/1001",
+   "avg_frame_rate": "24000/1001",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "extradata_size": 183,
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "en",
+    "BPS-eng": "49294186",
+    "DURATION-eng": "01:04:59.020000000",
+    "NUMBER_OF_FRAMES-eng": "93483",
+    "NUMBER_OF_BYTES-eng": "24024877300",
+    "SOURCE_ID-eng": "001011",
+    "_STATISTICS_WRITING_APP-eng": "mkvmerge v51.0.0 ('I Wish') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC-eng": "2020-12-03 09:02:36",
+    "_STATISTICS_TAGS-eng": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES SOURCE_ID"
+   },
+   "side_data_list": [
+    {
+     "side_data_type": "DOVI configuration record",
+     "dv_version_major": 1,
+     "dv_version_minor": 0,
+     "dv_profile": 7,
+     "dv_level": 6,
+     "rpu_present_flag": 1,
+     "el_present_flag": 1,
+     "bl_present_flag": 1,
+     "dv_bl_signal_compatibility_id": 6,
+     "dv_md_compression": "none"
+    }
+   ]
+  },
+  {
+   "index": 1,
+   "codec_name": "dts",
+   "codec_long_name": "DCA (DTS Coherent Acoustics)",
+   "profile": "DTS-HD MA",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "sample_fmt": "s32p",
+   "sample_rate": "48000",
+   "channels": 6,
+   "channel_layout": "5.1(side)",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "bits_per_raw_sample": "24",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "en",
+    "title": "DTS-HD MA 5.1",
+    "BPS-eng": "2909078",
+    "DURATION-eng": "01:04:59.030000000",
+    "NUMBER_OF_FRAMES-eng": "365534",
+    "NUMBER_OF_BYTES-eng": "1417822880",
+    "SOURCE_ID-eng": "001100",
+    "_STATISTICS_WRITING_APP-eng": "mkvmerge v51.0.0 ('I Wish') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC-eng": "2020-12-03 09:02:36",
+    "_STATISTICS_TAGS-eng": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES SOURCE_ID"
+   }
+  },
+  {
+   "index": 2,
+   "codec_name": "dts",
+   "codec_long_name": "DCA (DTS Coherent Acoustics)",
+   "profile": "DTS",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "sample_fmt": "fltp",
+   "sample_rate": "48000",
+   "channels": 6,
+   "channel_layout": "5.1(side)",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "bit_rate": "768000",
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fr",
+    "languageISO639": "fre",
+    "title": "DTS 5.1",
+    "BPS-eng": "767999",
+    "DURATION-eng": "01:04:59.019000000",
+    "NUMBER_OF_FRAMES-eng": "365533",
+    "NUMBER_OF_BYTES-eng": "374305792",
+    "SOURCE_ID-eng": "001101",
+    "_STATISTICS_WRITING_APP-eng": "mkvmerge v51.0.0 ('I Wish') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC-eng": "2020-12-03 09:02:36",
+    "_STATISTICS_TAGS-eng": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES SOURCE_ID"
+   }
+  },
+  {
+   "index": 3,
+   "codec_name": "hdmv_pgs_subtitle",
+   "codec_long_name": "HDMV Presentation Graphic Stream subtitles",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 3899030,
+   "duration": "3899.030000",
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fr",
+    "languageISO639": "fre",
+    "title": "Forced",
+    "BPS-eng": "369",
+    "DURATION-eng": "01:00:48.120000000",
+    "NUMBER_OF_FRAMES-eng": "18",
+    "NUMBER_OF_BYTES-eng": "168405",
+    "_STATISTICS_WRITING_APP-eng": "mkvmerge v51.0.0 ('I Wish') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC-eng": "2020-12-03 09:02:36",
+    "_STATISTICS_TAGS-eng": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 4,
+   "codec_name": "hdmv_pgs_subtitle",
+   "codec_long_name": "HDMV Presentation Graphic Stream subtitles",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 3899030,
+   "duration": "3899.030000",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fr",
+    "languageISO639": "fre",
+    "title": "French",
+    "BPS-eng": "19334",
+    "DURATION-eng": "01:04:04.080000000",
+    "NUMBER_OF_FRAMES-eng": "1100",
+    "NUMBER_OF_BYTES-eng": "9290331",
+    "_STATISTICS_WRITING_APP-eng": "mkvmerge v51.0.0 ('I Wish') 64-bit",
+    "_STATISTICS_WRITING_DATE_UTC-eng": "2020-12-03 09:02:36",
+    "_STATISTICS_TAGS-eng": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "id": 219147368551805557,
+   "time_base": "1/1000000000",
+   "start": 0,
+   "start_time": "0.000000",
+   "end": 247830916666,
+   "end_time": "247.830917",
+   "tags": {
+    "title": "Chapter 01"
+   }
+  },
+  {
+   "id": 2154027101054848779,
+   "time_base": "1/1000000000",
+   "start": 247830916666,
+   "start_time": "247.830917",
+   "end": 825825000000,
+   "end_time": "825.825000",
+   "tags": {
+    "title": "Chapter 02"
+   }
+  },
+  {
+   "id": -6549535033714596355,
+   "time_base": "1/1000000000",
+   "start": 825825000000,
+   "start_time": "825.825000",
+   "end": 1462544416666,
+   "end_time": "1462.544417",
+   "tags": {
+    "title": "Chapter 03"
+   }
+  },
+  {
+   "id": 1688659134889729878,
+   "time_base": "1/1000000000",
+   "start": 1462544416666,
+   "start_time": "1462.544417",
+   "end": 2011968291666,
+   "end_time": "2011.968292",
+   "tags": {
+    "title": "Chapter 04"
+   }
+  },
+  {
+   "id": 6439036027895362478,
+   "time_base": "1/1000000000",
+   "start": 2011968291666,
+   "start_time": "2011.968292",
+   "end": 2615446166666,
+   "end_time": "2615.446167",
+   "tags": {
+    "title": "Chapter 05"
+   }
+  },
+  {
+   "id": 1544336456953772816,
+   "time_base": "1/1000000000",
+   "start": 2615446166666,
+   "start_time": "2615.446167",
+   "end": 3176089583333,
+   "end_time": "3176.089583",
+   "tags": {
+    "title": "Chapter 06"
+   }
+  },
+  {
+   "id": -1925778839439050411,
+   "time_base": "1/1000000000",
+   "start": 3176089583333,
+   "start_time": "3176.089583",
+   "end": 3742488750000,
+   "end_time": "3742.488750",
+   "tags": {
+    "title": "Chapter 07"
+   }
+  },
+  {
+   "id": 7959140663206827610,
+   "time_base": "1/1000000000",
+   "start": 3742488750000,
+   "start_time": "3742.488750",
+   "end": 3899020125000,
+   "end_time": "3899.020125",
+   "tags": {
+    "title": "Chapter 08"
+   }
+  }
+ ],
+ "format": {
+  "filename": "Chernobyl.2019.S01.E04.2160p.UHD.DOLBY.VISION.REMUX.HDR.HEVC.MULTI.VFi.DTS.x265-EXTREME_wWw.Extreme-Down.Video.mkv",
+  "nb_streams": 5,
+  "nb_programs": 0,
+  "nb_stream_groups": 0,
+  "format_name": "matroska,webm",
+  "format_long_name": "Matroska / WebM",
+  "start_time": "0.000000",
+  "duration": "3899.030000",
+  "size": "25822301903",
+  "bit_rate": "52982001",
+  "probe_score": 100,
+  "tags": {
+   "encoder": "libebml v1.4.0 + libmatroska v1.6.2",
+   "creation_time": "2020-12-03T09:02:36.000000Z"
+  }
+ }
+}

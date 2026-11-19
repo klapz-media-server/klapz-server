@@ -1,0 +1,110 @@
+{
+ "media": {
+  "width": 3840,
+  "height": 2160,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 52982001,
+  "container": "mkv",
+  "video_codec": "hevc",
+  "audio_codec": "dca",
+  "audio_channels": 6,
+  "frames_per_second": 23.976024627685547,
+  "duration": 3899030
+ },
+ "part": {
+  "size": 25822301903,
+  "duration": 3899030,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "hevc",
+   "language": "en",
+   "bitrate": 52214001,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:DOVIBLCompatID": "6",
+    "ma:DOVIBLPresent": "1",
+    "ma:DOVIELPresent": "1",
+    "ma:DOVILevel": "6",
+    "ma:DOVIPresent": "1",
+    "ma:DOVIProfile": "7",
+    "ma:DOVIRPUPresent": "1",
+    "ma:DOVIVersion": "1.0",
+    "ma:bitDepth": "10",
+    "ma:chromaLocation": "topleft",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "2160",
+    "ma:codedWidth": "3840",
+    "ma:colorPrimaries": "bt2020",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt2020nc",
+    "ma:colorTrc": "smpte2084",
+    "ma:frameRate": "23.976",
+    "ma:height": "2160",
+    "ma:level": "153",
+    "ma:profile": "main 10",
+    "ma:refFrames": "1",
+    "ma:width": "3840"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "dca",
+   "language": "en",
+   "channels": 6,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:bitDepth": "24",
+    "ma:profile": "ma",
+    "ma:samplingRate": "48000",
+    "ma:title": "DTS-HD MA 5.1"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "dca",
+   "language": "fr",
+   "channels": 6,
+   "bitrate": 768000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:profile": "dts",
+    "ma:samplingRate": "48000",
+    "ma:title": "DTS 5.1"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 3,
+   "codec": "pgs",
+   "language": "fr",
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "Forced"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 4,
+   "codec": "pgs",
+   "language": "fr",
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "French"
+   }
+  }
+ ],
+ "rates": "declared"
+}

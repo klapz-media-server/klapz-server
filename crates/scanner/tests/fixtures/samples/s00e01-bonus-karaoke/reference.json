@@ -1,0 +1,59 @@
+{
+ "media": {
+  "width": 1024,
+  "height": 576,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 1828549,
+  "container": "avi",
+  "video_codec": "h264",
+  "audio_codec": "mp3",
+  "audio_channels": 2,
+  "frames_per_second": 25.0,
+  "duration": 43296
+ },
+ "part": {
+  "size": 9896110,
+  "duration": 43296,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "h264",
+   "bitrate": 1564474,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "576",
+    "ma:codedWidth": "1024",
+    "ma:frameRate": "25.000",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "576",
+    "ma:level": "31",
+    "ma:profile": "main",
+    "ma:refFrames": "1",
+    "ma:scanType": "progressive",
+    "ma:width": "1024"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "mp3",
+   "channels": 2,
+   "bitrate": 256000,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:samplingRate": "48000",
+    "ma:streamIdentifier": "1"
+   }
+  }
+ ],
+ "rates": "declared"
+}

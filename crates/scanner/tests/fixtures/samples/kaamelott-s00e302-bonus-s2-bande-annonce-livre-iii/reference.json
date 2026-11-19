@@ -1,0 +1,63 @@
+{
+ "media": {
+  "width": 720,
+  "height": 576,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 5926733,
+  "container": "mkv",
+  "video_codec": "mpeg2video",
+  "audio_codec": "ac3",
+  "audio_channels": 2,
+  "frames_per_second": 25.0,
+  "duration": 30000
+ },
+ "part": {
+  "size": 22225252,
+  "duration": 30000,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "mpeg2video",
+   "language": "en",
+   "bitrate": 5734733,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:anamorphic": "1",
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "576",
+    "ma:codedWidth": "720",
+    "ma:colorRange": "tv",
+    "ma:frameRate": "25.000",
+    "ma:height": "576",
+    "ma:level": "8",
+    "ma:pixelAspectRatio": "64:45",
+    "ma:profile": "main",
+    "ma:refFrames": "1",
+    "ma:scanType": "interlaced",
+    "ma:width": "720"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "ac3",
+   "language": "fr",
+   "channels": 2,
+   "bitrate": 192000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:samplingRate": "48000",
+    "ma:title": "Stéréo"
+   }
+  }
+ ],
+ "rates": "declared"
+}

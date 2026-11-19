@@ -1,0 +1,124 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1080,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 4052055,
+  "container": "mkv",
+  "video_codec": "h264",
+  "audio_codec": "aac",
+  "audio_channels": 2,
+  "frames_per_second": 25.0,
+  "duration": 662760
+ },
+ "part": {
+  "size": 335692560,
+  "duration": 662760,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "h264",
+   "language": "en",
+   "bitrate": 1786478,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1088",
+    "ma:codedWidth": "1920",
+    "ma:colorPrimaries": "bt709",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt709",
+    "ma:colorTrc": "bt709",
+    "ma:frameRate": "25.000",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "1080",
+    "ma:level": "40",
+    "ma:profile": "main",
+    "ma:refFrames": "4",
+    "ma:scanType": "progressive",
+    "ma:title": "1080p",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 1,
+   "index": 1,
+   "codec": "h264",
+   "language": "en",
+   "bitrate": 1841709,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1088",
+    "ma:codedWidth": "1920",
+    "ma:colorPrimaries": "bt709",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt709",
+    "ma:colorTrc": "bt709",
+    "ma:frameRate": "25.000",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "1080",
+    "ma:level": "40",
+    "ma:profile": "main",
+    "ma:refFrames": "4",
+    "ma:scanType": "progressive",
+    "ma:title": "1080p",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "aac",
+   "language": "en",
+   "channels": 2,
+   "bitrate": 253375,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:profile": "lc",
+    "ma:samplingRate": "48000",
+    "ma:title": "Audio VO"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 3,
+   "codec": "aac",
+   "language": "fr",
+   "channels": 2,
+   "bitrate": 189374,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:profile": "lc",
+    "ma:samplingRate": "48000",
+    "ma:title": "Audio VF"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 4,
+   "codec": "ass",
+   "language": "fr",
+   "bitrate": 160,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "Sous-titres FR [Steven Universe Fantasy]"
+   }
+  }
+ ],
+ "rates": "declared"
+}

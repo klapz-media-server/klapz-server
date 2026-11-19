@@ -9,7 +9,7 @@ use serde::Deserialize;
 use crate::engine::{hashes, input, mp4, run, sequence_header, ScanError, Streaming, Tools};
 use crate::report::{
     Analysis, Attachment, AudioTrack, Chapter, Cropping, DeepAnalysis, Disposition, DolbyVision,
-    MeasuredTrack, Track, TrackKind, VideoTrack,
+    FileIdentity, MeasuredTrack, Track, TrackKind, VideoTrack,
 };
 
 /// Reads what the file declares; with `deep`, also every packet's size, which measures each
@@ -21,21 +21,7 @@ use crate::report::{
 /// file cannot be read at all.
 pub fn probe(tools: &Tools, path: &Path, deep: bool) -> Result<Analysis, ScanError> {
     let file = hashes::identify(path)?;
-    let probed = ffprobe(tools, path)?;
-    let duration_ms = probed.format.duration.as_deref().and_then(milliseconds);
-    let container = probed.format.format_name.unwrap_or_default();
-    let mut analysis = Analysis {
-        file,
-        duration_ms,
-        bitrate: probed.format.bit_rate.as_deref().and_then(integer),
-        optimized_for_streaming: None,
-        has_64bit_offsets: None,
-        packet_length: None,
-        tracks: probed.streams.iter().filter_map(track).collect(),
-        chapters: chapters(probed.chapters),
-        deep: None,
-        container,
-    };
+    let mut analysis = analysis_from_ffprobe(&ffprobe(tools, path)?, file)?;
     if analysis.container.split(',').any(|name| name == "mp4") {
         // The layout is a nicety; a file ffprobe could read but this walk cannot stays analyzed.
         if let Ok(layout) = mp4::layout(path) {
@@ -55,9 +41,32 @@ pub fn probe(tools: &Tools, path: &Path, deep: bool) -> Result<Analysis, ScanErr
         }
     }
     if deep {
-        analysis.deep = Some(measure_packets(tools, path, duration_ms)?);
+        analysis.deep = Some(measure_packets(tools, path, analysis.duration_ms)?);
     }
     Ok(analysis)
+}
+
+/// What ffprobe's `-show_format -show_streams -show_chapters` JSON says of a file: everything
+/// of an analysis but the layout read from the file's bytes, H.264's sequence header and the
+/// deep analysis.
+///
+/// # Errors
+///
+/// [`ScanError::Output`] when the output is not ffprobe's JSON.
+pub fn analysis_from_ffprobe(output: &[u8], file: FileIdentity) -> Result<Analysis, ScanError> {
+    let probed = parse(output)?;
+    Ok(Analysis {
+        file,
+        duration_ms: probed.format.duration.as_deref().and_then(milliseconds),
+        bitrate: probed.format.bit_rate.as_deref().and_then(integer),
+        optimized_for_streaming: None,
+        has_64bit_offsets: None,
+        packet_length: None,
+        tracks: probed.streams.iter().filter_map(track).collect(),
+        chapters: chapters(probed.chapters),
+        deep: None,
+        container: probed.format.format_name.unwrap_or_default(),
+    })
 }
 
 /// The duration ffprobe reads from the container, for commands sized by it.
@@ -120,8 +129,8 @@ pub(crate) fn chapters_of(tools: &Tools, path: &Path) -> Result<Vec<Chapter>, Sc
     Ok(chapters(probed.chapters))
 }
 
-fn ffprobe(tools: &Tools, path: &Path) -> Result<Probed, ScanError> {
-    let output = run(
+fn ffprobe(tools: &Tools, path: &Path) -> Result<Vec<u8>, ScanError> {
+    run(
         "ffprobe",
         tools
             .ffprobe()
@@ -136,8 +145,7 @@ fn ffprobe(tools: &Tools, path: &Path) -> Result<Probed, ScanError> {
                 "-i",
             ])
             .arg(input(path)),
-    )?;
-    parse(&output)
+    )
 }
 
 fn parse(output: &[u8]) -> Result<Probed, ScanError> {
@@ -386,6 +394,10 @@ fn track(stream: &Stream) -> Option<Track> {
     });
     Some(Track {
         index: stream.index,
+        identifier: stream
+            .id
+            .as_deref()
+            .and_then(|id| u32::from_str_radix(id.strip_prefix("0x")?, 16).ok()),
         kind,
         codec: stream.codec_name.clone(),
         codec_tag: stream
@@ -553,6 +565,8 @@ struct Format {
 #[derive(Debug, Deserialize)]
 struct Stream {
     index: u32,
+    /// In hex: `0x44`.
+    id: Option<String>,
     codec_type: Option<String>,
     codec_name: Option<String>,
     codec_tag_string: Option<String>,

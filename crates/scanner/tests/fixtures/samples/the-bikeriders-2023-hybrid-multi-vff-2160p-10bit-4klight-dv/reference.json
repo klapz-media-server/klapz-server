@@ -1,0 +1,160 @@
+{
+ "media": {
+  "width": 3840,
+  "height": 1608,
+  "display_aspect_ratio": 2.388059616088867,
+  "bitrate": 9157872,
+  "container": "mkv",
+  "video_codec": "hevc",
+  "audio_codec": "eac3",
+  "audio_channels": 8,
+  "frames_per_second": 23.976024627685547,
+  "duration": 6955968
+ },
+ "part": {
+  "size": 7962733763,
+  "duration": 6955968,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "hevc",
+   "language": "en",
+   "bitrate": 8837872,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:DOVIBLCompatID": "1",
+    "ma:DOVIBLPresent": "1",
+    "ma:DOVIELPresent": "0",
+    "ma:DOVILevel": "6",
+    "ma:DOVIPresent": "1",
+    "ma:DOVIProfile": "8",
+    "ma:DOVIRPUPresent": "1",
+    "ma:DOVIVersion": "1.0",
+    "ma:bitDepth": "10",
+    "ma:chromaLocation": "topleft",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1608",
+    "ma:codedWidth": "3840",
+    "ma:colorPrimaries": "bt2020",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt2020nc",
+    "ma:colorTrc": "smpte2084",
+    "ma:frameRate": "23.976",
+    "ma:height": "1608",
+    "ma:level": "153",
+    "ma:profile": "main 10",
+    "ma:refFrames": "1",
+    "ma:width": "3840"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "eac3",
+   "language": "fr",
+   "channels": 8,
+   "bitrate": 320000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "7.1",
+    "ma:samplingRate": "48000",
+    "ma:title": "FR VFF : DDP 7.1"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "truehd",
+   "language": "en",
+   "channels": 8,
+   "bitrate": 2505567,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "7.1",
+    "ma:bitDepth": "24",
+    "ma:profile": "dolby truehd + dolby atmos",
+    "ma:samplingRate": "48000",
+    "ma:title": "ENG VO : TrueHD 7.1 Atmos"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 3,
+   "codec": "srt",
+   "language": "fr",
+   "default": 1,
+   "forced": 1,
+   "analysis": {
+    "ma:title": "FR Forced : SRT"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 4,
+   "codec": "srt",
+   "language": "fr",
+   "bitrate": 43,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "FR Full : SRT"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 5,
+   "codec": "srt",
+   "language": "en",
+   "bitrate": 65,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "ENG Full : SRT"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 6,
+   "codec": "pgs",
+   "language": "fr",
+   "bitrate": 299,
+   "default": 0,
+   "forced": 1,
+   "analysis": {
+    "ma:title": "FR Forced : PGS"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 7,
+   "codec": "pgs",
+   "language": "fr",
+   "bitrate": 28519,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "FR Full : PGS"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 8,
+   "codec": "pgs",
+   "language": "en",
+   "bitrate": 44569,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:hearingImpaired": "1",
+    "ma:title": "ENG Full SDH : PGS"
+   }
+  }
+ ],
+ "rates": "declared"
+}

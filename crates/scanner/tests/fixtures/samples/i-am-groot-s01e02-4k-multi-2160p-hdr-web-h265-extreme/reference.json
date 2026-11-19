@@ -1,0 +1,101 @@
+{
+ "media": {
+  "width": 3840,
+  "height": 2160,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 14788459,
+  "container": "mkv",
+  "video_codec": "hevc",
+  "audio_codec": "eac3",
+  "audio_channels": 6,
+  "frames_per_second": 24.0,
+  "duration": 232896
+ },
+ "part": {
+  "size": 430521633,
+  "duration": 232896,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 2,
+   "index": 0,
+   "codec": "eac3",
+   "language": "fr",
+   "channels": 6,
+   "bitrate": 256000,
+   "default": 1,
+   "forced": 1,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:samplingRate": "48000"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 1,
+   "codec": "srt",
+   "language": "fr",
+   "bitrate": 2,
+   "default": 1,
+   "forced": 1,
+   "analysis": {
+    "ma:title": "Forced"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 2,
+   "codec": "srt",
+   "language": "fr",
+   "bitrate": 8,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "French"
+   }
+  },
+  {
+   "stream_type_id": 1,
+   "index": 3,
+   "codec": "hevc",
+   "language": "en",
+   "bitrate": 13764459,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "10",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "2160",
+    "ma:codedWidth": "3840",
+    "ma:colorPrimaries": "bt2020",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt2020nc",
+    "ma:colorTrc": "smpte2084",
+    "ma:frameRate": "24.000",
+    "ma:height": "2160",
+    "ma:level": "150",
+    "ma:profile": "main 10",
+    "ma:refFrames": "1",
+    "ma:width": "3840"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 4,
+   "codec": "eac3",
+   "language": "en",
+   "channels": 6,
+   "bitrate": 768000,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:profile": "dolby digital plus + dolby atmos",
+    "ma:samplingRate": "48000"
+   }
+  }
+ ],
+ "rates": "declared"
+}

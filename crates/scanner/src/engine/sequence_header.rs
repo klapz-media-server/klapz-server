@@ -31,9 +31,9 @@ pub(super) fn read(tools: &Tools, path: &Path, stream: u32) -> Option<SequenceHe
         .flatten()
 }
 
-/// The first sequence parameter set of a trace. Each field is a line
+/// The first sequence parameter set of ffmpeg's `trace_headers` output. Each field is a line
 /// `[trace_headers @ …] <bit position> <name> <bits> = <value>`.
-fn parse(trace: &str) -> Option<SequenceHeader> {
+pub fn parse(trace: &str) -> Option<SequenceHeader> {
     let mut fields: Vec<(&str, u32)> = Vec::new();
     let mut inside = false;
     for line in trace.lines() {

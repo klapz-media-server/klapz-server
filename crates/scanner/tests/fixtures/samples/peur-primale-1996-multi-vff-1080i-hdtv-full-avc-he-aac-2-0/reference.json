@@ -1,0 +1,125 @@
+{
+ "media": {
+  "width": 1440,
+  "height": 1080,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 4907421,
+  "container": "mpegts",
+  "video_codec": "h264",
+  "audio_codec": "aac",
+  "audio_channels": 2,
+  "frames_per_second": 25.0,
+  "duration": 7394730
+ },
+ "part": {
+  "size": 4536132672,
+  "duration": 7394730,
+  "analysis": {
+   "ma:packetLength": "192"
+  }
+ },
+ "streams": [
+  {
+   "stream_type_id": 3,
+   "index": 0,
+   "codec": "dvb_teletext",
+   "language": "und",
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:streamIdentifier": "49"
+   }
+  },
+  {
+   "stream_type_id": 1,
+   "index": 1,
+   "codec": "h264",
+   "bitrate": 4642905,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:anamorphic": "1",
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1088",
+    "ma:codedWidth": "1440",
+    "ma:frameRate": "25.000",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "1080",
+    "ma:level": "40",
+    "ma:pixelAspectRatio": "4:3",
+    "ma:profile": "high",
+    "ma:refFrames": "4",
+    "ma:scanType": "interlaced",
+    "ma:streamIdentifier": "68",
+    "ma:width": "1440"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "aac",
+   "language": "fr",
+   "channels": 2,
+   "bitrate": 79969,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:profile": "he-aac",
+    "ma:samplingRate": "48000",
+    "ma:streamIdentifier": "69"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 3,
+   "codec": "aac",
+   "language": "de",
+   "channels": 2,
+   "bitrate": 55547,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:profile": "he-aac",
+    "ma:samplingRate": "48000",
+    "ma:streamIdentifier": "71"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 4,
+   "codec": "aac",
+   "language": "qaa",
+   "channels": 2,
+   "bitrate": 83485,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:profile": "he-aac",
+    "ma:samplingRate": "48000",
+    "ma:streamIdentifier": "72"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 5,
+   "codec": "aac",
+   "language": "qad",
+   "channels": 2,
+   "bitrate": 45515,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:profile": "he-aac",
+    "ma:samplingRate": "48000",
+    "ma:streamIdentifier": "73"
+   }
+  }
+ ],
+ "rates": "declared"
+}

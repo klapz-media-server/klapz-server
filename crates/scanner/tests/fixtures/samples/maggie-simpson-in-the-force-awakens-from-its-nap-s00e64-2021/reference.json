@@ -1,0 +1,75 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1080,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 3385340,
+  "container": "mkv",
+  "video_codec": "hevc",
+  "audio_codec": "ac3",
+  "audio_channels": 6,
+  "frames_per_second": 23.976024627685547,
+  "duration": 215520
+ },
+ "part": {
+  "size": 91201066,
+  "duration": 215520,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "hevc",
+   "language": "en",
+   "bitrate": 3001340,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "10",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1080",
+    "ma:codedWidth": "1920",
+    "ma:colorPrimaries": "bt709",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt709",
+    "ma:colorTrc": "bt709",
+    "ma:frameRate": "23.976",
+    "ma:height": "1080",
+    "ma:level": "120",
+    "ma:profile": "main 10",
+    "ma:refFrames": "1",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "ac3",
+   "language": "en",
+   "channels": 6,
+   "bitrate": 384000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:samplingRate": "48000",
+    "ma:title": "English AC3 5.1"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 2,
+   "codec": "srt",
+   "language": "fr",
+   "bitrate": 21,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "French Forced"
+   }
+  }
+ ],
+ "rates": "declared"
+}

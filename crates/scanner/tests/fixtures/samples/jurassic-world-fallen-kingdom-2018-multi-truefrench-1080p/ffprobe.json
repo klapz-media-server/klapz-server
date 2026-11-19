@@ -1,0 +1,542 @@
+{
+ "streams": [
+  {
+   "index": 0,
+   "codec_name": "dts",
+   "codec_long_name": "DCA (DTS Coherent Acoustics)",
+   "profile": "DTS-HD HRA",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "sample_fmt": "fltp",
+   "sample_rate": "48000",
+   "channels": 8,
+   "channel_layout": "7.1",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fre",
+    "languageISO639": "fre",
+    "title": "VFF DTS-HDHRA 7.1",
+    "BPS": "2046000",
+    "BPS-eng": "2046000",
+    "DURATION": "02:08:17.696000000",
+    "DURATION-eng": "02:08:17.696000000",
+    "NUMBER_OF_FRAMES": "721659",
+    "NUMBER_OF_FRAMES-eng": "721659",
+    "NUMBER_OF_BYTES": "1968685752",
+    "NUMBER_OF_BYTES-eng": "1968685752",
+    "_STATISTICS_WRITING_APP": "mkvmerge v7.8.0 ('River Man') 32bit built on Mar 27 2015 16:18:02",
+    "_STATISTICS_WRITING_APP-eng": "mkvmerge v7.8.0 ('River Man') 32bit built on Mar 27 2015 16:18:02",
+    "_STATISTICS_WRITING_DATE_UTC": "2018-09-26 13:19:04",
+    "_STATISTICS_WRITING_DATE_UTC-eng": "2018-09-26 13:19:04",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES",
+    "_STATISTICS_TAGS-eng": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 1,
+   "codec_name": "subrip",
+   "codec_long_name": "SubRip subtitle",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 7697703,
+   "duration": "7697.703000",
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fre",
+    "languageISO639": "fre",
+    "title": "Forced",
+    "BPS": "0",
+    "BPS-eng": "0",
+    "DURATION": "01:49:50.584000000",
+    "DURATION-eng": "01:49:50.584000000",
+    "NUMBER_OF_FRAMES": "5",
+    "NUMBER_OF_FRAMES-eng": "5",
+    "NUMBER_OF_BYTES": "147",
+    "NUMBER_OF_BYTES-eng": "147",
+    "_STATISTICS_WRITING_APP": "mkvmerge v7.8.0 ('River Man') 32bit built on Mar 27 2015 16:18:02",
+    "_STATISTICS_WRITING_APP-eng": "mkvmerge v7.8.0 ('River Man') 32bit built on Mar 27 2015 16:18:02",
+    "_STATISTICS_WRITING_DATE_UTC": "2018-09-26 13:19:04",
+    "_STATISTICS_WRITING_DATE_UTC-eng": "2018-09-26 13:19:04",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES",
+    "_STATISTICS_TAGS-eng": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 2,
+   "codec_name": "dts",
+   "codec_long_name": "DCA (DTS Coherent Acoustics)",
+   "profile": "DTS-HD MA + DTS:X",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "sample_fmt": "s32p",
+   "sample_rate": "48000",
+   "channels": 8,
+   "channel_layout": "7.1",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "bits_per_raw_sample": "24",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "eng",
+    "languageISO639": "eng",
+    "title": "VO DTS-HDMA 7.1",
+    "BPS": "4230911",
+    "BPS-eng": "4230911",
+    "DURATION": "02:08:17.697000000",
+    "DURATION-eng": "02:08:17.697000000",
+    "NUMBER_OF_FRAMES": "721659",
+    "NUMBER_OF_FRAMES-eng": "721659",
+    "NUMBER_OF_BYTES": "4071034416",
+    "NUMBER_OF_BYTES-eng": "4071034416",
+    "_STATISTICS_WRITING_APP": "mkvmerge v7.8.0 ('River Man') 32bit built on Mar 27 2015 16:18:02",
+    "_STATISTICS_WRITING_APP-eng": "mkvmerge v7.8.0 ('River Man') 32bit built on Mar 27 2015 16:18:02",
+    "_STATISTICS_WRITING_DATE_UTC": "2018-09-26 13:19:04",
+    "_STATISTICS_WRITING_DATE_UTC-eng": "2018-09-26 13:19:04",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES",
+    "_STATISTICS_TAGS-eng": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 3,
+   "codec_name": "h264",
+   "codec_long_name": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+   "profile": "High",
+   "codec_type": "video",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "mime_codec_string": "avc1.640029",
+   "width": 1920,
+   "height": 808,
+   "coded_width": 1920,
+   "coded_height": 808,
+   "has_b_frames": 2,
+   "sample_aspect_ratio": "1:1",
+   "display_aspect_ratio": "240:101",
+   "pix_fmt": "yuv420p",
+   "level": 41,
+   "chroma_location": "left",
+   "field_order": "progressive",
+   "is_avc": "true",
+   "nal_length_size": "4",
+   "r_frame_rate": "13978/583",
+   "avg_frame_rate": "13978/583",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "bits_per_raw_sample": "8",
+   "extradata_size": 41,
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "eng",
+    "languageISO639": "eng",
+    "BPS": "9180632",
+    "BPS-eng": "9180632",
+    "DURATION": "02:08:17.703000000",
+    "DURATION-eng": "02:08:17.703000000",
+    "NUMBER_OF_FRAMES": "184560",
+    "NUMBER_OF_FRAMES-eng": "184560",
+    "NUMBER_OF_BYTES": "8833723175",
+    "NUMBER_OF_BYTES-eng": "8833723175",
+    "_STATISTICS_WRITING_APP": "mkvmerge v7.8.0 ('River Man') 32bit built on Mar 27 2015 16:18:02",
+    "_STATISTICS_WRITING_APP-eng": "mkvmerge v7.8.0 ('River Man') 32bit built on Mar 27 2015 16:18:02",
+    "_STATISTICS_WRITING_DATE_UTC": "2018-09-26 13:19:04",
+    "_STATISTICS_WRITING_DATE_UTC-eng": "2018-09-26 13:19:04",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES",
+    "_STATISTICS_TAGS-eng": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  },
+  {
+   "index": 4,
+   "codec_name": "subrip",
+   "codec_long_name": "SubRip subtitle",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 7697703,
+   "duration": "7697.703000",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "fre",
+    "languageISO639": "fre",
+    "BPS": "39",
+    "BPS-eng": "39",
+    "DURATION": "02:06:27.330000000",
+    "DURATION-eng": "02:06:27.330000000",
+    "NUMBER_OF_FRAMES": "1296",
+    "NUMBER_OF_FRAMES-eng": "1296",
+    "NUMBER_OF_BYTES": "37173",
+    "NUMBER_OF_BYTES-eng": "37173",
+    "_STATISTICS_WRITING_APP": "mkvmerge v7.8.0 ('River Man') 32bit built on Mar 27 2015 16:18:02",
+    "_STATISTICS_WRITING_APP-eng": "mkvmerge v7.8.0 ('River Man') 32bit built on Mar 27 2015 16:18:02",
+    "_STATISTICS_WRITING_DATE_UTC": "2018-09-26 13:19:04",
+    "_STATISTICS_WRITING_DATE_UTC-eng": "2018-09-26 13:19:04",
+    "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES",
+    "_STATISTICS_TAGS-eng": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "id": 2096208890561691069,
+   "time_base": "1/1000000000",
+   "start": 0,
+   "start_time": "0.000000",
+   "end": 433224000000,
+   "end_time": "433.224000",
+   "tags": {
+    "title": "00:00:00.000"
+   }
+  },
+  {
+   "id": -7189240970720761430,
+   "time_base": "1/1000000000",
+   "start": 433224000000,
+   "start_time": "433.224000",
+   "end": 721554000000,
+   "end_time": "721.554000",
+   "tags": {
+    "title": "00:07:13.224"
+   }
+  },
+  {
+   "id": 2577389389959991219,
+   "time_base": "1/1000000000",
+   "start": 721554000000,
+   "start_time": "721.554000",
+   "end": 1037745000000,
+   "end_time": "1037.745000",
+   "tags": {
+    "title": "00:12:01.554"
+   }
+  },
+  {
+   "id": 4764067196664662461,
+   "time_base": "1/1000000000",
+   "start": 1037745000000,
+   "start_time": "1037.745000",
+   "end": 1277193000000,
+   "end_time": "1277.193000",
+   "tags": {
+    "title": "00:17:17.745"
+   }
+  },
+  {
+   "id": -7801477597936715366,
+   "time_base": "1/1000000000",
+   "start": 1277193000000,
+   "start_time": "1277.193000",
+   "end": 1729811000000,
+   "end_time": "1729.811000",
+   "tags": {
+    "title": "00:21:17.193"
+   }
+  },
+  {
+   "id": -8445347359417263716,
+   "time_base": "1/1000000000",
+   "start": 1729811000000,
+   "start_time": "1729.811000",
+   "end": 2104686000000,
+   "end_time": "2104.686000",
+   "tags": {
+    "title": "00:28:49.811"
+   }
+  },
+  {
+   "id": 198844249731356326,
+   "time_base": "1/1000000000",
+   "start": 2104686000000,
+   "start_time": "2104.686000",
+   "end": 2451574000000,
+   "end_time": "2451.574000",
+   "tags": {
+    "title": "00:35:04.686"
+   }
+  },
+  {
+   "id": -7693412111754197343,
+   "time_base": "1/1000000000",
+   "start": 2451574000000,
+   "start_time": "2451.574000",
+   "end": 2792498000000,
+   "end_time": "2792.498000",
+   "tags": {
+    "title": "00:40:51.574"
+   }
+  },
+  {
+   "id": -9135649415531886207,
+   "time_base": "1/1000000000",
+   "start": 2792498000000,
+   "start_time": "2792.498000",
+   "end": 3124997000000,
+   "end_time": "3124.997000",
+   "tags": {
+    "title": "00:46:32.498"
+   }
+  },
+  {
+   "id": 6710597395821850773,
+   "time_base": "1/1000000000",
+   "start": 3124997000000,
+   "start_time": "3124.997000",
+   "end": 3659197000000,
+   "end_time": "3659.197000",
+   "tags": {
+    "title": "00:52:04.997"
+   }
+  },
+  {
+   "id": -968771096426023495,
+   "time_base": "1/1000000000",
+   "start": 3659197000000,
+   "start_time": "3659.197000",
+   "end": 4010256000000,
+   "end_time": "4010.256000",
+   "tags": {
+    "title": "01:00:59.197"
+   }
+  },
+  {
+   "id": -8071102446246443898,
+   "time_base": "1/1000000000",
+   "start": 4010256000000,
+   "start_time": "4010.256000",
+   "end": 4267638000000,
+   "end_time": "4267.638000",
+   "tags": {
+    "title": "01:06:50.256"
+   }
+  },
+  {
+   "id": -3108883905282106207,
+   "time_base": "1/1000000000",
+   "start": 4267638000000,
+   "start_time": "4267.638000",
+   "end": 4641095000000,
+   "end_time": "4641.095000",
+   "tags": {
+    "title": "01:11:07.638"
+   }
+  },
+  {
+   "id": 250318123228860304,
+   "time_base": "1/1000000000",
+   "start": 4641095000000,
+   "start_time": "4641.095000",
+   "end": 5215210000000,
+   "end_time": "5215.210000",
+   "tags": {
+    "title": "01:17:21.095"
+   }
+  },
+  {
+   "id": -2867049085097119594,
+   "time_base": "1/1000000000",
+   "start": 5215210000000,
+   "start_time": "5215.210000",
+   "end": 5581493000000,
+   "end_time": "5581.493000",
+   "tags": {
+    "title": "01:26:55.210"
+   }
+  },
+  {
+   "id": 3862953759823343003,
+   "time_base": "1/1000000000",
+   "start": 5581493000000,
+   "start_time": "5581.493000",
+   "end": 6175878000000,
+   "end_time": "6175.878000",
+   "tags": {
+    "title": "01:33:01.493"
+   }
+  },
+  {
+   "id": 8008938704406096575,
+   "time_base": "1/1000000000",
+   "start": 6175878000000,
+   "start_time": "6175.878000",
+   "end": 6601553000000,
+   "end_time": "6601.553000",
+   "tags": {
+    "title": "01:42:55.878"
+   }
+  },
+  {
+   "id": -1125689638615100514,
+   "time_base": "1/1000000000",
+   "start": 6601553000000,
+   "start_time": "6601.553000",
+   "end": 6896223000000,
+   "end_time": "6896.223000",
+   "tags": {
+    "title": "01:50:01.553"
+   }
+  },
+  {
+   "id": 6932545637632991361,
+   "time_base": "1/1000000000",
+   "start": 6896223000000,
+   "start_time": "6896.223000",
+   "end": 7117986000000,
+   "end_time": "7117.986000",
+   "tags": {
+    "title": "01:54:56.223"
+   }
+  },
+  {
+   "id": -3656955694380778340,
+   "time_base": "1/1000000000",
+   "start": 7117986000000,
+   "start_time": "7117.986000",
+   "end": 7697703000000,
+   "end_time": "7697.703000",
+   "tags": {
+    "title": "01:58:37.986"
+   }
+  }
+ ],
+ "format": {
+  "filename": "Jurassic.World.Fallen.Kingdom.2018.MULTi.TRUEFRENCH.1080p.BluRay.DTS-HDHRA.x264-EXTREME.mkv",
+  "nb_streams": 5,
+  "nb_programs": 0,
+  "nb_stream_groups": 0,
+  "format_name": "matroska,webm",
+  "format_long_name": "Matroska / WebM",
+  "start_time": "0.000000",
+  "duration": "7697.703000",
+  "size": "14877731064",
+  "bit_rate": "15461995",
+  "probe_score": 100,
+  "tags": {
+   "encoder": "libebml v1.3.1 + libmatroska v1.4.2",
+   "creation_time": "2018-09-26T13:19:04.000000Z"
+  }
+ }
+}

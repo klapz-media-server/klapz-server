@@ -1,0 +1,159 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1088,
+  "display_aspect_ratio": 1.777573585510254,
+  "bitrate": 12431056,
+  "container": "mkv",
+  "video_codec": "hevc",
+  "audio_codec": "dca",
+  "audio_channels": 6,
+  "frames_per_second": 23.976024627685547,
+  "duration": 2638227
+ },
+ "part": {
+  "size": 4099493543,
+  "duration": 2638227,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "hevc",
+   "language": "en",
+   "bitrate": 12047056,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:anamorphic": "0",
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1088",
+    "ma:codedWidth": "1920",
+    "ma:colorPrimaries": "bt709",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt709",
+    "ma:colorTrc": "bt709",
+    "ma:frameRate": "23.976",
+    "ma:height": "1088",
+    "ma:level": "120",
+    "ma:pixelAspectRatio": "967:960",
+    "ma:profile": "main",
+    "ma:refFrames": "1",
+    "ma:title": "Video [H.265 - 10 Mbps]",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "ac3",
+   "language": "fr",
+   "channels": 2,
+   "bitrate": 192000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:samplingRate": "48000",
+    "ma:title": "Français [AC3 - 2.0 @ 192 Kbps]"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "dca",
+   "language": "en",
+   "channels": 6,
+   "bitrate": 2165730,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:bitDepth": "16",
+    "ma:profile": "ma",
+    "ma:samplingRate": "48000",
+    "ma:title": "Anglais [DTS-HDMA - 5.1 @ 2150 Kbps]"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 3,
+   "codec": "ac3",
+   "language": "en",
+   "channels": 2,
+   "bitrate": 192000,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:comment": "1",
+    "ma:samplingRate": "48000",
+    "ma:title": "Anglais commentaire [AC3 - 2.0 @ 192 Kbps]"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 4,
+   "codec": "srt",
+   "language": "fr",
+   "bitrate": 54,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "Français [SRT]"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 5,
+   "codec": "pgs",
+   "language": "fr",
+   "bitrate": 12645,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "Français [PGS]"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 6,
+   "codec": "srt",
+   "language": "en",
+   "bitrate": 57,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "Anglais [SRT]"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 7,
+   "codec": "srt",
+   "language": "en",
+   "bitrate": 60,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "Anglais SDH [SRT]"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 8,
+   "codec": "pgs",
+   "language": "en",
+   "bitrate": 14502,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "Anglais SDH [PGS]"
+   }
+  }
+ ],
+ "rates": "declared"
+}

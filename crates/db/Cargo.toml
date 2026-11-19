@@ -18,6 +18,8 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 open-plex-core.workspace = true
+# The scanner's parsers, to replay captured ffprobe output through the scan's storage.
+open-plex-scanner = { workspace = true, features = ["engine"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]

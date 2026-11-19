@@ -1,0 +1,79 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1080,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 4418618,
+  "container": "mkv",
+  "video_codec": "h264",
+  "audio_codec": "aac",
+  "audio_channels": 2,
+  "frames_per_second": 25.0,
+  "duration": 91882
+ },
+ "part": {
+  "size": 50748934,
+  "duration": 91882,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "h264",
+   "language": "en",
+   "bitrate": 4418618,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1088",
+    "ma:codedWidth": "1920",
+    "ma:colorPrimaries": "bt709",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt709",
+    "ma:colorTrc": "bt709",
+    "ma:frameRate": "25.000",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "1080",
+    "ma:level": "41",
+    "ma:profile": "high",
+    "ma:refFrames": "2",
+    "ma:scanType": "progressive",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "aac",
+   "language": "fr",
+   "channels": 2,
+   "bitrate": 128000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:profile": "lc",
+    "ma:samplingRate": "48000"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 2,
+   "codec": "srt",
+   "language": "fr",
+   "bitrate": 123,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:hearingImpaired": "1",
+    "ma:original": "1",
+    "ma:title": "SDH"
+   }
+  }
+ ],
+ "rates": "declared"
+}

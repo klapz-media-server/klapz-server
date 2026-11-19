@@ -20,7 +20,8 @@ pub use bif::preview_index;
 pub use fingerprint::fingerprint;
 pub use hashes::identify;
 pub use loudness::loudness;
-pub use probe::probe;
+pub use probe::{analysis_from_ffprobe, probe};
+pub use sequence_header::parse as sequence_header_from_trace;
 pub use subtitles::extract_subtitle;
 
 use crate::report;

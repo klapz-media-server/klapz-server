@@ -1,0 +1,72 @@
+{
+ "media": {
+  "width": 720,
+  "height": 480,
+  "display_aspect_ratio": 1.5,
+  "bitrate": 950915,
+  "container": "mkv",
+  "video_codec": "h264",
+  "audio_codec": "aac",
+  "audio_channels": 2,
+  "frames_per_second": 29.969999313354492,
+  "duration": 320149
+ },
+ "part": {
+  "size": 38054343,
+  "duration": 320149,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "h264",
+   "language": "en",
+   "bitrate": 950915,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "480",
+    "ma:codedWidth": "720",
+    "ma:frameRate": "29.970",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "480",
+    "ma:level": "30",
+    "ma:profile": "high",
+    "ma:refFrames": "4",
+    "ma:scanType": "progressive",
+    "ma:width": "720"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "aac",
+   "language": "en",
+   "channels": 2,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:profile": "lc",
+    "ma:samplingRate": "48000",
+    "ma:title": "Anglais"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 2,
+   "codec": "pgs",
+   "language": "fr",
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "Français"
+   }
+  }
+ ],
+ "rates": "declared"
+}

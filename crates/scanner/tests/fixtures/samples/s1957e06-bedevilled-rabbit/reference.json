@@ -1,0 +1,76 @@
+{
+ "media": {
+  "width": 960,
+  "height": 720,
+  "display_aspect_ratio": 1.3333333730697632,
+  "bitrate": 2017738,
+  "container": "mkv",
+  "video_codec": "h264",
+  "audio_codec": "ac3",
+  "audio_channels": 2,
+  "frames_per_second": 23.976024627685547,
+  "duration": 409944
+ },
+ "part": {
+  "size": 103394996,
+  "duration": 409944,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "h264",
+   "language": "en",
+   "bitrate": 1025738,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "10",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "720",
+    "ma:codedWidth": "960",
+    "ma:frameRate": "23.976",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "720",
+    "ma:level": "40",
+    "ma:profile": "high 10",
+    "ma:refFrames": "12",
+    "ma:scanType": "progressive",
+    "ma:width": "960"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "pcm",
+   "language": "fr",
+   "channels": 1,
+   "bitrate": 768000,
+   "default": 1,
+   "forced": 1,
+   "analysis": {
+    "ma:profile": "pcm_s16le",
+    "ma:samplingRate": "48000",
+    "ma:title": "Français (Doublage d'origine)"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "ac3",
+   "language": "en",
+   "channels": 2,
+   "bitrate": 224000,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:samplingRate": "48000",
+    "ma:title": "Anglais"
+   }
+  }
+ ],
+ "rates": "declared"
+}

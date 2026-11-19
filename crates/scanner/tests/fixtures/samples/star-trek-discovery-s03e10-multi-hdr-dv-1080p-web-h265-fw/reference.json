@@ -1,0 +1,118 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1080,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 4853270,
+  "container": "mkv",
+  "video_codec": "hevc",
+  "audio_codec": "eac3",
+  "audio_channels": 6,
+  "frames_per_second": 23.976024627685547,
+  "duration": 2963127
+ },
+ "part": {
+  "size": 1797607049,
+  "duration": 2963127,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "hevc",
+   "language": "en",
+   "bitrate": 4533270,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:DOVIBLCompatID": "1",
+    "ma:DOVIBLPresent": "1",
+    "ma:DOVIELPresent": "0",
+    "ma:DOVILevel": "3",
+    "ma:DOVIPresent": "1",
+    "ma:DOVIProfile": "8",
+    "ma:DOVIRPUPresent": "1",
+    "ma:DOVIVersion": "1.0",
+    "ma:bitDepth": "10",
+    "ma:chromaLocation": "topleft",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1080",
+    "ma:codedWidth": "1920",
+    "ma:colorPrimaries": "bt2020",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt2020nc",
+    "ma:colorTrc": "smpte2084",
+    "ma:frameRate": "23.976",
+    "ma:height": "1080",
+    "ma:level": "120",
+    "ma:profile": "main 10",
+    "ma:refFrames": "1",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "eac3",
+   "language": "fr",
+   "channels": 2,
+   "bitrate": 128000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:samplingRate": "48000"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "eac3",
+   "language": "en",
+   "channels": 6,
+   "bitrate": 192000,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:samplingRate": "48000"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 3,
+   "codec": "srt",
+   "language": "fr",
+   "bitrate": 155,
+   "default": 1,
+   "forced": 1,
+   "analysis": {
+    "ma:title": "Forced"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 4,
+   "codec": "srt",
+   "language": "fr",
+   "bitrate": 58,
+   "default": 0,
+   "forced": 0,
+   "analysis": {}
+  },
+  {
+   "stream_type_id": 3,
+   "index": 5,
+   "codec": "srt",
+   "language": "en",
+   "bitrate": 65,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "SDH"
+   }
+  }
+ ],
+ "rates": "declared"
+}

@@ -328,7 +328,7 @@ pub(super) fn track_rows(
                 is_forced: disposition.forced,
                 external_path: None,
                 title: track.title.clone(),
-                stream_identifier: None,
+                stream_identifier: stream_identifier(analysis, track),
                 profile: track.profile.as_deref().map(profile).or_else(|| {
                     // PCM's sample format, which ffprobe names as a codec and the reference
                     // stores as the profile: `pcm_s16le`.
@@ -473,6 +473,20 @@ fn is_square(sample_aspect_ratio: &str) -> bool {
         Some((numerator, denominator)) => numerator == denominator || numerator == "0",
         None => true,
     }
+}
+
+/// The container's number for a track: an MP4 track ID, an MPEG-TS PID (`0x44` is 68), and
+/// for an AVI its index, as the reference's libav numbered AVI streams — except 0, which it
+/// never stored (6,230 first AVI tracks without one, 6,606 later ones with their index).
+fn stream_identifier(analysis: &Analysis, track: &Track) -> Option<i64> {
+    let identifier = if analysis.container == "avi" {
+        Some(track.index)
+    } else {
+        track.identifier
+    };
+    identifier
+        .filter(|identifier| *identifier != 0)
+        .map(i64::from)
 }
 
 /// The video's rate when its header declares none: what the container's rate leaves once the

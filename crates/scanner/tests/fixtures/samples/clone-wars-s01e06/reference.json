@@ -1,0 +1,99 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1080,
+  "display_aspect_ratio": 1.77777779102325,
+  "bitrate": 10898927,
+  "container": "mkv",
+  "video_codec": "vc1",
+  "audio_codec": "ac3",
+  "audio_channels": 6,
+  "frames_per_second": 23.9760246276855,
+  "duration": 1287040
+ },
+ "part": {
+  "size": 1744533561,
+  "duration": 1287040,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "vc1",
+   "language": "fr",
+   "bitrate": 9534515,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1080",
+    "ma:codedWidth": "1920",
+    "ma:colorPrimaries": "bt709",
+    "ma:colorSpace": "bt709",
+    "ma:colorTrc": "bt709",
+    "ma:frameRate": "23.976",
+    "ma:height": "1080",
+    "ma:level": "3",
+    "ma:profile": "advanced",
+    "ma:refFrames": "1",
+    "ma:scanType": "progressive",
+    "ma:title": "Clone Wars S01E06",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "ac3",
+   "language": "en",
+   "channels": 6,
+   "bitrate": 640000,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:samplingRate": "48000",
+    "ma:title": "Surround 5.1"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "ac3",
+   "language": "fr",
+   "channels": 6,
+   "bitrate": 640000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:samplingRate": "48000",
+    "ma:title": "Surround 5.1"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 3,
+   "codec": "pgs",
+   "language": "en",
+   "bitrate": 42138,
+   "default": 0,
+   "forced": 0,
+   "analysis": {}
+  },
+  {
+   "stream_type_id": 3,
+   "index": 4,
+   "codec": "pgs",
+   "language": "fr",
+   "bitrate": 42273,
+   "default": 0,
+   "forced": 0,
+   "analysis": {}
+  }
+ ],
+ "rates": "measured"
+}

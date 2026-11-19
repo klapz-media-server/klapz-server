@@ -1,0 +1,103 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1080,
+  "display_aspect_ratio": 1.7777777910232544,
+  "bitrate": 903936,
+  "container": "mkv",
+  "video_codec": "av1",
+  "audio_codec": "eac3",
+  "audio_channels": 2,
+  "frames_per_second": 25.0,
+  "duration": 1386272
+ },
+ "part": {
+  "size": 156637714,
+  "duration": 1386272,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "av1",
+   "language": "fr",
+   "bitrate": 519936,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "10",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1080",
+    "ma:codedWidth": "1920",
+    "ma:colorRange": "tv",
+    "ma:frameRate": "25.000",
+    "ma:height": "1080",
+    "ma:level": "8",
+    "ma:profile": "main",
+    "ma:refFrames": "1",
+    "ma:title": "AV1 @ 518 kb/s",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "eac3",
+   "language": "fr",
+   "channels": 2,
+   "bitrate": 128000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:samplingRate": "48000",
+    "ma:title": "French - E-AC-3 2.0 @ 128 kb/s"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "eac3",
+   "language": "en",
+   "channels": 2,
+   "bitrate": 128000,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:samplingRate": "48000",
+    "ma:title": "English - E-AC-3 2.0 @ 128 kb/s"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 3,
+   "codec": "eac3",
+   "language": "fr",
+   "channels": 2,
+   "bitrate": 128000,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:samplingRate": "48000",
+    "ma:title": "French Audio-Description - E-AC-3 2.0 @ 128 kb/s",
+    "ma:visualImpaired": "1"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 4,
+   "codec": "srt",
+   "language": "en",
+   "bitrate": 50,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "English Full - SRT"
+   }
+  }
+ ],
+ "rates": "declared"
+}

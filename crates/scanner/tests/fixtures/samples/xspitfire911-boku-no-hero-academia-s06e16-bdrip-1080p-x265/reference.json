@@ -1,0 +1,74 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1080,
+  "display_aspect_ratio": 1.77777779102325,
+  "bitrate": 2696054,
+  "container": "mkv",
+  "video_codec": "hevc",
+  "audio_codec": "flac",
+  "audio_channels": 2,
+  "frames_per_second": 23.9760246276855,
+  "duration": 1431428
+ },
+ "part": {
+  "size": 482728179,
+  "duration": 1431428,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "hevc",
+   "language": "en",
+   "bitrate": 2061160,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "10",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1080",
+    "ma:codedWidth": "1920",
+    "ma:colorPrimaries": "bt709",
+    "ma:colorRange": "tv",
+    "ma:colorSpace": "bt709",
+    "ma:colorTrc": "bt709",
+    "ma:frameRate": "23.976",
+    "ma:height": "1080",
+    "ma:level": "123",
+    "ma:profile": "main 10",
+    "ma:refFrames": "1",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "flac",
+   "language": "ja",
+   "channels": 2,
+   "bitrate": 634766,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "stereo",
+    "ma:bitDepth": "16",
+    "ma:samplingRate": "48000",
+    "ma:title": "Stereo"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 2,
+   "codec": "ass",
+   "language": "fr",
+   "bitrate": 128,
+   "default": 1,
+   "forced": 0,
+   "analysis": {}
+  }
+ ],
+ "rates": "measured"
+}

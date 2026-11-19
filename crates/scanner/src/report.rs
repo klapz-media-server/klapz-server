@@ -97,6 +97,10 @@ pub enum TrackKind {
 pub struct Track {
     /// ffmpeg's stream index, what every other command's `--stream` names.
     pub index: u32,
+    /// The container's own number for the track: an MP4 track ID, an MPEG-TS PID. Matroska's
+    /// and AVI's are not reported.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identifier: Option<u32>,
     pub kind: TrackKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codec: Option<String>,

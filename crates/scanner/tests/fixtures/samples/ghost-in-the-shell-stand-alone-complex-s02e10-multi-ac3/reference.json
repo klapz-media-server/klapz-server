@@ -1,0 +1,115 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 1040,
+  "display_aspect_ratio": 1.84615385532379,
+  "bitrate": 6072150,
+  "container": "mkv",
+  "video_codec": "hevc",
+  "audio_codec": "ac3",
+  "audio_channels": 6,
+  "frames_per_second": 23.9760246276855,
+  "duration": 1503235
+ },
+ "part": {
+  "size": 1155994464,
+  "duration": 1503235,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 1,
+   "index": 0,
+   "codec": "hevc",
+   "language": "ja",
+   "bitrate": 2566937,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "10",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "1040",
+    "ma:codedWidth": "1920",
+    "ma:colorRange": "tv",
+    "ma:frameRate": "23.976",
+    "ma:height": "1040",
+    "ma:level": "120",
+    "ma:profile": "main 10",
+    "ma:refFrames": "1",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 1,
+   "codec": "ac3",
+   "language": "fr",
+   "channels": 6,
+   "bitrate": 447398,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:samplingRate": "48000"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "dca",
+   "language": "fr",
+   "channels": 6,
+   "bitrate": 1506973,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:profile": "dts",
+    "ma:samplingRate": "48000",
+    "ma:title": "FR DTS 5.1"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 3,
+   "codec": "truehd",
+   "language": "ja",
+   "channels": 6,
+   "bitrate": 1550687,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "5.1(side)",
+    "ma:bitDepth": "24",
+    "ma:samplingRate": "48000",
+    "ma:title": "JAP TrueHD 5.1"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 4,
+   "codec": "ass",
+   "language": "fr",
+   "bitrate": 15,
+   "default": 0,
+   "forced": 1,
+   "analysis": {
+    "ma:title": "FR Forced ASS"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 5,
+   "codec": "ass",
+   "language": "fr",
+   "bitrate": 138,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "FR Complet ASS"
+   }
+  }
+ ],
+ "rates": "measured"
+}

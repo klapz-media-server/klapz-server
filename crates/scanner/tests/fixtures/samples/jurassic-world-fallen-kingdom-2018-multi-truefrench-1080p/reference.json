@@ -1,0 +1,100 @@
+{
+ "media": {
+  "width": 1920,
+  "height": 808,
+  "display_aspect_ratio": 2.376237630844116,
+  "bitrate": 15461995,
+  "container": "mkv",
+  "video_codec": "h264",
+  "audio_codec": "dca",
+  "audio_channels": 8,
+  "frames_per_second": 23.97598648071289,
+  "duration": 7697703
+ },
+ "part": {
+  "size": 14877731064,
+  "duration": 7697703,
+  "analysis": {}
+ },
+ "streams": [
+  {
+   "stream_type_id": 2,
+   "index": 0,
+   "codec": "dca",
+   "language": "fr",
+   "channels": 8,
+   "bitrate": 2046000,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "7.1",
+    "ma:profile": "hra",
+    "ma:samplingRate": "48000",
+    "ma:title": "VFF DTS-HDHRA 7.1"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 1,
+   "codec": "srt",
+   "language": "fr",
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:title": "Forced"
+   }
+  },
+  {
+   "stream_type_id": 2,
+   "index": 2,
+   "codec": "dca",
+   "language": "en",
+   "channels": 8,
+   "bitrate": 4230911,
+   "default": 0,
+   "forced": 0,
+   "analysis": {
+    "ma:audioChannelLayout": "7.1",
+    "ma:bitDepth": "24",
+    "ma:profile": "ma + dts:x",
+    "ma:samplingRate": "48000",
+    "ma:title": "VO DTS-HDMA 7.1"
+   }
+  },
+  {
+   "stream_type_id": 1,
+   "index": 3,
+   "codec": "h264",
+   "language": "en",
+   "bitrate": 15461995,
+   "default": 1,
+   "forced": 0,
+   "analysis": {
+    "ma:bitDepth": "8",
+    "ma:chromaLocation": "left",
+    "ma:chromaSubsampling": "4:2:0",
+    "ma:codedHeight": "816",
+    "ma:codedWidth": "1920",
+    "ma:frameRate": "23.976",
+    "ma:hasScalingMatrix": "0",
+    "ma:height": "808",
+    "ma:level": "41",
+    "ma:profile": "high",
+    "ma:refFrames": "5",
+    "ma:scanType": "progressive",
+    "ma:width": "1920"
+   }
+  },
+  {
+   "stream_type_id": 3,
+   "index": 4,
+   "codec": "srt",
+   "language": "fr",
+   "bitrate": 39,
+   "default": 0,
+   "forced": 0,
+   "analysis": {}
+  }
+ ],
+ "rates": "declared"
+}
