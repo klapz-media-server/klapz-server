@@ -103,7 +103,7 @@ on a lookup and are not imported.
 
 | Attribute | Rule |
 | --- | --- |
-| `language` | ICU's display name of the stored tag in the client's language: standard name, region by its short name (`Anglais (R.-U.)`, `Englisch (UK)`), region dropped when it is the language's likely one (`fr-FR` and `pt-BR` read `Français`, `Portugais`), first letter capitalised where the locale's menus capitalise (`Anglais`, but `English`, and an unknown `qad` reads `Qad` in French only). Identical on 2,516 tracks × 3 languages. `mis` and `und` are the exceptions, `Uncoded language` and `Undetermined language` in every language. |
+| `language` | ICU's display name of the stored tag in the client's language: standard name, region by its short name (`Anglais (R.-U.)`, `Englisch (UK)`), region dropped when it is the language's likely one (`fr-FR` and `pt-BR` read `Français`, `Portugais`), first letter capitalised where the locale's menus capitalise (`Anglais`, but `English`, and an unknown `qad` reads `Qad` in French only). Identical on 2,516 tracks × 3 languages. `mis` and `und` are the exceptions, `Uncoded language` and `Undetermined language` in every language. With no `X-Plex-Language`, each language is named in itself, by its own locale's rules: `日本語`, `Français (Canada)`, `English (UK)`, `Español (Latinoamérica)`, `Русский` but `norsk bokmål`; one with no locale of its own in the reference's system locale, French (`zxx` `Sans contenu linguistique`, `qaa` `Qaa`). The rest of a label stays English: `Français Forced`. Identical on 38 files. |
 | `languageTag`, `languageCode` | The stored tag unchanged; its ISO 639-2/T code (`fra`, `deu`, `ron`), empty for a private-use code. |
 | `Media.audioProfile`, `videoProfile` | The profile of the audio track the version's codec and channel count describe — the first matching both, else the default, else the first (243,112 of 243,159) — and of the first video track. Repeated on the part. |
 | `Media.audioCodec` | `dca-ma` for DTS-HD Master Audio; no other pair is composed, not `dca` with `hra` or `es`. |
@@ -1558,7 +1558,7 @@ carries `optimizedForStreaming="1"` and `protocol` (its container) when its own 
 `optimizedForStreaming` when that is what the source set: 59,557 versions have the first, 26,406
 parts the second. Local extras number their parts `/library/parts/{id}/0/file.{ext}` as here.
 A track's language is named in the client's `X-Plex-Language`, and with none in itself
-(`Français`, `English`): ours falls back to English, as on items.
+(`Français`, `English`), as on items.
 
 **Compared field by field** (`/extras` of 150 imported items against the reference's lookup of
 each extra, artwork aside, `X-Plex-Language: en` on both): 264 extras, 33 more no longer on the

@@ -77,6 +77,7 @@ fn lookup<'a>(table: &'a [(&str, &'a str)], key: &str) -> Option<&'a str> {
 /// ICU's display name of a tag, as the reference computes it: the language's standard name,
 /// then the region's short name in parentheses, capitalised for a menu where the locale
 /// says to. A code the locale does not name is shown as stored, capitalisation included.
+/// The locale is the client's, else the language's own.
 fn language_name(tag: &str, language: Language) -> String {
     // Two codes the reference names itself, in English whatever the client's language.
     match tag {
@@ -84,8 +85,8 @@ fn language_name(tag: &str, language: Language) -> String {
         "und" => return "Undetermined language".to_owned(),
         _ => {}
     }
-    let names = language.names();
     let (code, region) = minimal(tag);
+    let names = language.names_for(&code);
     let name = match lookup(names.languages, &code) {
         None => tag.to_owned(),
         Some(name) => match region {
@@ -592,6 +593,37 @@ mod tests {
             "Undetermined language"
         );
         assert_eq!(language("und", in_language("de")).code, "");
+    }
+
+    #[test]
+    fn names_a_language_in_itself_for_a_client_that_states_none() {
+        // Measured on the reference with no `X-Plex-Language`.
+        let none = Language::default();
+        for (tag, name) in [
+            ("ja", "日本語"),
+            ("fr", "Français"),
+            ("fr-CA", "Français (Canada)"),
+            ("fr-BE", "Français (Belgique)"),
+            ("en-GB", "English (UK)"),
+            ("es", "Español"),
+            ("es-419", "Español (Latinoamérica)"),
+            ("ru", "Русский"),
+            ("pt-BR", "Português"),
+            ("nb", "norsk bokmål"),
+            ("ar", "العربية"),
+            ("ko", "한국어"),
+            ("zxx", "Sans contenu linguistique"),
+            ("qaa", "Qaa"),
+            ("und", "Undetermined language"),
+        ] {
+            assert_eq!(language(tag, none).name, name, "{tag}");
+        }
+        // The rest of a label stays the client's, English when it states none.
+        let forced = GqlStream {
+            is_forced: true,
+            ..track("SUBTITLE", "srt", Some("fr"), None)
+        };
+        assert_eq!(labels(&forced, none).display, "Français Forced");
     }
 
     #[test]

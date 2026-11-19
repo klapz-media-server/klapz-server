@@ -1146,12 +1146,12 @@ async fn a_lookup_repeats_the_library_on_each_item_and_carries_streams() {
     let stream = &item["Media"][0]["Part"][0]["Stream"][0];
     assert_eq!(stream["streamType"], 2);
     assert_eq!(stream["bitrate"], 1536);
-    // Named in the client's language, English when it sends none, beside the stored tag.
-    assert_eq!(stream["language"], "French");
+    // Named in the client's language, in itself when it sends none, beside the stored tag.
+    assert_eq!(stream["language"], "Français");
     assert_eq!(stream["languageTag"], "fr");
     assert_eq!(stream["languageCode"], "fra");
     assert_eq!(stream["samplingRate"], 48_000);
-    assert_eq!(stream["displayTitle"], "French (DTS 5.1)");
+    assert_eq!(stream["displayTitle"], "Français (DTS 5.1)");
     assert_eq!(stream["default"], true);
     // Reported only when true, as a reference server does.
     assert!(stream.get("forced").is_none(), "{stream}");

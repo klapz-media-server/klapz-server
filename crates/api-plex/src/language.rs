@@ -6,15 +6,23 @@
 //! extracted into [`crate::translations`].
 
 use crate::client::ClientIdentity;
-use crate::language_names::{LocaleNames, LOCALES};
+use crate::language_names::{LocaleNames, LOCALES, OWN_LOCALES};
 use crate::translations::{Catalog, CATALOGS, ENGLISH};
 
 #[derive(Debug, Clone, Copy)]
-pub struct Language(&'static Catalog);
+pub struct Language {
+    catalog: &'static Catalog,
+    /// Whether the client named a language. Without one the strings are English, but a
+    /// track's language is named in itself.
+    stated: bool,
+}
 
 impl Default for Language {
     fn default() -> Self {
-        Self(&ENGLISH)
+        Self {
+            catalog: &ENGLISH,
+            stated: false,
+        }
     }
 }
 
@@ -37,20 +45,34 @@ impl Language {
                     .iter()
                     .find(|catalog| primary_of(catalog.code).eq_ignore_ascii_case(primary))
             })
-            .map_or_else(Self::default, Self)
+            .map_or_else(Self::default, |catalog| Self {
+                catalog,
+                stated: true,
+            })
     }
 
     pub(crate) const fn catalog(self) -> &'static Catalog {
-        self.0
+        self.catalog
+    }
+
+    /// The names a track's language is shown with: the client's, or with no language stated
+    /// the language's own (`日本語`, `Français (Canada)`), as the reference names them. A
+    /// language with no locale of its own (`zxx`) takes the reference's system locale,
+    /// French: `Sans contenu linguistique`.
+    pub(crate) fn names_for(self, language: &str) -> &'static LocaleNames {
+        if self.stated {
+            return self.names();
+        }
+        OWN_LOCALES
+            .binary_search_by(|names| names.catalog.cmp(language))
+            .ok()
+            .and_then(|found| OWN_LOCALES.get(found))
+            .unwrap_or_else(|| locale("fr"))
     }
 
     /// The language and region names this client reads, from the same catalog choice.
     pub(crate) fn names(self) -> &'static LocaleNames {
-        LOCALES
-            .iter()
-            .find(|names| names.catalog == self.0.code)
-            // The generator writes English first, and every catalog has its locale.
-            .unwrap_or(&LOCALES[0])
+        locale(self.catalog.code)
     }
 
     /// A season's display name, when the source stores none: `Saison 3`, or the language's
@@ -59,39 +81,47 @@ impl Language {
     pub fn season_title(self, stored: Option<&str>, number: Option<i32>) -> String {
         match (stored, number) {
             (Some(title), _) => title.to_owned(),
-            (None, Some(0)) => self.0.specials.to_owned(),
-            (None, Some(number)) => self.0.season.replace("{1}", &number.to_string()),
+            (None, Some(0)) => self.catalog.specials.to_owned(),
+            (None, Some(number)) => self.catalog.season.replace("{1}", &number.to_string()),
             (None, None) => String::new(),
         }
     }
 
     pub const fn continue_watching(self) -> &'static str {
-        self.0.continue_watching
+        self.catalog.continue_watching
     }
 
     pub fn recently_added_in(self, library: &str) -> String {
-        self.0.recently_added_in.replace("{1}", library)
+        self.catalog.recently_added_in.replace("{1}", library)
     }
 
     pub const fn recent_playlists(self) -> &'static str {
-        self.0.recent_playlists
+        self.catalog.recent_playlists
     }
 
     pub const fn related_movies(self) -> &'static str {
-        self.0.related_movies
+        self.catalog.related_movies
     }
 
     pub const fn related_shows(self) -> &'static str {
-        self.0.related_shows
+        self.catalog.related_shows
     }
 
     pub fn more_with(self, person: &str) -> String {
-        self.0.more_with.replace("{1}", person)
+        self.catalog.more_with.replace("{1}", person)
     }
 
     pub fn more_by(self, person: &str) -> String {
-        self.0.more_by.replace("{1}", person)
+        self.catalog.more_by.replace("{1}", person)
     }
+}
+
+fn locale(catalog: &str) -> &'static LocaleNames {
+    LOCALES
+        .iter()
+        .find(|names| names.catalog == catalog)
+        // The generator writes English first, and every catalog has its locale.
+        .unwrap_or(&LOCALES[0])
 }
 
 #[cfg(test)]
@@ -141,8 +171,8 @@ mod tests {
             Language::of(&client("fr-CA")).season_title(None, Some(1)),
             "Saison 1"
         );
-        assert_eq!(Language::of(&client("pt-BR")).0.code, "pt_BR");
-        assert_eq!(Language::of(&client("ja")).0.code, "ja_JP");
+        assert_eq!(Language::of(&client("pt-BR")).catalog.code, "pt_BR");
+        assert_eq!(Language::of(&client("ja")).catalog.code, "ja_JP");
         assert_eq!(
             Language::of(&client("xx")).season_title(None, Some(1)),
             "Season 1"
