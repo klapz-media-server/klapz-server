@@ -132,9 +132,13 @@ pub async fn scan(
 }
 
 /// A canonical path as a person writes it. Windows canonicalizes `C:\Films` to the verbatim
-/// `\\?\C:\Films`, which every API would then publish as the files' location.
+/// `\\?\C:\Films`, and a mapped drive to its share, `\\?\UNC\nas\films`, which every API would
+/// then publish as the files' location.
 fn displayed(path: &std::path::Path) -> String {
     let text = path.to_string_lossy();
+    if let Some(share) = text.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{share}");
+    }
     match text.strip_prefix(r"\\?\") {
         Some(rest) if rest.as_bytes().get(1) == Some(&b':') => rest.to_owned(),
         _ => text.into_owned(),
@@ -146,14 +150,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn drops_the_verbatim_prefix_of_a_drive_path() {
+    fn drops_the_verbatim_prefix_of_a_drive_or_a_share() {
         assert_eq!(
             displayed(std::path::Path::new(r"\\?\C:\Films")),
             r"C:\Films"
         );
         assert_eq!(
             displayed(std::path::Path::new(r"\\?\UNC\nas\films")),
-            r"\\?\UNC\nas\films"
+            r"\\nas\films"
+        );
+        assert_eq!(
+            displayed(std::path::Path::new(r"\\?\GLOBALROOT\Device\Films")),
+            r"\\?\GLOBALROOT\Device\Films"
         );
         assert_eq!(displayed(std::path::Path::new("/srv/films")), "/srv/films");
     }
