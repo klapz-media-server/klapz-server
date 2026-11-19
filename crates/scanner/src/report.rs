@@ -173,7 +173,8 @@ pub struct VideoTrack {
     pub color_transfer: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chroma_location: Option<String>,
-    /// `r_frame_rate` evaluated: 23.976023976… for 24000/1001.
+    /// `avg_frame_rate` evaluated, else `r_frame_rate`: 23.976023976… for 24000/1001, and the
+    /// 25.011 the reference stores for an MP4 whose timestamps drift from its nominal 25.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frame_rate: Option<f64>,
     /// `progressive`, `tt`, `bb`, `tb`, `bt`.
@@ -184,9 +185,22 @@ pub struct VideoTrack {
     pub sample_aspect_ratio: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_aspect_ratio: Option<String>,
+    /// The container's crop, which ffprobe applies before stating the sample aspect ratio.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cropping: Option<Cropping>,
     pub closed_captions: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dolby_vision: Option<DolbyVision>,
+}
+
+/// Lines and columns a container asks a player to hide, from Matroska's `PixelCrop*`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Cropping {
+    pub top: u32,
+    pub bottom: u32,
+    pub left: u32,
+    pub right: u32,
 }
 
 /// An H.264 sequence parameter set, as `trace_headers` reads it.

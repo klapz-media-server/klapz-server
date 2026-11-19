@@ -11,7 +11,7 @@ use open_plex_scanner::report::{Analysis, DolbyVision, Track, TrackKind, VideoTr
 
 use crate::entity::{media_stream, stream_dolby_vision};
 
-/// What a version states about itself, from the first video track and the default audio.
+/// What a version states about itself, from its first video track and its widest audio.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct MediaSummary {
     pub width: Option<i32>,
@@ -36,7 +36,7 @@ pub(super) fn media_summary(analysis: &Analysis, path: &str) -> MediaSummary {
         height: picture.and_then(|picture| i32::try_from(picture.height).ok()),
         aspect_ratio: picture.and_then(|picture| {
             let ratio = f64::from(picture.width) / f64::from(picture.height)
-                * sample_aspect_ratio(picture.sample_aspect_ratio.as_deref());
+                * sample_aspect_ratio(sample_aspect(picture).as_deref());
             ratio.is_finite().then(|| as_stored_float(ratio))
         }),
         bitrate: analysis
@@ -61,8 +61,7 @@ pub(super) fn media_summary(analysis: &Analysis, path: &str) -> MediaSummary {
     }
 }
 
-/// The video track a version is described by: not a cover picture stored as a track, which
-/// the reference counts among a library's codecs but never names a version's.
+/// The video track a version is described by: not a cover picture stored as a track.
 fn main_video(analysis: &Analysis) -> Option<&Track> {
     analysis
         .tracks
@@ -70,13 +69,19 @@ fn main_video(analysis: &Analysis) -> Option<&Track> {
         .find(|track| track.kind == TrackKind::Video && !track.disposition.attached_picture)
 }
 
+/// The first of the audio tracks with the most channels, default or not: the track a version's
+/// codec and channels describe on 112,304 of the reference's 112,304 media with several, where
+/// the default track gives the wrong count on 14,482.
 fn main_audio(analysis: &Analysis) -> Option<&Track> {
-    let mut audio = analysis
+    let channels = |track: &Track| track.audio.as_ref().and_then(|audio| audio.channels);
+    analysis
         .tracks
         .iter()
-        .filter(|track| track.kind == TrackKind::Audio);
-    let first = audio.clone().next();
-    audio.find(|track| track.disposition.default).or(first)
+        .filter(|track| track.kind == TrackKind::Audio)
+        .fold(None, |best: Option<&Track>, track| match best {
+            Some(best) if channels(best) >= channels(track) => Some(best),
+            _ => Some(track),
+        })
 }
 
 /// The reference keeps a version's frame rate and aspect ratio as 32-bit floats: 24000/1001 is
@@ -87,6 +92,40 @@ fn main_audio(analysis: &Analysis) -> Option<&Track> {
 )]
 fn as_stored_float(value: f64) -> f64 {
     f64::from(value as f32)
+}
+
+/// The sample aspect ratio as the reference reads it, `num:den`. Its libav applied no
+/// container crop: Fleabag's 1920×1080, cropped to be shown as 1920×800, is 27:20 there and
+/// square to ffprobe, which states the ratio after cropping.
+fn sample_aspect(picture: &VideoTrack) -> Option<String> {
+    let ratio = picture.sample_aspect_ratio.as_deref()?;
+    let Some(crop) = picture.cropping else {
+        return Some(ratio.to_owned());
+    };
+    let (numerator, denominator) = ratio.split_once(':')?;
+    let numerator: u64 = numerator.parse().ok()?;
+    let denominator: u64 = denominator.parse().ok()?;
+    let (width, height) = (u64::from(picture.width), u64::from(picture.height));
+    let shown_width = width.checked_sub(u64::from(crop.left) + u64::from(crop.right))?;
+    let shown_height = height.checked_sub(u64::from(crop.top) + u64::from(crop.bottom))?;
+    let numerator = numerator * height * shown_width;
+    let denominator = denominator * shown_height * width;
+    let divisor = gcd(numerator, denominator);
+    (divisor > 0).then(|| format!("{}:{}", numerator / divisor, denominator / divisor))
+}
+
+fn gcd(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
+}
+
+/// Whether the reference calls non-square pixels anamorphic: when they are more than 5 % off
+/// square. It stores 967:960 as not (0.7 %), and every ratio of its library falls clear of the
+/// line: none between 4.9 % and 5.2 %.
+fn is_anamorphic(sample_aspect: &str) -> bool {
+    (sample_aspect_ratio(Some(sample_aspect)) - 1.0).abs() > 0.05
 }
 
 fn sample_aspect_ratio(ratio: Option<&str>) -> f64 {
@@ -167,6 +206,14 @@ pub(super) fn language(tag: &str) -> Option<String> {
     if tag.is_empty() || tag.eq_ignore_ascii_case("und") {
         return None;
     }
+    // Teletext lists one language per page, `fra,fra`: the reference stores `und` for what
+    // is not a tag at all, and keeps words such as `unknown`.
+    if !tag
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        return Some("und".to_owned());
+    }
     let lower = tag.to_ascii_lowercase();
     let short = super::languages::ALPHA2
         .binary_search_by_key(&lower.as_str(), |(alpha3, _)| alpha3)
@@ -175,17 +222,20 @@ pub(super) fn language(tag: &str) -> Option<String> {
     Some(short.map_or_else(|| tag.to_owned(), ToOwned::to_owned))
 }
 
-/// ffprobe's profile, lower-cased as the reference stores it, DTS's named by their extension
-/// alone (`ma` for DTS-HD Master Audio), as Plex's analysis writes them.
+/// ffprobe's profile, lower-cased as the reference stores it: DTS's named by their extension
+/// alone (`ma`, and `ma + dts:x` for DTS-HD Master Audio with DTS:X), MPEG-4's without the word
+/// `profile` (`advanced simple`).
 pub(super) fn profile(ffprobe: &str) -> String {
     let lower = ffprobe.to_lowercase();
-    let name = match lower.as_str() {
-        "dts-hd ma" => "ma",
-        "dts-hd hra" => "hra",
-        "dts-es" => "es",
-        other => other,
-    };
-    name.to_owned()
+    for (prefix, extension) in [("dts-hd ma", "ma"), ("dts-hd hra", "hra"), ("dts-es", "es")] {
+        if let Some(rest) = lower.strip_prefix(prefix) {
+            return format!("{extension}{rest}");
+        }
+    }
+    if let Some(name) = lower.strip_suffix(" profile") {
+        return name.to_owned();
+    }
+    lower
 }
 
 /// The chroma subsampling a pixel format names: `yuv420p10le` is `4:2:0`.
@@ -216,41 +266,40 @@ pub(super) struct TrackRows {
     pub dolby_vision: Option<stream_dolby_vision::Model>,
 }
 
-/// A track's language as tagged; else Matroska's default for its video, which muxers leave
-/// unwritten, and the dub its file's name gives for a file's one audio track.
+/// A track's language as tagged, else the dub its file's name gives for a file's one audio
+/// track. Matroska's implicit English needs nothing here: ffprobe already reports it, and a
+/// track it reports without one was written `und`, which the reference leaves without.
 fn track_language(analysis: &Analysis, track: &Track, path: &str) -> Option<String> {
     if let Some(tagged) = track.language.as_deref().and_then(language) {
         return Some(tagged);
     }
-    match track.kind {
-        TrackKind::Video if analysis.container.starts_with("matroska") => Some("en".to_owned()),
-        TrackKind::Audio => {
-            let audio = analysis
-                .tracks
-                .iter()
-                .filter(|other| other.kind == TrackKind::Audio)
-                .count();
-            (audio == 1)
-                .then(|| dub_language(path))
-                .flatten()
-                .map(ToOwned::to_owned)
-        }
-        _ => None,
+    if track.kind != TrackKind::Audio {
+        return None;
     }
+    let audio = analysis
+        .tracks
+        .iter()
+        .filter(|other| other.kind == TrackKind::Audio)
+        .count();
+    (audio == 1)
+        .then(|| dub_language(path))
+        .flatten()
+        .map(ToOwned::to_owned)
 }
 
-/// The rows of a file's tracks, numbered from `first_id`. Attachments and data tracks have no
-/// row: the reference keeps video, audio and subtitles only.
+/// The rows of a file's tracks, numbered from `first_id`. Attachments, data tracks and cover
+/// pictures have no row: the reference keeps video, audio and subtitles only, and a cover as
+/// the part's `hasThumbnail`.
 pub(super) fn track_rows(
     analysis: &Analysis,
     path: &str,
     part: i64,
     first_id: i64,
 ) -> Vec<TrackRows> {
-    let avi = analysis.container == "avi";
     analysis
         .tracks
         .iter()
+        .filter(|track| !track.disposition.attached_picture)
         .filter_map(|track| Some((track, kind_name(track.kind)?)))
         .zip(first_id..)
         .map(|((track, kind), id)| {
@@ -262,7 +311,7 @@ pub(super) fn track_rows(
             let disposition = track.disposition;
             // Written only for pixels that are not square, as the reference writes it.
             let sample_aspect = picture
-                .and_then(|picture| picture.sample_aspect_ratio.as_deref())
+                .and_then(sample_aspect)
                 .filter(|ratio| !is_square(ratio));
             let stream = media_stream::Model {
                 id,
@@ -280,7 +329,15 @@ pub(super) fn track_rows(
                 external_path: None,
                 title: track.title.clone(),
                 stream_identifier: None,
-                profile: track.profile.as_deref().map(profile),
+                profile: track.profile.as_deref().map(profile).or_else(|| {
+                    // PCM's sample format, which ffprobe names as a codec and the reference
+                    // stores as the profile: `pcm_s16le`.
+                    track
+                        .codec
+                        .as_deref()
+                        .filter(|codec| codec.starts_with("pcm_"))
+                        .map(ToOwned::to_owned)
+                }),
                 bit_depth: picture
                     .and_then(|picture| picture.bit_depth)
                     .or_else(|| sound.and_then(|sound| sound.bit_depth))
@@ -306,10 +363,12 @@ pub(super) fn track_rows(
                 color_primaries: picture.and_then(|picture| picture.color_primaries.clone()),
                 color_transfer: picture.and_then(|picture| picture.color_transfer.clone()),
                 has_scaling_matrix: coded.and_then(|coded| coded.has_scaling_matrix),
-                is_anamorphic: sample_aspect.map(|_| true),
-                pixel_aspect_ratio: sample_aspect.map(ToOwned::to_owned),
-                // The reference keeps a FourCC for the legacy containers that carry one.
-                fourcc: if avi && picture.is_some() {
+                is_anamorphic: sample_aspect.as_deref().map(is_anamorphic),
+                pixel_aspect_ratio: sample_aspect,
+                // The reference keeps the tag of two codecs, whatever the container: MPEG-4
+                // Part 2's (`XVID`, `DX50`, `mp4v`) and HEVC's (`hvc1`, `hev1`), never H.264's
+                // nor MS-MPEG4's, even in an AVI.
+                fourcc: if matches!(track.codec.as_deref(), Some("mpeg4" | "hevc")) {
                     track.codec_tag.clone()
                 } else {
                     None
@@ -343,9 +402,10 @@ pub(super) fn track_rows(
 
 /// A track's rate: measured over every packet when a deep analysis ran, and then nothing else,
 /// a rate of 0 included (Soul's forced subtitles: ten packets, 318 bytes, no rate stored).
-/// Otherwise as its header declares it; without that, the main video takes what the
-/// container's rate leaves, and audio and subtitles the rate their muxer tagged — Bull's AAC
-/// declares none and the reference stored its tagged 96000.
+/// Otherwise as its header declares it. Without that, a file's one video takes what the
+/// container's rate leaves, even beside a tag (Terra Firma: 4533 kb/s left, 4531 tagged), and
+/// every other track the rate its muxer tagged — Bull's AAC declares none and the reference
+/// stored its tagged 96000, Steven Universe's two videos their own.
 fn track_bitrate(analysis: &Analysis, track: &Track) -> Option<u64> {
     if let Some(deep) = &analysis.deep {
         return deep
@@ -355,17 +415,18 @@ fn track_bitrate(analysis: &Analysis, track: &Track) -> Option<u64> {
             .map(|measured| measured.bitrate)
             .filter(|rate| *rate > 0);
     }
+    let tagged = || track.tagged_bitrate.filter(|rate| *rate > 0);
+    let videos = analysis
+        .tracks
+        .iter()
+        .filter(|other| other.kind == TrackKind::Video && !other.disposition.attached_picture)
+        .count();
     track
         .bitrate
         .filter(|rate| *rate > 0)
         .or_else(|| match track.kind {
-            TrackKind::Video
-                if main_video(analysis).map(|main| main.index) == Some(track.index) =>
-            {
-                video_bitrate_fallback(analysis)
-            }
-            TrackKind::Video => None,
-            _ => track.tagged_bitrate.filter(|rate| *rate > 0),
+            TrackKind::Video if videos == 1 => video_bitrate_fallback(analysis).or_else(tagged),
+            _ => tagged(),
         })
 }
 
@@ -380,7 +441,9 @@ struct Coding {
 
 /// H.264's from its sequence header, unknown without one, since ffprobe's cropped size would be
 /// stored wrong; any other codec's size as ffprobe reports it, with the one reference frame the
-/// reference stores for every such track (39,297 of 39,297 in its library).
+/// reference stores for every such track (39,297 of 39,297 in its library). ffprobe states no
+/// coded size for MPEG-2 without decoding, where the sequence header's is the picture's: the
+/// reference's 720×576.
 fn coding(track: &Track, picture: &VideoTrack) -> Option<Coding> {
     if track.codec.as_deref() == Some("h264") {
         let header = picture.sequence_header?;
@@ -391,9 +454,15 @@ fn coding(track: &Track, picture: &VideoTrack) -> Option<Coding> {
             has_scaling_matrix: Some(header.has_scaling_matrix),
         });
     }
+    let mpeg2 = track.codec.as_deref() == Some("mpeg2video");
+    let (width, height) = match (picture.coded_width, picture.coded_height) {
+        (Some(width), Some(height)) => (width, height),
+        _ if mpeg2 => (picture.width, picture.height),
+        _ => return None,
+    };
     Some(Coding {
-        width: i32::try_from(picture.coded_width?).ok()?,
-        height: i32::try_from(picture.coded_height?).ok()?,
+        width: i32::try_from(width).ok()?,
+        height: i32::try_from(height).ok()?,
         ref_frames: 1,
         has_scaling_matrix: None,
     })
@@ -513,6 +582,15 @@ pub(super) fn has_thumbnail(analysis: &Analysis) -> bool {
     })
 }
 
+/// Whether chapters come as a `QuickTime` text track, the data track an MP4 tags `text`: Soda's
+/// and 18 more of the reference's MP4s, where it is set on none of another container.
+pub(super) fn has_chapter_text_stream(analysis: &Analysis) -> bool {
+    analysis.container.starts_with("mov,")
+        && analysis.tracks.iter().any(|track| {
+            track.kind == TrackKind::Data && track.codec_tag.as_deref() == Some("text")
+        })
+}
+
 const fn kind_name(kind: TrackKind) -> Option<&'static str> {
     match kind {
         TrackKind::Video => Some("video"),
@@ -531,6 +609,7 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::float_cmp)]
 
     use super::*;
+    use open_plex_scanner::report::Cropping;
 
     #[test]
     fn names_containers_as_the_reference() {
@@ -591,6 +670,9 @@ mod tests {
         assert_eq!(language("mul").as_deref(), Some("mul"));
         assert_eq!(language("und"), None);
         assert_eq!(language(""), None);
+        // Not a tag: teletext's language per page.
+        assert_eq!(language("fra,fra").as_deref(), Some("und"));
+        assert_eq!(language("unknown").as_deref(), Some("unknown"));
     }
 
     #[test]
@@ -610,7 +692,11 @@ mod tests {
             "dolby digital plus + dolby atmos"
         );
         assert_eq!(profile("DTS-HD MA"), "ma");
+        assert_eq!(profile("DTS-HD MA + DTS:X"), "ma + dts:x");
+        assert_eq!(profile("DTS-HD MA + DTS:X IMAX"), "ma + dts:x imax");
         assert_eq!(profile("DTS"), "dts");
+        assert_eq!(profile("Advanced Simple Profile"), "advanced simple");
+        assert_eq!(profile("Profile 0"), "profile 0");
     }
 
     #[test]
@@ -641,5 +727,55 @@ mod tests {
         assert_eq!(sample_aspect_ratio(Some("4:3")), 4.0 / 3.0);
         assert!(is_square("1:1") && is_square("0:1"));
         assert!(!is_square("16:15"));
+    }
+
+    #[test]
+    fn calls_pixels_anamorphic_past_five_percent_off_square() {
+        assert!(!is_anamorphic("967:960"));
+        assert!(!is_anamorphic("621:592"));
+        assert!(is_anamorphic("1347:1280"));
+        assert!(is_anamorphic("16:15"));
+        assert!(is_anamorphic("27:20"));
+    }
+
+    #[test]
+    fn reads_the_aspect_of_a_cropped_picture_as_the_reference_does() {
+        let picture = |sample, cropping| VideoTrack {
+            width: 1920,
+            height: 1080,
+            coded_width: None,
+            coded_height: None,
+            sequence_header: None,
+            level: None,
+            pixel_format: None,
+            bit_depth: None,
+            color_range: None,
+            color_space: None,
+            color_primaries: None,
+            color_transfer: None,
+            chroma_location: None,
+            frame_rate: None,
+            field_order: None,
+            sample_aspect_ratio: Some(sample),
+            display_aspect_ratio: None,
+            cropping,
+            closed_captions: false,
+            dolby_vision: None,
+        };
+        // Fleabag: 140 lines hidden above and below, square to ffprobe.
+        let fleabag = Cropping {
+            top: 140,
+            bottom: 140,
+            left: 0,
+            right: 0,
+        };
+        assert_eq!(
+            sample_aspect(&picture("1:1".to_owned(), Some(fleabag))).as_deref(),
+            Some("27:20")
+        );
+        assert_eq!(
+            sample_aspect(&picture("4:3".to_owned(), None)).as_deref(),
+            Some("4:3")
+        );
     }
 }

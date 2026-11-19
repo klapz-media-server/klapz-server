@@ -88,8 +88,8 @@ from the patched ffmpeg-plex 8.1.3 and the `trace_headers` bitstream filter.
 | `bitrate` | 7726375 (bps) | `format.bit_rate`, exact, before deep analysis |
 | `width`, `height` | 1920×1080 | the first video track |
 | `display_aspect_ratio` | 1.7777777910 (float32) | width / height × SAR |
-| `frames_per_second` | 23.976024627685547 | `r_frame_rate` 24000/1001 as float32 |
-| `video_codec`, `audio_codec`, `audio_channels` | `h264`, `eac3`, 6 | first video, first (default) audio |
+| `frames_per_second` | 23.976024627685547 | `avg_frame_rate`, else `r_frame_rate`, as float32 (an MP4 whose 25 drifts is stored 25.011) |
+| `video_codec`, `audio_codec`, `audio_channels` | `h264`, `eac3`, 6 | first video that is not a cover; the first of the audio tracks with the most channels, default or not (right on 112,304 of 112,304 media with several; the default track is wrong on 14,482) |
 | `color_trc` | `bt709` | video `color_transfer` |
 | `media_analysis_version` | 8 | the analysis' version (see below) |
 | `extra_data` `ma:videoProfile`, `ma:audioProfile` | `high`, `lc` | track profiles, lower-cased |
@@ -118,9 +118,12 @@ Our `media_part` already carries `has_thumbnail`, `has_64bit_offsets`,
 and `open_subtitles_hash`.
 
 **`media_streams`** (our `media_stream`): `codec` (`subrip` → `srt`), `index` (ffmpeg's
-stream index, our `position`), `language` (ISO 639-2 → 639-1: `fre` → `fr`; a Matroska video
-track without a language tag gets `en`, Matroska's default), `channels`, `bitrate`, `default`,
-`forced`. Video `extra_data`, every value a string:
+stream index, our `position`), `language` (ISO 639-2 → 639-1: `fre` → `fr`; a value that is
+not a tag, teletext's `fra,fra`, is stored `und`, a word such as `unknown` as it is; Matroska's
+implicit English needs nothing, since ffprobe reports `eng` for a track without the element and
+nothing for one written `und`, which the reference leaves without), `channels`, `bitrate`,
+`default`, `forced`. A cover picture stored as a video track (`attached_pic`) has no row: the
+part's `ma:hasThumbnail` stands for it. Video `extra_data`, every value a string:
 
 | Key | Test value | ffprobe source | Reproduced |
 | --- | --- | --- | --- |
@@ -130,12 +133,30 @@ track without a language tag gets `en`, Matroska's default), `channels`, `bitrat
 | `ma:codedWidth`, `ma:codedHeight` | 1920, **1088** | SPS `(pic_height_in_map_units_minus1+1)×16`; ffprobe's `coded_height` says 1080 | via `trace_headers` |
 | `ma:refFrames` | 4, 2 | SPS `max_num_ref_frames`; ffprobe's `refs` says 1 | via `trace_headers` |
 | `ma:hasScalingMatrix` | 0 | SPS `seq_scaling_matrix_present_flag` | via `trace_headers` |
-| `ma:bitDepth` | 8 | `bits_per_raw_sample` | yes |
+| `ma:bitDepth` | 8 | `bits_per_raw_sample`, which ffprobe gives for H.264 only; else the pixel format's (`yuv420p10le` 10) | yes |
 | `ma:chromaSubsampling` | `4:2:0` | from `pix_fmt` | yes |
 | `ma:chromaLocation`, `ma:colorRange`, `ma:colorSpace`, `ma:colorPrimaries`, `ma:colorTrc` | `left`, `tv`, `bt709`… | same names | yes |
-| `ma:frameRate` | `23.976`, `25.000` | `r_frame_rate`, three decimals | yes |
+| `ma:frameRate` | `23.976`, `25.011` | `avg_frame_rate`, else `r_frame_rate`, three decimals | yes |
 | `ma:scanType` | `progressive` | `field_order` | yes |
 | `ma:requiredBandwidths` | eight values | deep analysis (§2) | no |
+
+Measured on 38 sample files chosen to cover every container, codec and layout of the library
+(2026-11-19), and checked against the whole library where it says:
+
+- `ma:pixelAspectRatio` is written for any non-square ratio, `ma:anamorphic` 1 only past 5 %
+  off square: 967:960 is stored with `anamorphic` 0, and no ratio of the library lies between
+  4.9 % and 5.2 %.
+- A Matroska crop (`PixelCrop*`) was not applied by the reference's libav: Fleabag, 1920×1080
+  shown as 1920×800, is 27:20 and 2.35 there. ffprobe 8.1 applies it and says 1:1, and reports
+  the crop as *Frame Cropping* side data, from which the reference's ratio is rebuilt.
+- `ma:codecID` is the codec tag of MPEG-4 Part 2 (`XVID`, `DX50`, `DIVX`, `mp4v`) and HEVC
+  (`hev1`, `hvc1`) in any container, and of no other codec: not H.264's `H264` nor MS-MPEG4's
+  `DIV3`, even in an AVI.
+- `ma:profile`: `dts-hd ma + dts:x` is `ma + dts:x`, MPEG-4's `advanced simple profile` is
+  `advanced simple`, and PCM's is its sample format, `pcm_s16le`.
+- MPEG-2's coded size is its picture size (720×576), which ffprobe states only after decoding.
+- `ma:hasChapterTextStream`: an MP4 with a data track tagged `text`.
+- The Plex surface adds `timeStamp="1"` to a part of 192-byte packets.
 
 Other video keys in the library: `ma:title` (30,935), `ma:streamIdentifier` (8,846),
 `ma:pixelAspectRatio` + `ma:anamorphic` (7,856), `ma:codecID` (6,368, the FourCC),
@@ -158,15 +179,16 @@ reproduces every per-track value of the normal analysis on the test files. The S
 H.264's alone: over the reference's library, every video track of another codec (HEVC, AV1,
 MPEG-4, MPEG-2, VC-1, VP9…, 39,297 tracks) stores `ma:refFrames` 1, no `ma:hasScalingMatrix`,
 and a coded size equal to its size or rounded up to 8, 16 or 32 (HEVC: 1036 → 1040), which is
-ffprobe's `coded_width` and `coded_height` for those decoders (**inferred**: no such file
-among the test files). ffprobe 8.1 no longer prints `refs` at all. A tag `BPS` gives a
+ffprobe's `coded_width` and `coded_height` for those decoders (**measured** on HEVC, AV1, VP9,
+VC-1 and MPEG-4 samples). ffprobe 8.1 no longer prints `refs` at all. A tag `BPS` gives a
 subtitle its rate (Bull: 77); `BPS-eng`, which an older mkvmerge wrote on Soul, is not read,
 and Soul's subtitles had no rate before their deep analysis (**measured**). An audio track
 without a language tag is stored without one; ours takes the French dub the file's name gives
 when it is the file's only audio track, a deliberate divergence (`CLAUDE.md`). Two `media_items`
 values differ by origin: `bitrate` is the container's, and the video track's `bitrate` is
 `format.bit_rate` minus the audio tracks' declared bitrates (Soul: 7726375 − 256000 − 768000
-= 6702375, stored exactly). Bull's video track stored the format bitrate itself (3208969),
+= 6702375, stored exactly), even beside a `BPS` tag (Terra Firma: 4533 left, 4531 tagged); a
+file with two video tracks gives each its tag instead (Steven Universe). Bull's video track stored the format bitrate itself (3208969),
 because its AAC track declares no bitrate in the header (**inferred**).
 
 ### Versions
@@ -214,7 +236,7 @@ The transcoder decides whether to copy the video by comparing a client's bandwid
 `requiredBandwidths` (`docs/spec-gaps.md`, *Quality follows a fixed ladder*; **binary**:
 *Cannot direct play this item. Required bandwidth is not known and only {2}kbps is available.*).
 
-**The measured rates (reproduced, measured on the three test files).** Each track's rate, and the
+**The measured rates (reproduced on the test files and the five samples in that state).** Each track's rate, and the
 media's, is its packets' bytes × 8 divided by the time **all** the packets span — the earliest
 start (presentation time, else decoding time) to the latest end (start plus duration) — and
 truncated. The span replaces the duration too: Soul's packets end at 6031.567 s, its header says
@@ -227,6 +249,15 @@ none, 69 and 80, video 6699911; Bull E01 3206539, 3110461, 96000, 76; E02 321863
 Soul's state before (`ma:deepAnalysisVersion` 6, yet the declared rates) was a normal analysis
 rewriting the tracks after the deep one, which the version then kept from running again
 (**inferred** from the tracks' `updated_at`, later than the deep analysis).
+
+**That state is the common one.** Of 38 sample files, all at `ma:deepAnalysisVersion` 6, the
+reference publishes the declared rates for 33 and the measured ones for 5, and over the library
+97 Opus tracks have a rate where 102 have none, which only a deep analysis gives them
+(**measured**, 2026-11-19). What a file shows thus depends on the order its analyses ran in,
+not on the file. Scanned twice, with and without `--deep`, every rate and duration of 34 of the
+38 is the reference's in the mode it is in; the rest are two MPEG-TS files whose AAC rates the
+reference's older libav estimated differently (80 where ffprobe 8.1 declares 73), an E-AC-3
+Atmos track it stored at 320 kb/s against a declared and tagged 768, and 1 ms of duration.
 
 **Not reproduced.** The buffer sizes behind the eight `requiredBandwidths` values were not found. On Soul, video
 stored `10639,9885,9182,9033,9033,9033,9033,9033` against an average of 6700 kbps; neither a
@@ -497,8 +528,8 @@ breaks between 25 and 600 s). No Live TV here, so out of scope with the DVR.
 
 | Output | With | Status |
 | --- | --- | --- |
-| Track and container fields of the analysis | `ffprobe` (ffmpeg-plex) + `trace_headers` for H.264's `refFrames`, `codedWidth`, `codedHeight`, `hasScalingMatrix` | identical on the test files, every `Media`, `Part` and `Stream` field of a lookup |
-| Rates and duration of deep analysis | packet sizes and times from `ffprobe -show_entries packet` | identical on the test files |
+| Track and container fields of the analysis | `ffprobe` (ffmpeg-plex) + `trace_headers` for H.264's `refFrames`, `codedWidth`, `codedHeight`, `hasScalingMatrix` | identical on the 3 test files and 38 samples, every `Media`, `Part` and `Stream` field of a lookup but the rates below and each account's track choice |
+| Rates and duration of deep analysis | packet sizes and times from `ffprobe -show_entries packet` | identical on the test files; the reference shows them on 5 of 38 samples, the declared ones on the rest (§2) |
 | `requiredBandwidths` | packet sizes | rule unknown |
 | GoP file | packet flags and sizes | format known, not compared |
 | OpenSubtitles hash | 128 KiB read | exact |

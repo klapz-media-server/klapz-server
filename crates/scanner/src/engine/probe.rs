@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::engine::{hashes, input, mp4, run, sequence_header, ScanError, Streaming, Tools};
 use crate::report::{
-    Analysis, Attachment, AudioTrack, Chapter, DeepAnalysis, Disposition, DolbyVision,
+    Analysis, Attachment, AudioTrack, Chapter, Cropping, DeepAnalysis, Disposition, DolbyVision,
     MeasuredTrack, Track, TrackKind, VideoTrack,
 };
 
@@ -343,19 +343,27 @@ fn track(stream: &Stream) -> Option<Track> {
         sequence_header: None,
         level: stream.level.filter(|level| *level >= 0),
         pixel_format: stream.pix_fmt.clone(),
+        // ffprobe states the depth of H.264 alone; for HEVC, AV1, VP9 and the rest it is the
+        // pixel format's, which is where the reference reads it too.
         bit_depth: stream
             .bits_per_raw_sample
             .as_deref()
-            .and_then(|bits| bits.parse().ok()),
+            .and_then(|bits| bits.parse().ok())
+            .or_else(|| pixel_depth(stream.pix_fmt.as_deref()?)),
         color_range: stream.color_range.clone(),
         color_space: stream.color_space.clone(),
         color_primaries: stream.color_primaries.clone(),
         color_transfer: stream.color_transfer.clone(),
         chroma_location: stream.chroma_location.clone(),
-        frame_rate: stream.r_frame_rate.as_deref().and_then(ratio),
+        frame_rate: stream
+            .avg_frame_rate
+            .as_deref()
+            .and_then(ratio)
+            .or_else(|| stream.r_frame_rate.as_deref().and_then(ratio)),
         field_order: stream.field_order.clone(),
         sample_aspect_ratio: stream.sample_aspect_ratio.clone(),
         display_aspect_ratio: stream.display_aspect_ratio.clone(),
+        cropping: stream.side_data_list.iter().find_map(cropping),
         closed_captions: stream.closed_captions.is_some_and(|captions| captions != 0),
         dolby_vision: stream.side_data_list.iter().find_map(dolby_vision),
     });
@@ -394,6 +402,48 @@ fn track(stream: &Stream) -> Option<Track> {
         audio,
         attachment,
     })
+}
+
+fn cropping(side_data: &SideData) -> Option<Cropping> {
+    if side_data.side_data_type.as_deref() != Some("Frame Cropping") {
+        return None;
+    }
+    let cropping = Cropping {
+        top: side_data.crop_top.unwrap_or(0),
+        bottom: side_data.crop_bottom.unwrap_or(0),
+        left: side_data.crop_left.unwrap_or(0),
+        right: side_data.crop_right.unwrap_or(0),
+    };
+    (cropping != Cropping::default()).then_some(cropping)
+}
+
+/// The bits per component a pixel format names: `yuv420p10le` 10, `p010le` 10, `yuv420p`,
+/// `nv12` and `gray` 8. Nothing for the packed formats, whose digits count whole pixels.
+fn pixel_depth(pixel_format: &str) -> Option<u32> {
+    let name = pixel_format
+        .strip_suffix("le")
+        .or_else(|| pixel_format.strip_suffix("be"))
+        .unwrap_or(pixel_format);
+    // What follows the planar layout (`yuv420p`, `gbrp`) or `gray` is the depth, 8 when bare.
+    let depth = if name.starts_with("yuv") || name.starts_with("gbr") {
+        name.rsplit_once('p').map(|(_, depth)| depth)
+    } else {
+        name.strip_prefix("gray")
+    };
+    if let Some(depth) = depth {
+        return if depth.is_empty() {
+            Some(8)
+        } else {
+            depth.parse().ok()
+        };
+    }
+    if name.starts_with("nv") {
+        return Some(8);
+    }
+    // Semi-planar at a higher depth: `p010`, `p016`, `p210`, `p410`.
+    name.strip_prefix('p')
+        .filter(|digits| digits.len() == 3)
+        .and_then(|digits| digits.get(1..)?.parse().ok())
 }
 
 fn dolby_vision(side_data: &SideData) -> Option<DolbyVision> {
@@ -521,6 +571,7 @@ struct Stream {
     chroma_location: Option<String>,
     field_order: Option<String>,
     r_frame_rate: Option<String>,
+    avg_frame_rate: Option<String>,
     sample_aspect_ratio: Option<String>,
     display_aspect_ratio: Option<String>,
     closed_captions: Option<u8>,
@@ -548,6 +599,10 @@ struct SideData {
     el_present_flag: Option<u8>,
     bl_present_flag: Option<u8>,
     dv_bl_signal_compatibility_id: Option<u32>,
+    crop_top: Option<u32>,
+    crop_bottom: Option<u32>,
+    crop_left: Option<u32>,
+    crop_right: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -563,6 +618,54 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+
+    #[test]
+    fn reads_the_depth_a_pixel_format_names() {
+        for (format, depth) in [
+            ("yuv420p", Some(8)),
+            ("yuvj420p", Some(8)),
+            ("yuv420p10le", Some(10)),
+            ("yuv444p12be", Some(12)),
+            ("gbrp10le", Some(10)),
+            ("gray", Some(8)),
+            ("gray10le", Some(10)),
+            ("nv12", Some(8)),
+            ("p010le", Some(10)),
+            ("rgb24", None),
+            ("bgra", None),
+        ] {
+            assert_eq!(pixel_depth(format), depth, "{format}");
+        }
+    }
+
+    #[test]
+    fn keeps_a_crop_only_when_it_hides_something() {
+        let side_data = |top| SideData {
+            side_data_type: Some("Frame Cropping".to_owned()),
+            dv_version_major: None,
+            dv_version_minor: None,
+            dv_profile: None,
+            dv_level: None,
+            rpu_present_flag: None,
+            el_present_flag: None,
+            bl_present_flag: None,
+            dv_bl_signal_compatibility_id: None,
+            crop_top: Some(top),
+            crop_bottom: Some(top),
+            crop_left: Some(0),
+            crop_right: Some(0),
+        };
+        assert_eq!(
+            cropping(&side_data(140)),
+            Some(Cropping {
+                top: 140,
+                bottom: 140,
+                left: 0,
+                right: 0
+            })
+        );
+        assert_eq!(cropping(&side_data(0)), None);
+    }
 
     #[test]
     fn numbered_chapter_titles_are_generic() {

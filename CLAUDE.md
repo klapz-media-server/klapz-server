@@ -916,7 +916,9 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   reference's) with the covers a file carries; H.264's coded size, reference frames and scaling
   matrix from its sequence header (`trace_headers`), and the deep analysis' rates and duration
   over the time the packets span, as the reference measures them. A scanned file's lookup is the
-  reference's field for field on `Media`, `Part` and `Stream` for the three test files. Not yet:
+  reference's field for field on `Media`, `Part` and `Stream` for the three test files and 38
+  samples covering every container, codec and layout of the library, rates aside: the reference
+  mostly publishes the declared ones, its deep analysis overwritten (`docs/scanner/analysis.md`, §2). Not yet:
   `requiredBandwidths`, chapters stored, credits detection.
 - 🚧 **library scans in the server**: libraries walked through `LibraryFiles` (local disks for
   now), files grouped into films, series, seasons and episodes by the reference's measured

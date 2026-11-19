@@ -696,3 +696,39 @@ async fn new_items_are_numbered_past_the_highest() {
     assert_eq!(second.get(), first.get() + 1);
     assert!(scan.add_item(SectionId::new(9), soul(), NOW).await.is_err());
 }
+
+#[tokio::test]
+async fn a_version_names_its_widest_audio_and_keeps_no_cover_as_a_track() {
+    use open_plex_scanner::report::TrackKind;
+
+    let (_, scan, metadata) = seeded().await;
+    let mut analysis = probe("soul");
+    // The default track in stereo, the other in 5.1: the reference names the 5.1 (Fringe).
+    for track in &mut analysis.tracks {
+        if let (TrackKind::Audio, Some(audio)) = (track.kind, track.audio.as_mut()) {
+            audio.channels = Some(if track.disposition.default { 2 } else { 6 });
+        }
+    }
+    // A cover stored as a video track (Kaleidoscope's MJPEG).
+    let mut cover = analysis
+        .tracks
+        .iter()
+        .find(|track| track.kind == TrackKind::Video)
+        .unwrap()
+        .clone();
+    cover.index = 6;
+    cover.codec = Some("mjpeg".to_owned());
+    cover.disposition.attached_picture = true;
+    analysis.tracks.push(cover);
+
+    let key = scan
+        .add_item(FILMS, soul_with(analysis), NOW)
+        .await
+        .unwrap();
+    let versions = metadata.versions_for(&[key]).await.unwrap();
+    assert_eq!(versions[0].audio_channels, Some(6));
+    let tracks = tracks_of(&metadata, key).await;
+    assert!(tracks.iter().all(|track| track.position != 6), "{tracks:?}");
+    let files = metadata.files_for(&[versions[0].id]).await.unwrap();
+    assert!(files[0].layout.has_thumbnail);
+}

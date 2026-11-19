@@ -592,6 +592,10 @@ pub struct PartEntry {
     pub optimized_for_streaming: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub packet_length: Option<i32>,
+    /// Set on M2TS, whose 192-byte packets are the 188 of a transport stream behind a time
+    /// stamp each.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_stamp: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_profile: Option<String>,
     #[serde(rename = "Stream", skip_serializing_if = "Vec::is_empty")]
@@ -1131,6 +1135,7 @@ impl PartEntry {
             has_thumbnail: file.has_thumbnail.then_some("1"),
             optimized_for_streaming: file.optimized_for_streaming,
             packet_length: file.packet_length,
+            time_stamp: (file.packet_length == Some(192)).then_some(true),
             video_profile: profile_of(version.primary_video.as_ref()),
             stream: with_selected(
                 file.streams

@@ -571,7 +571,7 @@ fn part_row(file: &NewPart, media: i64, id: i64, position: i32) -> media_part::M
         packet_length: analysis
             .and_then(|analysis| analysis.packet_length)
             .and_then(|length| i32::try_from(length).ok()),
-        has_chapter_text_stream: false,
+        has_chapter_text_stream: analysis.is_some_and(analysis::has_chapter_text_stream),
         // The reference's identity hash is not one the scanner can reproduce yet.
         content_hash: None,
         open_subtitles_hash: analysis.map(|analysis| analysis.file.open_subtitles_hash.clone()),
