@@ -7,28 +7,22 @@
 //! Nothing under `/web` needs a token — the client has to load before it can ask for one — and
 //! a directory is never listed.
 //!
-//! Unlike the reference, which redirects `/web` and `/web/` to `/web/index.html`, every page
-//! carries `<base href="/web/">` and a path naming no file answers the index: a client that
-//! routes in the browser then works below `/web/` whatever its own paths are, and resolves its
-//! assets there from any of them. Plex Web is unaffected: its index names no base of its own
-//! and loads the same assets.
+//! Unlike the reference, which redirects `/web` and `/web/` to `/web/index.html`, `/web`
+//! redirects to `/web/`, which serves the index, and a path naming no file answers the index:
+//! a client that routes in the browser then works at any of its paths below `/web/`. Plex Web
+//! is unaffected: it loads the same assets.
 
 use std::path::{Path, PathBuf};
 
-use axum::body::Body;
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::extract::Request;
+use axum::http::{header, StatusCode};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::Router;
 use tower_http::services::{ServeDir, ServeFile};
 
 /// Where the client is mounted. Clients and bookmarks expect exactly this prefix.
 pub const PREFIX: &str = "/web";
-
-/// What every page is given, so that relative addresses resolve below the prefix.
-const BASE: &[u8] = br#"<base href="/web/">"#;
-
-/// The largest page given a base: a client's HTML is kilobytes, its scripts are files apart.
-const MAX_PAGE_BYTES: usize = 4 * 1024 * 1024;
 
 /// The web client's routes, or `None` when `dir` holds no client.
 ///
@@ -49,53 +43,17 @@ pub fn router(dir: &Path) -> Option<Router> {
     Some(
         Router::new()
             .nest_service(PREFIX, files)
-            .layer(axum::middleware::map_response(with_base)),
+            .layer(axum::middleware::from_fn(with_trailing_slash)),
     )
 }
 
-/// Gives a page served whole its base; anything else goes through untouched.
-async fn with_base(response: Response) -> Response {
-    let is_page = response.status() == StatusCode::OK
-        && response
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|value| value.starts_with("text/html"));
-    if !is_page {
-        return response;
+/// Sends the bare prefix to the prefix with a slash, so that the index's relative addresses
+/// resolve below it. A 302, as the reference answers: axum's `Redirect` offers 303 and 307.
+async fn with_trailing_slash(request: Request, next: Next) -> Response {
+    if request.uri().path() == PREFIX {
+        return (StatusCode::FOUND, [(header::LOCATION, "/web/")]).into_response();
     }
-    let (mut parts, body) = response.into_parts();
-    let Ok(page) = axum::body::to_bytes(body, MAX_PAGE_BYTES).await else {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    };
-    let page = based(&page);
-    parts
-        .headers
-        .insert(header::CONTENT_LENGTH, HeaderValue::from(page.len()));
-    Response::from_parts(parts, Body::from(page))
-}
-
-/// `page` with [`BASE`] right after its `<head>`, else after its `<html>`, else first. A page
-/// that names a base already keeps its own.
-fn based(page: &[u8]) -> Vec<u8> {
-    let lower = page.to_ascii_lowercase();
-    if find(&lower, b"<base").is_some() {
-        return page.to_vec();
-    }
-    let at = [b"<head".as_slice(), b"<html"]
-        .into_iter()
-        .find_map(|tag| {
-            let start = find(&lower, tag)?;
-            Some(start + find(&lower[start..], b">")? + 1)
-        })
-        .unwrap_or(0);
-    [&page[..at], BASE, &page[at..]].concat()
-}
-
-fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
+    next.run(request).await
 }
 
 /// The directory the client is served from: `KLAPZ_WEB_DIR`, or `web` beside the server's
@@ -122,8 +80,7 @@ mod tests {
 
     use super::*;
 
-    /// The test client's index as served.
-    const INDEX: &str = r#"<html><head><base href="/web/"></head>plex</html>"#;
+    const INDEX: &str = "<html><head></head>plex</html>";
 
     #[test]
     fn the_client_is_looked_for_beside_the_executable_not_the_working_directory() {
@@ -138,7 +95,7 @@ mod tests {
     fn client(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("klapz-web-{name}-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("js")).unwrap();
-        std::fs::write(dir.join("index.html"), "<html><head></head>plex</html>").unwrap();
+        std::fs::write(dir.join("index.html"), INDEX).unwrap();
         std::fs::write(dir.join("js").join("main.js"), "console.log(1)").unwrap();
         dir
     }
@@ -165,9 +122,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_prefix_serves_the_index_with_its_base() {
+    async fn the_prefix_redirects_to_its_slash_which_serves_the_index() {
         let router = router(&client("prefix")).unwrap();
-        for uri in ["/web", "/web/", "/web/index.html"] {
+        let (status, location, _) = get(router.clone(), "/web").await;
+        assert_eq!(
+            (status, location.as_deref()),
+            (StatusCode::FOUND, Some("/web/"))
+        );
+        for uri in ["/web/", "/web/index.html"] {
             let (status, location, body) = get(router.clone(), uri).await;
             assert_eq!(
                 (status, location, body.as_str()),
@@ -191,22 +153,6 @@ mod tests {
         let router = router(&client("files")).unwrap();
         let (status, _, body) = get(router, "/web/js/main.js").await;
         assert_eq!((status, body.as_str()), (StatusCode::OK, "console.log(1)"));
-    }
-
-    #[test]
-    fn a_page_gets_one_base_after_its_head() {
-        let based = |page: &str| String::from_utf8(based(page.as_bytes())).unwrap();
-        assert_eq!(
-            based(r#"<!doctype html><HTML lang="fr"><Head data-x="1"><title>t</title>"#),
-            r#"<!doctype html><HTML lang="fr"><Head data-x="1"><base href="/web/"><title>t</title>"#
-        );
-        assert_eq!(
-            based("<html><body>x</body></html>"),
-            r#"<html><base href="/web/"><body>x</body></html>"#
-        );
-        assert_eq!(based("plain"), r#"<base href="/web/">plain"#);
-        let own = r#"<html><head><BASE href="/app/"></head></html>"#;
-        assert_eq!(based(own), own);
     }
 
     #[tokio::test]
