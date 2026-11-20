@@ -138,11 +138,21 @@ pub async fn libraries(state: &JellyfinState) -> Result<Vec<Library>, JellyfinEr
 async fn views(state: &JellyfinState, user: Option<&str>) -> Result<Response, JellyfinError> {
     let viewer = gql::viewer(&state.schema).await?;
     viewer.require_self(user)?;
-    let items: Vec<Value> = libraries(state)
+    let mut items: Vec<Value> = libraries(state)
         .await?
         .iter()
         .map(|library| library_dto(library, &state.server.id))
         .collect();
+    // The reference lists a view of the user's playlists once there is one, among the
+    // libraries by name.
+    let playlists = crate::playlists::playlists(state).await?;
+    if !playlists.is_empty() {
+        items.push(crate::playlists::view_dto(
+            &state.server.id,
+            playlists.len(),
+        ));
+    }
+    items.sort_by_key(|view| view["Name"].as_str().unwrap_or_default().to_lowercase());
     Ok(json(&ItemsResult {
         total_record_count: i64::try_from(items.len()).unwrap_or(i64::MAX),
         items,

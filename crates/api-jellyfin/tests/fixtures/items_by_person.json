@@ -1,0 +1,108 @@
+{
+  "Items": [
+    {
+      "Name": "Daria",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "09f846343920eb4f55fb1c160b02f91e",
+      "PremiereDate": "1997-03-02T23:00:00.0000000Z",
+      "OfficialRating": "TV-PG",
+      "ChannelId": null,
+      "CommunityRating": 8.2,
+      "RunTimeTicks": 0,
+      "ProductionYear": 1997,
+      "IsFolder": true,
+      "Type": "Series",
+      "UserData": {
+        "PlayedPercentage": 0,
+        "UnplayedItemCount": 1,
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "09f84634-3920-eb4f-55fb-1c160b02f91e",
+        "ItemId": "09f846343920eb4f55fb1c160b02f91e"
+      },
+      "Status": "Ended",
+      "AirDays": [],
+      "ImageTags": {
+        "Logo": "22e2cf3196dcdfcf449a00de153fa2d4",
+        "Primary": "d10480e00a8cc8a4737b0b5671be7d03",
+        "Thumb": "55d07ff720a8c7108fc3a311aed64b34"
+      },
+      "BackdropImageTags": [
+        "a952ccd7ccaf94d4221f5c99de13f579"
+      ],
+      "ImageBlurHashes": {
+        "Backdrop": {
+          "a952ccd7ccaf94d4221f5c99de13f579": "WLG*Z-+q~X==Icv~=LskX9ROf,xGV}IqNeR.xsxu-DROakWTV@xG"
+        },
+        "Logo": {
+          "22e2cf3196dcdfcf449a00de153fa2d4": "NcH.Qbxuj[ayIUay4nj[j[j[RjM{00t7xuWBofRj"
+        },
+        "Primary": {
+          "d10480e00a8cc8a4737b0b5671be7d03": "dXBg}ctR5wOv?doMM_f+KRX9$xs.Otbbs+ayXBoLV?Rk"
+        },
+        "Thumb": {
+          "55d07ff720a8c7108fc3a311aed64b34": "WSLzuu^]xpRX?R%0^#NHWV$%NaoL%Fxsa#NHs;j?~i-,oeM}xtoc"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "EndDate": "2001-06-24T22:00:00.0000000Z",
+      "OriginalLanguage": "en"
+    },
+    {
+      "Name": "Daria",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "dfec8d020c2dcdc7bd514113d80ac9f4",
+      "PremiereDate": "1997-03-02T23:00:00.0000000Z",
+      "OfficialRating": "TV-PG",
+      "ChannelId": null,
+      "CommunityRating": 8.2,
+      "RunTimeTicks": 0,
+      "ProductionYear": 1997,
+      "IsFolder": true,
+      "Type": "Series",
+      "UserData": {
+        "PlayedPercentage": 0,
+        "UnplayedItemCount": 1,
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "dfec8d02-0c2d-cdc7-bd51-4113d80ac9f4",
+        "ItemId": "dfec8d020c2dcdc7bd514113d80ac9f4"
+      },
+      "Status": "Ended",
+      "AirDays": [],
+      "ImageTags": {
+        "Logo": "aef8a7afa79e2147edc1cfa3d069cc44",
+        "Primary": "062c0a3295343c5f1900bb09b5752314",
+        "Thumb": "70719783c7766d9faaa44924a1db2d35"
+      },
+      "BackdropImageTags": [
+        "15c7b7c57b64f7ede1b3f06e26315e94"
+      ],
+      "ImageBlurHashes": {
+        "Backdrop": {
+          "15c7b7c57b64f7ede1b3f06e26315e94": "WLG*Z-+q~X==Icv~=LskX9ROf,xGV}IqNeR.xsxu-DROakWTV@xG"
+        },
+        "Logo": {
+          "aef8a7afa79e2147edc1cfa3d069cc44": "NcH.Qbxuj[ayIUay4nj[j[j[RjM{00t7xuWBofRj"
+        },
+        "Primary": {
+          "062c0a3295343c5f1900bb09b5752314": "dXBg}ctR5wOv?doMM_f+KRX9$xs.Otbbs+ayXBoLV?Rk"
+        },
+        "Thumb": {
+          "70719783c7766d9faaa44924a1db2d35": "WSLzuu^]xpRX?R%0^#NHWV$%NaoL%Fxsa#NHs;j?~i-,oeM}xtoc"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "EndDate": "2001-06-24T22:00:00.0000000Z",
+      "OriginalLanguage": "en"
+    }
+  ],
+  "TotalRecordCount": 2,
+  "StartIndex": 0
+}

@@ -1,0 +1,44 @@
+{
+  "Items": [
+    {
+      "Name": "Chuyện Vợ Chồng Sáo",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "c4927ec38c9f3d59490edf05de2d8a2a",
+      "Container": "mkv",
+      "PremiereDate": "1997-05-31T22:00:00.0000000Z",
+      "ChannelId": null,
+      "RunTimeTicks": 1783009999,
+      "ProductionYear": 1997,
+      "IsFolder": false,
+      "Type": "Movie",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "c4927ec3-8c9f-3d59-490e-df05de2d8a2a",
+        "ItemId": "c4927ec38c9f3d59490edf05de2d8a2a"
+      },
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "09d7f14edc8b4791c14b4b3449079abc"
+      },
+      "BackdropImageTags": [
+        "246884c4d58be19e83d4809b266b9ee1"
+      ],
+      "ImageBlurHashes": {
+        "Backdrop": {
+          "246884c4d58be19e83d4809b266b9ee1": "NBCZObiwTykXyCpboyNyR%xtIqNG4VoyDQMyRPRP"
+        },
+        "Primary": {
+          "09d7f14edc8b4791c14b4b3449079abc": "dAD,73rX?[%y6Bi^jcE3KjWBr?WEkCS6Rjo|J:bEkBjs"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "OriginalLanguage": "vi"
+    }
+  ],
+  "TotalRecordCount": 1,
+  "StartIndex": 0
+}

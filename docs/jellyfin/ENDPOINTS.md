@@ -8,8 +8,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `served` | 56 | 15.4 % |
-| `todo` | 308 | 84.6 % |
+| `served` | 68 | 18.7 % |
+| `todo` | 296 | 81.3 % |
 
 ## By domain
 
@@ -31,7 +31,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | InstantMix | 7 | 0 |
 | ItemLookup | 11 | 0 |
 | ItemUpdate | 3 | 0 |
-| Library | 34 | 11 |
+| Library | 34 | 12 |
 | LibraryStructure | 8 | 0 |
 | LiveTv | 38 | 0 |
 | Localization | 4 | 0 |
@@ -41,7 +41,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | Movie | 1 | 0 |
 | MusicGenre | 1 | 0 |
 | Person | 2 | 0 |
-| Playlist | 11 | 0 |
+| Playlist | 11 | 11 |
 | Plugin | 17 | 0 |
 | RemoteImage | 3 | 0 |
 | ScheduledTask | 5 | 0 |
@@ -265,7 +265,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | GET | `/Items/Latest` | `served` |  |
 | GET | `/Items/Root` | `todo` |  |
 | GET | `/Items/{itemId}` | `served` |  |
-| DELETE | `/Items/{itemId}` | `todo` |  |
+| DELETE | `/Items/{itemId}` | `served` | Playlists and collections; media files answer 501. |
 | GET | `/Items/{itemId}/Ancestors` | `served` |  |
 | GET | `/Items/{itemId}/Collections` | `todo` |  |
 | GET | `/Items/{itemId}/Download` | `todo` |  |
@@ -407,17 +407,17 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Method | Path | Status | Notes |
 | --- | --- | --- | --- |
-| POST | `/Playlists` | `todo` |  |
-| GET | `/Playlists/{playlistId}` | `todo` |  |
-| POST | `/Playlists/{playlistId}` | `todo` |  |
-| GET | `/Playlists/{playlistId}/Items` | `todo` |  |
-| POST | `/Playlists/{playlistId}/Items` | `todo` |  |
-| DELETE | `/Playlists/{playlistId}/Items` | `todo` |  |
-| POST | `/Playlists/{playlistId}/Items/{itemId}/Move/{newIndex}` | `todo` |  |
-| GET | `/Playlists/{playlistId}/Users` | `todo` |  |
-| GET | `/Playlists/{playlistId}/Users/{userId}` | `todo` |  |
-| POST | `/Playlists/{playlistId}/Users/{userId}` | `todo` |  |
-| DELETE | `/Playlists/{playlistId}/Users/{userId}` | `todo` |  |
+| POST | `/Playlists` | `served` | The caller's own: sharing (Users, IsPublic) answers 501. |
+| GET | `/Playlists/{playlistId}` | `served` | OpenAccess false, no shares: a playlist is its owner's. |
+| POST | `/Playlists/{playlistId}` | `served` | Name and items; sharing answers 501. |
+| GET | `/Playlists/{playlistId}/Items` | `served` |  |
+| POST | `/Playlists/{playlistId}/Items` | `served` | Appended; a position before the end answers 501. |
+| DELETE | `/Playlists/{playlistId}/Items` | `served` |  |
+| POST | `/Playlists/{playlistId}/Items/{itemId}/Move/{newIndex}` | `served` |  |
+| GET | `/Playlists/{playlistId}/Users` | `served` | Empty: shared with nobody. |
+| GET | `/Playlists/{playlistId}/Users/{userId}` | `served` |  |
+| POST | `/Playlists/{playlistId}/Users/{userId}` | `served` | 501: playlists are not shared. |
+| DELETE | `/Playlists/{playlistId}/Users/{userId}` | `served` | 501: playlists are not shared. |
 
 ## Plugin
 

@@ -1,0 +1,38 @@
+{
+  "Items": [
+    {
+      "Name": "open-plex capture",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "fa0974433b104c0e42ab50df5c04b501",
+      "OfficialRating": "FR-TP",
+      "ChannelId": null,
+      "RunTimeTicks": 152707343779,
+      "IsFolder": true,
+      "Type": "Playlist",
+      "UserData": {
+        "PlayedPercentage": 0,
+        "UnplayedItemCount": 3,
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "fa097443-3b10-4c0e-42ab-50df5c04b501",
+        "ItemId": "fa0974433b104c0e42ab50df5c04b501"
+      },
+      "ChildCount": 3,
+      "ImageTags": {
+        "Primary": "d180e5f63bf6cad704a9c2036aaa59d7"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "d180e5f63bf6cad704a9c2036aaa59d7": "eGDJngMyfQH@%y$]offQt7t60Mt6fQxtM|Y7V@fQVss;xuWqfQR+wb"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    }
+  ],
+  "TotalRecordCount": 1,
+  "StartIndex": 0
+}

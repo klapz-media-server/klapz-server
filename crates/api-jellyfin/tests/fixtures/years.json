@@ -1,0 +1,86 @@
+{
+  "Items": [
+    {
+      "Name": "2025",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "fc6e838cbacd13c6b6a8ced2465264b0",
+      "ChannelId": null,
+      "Type": "Year",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "Year-2025",
+        "ItemId": "fc6e838cbacd13c6b6a8ced2465264b0"
+      },
+      "ImageTags": {},
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {},
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown"
+    },
+    {
+      "Name": "2018",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "31cf6f25af5066f5a3c9f813a56937f6",
+      "ChannelId": null,
+      "Type": "Year",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "Year-2018",
+        "ItemId": "31cf6f25af5066f5a3c9f813a56937f6"
+      },
+      "ImageTags": {},
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {},
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown"
+    },
+    {
+      "Name": "1997",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "41900569079f829eda2ce63158cd8ba4",
+      "ChannelId": null,
+      "Type": "Year",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "Year-1997",
+        "ItemId": "41900569079f829eda2ce63158cd8ba4"
+      },
+      "ImageTags": {},
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {},
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown"
+    },
+    {
+      "Name": "1996",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "07dde41679527775ef4d0af001bff7c8",
+      "ChannelId": null,
+      "Type": "Year",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "Year-1996",
+        "ItemId": "07dde41679527775ef4d0af001bff7c8"
+      },
+      "ImageTags": {},
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {},
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown"
+    }
+  ],
+  "TotalRecordCount": 5,
+  "StartIndex": 0
+}

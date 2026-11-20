@@ -51,6 +51,14 @@ NOTES = {
     "GET /SyncPlay/List": "Empty: no group is held.",
     "GET /Items/Filters": "Below a library or across the caller's; no tags (keywords are a provider's).",
     "GET /Items/Filters2": "Languages as tracks state them; Live TV flags answer 501.",
+    "POST /Playlists": "The caller's own: sharing (Users, IsPublic) answers 501.",
+    "POST /Playlists/{playlistId}": "Name and items; sharing answers 501.",
+    "GET /Playlists/{playlistId}": "OpenAccess false, no shares: a playlist is its owner's.",
+    "POST /Playlists/{playlistId}/Items": "Appended; a position before the end answers 501.",
+    "GET /Playlists/{playlistId}/Users": "Empty: shared with nobody.",
+    "POST /Playlists/{playlistId}/Users/{userId}": "501: playlists are not shared.",
+    "DELETE /Playlists/{playlistId}/Users/{userId}": "501: playlists are not shared.",
+    "DELETE /Items/{itemId}": "Playlists and collections; media files answer 501.",
 }
 
 

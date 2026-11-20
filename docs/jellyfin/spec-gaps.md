@@ -166,6 +166,25 @@ Tags are keywords a provider gives: none. Narrowing below a library, to a kind o
 its own, or by the Live TV flags of `Filters2`, answers `501`; music and photos, held nowhere,
 list nothing.
 
+## Playlists
+
+The caller's own playlists, over the official API's (`createPlaylist`, `addToPlaylist`,
+`movePlaylistEntry`, `removeFromPlaylist`, `clearPlaylist`, `updatePlaylist`,
+`deletePlaylist`), as measured on a playlist made on the reference for the capture
+(`tools/capture_jellyfin.py --writes`):
+
+- a playlist is a `Playlist` folder item, listed by `/Items?IncludeItemTypes=Playlist` and in a
+  `Playlists` view (`CollectionType` `playlists`) the reference adds among the libraries, by name,
+  once the user has one; opened by `/Playlists/{id}/Items` or `/Items?ParentId=`, counting what is
+  left to watch;
+- each entry carries a `PlaylistItemId` of its own, which `Move/{index}` and `entryIds` name;
+  the reference's is the item's id, which cannot tell two entries of one item apart;
+- a playlist is its owner's alone, as on the official API: `OpenAccess` is `false`, `Shares`
+  empty, and sharing (`Users`, `IsPublic`, `/Users/{userId}`) answers `501`; another user's is
+  not found;
+- items are appended: a `position` before the end answers `501`. `DELETE /Items/{id}` deletes a
+  playlist, and never a media file (`501`).
+
 ## Measured on the 35 files
 
 `tools/compare_jellyfin.py` compares, for every file, the lookup (`/Items/{id}` and

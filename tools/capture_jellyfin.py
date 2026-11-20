@@ -13,7 +13,10 @@ Credentials come from the environment, so none is ever written into the reposito
     JELLYFIN_PASSWORD  required
 
 Usage: JELLYFIN_USER=... JELLYFIN_PASSWORD=... python tools/capture_jellyfin.py [--fixtures]
-       [--out DIRECTORY]
+       [--out DIRECTORY] [--all-items] [--writes]
+
+`--writes` makes a playlist and a collection on the server, captures what they answer, and
+deletes them.
 
 Pointed at open-plex's own surface (`JELLYFIN_URL=http://127.0.0.1:32500/jellyfin`) with
 `--out captures/jellyfin-ours`, the same requests capture our answers, for
@@ -27,6 +30,7 @@ import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -177,6 +181,58 @@ def capture_every_item(token: str, user: str) -> None:
     print(f"{len(series)} series")
 
 
+def capture_writes(token: str, user: str, record) -> None:
+    """What a playlist and a collection answer, made for the capture and deleted after it, and
+    the pages of genres, people, studios and years, search hints and media segments."""
+    get = lambda path: json.loads(request("GET", path, token)[2])  # noqa: E731
+    views = get(f"/UserViews?userId={user}")["Items"]
+    movies = first(views, CollectionType="movies")["Id"]
+    films = get(f"/Items?userId={user}&ParentId={movies}&Recursive=true&IncludeItemTypes=Movie&SortBy=SortName")["Items"]
+    ids = [film["Id"] for film in films]
+    created = record("playlist_create", "POST", "/Playlists",
+                     {"Name": "open-plex capture", "Ids": ids[:2], "UserId": user, "MediaType": "Video"})
+    playlist = created["Id"]
+    record("playlist_add", "POST", f"/Playlists/{playlist}/Items?ids={ids[2]}&userId={user}")
+    record("playlist", "GET", f"/Playlists/{playlist}")
+    entries = record("playlist_items", "GET", f"/Playlists/{playlist}/Items?userId={user}&Fields=PrimaryImageAspectRatio")
+    record("playlist_users", "GET", f"/Playlists/{playlist}/Users")
+    record("playlist_user", "GET", f"/Playlists/{playlist}/Users/{user}")
+    record("playlists_listing", "GET", f"/Items?userId={user}&Recursive=true&IncludeItemTypes=Playlist")
+    record("user_views_with_playlist", "GET", f"/UserViews?userId={user}")
+    record("playlist_lookup", "GET", f"/Items/{playlist}?userId={user}")
+    moved = entries["Items"][2]["PlaylistItemId"]
+    record("playlist_move", "POST", f"/Playlists/{playlist}/Items/{moved}/Move/0")
+    record("playlist_after_move", "GET", f"/Playlists/{playlist}/Items?userId={user}")
+    record("playlist_remove", "DELETE", f"/Playlists/{playlist}/Items?entryIds={moved}")
+    record("playlist_delete", "DELETE", f"/Items/{playlist}")
+
+    collection = record("collection_create", "POST", f"/Collections?Name=open-plex%20capture&Ids={ids[0]},{ids[1]}")
+    boxset = collection["Id"]
+    record("collection_lookup", "GET", f"/Items/{boxset}?userId={user}")
+    record("collection_items", "GET", f"/Items?userId={user}&ParentId={boxset}&Fields=PrimaryImageAspectRatio")
+    record("collections_listing", "GET", f"/Items?userId={user}&Recursive=true&IncludeItemTypes=BoxSet")
+    record("item_collections", "GET", f"/Items/{ids[0]}/Collections?userId={user}")
+    record("user_views_with_collection", "GET", f"/UserViews?userId={user}")
+    record("collection_add", "POST", f"/Collections/{boxset}/Items?ids={ids[2]}")
+    record("collection_remove", "DELETE", f"/Collections/{boxset}/Items?ids={ids[2]}")
+    record("collection_delete", "DELETE", f"/Items/{boxset}")
+
+    record("genres", "GET", f"/Genres?userId={user}&ParentId={movies}&SortBy=SortName&SortOrder=Ascending&Recursive=true&Fields=PrimaryImageAspectRatio,ItemCounts&StartIndex=0")
+    genre = get(f"/Genres?userId={user}&ParentId={movies}")["Items"][0]
+    record("genre", "GET", f"/Genres/{urllib.parse.quote(genre['Name'])}?userId={user}")
+    record("items_by_genre", "GET", f"/Items?userId={user}&GenreIds={genre['Id']}&Recursive=true&IncludeItemTypes=Movie")
+    record("persons", "GET", f"/Persons?userId={user}&Limit=10&Fields=PrimaryImageAspectRatio")
+    person = get(f"/Persons?userId={user}&Limit=1")["Items"][0]
+    record("person", "GET", f"/Persons/{urllib.parse.quote(person['Name'])}?userId={user}")
+    record("items_by_person", "GET", f"/Items?userId={user}&PersonIds={person['Id']}&Recursive=true&IncludeItemTypes=Movie,Series")
+    record("studios", "GET", f"/Studios?userId={user}&ParentId={movies}&Fields=PrimaryImageAspectRatio")
+    record("years", "GET", f"/Years?userId={user}&ParentId={movies}&Recursive=true&SortBy=SortName&SortOrder=Descending")
+    record("year", "GET", f"/Years/1997?userId={user}")
+    record("search_hints", "GET", f"/Search/Hints?userId={user}&searchTerm=doodle&Limit=20")
+    record("search_items", "GET", f"/Items?userId={user}&searchTerm=doodle&Recursive=true&IncludeItemTypes=Movie&Limit=24&Fields=PrimaryImageAspectRatio")
+    record("media_segments", "GET", f"/MediaSegments/{ids[0]}")
+
+
 def scrub(text: str, server_id: str, user_id: str, server_name: str, username: str) -> str:
     text = text.replace(server_id, SERVER_ID).replace(user_id, USER_ID)
     text = re.sub(rf'"(Name|UserName)":\s*"{re.escape(username)}"', r'"\1": "user"', text)
@@ -215,13 +271,15 @@ def main() -> None:
     CAPTURES.mkdir(parents=True, exist_ok=True)
     (CAPTURES / "authenticate_by_name.json").write_text(json.dumps(signed_in, indent=2, ensure_ascii=False), encoding="utf-8")
     outputs = [("authenticate_by_name", 200, json.dumps(signed_in))]
-    for name, method, path, body in captures(token, user):
+
+    def record(name: str, method: str, path: str, body: object | None = None) -> object | None:
         status, headers, raw = request(method, path, token, body)
         text = raw.decode("utf-8", errors="replace")
         try:
-            text = json.dumps(json.loads(text), indent=2, ensure_ascii=False)
+            answer = json.loads(text)
+            text = json.dumps(answer, indent=2, ensure_ascii=False)
         except ValueError:
-            pass
+            answer = None
         (CAPTURES / f"{name}.json").write_text(text, encoding="utf-8")
         (CAPTURES / f"{name}.headers.json").write_text(
             json.dumps({"status": status, "method": method, "path": path, "headers": headers}, indent=2),
@@ -229,6 +287,12 @@ def main() -> None:
         )
         print(f"{status} {method} {name}")
         outputs.append((name, status, text))
+        return answer
+
+    for name, method, path, body in captures(token, user):
+        record(name, method, path, body)
+    if "--writes" in sys.argv:
+        capture_writes(token, user, record)
     if "--all-items" in sys.argv:
         capture_every_item(token, user)
     if write_fixtures:

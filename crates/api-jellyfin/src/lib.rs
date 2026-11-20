@@ -25,6 +25,7 @@ mod items;
 mod language;
 mod listing;
 mod playback;
+mod playlists;
 mod query;
 mod response;
 mod shows;
@@ -132,6 +133,7 @@ pub fn router(state: JellyfinState) -> Router {
         .merge(views::router())
         .merge(items::router())
         .merge(filters::router())
+        .merge(playlists::router())
         .merge(shows::router())
         .merge(playback::router())
         .fallback(not_found)

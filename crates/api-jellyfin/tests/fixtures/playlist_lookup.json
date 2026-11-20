@@ -1,0 +1,109 @@
+{
+  "Name": "open-plex capture",
+  "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+  "Id": "fa0974433b104c0e42ab50df5c04b501",
+  "Etag": "d48403d519be5dcafeddf1adca9e4f19",
+  "DateCreated": "2026-11-20T13:45:05.0000000Z",
+  "DateLastMediaAdded": "2026-11-20T12:45:07.3059919Z",
+  "CanDelete": true,
+  "CanDownload": false,
+  "SortName": "openplex capture",
+  "ExternalUrls": [],
+  "Path": "/var/lib/jellyfin/data/playlists/open-plex capture",
+  "EnableMediaSourceDisplay": true,
+  "OfficialRating": "FR-TP",
+  "ChannelId": null,
+  "Taglines": [],
+  "Genres": [
+    "Animation",
+    "Aventure",
+    "Science-Fiction",
+    "Thriller",
+    "Crime",
+    "Drame"
+  ],
+  "CumulativeRunTimeTicks": 152707343779,
+  "RunTimeTicks": 152707343779,
+  "PlayAccess": "Full",
+  "RemoteTrailers": [],
+  "ProviderIds": {},
+  "IsFolder": true,
+  "ParentId": "1071671e7bffa0532e930debee501d2e",
+  "Type": "Playlist",
+  "People": [],
+  "Studios": [
+    {
+      "Name": "Amblin Entertainment",
+      "Id": "cdc4ab8b8df7162ca868ae3a899a95e3"
+    },
+    {
+      "Name": "Universal Pictures",
+      "Id": "e56aaac7ab0bb0f5f48371be0252bab4"
+    },
+    {
+      "Name": "Paramount Pictures",
+      "Id": "2672ed34a3f2b0bb6b4257c2ab9875b7"
+    },
+    {
+      "Name": "Rysher Entertainment",
+      "Id": "62b236e287551db66fadd2b2ca7d20a1"
+    }
+  ],
+  "GenreItems": [
+    {
+      "Name": "Animation",
+      "Id": "074229225b7254292f131f9f49f8dcd6"
+    },
+    {
+      "Name": "Aventure",
+      "Id": "4224b8ea18993e46081c00fa1c46a736"
+    },
+    {
+      "Name": "Science-Fiction",
+      "Id": "44a6a873a8ec54283c407e7193e7dd69"
+    },
+    {
+      "Name": "Thriller",
+      "Id": "4936f5b1a6f84f0b0aa2657368a5b364"
+    },
+    {
+      "Name": "Crime",
+      "Id": "83a9dab21914792744c8fb23b9925dc6"
+    },
+    {
+      "Name": "Drame",
+      "Id": "6a24d9a479675b918371054b545b59a0"
+    }
+  ],
+  "LocalTrailerCount": 0,
+  "UserData": {
+    "PlayedPercentage": 0,
+    "UnplayedItemCount": 3,
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false,
+    "Key": "fa097443-3b10-4c0e-42ab-50df5c04b501",
+    "ItemId": "fa0974433b104c0e42ab50df5c04b501"
+  },
+  "RecursiveItemCount": 3,
+  "ChildCount": 3,
+  "SpecialFeatureCount": 0,
+  "DisplayPreferencesId": "6791e0b941b0543a1c3a13bfd5e6b240",
+  "Tags": [],
+  "PrimaryImageAspectRatio": 1,
+  "ImageTags": {
+    "Primary": "d180e5f63bf6cad704a9c2036aaa59d7"
+  },
+  "BackdropImageTags": [],
+  "ImageBlurHashes": {
+    "Primary": {
+      "d180e5f63bf6cad704a9c2036aaa59d7": "eGDJngMyfQH@%y$]offQt7t60Mt6fQxtM|Y7V@fQVss;xuWqfQR+wb"
+    }
+  },
+  "Chapters": [],
+  "LocationType": "FileSystem",
+  "MediaType": "Video",
+  "LockedFields": [],
+  "LockData": false
+}

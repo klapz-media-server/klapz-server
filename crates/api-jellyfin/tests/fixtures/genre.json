@@ -1,0 +1,61 @@
+{
+  "Name": "Animation",
+  "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+  "Id": "074229225b7254292f131f9f49f8dcd6",
+  "Etag": "aefc26f42d0e89b58e0cbd19eaf82cf8",
+  "DateCreated": "2026-11-20T08:33:48.7258967Z",
+  "CanDelete": false,
+  "CanDownload": false,
+  "SortName": "animation",
+  "ExternalUrls": [],
+  "Path": "/var/lib/jellyfin/metadata/Genre/Animation",
+  "EnableMediaSourceDisplay": true,
+  "ChannelId": null,
+  "Taglines": [],
+  "Genres": [],
+  "PlayAccess": "Full",
+  "RemoteTrailers": [],
+  "ProviderIds": {},
+  "ParentId": null,
+  "Type": "Genre",
+  "People": [],
+  "Studios": [],
+  "GenreItems": [],
+  "LocalTrailerCount": 0,
+  "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false,
+    "Key": "Genre-Animation",
+    "ItemId": "074229225b7254292f131f9f49f8dcd6"
+  },
+  "ChildCount": 36,
+  "SpecialFeatureCount": 0,
+  "DisplayPreferencesId": "7b6fd309fc021df5f3c55c3006a0b856",
+  "Tags": [],
+  "PrimaryImageAspectRatio": 1,
+  "ImageTags": {
+    "Primary": "7a28e54da99039fdf644b854bec6fa42"
+  },
+  "BackdropImageTags": [],
+  "ImageBlurHashes": {
+    "Primary": {
+      "7a28e54da99039fdf644b854bec6fa42": "eiIX?R^-WVNFT1^*?GRkW.s+WAR%V@t7t7NfWWWBaeWCT0g3j@e-n#"
+    }
+  },
+  "Chapters": [],
+  "LocationType": "FileSystem",
+  "MediaType": "Unknown",
+  "LockedFields": [],
+  "TrailerCount": 0,
+  "MovieCount": 1,
+  "SeriesCount": 20,
+  "ProgramCount": 0,
+  "EpisodeCount": 15,
+  "SongCount": 0,
+  "AlbumCount": 0,
+  "ArtistCount": 0,
+  "MusicVideoCount": 0,
+  "LockData": false
+}

@@ -25,7 +25,7 @@ pub fn router() -> Router<JellyfinState> {
         .route("/users/{user}/items/latest", get(legacy_latest))
         .route("/useritems/resume", get(resume))
         .route("/users/{user}/items/resume", get(legacy_resume))
-        .route("/items/{id}", get(item))
+        .route("/items/{id}", get(item).delete(delete_item))
         .route("/users/{user}/items/{id}", get(legacy_item))
         .route("/items/{id}/similar", get(similar))
         .route("/items/{id}/ancestors", get(ancestors))
@@ -285,6 +285,9 @@ async fn list(
 ) -> Result<Response, JellyfinError> {
     let viewer: Viewer = gql::viewer(&state.schema).await?;
     viewer.require_self(user.or_else(|| query.get("userId")))?;
+    if let Some(answer) = containers(state, query).await? {
+        return Ok(answer);
+    }
     let listing = Listing::parse(query)?;
     let fields = fields(query);
     let start = listing.offset;
@@ -400,9 +403,81 @@ async fn lookup(
                 .ok_or(JellyfinError::NotFound)?;
             Ok(json(&library_dto(&library, &state.server.id)))
         }
+        open_plex_api::server::SERVER_TYPE if global.key == 1 => {
+            let count = crate::playlists::playlists(state).await?.len();
+            Ok(json(&crate::playlists::view_dto(&state.server.id, count)))
+        }
         open_plex_api::server::SERVER_TYPE => Ok(json(&user_root(state))),
+        open_plex_api::playlist::PLAYLIST_TYPE => {
+            let playlist = crate::playlists::playlist_of(state, &encoded).await?;
+            Ok(json(&crate::playlists::playlist_dto(
+                &playlist,
+                &state.server.id,
+                &Fields::all(),
+            )))
+        }
         _ => Err(JellyfinError::NotFound),
     }
+}
+
+/// Listings of what is not a library's item: the caller's playlists, as a type or as their
+/// view, and a playlist's entries. `None` for every other listing.
+async fn containers(
+    state: &JellyfinState,
+    query: &Query,
+) -> Result<Option<Response>, JellyfinError> {
+    let parent = query.get("parentId").map(id::decode).transpose()?;
+    let types = query.list("includeItemTypes");
+    let playlists_view = parent.as_ref().is_some_and(|parent| {
+        parent.type_name == open_plex_api::server::SERVER_TYPE && parent.key == 1
+    });
+    let only_playlists = !types.is_empty()
+        && types
+            .iter()
+            .all(|kind| kind.eq_ignore_ascii_case("playlist"));
+    if playlists_view || (only_playlists && parent.is_none()) {
+        let fields = fields(query);
+        let items: Vec<Value> = crate::playlists::playlists(state)
+            .await?
+            .iter()
+            .map(|playlist| crate::playlists::playlist_dto(playlist, &state.server.id, &fields))
+            .collect();
+        let total = count(&items);
+        return Ok(Some(page(items, total, 0)));
+    }
+    if types
+        .iter()
+        .any(|kind| kind.eq_ignore_ascii_case("playlist"))
+    {
+        return Err(JellyfinError::NotImplemented(
+            "playlists among other types, or below a library",
+        ));
+    }
+    match parent {
+        Some(parent) if parent.type_name == open_plex_api::playlist::PLAYLIST_TYPE => {
+            let global = open_plex_api::GlobalId::encode(&parent.type_name, parent.key);
+            Ok(Some(
+                crate::playlists::entries_page(state, &global, query).await?,
+            ))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// `DELETE /Items/{id}`: a playlist the caller owns. Media files are never deleted here.
+async fn delete_item(
+    State(state): State<JellyfinState>,
+    Path(item): Path<String>,
+) -> Result<Response, JellyfinError> {
+    let global = id::decode(&item)?;
+    let encoded = open_plex_api::GlobalId::encode(&global.type_name, global.key);
+    if global.type_name == open_plex_api::playlist::PLAYLIST_TYPE {
+        crate::playlists::delete(&state, &encoded).await?;
+        return Ok(crate::response::no_content());
+    }
+    Err(JellyfinError::NotImplemented(
+        "deleting media from the library",
+    ))
 }
 
 /// The folder a user's views hang from.

@@ -1,0 +1,209 @@
+{
+  "Items": [
+    {
+      "Name": "Animation",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "074229225b7254292f131f9f49f8dcd6",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 1,
+      "PrimaryImageAspectRatio": 1,
+      "ImageTags": {
+        "Primary": "7a28e54da99039fdf644b854bec6fa42"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "7a28e54da99039fdf644b854bec6fa42": "eiIX?R^-WVNFT1^*?GRkW.s+WAR%V@t7t7NfWWWBaeWCT0g3j@e-n#"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 1,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    },
+    {
+      "Name": "Aventure",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "4224b8ea18993e46081c00fa1c46a736",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 1,
+      "PrimaryImageAspectRatio": 1,
+      "ImageTags": {
+        "Primary": "bbaa339230c98fb7ed9a7878d65abcab"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "bbaa339230c98fb7ed9a7878d65abcab": "eIC%pgIBfQ8{%f.7R*fQRjxZfQfQfQfQfQ_MRjfQM{%1-oShfQNdwb"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 1,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    },
+    {
+      "Name": "Crime",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "83a9dab21914792744c8fb23b9925dc6",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 1,
+      "PrimaryImageAspectRatio": 1,
+      "ImageTags": {
+        "Primary": "4d93312a63dedfd9c87d2ebcd7236ad2"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "4d93312a63dedfd9c87d2ebcd7236ad2": "eEDu}JtBIWE29v%4?GM{t1a#%#OtM|$ys9~o9}s+VsRQVz^jRjIobY"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 1,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    },
+    {
+      "Name": "Documentaire",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "5d9052ea2349868290d6278b11fb4588",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 1,
+      "PrimaryImageAspectRatio": 1,
+      "ImageTags": {
+        "Primary": "77418346ac682f7c124dc151c0fcd416"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "77418346ac682f7c124dc151c0fcd416": "efJu16t7fQxuae-;j[fQj]WBfQfQfQfQfQ_MoffQofRj01WBfQV@Rj"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 1,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    },
+    {
+      "Name": "Drame",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "6a24d9a479675b918371054b545b59a0",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 1,
+      "PrimaryImageAspectRatio": 1,
+      "ImageTags": {
+        "Primary": "0768cb58766865003510dd726af2359f"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "0768cb58766865003510dd726af2359f": "eaF5c^WCfQIpRkoeWVfQWCayfQfQfQfQfQofWBfQRkay0NoefQxZs."
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 1,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    },
+    {
+      "Name": "Science-Fiction",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "44a6a873a8ec54283c407e7193e7dd69",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 1,
+      "PrimaryImageAspectRatio": 1,
+      "ImageTags": {
+        "Primary": "3ba79a783d0ea3f8c77a26ae4de45b1b"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "3ba79a783d0ea3f8c77a26ae4de45b1b": "eIC%pgIBfQ8{%f.7R*fQRjxZfQfQfQfQfQ_MRjfQM{%1-oShfQNdwb"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 1,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    },
+    {
+      "Name": "Thriller",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "4936f5b1a6f84f0b0aa2657368a5b364",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 2,
+      "PrimaryImageAspectRatio": 1,
+      "ImageTags": {
+        "Primary": "744a57601bc352a63dfd5d98e0779123"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "744a57601bc352a63dfd5d98e0779123": "eEE36VIVfQ8{g3}QbbfQOFRQ8{j]fQogIpGIRQfQRPxu0NbbfQoz$f"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 2,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    }
+  ],
+  "TotalRecordCount": 7,
+  "StartIndex": 0
+}

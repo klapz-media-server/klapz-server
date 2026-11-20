@@ -27,6 +27,7 @@ const TYPES: &[(u32, &str)] = &[
     (11, open_plex_api::playlist::PLAYLIST_TYPE),
     (12, open_plex_api::extra::EXTRA_TYPE),
     (13, open_plex_api::playback::PLAYBACK_TYPE),
+    (14, open_plex_api::playlist::PLAYLIST_ENTRY_TYPE),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

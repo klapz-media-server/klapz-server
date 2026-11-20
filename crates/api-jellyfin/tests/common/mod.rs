@@ -497,7 +497,7 @@ impl Harness {
             metadata: Arc::new(metadata()),
             playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
             play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-            playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+            playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::new(items())),
             collections: Arc::new(open_plex_core::testing::InMemoryCollections::default()),
             access: Arc::clone(&access) as Arc<dyn AccessRepository>,
             directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
@@ -602,6 +602,19 @@ impl Harness {
             uri,
             &[("authorization", client_header("device-1", Some(token)))],
             Some(body),
+        )
+        .await
+    }
+}
+
+impl Harness {
+    /// A request without a body, as Jellyfin's clients send most changes.
+    pub async fn bare(&self, method: Method, uri: &str, token: &str) -> Answer {
+        self.send(
+            method,
+            uri,
+            &[("authorization", client_header("device-1", Some(token)))],
+            None,
         )
         .await
     }

@@ -1,0 +1,110 @@
+{
+  "Items": [
+    {
+      "Name": "Amblin Entertainment",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "cdc4ab8b8df7162ca868ae3a899a95e3",
+      "ChannelId": null,
+      "Type": "Studio",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "Studio-Amblin Entertainment",
+        "ItemId": "cdc4ab8b8df7162ca868ae3a899a95e3"
+      },
+      "ImageTags": {
+        "Thumb": "3707d430bf19ed04993ca65b1d694841"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Thumb": {
+          "3707d430bf19ed04993ca65b1d694841": "WePGmdoyof%M-;?b~qM{Rjxuofxu~qWBM{t7fQt7%Mt7t7ayj[of"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown"
+    },
+    {
+      "Name": "Paramount Pictures",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "2672ed34a3f2b0bb6b4257c2ab9875b7",
+      "ChannelId": null,
+      "Type": "Studio",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "Studio-Paramount Pictures",
+        "ItemId": "2672ed34a3f2b0bb6b4257c2ab9875b7"
+      },
+      "ImageTags": {
+        "Thumb": "38b1d58ca53e48813c8ee4eb161b64de"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Thumb": {
+          "38b1d58ca53e48813c8ee4eb161b64de": "WVD[;N%1sloMRkbIIua$R*s:oMWC0gNIR-NHoLs:%1t6xZs.bFR+"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown"
+    },
+    {
+      "Name": "Rysher Entertainment",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "62b236e287551db66fadd2b2ca7d20a1",
+      "ChannelId": null,
+      "Type": "Studio",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "Studio-Rysher Entertainment",
+        "ItemId": "62b236e287551db66fadd2b2ca7d20a1"
+      },
+      "ImageTags": {
+        "Thumb": "e3cb2e3d22bf41e9f5397f1e07580651"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Thumb": {
+          "e3cb2e3d22bf41e9f5397f1e07580651": "WI9QmqxuD%M{D%j[?bt7IUM{Rjof4nRjxuj[%Mt700M{-;xut7ay"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown"
+    },
+    {
+      "Name": "Universal Pictures",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "e56aaac7ab0bb0f5f48371be0252bab4",
+      "ChannelId": null,
+      "Type": "Studio",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "Studio-Universal Pictures",
+        "ItemId": "e56aaac7ab0bb0f5f48371be0252bab4"
+      },
+      "ImageTags": {
+        "Thumb": "7122dbd4326aba69e4261cdf0954d270"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Thumb": {
+          "7122dbd4326aba69e4261cdf0954d270": "WE84oM%N9FROozRltSoyV@V[a$kB00Mx-:ozn+xtI9M{o$t7s+n,"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown"
+    }
+  ],
+  "TotalRecordCount": 4,
+  "StartIndex": 0
+}

@@ -1,0 +1,61 @@
+{
+  "Name": "A.J. Poulin",
+  "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+  "Id": "0b3d9451420b9a5f43d18cc1fe504913",
+  "Etag": "2a61f664ded9e9b60d15349aa8b1a430",
+  "DateCreated": "2026-11-20T08:33:16.7206554Z",
+  "CanDelete": false,
+  "CanDownload": false,
+  "SortName": "A.J. Poulin",
+  "ExternalUrls": [
+    {
+      "Name": "TMDB",
+      "Url": "https://www.themoviedb.org/person/1229454"
+    }
+  ],
+  "Path": "/var/lib/jellyfin/metadata/People/A/A.J. Poulin",
+  "EnableMediaSourceDisplay": true,
+  "ChannelId": null,
+  "Taglines": [],
+  "Genres": [],
+  "PlayAccess": "Full",
+  "RemoteTrailers": [],
+  "ProviderIds": {
+    "Tmdb": "1229454"
+  },
+  "ParentId": null,
+  "Type": "Person",
+  "People": [],
+  "Studios": [],
+  "GenreItems": [],
+  "LocalTrailerCount": 0,
+  "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false,
+    "Key": "Person-A.J. Poulin",
+    "ItemId": "0b3d9451420b9a5f43d18cc1fe504913"
+  },
+  "ChildCount": 2,
+  "SpecialFeatureCount": 0,
+  "DisplayPreferencesId": "b607178b0ac2f604a458d3d2363fdc83",
+  "Tags": [],
+  "ImageTags": {},
+  "BackdropImageTags": [],
+  "ImageBlurHashes": {},
+  "Chapters": [],
+  "LocationType": "FileSystem",
+  "MediaType": "Unknown",
+  "LockedFields": [],
+  "TrailerCount": 0,
+  "MovieCount": 0,
+  "SeriesCount": 2,
+  "ProgramCount": 0,
+  "EpisodeCount": 0,
+  "SongCount": 0,
+  "AlbumCount": 0,
+  "ArtistCount": 0,
+  "MusicVideoCount": 0,
+  "LockData": false
+}

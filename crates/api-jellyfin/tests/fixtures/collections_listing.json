@@ -1,0 +1,33 @@
+{
+  "Items": [
+    {
+      "Name": "open-plex capture",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "4416977fa75e04ceee8cdbe8b755b038",
+      "PremiereDate": "1997-05-31T22:00:00.0000000Z",
+      "OfficialRating": "FR-12",
+      "ChannelId": null,
+      "ProductionYear": 1997,
+      "IsFolder": true,
+      "Type": "BoxSet",
+      "UserData": {
+        "PlayedPercentage": 0,
+        "UnplayedItemCount": 2,
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "4416977f-a75e-04ce-ee8c-dbe8b755b038",
+        "ItemId": "4416977fa75e04ceee8cdbe8b755b038"
+      },
+      "DisplayOrder": "PremiereDate",
+      "ImageTags": {},
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {},
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown"
+    }
+  ],
+  "TotalRecordCount": 1,
+  "StartIndex": 0
+}
