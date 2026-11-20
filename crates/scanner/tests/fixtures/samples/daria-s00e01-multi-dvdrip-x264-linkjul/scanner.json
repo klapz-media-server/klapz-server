@@ -1,0 +1,115 @@
+{
+ "version": 1,
+ "command": "probe",
+ "file": {
+  "size": 38054343,
+  "modifiedAt": 1526945162,
+  "openSubtitlesHash": "bcb6f5147def9073"
+ },
+ "container": "matroska,webm",
+ "durationMs": 320149,
+ "durationUs": 320149000,
+ "bitrate": 950915,
+ "tracks": [
+  {
+   "index": 0,
+   "kind": "video",
+   "codec": "h264",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "profile": "High",
+   "language": "eng",
+   "declaredLanguage": "eng",
+   "handlerName": "VideoHandler",
+   "statistics": {
+    "durationUs": 320107000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "video": {
+    "width": 720,
+    "height": 480,
+    "codedWidth": 720,
+    "codedHeight": 480,
+    "sequenceHeader": {
+     "codedWidth": 720,
+     "codedHeight": 480,
+     "refFrames": 4,
+     "hasScalingMatrix": false
+    },
+    "level": 30,
+    "pixelFormat": "yuv420p",
+    "bitDepth": 8,
+    "chromaLocation": "left",
+    "frameRate": 29.97,
+    "averageFrameRate": "2997/100",
+    "realFrameRate": "2997/100",
+    "isAvc": true,
+    "nalLengthSize": 4,
+    "fieldOrder": "progressive",
+    "sampleAspectRatio": "1:1",
+    "displayAspectRatio": "3:2",
+    "closedCaptions": false
+   }
+  },
+  {
+   "index": 1,
+   "kind": "audio",
+   "codec": "aac",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "profile": "LC",
+   "language": "eng",
+   "declaredLanguage": "eng",
+   "title": "Anglais",
+   "handlerName": "SoundHandler",
+   "statistics": {
+    "durationUs": 320132000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "audio": {
+    "sampleRate": 48000,
+    "channels": 2,
+    "channelLayout": "stereo"
+   }
+  },
+  {
+   "index": 2,
+   "kind": "subtitle",
+   "codec": "hdmv_pgs_subtitle",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "language": "fre",
+   "declaredLanguage": "fre",
+   "title": "Français",
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   }
+  }
+ ],
+ "chapters": []
+}

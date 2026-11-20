@@ -66,21 +66,16 @@ pub fn three_letters(tag: &str) -> &str {
         .map_or(tag, |(_, three, _, _)| *three)
 }
 
-/// The English name of a three-letter code; a code it does not know, with its first letter
-/// raised, as the reference names `qaa` `Qaa`.
-pub fn english_name(code: &str) -> String {
+/// The name .NET gives a three-letter code, which the reference publishes as a track's
+/// `LocalizedLanguage`: none for a code it does not know (`qaa`, `fra,fra`).
+pub fn localized_name(code: &str) -> Option<&'static str> {
+    if code.eq_ignore_ascii_case("und") {
+        return Some("Undetermined");
+    }
     LANGUAGES
         .iter()
         .find(|(_, three, _, _)| code.eq_ignore_ascii_case(three))
-        .map_or_else(
-            || {
-                let mut letters = code.chars();
-                letters.next().map_or_else(String::new, |first| {
-                    first.to_uppercase().chain(letters).collect()
-                })
-            },
-            |(_, _, _, name)| (*name).to_owned(),
-        )
+        .map(|(_, _, _, name)| *name)
 }
 
 #[cfg(test)]
@@ -105,14 +100,22 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_tag_is_published_as_stored_and_named_capitalized() {
+    fn an_unknown_tag_is_published_as_stored() {
         assert_eq!(three_letters("qaa"), "qaa");
-        assert_eq!(english_name("qaa"), "Qaa");
+        assert_eq!(three_letters("fra,fra"), "fra,fra");
     }
 
     #[test]
-    fn labels_name_a_language_in_english() {
-        assert_eq!(english_name("fra"), "French");
-        assert_eq!(english_name("eng"), "English");
+    fn undetermined_is_named_and_an_unknown_code_is_not() {
+        assert_eq!(localized_name("und"), Some("Undetermined"));
+        assert_eq!(localized_name("fra"), Some("French"));
+        assert_eq!(localized_name("qaa"), None);
+        assert_eq!(localized_name("fra,fra"), None);
+    }
+
+    #[test]
+    fn a_language_is_named_in_english() {
+        assert_eq!(localized_name("eng"), Some("English"));
+        assert_eq!(localized_name("deu"), Some("German"));
     }
 }

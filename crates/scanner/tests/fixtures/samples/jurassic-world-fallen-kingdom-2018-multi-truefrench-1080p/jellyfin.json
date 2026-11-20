@@ -1,0 +1,271 @@
+{
+ "Library": "movies",
+ "Item": {
+  "Container": "mkv",
+  "RunTimeTicks": 76977030000,
+  "HasSubtitles": true,
+  "IsHD": true,
+  "Width": 1920,
+  "Height": 808,
+  "Chapters": [
+   {
+    "StartPositionTicks": 0,
+    "Name": "Chapitre 1"
+   },
+   {
+    "StartPositionTicks": 4332240000,
+    "Name": "Chapitre 2"
+   },
+   {
+    "StartPositionTicks": 7215540000,
+    "Name": "Chapitre 3"
+   },
+   {
+    "StartPositionTicks": 10377450000,
+    "Name": "Chapitre 4"
+   },
+   {
+    "StartPositionTicks": 12771930000,
+    "Name": "Chapitre 5"
+   },
+   {
+    "StartPositionTicks": 17298110000,
+    "Name": "Chapitre 6"
+   },
+   {
+    "StartPositionTicks": 21046860000,
+    "Name": "Chapitre 7"
+   },
+   {
+    "StartPositionTicks": 24515740000,
+    "Name": "Chapitre 8"
+   },
+   {
+    "StartPositionTicks": 27924980000,
+    "Name": "Chapitre 9"
+   },
+   {
+    "StartPositionTicks": 31249970000,
+    "Name": "Chapitre 10"
+   },
+   {
+    "StartPositionTicks": 36591970000,
+    "Name": "Chapitre 11"
+   },
+   {
+    "StartPositionTicks": 40102560000,
+    "Name": "Chapitre 12"
+   },
+   {
+    "StartPositionTicks": 42676380000,
+    "Name": "Chapitre 13"
+   },
+   {
+    "StartPositionTicks": 46410950000,
+    "Name": "Chapitre 14"
+   },
+   {
+    "StartPositionTicks": 52152100000,
+    "Name": "Chapitre 15"
+   },
+   {
+    "StartPositionTicks": 55814930000,
+    "Name": "Chapitre 16"
+   },
+   {
+    "StartPositionTicks": 61758780000,
+    "Name": "Chapitre 17"
+   },
+   {
+    "StartPositionTicks": 66015530000,
+    "Name": "Chapitre 18"
+   },
+   {
+    "StartPositionTicks": 68962230000,
+    "Name": "Chapitre 19"
+   },
+   {
+    "StartPositionTicks": 71179860000,
+    "Name": "Chapitre 20"
+   }
+  ]
+ },
+ "MediaSource": {
+  "Protocol": "File",
+  "Type": "Default",
+  "Container": "mkv",
+  "Size": 14877731064,
+  "Name": "Jurassic.World.Fallen.Kingdom.2018.MULTi.TRUEFRENCH.1080p.BluRay.DTS-HDHRA.x264-EXTREME",
+  "IsRemote": false,
+  "RunTimeTicks": 76977030000,
+  "ReadAtNativeFramerate": false,
+  "IgnoreDts": false,
+  "IgnoreIndex": false,
+  "GenPtsInput": false,
+  "SupportsTranscoding": true,
+  "SupportsDirectStream": true,
+  "SupportsDirectPlay": true,
+  "IsInfiniteStream": false,
+  "UseMostCompatibleTranscodingProfile": false,
+  "RequiresOpening": false,
+  "RequiresClosing": false,
+  "RequiresLooping": false,
+  "SupportsProbing": true,
+  "VideoType": "VideoFile",
+  "MediaStreams": [
+   {
+    "Codec": "dts",
+    "Language": "fra",
+    "TimeBase": "1/1000",
+    "Title": "VFF DTS-HDHRA 7.1",
+    "VideoRange": "Unknown",
+    "VideoRangeType": "Unknown",
+    "AudioSpatialFormat": "None",
+    "LocalizedDefault": "Default",
+    "LocalizedExternal": "External",
+    "LocalizedLanguage": "French",
+    "LocalizedOriginal": "Original",
+    "DisplayTitle": "VFF DTS-HDHRA 7.1 - French - DTS-HD HRA - Default",
+    "IsInterlaced": false,
+    "ChannelLayout": "7.1",
+    "BitRate": 2046000,
+    "Channels": 8,
+    "SampleRate": 48000,
+    "IsDefault": true,
+    "IsForced": false,
+    "IsHearingImpaired": false,
+    "IsOriginal": false,
+    "Profile": "DTS-HD HRA",
+    "Type": "Audio",
+    "Index": 0,
+    "IsExternal": false,
+    "IsTextSubtitleStream": false,
+    "SupportsExternalStream": false
+   },
+   {
+    "Codec": "subrip",
+    "Language": "fra",
+    "TimeBase": "1/1000",
+    "Title": "Forced",
+    "VideoRange": "Unknown",
+    "VideoRangeType": "Unknown",
+    "AudioSpatialFormat": "None",
+    "LocalizedUndefined": "Undefined",
+    "LocalizedDefault": "Default",
+    "LocalizedForced": "Forced",
+    "LocalizedExternal": "External",
+    "LocalizedHearingImpaired": "Hearing Impaired",
+    "LocalizedLanguage": "French",
+    "DisplayTitle": "Forced - French - Default - SUBRIP",
+    "IsInterlaced": false,
+    "IsDefault": true,
+    "IsForced": false,
+    "IsHearingImpaired": false,
+    "IsOriginal": false,
+    "Type": "Subtitle",
+    "Index": 1,
+    "Score": 112221,
+    "IsExternal": false,
+    "IsTextSubtitleStream": true,
+    "SupportsExternalStream": true
+   },
+   {
+    "Codec": "dts",
+    "Language": "eng",
+    "TimeBase": "1/1000",
+    "Title": "VO DTS-HDMA 7.1",
+    "VideoRange": "Unknown",
+    "VideoRangeType": "Unknown",
+    "AudioSpatialFormat": "DTSX",
+    "LocalizedDefault": "Default",
+    "LocalizedExternal": "External",
+    "LocalizedLanguage": "English",
+    "LocalizedOriginal": "Original",
+    "DisplayTitle": "VO DTS-HDMA 7.1 - English - DTS-HD MA + DTS:X",
+    "IsInterlaced": false,
+    "ChannelLayout": "7.1",
+    "BitRate": 4230911,
+    "BitDepth": 24,
+    "Channels": 8,
+    "SampleRate": 48000,
+    "IsDefault": false,
+    "IsForced": false,
+    "IsHearingImpaired": false,
+    "IsOriginal": false,
+    "Profile": "DTS-HD MA + DTS:X",
+    "Type": "Audio",
+    "Index": 2,
+    "IsExternal": false,
+    "IsTextSubtitleStream": false,
+    "SupportsExternalStream": false
+   },
+   {
+    "Codec": "h264",
+    "Language": "eng",
+    "TimeBase": "1/1000",
+    "VideoRange": "SDR",
+    "VideoRangeType": "SDR",
+    "AudioSpatialFormat": "None",
+    "DisplayTitle": "1080p H264 SDR",
+    "NalLengthSize": "4",
+    "IsInterlaced": false,
+    "IsAVC": true,
+    "BitRate": 9180632,
+    "BitDepth": 8,
+    "RefFrames": 1,
+    "IsDefault": true,
+    "IsForced": false,
+    "IsHearingImpaired": false,
+    "IsOriginal": false,
+    "Height": 808,
+    "Width": 1920,
+    "AverageFrameRate": 23.975986,
+    "RealFrameRate": 23.975986,
+    "ReferenceFrameRate": 23.975986,
+    "Profile": "High",
+    "Type": "Video",
+    "AspectRatio": "2.40:1",
+    "Index": 3,
+    "IsExternal": false,
+    "IsTextSubtitleStream": false,
+    "SupportsExternalStream": false,
+    "PixelFormat": "yuv420p",
+    "Level": 41,
+    "IsAnamorphic": false
+   },
+   {
+    "Codec": "subrip",
+    "Language": "fra",
+    "TimeBase": "1/1000",
+    "VideoRange": "Unknown",
+    "VideoRangeType": "Unknown",
+    "AudioSpatialFormat": "None",
+    "LocalizedUndefined": "Undefined",
+    "LocalizedDefault": "Default",
+    "LocalizedForced": "Forced",
+    "LocalizedExternal": "External",
+    "LocalizedHearingImpaired": "Hearing Impaired",
+    "LocalizedLanguage": "French",
+    "DisplayTitle": "French - SUBRIP",
+    "IsInterlaced": false,
+    "IsDefault": false,
+    "IsForced": false,
+    "IsHearingImpaired": false,
+    "IsOriginal": false,
+    "Type": "Subtitle",
+    "Index": 4,
+    "IsExternal": false,
+    "IsTextSubtitleStream": true,
+    "SupportsExternalStream": true
+   }
+  ],
+  "MediaAttachments": [],
+  "Formats": [],
+  "Bitrate": 15461995,
+  "RequiredHttpHeaders": {},
+  "TranscodingSubProtocol": "http",
+  "DefaultAudioStreamIndex": 0,
+  "DefaultSubtitleStreamIndex": 1,
+  "HasSegments": false
+ }
+}

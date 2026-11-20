@@ -138,9 +138,28 @@ fn player_formats(profile: &DeviceProfile) -> Vec<Value> {
         .collect()
 }
 
+/// The name a file played as it is goes by: the first of its container's names the device
+/// profile lists, as the reference names a Matroska file of `WebM`'s codecs `webm` to a browser.
+fn played_container(file: &crate::dto::File, profile: &DeviceProfile) -> Option<String> {
+    let names = file.format_names()?;
+    names
+        .split(',')
+        .find(|name| {
+            profile.direct_play_profiles.iter().any(|format| {
+                format.container.as_deref().is_some_and(|containers| {
+                    containers
+                        .split(',')
+                        .any(|listed| listed.trim().eq_ignore_ascii_case(name))
+                })
+            })
+        })
+        .map(ToOwned::to_owned)
+}
+
 fn item_query() -> String {
     format!(
-        r"query($id: ID!, $people: Boolean!) {{ node(id: $id) {{ ...JellyfinItem }} }}
+        r"query($id: ID!, $people: Boolean!,
+                $chapters: Boolean!) {{ node(id: $id) {{ ...JellyfinItem }} }}
         {ITEM_FIELDS}"
     )
 }
@@ -168,7 +187,7 @@ async fn playable_item(state: &JellyfinState, item: &str) -> Result<Item, Jellyf
     let data: NodeData<Item> = gql::query(
         &state.schema,
         &item_query(),
-        json!({ "id": global, "people": false }),
+        json!({ "id": global, "people": false, "chapters": false }),
     )
     .await?;
     data.node.ok_or(JellyfinError::NotFound)
@@ -189,6 +208,36 @@ fn new_play_session() -> String {
     token
 }
 
+impl PlaybackInfoRequest {
+    /// The request's body, completed by its query string.
+    fn read(body: &[u8], query: &Query) -> Result<Self, JellyfinError> {
+        let mut request: Self = if body.is_empty() {
+            Self::default()
+        } else {
+            serde_json::from_slice(body)
+                .map_err(|_| JellyfinError::BadRequest("a playback request is not JSON"))?
+        };
+        let number = |name: &str| query.get(name).and_then(|value| value.parse::<i64>().ok());
+        let index = |name: &str| number(name).and_then(|value| i32::try_from(value).ok());
+        request.media_source_id = request
+            .media_source_id
+            .or_else(|| query.get("mediaSourceId").map(str::to_owned));
+        request.audio_stream_index = request
+            .audio_stream_index
+            .or_else(|| index("audioStreamIndex"));
+        request.subtitle_stream_index = request
+            .subtitle_stream_index
+            .or_else(|| index("subtitleStreamIndex"));
+        request.max_streaming_bitrate = request
+            .max_streaming_bitrate
+            .or_else(|| number("maxStreamingBitrate"));
+        request.start_time_ticks = request
+            .start_time_ticks
+            .or_else(|| number("startTimeTicks"));
+        Ok(request)
+    }
+}
+
 async fn playback_info(
     State(state): State<JellyfinState>,
     Path(item): Path<String>,
@@ -200,29 +249,7 @@ async fn playback_info(
     gql::viewer(&state.schema)
         .await?
         .require_self(query.get("userId"))?;
-    let mut request: PlaybackInfoRequest = if body.is_empty() {
-        PlaybackInfoRequest::default()
-    } else {
-        serde_json::from_slice(&body)
-            .map_err(|_| JellyfinError::BadRequest("a playback request is not JSON"))?
-    };
-    let number = |name: &str| query.get(name).and_then(|value| value.parse::<i64>().ok());
-    let index = |name: &str| number(name).and_then(|value| i32::try_from(value).ok());
-    request.media_source_id = request
-        .media_source_id
-        .or_else(|| query.get("mediaSourceId").map(str::to_owned));
-    request.audio_stream_index = request
-        .audio_stream_index
-        .or_else(|| index("audioStreamIndex"));
-    request.subtitle_stream_index = request
-        .subtitle_stream_index
-        .or_else(|| index("subtitleStreamIndex"));
-    request.max_streaming_bitrate = request
-        .max_streaming_bitrate
-        .or_else(|| number("maxStreamingBitrate"));
-    request.start_time_ticks = request
-        .start_time_ticks
-        .or_else(|| number("startTimeTicks"));
+    let mut request = PlaybackInfoRequest::read(&body, &query)?;
 
     let item = playable_item(&state, &item).await?;
     let profile = request.device_profile.take().unwrap_or_default();
@@ -270,6 +297,11 @@ async fn playback_info(
             continue;
         };
         source["SupportsDirectPlay"] = json!(direct_play);
+        if direct_play {
+            if let Some(container) = played_container(file, &profile) {
+                source["Container"] = json!(container);
+            }
+        }
         // A client that cannot open the file's path — any browser — reads a file it plays as
         // it is from `/videos/{id}/stream?static=true`, which Jellyfin calls direct
         // streaming. A copy of the tracks into another container is one of our conversions,
@@ -711,6 +743,34 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+
+    #[test]
+    fn a_file_played_as_it_is_goes_by_the_name_the_profile_lists() {
+        let track = |kind: &str, codec: &str| {
+            json!({ "id": "t", "kind": kind, "position": 0, "codec": codec, "isDefault": false,
+                    "isForced": false, "isExternal": false,
+                    "traits": { "isHearingImpaired": false, "isOriginal": false } })
+        };
+        let noob: crate::dto::File = serde_json::from_value(json!({
+            "id": "f", "path": "/media/Noob.mkv", "filename": "Noob.mkv",
+            "stated": { "formatName": "matroska,webm" },
+            "streams": [track("VIDEO", "vp9"), track("AUDIO", "vorbis")],
+        }))
+        .unwrap();
+        let browser: DeviceProfile = serde_json::from_value(json!({
+            "DirectPlayProfiles": [
+                { "Container": "webm", "Type": "Video", "VideoCodec": "vp9" },
+                { "Container": "mp4,m4v", "Type": "Video" },
+            ],
+        }))
+        .unwrap();
+        assert_eq!(played_container(&noob, &browser).as_deref(), Some("webm"));
+        let mkv_player: DeviceProfile = serde_json::from_value(json!({
+            "DirectPlayProfiles": [{ "Container": "mkv,webm", "Type": "Video" }],
+        }))
+        .unwrap();
+        assert_eq!(played_container(&noob, &mkv_player).as_deref(), Some("mkv"));
+    }
 
     #[test]
     fn a_device_profile_gives_its_video_formats_in_our_codec_names() {

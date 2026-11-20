@@ -25,7 +25,8 @@ with the repo owner happens in French.
 | `docs/jellyfin/openapi.json` | The reference Jellyfin's (12.4.0) own OpenAPI document, 364 operations. Refreshed by `python tools/gen_jellyfin_endpoints.py --fetch`. |
 | `docs/jellyfin/ENDPOINTS.md` | Tracker of the Jellyfin operations served below `/jellyfin`. **Generated**: `python tools/gen_jellyfin_endpoints.py`, from the routes `crates/api-jellyfin` declares. |
 | `docs/jellyfin/spec-gaps.md` | What the Jellyfin surface measured on the reference, and where it knowingly differs. Hand-verified. |
-| `tools/capture_jellyfin.py` | Captures the reference Jellyfin (`JELLYFIN_USER`, `JELLYFIN_PASSWORD`), or our own surface with `--out`; `--fixtures` writes the scrubbed fixtures of `crates/api-jellyfin/tests`. `tools/compare_jellyfin.py` sets the two side by side, track by track. |
+| `tools/capture_jellyfin.py` | Captures the reference Jellyfin (`JELLYFIN_USER`, `JELLYFIN_PASSWORD`), or our own surface with `--out`; `--all-items` every file's lookups and `PlaybackInfo` and every series' seasons and episodes, `--fixtures` the scrubbed fixtures of `crates/api-jellyfin/tests`. `tools/compare_jellyfin.py` sets the two side by side file by file, field by field, every difference either explained (its reason in `docs/jellyfin/spec-gaps.md`) or reported. |
+| `tools/capture_jellyfin_samples.py` | Gives each scan sample our scanner's report and the reference Jellyfin's answer about its file: the fixtures `crates/server/tests/jellyfin_samples.rs` replays through storage, the official API and the binding. |
 | `.claude/skills/rust/` | The project's Rust conventions. Load before writing Rust. |
 
 Three finds inside `files/` worth knowing about:
@@ -978,6 +979,13 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   reports, played marks. Jellyfin Web signs in, browses and plays directly and through a
   conversion. Not yet: artwork, favorites, subtitles delivered to the client, remuxing,
   people and genre pages, search hints, the other clients tried (`docs/jellyfin/`).
+  On the 35 test files, every field a file determines is the reference's — tracks, media sources,
+  chapters, containers, durations, rates, filters — from what ffprobe states as printed, which the
+  scan now keeps beside Plex's reading (`MediaStream.stated`, `MediaFile.stated`,
+  `MediaFile.sideStreams`, `Chapter.stated`, migration `m0040`; Matroska's languages read by the
+  scanner itself), and what remains differs for reasons measured in `docs/jellyfin/spec-gaps.md`
+  (*Measured on the 35 files*): metadata and artwork from a provider, the scan's grouping and
+  naming rules, what the reference's prober decodes.
 
 ## Reference server
 

@@ -24,7 +24,8 @@ use open_plex_core::access::{
 };
 use open_plex_core::metadata::{
     AudioAnalysis, FileLayout, ItemKind, MediaFile, MediaStream, MediaVersion, MetadataItem,
-    StreamKind, TrackTraits, VideoAnalysis,
+    SidePicture, SideStream, SideStreamKind, StatedFile, StatedTrack, StreamKind, TrackTraits,
+    VideoAnalysis,
 };
 use open_plex_core::testing::{InMemoryAccess, InMemoryLibrary, InMemoryMetadata, StubStreams};
 use open_plex_core::{
@@ -146,6 +147,25 @@ fn version(id: i64, item: i64, width: i32, height: i32) -> MediaVersion {
     }
 }
 
+/// What ffprobe states of a track, as the scan keeps it.
+fn stated(language: Option<&str>, time_base: &str, codec_tag: &str) -> StatedTrack {
+    StatedTrack {
+        language: language.map(ToOwned::to_owned),
+        time_base: Some(time_base.to_owned()),
+        codec_tag: Some(codec_tag.to_owned()),
+        ..StatedTrack::default()
+    }
+}
+
+/// What ffprobe states of a file, as the scan keeps it.
+fn stated_file(format_name: &str, duration_us: i64, bitrate: i64) -> StatedFile {
+    StatedFile {
+        format_name: Some(format_name.to_owned()),
+        duration_us: Some(duration_us),
+        bitrate: Some(bitrate),
+    }
+}
+
 fn file(id: i64, version: i64, path: &str, size: i64) -> MediaFile {
     MediaFile {
         id: PartId::new(id),
@@ -158,7 +178,7 @@ fn file(id: i64, version: i64, path: &str, size: i64) -> MediaFile {
         stream_url: None,
         content_hash: None,
         open_subtitles_hash: None,
-        stated: open_plex_core::metadata::StatedFile::default(),
+        stated: StatedFile::default(),
     }
 }
 
@@ -184,11 +204,12 @@ fn track(id: i64, file: i64, kind: StreamKind, position: i32, codec: &str) -> Me
         audio: None,
         subtitle: None,
         required_bandwidths: Vec::new(),
-        stated: open_plex_core::metadata::StatedTrack::default(),
+        stated: StatedTrack::default(),
     }
 }
 
-/// `doodlebug` as our scan stores it: 720×480 H.264 and an English Opus track.
+/// `doodlebug` as our scan stores it: 720×480 H.264 and an English Opus track, and what
+/// ffprobe states of them.
 fn doodlebug_tracks() -> Vec<MediaStream> {
     let mut video = track(
         DOODLEBUG_VIDEO,
@@ -201,6 +222,10 @@ fn doodlebug_tracks() -> Vec<MediaStream> {
     video.profile = Some("main".to_owned());
     video.bit_depth = Some(8);
     video.is_default = true;
+    video.stated = StatedTrack {
+        handler_name: Some("VideoHandler".to_owned()),
+        ..stated(Some("und"), "1/1000", "[0][0][0][0]")
+    };
     video.video = Some(Box::new(VideoAnalysis {
         width: Some(720),
         height: Some(480),
@@ -209,6 +234,14 @@ fn doodlebug_tracks() -> Vec<MediaStream> {
         ref_frames: Some(1),
         anamorphic: Some(false),
         chroma_subsampling: Some("4:2:0".to_owned()),
+        average_frame_rate: Some("30000/1001".to_owned()),
+        real_frame_rate: Some("30000/1001".to_owned()),
+        display_aspect_ratio: Some("3:2".to_owned()),
+        sample_aspect_ratio: Some("1:1".to_owned()),
+        cropped: Some(false),
+        pixel_format: Some("yuv420p".to_owned()),
+        is_avc: Some(true),
+        nal_length_size: Some(4),
         ..VideoAnalysis::default()
     }));
     let mut audio = track(
@@ -222,6 +255,7 @@ fn doodlebug_tracks() -> Vec<MediaStream> {
     audio.channels = Some(2);
     audio.bitrate = Some(128);
     audio.is_default = true;
+    audio.stated = stated(Some("eng"), "1/1000", "[0][0][0][0]");
     audio.audio = Some(AudioAnalysis {
         sampling_rate: Some(48_000),
         channel_layout: Some("stereo".to_owned()),
@@ -236,47 +270,94 @@ fn metadata() -> InMemoryMetadata {
     episode_video.bitrate = Some(1_376_000);
     episode_video.bit_depth = Some(8);
     episode_video.profile = Some("main".to_owned());
+    episode_video.is_default = true;
+    episode_video.stated = StatedTrack {
+        bitrate: Some(1_510_916),
+        ..stated(Some("und"), "1/30000", "avc1")
+    };
     episode_video.video = Some(Box::new(VideoAnalysis {
         width: Some(720),
         height: Some(404),
-        frame_rate: Some(23.976),
+        frame_rate: Some(29.97),
         level: Some(30),
         ref_frames: Some(1),
         chroma_subsampling: Some("4:2:0".to_owned()),
+        average_frame_rate: Some("30000/1001".to_owned()),
+        real_frame_rate: Some("30000/1001".to_owned()),
+        cropped: Some(false),
+        pixel_format: Some("yuv420p".to_owned()),
+        is_avc: Some(true),
+        nal_length_size: Some(4),
         ..VideoAnalysis::default()
     }));
     let mut episode_audio = track(3102, EPISODE_FILE, StreamKind::Audio, 1, "aac");
-    episode_audio.language = Some("fr".to_owned());
-    episode_audio.channels = Some(2);
+    episode_audio.channels = Some(6);
     episode_audio.is_default = true;
+    episode_audio.profile = Some("lc".to_owned());
+    episode_audio.stated = StatedTrack {
+        name: Some("aac 5.1".to_owned()),
+        bitrate: Some(448_006),
+        ..stated(Some("und"), "1/48000", "mp4a")
+    };
     episode_audio.audio = Some(AudioAnalysis {
         sampling_rate: Some(48_000),
-        channel_layout: Some("stereo".to_owned()),
+        channel_layout: Some("5.1".to_owned()),
         loudness: None,
     });
+    // Its cover, a picture stored as a third video track.
+    let cover = SideStream {
+        file_id: PartId::new(EPISODE_FILE),
+        kind: SideStreamKind::Cover,
+        position: 2,
+        codec: Some("bmp".to_owned()),
+        codec_tag: Some("[0][0][0][0]".to_owned()),
+        profile: None,
+        language: None,
+        time_base: Some("1/90000".to_owned()),
+        mime_type: None,
+        filename: None,
+        picture: Some(SidePicture {
+            width: Some(640),
+            height: Some(360),
+            pixel_format: Some("bgra".to_owned()),
+            real_frame_rate: Some("90000/1".to_owned()),
+            average_frame_rate: Some("0/0".to_owned()),
+            ..SidePicture::default()
+        }),
+        is_default: false,
+        is_forced: false,
+    };
     let mut tracks = doodlebug_tracks();
     tracks.extend([episode_video, episode_audio]);
-    InMemoryMetadata::new(items()).with_media(
-        vec![
-            version(1001, DOODLEBUG, 720, 480),
-            version(1003, EPISODE, 720, 404),
-        ],
-        vec![
-            file(
-                DOODLEBUG_FILE,
-                1001,
-                "/media/Movies/VO/doodlebug.1997.VO.H264.mkv",
-                14_876_546,
-            ),
-            file(
-                EPISODE_FILE,
-                1003,
-                "/media/TVShows/VF/90210/S01E21.mp4",
-                1_000,
-            ),
-        ],
-        tracks,
-    )
+    InMemoryMetadata::new(items())
+        .with_media(
+            vec![
+                version(1001, DOODLEBUG, 720, 480),
+                version(1003, EPISODE, 720, 404),
+            ],
+            vec![
+                MediaFile {
+                    stated: stated_file("matroska,webm", 178_301_000, 667_480),
+                    ..file(
+                        DOODLEBUG_FILE,
+                        1001,
+                        "/media/Movies/VO/doodlebug.1997.VO.H264.mkv",
+                        14_876_546,
+                    )
+                },
+                MediaFile {
+                    stated: stated_file("mov,mp4,m4a,3gp,3g2,mj2", 287_754_134, 1_986_929),
+                    ..file(
+                        EPISODE_FILE,
+                        1003,
+                        "/media/TVShows/VF/90210/S01E21.mp4",
+                        71_468_407,
+                    )
+                },
+            ],
+            tracks,
+        )
+        .with_side_streams(vec![cover])
 }
 
 pub struct Harness {

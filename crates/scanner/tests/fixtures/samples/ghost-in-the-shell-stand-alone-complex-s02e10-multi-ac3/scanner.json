@@ -1,0 +1,460 @@
+{
+ "version": 1,
+ "command": "probe",
+ "file": {
+  "size": 1155994464,
+  "modifiedAt": 1780412912,
+  "openSubtitlesHash": "f06e3a4815be9beb"
+ },
+ "container": "matroska,webm",
+ "durationMs": 1503236,
+ "durationUs": 1503236000,
+ "bitrate": 6152031,
+ "tracks": [
+  {
+   "index": 0,
+   "kind": "video",
+   "codec": "hevc",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "profile": "Main 10",
+   "language": "ja",
+   "declaredLanguage": "ja",
+   "taggedBitrate": 2566980,
+   "statistics": {
+    "bitrate": 2566980,
+    "bytes": 482338819,
+    "durationUs": 1503210000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "video": {
+    "width": 1920,
+    "height": 1040,
+    "codedWidth": 1920,
+    "codedHeight": 1040,
+    "level": 120,
+    "pixelFormat": "yuv420p10le",
+    "bitDepth": 10,
+    "colorRange": "tv",
+    "chromaLocation": "left",
+    "frameRate": 23.976023976023978,
+    "averageFrameRate": "24000/1001",
+    "realFrameRate": "24000/1001",
+    "sampleAspectRatio": "1:1",
+    "displayAspectRatio": "24:13",
+    "closedCaptions": false
+   }
+  },
+  {
+   "index": 1,
+   "kind": "audio",
+   "codec": "ac3",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "language": "fr",
+   "declaredLanguage": "fr",
+   "bitrate": 448000,
+   "taggedBitrate": 448000,
+   "statistics": {
+    "bitrate": 448000,
+    "bytes": 84068096,
+    "durationUs": 1501216000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "audio": {
+    "sampleRate": 48000,
+    "channels": 6,
+    "channelLayout": "5.1(side)"
+   }
+  },
+  {
+   "index": 2,
+   "kind": "audio",
+   "codec": "dts",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "profile": "DTS",
+   "language": "fr",
+   "declaredLanguage": "fr",
+   "title": "FR DTS 5.1",
+   "bitrate": 1536000,
+   "taggedBitrate": 1509000,
+   "statistics": {
+    "bitrate": 1509000,
+    "bytes": 283166868,
+    "durationUs": 1501216000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "audio": {
+    "sampleRate": 48000,
+    "channels": 6,
+    "channelLayout": "5.1(side)"
+   }
+  },
+  {
+   "index": 3,
+   "kind": "audio",
+   "codec": "truehd",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "language": "ja",
+   "declaredLanguage": "ja",
+   "title": "JAP TrueHD 5.1",
+   "taggedBitrate": 1550686,
+   "statistics": {
+    "bitrate": 1550686,
+    "bytes": 291380926,
+    "durationUs": 1503236000
+   },
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "audio": {
+    "sampleRate": 48000,
+    "channels": 6,
+    "channelLayout": "5.1(side)",
+    "bitDepth": 24
+   }
+  },
+  {
+   "index": 4,
+   "kind": "subtitle",
+   "codec": "ass",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "language": "fr",
+   "declaredLanguage": "fr",
+   "title": "FR Forced ASS",
+   "taggedBitrate": 15,
+   "statistics": {
+    "bitrate": 15,
+    "bytes": 2917,
+    "durationUs": 1469470000
+   },
+   "disposition": {
+    "default": false,
+    "forced": true,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   }
+  },
+  {
+   "index": 5,
+   "kind": "subtitle",
+   "codec": "ass",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "language": "fr",
+   "declaredLanguage": "fr",
+   "title": "FR Complet ASS",
+   "taggedBitrate": 139,
+   "statistics": {
+    "bitrate": 139,
+    "bytes": 25994,
+    "durationUs": 1489780000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   }
+  },
+  {
+   "index": 6,
+   "kind": "attachment",
+   "codec": "ttf",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/90000",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "attachment": {
+    "mimeType": "application/x-truetype-font",
+    "filename": "OpenSans-BoldItalic.ttf"
+   }
+  },
+  {
+   "index": 7,
+   "kind": "attachment",
+   "codec": "ttf",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/90000",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "attachment": {
+    "mimeType": "application/x-truetype-font",
+    "filename": "OpenSans-ExtraBold.ttf"
+   }
+  },
+  {
+   "index": 8,
+   "kind": "attachment",
+   "codec": "ttf",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/90000",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "attachment": {
+    "mimeType": "application/x-truetype-font",
+    "filename": "OpenSans-ExtraBoldItalic.ttf"
+   }
+  },
+  {
+   "index": 9,
+   "kind": "attachment",
+   "codec": "ttf",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/90000",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "attachment": {
+    "mimeType": "application/x-truetype-font",
+    "filename": "OpenSans-Italic.ttf"
+   }
+  },
+  {
+   "index": 10,
+   "kind": "attachment",
+   "codec": "ttf",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/90000",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "attachment": {
+    "mimeType": "application/x-truetype-font",
+    "filename": "OpenSans-Light.ttf"
+   }
+  },
+  {
+   "index": 11,
+   "kind": "attachment",
+   "codec": "ttf",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/90000",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "attachment": {
+    "mimeType": "application/x-truetype-font",
+    "filename": "OpenSans-LightItalic.ttf"
+   }
+  },
+  {
+   "index": 12,
+   "kind": "attachment",
+   "codec": "ttf",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/90000",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "attachment": {
+    "mimeType": "application/x-truetype-font",
+    "filename": "OpenSans-Regular.ttf"
+   }
+  },
+  {
+   "index": 13,
+   "kind": "attachment",
+   "codec": "ttf",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/90000",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "attachment": {
+    "mimeType": "application/x-truetype-font",
+    "filename": "OpenSans-Semibold.ttf"
+   }
+  },
+  {
+   "index": 14,
+   "kind": "attachment",
+   "codec": "ttf",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/90000",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "attachment": {
+    "mimeType": "application/x-truetype-font",
+    "filename": "OpenSans-SemiboldItalic.ttf"
+   }
+  },
+  {
+   "index": 15,
+   "kind": "attachment",
+   "codec": "ttf",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/90000",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "attachment": {
+    "mimeType": "application/x-truetype-font",
+    "filename": "OpenSans-Bold.ttf"
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "index": 1,
+   "startMs": 0,
+   "endMs": 91925,
+   "startUs": 0,
+   "declaredTitle": "Chapter 01"
+  },
+  {
+   "index": 2,
+   "startMs": 91925,
+   "endMs": 733700,
+   "startUs": 91925167,
+   "declaredTitle": "Chapter 02"
+  },
+  {
+   "index": 3,
+   "startMs": 733700,
+   "endMs": 1382110,
+   "startUs": 733699633,
+   "declaredTitle": "Chapter 03"
+  },
+  {
+   "index": 4,
+   "startMs": 1382110,
+   "endMs": 1472200,
+   "startUs": 1382114067,
+   "declaredTitle": "Chapter 04"
+  },
+  {
+   "index": 5,
+   "startMs": 1472200,
+   "endMs": 1502970,
+   "startUs": 1472204067,
+   "declaredTitle": "Chapter 05"
+  },
+  {
+   "index": 6,
+   "startMs": 1502970,
+   "endMs": 1503240,
+   "startUs": 1502968133,
+   "declaredTitle": "Chapter 06"
+  }
+ ]
+}

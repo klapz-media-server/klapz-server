@@ -18,6 +18,7 @@
 pub mod auth;
 mod dto;
 mod error;
+mod filters;
 mod gql;
 pub mod id;
 mod items;
@@ -130,6 +131,7 @@ pub fn router(state: JellyfinState) -> Router {
         .merge(users::router())
         .merge(views::router())
         .merge(items::router())
+        .merge(filters::router())
         .merge(shows::router())
         .merge(playback::router())
         .fallback(not_found)

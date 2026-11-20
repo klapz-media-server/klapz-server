@@ -101,7 +101,8 @@ struct Children {
 fn library_page_query() -> String {
     format!(
         r"query($id: ID!, $filter: ItemFilterInput, $order: ItemOrder, $direction: SortDirection,
-                $offset: Int, $first: Int, $people: Boolean!) {{
+                $offset: Int, $first: Int, $people: Boolean!,
+                $chapters: Boolean!) {{
             node(id: $id) {{ ... on Library {{
                 stats(filter: $filter) {{ itemCount }}
                 items(filter: $filter, orderBy: $order, direction: $direction, offset: $offset,
@@ -114,7 +115,8 @@ fn library_page_query() -> String {
 
 fn children_query() -> String {
     format!(
-        r"query($id: ID!, $people: Boolean!) {{
+        r"query($id: ID!, $people: Boolean!,
+                $chapters: Boolean!) {{
             node(id: $id) {{
                 ... on Show {{ seasons(first: {MAX_PAGE}) {{ nodes {{ ...JellyfinItem }} }} }}
                 ... on Season {{ episodes(first: {MAX_PAGE}) {{ nodes {{ ...JellyfinItem }} }} }}
@@ -126,7 +128,8 @@ fn children_query() -> String {
 
 fn items_query() -> String {
     format!(
-        r"query($ids: [ID!]!, $people: Boolean!) {{
+        r"query($ids: [ID!]!, $people: Boolean!,
+                $chapters: Boolean!) {{
             nodes(ids: $ids) {{ ...JellyfinItem }}
         }}
         {ITEM_FIELDS}"
@@ -135,7 +138,8 @@ fn items_query() -> String {
 
 fn search_query() -> String {
     format!(
-        r"query($query: String!, $kinds: [ItemType!], $first: Int, $people: Boolean!) {{
+        r"query($query: String!, $kinds: [ItemType!], $first: Int, $people: Boolean!,
+                $chapters: Boolean!) {{
             search(query: $query, kinds: $kinds, first: $first) {{ nodes {{ ...JellyfinItem }} }}
         }}
         {ITEM_FIELDS}"
@@ -159,6 +163,7 @@ async fn library_page(
             "offset": listing.offset,
             "first": listing.first,
             "people": fields.wants_people(),
+            "chapters": fields.has("Chapters"),
         }),
     )
     .await?;
@@ -175,7 +180,8 @@ async fn children(
     let data: NodeData<Children> = gql::query(
         &state.schema,
         &children_query(),
-        json!({ "id": parent, "people": fields.wants_people() }),
+        json!({ "id": parent, "people": fields.wants_people(),
+            "chapters": fields.has("Chapters") }),
     )
     .await?;
     let children = data.node.ok_or(JellyfinError::NotFound)?;
@@ -194,7 +200,8 @@ pub async fn items_by_id(
     let data: NodesData<Item> = gql::query(
         &state.schema,
         &items_query(),
-        json!({ "ids": ids, "people": fields.wants_people() }),
+        json!({ "ids": ids, "people": fields.wants_people(),
+            "chapters": fields.has("Chapters") }),
     )
     .await?;
     Ok(data.nodes.into_iter().flatten().collect())
@@ -263,6 +270,7 @@ async fn search(
             "kinds": listing.kinds,
             "first": listing.first,
             "people": fields.wants_people(),
+            "chapters": fields.has("Chapters"),
         }),
     )
     .await?;
@@ -477,7 +485,8 @@ async fn latest_items(
         kinds.push(("SHOW", None));
     }
     let latest_query = format!(
-        r"query($kind: LibraryKind!, $library: ID, $first: Int, $people: Boolean!) {{
+        r"query($kind: LibraryKind!, $library: ID, $first: Int, $people: Boolean!,
+                $chapters: Boolean!) {{
             recentlyAdded(kind: $kind, library: $library, first: $first) {{
                 nodes {{ ...JellyfinItem }}
             }}
@@ -494,6 +503,7 @@ async fn latest_items(
                 "library": library,
                 "first": limit,
                 "people": fields.wants_people(),
+            "chapters": fields.has("Chapters"),
             }),
         )
         .await?;
@@ -543,7 +553,8 @@ pub async fn continue_watching(
     fields: &Fields,
 ) -> Result<Vec<(Item, String)>, JellyfinError> {
     let continue_query = format!(
-        r"query($library: ID, $people: Boolean!) {{
+        r"query($library: ID, $people: Boolean!,
+                $chapters: Boolean!) {{
             continueWatching(library: $library, first: {MAX_PAGE}) {{
                 edges {{ reason node {{ ...JellyfinItem }} }}
             }}
@@ -553,7 +564,8 @@ pub async fn continue_watching(
     let data: ContinueData = gql::query(
         &state.schema,
         &continue_query,
-        json!({ "library": library, "people": fields.wants_people() }),
+        json!({ "library": library, "people": fields.wants_people(),
+            "chapters": fields.has("Chapters") }),
     )
     .await?;
     Ok(data
@@ -628,7 +640,8 @@ async fn similar(
     let fields = fields(&query);
     let limit = query.count("limit")?.unwrap_or(12).min(MAX_PAGE);
     let similar_query = format!(
-        r"query($id: ID!, $first: Int, $people: Boolean!) {{
+        r"query($id: ID!, $first: Int, $people: Boolean!,
+                $chapters: Boolean!) {{
             node(id: $id) {{
                 ... on Movie {{ similar(first: $first) {{ nodes {{ ...JellyfinItem }} }} }}
                 ... on Show {{ similar(first: $first) {{ nodes {{ ...JellyfinItem }} }} }}
@@ -639,7 +652,8 @@ async fn similar(
     let data: NodeData<Similar> = gql::query(
         &state.schema,
         &similar_query,
-        json!({ "id": global, "first": limit, "people": fields.wants_people() }),
+        json!({ "id": global, "first": limit, "people": fields.wants_people(),
+            "chapters": fields.has("Chapters") }),
     )
     .await?;
     let items = data

@@ -8,8 +8,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `served` | 54 | 14.8 % |
-| `todo` | 310 | 85.2 % |
+| `served` | 56 | 15.4 % |
+| `todo` | 308 | 84.6 % |
 
 ## By domain
 
@@ -25,7 +25,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | Device | 5 | 0 |
 | DisplayPreference | 2 | 2 |
 | Environment | 5 | 0 |
-| Filter | 2 | 0 |
+| Filter | 2 | 2 |
 | Genre | 2 | 0 |
 | Image | 37 | 5 |
 | InstantMix | 7 | 0 |
@@ -165,8 +165,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Method | Path | Status | Notes |
 | --- | --- | --- | --- |
-| GET | `/Items/Filters` | `todo` |  |
-| GET | `/Items/Filters2` | `todo` |  |
+| GET | `/Items/Filters` | `served` | Below a library or across the caller's; no tags (keywords are a provider's). |
+| GET | `/Items/Filters2` | `served` | Languages as tracks state them; Live TV flags answer 501. |
 
 ## Genre
 

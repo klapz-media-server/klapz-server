@@ -4,8 +4,8 @@ The Jellyfin surface answers as the reference Jellyfin (12.4.0) does, measured o
 holding the same 35 files as an open-plex library (`Z:\samples\Movies` and `Z:\samples\TVShows`).
 Captures come from `tools/capture_jellyfin.py`, which also writes the scrubbed fixtures of
 `crates/api-jellyfin/tests/fixtures`; `tools/compare_jellyfin.py` sets our answers against the
-reference's, capture by capture and track by track. The operations served are tracked in
-`ENDPOINTS.md`.
+reference's file by file and field by field (below, *Measured on the 35 files*). The operations
+served are tracked in `ENDPOINTS.md`.
 
 ## Where the surface lives, and who reaches it
 
@@ -79,34 +79,126 @@ first file's id.
 - **Dates** are written as .NET writes them (`2018-06-06T00:00:00.0000000Z`). A release date is its
   day's midnight UTC; the reference stores the local midnight of its own time zone, so its dates
   read a day early in UTC (`2018-06-05T22:00:00Z` for a server in Paris).
-- **The series library's grouping comes from the scan.** On the reference's test files, the scan
-  takes the folders below the root (`Multi`, `VF`, `VO`) for series names, where Jellyfin finds the
-  series one level further down. A library rooted at each of those folders reads as Jellyfin's.
+- **Grouping comes from the scan, which follows Plex's measured naming rules.** The reference's
+  series library has three roots, `TVShows\Multi`, `TVShows\VF` and `TVShows\VO`
+  (`/Library/VirtualFolders`), and its film library one, `Movies`; ours are made alike
+  (`library add --kind show --language en-US --title Séries …\Multi …\VF …\VO`; the
+  reference's series library names no metadata language, which its server reads as English).
+  What still differs is the rules', and is not bent to Jellyfin's:
+  - a folder with no media in it is a series on the reference (ten of them here), and nothing
+    in our scan;
+  - a series found under two roots (`Daria`, `Steven Universe`, `The Simpsons`) is one series
+    here, two there;
+  - a film alone in its folder is named after the folder (`doodlebug` is `VO`, `Le mal aimé`
+    `VF`), and a date in a name is read as the year (`Peur primale … (Arte - 13-09-2021)` is
+    2021), as Plex names them; the reference names by the file;
+  - the reference keeps the folders as items: a film's `ParentId` is its folder, and a season with
+    a folder of its own (`Saison 01`) is a `FileSystem` item, `Virtual` here.
+- **Names.** An episode or a film with no title is named after its file, as the reference names
+  what no provider matched; a season without one `Season n`, season 0 `Specials`. `SortName` is
+  the reference's: an episode's `001 - 0021 - name`, a season's number on four digits, anything
+  else its name in lower case without articles or `,&-{}'`, `.+%` as spaces, numbers on ten
+  digits.
 
 ## Tracks
 
-The labels and values below were read off the reference's 35 files and are reproduced
-(`track.rs`):
+A track is published from what ffprobe printed of it, which the scan keeps beside the values it
+stores the reference Plex's way, and the official API publishes as `MediaStream.stated`,
+`VideoAnalysis.averageFrameRate` and its neighbours, `MediaFile.stated` and
+`MediaFile.sideStreams` (migration `m0040`). An imported file states none of it, and is shaped
+from Plex's analysis as before. The rules are the reference's own (`ProbeResultNormalizer`,
+`MediaStream`, `MediaStreamSelector`), each checked on the 35 files (`track.rs`):
 
-- `DisplayTitle`: a video's size class, codec and range (`480p H264 SDR`); an audio's language,
-  profile or codec, layout and default flag (`English - OPUS - Stereo - Default`); a subtitle's
-  language, hearing-impaired, default and forced flags and codec. A track named in its file keeps
-  its name first, followed by the attributes its name does not already hold (`Stereo - French -
-  AAC - Default`; `aac 5.1 - Default`). Size classes are the reference's: the smallest of 144p,
-  240p, 360p, 384p, 404p, 480p, 540p, 576p, 720p, 1080p, 1440p, 4K, 8K that holds both sides,
-  `i` for interlaced (`384x284` is `360p`, `704x396` is `404p`); a coded height of 1088 is 1080p.
-- Codecs as ffprobe names them, with DTS as `dts`, PGS as `PGSSUB`, DVB as `DVBSUB` and
-  `DVBTXT`; AC-3 and E-AC-3 labelled `Dolby Digital` and `Dolby Digital+`; profiles as ffprobe
-  writes them (`LC`, `HE-AAC`, `DTS-HD MA`, `Main 10`), `LC` left out of labels.
-- Languages as ISO 639-2 terminological codes (`fra`, `deu`), English names in labels, an unknown
-  code capitalized (`Qaa`).
-- Text subtitles and PGS images are extractable (`SupportsExternalStream`); DVB images are not.
-- **Not reproduced**: `TimeBase`, `NalLengthSize`, `CodecTag`, the Dolby Vision flags beyond the
-  profile, and the reference's frame rates to five decimals (ours keep the three the scan
-  stores). `RefFrames` and bitrates are the scan's measurements, which differ from the
-  reference's (`RefFrames` 4 where it says 1; a bitrate a few hundred bits apart).
-  `AspectRatio` is the picture's own, where the reference reads the container's display ratio
-  (`4:3` for an anamorphic `720x576`, `1.25:1` here).
+- **Language**: as the file states it, in its terminological code (`fre`, `fr-FR` are `fra`), an
+  unknown one as written (`qaa`, `fra,fra`), none when the file states none. A Matroska track
+  declaring `und` has none, though ffprobe-plex writes `eng` for it as Plex's analysis expects:
+  the scanner reads Matroska's `Language` elements itself (`matroska.rs`), a track without one
+  being English by the format's default.
+- **Title**: the track's name, else for sound and subtitles an MP4's `name`, else its handler's
+  unless it is the muxer's (`SoundHandler`); `cc` is no title.
+- **Codec, profile, tag, time base, framing**: ffprobe's names, picture subtitles as `PGSSUB`,
+  `DVDSUB`, `DVBSUB`, `DVBTXT`, PCM by its sample format with no profile; `CodecTag` unless
+  ffprobe's is zeros; `TimeBase`; H.264's `IsAVC` and `NalLengthSize`, as a string.
+- **Rates**: `BitRate` is `MediaStream.estimatedBitrate`, the reference's rule moved to
+  `core::bitrate`: the header's rate, else the muxer's tags (`BPS`, `BPS-eng`, bytes over
+  duration; not a subtitle's), else a rate typical of an audio codec and its channels, and a
+  file's one video what the container's declared rate leaves. Frame rates are 32-bit floats of
+  ffprobe's ratios (`23.976025`), the average left out when ffprobe has none; `Level` is `-99`
+  where ffprobe knows none.
+- **Picture**: `AspectRatio` is the stated display ratio snapped to the reference's named ones
+  (`16:9`, `4:3`, `1.85:1`, `2.40:1`…), else as stated; `IsAnamorphic` from the stated ratios,
+  1% off square, never for a cropped picture; the pixel format as ffprobe names it; a picture
+  subtitle's canvas as `Width` and `Height`; Dolby Vision's record in full, and the reference's
+  `VideoRangeType` and `VideoDoViTitle` (an out-of-spec record is `DOVIInvalid`).
+- **Labels**: `DisplayTitle` as the reference composes it per kind, `Undefined` for a subtitle of
+  no language, `LocalizedLanguage` .NET's English name (`Undetermined` for `und`).
+- **Selection**: for a user who set no preference, which every user is here, subtitles the
+  default mode would play carry the reference's `Score`, and a media source names the default
+  audio and subtitle by the reference's rule (`DefaultAudioStreamIndex`,
+  `DefaultSubtitleStreamIndex`).
+- **What else a file carries**: covers are `EmbeddedImage` streams and, with Matroska's attached
+  files, `MediaAttachments`; data tracks are `Data` streams.
+
+## Media sources and items
+
+- `Container` on an item is the reference's normalization of ffprobe's format names
+  (`mov,mp4,m4a,3gp,3g2,mj2`, `mkv,webm` when every stream may be WebM's, `ts`); a media source
+  takes the one its file's extension names, else the first. A file played as it is goes by the
+  name the device profile lists: a Matroska file of WebM's codecs is `webm` to a browser, and
+  read as it is, which `MediaFile.readableAsIs` now admits (`core::stream::container_names`).
+- `RunTimeTicks` and the source's `Bitrate` are what the container declares, read as .NET reads
+  them (`178.301` s is 1783009999 ticks); `Timestamp` is a transport stream's (`Valid` for
+  Blu-ray's 192-byte packets).
+- `Chapters`: the file's names as written, a name that reads as a time or none numbered in the
+  library's language (`Chapitre 3` in the French film library, `Chapter 3` otherwise), starts to
+  the millisecond. The scan keeps both these and Plex's reading (six significant digits, numbered
+  titles cleared), the first as `Chapter.stated`.
+- `IsHD` for a picture 720 lines tall at least; `DisplayPreferencesId` the reference's per type
+  (the MD5 of its own type's name).
+
+## Filters
+
+`/Items/Filters` and `/Items/Filters2` list what a library's items hold, or every library of the
+caller's: genres (with their ids), release years, content ratings, and the audio and subtitle
+languages tracks state, named as the reference names them (`French (fre)`, `qaa`), each language
+once as written (`fre` and `fra` apart, through `TrackField.AUDIO_LANGUAGE` on the official API).
+Tags are keywords a provider gives: none. Narrowing below a library, to a kind of item other than
+its own, or by the Live TV flags of `Filters2`, answers `501`; music and photos, held nowhere,
+list nothing.
+
+## Measured on the 35 files
+
+`tools/compare_jellyfin.py` compares, for every file, the lookup (`/Items/{id}` and
+`/Users/{user}/Items/{id}`), `PlaybackInfo` with a browser's device profile and the file's entry in
+its series' episodes, then every series and season both servers hold, field by field, ids
+rewritten into what they designate. On the last run: **26,379 fields identical, none unexplained**,
+and 15,490 differing for the reasons below, each named in the tool:
+
+- **metadata**: what an online provider gave the reference (overviews, people, genres, ratings,
+  dates, provider ids, a matched title and its sort name, a series' running time); nothing here
+  consults one.
+- **artwork**: images, their tags and blur hashes; none is held.
+- **opaque**, **dates**, **rights**: entity tags and keys, when an item was added, whether the
+  user may delete it.
+- **roots**: a mapped drive is stored as the share it maps (`\\nas\samples\…` for
+  `Z:\samples\…`): library roots are canonical (`library add`).
+- **grouping**, **naming**: the scan's rules, above.
+- **ref-frames**: the reference's prober states one reference frame for every video, its codec
+  context's default; ours is H.264's sequence header (2 to 16 here), none for other codecs.
+- **conversion**: a conversion's address is the binding's own, with its own parameters.
+- **delivery**: subtitles and attached files are not delivered to clients (`DeliveryMethod`,
+  `DeliveryUrl`): no address is published that would not answer.
+- **decoded**: what the reference's prober reads by decoding up to the first video frame
+  (jellyfin-ffmpeg's `-only_first_vframe`, which ffmpeg-plex lacks): the rates of AAC in a
+  transport stream (`Peur primale`, `S01E41`) and the video's that follows from them, the canvas
+  of two picture subtitles ffprobe-plex states none for, PCM's 16 bits, and HDR10+ metadata in
+  the first frame of `Star Trek: Discovery` (`DOVIWithHDR10Plus` there, `DOVIWithHDR10` here).
+
+`crates/server/tests/jellyfin_samples.rs` replays the same on every run of the tests, without a
+server: each sample keeps our scanner's report and the reference's answer
+(`tools/capture_jellyfin_samples.py`), and the report goes through the scan's storage, the
+official API and the binding to the reference's media source and file-derived fields, these
+reasons excepted.
 
 ## Playing
 

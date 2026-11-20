@@ -1,0 +1,814 @@
+[
+  {
+    "Name": "My Hero Academia",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "60445f26a1a54f6ac7d89ab3be64d447",
+    "PremiereDate": "2016-04-02T22:00:00.0000000Z",
+    "OfficialRating": "TV-14",
+    "ChannelId": null,
+    "CommunityRating": 8.598,
+    "RunTimeTicks": 14400000000,
+    "ProductionYear": 2016,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "60445f26-a1a5-4f6a-c7d8-9ab3be64d447",
+      "ItemId": "60445f26a1a54f6ac7d89ab3be64d447"
+    },
+    "Status": "Ended",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.6666666666666666,
+    "ImageTags": {
+      "Thumb": "d43332be2aed92efba0a1c682fcc7ea0",
+      "Logo": "beae913038ba480317db8f0d168bd6b1",
+      "Primary": "e8175faa0890416482f74d37292b0c9e"
+    },
+    "BackdropImageTags": [
+      "8b6033b89ec2a1782865f2b8abbc1c7b"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "8b6033b89ec2a1782865f2b8abbc1c7b": "WOEC|NyFyGyF%ho~?wMx9bR6V@sks=9aIVM|aJRi%hRmkC%Mt7WW"
+      },
+      "Thumb": {
+        "d43332be2aed92efba0a1c682fcc7ea0": "WzF7YxcZgig2bwtm.mXkf#ofbbbcpwSwn}nin#bapxT0ozjGn$j="
+      },
+      "Logo": {
+        "beae913038ba480317db8f0d168bd6b1": "PvMr-?j[%~n%x^bbt7jY~WfktmoJf+bbRPn%PBjuogbGaxbHV@jZ"
+      },
+      "Primary": {
+        "e8175faa0890416482f74d37292b0c9e": "daI|]e%0-$%I~l%K$zxs}%xt-oxW~2bIo|jYyBIpwNs:"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2025-12-12T23:00:00.0000000Z",
+    "OriginalLanguage": "ja"
+  },
+  {
+    "Name": "Devil in Ohio",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "84cbbdef69ebbd5b9dbd32f3e4c30019",
+    "PremiereDate": "2022-09-01T22:00:00.0000000Z",
+    "OfficialRating": "TV-MA",
+    "ChannelId": null,
+    "CommunityRating": 6.514,
+    "RunTimeTicks": 0,
+    "ProductionYear": 2022,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "84cbbdef-69eb-bd5b-9dbd-32f3e4c30019",
+      "ItemId": "84cbbdef69ebbd5b9dbd32f3e4c30019"
+    },
+    "Status": "Ended",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.6669218989280244,
+    "ImageTags": {
+      "Logo": "4459f8bcf76d4d4e5dfba71e07a76083",
+      "Thumb": "d664b45f4b5d5e9384755b1c0a9ce83b",
+      "Primary": "c573f2f22250a573c6f52fc4f70a0a5d"
+    },
+    "BackdropImageTags": [
+      "f97827177773624abdd05843e51f1cfe"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "f97827177773624abdd05843e51f1cfe": "W87Uho9HR.wIbvx]?[M|Rka0batRNHtQaeW;aeayM{oyx[tkRQae"
+      },
+      "Logo": {
+        "4459f8bcf76d4d4e5dfba71e07a76083": "HAFY$2xu_3M{?b%M~qRj?b%MRj%Mt7ofIUxufQ-;"
+      },
+      "Thumb": {
+        "d664b45f4b5d5e9384755b1c0a9ce83b": "W86ukQ9HI[+[OY%f?[IqRkv#ShtkNIo|niWqjFoJICt6tQcDVti{"
+      },
+      "Primary": {
+        "c573f2f22250a573c6f52fc4f70a0a5d": "dG9@FZW;xB%J~TkBoLxs-kbHW=xZ-.WCoexZt7azWCoK"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2022-09-01T22:00:00.0000000Z",
+    "OriginalLanguage": "en"
+  },
+  {
+    "Name": "Zak Jinks",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "f729ffc716d0d973d3661e36d676c359",
+    "PremiereDate": "2019-04-07T22:00:00.0000000Z",
+    "OfficialRating": "TV-G",
+    "ChannelId": null,
+    "RunTimeTicks": 0,
+    "ProductionYear": 2019,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "f729ffc7-16d0-d973-d366-1e36d676c359",
+      "ItemId": "f729ffc716d0d973d3661e36d676c359"
+    },
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.6666666666666666,
+    "ImageTags": {
+      "Primary": "0cefa01ea7ef95400ba9fa2b96503786",
+      "Logo": "83fb640bed74791393a29e9907e38152",
+      "Thumb": "b15f92620527591e4006873816735190"
+    },
+    "BackdropImageTags": [
+      "6a27d4e99084212eda02811653639567"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "6a27d4e99084212eda02811653639567": "WONTp^$]t.^aQ*^,P:IntnpBIli{CTNHoiX,NZR:?]tmt8xb$mxv"
+      },
+      "Primary": {
+        "0cefa01ea7ef95400ba9fa2b96503786": "dURx=Y~WyY_N?bWBx]s,lUV[Q-V?+ut7kVtSx]Wotlt7"
+      },
+      "Logo": {
+        "83fb640bed74791393a29e9907e38152": "VeH8=-oL10njkB$PS2sooKWp10Nb-TkBr[Sfa|S2S2n*"
+      },
+      "Thumb": {
+        "b15f92620527591e4006873816735190": "WVJ*Ou%$tj-oGG$*}^t+ocwcK$nTOZtPoaaKW?r??txb$%s,r@t2"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2023-11-27T23:00:00.0000000Z",
+    "OriginalLanguage": "fr"
+  },
+  {
+    "Name": "Ghost in the Shell: Stand Alone Complex",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "6bb4d19e0044a7dce75b1ea0522eea6e",
+    "PremiereDate": "2002-09-30T22:00:00.0000000Z",
+    "OfficialRating": "TV-MA",
+    "ChannelId": null,
+    "CommunityRating": 8.229,
+    "RunTimeTicks": 15000000000,
+    "ProductionYear": 2002,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "6bb4d19e-0044-a7dc-e75b-1ea0522eea6e",
+      "ItemId": "6bb4d19e0044a7dce75b1ea0522eea6e"
+    },
+    "Status": "Ended",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.66650390625,
+    "ImageTags": {
+      "Thumb": "65d35e73c2f5c721a68b7f53763f152b",
+      "Logo": "1f0e2d4ce3c7750c3d7424693184b207",
+      "Primary": "face5e882ab5a13edd19b569300f2a69"
+    },
+    "BackdropImageTags": [
+      "a9fee7d81ac7888c6719cf5276d884e9"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "a9fee7d81ac7888c6719cf5276d884e9": "W7695hM~li%|sE.OxHH[Mfr^H[r?D6b[d[xaE2R7.jS^.O%xS#tk"
+      },
+      "Thumb": {
+        "65d35e73c2f5c721a68b7f53763f152b": "WTHeUiMc-nxUMw%0_3V?x[t5axWBx]oct6ofWAM{~Wr=n#s,sln$"
+      },
+      "Logo": {
+        "1f0e2d4ce3c7750c3d7424693184b207": "HRKUWDt8IUofRjxtWDt7Rl~oj[xut6oft7NGofM|"
+      },
+      "Primary": {
+        "face5e882ab5a13edd19b569300f2a69": "dREV+?a}-;-;~qRj%M%MV@WCM{Rj%2t7RPRjt7WBt6t8"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2005-01-07T23:00:00.0000000Z",
+    "OriginalLanguage": "ja"
+  },
+  {
+    "Name": "Trotro",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "a8679fe1a2fe793e76e9c1c7fb98b473",
+    "PremiereDate": "2004-10-22T22:00:00.0000000Z",
+    "OfficialRating": "TV-Y",
+    "ChannelId": null,
+    "CommunityRating": 6.417,
+    "RunTimeTicks": 0,
+    "ProductionYear": 2004,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "a8679fe1-a2fe-793e-76e9-c1c7fb98b473",
+      "ItemId": "a8679fe1a2fe793e76e9c1c7fb98b473"
+    },
+    "Status": "Ended",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.68,
+    "ImageTags": {
+      "Thumb": "e8f9c7356d6c65c703377f2a6f69494a",
+      "Logo": "8b51779ce412e7c7ad4c10b6c1bbc187",
+      "Primary": "515493a5bb35b34960812184b4702d43"
+    },
+    "BackdropImageTags": [
+      "7ffe1fb9f9b8ce48ba69244d4589cd8c"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "7ffe1fb9f9b8ce48ba69244d4589cd8c": "W~A|fjozS^g3jJXlyGoMjIX9W;fmp1oLnmW=W.jct5j?X5bGjbbF"
+      },
+      "Thumb": {
+        "e8f9c7356d6c65c703377f2a6f69494a": "WcIXy|-on$xptQ%L5es:Rka~R:I]5HItxVItRoWGxao2xYt5odoe"
+      },
+      "Logo": {
+        "8b51779ce412e7c7ad4c10b6c1bbc187": "OcLqe7RjayofD%xuRj-;ofofxuRjRjay00t7t7-;j[ofM{"
+      },
+      "Primary": {
+        "515493a5bb35b34960812184b4702d43": "dTDdxRbyEo%hXrogxARkGHkBwZR%$uWAIts+a8s;t4RQ"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2005-12-30T23:00:00.0000000Z",
+    "OriginalLanguage": "fr"
+  },
+  {
+    "Name": "The Wakos",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "2ddbb4cf4995f90bb2198a3b746e700b",
+    "PremiereDate": "2013-05-11T22:00:00.0000000Z",
+    "OfficialRating": "16",
+    "ChannelId": null,
+    "CommunityRating": 7.9,
+    "RunTimeTicks": 1200000000,
+    "ProductionYear": 2013,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "2ddbb4cf-4995-f90b-b219-8a3b746e700b",
+      "ItemId": "2ddbb4cf4995f90bb2198a3b746e700b"
+    },
+    "Status": "Ended",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.6804002354326074,
+    "ImageTags": {
+      "Thumb": "b7589c740d18632c6e5d07ef3ac2d011",
+      "Primary": "8d167c65d60985c546d75edcf97c22ec",
+      "Logo": "fce66618f75953ef70c80c46e82b8fe4"
+    },
+    "BackdropImageTags": [
+      "fb3263657e02d106ca64495855887cf8"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "fb3263657e02d106ca64495855887cf8": "WGJ@:hnPR6NQNi^+_3DjT1x]Mxos?cD$NNx?I9WB_4-nMeRoX3Mm"
+      },
+      "Thumb": {
+        "b7589c740d18632c6e5d07ef3ac2d011": "NTKT=5~D-=xvo}o#%%%Nt5I:X8xuXUo}OXX9S6xa"
+      },
+      "Primary": {
+        "8d167c65d60985c546d75edcf97c22ec": "djO{?co~I;?H?c%Mxtsm?ws7aLog?bs;RiSgx]WBn#t8"
+      },
+      "Logo": {
+        "fce66618f75953ef70c80c46e82b8fe4": "P77v}x+_1u2rWB]A+_Na$js:NuODjGw{n%bH9Fbbaea1xGozXSbH"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2024-06-09T22:00:00.0000000Z",
+    "OriginalLanguage": "fr"
+  },
+  {
+    "Name": "Wakfu",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "25c19f86e3e94742ba6edb74ede5123c",
+    "PremiereDate": "2008-10-29T23:00:00.0000000Z",
+    "OfficialRating": "TV-Y7",
+    "ChannelId": null,
+    "CommunityRating": 8.248,
+    "RunTimeTicks": 13800000000,
+    "ProductionYear": 2008,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "25c19f86-e3e9-4742-ba6e-db74ede5123c",
+      "ItemId": "25c19f86e3e94742ba6edb74ede5123c"
+    },
+    "Status": "Continuing",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.703923900118906,
+    "ImageTags": {
+      "Primary": "d080174bf8ee5543cc80adea456c0082",
+      "Logo": "0deee67f845c120483e1b473ff1d9183",
+      "Thumb": "b1fb1b07f2e6f3ccad84f01115f25ed0"
+    },
+    "BackdropImageTags": [
+      "7f1598461ff33c5ad2f21f06d0913234"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "7f1598461ff33c5ad2f21f06d0913234": "WyE3PMW?V=xtRjkB?wS6nzt6Rjofp1R.xXocWBt7o~R.xZoen~t7"
+      },
+      "Primary": {
+        "d080174bf8ee5543cc80adea456c0082": "dLEfJ,~ptjxp-=?axuaKT0bvjuR*E7EOM|RkShR-M}M|"
+      },
+      "Logo": {
+        "0deee67f845c120483e1b473ff1d9183": "WaDw5Do#9Fs:ROWAbEt7RQM{t7t64TRjtRRjt7t7t7V@tRogWCoz"
+      },
+      "Thumb": {
+        "b1fb1b07f2e6f3ccad84f01115f25ed0": "WNEpyT%0L~$%IBtl9Y%LxHNHS5E2-VoeS5XAXTf,0KV@xGV]WDt7"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2024-03-14T23:00:00.0000000Z",
+    "OriginalLanguage": "fr"
+  },
+  {
+    "Name": "Kaleidoscope",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "5588a518c2de3983af8e0841042398a1",
+    "PremiereDate": "2022-12-31T23:00:00.0000000Z",
+    "OfficialRating": "TV-MA",
+    "ChannelId": null,
+    "CommunityRating": 6.84,
+    "RunTimeTicks": 0,
+    "ProductionYear": 2023,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "5588a518-c2de-3983-af8e-0841042398a1",
+      "ItemId": "5588a518c2de3983af8e0841042398a1"
+    },
+    "Status": "Ended",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.666966696669667,
+    "ImageTags": {
+      "Thumb": "2b9644136e1427da91d665409abf731a",
+      "Logo": "d312cdb75fada100b2e9db32695f4fe9",
+      "Primary": "bf3d75eba0974769c23532ae938fc7be"
+    },
+    "BackdropImageTags": [
+      "2985b2866acb8f0df8e63596eb98bb86"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "2985b2866acb8f0df8e63596eb98bb86": "WGC?fXtp0T^[-gDm?uKQMlrv%KVgtR9%5FNEZ~RVX|%FR+t2$eR8"
+      },
+      "Thumb": {
+        "2b9644136e1427da91d665409abf731a": "WCAwSN.A%Dq_K7%3tp9moxrZK6$kI^9$Iov~OsWF?;?R%Fs9S#kQ"
+      },
+      "Logo": {
+        "d312cdb75fada100b2e9db32695f4fe9": "8AMQ*J9F9Fay~qof%M?b-;"
+      },
+      "Primary": {
+        "bf3d75eba0974769c23532ae938fc7be": "dMBDWjIv0n~S%fRjEN%IaRVst7WFN0i^nhWFxVRlWFxY"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2022-12-31T23:00:00.0000000Z",
+    "OriginalLanguage": "en"
+  },
+  {
+    "Name": "Star Trek: Discovery",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "45f3aacc5e843a6f36b960c8d14fdaa7",
+    "PremiereDate": "2017-09-23T22:00:00.0000000Z",
+    "OfficialRating": "TV-14",
+    "ChannelId": null,
+    "CommunityRating": 6.9,
+    "RunTimeTicks": 0,
+    "ProductionYear": 2017,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "45f3aacc-5e84-3a6f-36b9-60c8d14fdaa7",
+      "ItemId": "45f3aacc5e843a6f36b960c8d14fdaa7"
+    },
+    "Status": "Ended",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.6666666666666666,
+    "ImageTags": {
+      "Logo": "1b46ce56699236b9afe9794981bfa34b",
+      "Primary": "c6fd321f5e44c578f494760eda7402a0",
+      "Thumb": "92d470f930fa087e704637f71bc75ad5"
+    },
+    "BackdropImageTags": [
+      "3d2ac5c09d4017e05851eb5e6a66a23a"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "3d2ac5c09d4017e05851eb5e6a66a23a": "WS4V,ykDMaV?yFo}R3axtmkDR5V@V?ayohkCWAWBtSj]RPWBtRoz"
+      },
+      "Logo": {
+        "1b46ce56699236b9afe9794981bfa34b": "PGGR@q?H58E1D*oz?at7.TRk^%%Lf5t5xtM|%1xaE2Rjj=M|s:ay"
+      },
+      "Primary": {
+        "c6fd321f5e44c578f494760eda7402a0": "deI4bG}=xt-o%3xV%2xt0fIpspRjtPWBWYWUS1aft8oe"
+      },
+      "Thumb": {
+        "92d470f930fa087e704637f71bc75ad5": "WkLyZY},VsMxtSxaS6sls;RQIVRRE1xatPxtM{V[$esojGozt6oI"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2024-05-29T22:00:00.0000000Z",
+    "OriginalLanguage": "en"
+  },
+  {
+    "Name": "Eureka",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "7b9a400658426b9aa627baa219686a7e",
+    "PremiereDate": "2006-07-17T22:00:00.0000000Z",
+    "OfficialRating": "TV-14",
+    "ChannelId": null,
+    "CommunityRating": 7.73,
+    "RunTimeTicks": 26400000000,
+    "ProductionYear": 2006,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "7b9a4006-5842-6b9a-a627-baa219686a7e",
+      "ItemId": "7b9a400658426b9aa627baa219686a7e"
+    },
+    "Status": "Ended",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.68,
+    "ImageTags": {
+      "Logo": "106608673264fbb31533f0a7af7f8b41",
+      "Thumb": "95a239c90fd49a932f1bc99eb1d5454d",
+      "Primary": "53e0374762a028ae23b6d0d1c5df5ba6"
+    },
+    "BackdropImageTags": [
+      "c189774d0d546754dfa3cf0dbb019623"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "c189774d0d546754dfa3cf0dbb019623": "WeFZBD%N4mRPt3n+K9WCv{f5a|axFhR-sQaen%f5%hWqRjxba{WD"
+      },
+      "Logo": {
+        "106608673264fbb31533f0a7af7f8b41": "HCO:@S~qt7%MIU~q_3RjIUIUof00_3-;9FM{-;D%"
+      },
+      "Thumb": {
+        "95a239c90fd49a932f1bc99eb1d5454d": "WaJRdeafH?xH%1t6peWYibxtM{slK+NuwaRPs9sp?wt7s8WAj]og"
+      },
+      "Primary": {
+        "53e0374762a028ae23b6d0d1c5df5ba6": "dUE|F@%MD*og_NxDs:xuE3jE%2tRK+bwoyWqt7WqR*W="
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2012-07-15T22:00:00.0000000Z",
+    "OriginalLanguage": "en"
+  },
+  {
+    "Name": "The Simpsons",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "e317e540d714733e594e5a49717e4eb3",
+    "PremiereDate": "1989-12-16T23:00:00.0000000Z",
+    "OfficialRating": "TV-14",
+    "ChannelId": null,
+    "CommunityRating": 8.029,
+    "RunTimeTicks": 0,
+    "ProductionYear": 1989,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "e317e540-d714-733e-594e-5a49717e4eb3",
+      "ItemId": "e317e540d714733e594e5a49717e4eb3"
+    },
+    "Status": "Continuing",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.6666666666666666,
+    "ImageTags": {
+      "Primary": "8e25aeb6f607cc3a9e7c50071ffd4074",
+      "Logo": "5d80072a9b993fbd3d6f4d0195ccd3de",
+      "Thumb": "3d7c94b64af22334e9d990a682675d1d"
+    },
+    "BackdropImageTags": [
+      "295bc12d6d71cc26001e7e0502b28b80"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "295bc12d6d71cc26001e7e0502b28b80": "WyM%fMtS$v=:-3-M~1JENfa{jExUt3n#R:WYWYbI$xkCSPs,s+af"
+      },
+      "Primary": {
+        "8e25aeb6f607cc3a9e7c50071ffd4074": "dMG],g.TE3%O}~I=JGs*w@ESEBSi^~s=IyS%%Cx@#loz"
+      },
+      "Logo": {
+        "5d80072a9b993fbd3d6f4d0195ccd3de": "OFFrER$~9e$}?CE6IsE5od9et4?CRmaz0R?Bj@WWIsIZE6"
+      },
+      "Thumb": {
+        "3d7c94b64af22334e9d990a682675d1d": "W;GmiaBaa#xWbbkEx]NN$wSPR:t2W=aff6oJWYoJtSW?WDocbIja"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2026-11-14T23:00:00.0000000Z",
+    "OriginalLanguage": "en"
+  },
+  {
+    "Name": "Hajime no ippo manga",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "1520fe6b2e1e7cd807dfb4d7b3628246",
+    "PremiereDate": "2002-03-12T23:00:00.0000000Z",
+    "ChannelId": null,
+    "RunTimeTicks": 0,
+    "ProductionYear": 2002,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 2,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "1520fe6b-2e1e-7cd8-07df-b4d7b3628246",
+      "ItemId": "1520fe6b2e1e7cd807dfb4d7b3628246"
+    },
+    "Status": "Continuing",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.6646341463414634,
+    "ImageTags": {
+      "Primary": "5e0a9b6ed7b4d6a433061b79bc20757b"
+    },
+    "BackdropImageTags": [
+      "98c1ffc9ca2b657ceacbf4a6a958bee3"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "98c1ffc9ca2b657ceacbf4a6a958bee3": "NtPZr%%M?b~qWBt7-;M{ofxu%Mof%MM{j[t7xuWB"
+      },
+      "Primary": {
+        "5e0a9b6ed7b4d6a433061b79bc20757b": "dPPZr%00IU?bt79FD%t74nD%t7xuD%D%%M%MM{Rjoft7"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2025-08-05T22:00:00.0000000Z",
+    "OriginalLanguage": "en"
+  },
+  {
+    "Name": "Faites entrer l'accusé",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "efabcab9f8e08a0ae2ec98dd8cd01051",
+    "PremiereDate": "2000-06-05T22:00:00.0000000Z",
+    "OfficialRating": "NR",
+    "ChannelId": null,
+    "CommunityRating": 8.5,
+    "RunTimeTicks": 54000000000,
+    "ProductionYear": 2000,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "efabcab9-f8e0-8a0a-e2ec-98dd8cd01051",
+      "ItemId": "efabcab9f8e08a0ae2ec98dd8cd01051"
+    },
+    "Status": "Continuing",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.6666666666666666,
+    "ImageTags": {
+      "Primary": "e7aaf942ea2aede8f85489071e7de080",
+      "Logo": "2af94a56ada4882da9bc00ce7a43705b",
+      "Thumb": "91918de98723c4e513968507676ad417"
+    },
+    "BackdropImageTags": [
+      "d75d4ed44b1046928af0291393861936"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "d75d4ed44b1046928af0291393861936": "W37KF@554:~VR%R%~Us9R.xZNG-p9[s;t7xsE2WXs,n+E2-n%257"
+      },
+      "Primary": {
+        "e7aaf942ea2aede8f85489071e7de080": "dOBfd{?FI:V[~TxtI:V[jXNGR*jGM{R*t6s.IWoMxtoe"
+      },
+      "Logo": {
+        "2af94a56ada4882da9bc00ce7a43705b": "OLL|9;?;IRR8s=tQ--QB?sx]#*V@bvNK#kx@x[V@R*t6WC"
+      },
+      "Thumb": {
+        "91918de98723c4e513968507676ad417": "W8AJZrxT0dT20Kn4^R4:9t_2RiRPD*9aVs~B%LNE~p--RON19uE0"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2026-10-24T22:00:00.0000000Z",
+    "OriginalLanguage": "fr"
+  },
+  {
+    "Name": "Ariol",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "354c9aff07fe23697a578521422ad11b",
+    "PremiereDate": "2009-11-15T23:00:00.0000000Z",
+    "OfficialRating": "NR",
+    "ChannelId": null,
+    "CommunityRating": 7.2,
+    "RunTimeTicks": 2400000000,
+    "ProductionYear": 2009,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "354c9aff-07fe-2369-7a57-8521422ad11b",
+      "ItemId": "354c9aff07fe23697a578521422ad11b"
+    },
+    "Status": "Continuing",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.6666666666666666,
+    "ImageTags": {
+      "Primary": "2b7c7d678d1969c68fcd172b2796c16b"
+    },
+    "BackdropImageTags": [
+      "33e1780bb0af3af594d158b7302eeaf3"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "33e1780bb0af3af594d158b7302eeaf3": "WjNRiSNHEMsma_t7~AafRns:R*bH^iWBS5kCoLs.%LWVWVa#jbs:"
+      },
+      "Primary": {
+        "2b7c7d678d1969c68fcd172b2796c16b": "dNLXJ3.koOxA8YXKs,M_9YroS^xFyD$yohax.7yEnnNF"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2018-09-01T22:00:00.0000000Z",
+    "OriginalLanguage": "fr"
+  },
+  {
+    "Name": "Fleabag",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "43bd34f3d67aba535ea3a1238161d34f",
+    "PremiereDate": "2016-07-20T22:00:00.0000000Z",
+    "OfficialRating": "TV-MA",
+    "ChannelId": null,
+    "CommunityRating": 8.28,
+    "RunTimeTicks": 0,
+    "ProductionYear": 2016,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "43bd34f3-d67a-ba53-5ea3-a1238161d34f",
+      "ItemId": "43bd34f3d67aba535ea3a1238161d34f"
+    },
+    "Status": "Ended",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.6666666666666666,
+    "ImageTags": {
+      "Primary": "4ee43c64c0c3f90925755b1a7411d94f",
+      "Logo": "5d5eaaa09fe786a91fb8062c402323aa",
+      "Thumb": "5fad58bf51043a66cee9c3f445cd7817"
+    },
+    "BackdropImageTags": [
+      "99b1006cc2da0c502c792f48644093b1"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "99b1006cc2da0c502c792f48644093b1": "WKB.y6=^0g9wxtXT~U-QE2IqSebvoza{WCoMV@WXV_NIX8xZniNG"
+      },
+      "Primary": {
+        "4ee43c64c0c3f90925755b1a7411d94f": "dSFqn1-UEO%3-9xZNHV@0MR,obInb{NcxYtROGWCxZt7"
+      },
+      "Logo": {
+        "5d5eaaa09fe786a91fb8062c402323aa": "OAM7u;00of_3~qxu?b9F%Mxu%M-;t7t7?b%M%MD%ay9F?b"
+      },
+      "Thumb": {
+        "5fad58bf51043a66cee9c3f445cd7817": "WSE.99=^0LIVxu%gacoco#ofaeM|57NKxus:V@RjtSR.ROoIkWxa"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2019-04-07T22:00:00.0000000Z",
+    "OriginalLanguage": "en"
+  },
+  {
+    "Name": "90210",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "b0090a8c4dfbb2490dab2caf36536d9f",
+    "PremiereDate": "2008-09-01T22:00:00.0000000Z",
+    "OfficialRating": "TV-14",
+    "ChannelId": null,
+    "CommunityRating": 5.8,
+    "RunTimeTicks": 24000000000,
+    "ProductionYear": 2008,
+    "IsFolder": true,
+    "Type": "Series",
+    "UserData": {
+      "PlayedPercentage": 0,
+      "UnplayedItemCount": 1,
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "b0090a8c-4dfb-b249-0dab-2caf36536d9f",
+      "ItemId": "b0090a8c4dfbb2490dab2caf36536d9f"
+    },
+    "Status": "Ended",
+    "AirDays": [],
+    "PrimaryImageAspectRatio": 0.6665188470066519,
+    "ImageTags": {
+      "Primary": "50ce5c92fe72d9e7d70979f35b041a3d",
+      "Logo": "200c89c832e477571e7a1ce4df91fdb8",
+      "Thumb": "cc3f7975d486039dde8b7b927eb8ed4f"
+    },
+    "BackdropImageTags": [
+      "bc43018dc61e72a1e85f51b25ac344df"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "bc43018dc61e72a1e85f51b25ac344df": "WaK0{Mozo|ofj[-p_4WqW=R*M{%2.8S4ofofIVxa?bWXocs.t6s:"
+      },
+      "Primary": {
+        "50ce5c92fe72d9e7d70979f35b041a3d": "d]L;?CxuWAxuPXbbkBW=ESbIWrWVNHkCoLWXE2WBj[WW"
+      },
+      "Logo": {
+        "200c89c832e477571e7a1ce4df91fdb8": "PNLEN8Rk9H?at7IUt6D%xuofxuxuWBay%Lt6_2IVD*D*WB?aRj~p"
+      },
+      "Thumb": {
+        "cc3f7975d486039dde8b7b927eb8ed4f": "WYKUl:yEPV.TxC-;-gFzoyVXaJV@PTEnM_IpRiMx?^NLS5t8xCr="
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Unknown",
+    "EndDate": "2013-05-12T22:00:00.0000000Z",
+    "OriginalLanguage": "en"
+  }
+]

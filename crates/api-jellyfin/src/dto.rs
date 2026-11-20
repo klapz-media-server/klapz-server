@@ -16,23 +16,33 @@ use serde_json::{json, Map, Value};
 
 use crate::id;
 use crate::time;
-use crate::track::{in_order, media_stream, Track};
+use crate::track::{
+    default_audio_index, default_subtitle_index, score_subtitles, FileStreams, SideStream, Track,
+};
 
 /// What the official API is asked of an item, wherever it is listed.
 pub const ITEM_FIELDS: &str = concat!(
     r"
 fragment JellyfinVersion on MediaVersion {
     width height container durationMs bitrate
-    files { id path filename sizeBytes durationMs streams { ...JellyfinTrack } }
+    files {
+        id path filename sizeBytes durationMs packetLength
+        stated { formatName durationUs bitrate }
+        streams { ...JellyfinTrack }
+        sideStreams { ...JellyfinSideStream }
+    }
 }
 fragment JellyfinItem on Item {
     __typename id title titleSort summary addedAt
-    library { id }
+    library { id language }
     watchState { viewCount isWatched offsetMs lastViewedAt }
     ... on Movie {
         originalTitle year releasedOn contentRating audienceRating rating tagline studio
         durationMs
         versions { ...JellyfinVersion }
+        chapters(first: 500) @include(if: $chapters) {
+            nodes { startMs title stated { title startUs } }
+        }
         tags @include(if: $people) {
             genres(first: 50) { nodes { id name } }
             directors(first: 20) { nodes { id name } }
@@ -62,6 +72,9 @@ fragment JellyfinItem on Item {
         season { id number title }
         show { id title }
         versions { ...JellyfinVersion }
+        chapters(first: 500) @include(if: $chapters) {
+            nodes { startMs title stated { title startUs } }
+        }
     }
 }
 ",
@@ -97,12 +110,102 @@ pub struct Item {
     pub external_ids: Option<Nodes<ExternalId>>,
     pub show: Option<Reference>,
     pub season: Option<SeasonReference>,
+    pub chapters: Option<Nodes<Chapter>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Chapter {
+    pub start_ms: i64,
+    pub title: Option<String>,
+    #[serde(default)]
+    pub stated: StatedChapter,
+}
+
+/// What a scanned file states of a chapter; empty for an imported one.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatedChapter {
+    pub title: Option<String>,
+    /// Microseconds, as a string.
+    pub start_us: Option<String>,
+}
+
+impl Chapter {
+    /// Where it starts in ticks, to the millisecond as the reference keeps it: what the file
+    /// states rounded half to even, else the stored milliseconds.
+    fn start_ticks(&self) -> i64 {
+        let stated = self
+            .stated
+            .start_us
+            .as_deref()
+            .and_then(|us| us.parse::<i64>().ok());
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            reason = "a chapter's microseconds are far below 2^52"
+        )]
+        let milliseconds = stated.map_or(self.start_ms, |us| {
+            (us as f64 / 1000.0).round_ties_even() as i64
+        });
+        time::ticks(milliseconds)
+    }
+
+    /// Its name as the file writes it, unless that is empty or reads as a time, which the
+    /// reference replaces by a number; an imported chapter's as stored.
+    fn name(&self) -> Option<&str> {
+        match (&self.stated.start_us, &self.stated.title) {
+            (Some(_), Some(title)) if !title.trim().is_empty() && !reads_as_time(title) => {
+                Some(title)
+            }
+            (Some(_), _) => None,
+            (None, _) => self.title.as_deref(),
+        }
+    }
+}
+
+/// Whether .NET's `TimeSpan.TryParse` reads a text: a number of days, or `[d.]hh:mm[:ss[.f]]`.
+/// mkvmerge names chapters it was given no title for so, and the reference numbers them.
+fn reads_as_time(text: &str) -> bool {
+    let text = text.trim();
+    let text = text.strip_prefix('-').unwrap_or(text);
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
+    if digits(text) {
+        return text.len() <= 8;
+    }
+    let parts: Vec<&str> = text.split(':').collect();
+    if !(2..=3).contains(&parts.len()) {
+        return false;
+    }
+    let hours = parts[0].rsplit_once('.').map_or(
+        parts[0],
+        |(days, hours)| {
+            if digits(days) {
+                hours
+            } else {
+                ""
+            }
+        },
+    );
+    let seconds = parts.get(2).map(|seconds| {
+        seconds
+            .split_once('.')
+            .filter(|(_, fraction)| digits(fraction))
+            .map_or(*seconds, |(whole, _)| whole)
+    });
+    let within = |part: &str, limit: u32| {
+        digits(part) && part.parse::<u32>().is_ok_and(|value| value < limit)
+    };
+    within(hours, 24) && within(parts[1], 60) && seconds.is_none_or(|seconds| within(seconds, 60))
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Reference {
     pub id: String,
     pub title: Option<String>,
+    /// A library's, as a BCP 47 tag.
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -188,7 +291,108 @@ pub struct File {
     pub filename: String,
     pub size_bytes: Option<i64>,
     pub duration_ms: Option<i64>,
+    pub packet_length: Option<i32>,
+    #[serde(default)]
+    pub stated: StatedFile,
     pub streams: Vec<Track>,
+    #[serde(default)]
+    pub side_streams: Vec<SideStream>,
+}
+
+/// What a file's container states as ffprobe printed it; empty for an imported file.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatedFile {
+    pub format_name: Option<String>,
+    /// Microseconds, as a string: it exceeds 32 bits.
+    pub duration_us: Option<String>,
+    pub bitrate: Option<i64>,
+}
+
+impl File {
+    /// Whether the scan read the file, so that it states what ffprobe printed.
+    pub fn scanned(&self) -> bool {
+        self.stated.format_name.is_some()
+    }
+
+    fn streams(&self) -> FileStreams<'_> {
+        FileStreams {
+            tracks: &self.streams,
+            side_streams: &self.side_streams,
+            scanned: self.scanned(),
+        }
+    }
+
+    /// The streams the reference lists, the subtitles its default mode plays scored.
+    pub fn media_streams(&self) -> Vec<Value> {
+        let mut streams = self.streams().media_streams();
+        score_subtitles(&mut streams);
+        streams
+    }
+
+    /// The container's declared duration in ticks, as .NET reads ffprobe's seconds: a
+    /// double times ten million, truncated (`178.301` is 1783009999).
+    pub fn declared_ticks(&self) -> Option<i64> {
+        let micros: i64 = self.stated.duration_us.as_deref()?.parse().ok()?;
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            reason = "the reference's own arithmetic, on durations far below 2^52 µs"
+        )]
+        let ticks = (micros as f64 / 1_000_000.0 * 10_000_000.0) as i64;
+        Some(ticks)
+    }
+
+    /// The container's format names as the reference writes them for an item: ffprobe's,
+    /// `matroska` as `mkv`, `mpegts` as `ts`, and `webm` only when every stream may be in one.
+    pub fn format_names(&self) -> Option<String> {
+        let names = self.stated.format_name.as_deref()?;
+        let webm = self.streams.iter().all(|track| match track.kind.as_str() {
+            "VIDEO" => matches!(track.codec.as_deref(), Some("vp8" | "vp9" | "av1")),
+            "AUDIO" => matches!(track.codec.as_deref(), Some("vorbis" | "opus")),
+            _ => false,
+        }) && self
+            .side_streams
+            .iter()
+            .all(|side| side.kind == "ATTACHMENT");
+        let kept: Vec<&str> = names
+            .split(',')
+            .filter_map(|name| match name {
+                "mpegvideo" => Some("mpeg"),
+                "mpegts" => Some("ts"),
+                "matroska" => Some("mkv"),
+                "webm" if !webm => None,
+                other => Some(other),
+            })
+            .collect();
+        Some(kept.join(","))
+    }
+
+    /// A media source's container: the item's format named by the file's extension, else
+    /// its first.
+    fn source_container(&self) -> Option<String> {
+        let names = self.format_names()?;
+        let extension = self
+            .filename
+            .rsplit_once('.')
+            .map(|(_, extension)| extension.to_ascii_lowercase());
+        let mut listed = names.split(',');
+        let first = listed.next().map(ToOwned::to_owned);
+        names
+            .split(',')
+            .find(|name| Some(*name) == extension.as_deref())
+            .map(ToOwned::to_owned)
+            .or(first)
+    }
+
+    /// Whether an MPEG-TS file's packets carry the timestamps of Blu-ray's 192-byte packets,
+    /// as the reference reports for one.
+    fn timestamp(&self) -> Option<&'static str> {
+        match self.packet_length? {
+            192 => Some("Valid"),
+            _ => Some("None"),
+        }
+    }
 }
 
 /// Which of the optional fields a client asked for. An item looked up alone gets them all.
@@ -254,12 +458,105 @@ fn is_playable(item: &Item) -> bool {
 }
 
 /// The item's name, as Jellyfin names an untitled season.
+/// The item's name. Without a title, a season is named by its number as Jellyfin names one,
+/// and a film or an episode by its file, as the reference names what no provider matched.
 fn name(item: &Item) -> String {
     match (&item.title, item.type_name.as_str(), item.number) {
         (Some(title), _, _) => title.clone(),
-        (None, "Season", Some(number)) => format!("Season {number}"),
+        (None, "Season", Some(number)) => season_name(number),
+        (None, "Movie" | "Episode", _) => item
+            .versions
+            .first()
+            .and_then(|version| version.files.first())
+            .map(|file| {
+                file.filename
+                    .rsplit_once('.')
+                    .map_or(file.filename.as_str(), |(stem, _)| stem)
+                    .to_owned()
+            })
+            .unwrap_or_default(),
         (None, _, _) => String::new(),
     }
+}
+
+fn season_name(number: i32) -> String {
+    if number == 0 {
+        "Specials".to_owned()
+    } else {
+        format!("Season {number}")
+    }
+}
+
+/// The key the reference sorts an item by (`CreateSortName`): an episode by its season and
+/// number, a season by its number, anything else by its name folded — lower case, articles and
+/// some punctuation dropped, numbers padded to ten digits so that they sort as numbers. A sort
+/// title the import gave stands.
+fn sort_name(item: &Item) -> String {
+    let name = name(item);
+    match item.type_name.as_str() {
+        "Episode" => {
+            let season = item
+                .season
+                .as_ref()
+                .and_then(|season| season.number)
+                .map(|season| format!("{season:03} - "))
+                .unwrap_or_default();
+            let number = item
+                .number
+                .map(|number| format!("{number:04} - "))
+                .unwrap_or_default();
+            format!("{season}{number}{name}")
+        }
+        "Season" => item.number.map_or(name, |number| format!("{number:04}")),
+        _ => match &item.title_sort {
+            Some(sort) if Some(sort) != item.title.as_ref() => sort.to_lowercase(),
+            _ => folded_sort_name(&name),
+        },
+    }
+}
+
+fn folded_sort_name(name: &str) -> String {
+    let mut sortable = name.trim().to_lowercase();
+    for article in ["the", "a", "an"] {
+        if let Some(rest) = sortable.strip_prefix(&format!("{article} ")) {
+            sortable = rest.to_owned();
+        }
+        sortable = sortable.replace(&format!(" {article} "), " ");
+        if let Some(rest) = sortable.strip_suffix(&format!(" {article}")) {
+            sortable = rest.to_owned();
+        }
+    }
+    sortable.retain(|character| !matches!(character, ',' | '&' | '-' | '{' | '}' | '\''));
+    let sortable: String = sortable
+        .chars()
+        .map(|character| match character {
+            '.' | '+' | '%' => ' ',
+            other => other,
+        })
+        .collect();
+    padded_numbers(&sortable)
+}
+
+/// Every run of digits padded to ten, as the reference sorts `80` after `9`.
+fn padded_numbers(text: &str) -> String {
+    use std::fmt::Write as _;
+    let mut padded = String::with_capacity(text.len());
+    let mut digits = String::new();
+    for character in text.chars() {
+        if character.is_ascii_digit() {
+            digits.push(character);
+            continue;
+        }
+        if !digits.is_empty() {
+            let _ = write!(padded, "{digits:0>10}");
+            digits.clear();
+        }
+        padded.push(character);
+    }
+    if !digits.is_empty() {
+        let _ = write!(padded, "{digits:0>10}");
+    }
+    padded
 }
 
 /// The user's state of an item. Folders count what is left to watch beneath them.
@@ -329,13 +626,15 @@ pub fn item_dto(item: &Item, shaping: &Shaping<'_>) -> Value {
         if has_subtitles {
             put("HasSubtitles", json!(true));
         }
-        if let Some(container) = primary.and_then(|version| version.container.as_deref()) {
+        let container = file
+            .and_then(File::format_names)
+            .or_else(|| primary.and_then(|version| version.container.clone()));
+        if let Some(container) = container {
             put("Container", json!(container));
         }
     }
     if fields.has("SortName") {
-        let sort = item.title_sort.clone().unwrap_or_else(|| name(item));
-        put("SortName", json!(sort.to_lowercase()));
+        put("SortName", json!(sort_name(item)));
     }
     if let Some(released) = &item.released_on {
         put("PremiereDate", json!(time::date(released)));
@@ -396,8 +695,9 @@ pub fn item_dto(item: &Item, shaping: &Shaping<'_>) -> Value {
         // Critics' scores are out of a hundred on Jellyfin, out of ten here.
         put("CriticRating", json!((rating * 10.0).round()));
     }
-    if let Some(duration) = item.duration_ms {
-        put("RunTimeTicks", json!(time::ticks(duration)));
+    let declared = file.filter(|_| playable).and_then(File::declared_ticks);
+    if let Some(ticks) = declared.or_else(|| item.duration_ms.map(time::ticks)) {
+        put("RunTimeTicks", json!(ticks));
     }
     if fields.has("PlayAccess") {
         put("PlayAccess", json!("Full"));
@@ -476,7 +776,10 @@ pub fn item_dto(item: &Item, shaping: &Shaping<'_>) -> Value {
         put("SpecialFeatureCount", json!(0));
     }
     if fields.has("DisplayPreferencesId") {
-        put("DisplayPreferencesId", json!(jellyfin_id));
+        put(
+            "DisplayPreferencesId",
+            json!(display_preferences_id(&item.type_name).unwrap_or(&jellyfin_id)),
+        );
     }
     if fields.has("Tags") {
         put("Tags", json!([]));
@@ -490,15 +793,13 @@ pub fn item_dto(item: &Item, shaping: &Shaping<'_>) -> Value {
         let name = season
             .title
             .clone()
-            .or_else(|| season.number.map(|n| format!("Season {n}")));
+            .or_else(|| season.number.map(season_name));
         if let Some(name) = name {
             put("SeasonName", json!(name));
         }
     }
     if playable && fields.has("MediaStreams") {
-        let streams: Vec<Value> = file
-            .map(|file| in_order(&file.streams).map(media_stream).collect())
-            .unwrap_or_default();
+        let streams: Vec<Value> = file.map(File::media_streams).unwrap_or_default();
         put("MediaStreams", Value::Array(streams));
     }
     if playable {
@@ -508,7 +809,7 @@ pub fn item_dto(item: &Item, shaping: &Shaping<'_>) -> Value {
     put("BackdropImageTags", json!([]));
     put("ImageBlurHashes", json!({}));
     if fields.has("Chapters") {
-        put("Chapters", json!([]));
+        put("Chapters", json!(chapters(item)));
     }
     put(
         "LocationType",
@@ -526,6 +827,13 @@ pub fn item_dto(item: &Item, shaping: &Shaping<'_>) -> Value {
         put("LockedFields", json!([]));
         put("LockData", json!(false));
     }
+    // The reference sets it only when true, for compatibility with older clients.
+    let tall = primary
+        .and_then(|version| version.height)
+        .is_some_and(|height| height >= 720);
+    if playable && tall && fields.has("IsHD") {
+        put("IsHD", json!(true));
+    }
     if playable && fields.has("Width") {
         if let Some(version) = primary {
             if let Some(width) = version.width {
@@ -537,6 +845,44 @@ pub fn item_dto(item: &Item, shaping: &Shaping<'_>) -> Value {
         }
     }
     Value::Object(dto)
+}
+
+/// The display preferences an item shares with every item of its type: the reference names them
+/// by the MD5 of its own type's name, as a GUID (`MediaBrowser.Controller.Entities.Movies.Movie`).
+fn display_preferences_id(type_name: &str) -> Option<&'static str> {
+    match type_name {
+        "Movie" => Some("dbf7709c41faaa746463d67978eb863d"),
+        "Episode" => Some("26dd4a82b00c839c498471cdba80a99c"),
+        "Show" => Some("f63033ff6886ecc7083a696cbeced1b0"),
+        "Season" => Some("dfd065f5787fb957a750d76dcf835aad"),
+        _ => None,
+    }
+}
+
+/// An item's chapters as the reference lists them: a chapter the media leaves unnamed is named
+/// by its number in its library's language (`Chapitre 3` in French, `Chapter 3` otherwise), and
+/// none has an image here.
+fn chapters(item: &Item) -> Vec<Value> {
+    let french = item
+        .library
+        .as_ref()
+        .and_then(|library| library.language.as_deref())
+        .is_some_and(|language| language.to_ascii_lowercase().starts_with("fr"));
+    let word = if french { "Chapitre" } else { "Chapter" };
+    item.chapters
+        .iter()
+        .flat_map(|chapters| &chapters.nodes)
+        .zip(1..)
+        .map(|(chapter, number)| {
+            json!({
+                "StartPositionTicks": chapter.start_ticks(),
+                "Name": chapter
+                    .name()
+                    .map_or_else(|| format!("{word} {number}"), ToOwned::to_owned),
+                "ImageDateModified": "0001-01-01T00:00:00.0000000Z",
+            })
+        })
+        .collect()
 }
 
 /// Jellyfin's name for a source of external ids, for the ones it knows.
@@ -591,7 +937,10 @@ pub fn media_source(
     item_duration_ms: Option<i64>,
 ) -> Option<Value> {
     let file = version.files.first()?;
-    let streams: Vec<Value> = in_order(&file.streams).map(media_stream).collect();
+    let streams = file.media_streams();
+    let default_audio = default_audio_index(&streams);
+    let default_subtitle = default_subtitle_index(&streams);
+    let attachments = file.streams().media_attachments();
     let mut source = json!({
         "Protocol": "File",
         "Id": source_id,
@@ -617,35 +966,42 @@ pub fn media_source(
         "SupportsProbing": true,
         "VideoType": "VideoFile",
         "MediaStreams": streams,
-        "MediaAttachments": [],
+        "MediaAttachments": attachments,
         "Formats": [],
         "RequiredHttpHeaders": {},
         "TranscodingSubProtocol": "http",
         "HasSegments": false,
     });
-    if let Some(container) = &version.container {
+    if let Some(container) = file
+        .source_container()
+        .or_else(|| version.container.clone())
+    {
         source["Container"] = json!(container);
     }
     if let Some(size) = file.size_bytes {
         source["Size"] = json!(size);
     }
-    if let Some(duration) = file
+    let measured = file
         .duration_ms
         .or(version.duration_ms)
         .or(item_duration_ms)
-    {
-        source["RunTimeTicks"] = json!(time::ticks(duration));
+        .map(time::ticks);
+    if let Some(ticks) = file.declared_ticks().or(measured) {
+        source["RunTimeTicks"] = json!(ticks);
     }
-    if let Some(bitrate) = version.bitrate {
+    if file.format_names().as_deref() == Some("ts") {
+        if let Some(timestamp) = file.timestamp() {
+            source["Timestamp"] = json!(timestamp);
+        }
+    }
+    if let Some(bitrate) = file.stated.bitrate.or(version.bitrate) {
         source["Bitrate"] = json!(bitrate);
     }
-    if let Some(audio) = file
-        .streams
-        .iter()
-        .filter(|track| track.kind == "AUDIO")
-        .max_by_key(|track| track.is_default)
-    {
-        source["DefaultAudioStreamIndex"] = json!(audio.position);
+    if let Some(index) = default_audio {
+        source["DefaultAudioStreamIndex"] = json!(index);
+    }
+    if let Some(index) = default_subtitle {
+        source["DefaultSubtitleStreamIndex"] = json!(index);
     }
     Some(source)
 }
@@ -676,6 +1032,7 @@ mod tests {
             library: Some(Reference {
                 id: open_plex_api::GlobalId::encode("Library", 1),
                 title: None,
+                language: Some("fr-FR".to_owned()),
             }),
             watch_state: Some(WatchState {
                 view_count: 1,
@@ -699,6 +1056,7 @@ mod tests {
             external_ids: None,
             show: None,
             season: None,
+            chapters: None,
         }
     }
 
@@ -833,6 +1191,7 @@ mod tests {
         episode.show = Some(Reference {
             id: open_plex_api::GlobalId::encode("Item", 201),
             title: Some("90210".to_owned()),
+            language: None,
         });
         episode.season = Some(SeasonReference {
             id: open_plex_api::GlobalId::encode("Item", 202),
@@ -854,6 +1213,127 @@ mod tests {
         assert_eq!(dto["SeasonId"], id::of("Item", 202).unwrap());
         assert_eq!(dto["SeasonName"], "Season 1");
         assert_eq!(dto["ParentId"], id::of("Item", 202).unwrap());
+    }
+
+    #[test]
+    fn an_unnamed_chapter_is_numbered_in_its_librarys_language() {
+        let mut film = movie();
+        film.chapters = Some(Nodes {
+            nodes: vec![
+                Chapter {
+                    start_ms: 0,
+                    title: None,
+                    stated: StatedChapter::default(),
+                },
+                Chapter {
+                    start_ms: 433_224,
+                    title: Some("Credits".to_owned()),
+                    stated: StatedChapter::default(),
+                },
+            ],
+        });
+        let fields = Fields::all();
+        let dto = item_dto(
+            &film,
+            &Shaping {
+                server_id: "s",
+                fields: &fields,
+            },
+        );
+        assert_eq!(dto["Chapters"][0]["Name"], "Chapitre 1");
+        assert_eq!(dto["Chapters"][1]["Name"], "Credits");
+        assert_eq!(dto["Chapters"][1]["StartPositionTicks"], 4_332_240_000_i64);
+        assert_eq!(
+            dto["Chapters"][1]["ImageDateModified"],
+            "0001-01-01T00:00:00.0000000Z"
+        );
+        if let Some(library) = &mut film.library {
+            library.language = Some("en-US".to_owned());
+        }
+        let dto = item_dto(
+            &film,
+            &Shaping {
+                server_id: "s",
+                fields: &fields,
+            },
+        );
+        assert_eq!(dto["Chapters"][0]["Name"], "Chapter 1");
+    }
+
+    #[test]
+    fn a_scanned_chapter_is_named_as_written_unless_it_reads_as_a_time() {
+        let chapter = |title: &str, start_us: &str| Chapter {
+            start_ms: 1_238_200,
+            title: None,
+            stated: StatedChapter {
+                title: Some(title.to_owned()),
+                start_us: Some(start_us.to_owned()),
+            },
+        };
+        let numbered = chapter("Chapter 04", "1238195000");
+        assert_eq!(numbered.name(), Some("Chapter 04"));
+        // The reference keeps milliseconds; storage, Plex's six significant digits.
+        assert_eq!(numbered.start_ticks(), 12_381_950_000);
+        assert_eq!(chapter("00:07:13.224", "433224000").name(), None);
+        assert_eq!(chapter("01", "0").name(), None);
+        assert_eq!(chapter(" ", "0").name(), None);
+        assert_eq!(chapter("Opening", "0").name(), Some("Opening"));
+        assert_eq!(chapter("Episode 1", "0").name(), Some("Episode 1"));
+        assert_eq!(chapter("1:2:3:4", "0").name(), Some("1:2:3:4"));
+        assert_eq!(
+            chapter("x", "1500").start_ticks(),
+            20_000,
+            "1.5 ms rounds to even"
+        );
+    }
+
+    #[test]
+    fn sort_names_are_the_references() {
+        assert_eq!(
+            folded_sort_name("Post 2070: A Documentary on the Monrovia VFW"),
+            "post 0000002070: documentary on monrovia vfw"
+        );
+        assert_eq!(
+            folded_sort_name("Le Tour du monde en 80 jours"),
+            "le tour du monde en 0000000080 jours"
+        );
+        assert_eq!(folded_sort_name("The Wine Show"), "wine show");
+        assert_eq!(
+            folded_sort_name("Jurassic World : Fallen Kingdom"),
+            "jurassic world : fallen kingdom"
+        );
+        let mut episode = movie();
+        episode.type_name = "Episode".to_owned();
+        episode.title = None;
+        episode.number = Some(302);
+        episode.season = Some(SeasonReference {
+            id: open_plex_api::GlobalId::encode("Item", 202),
+            number: Some(0),
+            title: None,
+        });
+        episode.versions = vec![Version {
+            width: None,
+            height: None,
+            container: None,
+            duration_ms: None,
+            bitrate: None,
+            files: vec![serde_json::from_value(json!({
+                "id": "f", "path": "/k/Kaamelott - S00E302 - Bonus.mkv",
+                "filename": "Kaamelott - S00E302 - Bonus.mkv", "streams": [],
+            }))
+            .unwrap()],
+        }];
+        assert_eq!(name(&episode), "Kaamelott - S00E302 - Bonus");
+        assert_eq!(
+            sort_name(&episode),
+            "000 - 0302 - Kaamelott - S00E302 - Bonus"
+        );
+        let mut season = movie();
+        season.type_name = "Season".to_owned();
+        season.title = None;
+        season.number = Some(0);
+        assert_eq!(name(&season), "Specials");
+        assert_eq!(sort_name(&season), "0000");
     }
 
     #[test]
@@ -892,7 +1372,10 @@ mod tests {
                 filename: "doodlebug.1997.VO.H264.mkv".to_owned(),
                 size_bytes: Some(14_876_546),
                 duration_ms: None,
+                packet_length: None,
+                stated: StatedFile::default(),
                 streams: vec![crate::track::tests::track("VIDEO", "h264"), audio],
+                side_streams: Vec::new(),
             }],
         };
         let source = media_source(&version, "source", None).unwrap();

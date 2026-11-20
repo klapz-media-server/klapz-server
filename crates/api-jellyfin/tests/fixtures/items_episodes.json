@@ -1,0 +1,1816 @@
+{
+  "Items": [
+    {
+      "Name": "Kaleidoscope_S00E01_Noir",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "c8afa97229a08df52e4bb5927ce59c0e",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "000 - 0001 - Kaleidoscope_S00E01_Noir",
+      "Path": "/media/TVShows/Multi/Kaleidoscope/Kaleidoscope_S00E01_Noir.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 645440000,
+      "ProductionYear": 0,
+      "IndexNumber": 1,
+      "ParentIndexNumber": 0,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "5588a518c2de3983af8e0841042398a1",
+      "ParentBackdropImageTags": [
+        "2985b2866acb8f0df8e63596eb98bb86"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "410092000001",
+        "ItemId": "c8afa97229a08df52e4bb5927ce59c0e"
+      },
+      "SeriesName": "Kaleidoscope",
+      "SeriesId": "5588a518c2de3983af8e0841042398a1",
+      "SeasonId": "7f382b7b8109e785cceba2061a3d2f8a",
+      "PrimaryImageAspectRatio": 1.7676767676767677,
+      "SeriesPrimaryImageTag": "bf3d75eba0974769c23532ae938fc7be",
+      "SeasonName": "Specials",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "bc7a42f6d0a7fdc71b62753b39f18d93"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "bc7a42f6d0a7fdc71b62753b39f18d93": "WDCG4L4%B-^sIAXw-@bpv}tKV_nm[2OAxrnQf9R:-cNft6s*nhW?",
+          "bf3d75eba0974769c23532ae938fc7be": "dMBDWjIv0n~S%fRjEN%IaRVst7WFN0i^nhWFxVRlWFxY"
+        },
+        "Thumb": {
+          "2b9644136e1427da91d665409abf731a": "WCAwSN.A%Dq_K7%3tp9moxrZK6$kI^9$Iov~OsWF?;?R%Fs9S#kQ"
+        },
+        "Backdrop": {
+          "2985b2866acb8f0df8e63596eb98bb86": "WGC?fXtp0T^[-gDm?uKQMlrv%KVgtR9%5FNEZ~RVX|%FR+t2$eR8"
+        }
+      },
+      "ParentThumbItemId": "5588a518c2de3983af8e0841042398a1",
+      "ParentThumbImageTag": "2b9644136e1427da91d665409abf731a",
+      "ParentPrimaryImageItemId": "5588a518c2de3983af8e0841042398a1",
+      "ParentPrimaryImageTag": "bf3d75eba0974769c23532ae938fc7be",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "S00E01",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "a210353d08bd59758a54949232e21c64",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "000 - 0001 - S00E01",
+      "PremiereDate": "2013-07-28T12:10:13.0000000Z",
+      "Path": "/media/TVShows/VO/Hajime no Ippo/S00E01.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 751020000,
+      "ProductionYear": 2013,
+      "IndexNumber": 1,
+      "ParentIndexNumber": 0,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "1520fe6b2e1e7cd807dfb4d7b3628246",
+      "ParentBackdropImageTags": [
+        "98c1ffc9ca2b657ceacbf4a6a958bee3"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "1520fe6b-2e1e-7cd8-07df-b4d7b3628246000001",
+        "ItemId": "a210353d08bd59758a54949232e21c64"
+      },
+      "SeriesName": "Hajime no ippo manga",
+      "SeriesId": "1520fe6b2e1e7cd807dfb4d7b3628246",
+      "SeasonId": "3b143575123b44fdcaf5488210bd0c0e",
+      "PrimaryImageAspectRatio": 1.3333333333333333,
+      "SeriesPrimaryImageTag": "5e0a9b6ed7b4d6a433061b79bc20757b",
+      "SeasonName": "Specials",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "8e8435c31f2eba07197d1806742b8e1e"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "8e8435c31f2eba07197d1806742b8e1e": "VKJrEU1KE3[u#9:T%KOEv$jINMw0sloys:,@o0$$S4nj",
+          "5e0a9b6ed7b4d6a433061b79bc20757b": "dPPZr%00IU?bt79FD%t74nD%t7xuD%D%%M%MM{Rjoft7"
+        },
+        "Backdrop": {
+          "98c1ffc9ca2b657ceacbf4a6a958bee3": "NtPZr%%M?b~qWBt7-;M{ofxu%Mof%MM{j[t7xuWB"
+        }
+      },
+      "ParentPrimaryImageItemId": "1520fe6b2e1e7cd807dfb4d7b3628246",
+      "ParentPrimaryImageTag": "5e0a9b6ed7b4d6a433061b79bc20757b",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "S00E01 - BONUS_Karaoke",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "5041728e0d39aa9474089e30a2b4bfd6",
+      "Container": "avi",
+      "SortName": "000 - 0001 - S00E01 - BONUS_Karaoke",
+      "Path": "/media/TVShows/VF/Ariol/S00E01 - BONUS_Karaoke.avi",
+      "ChannelId": null,
+      "RunTimeTicks": 432960000,
+      "IndexNumber": 1,
+      "ParentIndexNumber": 0,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "354c9aff07fe23697a578521422ad11b",
+      "ParentBackdropImageTags": [
+        "33e1780bb0af3af594d158b7302eeaf3"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "tt10256106000001",
+        "ItemId": "5041728e0d39aa9474089e30a2b4bfd6"
+      },
+      "SeriesName": "Ariol",
+      "SeriesId": "354c9aff07fe23697a578521422ad11b",
+      "SeasonId": "993b82ecf0a5d39e3a37070a75187bd9",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "2b7c7d678d1969c68fcd172b2796c16b",
+      "SeasonName": "Specials",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "19a514c17faa3cd691ba2df346e5ab6c"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "19a514c17faa3cd691ba2df346e5ab6c": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ",
+          "2b7c7d678d1969c68fcd172b2796c16b": "dNLXJ3.koOxA8YXKs,M_9YroS^xFyD$yohax.7yEnnNF"
+        },
+        "Backdrop": {
+          "33e1780bb0af3af594d158b7302eeaf3": "WjNRiSNHEMsma_t7~AafRns:R*bH^iWBS5kCoLs.%LWVWVa#jbs:"
+        }
+      },
+      "ParentPrimaryImageItemId": "354c9aff07fe23697a578521422ad11b",
+      "ParentPrimaryImageTag": "2b7c7d678d1969c68fcd172b2796c16b",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Sealed with a Kick (Pilot)",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "b00af7f9efc24f64229ce894b8aba892",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "000 - 0001 - Sealed with a Kick (Pilot)",
+      "PremiereDate": "1995-08-10T22:00:00.0000000Z",
+      "Path": "/media/TVShows/Multi/Daria/Daria.S00E01.MULTi.DVDRip.x264-LiNKJUL.mkv",
+      "ChannelId": null,
+      "CommunityRating": 10,
+      "RunTimeTicks": 3201490000,
+      "ProductionYear": 1995,
+      "IndexNumber": 1,
+      "ParentIndexNumber": 0,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "dfec8d020c2dcdc7bd514113d80ac9f4",
+      "ParentBackdropImageTags": [
+        "15c7b7c57b64f7ede1b3f06e26315e94"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "77996000001",
+        "ItemId": "b00af7f9efc24f64229ce894b8aba892"
+      },
+      "SeriesName": "Daria",
+      "SeriesId": "dfec8d020c2dcdc7bd514113d80ac9f4",
+      "SeasonId": "778ce8ec9c92edee06f8c83b93609184",
+      "PrimaryImageAspectRatio": 1.3333333333333333,
+      "SeriesPrimaryImageTag": "062c0a3295343c5f1900bb09b5752314",
+      "SeasonName": "Specials",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "0a149c7bc3f674069613a55571bdc59d"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "0a149c7bc3f674069613a55571bdc59d": "VBL}84t7_3NFxu~qRjt7t7IUt7RjM{xuWUxujuM{oft7",
+          "062c0a3295343c5f1900bb09b5752314": "dXBg}ctR5wOv?doMM_f+KRX9$xs.Otbbs+ayXBoLV?Rk",
+          "125fe5242d1f1c577ba13b5260d91733": "dvNTfuxs^?-$~Ut6IVfi%dt5aMjb%JkBahj[%FagNKoc"
+        },
+        "Thumb": {
+          "70719783c7766d9faaa44924a1db2d35": "WSLzuu^]xpRX?R%0^#NHWV$%NaoL%Fxsa#NHs;j?~i-,oeM}xtoc"
+        },
+        "Backdrop": {
+          "15c7b7c57b64f7ede1b3f06e26315e94": "WLG*Z-+q~X==Icv~=LskX9ROf,xGV}IqNeR.xsxu-DROakWTV@xG"
+        }
+      },
+      "ParentThumbItemId": "dfec8d020c2dcdc7bd514113d80ac9f4",
+      "ParentThumbImageTag": "70719783c7766d9faaa44924a1db2d35",
+      "ParentPrimaryImageItemId": "778ce8ec9c92edee06f8c83b93609184",
+      "ParentPrimaryImageTag": "125fe5242d1f1c577ba13b5260d91733",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Hide and Seek Webisode 1",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "7ab80ba0be8746e548031a0d5560a257",
+      "Container": "mov,mp4,m4a,3gp,3g2,mj2",
+      "SortName": "000 - 0002 - Hide and Seek Webisode 1",
+      "PremiereDate": "2006-07-24T22:00:00.0000000Z",
+      "Path": "/media/TVShows/VO/Eureka/S00E02.mp4",
+      "ChannelId": null,
+      "RunTimeTicks": 913473020,
+      "ProductionYear": 2006,
+      "IndexNumber": 2,
+      "ParentIndexNumber": 0,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "7b9a400658426b9aa627baa219686a7e",
+      "ParentBackdropImageTags": [
+        "c189774d0d546754dfa3cf0dbb019623"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "79334000002",
+        "ItemId": "7ab80ba0be8746e548031a0d5560a257"
+      },
+      "SeriesName": "Eureka",
+      "SeriesId": "7b9a400658426b9aa627baa219686a7e",
+      "SeasonId": "83f5d85b803ae3f701411905c9b82cae",
+      "PrimaryImageAspectRatio": 1.3468013468013469,
+      "SeriesPrimaryImageTag": "53e0374762a028ae23b6d0d1c5df5ba6",
+      "SeasonName": "Specials",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "a812dfbd37841870767e9fea1d5ccb71"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "a812dfbd37841870767e9fea1d5ccb71": "V48gZ;01?bR4.8-;D%tm9ZT09d%JV[oyMyIWOEIV-.My",
+          "53e0374762a028ae23b6d0d1c5df5ba6": "dUE|F@%MD*og_NxDs:xuE3jE%2tRK+bwoyWqt7WqR*W=",
+          "c6f38fc0b6e7888d92916307e54e31f9": "dPOXB?-=^$?bOIoLbbj@9dR-R%R*0obI?Gax4;R+WrRk"
+        },
+        "Thumb": {
+          "95a239c90fd49a932f1bc99eb1d5454d": "WaJRdeafH?xH%1t6peWYibxtM{slK+NuwaRPs9sp?wt7s8WAj]og"
+        },
+        "Backdrop": {
+          "c189774d0d546754dfa3cf0dbb019623": "WeFZBD%N4mRPt3n+K9WCv{f5a|axFhR-sQaen%f5%hWqRjxba{WD"
+        }
+      },
+      "ParentThumbItemId": "7b9a400658426b9aa627baa219686a7e",
+      "ParentThumbImageTag": "95a239c90fd49a932f1bc99eb1d5454d",
+      "ParentPrimaryImageItemId": "83f5d85b803ae3f701411905c9b82cae",
+      "ParentPrimaryImageTag": "c6f38fc0b6e7888d92916307e54e31f9",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "S00E11",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "d3e87893dd01da6b52a9a4298c0fc8fd",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "000 - 0011 - S00E11",
+      "PremiereDate": "2013-10-17T20:30:12.0000000Z",
+      "Path": "/media/TVShows/VO/Hajime no Ippo/S00E11.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 848940000,
+      "ProductionYear": 2013,
+      "IndexNumber": 11,
+      "ParentIndexNumber": 0,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "1520fe6b2e1e7cd807dfb4d7b3628246",
+      "ParentBackdropImageTags": [
+        "98c1ffc9ca2b657ceacbf4a6a958bee3"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "1520fe6b-2e1e-7cd8-07df-b4d7b3628246000011",
+        "ItemId": "d3e87893dd01da6b52a9a4298c0fc8fd"
+      },
+      "SeriesName": "Hajime no ippo manga",
+      "SeriesId": "1520fe6b2e1e7cd807dfb4d7b3628246",
+      "SeasonId": "3b143575123b44fdcaf5488210bd0c0e",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "5e0a9b6ed7b4d6a433061b79bc20757b",
+      "SeasonName": "Specials",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "23c5f26129019eeafe9b75e53a4450b1"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "23c5f26129019eeafe9b75e53a4450b1": "WC9@Fx_44.9FxY%fD*V@%M%gxaM}9ZWA-;tSIoMx?vxvIUMykW%L",
+          "5e0a9b6ed7b4d6a433061b79bc20757b": "dPPZr%00IU?bt79FD%t74nD%t7xuD%D%%M%MM{Rjoft7"
+        },
+        "Backdrop": {
+          "98c1ffc9ca2b657ceacbf4a6a958bee3": "NtPZr%%M?b~qWBt7-;M{ofxu%Mof%MM{j[t7xuWB"
+        }
+      },
+      "ParentPrimaryImageItemId": "1520fe6b2e1e7cd807dfb4d7b3628246",
+      "ParentPrimaryImageTag": "5e0a9b6ed7b4d6a433061b79bc20757b",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Echo Canyon",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "f38d6799058b4444b3bad9dcc4891b8c",
+      "Container": "mkv",
+      "SortName": "000 - 0041 - Echo Canyon",
+      "PremiereDate": "1989-03-11T23:00:00.0000000Z",
+      "Path": "/media/TVShows/VO/The Simpsons/Saison 00/The.Simpsons.S00E41.Bart's Little Fantasy.mkv",
+      "ChannelId": null,
+      "CommunityRating": 6.3,
+      "RunTimeTicks": 530530000,
+      "ProductionYear": 1989,
+      "IndexNumber": 41,
+      "ParentIndexNumber": 0,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "b562128b379a0e134f3888e31e33b70c",
+      "ParentBackdropImageTags": [
+        "6e9d31e1cfffbde8b5d48e5407ad73b6"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "71663000041",
+        "ItemId": "f38d6799058b4444b3bad9dcc4891b8c"
+      },
+      "SeriesName": "The Simpsons",
+      "SeriesId": "b562128b379a0e134f3888e31e33b70c",
+      "SeasonId": "bce60fcf9b80a4c19a97385c067a879c",
+      "PrimaryImageAspectRatio": 1.3333333333333333,
+      "SeriesPrimaryImageTag": "7288854747916df3eab8c7f476dbb50d",
+      "SeasonName": "Specials",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "e3013f8daf1fb72cce704060a50e4efc"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "e3013f8daf1fb72cce704060a50e4efc": "VZI${A#5t--qsqT#n2xUk;o|NjN#MwX8S$XnS$WYrpt6",
+          "7288854747916df3eab8c7f476dbb50d": "dMG],g.TE3%O}~I=JGs*w@ESEBSi^~s=IyS%%Cx@#loz",
+          "f51cb3c57bcc1ee3b2fed468a58912ef": "dVM=wz]z#j,b|pEnEN#,5Bo{InR%xwrqa0WAnNWCNet7"
+        },
+        "Thumb": {
+          "ebacfa535b35ceaf9a170b4deaaa32b6": "W;GmiaBaa#xWbbkEx]NN$wSPR:t2W=aff6oJWYoJtSW?WDocbIja"
+        },
+        "Backdrop": {
+          "6e9d31e1cfffbde8b5d48e5407ad73b6": "WyM%fMtS$v=:-3-M~1JENfa{jExUt3n#R:WYWYbI$xkCSPs,s+af"
+        }
+      },
+      "ParentThumbItemId": "b562128b379a0e134f3888e31e33b70c",
+      "ParentThumbImageTag": "ebacfa535b35ceaf9a170b4deaaa32b6",
+      "ParentPrimaryImageItemId": "bce60fcf9b80a4c19a97385c067a879c",
+      "ParentPrimaryImageTag": "f51cb3c57bcc1ee3b2fed468a58912ef",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Trumptastic Voyage",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "e4c821120659bb426ca607c2a0764e25",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "000 - 0064 - Trumptastic Voyage",
+      "PremiereDate": "2015-07-06T22:00:00.0000000Z",
+      "Path": "/media/TVShows/Multi/The Simpsons/Maggie.Simpson.in.The.Force.Awakens.from.Its.Nap.S00E64.2021.VOSTFR.1080p.WEB-DL.AC3.x265-STEGNER.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 2155200000,
+      "ProductionYear": 2015,
+      "IndexNumber": 64,
+      "ParentIndexNumber": 0,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "e317e540d714733e594e5a49717e4eb3",
+      "ParentBackdropImageTags": [
+        "295bc12d6d71cc26001e7e0502b28b80"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "71663000064",
+        "ItemId": "e4c821120659bb426ca607c2a0764e25"
+      },
+      "SeriesName": "The Simpsons",
+      "SeriesId": "e317e540d714733e594e5a49717e4eb3",
+      "SeasonId": "e34bc0a34683710752d3431f268f5f25",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "8e25aeb6f607cc3a9e7c50071ffd4074",
+      "SeasonName": "Specials",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "0b69df42de6aa46fd52a9c96303e7a0d"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "0b69df42de6aa46fd52a9c96303e7a0d": "WMCr{Hsq9jxb-g%0%7WFN3R.xUoLD+xYxVRkofoet8RoWTbHNMWY",
+          "8e25aeb6f607cc3a9e7c50071ffd4074": "dMG],g.TE3%O}~I=JGs*w@ESEBSi^~s=IyS%%Cx@#loz",
+          "e1374dab32335a54813a3dedc0524b7a": "dVM=wz]z#j,b|pEnEN#,5Bo{InR%xwrqa0WAnNWCNet7"
+        },
+        "Thumb": {
+          "3d7c94b64af22334e9d990a682675d1d": "W;GmiaBaa#xWbbkEx]NN$wSPR:t2W=aff6oJWYoJtSW?WDocbIja"
+        },
+        "Backdrop": {
+          "295bc12d6d71cc26001e7e0502b28b80": "WyM%fMtS$v=:-3-M~1JENfa{jExUt3n#R:WYWYbI$xkCSPs,s+af"
+        }
+      },
+      "ParentThumbItemId": "e317e540d714733e594e5a49717e4eb3",
+      "ParentThumbImageTag": "3d7c94b64af22334e9d990a682675d1d",
+      "ParentPrimaryImageItemId": "e34bc0a34683710752d3431f268f5f25",
+      "ParentPrimaryImageTag": "e1374dab32335a54813a3dedc0524b7a",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Kaamelott - S00E302 - Bonus S2 - Bande annonce Livre III",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "102e96b92e63c310dfd66de10f018c44",
+      "Container": "mkv",
+      "SortName": "000 - 0302 - Kaamelott - S00E302 - Bonus S2 - Bande annonce Livre III",
+      "PremiereDate": "2018-09-29T21:50:02.0000000Z",
+      "Path": "/media/TVShows/VF/Kaamelott/Kaamelott - S00E302 - Bonus S2 - Bande annonce Livre III.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 300000000,
+      "ProductionYear": 2018,
+      "IndexNumber": 302,
+      "ParentIndexNumber": 0,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "6b000c4beecc0259949d014415108647",
+      "ParentBackdropImageTags": [
+        "24e0d3cfeca200cda87529a3594b97be"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "79175000302",
+        "ItemId": "102e96b92e63c310dfd66de10f018c44"
+      },
+      "SeriesName": "Kaamelott",
+      "SeriesId": "6b000c4beecc0259949d014415108647",
+      "SeasonId": "f7e9ed302fad66624001e977425f3ff5",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "74a368c644eff8edf9a47b468bf45462",
+      "SeasonName": "Specials",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "0ed0b1102473abdd7eb8211d15ffefa4"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "0ed0b1102473abdd7eb8211d15ffefa4": "W34xrM?uoyxtt7s;_M-;WCfkxtt7xut7RkRQkAj@tQa{V[ayWBM{",
+          "74a368c644eff8edf9a47b468bf45462": "dIM@ca~poJ_2e.xuRiV@_2M{M{ay~WM{j[%M4nayxuof",
+          "d1606fb28fa353c6a3ac5c41a5562000": "d771$X%N_Nxu%Mt7fjfkM{Rjoft7RjfQ%M%MM{fkWBay"
+        },
+        "Thumb": {
+          "24d6d5b3ce40ae5e588273d320ad1528": "WHA9+t$KE1KPI@WoS$RksAs:R*R+0LT0xvn4-7xZIUxuxuRjfkj["
+        },
+        "Backdrop": {
+          "24e0d3cfeca200cda87529a3594b97be": "W45XPyj]0#$$r?EM-:ayIps:ofR*-UayIpj[xZWW-ojsIpa}fkWV"
+        }
+      },
+      "ParentThumbItemId": "6b000c4beecc0259949d014415108647",
+      "ParentThumbImageTag": "24d6d5b3ce40ae5e588273d320ad1528",
+      "ParentPrimaryImageItemId": "f7e9ed302fad66624001e977425f3ff5",
+      "ParentPrimaryImageTag": "d1606fb28fa353c6a3ac5c41a5562000",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Kaamelott - S00E602 - Bonus S5 - Bande annonce Livre VI",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "bcb1d69b9d0064b3c901c34b350ad168",
+      "Container": "mkv",
+      "SortName": "000 - 0602 - Kaamelott - S00E602 - Bonus S5 - Bande annonce Livre VI",
+      "PremiereDate": "2018-10-01T06:32:45.0000000Z",
+      "Path": "/media/TVShows/VF/Kaamelott/Kaamelott - S00E602 - Bonus S5 - Bande annonce Livre VI.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 500400000,
+      "ProductionYear": 2018,
+      "IndexNumber": 602,
+      "ParentIndexNumber": 0,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "6b000c4beecc0259949d014415108647",
+      "ParentBackdropImageTags": [
+        "24e0d3cfeca200cda87529a3594b97be"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "79175000602",
+        "ItemId": "bcb1d69b9d0064b3c901c34b350ad168"
+      },
+      "SeriesName": "Kaamelott",
+      "SeriesId": "6b000c4beecc0259949d014415108647",
+      "SeasonId": "f7e9ed302fad66624001e977425f3ff5",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "74a368c644eff8edf9a47b468bf45462",
+      "SeasonName": "Specials",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "003e4865455083bfa51894412c4d5081"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "003e4865455083bfa51894412c4d5081": "W4AcI{xuEL=^E2Dj+[9b=_~8%1-Uvf=^^%NI%2?G?FbIn#$y$|V?",
+          "74a368c644eff8edf9a47b468bf45462": "dIM@ca~poJ_2e.xuRiV@_2M{M{ay~WM{j[%M4nayxuof",
+          "d1606fb28fa353c6a3ac5c41a5562000": "d771$X%N_Nxu%Mt7fjfkM{Rjoft7RjfQ%M%MM{fkWBay"
+        },
+        "Thumb": {
+          "24d6d5b3ce40ae5e588273d320ad1528": "WHA9+t$KE1KPI@WoS$RksAs:R*R+0LT0xvn4-7xZIUxuxuRjfkj["
+        },
+        "Backdrop": {
+          "24e0d3cfeca200cda87529a3594b97be": "W45XPyj]0#$$r?EM-:ayIps:ofR*-UayIpj[xZWW-ojsIpa}fkWV"
+        }
+      },
+      "ParentThumbItemId": "6b000c4beecc0259949d014415108647",
+      "ParentThumbImageTag": "24d6d5b3ce40ae5e588273d320ad1528",
+      "ParentPrimaryImageItemId": "f7e9ed302fad66624001e977425f3ff5",
+      "ParentPrimaryImageTag": "d1606fb28fa353c6a3ac5c41a5562000",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Episode 1",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "84284355e50e39aafc843f25b5ae4e4c",
+      "Container": "mkv,webm",
+      "SortName": "001 - 0001 - Episode 1",
+      "PremiereDate": "2008-11-06T23:00:00.0000000Z",
+      "Path": "/media/TVShows/VF/Noob/Noob - S01E01 - Gaea l'invocatrice.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 2167040000,
+      "ProductionYear": 2008,
+      "IndexNumber": 1,
+      "ParentIndexNumber": 1,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "d39bac7fdac6f307d3c54798ba307042",
+      "ParentBackdropImageTags": [
+        "27daeeb7fc7d746aa135be51fbfa60e6"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "111371001001",
+        "ItemId": "84284355e50e39aafc843f25b5ae4e4c"
+      },
+      "SeriesName": "NOOB",
+      "SeriesId": "d39bac7fdac6f307d3c54798ba307042",
+      "SeasonId": "0df9d38b3044d305ad94936d5d413bbe",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "467264a7f4072de6637d0b2c594fe26c",
+      "SeasonName": "Saison 1",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "d1756165bbe1284bb017712f54b1458a"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "d1756165bbe1284bb017712f54b1458a": "WXF$9OD%OD~qnhxaxtoz%Mt7Rjt7Infln%V@R*a|t7V[WBofbHjZ",
+          "467264a7f4072de6637d0b2c594fe26c": "dEG[AsRPD%Rk~WxZ9GE2^*oyM{jYE3My=_Rk02fPNGNJ",
+          "fbf3b5481aaaba980c9346a179ab5015": "dEG[AsRPD%Rk~WxZ9GE2^*oyM{jYE3My=_Rk02bFNGNI"
+        },
+        "Thumb": {
+          "de65c0fb09de858cb34fc21253e4f567": "WVD0G+spItT1MdjF_4t8S2M|M_t5-qXmNZR6WAt2-pS%NbadjFsl"
+        },
+        "Backdrop": {
+          "27daeeb7fc7d746aa135be51fbfa60e6": "WUB=0B$jK+xbm-YP_NWC9[RjRjS4?HofIos-t7jF?ut7I=s:xatR"
+        }
+      },
+      "ParentThumbItemId": "d39bac7fdac6f307d3c54798ba307042",
+      "ParentThumbImageTag": "de65c0fb09de858cb34fc21253e4f567",
+      "ParentPrimaryImageItemId": "0df9d38b3044d305ad94936d5d413bbe",
+      "ParentPrimaryImageTag": "fbf3b5481aaaba980c9346a179ab5015",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Zander's Joyride",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "a3e7e1b2bb6cc746f153d0c513dfb811",
+      "Container": "flv",
+      "SortName": "001 - 0003 - Zander's Joyride",
+      "PremiereDate": "2016-06-21T22:00:00.0000000Z",
+      "Path": "/media/TVShows/VF/LEGO Star Wars/Saison 01/S01E03 - Bombad Bounty.flv",
+      "OfficialRating": "TV-Y7",
+      "ChannelId": null,
+      "CommunityRating": 4.7,
+      "RunTimeTicks": 3015250000,
+      "ProductionYear": 2016,
+      "IndexNumber": 3,
+      "ParentIndexNumber": 1,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "470a52988c65986fbc22c1839c43370d",
+      "ParentBackdropImageTags": [
+        "1a1f14bd55eeebd921173d524c2b7b43"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "250498001003",
+        "ItemId": "a3e7e1b2bb6cc746f153d0c513dfb811"
+      },
+      "SeriesName": "LEGO Star Wars: The Freemaker Adventures",
+      "SeriesId": "470a52988c65986fbc22c1839c43370d",
+      "SeasonId": "81371e95f5ade41327bc1f761522c333",
+      "PrimaryImageAspectRatio": 1.7785800240673888,
+      "SeriesPrimaryImageTag": "9f9bcc8eafbe442964c45328d9528f73",
+      "SeasonName": "Season 1",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "4a017521efa92b3621f4c8f8cf6b396d"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "4a017521efa92b3621f4c8f8cf6b396d": "NBA9KAIo1NIo=xNL59%1e.s:Rks,5*WG=sSPNuWC",
+          "9f9bcc8eafbe442964c45328d9528f73": "dRDSq5vz4:Rk$dozM|M|01T0xtt6JERixWx[NZae%0og",
+          "fcc163154dcededf182738f34a9d86e3": "dRDSq6vz4:Rk$dozM|M|01T0xtt6JDRjxY%LNYad%0og"
+        },
+        "Thumb": {
+          "61211c32b77acd0227c3f8912404ede1": "WUDSO7$z0MD*x[kWxZWXNIV@t6t7E1S$t7n$i^t7-pt7IUR*xZt7"
+        },
+        "Backdrop": {
+          "1a1f14bd55eeebd921173d524c2b7b43": "WLDSg*8_01^+V@tR}@R-IUx]azjEv}j]xaRjR,xZ$iWBozjFV@oz"
+        }
+      },
+      "ParentThumbItemId": "470a52988c65986fbc22c1839c43370d",
+      "ParentThumbImageTag": "61211c32b77acd0227c3f8912404ede1",
+      "ParentPrimaryImageItemId": "81371e95f5ade41327bc1f761522c333",
+      "ParentPrimaryImageTag": "fcc163154dcededf182738f34a9d86e3",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Downfall of a Droid",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "0cafd8e1b4082d7f4478240ae2468b79",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "001 - 0006 - Downfall of a Droid",
+      "PremiereDate": "2008-11-06T23:00:00.0000000Z",
+      "Path": "/media/TVShows/Multi/Star Wars The Clone Wars 2008/Clone Wars S01E06.mkv",
+      "OfficialRating": "TV-PG",
+      "ChannelId": null,
+      "CommunityRating": 6.8,
+      "RunTimeTicks": 12870400000,
+      "ProductionYear": 2008,
+      "IndexNumber": 6,
+      "ParentIndexNumber": 1,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "cfb9a3e7d33d6190480ae59884927869",
+      "ParentBackdropImageTags": [
+        "ea8dca2fee796804880e74ab9e66337c"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "83268001006",
+        "ItemId": "0cafd8e1b4082d7f4478240ae2468b79"
+      },
+      "SeriesName": "Star Wars: The Clone Wars",
+      "SeriesId": "cfb9a3e7d33d6190480ae59884927869",
+      "SeasonId": "a13503c59af1190ef0d30e59af07e789",
+      "PrimaryImageAspectRatio": 1.7775,
+      "SeriesPrimaryImageTag": "cf9052740771e9c499d0fdce75a6ed45",
+      "SeasonName": "Saison 1",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "6d191970c60fe0f5357ba46e6bd99640"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "6d191970c60fe0f5357ba46e6bd99640": "WMDu;?R8t7o|E29u~VIps:-of8Ip%2t6Rkxao2WEnixFNGoftQW=",
+          "cf9052740771e9c499d0fdce75a6ed45": "dfIDN}-Un4-U-Es;n$WE0~SPOYI:X1ozOGjXrGogtPV@",
+          "2df6d99ad58a1df3aaf27fe360520e2d": "dNJjSi*dw|s=m-%NXSMwpw9]b]nh_2M_Rjog8{My%Msm"
+        },
+        "Thumb": {
+          "71e49ae785f29b08ac4dfba3cba85eb4": "WVECOQx80fNPIWIu?bWAD*t8oaR+D+I^V@%G-itMIaWDozs+t4bc"
+        },
+        "Backdrop": {
+          "ea8dca2fee796804880e74ab9e66337c": "WWC$sBRN0fo$nzn,.8RjIBxut1WCROXAaKxYxVS2NKoJozaea#S6"
+        }
+      },
+      "ParentThumbItemId": "cfb9a3e7d33d6190480ae59884927869",
+      "ParentThumbImageTag": "71e49ae785f29b08ac4dfba3cba85eb4",
+      "ParentPrimaryImageItemId": "a13503c59af1190ef0d30e59af07e789",
+      "ParentPrimaryImageTag": "2df6d99ad58a1df3aaf27fe360520e2d",
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "OriginalLanguage": "en"
+    },
+    {
+      "Name": "By Blood",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "19ac20e8902b986d522e7e7b3353a494",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "001 - 0007 - By Blood",
+      "PremiereDate": "2022-09-01T22:00:00.0000000Z",
+      "Path": "/media/TVShows/Multi/Devil in Ohio/Devil in Ohio - S01E07 - Par le sang 1080p.DV.HDR.x265-Amen.mkv",
+      "OfficialRating": "TV-MA",
+      "ChannelId": null,
+      "CommunityRating": 3.75,
+      "RunTimeTicks": 24201680000,
+      "ProductionYear": 2022,
+      "IndexNumber": 7,
+      "ParentIndexNumber": 1,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "84cbbdef69ebbd5b9dbd32f3e4c30019",
+      "ParentBackdropImageTags": [
+        "f97827177773624abdd05843e51f1cfe"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "410037001007",
+        "ItemId": "19ac20e8902b986d522e7e7b3353a494"
+      },
+      "SeriesName": "Devil in Ohio",
+      "SeriesId": "84cbbdef69ebbd5b9dbd32f3e4c30019",
+      "SeasonId": "3f1c33d9cf191fd66305d926fe7ea644",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "c573f2f22250a573c6f52fc4f70a0a5d",
+      "SeasonName": "Saison 1",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "60537aa38229bdce35bd41fc06f6e8ed"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "60537aa38229bdce35bd41fc06f6e8ed": "W58yxbM|Ec-A$Oo|?K=wOCw[wbWro~$R=yNZRj$*=}aLRij]xGn+",
+          "c573f2f22250a573c6f52fc4f70a0a5d": "dG9@FZW;xB%J~TkBoLxs-kbHW=xZ-.WCoexZt7azWCoK",
+          "3ee38cd0b46f92f964e603e30e68828b": "dG9@FZW;xB%J~TkBoexs-kbHW=xZ-.WCoLxZt7ayWCoK"
+        },
+        "Thumb": {
+          "d664b45f4b5d5e9384755b1c0a9ce83b": "W86ukQ9HI[+[OY%f?[IqRkv#ShtkNIo|niWqjFoJICt6tQcDVti{"
+        },
+        "Backdrop": {
+          "f97827177773624abdd05843e51f1cfe": "W87Uho9HR.wIbvx]?[M|Rka0batRNHtQaeW;aeayM{oyx[tkRQae"
+        }
+      },
+      "ParentThumbItemId": "84cbbdef69ebbd5b9dbd32f3e4c30019",
+      "ParentThumbImageTag": "d664b45f4b5d5e9384755b1c0a9ce83b",
+      "ParentPrimaryImageItemId": "3f1c33d9cf191fd66305d926fe7ea644",
+      "ParentPrimaryImageTag": "3ee38cd0b46f92f964e603e30e68828b",
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "OriginalLanguage": "en"
+    },
+    {
+      "Name": "Episode 10",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "ee6128cecc512ce5c0c7f06d3ab840a6",
+      "Container": "mov,mp4,m4a,3gp,3g2,mj2",
+      "SortName": "001 - 0010 - Episode 10",
+      "PremiereDate": "2016-07-02T22:00:00.0000000Z",
+      "Path": "/media/TVShows/VF/Bloque/Bloqués - S01E10 - Comment tu sais que tu l aimes.mp4",
+      "ChannelId": null,
+      "RunTimeTicks": 903720630,
+      "ProductionYear": 2016,
+      "IndexNumber": 10,
+      "ParentIndexNumber": 1,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "ad872faea66f2ba5f0867e54f108d462",
+      "ParentBackdropImageTags": [
+        "4bfbfc39f9622c2fd2fb0922ca7f0f9e"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "322622001010",
+        "ItemId": "ee6128cecc512ce5c0c7f06d3ab840a6"
+      },
+      "SeriesName": "Bloque de búsqueda",
+      "SeriesId": "ad872faea66f2ba5f0867e54f108d462",
+      "SeasonId": "fe259ed4df40d50615d086f92ea6aee5",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "93f0fdac3b89b38fb7931853ce7c2a9c",
+      "SeasonName": "Saison 1",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "63bdccc303847fe6341e4aebbfad2f05"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "63bdccc303847fe6341e4aebbfad2f05": "W85X=Nof4nay%MM{xuj[RjfQofWB00WB_3j[IUxbDjay-;j[M{t7",
+          "93f0fdac3b89b38fb7931853ce7c2a9c": "dFD9u3?bo#_3~qoeRj%M56IUIUWBIVWBIokC-;fkaej@",
+          "a7d94b0b558252dd2e7495d15693500c": "dID07L?atR.8~qoeRjxuEMIVIUoJIoWBNGofxtofjYWB"
+        },
+        "Thumb": {
+          "4132ed70965e654ca635f1d440b25d45": "WJEfA;xuE2WBIVxYS$t7IUM{jYD*4:xanORjoLIo~WbIWXxaM|t6"
+        },
+        "Backdrop": {
+          "4bfbfc39f9622c2fd2fb0922ca7f0f9e": "WOIq[kWU?v~WIotS_3t7RjRjWXf6x]oLM{Sgniae?bfkfRt7nhae"
+        }
+      },
+      "ParentThumbItemId": "ad872faea66f2ba5f0867e54f108d462",
+      "ParentThumbImageTag": "4132ed70965e654ca635f1d440b25d45",
+      "ParentPrimaryImageItemId": "fe259ed4df40d50615d086f92ea6aee5",
+      "ParentPrimaryImageTag": "a7d94b0b558252dd2e7495d15693500c",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "So Many Birthdays",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "e04b5fb0c55de096eea3bd0a6aa1a84f",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "001 - 0013 - So Many Birthdays",
+      "PremiereDate": "2014-03-02T23:00:00.0000000Z",
+      "Path": "/media/TVShows/Multi/Steven Universe/[SUF] Steven Universe S01E13 So Many Birthdays VF-VOSTFR MULTI [1080p WEB-DL].mkv",
+      "OfficialRating": "TV-PG",
+      "ChannelId": null,
+      "CommunityRating": 7.333,
+      "RunTimeTicks": 6627600000,
+      "ProductionYear": 2014,
+      "IndexNumber": 13,
+      "ParentIndexNumber": 1,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "cebad5ef8c829fcf985d03210586e4dc",
+      "ParentBackdropImageTags": [
+        "cc2ca158dca4322b880dedc9ba2fea48"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "270701001013",
+        "ItemId": "e04b5fb0c55de096eea3bd0a6aa1a84f"
+      },
+      "SeriesName": "Steven Universe",
+      "SeriesId": "cebad5ef8c829fcf985d03210586e4dc",
+      "SeasonId": "3f55a05a60ef3275a1399c8dfbe15be5",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "6dc89d76eb0331ccee210a8b10bbb677",
+      "SeasonName": "Saison 1",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "69b615c9958a36139785b88b568d16e0"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "69b615c9958a36139785b88b568d16e0": "WrM8HINdI;%gW;xu~pkCM{aLWXofS$%Lt7WBV@R*%gn%s:ozogoz",
+          "6dc89d76eb0331ccee210a8b10bbb677": "ddL#E}Diks-;~p%KWYt8o|%Lozj^?bxtR.Rmt7xuozNe",
+          "736b3e6cc316d2dc97108ce54802e708": "dQP39^^kzq||vhaMxas.+InNNsWX}[s,M|R-DQV{tlbE"
+        },
+        "Thumb": {
+          "f90b4c710eaf7c8e4c0b47e19de09e55": "WYGSi%NZ56V@RjX9zmoKIVi^S0V[D~XAt8%LflW.K7R5xXx]rsR+"
+        },
+        "Backdrop": {
+          "cc2ca158dca4322b880dedc9ba2fea48": "WV8@P2tS9#O]#joNR.a}oeogocnhIoWWw[s9S%W;%%ofNcWEn%og"
+        }
+      },
+      "ParentThumbItemId": "cebad5ef8c829fcf985d03210586e4dc",
+      "ParentThumbImageTag": "f90b4c710eaf7c8e4c0b47e19de09e55",
+      "ParentPrimaryImageItemId": "3f55a05a60ef3275a1399c8dfbe15be5",
+      "ParentPrimaryImageTag": "736b3e6cc316d2dc97108ce54802e708",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "The Dionysian Debacle",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "0e4c88a9e803249425b656dfd2cdb3de",
+      "Container": "mov,mp4,m4a,3gp,3g2,mj2",
+      "SortName": "001 - 0021 - The Dionysian Debacle",
+      "PremiereDate": "2009-04-27T22:00:00.0000000Z",
+      "Path": "/media/TVShows/VF/90210 BEVERLY HILLS NOUVELLE GeneRATION/90210 BEVERLY HILLS NG S01E21.VF.SD.TVHDRIP.MP4.AVC.AAC.mp4",
+      "OfficialRating": "TV-14",
+      "ChannelId": null,
+      "CommunityRating": 8,
+      "RunTimeTicks": 2877541340,
+      "ProductionYear": 2009,
+      "IndexNumber": 21,
+      "ParentIndexNumber": 1,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+      "ParentBackdropImageTags": [
+        "bc43018dc61e72a1e85f51b25ac344df"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "82716001021",
+        "ItemId": "0e4c88a9e803249425b656dfd2cdb3de"
+      },
+      "SeriesName": "90210",
+      "SeriesId": "b0090a8c4dfbb2490dab2caf36536d9f",
+      "SeasonId": "d7cd792800f0b24c3b4f0bc3ccfd510a",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "50ce5c92fe72d9e7d70979f35b041a3d",
+      "SeasonName": "Saison 1",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "0e2f9c6b1e46317d96fc5a13f8db978e"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "0e2f9c6b1e46317d96fc5a13f8db978e": "WSIhNu-..T^+$*%g~q-oNLx]ocoMbrIURQIoWBaLIAIVIUInNGRj",
+          "50ce5c92fe72d9e7d70979f35b041a3d": "d]L;?CxuWAxuPXbbkBW=ESbIWrWVNHkCoLWXE2WBj[WW",
+          "71d37e5c30f3e92a41b55cfb7299bc68": "dZJulr-;kW%hPXogWrbvThbcslsnNzofnhRkIWn$bvNH"
+        },
+        "Thumb": {
+          "cc3f7975d486039dde8b7b927eb8ed4f": "WYKUl:yEPV.TxC-;-gFzoyVXaJV@PTEnM_IpRiMx?^NLS5t8xCr="
+        },
+        "Backdrop": {
+          "bc43018dc61e72a1e85f51b25ac344df": "WaK0{Mozo|ofj[-p_4WqW=R*M{%2.8S4ofofIVxa?bWXocs.t6s:"
+        }
+      },
+      "ParentThumbItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+      "ParentThumbImageTag": "cc3f7975d486039dde8b7b927eb8ed4f",
+      "ParentPrimaryImageItemId": "d7cd792800f0b24c3b4f0bc3ccfd510a",
+      "ParentPrimaryImageTag": "71d37e5c30f3e92a41b55cfb7299bc68",
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "OriginalLanguage": "en"
+    },
+    {
+      "Name": "Episode 35",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "082af177a69ad0ad0aa59bb13ee90728",
+      "Container": "mkv",
+      "SortName": "001 - 0035 - Episode 35",
+      "PremiereDate": "2019-09-21T15:13:57.0000000Z",
+      "Path": "/media/TVShows/Multi/Anatole Latuile/Anatole Latuile S1E35 - La chasse au trésor.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 7565010000,
+      "ProductionYear": 2019,
+      "IndexNumber": 35,
+      "ParentIndexNumber": 1,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "f729ffc716d0d973d3661e36d676c359",
+      "ParentBackdropImageTags": [
+        "6a27d4e99084212eda02811653639567"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "347207001035",
+        "ItemId": "082af177a69ad0ad0aa59bb13ee90728"
+      },
+      "SeriesName": "Zak Jinks",
+      "SeriesId": "f729ffc716d0d973d3661e36d676c359",
+      "SeasonId": "a35835155eed6589dcf310edbd5e4f08",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "0cefa01ea7ef95400ba9fa2b96503786",
+      "SeasonName": "Saison 1",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "60efda25ee040c080e81e1d61bce75ca"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "60efda25ee040c080e81e1d61bce75ca": "WSJ?Z;~V%M-o%e-n%2o}t7$*njj@9bIojEr?V@M|-6V[Rns.t4NH",
+          "0cefa01ea7ef95400ba9fa2b96503786": "dURx=Y~WyY_N?bWBx]s,lUV[Q-V?+ut7kVtSx]Wotlt7"
+        },
+        "Thumb": {
+          "b15f92620527591e4006873816735190": "WVJ*Ou%$tj-oGG$*}^t+ocwcK$nTOZtPoaaKW?r??txb$%s,r@t2"
+        },
+        "Backdrop": {
+          "6a27d4e99084212eda02811653639567": "WONTp^$]t.^aQ*^,P:IntnpBIli{CTNHoiX,NZR:?]tmt8xb$mxv"
+        }
+      },
+      "ParentThumbItemId": "f729ffc716d0d973d3661e36d676c359",
+      "ParentThumbImageTag": "b15f92620527591e4006873816735190",
+      "ParentPrimaryImageItemId": "f729ffc716d0d973d3661e36d676c359",
+      "ParentPrimaryImageTag": "0cefa01ea7ef95400ba9fa2b96503786",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Episode 41",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "10025f8daacaf2764b57f46570b31518",
+      "Container": "ts",
+      "SortName": "001 - 0041 - Episode 41",
+      "PremiereDate": "2009-08-14T22:00:00.0000000Z",
+      "Path": "/media/TVShows/VF/Des baskets dans l'assiette/S01E41 - La cueillette.mp4",
+      "ChannelId": null,
+      "RunTimeTicks": 1900403330,
+      "ProductionYear": 2009,
+      "IndexNumber": 41,
+      "ParentIndexNumber": 1,
+      "IsFolder": false,
+      "Type": "Episode",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "tt1471298001041",
+        "ItemId": "10025f8daacaf2764b57f46570b31518"
+      },
+      "SeriesName": "Des baskets dans l'assiette",
+      "SeriesId": "4e1516308fdef7b2afdb1934849ca807",
+      "SeasonId": "b1d876072fda821f37eed65e6bfcdc43",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "83dca9726aec640329ab85042ba1d1d3",
+      "SeasonName": "Saison 1",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "d90f3a78e32f95751276c2820dc37b2b"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "d90f3a78e32f95751276c2820dc37b2b": "WTJRBB~AtMMwvz8{^+-:xtMxWTNF4.IVxat7S6tRs7VrobkDxuof",
+          "83dca9726aec640329ab85042ba1d1d3": "dgJ%wh-po{-;~Dt8xst7xwRkW+R*xJxak7Rka6oMouRj",
+          "f37e95b4a0e565114cd4171c20f74635": "dgJ%wh-po{-;~Dt8xst7xwRkW+R*xJxak7Rka6oMouRj"
+        },
+        "Thumb": {
+          "7caf5e6bf76ab31407bcc052b7fcf3d0": "WmKAvd%4x^xbnixb~Wxwo~oga~oz-pt8WBoJWCjF-:oys,t7oxj?"
+        }
+      },
+      "ParentThumbItemId": "4e1516308fdef7b2afdb1934849ca807",
+      "ParentThumbImageTag": "7caf5e6bf76ab31407bcc052b7fcf3d0",
+      "ParentPrimaryImageItemId": "b1d876072fda821f37eed65e6bfcdc43",
+      "ParentPrimaryImageTag": "f37e95b4a0e565114cd4171c20f74635",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Episode 1",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "09168f8b356adf9154c51e06b9e5cd7c",
+      "Container": "mkv",
+      "SortName": "002 - 0001 - Episode 1",
+      "PremiereDate": "2019-03-03T23:00:00.0000000Z",
+      "Path": "/media/TVShows/VO/Fleabag/Fleabag.S02E01.REPACK.1080p.HDTV.h264-PLUTONiUM.mkv",
+      "OfficialRating": "TV-MA",
+      "ChannelId": null,
+      "CommunityRating": 8.353,
+      "RunTimeTicks": 15253760000,
+      "ProductionYear": 2019,
+      "IndexNumber": 1,
+      "ParentIndexNumber": 2,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "43bd34f3d67aba535ea3a1238161d34f",
+      "ParentBackdropImageTags": [
+        "99b1006cc2da0c502c792f48644093b1"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "314614002001",
+        "ItemId": "09168f8b356adf9154c51e06b9e5cd7c"
+      },
+      "SeriesName": "Fleabag",
+      "SeriesId": "43bd34f3d67aba535ea3a1238161d34f",
+      "SeasonId": "b2c169a2376da44be79b5310420152ae",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "4ee43c64c0c3f90925755b1a7411d94f",
+      "SeasonName": "Saison 2",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "a26f11fcb047cbdfc0e33b091d656ca1"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "a26f11fcb047cbdfc0e33b091d656ca1": "WBA[}r^jtl^%?G~BS5t7xtbv-Uxt57IoIUIUM{9a,.MxMxRPE1rq",
+          "4ee43c64c0c3f90925755b1a7411d94f": "dSFqn1-UEO%3-9xZNHV@0MR,obInb{NcxYtROGWCxZt7",
+          "5f0c75e100ac9a2aa67ec5d8c98b75d4": "dSFqn1-UEO%3-9xZNHV@0MR,obInb{NcxYtROGWCxZt7"
+        },
+        "Thumb": {
+          "5fad58bf51043a66cee9c3f445cd7817": "WSE.99=^0LIVxu%gacoco#ofaeM|57NKxus:V@RjtSR.ROoIkWxa"
+        },
+        "Backdrop": {
+          "99b1006cc2da0c502c792f48644093b1": "WKB.y6=^0g9wxtXT~U-QE2IqSebvoza{WCoMV@WXV_NIX8xZniNG"
+        }
+      },
+      "ParentThumbItemId": "43bd34f3d67aba535ea3a1238161d34f",
+      "ParentThumbImageTag": "5fad58bf51043a66cee9c3f445cd7817",
+      "ParentPrimaryImageItemId": "b2c169a2376da44be79b5310420152ae",
+      "ParentPrimaryImageTag": "5f0c75e100ac9a2aa67ec5d8c98b75d4",
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "OriginalLanguage": "en"
+    },
+    {
+      "Name": "DI:  One Angry Man; TRIAL",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "5fe8e078e76e1f32b3a9f2a54645af1d",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "002 - 0010 - DI:  One Angry Man; TRIAL",
+      "PremiereDate": "2004-05-07T22:00:00.0000000Z",
+      "Path": "/media/TVShows/Multi/Ghost in the Shell Stand Alone Complex/Ghost.in.the.Shell.Stand.Alone.Complex.S02E10.MULTi.AC3.1080p.BluRay.x265.mkv",
+      "OfficialRating": "TV-MA",
+      "ChannelId": null,
+      "CommunityRating": 7,
+      "RunTimeTicks": 15032360000,
+      "ProductionYear": 2004,
+      "IndexNumber": 10,
+      "ParentIndexNumber": 2,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "6bb4d19e0044a7dce75b1ea0522eea6e",
+      "ParentBackdropImageTags": [
+        "a9fee7d81ac7888c6719cf5276d884e9"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "73749002010",
+        "ItemId": "5fe8e078e76e1f32b3a9f2a54645af1d"
+      },
+      "SeriesName": "Ghost in the Shell: Stand Alone Complex",
+      "SeriesId": "6bb4d19e0044a7dce75b1ea0522eea6e",
+      "SeasonId": "d89fe64b891ef4e19b00d45c161b3ca6",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "face5e882ab5a13edd19b569300f2a69",
+      "SeasonName": "Saison 2",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "3861056781f1bc773a12695fb93f77c5"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "3861056781f1bc773a12695fb93f77c5": "WDAAEo4;xu%LM|s,~V4oog%1M|t7?G9GR-xsRkxt_2Iot8tQM|oy",
+          "face5e882ab5a13edd19b569300f2a69": "dREV+?a}-;-;~qRj%M%MV@WCM{Rj%2t7RPRjt7WBt6t8",
+          "a13a8c0f284b924bfae0274a2d6d1ac8": "dFD+}b~oDjtSMfIvWARq.St89ZxWbVROMwW9oYRiWAoI"
+        },
+        "Thumb": {
+          "65d35e73c2f5c721a68b7f53763f152b": "WTHeUiMc-nxUMw%0_3V?x[t5axWBx]oct6ofWAM{~Wr=n#s,sln$"
+        },
+        "Backdrop": {
+          "a9fee7d81ac7888c6719cf5276d884e9": "W7695hM~li%|sE.OxHH[Mfr^H[r?D6b[d[xaE2R7.jS^.O%xS#tk"
+        }
+      },
+      "ParentThumbItemId": "6bb4d19e0044a7dce75b1ea0522eea6e",
+      "ParentThumbImageTag": "65d35e73c2f5c721a68b7f53763f152b",
+      "ParentPrimaryImageItemId": "d89fe64b891ef4e19b00d45c161b3ca6",
+      "ParentPrimaryImageTag": "a13a8c0f284b924bfae0274a2d6d1ac8",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Trotro on vacation",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "53e01bd38704e3b1e218f645ee513969",
+      "Container": "mkv",
+      "SortName": "002 - 0020 - Trotro on vacation",
+      "PremiereDate": "2005-06-17T22:00:00.0000000Z",
+      "Path": "/media/TVShows/VF/Trotro/Trotro.S02E20.FRENCH.1080p.WEB-DL.H265-T3KASHi.mkv",
+      "OfficialRating": "TV-Y",
+      "ChannelId": null,
+      "RunTimeTicks": 2143680000,
+      "ProductionYear": 2005,
+      "IndexNumber": 20,
+      "ParentIndexNumber": 2,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "a8679fe1a2fe793e76e9c1c7fb98b473",
+      "ParentBackdropImageTags": [
+        "7ffe1fb9f9b8ce48ba69244d4589cd8c"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "108061002020",
+        "ItemId": "53e01bd38704e3b1e218f645ee513969"
+      },
+      "SeriesName": "Trotro",
+      "SeriesId": "a8679fe1a2fe793e76e9c1c7fb98b473",
+      "SeasonId": "f3156127c495baae013640b9efa12857",
+      "PrimaryImageAspectRatio": 1.3333333333333333,
+      "SeriesPrimaryImageTag": "515493a5bb35b34960812184b4702d43",
+      "SeasonName": "Saison 2",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "37694463862a1a3b9c1dbb4d1f35ab12"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "37694463862a1a3b9c1dbb4d1f35ab12": "VOA_ijt8Tho$v_t8odg4WFjDTMoev{jZT1bxkAsQjZXA",
+          "515493a5bb35b34960812184b4702d43": "dTDdxRbyEo%hXrogxARkGHkBwZR%$uWAIts+a8s;t4RQ",
+          "c646a8b568d316bf073b4066ae898767": "dFCtR|o~Bsxw1AIv$vbI9@xWrqS5iH$^OaoJAMR-Wsad"
+        },
+        "Thumb": {
+          "e8f9c7356d6c65c703377f2a6f69494a": "WcIXy|-on$xptQ%L5es:Rka~R:I]5HItxVItRoWGxao2xYt5odoe"
+        },
+        "Backdrop": {
+          "7ffe1fb9f9b8ce48ba69244d4589cd8c": "W~A|fjozS^g3jJXlyGoMjIX9W;fmp1oLnmW=W.jct5j?X5bGjbbF"
+        }
+      },
+      "ParentThumbItemId": "a8679fe1a2fe793e76e9c1c7fb98b473",
+      "ParentThumbImageTag": "e8f9c7356d6c65c703377f2a6f69494a",
+      "ParentPrimaryImageItemId": "f3156127c495baae013640b9efa12857",
+      "ParentPrimaryImageTag": "c646a8b568d316bf073b4066ae898767",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Arpagone",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "c8506271f10e41401cb07c73384f40f2",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "003 - 0008 - Arpagone",
+      "PremiereDate": "2017-09-09T22:00:00.0000000Z",
+      "Path": "/media/TVShows/Multi/Wakfu/Wakfu.S03E08.Arpagone.MULTi.AD.1080p.NF.WEB.DDP.AV1-BTT.mkv",
+      "ChannelId": null,
+      "CommunityRating": 8,
+      "RunTimeTicks": 13862720000,
+      "ProductionYear": 2017,
+      "IndexNumber": 8,
+      "ParentIndexNumber": 3,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "25c19f86e3e94742ba6edb74ede5123c",
+      "ParentBackdropImageTags": [
+        "7f1598461ff33c5ad2f21f06d0913234"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "94121003008",
+        "ItemId": "c8506271f10e41401cb07c73384f40f2"
+      },
+      "SeriesName": "Wakfu",
+      "SeriesId": "25c19f86e3e94742ba6edb74ede5123c",
+      "SeasonId": "a32c4906c9fa65c6ea08eff61bd98e0e",
+      "PrimaryImageAspectRatio": 1.7786561264822134,
+      "SeriesPrimaryImageTag": "d080174bf8ee5543cc80adea456c0082",
+      "SeasonName": "Saison 3",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "da9c676c3d53d40fe460cf7e9d5bd317"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "da9c676c3d53d40fe460cf7e9d5bd317": "N7BD4e~T4:%gES0M%KxoIUs.-:IW9FIp-nxUS4t7",
+          "d080174bf8ee5543cc80adea456c0082": "dLEfJ,~ptjxp-=?axuaKT0bvjuR*E7EOM|RkShR-M}M|",
+          "e51d60ac9de16a5678de0fd071148dac": "dUGlRox@#i.4$nRmIARS06R+9^M~?st6S}xrxuW=iwix"
+        },
+        "Thumb": {
+          "b1fb1b07f2e6f3ccad84f01115f25ed0": "WNEpyT%0L~$%IBtl9Y%LxHNHS5E2-VoeS5XAXTf,0KV@xGV]WDt7"
+        },
+        "Backdrop": {
+          "7f1598461ff33c5ad2f21f06d0913234": "WyE3PMW?V=xtRjkB?wS6nzt6Rjofp1R.xXocWBt7o~R.xZoen~t7"
+        }
+      },
+      "ParentThumbItemId": "25c19f86e3e94742ba6edb74ede5123c",
+      "ParentThumbImageTag": "b1fb1b07f2e6f3ccad84f01115f25ed0",
+      "ParentPrimaryImageItemId": "a32c4906c9fa65c6ea08eff61bd98e0e",
+      "ParentPrimaryImageTag": "e51d60ac9de16a5678de0fd071148dac",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Terra Firma (2)",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "710582916d4644e96e74930127420728",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "003 - 0010 - Terra Firma (2)",
+      "PremiereDate": "2020-12-16T23:00:00.0000000Z",
+      "Path": "/media/TVShows/Multi/Star Trek Discovery/Star.Trek.Discovery.S03E10.MULTi.HDR.DV.1080p.WEB.H265-FW.mkv",
+      "OfficialRating": "TV-MA",
+      "ChannelId": null,
+      "CommunityRating": 5.9,
+      "RunTimeTicks": 29631270000,
+      "ProductionYear": 2020,
+      "IndexNumber": 10,
+      "ParentIndexNumber": 3,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "45f3aacc5e843a6f36b960c8d14fdaa7",
+      "ParentBackdropImageTags": [
+        "3d2ac5c09d4017e05851eb5e6a66a23a"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "328711003010",
+        "ItemId": "710582916d4644e96e74930127420728"
+      },
+      "SeriesName": "Star Trek: Discovery",
+      "SeriesId": "45f3aacc5e843a6f36b960c8d14fdaa7",
+      "SeasonId": "ead5bc5a2d5849280a68e6673db47859",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "c6fd321f5e44c578f494760eda7402a0",
+      "SeasonName": "Saison 3",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "b14118c3ccf129a66e78a2db3791dce5"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "b14118c3ccf129a66e78a2db3791dce5": "WRDJbL?vt-%2S5I=_NxuX9WYbvg3T0V?V?NHoft8SzIVM|WVWXt7",
+          "c6fd321f5e44c578f494760eda7402a0": "deI4bG}=xt-o%3xV%2xt0fIpspRjtPWBWYWUS1aft8oe",
+          "22a25a00384c9fffadb078393f37a7f5": "daF#s{~U%0xY^%-oxZt54;Rjf6Rk9bIpV[ayM_IVoKxt"
+        },
+        "Thumb": {
+          "92d470f930fa087e704637f71bc75ad5": "WkLyZY},VsMxtSxaS6sls;RQIVRRE1xatPxtM{V[$esojGozt6oI"
+        },
+        "Backdrop": {
+          "3d2ac5c09d4017e05851eb5e6a66a23a": "WS4V,ykDMaV?yFo}R3axtmkDR5V@V?ayohkCWAWBtSj]RPWBtRoz"
+        }
+      },
+      "ParentThumbItemId": "45f3aacc5e843a6f36b960c8d14fdaa7",
+      "ParentThumbImageTag": "92d470f930fa087e704637f71bc75ad5",
+      "ParentPrimaryImageItemId": "ead5bc5a2d5849280a68e6673db47859",
+      "ParentPrimaryImageTag": "22a25a00384c9fffadb078393f37a7f5",
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "OriginalLanguage": "en"
+    },
+    {
+      "Name": "Episode 13",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "746af384cd0f12a3755ea67aa04e9120",
+      "Container": "mov,mp4,m4a,3gp,3g2,mj2",
+      "SortName": "003 - 0013 - Episode 13",
+      "PremiereDate": "2013-07-12T22:00:00.0000000Z",
+      "Path": "/media/TVShows/VF/Soda/Saison 03/S03E13 - Titre non communiqué.mp4",
+      "ChannelId": null,
+      "RunTimeTicks": 11461199999,
+      "ProductionYear": 2013,
+      "IndexNumber": 13,
+      "ParentIndexNumber": 3,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "e67557c9dc89c7c1e4a3cac949e16630",
+      "ParentBackdropImageTags": [
+        "b13c3fcf5f56358ebfbd9cd4f1511755"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "250025003013",
+        "ItemId": "746af384cd0f12a3755ea67aa04e9120"
+      },
+      "SeriesName": "Soda",
+      "SeriesId": "e67557c9dc89c7c1e4a3cac949e16630",
+      "SeasonId": "d3bb29b4514a3459382632950b65472c",
+      "PrimaryImageAspectRatio": 1.7708333333333333,
+      "SeriesPrimaryImageTag": "e88b78ac70bb6306e9e9348e70aee61e",
+      "SeasonName": "Season 3",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "d51819a876aba1cad808cde23bafc97b"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "d51819a876aba1cad808cde23bafc97b": "W64_;48^yEIAxus:kXRO%MROkDWVkXM_xaxuM{X9xuadS5Rjt6t6",
+          "e88b78ac70bb6306e9e9348e70aee61e": "dgHd{fs.kX%M~qt7bctR~qt7xaxu~Wozn%%1%ha#ozkW",
+          "858a4fe265b7f6c343bfed52e40e7003": "dPD9@$yDT1tS_4%1I:WBR%$LW-RPD$adkCozNGRQofkW"
+        },
+        "Backdrop": {
+          "b13c3fcf5f56358ebfbd9cd4f1511755": "WsK1UZxu-;%Mxuxu~pt7kCofoft7_3j]j[s:Rjoz?va#RjfPRjWV"
+        }
+      },
+      "ParentPrimaryImageItemId": "d3bb29b4514a3459382632950b65472c",
+      "ParentPrimaryImageTag": "858a4fe265b7f6c343bfed52e40e7003",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "Lysergic Acid Diethylamide",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "0246b09956dfa6a0ace8711355779c79",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "003 - 0019 - Lysergic Acid Diethylamide",
+      "PremiereDate": "2011-04-14T22:00:00.0000000Z",
+      "Path": "/media/TVShows/Multi/Fringe/Fringe.S03E19.Multi.1080p.BluRay.H.265.DTS-HDMA.5.1-CELESTIS.mkv",
+      "OfficialRating": "TV-14",
+      "ChannelId": null,
+      "CommunityRating": 7.611,
+      "RunTimeTicks": 26382270000,
+      "ProductionYear": 2011,
+      "IndexNumber": 19,
+      "ParentIndexNumber": 3,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "68c1c084b4c10e66510effe889a696c1",
+      "ParentBackdropImageTags": [
+        "21026373608d2a86b14698eb4b4b98b8"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "82066003019",
+        "ItemId": "0246b09956dfa6a0ace8711355779c79"
+      },
+      "SeriesName": "Fringe",
+      "SeriesId": "68c1c084b4c10e66510effe889a696c1",
+      "SeasonId": "1099e22dbf151440a4be336d8463ccf0",
+      "PrimaryImageAspectRatio": 1.7780938833570412,
+      "SeriesPrimaryImageTag": "a3239781b2fbbb32bc0877140538e24d",
+      "SeasonName": "Saison 3",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "474641a09d242e8f11995125726df113"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "474641a09d242e8f11995125726df113": "NDCGPwX50L%MNbR+ozM{%N%gNHxbo}RPR4xvRjR*",
+          "a3239781b2fbbb32bc0877140538e24d": "dBAmI|o29a-o~qR+D*t6XAbIIUR*E2s;V@R*4;s:t7Iq",
+          "ac766e717d410d22d0a5522992b0b914": "dZHxmCo}4oRi?aRlRjxa01axxuxaIUWBRjRQR5MxWCS4"
+        },
+        "Thumb": {
+          "3a1d2754561baf5ba0ce4f8a5cbc3203": "WBATTKwG8{~qs*V@R4?a%MD%?Hxu9ZNHj]RPa#jZyE4.IB-;4.IV"
+        },
+        "Backdrop": {
+          "21026373608d2a86b14698eb4b4b98b8": "WcH2TNR-IAaf9FoL~qR+M{t7aee.Siogs.xaozM{tRt7n$jEWARk"
+        }
+      },
+      "ParentThumbItemId": "68c1c084b4c10e66510effe889a696c1",
+      "ParentThumbImageTag": "3a1d2754561baf5ba0ce4f8a5cbc3203",
+      "ParentPrimaryImageItemId": "1099e22dbf151440a4be336d8463ccf0",
+      "ParentPrimaryImageTag": "ac766e717d410d22d0a5522992b0b914",
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "OriginalLanguage": "en"
+    },
+    {
+      "Name": "Fizz Ed",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "01fc0edceacdf6e1b3e77ccf3c1df9d5",
+      "Container": "avi",
+      "SortName": "005 - 0001 - Fizz Ed",
+      "PremiereDate": "2001-02-18T23:00:00.0000000Z",
+      "Path": "/media/TVShows/VF/Daria/5x01 - Jackpot.avi",
+      "OfficialRating": "TV-14",
+      "ChannelId": null,
+      "CommunityRating": 7.75,
+      "RunTimeTicks": 12697200000,
+      "ProductionYear": 2001,
+      "IndexNumber": 1,
+      "ParentIndexNumber": 5,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "09f846343920eb4f55fb1c160b02f91e",
+      "ParentBackdropImageTags": [
+        "a952ccd7ccaf94d4221f5c99de13f579"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "77996005001",
+        "ItemId": "01fc0edceacdf6e1b3e77ccf3c1df9d5"
+      },
+      "SeriesName": "Daria",
+      "SeriesId": "09f846343920eb4f55fb1c160b02f91e",
+      "SeasonId": "1cc1892926cb32809a14cd7c26f09c01",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "d10480e00a8cc8a4737b0b5671be7d03",
+      "SeasonName": "Saison 5",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "3330a114c96321db2e009bb4bcd358ff"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "3330a114c96321db2e009bb4bcd358ff": "WLFqtF%p?P%KSa5S]-n9IuxWn+ET-9aPNKt3sCR:}s$iw^t3X7NH",
+          "d10480e00a8cc8a4737b0b5671be7d03": "dXBg}ctR5wOv?doMM_f+KRX9$xs.Otbbs+ayXBoLV?Rk",
+          "e3324b34ac76bc6c2a5b7071b8a2c91e": "dpLNeYxs?8-,~Vt5M}of%eoxe?og--ofV]bHxpj]Rkaz"
+        },
+        "Thumb": {
+          "55d07ff720a8c7108fc3a311aed64b34": "WSLzuu^]xpRX?R%0^#NHWV$%NaoL%Fxsa#NHs;j?~i-,oeM}xtoc"
+        },
+        "Backdrop": {
+          "a952ccd7ccaf94d4221f5c99de13f579": "WLG*Z-+q~X==Icv~=LskX9ROf,xGV}IqNeR.xsxu-DROakWTV@xG"
+        }
+      },
+      "ParentThumbItemId": "09f846343920eb4f55fb1c160b02f91e",
+      "ParentThumbImageTag": "55d07ff720a8c7108fc3a311aed64b34",
+      "ParentPrimaryImageItemId": "1cc1892926cb32809a14cd7c26f09c01",
+      "ParentPrimaryImageTag": "e3324b34ac76bc6c2a5b7071b8a2c91e",
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "OriginalLanguage": "en"
+    },
+    {
+      "Name": "Episode 12",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "97f838c08144e0b2446f9fb7de7144ad",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "005 - 0012 - Episode 12",
+      "PremiereDate": "2021-04-04T22:00:00.0000000Z",
+      "Path": "/media/TVShows/VF/Les Kassos/Les.Kassos.2013.S05E12.FRENCH.1080p.WEB-DL.AAC.x264-Otiro.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 918820000,
+      "ProductionYear": 2021,
+      "IndexNumber": 12,
+      "ParentIndexNumber": 5,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "2ddbb4cf4995f90bb2198a3b746e700b",
+      "ParentBackdropImageTags": [
+        "fb3263657e02d106ca64495855887cf8"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "277455005012",
+        "ItemId": "97f838c08144e0b2446f9fb7de7144ad"
+      },
+      "SeriesName": "The Wakos",
+      "SeriesId": "2ddbb4cf4995f90bb2198a3b746e700b",
+      "SeasonId": "cf4c061fc1b99974885e39a290070a99",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "8d167c65d60985c546d75edcf97c22ec",
+      "SeasonName": "Saison 5",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "1534d6dc119047d7f6c266a51cf8d4cb"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "1534d6dc119047d7f6c266a51cf8d4cb": "WXHn?EniE3ohRlog_4RiIVbIWBRk?aITWBs-WAjutSV@WDt6oea$",
+          "8d167c65d60985c546d75edcf97c22ec": "djO{?co~I;?H?c%Mxtsm?ws7aLog?bs;RiSgx]WBn#t8",
+          "cccab7861ab5a3fd612cc6efd241d691": "dvPG1]x^WY%M?cxut7s-?^ngRja$-:ogaeoyt7WBoJt7"
+        },
+        "Thumb": {
+          "b7589c740d18632c6e5d07ef3ac2d011": "NTKT=5~D-=xvo}o#%%%Nt5I:X8xuXUo}OXX9S6xa"
+        },
+        "Backdrop": {
+          "fb3263657e02d106ca64495855887cf8": "WGJ@:hnPR6NQNi^+_3DjT1x]Mxos?cD$NNx?I9WB_4-nMeRoX3Mm"
+        }
+      },
+      "ParentThumbItemId": "2ddbb4cf4995f90bb2198a3b746e700b",
+      "ParentThumbImageTag": "b7589c740d18632c6e5d07ef3ac2d011",
+      "ParentPrimaryImageItemId": "cf4c061fc1b99974885e39a290070a99",
+      "ParentPrimaryImageTag": "cccab7861ab5a3fd612cc6efd241d691",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "The Hellish Todoroki Family, Part 2",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "03ed0579d224bb9fba02636e45b292de",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "006 - 0016 - The Hellish Todoroki Family, Part 2",
+      "PremiereDate": "2023-01-20T23:00:00.0000000Z",
+      "Path": "/media/TVShows/VO/My Hero Academia/[Xspitfire911] Boku No Hero Academia S06E16 BDRIP 1080p X265 10bit VOSTFR.mkv",
+      "ChannelId": null,
+      "CommunityRating": 8.9,
+      "RunTimeTicks": 14314300000,
+      "ProductionYear": 2023,
+      "IndexNumber": 16,
+      "ParentIndexNumber": 6,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "60445f26a1a54f6ac7d89ab3be64d447",
+      "ParentBackdropImageTags": [
+        "8b6033b89ec2a1782865f2b8abbc1c7b"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "305074006016",
+        "ItemId": "03ed0579d224bb9fba02636e45b292de"
+      },
+      "SeriesName": "My Hero Academia",
+      "SeriesId": "60445f26a1a54f6ac7d89ab3be64d447",
+      "SeasonId": "8f74a08b0fa0b67e4308dc1a221db484",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "e8175faa0890416482f74d37292b0c9e",
+      "SeasonName": "Saison 6",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "b5b2c1437337ce30eeabf99b92414e10"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "b5b2c1437337ce30eeabf99b92414e10": "WD9Q?%D%EpVr$xxv?dNKT1R4t7t7s.Rjt6adWYj?%OayM{jut7of",
+          "e8175faa0890416482f74d37292b0c9e": "daI|]e%0-$%I~l%K$zxs}%xt-oxW~2bIo|jYyBIpwNs:",
+          "e35472fd34b9c34e3541372dc027ccf6": "dUHnjY~D?bx]?JxcogaKM*s;xtRkbxIpoMjYIoRkafoz"
+        },
+        "Thumb": {
+          "d43332be2aed92efba0a1c682fcc7ea0": "WzF7YxcZgig2bwtm.mXkf#ofbbbcpwSwn}nin#bapxT0ozjGn$j="
+        },
+        "Backdrop": {
+          "8b6033b89ec2a1782865f2b8abbc1c7b": "WOEC|NyFyGyF%ho~?wMx9bR6V@sks=9aIVM|aJRi%hRmkC%Mt7WW"
+        }
+      },
+      "ParentThumbItemId": "60445f26a1a54f6ac7d89ab3be64d447",
+      "ParentThumbImageTag": "d43332be2aed92efba0a1c682fcc7ea0",
+      "ParentPrimaryImageItemId": "8f74a08b0fa0b67e4308dc1a221db484",
+      "ParentPrimaryImageTag": "e35472fd34b9c34e3541372dc027ccf6",
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "OriginalLanguage": "ja"
+    },
+    {
+      "Name": "Episode 3",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "d685c65337be72ef79985719258025e5",
+      "HasSubtitles": true,
+      "Container": "mkv",
+      "SortName": "018 - 0003 - Episode 3",
+      "PremiereDate": "2018-02-10T23:00:00.0000000Z",
+      "Path": "/media/TVShows/VF/Faites entrer l'accusé/S18E03.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 54467820000,
+      "ProductionYear": 2018,
+      "IndexNumber": 3,
+      "ParentIndexNumber": 18,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "efabcab9f8e08a0ae2ec98dd8cd01051",
+      "ParentBackdropImageTags": [
+        "d75d4ed44b1046928af0291393861936"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "84095018003",
+        "ItemId": "d685c65337be72ef79985719258025e5"
+      },
+      "SeriesName": "Faites entrer l'accusé",
+      "SeriesId": "efabcab9f8e08a0ae2ec98dd8cd01051",
+      "SeasonId": "77d36f4d6da5ef571e2fc61ec42fcc5d",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "e7aaf942ea2aede8f85489071e7de080",
+      "SeasonName": "Saison 18",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "c0eba61b8abfbd3d1117dc376bb09761"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "c0eba61b8abfbd3d1117dc376bb09761": "WjGuwZ%MM_ay%3IU~q%Moet7RjRj-:x]%3xvM{WB-;ozoexuWCWB",
+          "e7aaf942ea2aede8f85489071e7de080": "dOBfd{?FI:V[~TxtI:V[jXNGR*jGM{R*t6s.IWoMxtoe",
+          "529051804a48d53ec6255cc7a613f06e": "dDAvzm-p4:xG~8xsNHxFZyoaxuxD={t6X8xG%4t7Sdn,"
+        },
+        "Thumb": {
+          "91918de98723c4e513968507676ad417": "W8AJZrxT0dT20Kn4^R4:9t_2RiRPD*9aVs~B%LNE~p--RON19uE0"
+        },
+        "Backdrop": {
+          "d75d4ed44b1046928af0291393861936": "W37KF@554:~VR%R%~Us9R.xZNG-p9[s;t7xsE2WXs,n+E2-n%257"
+        }
+      },
+      "ParentThumbItemId": "efabcab9f8e08a0ae2ec98dd8cd01051",
+      "ParentThumbImageTag": "91918de98723c4e513968507676ad417",
+      "ParentPrimaryImageItemId": "77d36f4d6da5ef571e2fc61ec42fcc5d",
+      "ParentPrimaryImageTag": "529051804a48d53ec6255cc7a613f06e",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    },
+    {
+      "Name": "S1957E06 - Bedevilled Rabbit",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "1cd02757e44f00f0cdf9a96854fd2e29",
+      "Container": "mkv",
+      "SortName": "1957 - 0006 - S1957E06 - Bedevilled Rabbit",
+      "PremiereDate": "2014-06-21T22:05:51.0000000Z",
+      "Path": "/media/TVShows/Multi/Looney Tunes/S1957E06 - Bedevilled Rabbit.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 4099440000,
+      "ProductionYear": 2014,
+      "IndexNumber": 6,
+      "ParentIndexNumber": 1957,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentBackdropItemId": "61c03cc1fa689c18887bb5ed6f853367",
+      "ParentBackdropImageTags": [
+        "e33e5f32b8a0edae88a6d3c2d74980b0"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "725141957006",
+        "ItemId": "1cd02757e44f00f0cdf9a96854fd2e29"
+      },
+      "SeriesName": "Looney Tunes",
+      "SeriesId": "61c03cc1fa689c18887bb5ed6f853367",
+      "SeasonId": "4256743579f3467d5ae1a6c933b50fdb",
+      "PrimaryImageAspectRatio": 1.3333333333333333,
+      "SeriesPrimaryImageTag": "73ecb138fb0749657005adce8b11b2c2",
+      "SeasonName": "Saison 1957",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "a2df86d8093430943c771073063e76e0"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "a2df86d8093430943c771073063e76e0": "VcHMlRo|o|x]oftJjsbFj?j[0{WVe;S1a{pAbEoebFay",
+          "73ecb138fb0749657005adce8b11b2c2": "dTKd0cyXE4%2}lWYOHx[H@n$t5aKO@w@r:R--UoNjviw"
+        },
+        "Thumb": {
+          "1fb201313baf35b8f7036e7e465f6eba": "WiLWFMxuW-$$Ri$~}=t7OZs,k8R*$KbHNys+oeNe%2oIadWEW=t6"
+        },
+        "Backdrop": {
+          "e33e5f32b8a0edae88a6d3c2d74980b0": "WfK,g2xuWn$fRP%0}=ozS%s,obR,-5j[NfxXt6Nf-pjrWAjcW=oy"
+        }
+      },
+      "ParentThumbItemId": "61c03cc1fa689c18887bb5ed6f853367",
+      "ParentThumbImageTag": "1fb201313baf35b8f7036e7e465f6eba",
+      "ParentPrimaryImageItemId": "61c03cc1fa689c18887bb5ed6f853367",
+      "ParentPrimaryImageTag": "73ecb138fb0749657005adce8b11b2c2",
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    }
+  ],
+  "TotalRecordCount": 31,
+  "StartIndex": 0
+}

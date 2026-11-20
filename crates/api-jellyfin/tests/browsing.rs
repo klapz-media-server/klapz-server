@@ -54,19 +54,12 @@ const NOT_HELD: &[&str] = &[
     "RunTimeTicks",
     "CumulativeRunTimeTicks",
     "OriginalTitle",
-    // What ffprobe reports and the scan does not keep.
-    "TimeBase",
-    "NalLengthSize",
-    "CodecTag",
+    // The colors the harness's files leave out; a scanned file states them.
     "ColorSpace",
     "ColorTransfer",
     "ColorPrimaries",
-    "LocalizedDefault",
-    "LocalizedExternal",
-    "LocalizedLanguage",
-    "LocalizedOriginal",
+    // The reference's latest film has subtitles, and the harness's one film none.
     "HasSubtitles",
-    "Title",
     // A trace of the reference's own request handling.
     "traceId",
 ];
@@ -583,4 +576,63 @@ async fn an_id_that_is_no_guid_is_a_bad_request_and_an_unknown_one_not_found() {
         .await;
     assert_eq!(unknown.status, StatusCode::NOT_FOUND);
     no_differences(&unknown.json(), &fixture("item_unknown"));
+}
+
+#[tokio::test]
+async fn filters_list_what_a_librarys_items_hold_with_the_reference_shape() {
+    let harness = Harness::new().await;
+    let token = harness.token().await;
+    let films = jellyfin_id("Library", FILMS);
+    let legacy = harness
+        .get(
+            &format!("/jellyfin/Items/Filters?ParentId={films}&IncludeItemTypes=Movie"),
+            &token,
+        )
+        .await;
+    assert_eq!(legacy.status, StatusCode::OK);
+    let legacy = legacy.json();
+    no_differences(&legacy, &fixture("filters_movies"));
+    assert_eq!(legacy["Years"], serde_json::json!([1997]));
+    // Keywords come from a metadata provider, which nothing here consults.
+    assert_eq!(legacy["Tags"], serde_json::json!([]));
+    let current = harness
+        .get(
+            &format!("/jellyfin/Items/Filters2?ParentId={films}&IncludeItemTypes=Movie"),
+            &token,
+        )
+        .await;
+    assert_eq!(current.status, StatusCode::OK);
+    let current = current.json();
+    no_differences(&current, &fixture("filters2_movies"));
+    // The languages the film's tracks state, as written.
+    assert_eq!(
+        current["AudioLanguages"],
+        serde_json::json!([{ "Name": "English (eng)", "Value": "eng" }])
+    );
+}
+
+#[tokio::test]
+async fn filters_that_cannot_be_narrowed_as_asked_are_refused() {
+    let harness = Harness::new().await;
+    let token = harness.token().await;
+    let films = jellyfin_id("Library", FILMS);
+    for path in [
+        format!("/jellyfin/Items/Filters2?ParentId={films}&IsAiring=true"),
+        format!("/jellyfin/Items/Filters?ParentId={films}&IncludeItemTypes=Episode"),
+        format!(
+            "/jellyfin/Items/Filters?ParentId={}",
+            jellyfin_id("Item", DOODLEBUG)
+        ),
+    ] {
+        let answer = harness.get(&path, &token).await;
+        assert_eq!(answer.status, StatusCode::NOT_IMPLEMENTED, "{path}");
+    }
+    // Music is held nowhere: there is nothing to filter it by.
+    let music = harness
+        .get(
+            &format!("/jellyfin/Items/Filters?ParentId={films}&MediaTypes=Audio"),
+            &token,
+        )
+        .await;
+    assert_eq!(music.json()["Genres"], serde_json::json!([]));
 }

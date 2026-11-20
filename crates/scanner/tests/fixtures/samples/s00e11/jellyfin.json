@@ -1,0 +1,249 @@
+{
+ "Library": "tvshows",
+ "Item": {
+  "Container": "mkv",
+  "RunTimeTicks": 848940000,
+  "HasSubtitles": true,
+  "IsHD": true,
+  "Width": 1280,
+  "Height": 720,
+  "Chapters": [
+   {
+    "StartPositionTicks": 0,
+    "Name": "Opening",
+    "ImageDateModified": "0001-01-01T00:00:00.0000000Z"
+   },
+   {
+    "StartPositionTicks": 799130000,
+    "Name": "Episode 1",
+    "ImageDateModified": "0001-01-01T00:00:00.0000000Z"
+   }
+  ]
+ },
+ "MediaSource": {
+  "Protocol": "File",
+  "Type": "Default",
+  "Container": "mkv",
+  "Size": 56203887,
+  "Name": "S00E11",
+  "IsRemote": false,
+  "RunTimeTicks": 848940000,
+  "ReadAtNativeFramerate": false,
+  "IgnoreDts": false,
+  "IgnoreIndex": false,
+  "GenPtsInput": false,
+  "SupportsTranscoding": true,
+  "SupportsDirectStream": true,
+  "SupportsDirectPlay": true,
+  "IsInfiniteStream": false,
+  "UseMostCompatibleTranscodingProfile": false,
+  "RequiresOpening": false,
+  "RequiresClosing": false,
+  "RequiresLooping": false,
+  "SupportsProbing": true,
+  "VideoType": "VideoFile",
+  "MediaStreams": [
+   {
+    "Codec": "h264",
+    "Language": "eng",
+    "TimeBase": "1/1000",
+    "VideoRange": "SDR",
+    "VideoRangeType": "SDR",
+    "AudioSpatialFormat": "None",
+    "DisplayTitle": "720p H264 SDR",
+    "NalLengthSize": "4",
+    "IsInterlaced": false,
+    "IsAVC": true,
+    "BitRate": 5104382,
+    "BitDepth": 10,
+    "RefFrames": 1,
+    "IsDefault": true,
+    "IsForced": false,
+    "IsHearingImpaired": false,
+    "IsOriginal": false,
+    "Height": 720,
+    "Width": 1280,
+    "AverageFrameRate": 23.976025,
+    "RealFrameRate": 23.976025,
+    "ReferenceFrameRate": 23.976025,
+    "Profile": "High 10",
+    "Type": "Video",
+    "AspectRatio": "16:9",
+    "Index": 0,
+    "IsExternal": false,
+    "IsTextSubtitleStream": false,
+    "SupportsExternalStream": false,
+    "PixelFormat": "yuv420p10le",
+    "Level": 50,
+    "IsAnamorphic": false
+   },
+   {
+    "Codec": "aac",
+    "TimeBase": "1/1000",
+    "VideoRange": "Unknown",
+    "VideoRangeType": "Unknown",
+    "AudioSpatialFormat": "None",
+    "LocalizedDefault": "Default",
+    "LocalizedExternal": "External",
+    "LocalizedOriginal": "Original",
+    "DisplayTitle": "AAC - Stereo - Default",
+    "IsInterlaced": false,
+    "ChannelLayout": "stereo",
+    "BitRate": 192000,
+    "Channels": 2,
+    "SampleRate": 48000,
+    "IsDefault": true,
+    "IsForced": false,
+    "IsHearingImpaired": false,
+    "IsOriginal": false,
+    "Profile": "LC",
+    "Type": "Audio",
+    "Index": 1,
+    "IsExternal": false,
+    "IsTextSubtitleStream": false,
+    "SupportsExternalStream": false
+   },
+   {
+    "Codec": "ass",
+    "Language": "eng",
+    "TimeBase": "1/1000",
+    "Title": "Subtitles",
+    "VideoRange": "Unknown",
+    "VideoRangeType": "Unknown",
+    "AudioSpatialFormat": "None",
+    "LocalizedUndefined": "Undefined",
+    "LocalizedDefault": "Default",
+    "LocalizedForced": "Forced",
+    "LocalizedExternal": "External",
+    "LocalizedHearingImpaired": "Hearing Impaired",
+    "LocalizedLanguage": "English",
+    "DisplayTitle": "Subtitles - English - Default - ASS",
+    "IsInterlaced": false,
+    "IsDefault": true,
+    "IsForced": false,
+    "IsHearingImpaired": false,
+    "IsOriginal": false,
+    "Type": "Subtitle",
+    "Index": 2,
+    "Score": 112221,
+    "IsExternal": false,
+    "IsTextSubtitleStream": true,
+    "SupportsExternalStream": true
+   }
+  ],
+  "MediaAttachments": [
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 3,
+    "FileName": "A-OTF Folk Pro B Bold.otf",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 4,
+    "FileName": "A-OTF Gothic MB101 Pr5 H Bold.otf",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 5,
+    "FileName": "A-OTF Gothic MB101 Pr5 M Bold.otf",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 6,
+    "FileName": "A-OTF Gothic MB101 Pr5 U Bold.otf",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 7,
+    "FileName": "BlackMetalSans.ttf",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 8,
+    "FileName": "DFHSG5.TTC",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 9,
+    "FileName": "DFHSG9.TTC",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 10,
+    "FileName": "DFLis6_0.ttc",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 11,
+    "FileName": "DOTFONT-.TTF",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 12,
+    "FileName": "negotiate free.ttf",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 13,
+    "FileName": "Paint-hand_limited-set.ttf",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 14,
+    "FileName": "pehuensito.ttf",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 15,
+    "FileName": "Tuffy.ttf",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 16,
+    "FileName": "Tuffy_Italic.ttf",
+    "MimeType": "application/x-truetype-font"
+   },
+   {
+    "Codec": "ttf",
+    "CodecTag": "[0][0][0][0]",
+    "Index": 17,
+    "FileName": "VD-LogoG-Extra-G Regular.ttf",
+    "MimeType": "application/x-truetype-font"
+   }
+  ],
+  "Formats": [],
+  "Bitrate": 5296382,
+  "RequiredHttpHeaders": {},
+  "TranscodingSubProtocol": "http",
+  "DefaultAudioStreamIndex": 1,
+  "DefaultSubtitleStreamIndex": 2,
+  "HasSegments": false
+ }
+}

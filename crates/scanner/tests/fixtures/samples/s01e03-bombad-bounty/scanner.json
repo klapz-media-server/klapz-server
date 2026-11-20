@@ -1,0 +1,86 @@
+{
+ "version": 1,
+ "command": "probe",
+ "file": {
+  "size": 33995109,
+  "modifiedAt": 1548174038,
+  "openSubtitlesHash": "6ac0e585011e686c"
+ },
+ "container": "flv",
+ "durationMs": 301525,
+ "durationUs": 301525000,
+ "bitrate": 901951,
+ "tracks": [
+  {
+   "index": 0,
+   "kind": "audio",
+   "codec": "aac",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "profile": "HE-AAC",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "audio": {
+    "sampleRate": 48000,
+    "channels": 2,
+    "channelLayout": "stereo"
+   }
+  },
+  {
+   "index": 1,
+   "kind": "video",
+   "codec": "h264",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "profile": "High",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "video": {
+    "width": 640,
+    "height": 360,
+    "codedWidth": 640,
+    "codedHeight": 360,
+    "sequenceHeader": {
+     "codedWidth": 640,
+     "codedHeight": 368,
+     "refFrames": 2,
+     "hasScalingMatrix": false
+    },
+    "level": 51,
+    "pixelFormat": "yuv420p",
+    "bitDepth": 8,
+    "colorRange": "tv",
+    "colorSpace": "bt470bg",
+    "colorPrimaries": "bt470bg",
+    "colorTransfer": "bt470bg",
+    "chromaLocation": "left",
+    "frameRate": 25.0,
+    "averageFrameRate": "25/1",
+    "realFrameRate": "25/1",
+    "isAvc": true,
+    "nalLengthSize": 4,
+    "fieldOrder": "progressive",
+    "sampleAspectRatio": "1:1",
+    "displayAspectRatio": "16:9",
+    "closedCaptions": false
+   }
+  }
+ ],
+ "chapters": []
+}

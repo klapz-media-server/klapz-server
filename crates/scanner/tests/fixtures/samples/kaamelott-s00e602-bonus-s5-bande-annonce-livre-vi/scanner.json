@@ -1,0 +1,102 @@
+{
+ "version": 1,
+ "command": "probe",
+ "file": {
+  "size": 128598047,
+  "modifiedAt": 1538901543,
+  "openSubtitlesHash": "b3cb02f713b6586a"
+ },
+ "container": "matroska,webm",
+ "durationMs": 50040,
+ "durationUs": 50040000,
+ "bitrate": 20559240,
+ "tracks": [
+  {
+   "index": 0,
+   "kind": "video",
+   "codec": "h264",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "profile": "High",
+   "language": "eng",
+   "declaredLanguage": "eng",
+   "statistics": {
+    "bitrate": 18886162,
+    "bytes": 118132948,
+    "durationUs": 50040000
+   },
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "video": {
+    "width": 1920,
+    "height": 1080,
+    "codedWidth": 1920,
+    "codedHeight": 1080,
+    "sequenceHeader": {
+     "codedWidth": 1920,
+     "codedHeight": 1088,
+     "refFrames": 4,
+     "hasScalingMatrix": false
+    },
+    "level": 41,
+    "pixelFormat": "yuv420p",
+    "bitDepth": 8,
+    "colorRange": "tv",
+    "colorSpace": "bt709",
+    "colorPrimaries": "bt709",
+    "colorTransfer": "bt709",
+    "chromaLocation": "left",
+    "frameRate": 25.0,
+    "averageFrameRate": "25/1",
+    "realFrameRate": "25/1",
+    "isAvc": true,
+    "nalLengthSize": 4,
+    "fieldOrder": "tt",
+    "sampleAspectRatio": "1:1",
+    "displayAspectRatio": "16:9",
+    "closedCaptions": false
+   }
+  },
+  {
+   "index": 1,
+   "kind": "audio",
+   "codec": "dts",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "profile": "DTS-HD MA",
+   "language": "fra",
+   "declaredLanguage": "fra",
+   "title": "Stéréo",
+   "statistics": {
+    "bitrate": 1668865,
+    "bytes": 10440420,
+    "durationUs": 50048000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "audio": {
+    "sampleRate": 48000,
+    "channels": 2,
+    "channelLayout": "stereo",
+    "bitDepth": 16
+   }
+  }
+ ],
+ "chapters": []
+}

@@ -49,6 +49,8 @@ NOTES = {
     "GET /Items/{itemId}/Similar": "Films and series, by the official API's measure.",
     "GET /Items/{itemId}/ThemeMedia": "Empty: no theme media is held.",
     "GET /SyncPlay/List": "Empty: no group is held.",
+    "GET /Items/Filters": "Below a library or across the caller's; no tags (keywords are a provider's).",
+    "GET /Items/Filters2": "Languages as tracks state them; Live TV flags answer 501.",
 }
 
 

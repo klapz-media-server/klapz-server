@@ -1,0 +1,160 @@
+{
+ "version": 1,
+ "command": "probe",
+ "file": {
+  "size": 163391205,
+  "modifiedAt": 1548191431,
+  "openSubtitlesHash": "5cb496301f1878c4"
+ },
+ "container": "mov,mp4,m4a,3gp,3g2,mj2",
+ "durationMs": 1146120,
+ "durationUs": 1146120000,
+ "bitrate": 1140482,
+ "optimizedForStreaming": false,
+ "has64bitOffsets": true,
+ "tracks": [
+  {
+   "index": 0,
+   "identifier": 1,
+   "kind": "video",
+   "codec": "h264",
+   "codecTag": "avc1",
+   "rawCodecTag": "avc1",
+   "timeBase": "1/25000",
+   "profile": "Main",
+   "declaredLanguage": "und",
+   "bitrate": 1008301,
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "video": {
+    "width": 720,
+    "height": 404,
+    "codedWidth": 720,
+    "codedHeight": 404,
+    "sequenceHeader": {
+     "codedWidth": 720,
+     "codedHeight": 416,
+     "refFrames": 1,
+     "hasScalingMatrix": false
+    },
+    "level": 30,
+    "pixelFormat": "yuv420p",
+    "bitDepth": 8,
+    "colorRange": "tv",
+    "colorSpace": "smpte170m",
+    "colorPrimaries": "smpte170m",
+    "colorTransfer": "bt709",
+    "chromaLocation": "left",
+    "frameRate": 25.0,
+    "averageFrameRate": "25/1",
+    "realFrameRate": "25/1",
+    "isAvc": true,
+    "nalLengthSize": 4,
+    "fieldOrder": "progressive",
+    "closedCaptions": false
+   }
+  },
+  {
+   "index": 1,
+   "identifier": 2,
+   "kind": "audio",
+   "codec": "aac",
+   "codecTag": "mp4a",
+   "rawCodecTag": "mp4a",
+   "timeBase": "1/48000",
+   "profile": "LC",
+   "language": "fra",
+   "declaredLanguage": "fra",
+   "name": "French (aac 2.0)",
+   "bitrate": 127829,
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "audio": {
+    "sampleRate": 48000,
+    "channels": 2,
+    "channelLayout": "stereo"
+   }
+  },
+  {
+   "index": 2,
+   "identifier": 3,
+   "kind": "data",
+   "codec": "bin_data",
+   "codecTag": "text",
+   "rawCodecTag": "text",
+   "timeBase": "1/25000",
+   "declaredLanguage": "und",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   }
+  },
+  {
+   "index": 3,
+   "identifier": 0,
+   "kind": "video",
+   "codec": "bmp",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/90000",
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": true
+   },
+   "video": {
+    "width": 340,
+    "height": 192,
+    "codedWidth": 340,
+    "codedHeight": 192,
+    "pixelFormat": "bgra",
+    "frameRate": 90000.0,
+    "averageFrameRate": "0/0",
+    "realFrameRate": "90000/1",
+    "closedCaptions": false
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "index": 1,
+   "startMs": 0,
+   "endMs": 1520,
+   "startUs": 0,
+   "declaredTitle": "Chapter 1"
+  },
+  {
+   "index": 2,
+   "startMs": 1520,
+   "endMs": 1146120,
+   "startUs": 1520000,
+   "declaredTitle": "Chapter 2"
+  }
+ ]
+}

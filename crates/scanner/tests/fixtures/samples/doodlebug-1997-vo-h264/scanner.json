@@ -1,0 +1,91 @@
+{
+ "version": 1,
+ "command": "probe",
+ "file": {
+  "size": 14876546,
+  "modifiedAt": 1507388853,
+  "openSubtitlesHash": "760720623fce7f35"
+ },
+ "container": "matroska,webm",
+ "durationMs": 178301,
+ "durationUs": 178301000,
+ "bitrate": 667480,
+ "tracks": [
+  {
+   "index": 0,
+   "kind": "video",
+   "codec": "h264",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "profile": "Main",
+   "declaredLanguage": "und",
+   "handlerName": "VideoHandler",
+   "statistics": {
+    "durationUs": 178278000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "video": {
+    "width": 720,
+    "height": 480,
+    "codedWidth": 720,
+    "codedHeight": 480,
+    "sequenceHeader": {
+     "codedWidth": 720,
+     "codedHeight": 480,
+     "refFrames": 3,
+     "hasScalingMatrix": false
+    },
+    "level": 30,
+    "pixelFormat": "yuv420p",
+    "bitDepth": 8,
+    "chromaLocation": "left",
+    "frameRate": 29.97002997002997,
+    "averageFrameRate": "30000/1001",
+    "realFrameRate": "30000/1001",
+    "isAvc": true,
+    "nalLengthSize": 4,
+    "fieldOrder": "progressive",
+    "sampleAspectRatio": "1:1",
+    "displayAspectRatio": "3:2",
+    "closedCaptions": false
+   }
+  },
+  {
+   "index": 1,
+   "kind": "audio",
+   "codec": "opus",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "language": "eng",
+   "declaredLanguage": "eng",
+   "statistics": {
+    "durationUs": 178301000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "audio": {
+    "sampleRate": 48000,
+    "channels": 2,
+    "channelLayout": "stereo"
+   }
+  }
+ ],
+ "chapters": []
+}

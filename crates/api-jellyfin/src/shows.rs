@@ -83,7 +83,8 @@ async fn seasons(
     let show = id::global_of_type(&show, open_plex_api::item::ITEM_TYPE)?;
     let fields = Fields::named(query.list("fields"));
     let seasons_query = format!(
-        r"query($id: ID!, $people: Boolean!) {{
+        r"query($id: ID!, $people: Boolean!,
+                $chapters: Boolean!) {{
             node(id: $id) {{ ... on Show {{
                 seasons(first: {MAX_PAGE}) {{ nodes {{ ...JellyfinItem }} }}
             }} }}
@@ -93,7 +94,8 @@ async fn seasons(
     let data: NodeData<ShowSeasons> = gql::query(
         &state.schema,
         &seasons_query,
-        json!({ "id": show, "people": fields.wants_people() }),
+        json!({ "id": show, "people": fields.wants_people(),
+            "chapters": fields.has("Chapters") }),
     )
     .await?;
     let seasons = data
@@ -117,7 +119,8 @@ async fn episodes(
     let show = id::global_of_type(&show, open_plex_api::item::ITEM_TYPE)?;
     let fields = Fields::named(query.list("fields"));
     let episodes_query = format!(
-        r"query($id: ID!, $people: Boolean!) {{
+        r"query($id: ID!, $people: Boolean!,
+                $chapters: Boolean!) {{
             node(id: $id) {{ ... on Show {{
                 episodes(first: {MAX_PAGE}) {{ nodes {{ ...JellyfinItem }} }}
             }} }}
@@ -127,7 +130,8 @@ async fn episodes(
     let data: NodeData<ShowEpisodes> = gql::query(
         &state.schema,
         &episodes_query,
-        json!({ "id": show, "people": fields.wants_people() }),
+        json!({ "id": show, "people": fields.wants_people(),
+            "chapters": fields.has("Chapters") }),
     )
     .await?;
     let mut episodes = data

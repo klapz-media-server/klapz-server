@@ -1,0 +1,125 @@
+{
+ "version": 1,
+ "command": "probe",
+ "file": {
+  "size": 3137605828,
+  "modifiedAt": 1562482013,
+  "openSubtitlesHash": "7e80212e9bd5dcce"
+ },
+ "container": "matroska,webm",
+ "durationMs": 5446782,
+ "durationUs": 5446782000,
+ "bitrate": 4608380,
+ "tracks": [
+  {
+   "index": 0,
+   "kind": "video",
+   "codec": "h264",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "profile": "High",
+   "language": "eng",
+   "statistics": {
+    "bitrate": 4473470,
+    "bytes": 3045717724,
+    "durationUs": 5446720000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "video": {
+    "width": 1920,
+    "height": 1080,
+    "codedWidth": 1920,
+    "codedHeight": 1080,
+    "sequenceHeader": {
+     "codedWidth": 1920,
+     "codedHeight": 1088,
+     "refFrames": 4,
+     "hasScalingMatrix": true
+    },
+    "level": 40,
+    "pixelFormat": "yuv420p",
+    "bitDepth": 8,
+    "colorRange": "tv",
+    "colorSpace": "bt709",
+    "colorPrimaries": "bt709",
+    "colorTransfer": "bt709",
+    "chromaLocation": "left",
+    "frameRate": 25.0,
+    "averageFrameRate": "25/1",
+    "realFrameRate": "25/1",
+    "isAvc": true,
+    "nalLengthSize": 4,
+    "fieldOrder": "tt",
+    "sampleAspectRatio": "1:1",
+    "displayAspectRatio": "16:9",
+    "closedCaptions": false
+   }
+  },
+  {
+   "index": 1,
+   "kind": "audio",
+   "codec": "eac3",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "language": "fre",
+   "declaredLanguage": "fre",
+   "title": "Français AC3 2.0",
+   "bitrate": 128000,
+   "statistics": {
+    "bitrate": 128000,
+    "bytes": 87146496,
+    "durationUs": 5446656000
+   },
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": true,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "audio": {
+    "sampleRate": 48000,
+    "channels": 2,
+    "channelLayout": "stereo"
+   }
+  },
+  {
+   "index": 2,
+   "kind": "subtitle",
+   "codec": "dvb_subtitle",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "language": "fre",
+   "declaredLanguage": "fre",
+   "title": "Français",
+   "statistics": {
+    "bitrate": 10286,
+    "bytes": 6898248,
+    "durationUs": 5364760000
+   },
+   "disposition": {
+    "default": false,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   }
+  }
+ ],
+ "chapters": []
+}

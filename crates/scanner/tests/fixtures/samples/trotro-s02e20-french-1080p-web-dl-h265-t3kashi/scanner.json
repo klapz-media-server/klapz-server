@@ -1,0 +1,95 @@
+{
+ "version": 1,
+ "command": "probe",
+ "file": {
+  "size": 46889903,
+  "modifiedAt": 1776979288,
+  "openSubtitlesHash": "7b4217d27bae56e0"
+ },
+ "container": "matroska,webm",
+ "durationMs": 214368,
+ "durationUs": 214368000,
+ "bitrate": 1749884,
+ "tracks": [
+  {
+   "index": 0,
+   "kind": "video",
+   "codec": "hevc",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "profile": "Main",
+   "language": "fr",
+   "declaredLanguage": "fr",
+   "title": "E20 - 1080p",
+   "taggedBitrate": 1524245,
+   "statistics": {
+    "bitrate": 1524245,
+    "bytes": 40834524,
+    "durationUs": 214320000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "video": {
+    "width": 1440,
+    "height": 1080,
+    "codedWidth": 1440,
+    "codedHeight": 1080,
+    "level": 120,
+    "pixelFormat": "yuv420p",
+    "bitDepth": 8,
+    "colorRange": "tv",
+    "colorSpace": "bt709",
+    "colorPrimaries": "bt709",
+    "colorTransfer": "bt709",
+    "chromaLocation": "left",
+    "frameRate": 25.0,
+    "averageFrameRate": "25/1",
+    "realFrameRate": "25/1",
+    "sampleAspectRatio": "1:1",
+    "displayAspectRatio": "4:3",
+    "closedCaptions": false
+   }
+  },
+  {
+   "index": 1,
+   "kind": "audio",
+   "codec": "eac3",
+   "rawCodecTag": "[0][0][0][0]",
+   "timeBase": "1/1000",
+   "language": "fr-FR",
+   "declaredLanguage": "fr-FR",
+   "title": "Français",
+   "bitrate": 224000,
+   "taggedBitrate": 224000,
+   "statistics": {
+    "bitrate": 224000,
+    "bytes": 6002304,
+    "durationUs": 214368000
+   },
+   "disposition": {
+    "default": true,
+    "forced": false,
+    "hearingImpaired": false,
+    "visualImpaired": false,
+    "original": false,
+    "dub": false,
+    "comment": false,
+    "attachedPicture": false
+   },
+   "audio": {
+    "sampleRate": 48000,
+    "channels": 2,
+    "channelLayout": "stereo"
+   }
+  }
+ ],
+ "chapters": []
+}

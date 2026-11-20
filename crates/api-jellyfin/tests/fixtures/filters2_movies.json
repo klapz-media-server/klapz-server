@@ -1,0 +1,103 @@
+{
+  "Genres": [
+    {
+      "Name": "Animation",
+      "Id": "074229225b7254292f131f9f49f8dcd6"
+    },
+    {
+      "Name": "Aventure",
+      "Id": "4224b8ea18993e46081c00fa1c46a736"
+    },
+    {
+      "Name": "Crime",
+      "Id": "83a9dab21914792744c8fb23b9925dc6"
+    },
+    {
+      "Name": "Documentaire",
+      "Id": "5d9052ea2349868290d6278b11fb4588"
+    },
+    {
+      "Name": "Drame",
+      "Id": "6a24d9a479675b918371054b545b59a0"
+    },
+    {
+      "Name": "Science-Fiction",
+      "Id": "44a6a873a8ec54283c407e7193e7dd69"
+    },
+    {
+      "Name": "Thriller",
+      "Id": "4936f5b1a6f84f0b0aa2657368a5b364"
+    }
+  ],
+  "Tags": [
+    "aftercreditsstinger",
+    "altar boy",
+    "based on novel or book",
+    "bishop",
+    "capital punishment",
+    "chicago, illinois",
+    "child abuse",
+    "corruption",
+    "court",
+    "court case",
+    "courtroom drama",
+    "death penalty",
+    "dinosaur",
+    "genetic engineering",
+    "harsh",
+    "lawyer",
+    "legal drama",
+    "legal thriller",
+    "manipulation",
+    "mental illness",
+    "monster island",
+    "murder trial",
+    "pornographic video",
+    "prehistoric creature",
+    "psychiatrist",
+    "psychopath",
+    "rescue mission",
+    "sequel",
+    "taunting",
+    "tyrannosaurus rex",
+    "volcano",
+    "whodunit",
+    "wild animal"
+  ],
+  "AudioLanguages": [
+    {
+      "Name": "English (eng)",
+      "Value": "eng"
+    },
+    {
+      "Name": "French (fra)",
+      "Value": "fra"
+    },
+    {
+      "Name": "French (fre)",
+      "Value": "fre"
+    },
+    {
+      "Name": "German (deu)",
+      "Value": "deu"
+    },
+    {
+      "Name": "qaa",
+      "Value": "qaa"
+    },
+    {
+      "Name": "qad",
+      "Value": "qad"
+    }
+  ],
+  "SubtitleLanguages": [
+    {
+      "Name": "fra,fra",
+      "Value": "fra,fra"
+    },
+    {
+      "Name": "French (fre)",
+      "Value": "fre"
+    }
+  ]
+}

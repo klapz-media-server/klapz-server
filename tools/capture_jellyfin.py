@@ -129,6 +129,11 @@ def captures(token: str, user: str) -> list[tuple[str, str, str, object | None]]
         ("resume", "GET", f"/UserItems/Resume?userId={user}&Limit=12&Fields=PrimaryImageAspectRatio&MediaTypes=Video", None),
         ("latest_movies", "GET", f"/Items/Latest?userId={user}&ParentId={movies}&Limit=16&Fields=PrimaryImageAspectRatio", None),
         ("next_up", "GET", f"/Shows/NextUp?userId={user}&Limit=24&Fields=PrimaryImageAspectRatio", None),
+        ("latest_shows", "GET", f"/Items/Latest?userId={user}&ParentId={shows}&Limit=16&Fields=PrimaryImageAspectRatio", None),
+        ("items_episodes", "GET", f"/Items?userId={user}&ParentId={shows}&Recursive=true&IncludeItemTypes=Episode&SortBy=SortName&SortOrder=Ascending&StartIndex=0&Limit=100&{listing}", None),
+        ("filters_movies", "GET", f"/Items/Filters?userId={user}&ParentId={movies}&IncludeItemTypes=Movie", None),
+        ("filters2_movies", "GET", f"/Items/Filters2?userId={user}&ParentId={movies}&IncludeItemTypes=Movie", None),
+        ("filters_shows", "GET", f"/Items/Filters?userId={user}&ParentId={shows}&IncludeItemTypes=Series", None),
         ("display_preferences", "GET", f"/DisplayPreferences/usersettings?userId={user}&client=emby", None),
         ("playback_info", "POST", f"/Items/{movie}/PlaybackInfo?userId={user}", DEVICE_PROFILE),
         ("item_unknown", "GET", "/Items/00000000000000000000000000000001", None),
@@ -137,17 +142,39 @@ def captures(token: str, user: str) -> list[tuple[str, str, str, object | None]]
 
 
 def capture_every_item(token: str, user: str) -> None:
-    """Every film's and episode's lookup, under `items/`, for comparing tracks file by file."""
-    directory = CAPTURES / "items"
-    directory.mkdir(parents=True, exist_ok=True)
+    """Every film and episode as the clients ask for it, for comparing the 35 files one by one.
+
+    `items/` holds each lookup, `legacy/` the same through `/Users/{user}/Items/{id}`,
+    `playback/` its PlaybackInfo; `seasons/` and `episodes/` each series' children, `series/`
+    and `season/` their lookups.
+    """
+    get = lambda path: json.loads(request("GET", path, token)[2])  # noqa: E731
+    write = lambda folder, name, body: (CAPTURES / folder / f"{name}.json").write_bytes(body)  # noqa: E731
+    for folder in ("items", "legacy", "playback", "seasons", "episodes", "series", "season"):
+        (CAPTURES / folder).mkdir(parents=True, exist_ok=True)
     for kind in ("Movie", "Episode"):
-        listing = json.loads(request(
-            "GET", f"/Items?userId={user}&Recursive=true&IncludeItemTypes={kind}&Limit=500", token
-        )[2])
+        listing = get(f"/Items?userId={user}&Recursive=true&IncludeItemTypes={kind}&Limit=500")
         for item in listing["Items"]:
-            _, _, body = request("GET", f"/Items/{item['Id']}?userId={user}", token)
-            (directory / f"{item['Id']}.json").write_bytes(body)
+            write("items", item["Id"], request("GET", f"/Items/{item['Id']}?userId={user}", token)[2])
+            write("legacy", item["Id"], request("GET", f"/Users/{user}/Items/{item['Id']}", token)[2])
+            write("playback", item["Id"], request(
+                "POST", f"/Items/{item['Id']}/PlaybackInfo?userId={user}", token, DEVICE_PROFILE
+            )[2])
         print(f"{len(listing['Items'])} {kind} lookups")
+    series = get(f"/Items?userId={user}&Recursive=true&IncludeItemTypes=Series&Limit=500")["Items"]
+    fields = "Fields=ItemCounts,PrimaryImageAspectRatio,Overview,MediaSourceCount"
+    for show in series:
+        write("series", show["Id"], request("GET", f"/Items/{show['Id']}?userId={user}", token)[2])
+        _, _, seasons = request("GET", f"/Shows/{show['Id']}/Seasons?userId={user}&{fields}", token)
+        write("seasons", show["Id"], seasons)
+        write("episodes", show["Id"], request(
+            "GET", f"/Shows/{show['Id']}/Episodes?userId={user}&{fields}", token
+        )[2])
+        for season in json.loads(seasons).get("Items", []):
+            write("season", season["Id"], request(
+                "GET", f"/Items/{season['Id']}?userId={user}", token
+            )[2])
+    print(f"{len(series)} series")
 
 
 def scrub(text: str, server_id: str, user_id: str, server_name: str, username: str) -> str:
