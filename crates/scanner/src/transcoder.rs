@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 
 /// Names tried beside the executable, in order: the patched build under the name the packages
 /// give it, then under ffmpeg's own.
-const NAMES: [&str; 2] = ["klapz-transcoder", "ffmpeg"];
+const NAMES: [&str; 2] = ["klapz-ffmpeg", "ffmpeg"];
 
-/// `KLAPZ_TRANSCODER`; else `klapz-transcoder`, then `ffmpeg`, beside the running executable;
+/// `KLAPZ_TRANSCODER`; else `klapz-ffmpeg`, then `ffmpeg`, beside the running executable;
 /// else the `ffmpeg` that `PATH` finds.
 pub fn binary() -> PathBuf {
     let beside = std::env::current_exe()
@@ -52,9 +52,9 @@ mod tests {
     }
 
     #[test]
-    fn the_klapz_transcoder_beside_wins_over_ffmpeg() {
-        let both = directory("both", &["klapz-transcoder", "ffmpeg"]);
-        assert_eq!(resolve(None, Some(&both)), named(&both, "klapz-transcoder"));
+    fn the_klapz_ffmpeg_beside_wins_over_ffmpeg() {
+        let both = directory("both", &["klapz-ffmpeg", "ffmpeg"]);
+        assert_eq!(resolve(None, Some(&both)), named(&both, "klapz-ffmpeg"));
         let ffmpeg = directory("ffmpeg", &["ffmpeg"]);
         assert_eq!(resolve(None, Some(&ffmpeg)), named(&ffmpeg, "ffmpeg"));
     }
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn the_variable_wins_over_everything() {
-        let both = directory("variable", &["klapz-transcoder", "ffmpeg"]);
+        let both = directory("variable", &["klapz-ffmpeg", "ffmpeg"]);
         let configured = OsString::from("/opt/ffmpeg-plex/ffmpeg");
         assert_eq!(
             resolve(Some(configured.clone()), Some(&both)),
