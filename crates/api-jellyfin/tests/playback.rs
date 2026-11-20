@@ -7,7 +7,7 @@ mod common;
 use axum::http::{Method, StatusCode};
 use common::{
     client_header, fixture, jellyfin_id, shape_differences, Harness, DOODLEBUG, DOODLEBUG_AUDIO,
-    HIDDEN_FILM,
+    EPISODE, HIDDEN_FILM,
 };
 use open_plex_core::stream::Delivery;
 use serde_json::{json, Value};
@@ -352,4 +352,44 @@ async fn an_audio_track_named_by_its_index_is_the_one_played() {
     assert_eq!(started[0].source.audio.position, 1);
     // The track the index names, the film's only audio.
     let _ = DOODLEBUG_AUDIO;
+}
+
+#[tokio::test]
+async fn an_episodes_intro_and_credits_are_its_segments() {
+    let harness = Harness::new().await;
+    let token = harness.token().await;
+    let episode = jellyfin_id("Item", EPISODE);
+    let answer = harness
+        .get(&format!("/jellyfin/MediaSegments/{episode}"), &token)
+        .await;
+    assert_eq!(answer.status, StatusCode::OK);
+    let segments = answer.json();
+    assert_eq!(
+        shape_differences(&segments, &fixture("media_segments"), &[]),
+        Vec::<String>::new()
+    );
+    assert_eq!(segments["TotalRecordCount"], 2);
+    let intro = &segments["Items"][0];
+    assert_eq!(intro["Type"], "Intro");
+    assert_eq!(intro["ItemId"], episode.as_str());
+    assert_eq!(intro["Id"], jellyfin_id("Marker", common::INTRO));
+    assert_eq!(intro["StartTicks"], 120_000_000);
+    assert_eq!(intro["EndTicks"], 615_000_000);
+    assert_eq!(segments["Items"][1]["Type"], "Outro");
+    let outros = harness
+        .get(
+            &format!("/jellyfin/MediaSegments/{episode}?includeSegmentTypes=Outro"),
+            &token,
+        )
+        .await
+        .json();
+    assert_eq!(outros["TotalRecordCount"], 1);
+    let film = harness
+        .get(
+            &format!("/jellyfin/MediaSegments/{}", jellyfin_id("Item", DOODLEBUG)),
+            &token,
+        )
+        .await
+        .json();
+    assert_eq!(film, fixture("media_segments"));
 }

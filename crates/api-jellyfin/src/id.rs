@@ -30,6 +30,7 @@ const TYPES: &[(u32, &str)] = &[
     (14, open_plex_api::playlist::PLAYLIST_ENTRY_TYPE),
     (15, crate::browse::STUDIO_TYPE),
     (16, crate::browse::YEAR_TYPE),
+    (17, open_plex_api::marker::MARKER_TYPE),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

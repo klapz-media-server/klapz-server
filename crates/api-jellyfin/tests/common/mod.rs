@@ -163,6 +163,29 @@ fn tags() -> Vec<open_plex_core::metadata::ItemTag> {
     ]
 }
 
+pub const INTRO: i64 = 601;
+
+/// The episode's intro and final credits, as an analysis found them.
+fn markers() -> Vec<open_plex_core::marker::Marker> {
+    use open_plex_core::marker::{Marker, MarkerKind};
+    let marker = |id: i64, kind, start_ms, end_ms| Marker {
+        id: open_plex_core::MarkerId::new(id),
+        item: RatingKey::new(EPISODE),
+        kind,
+        owner: None,
+        start_ms,
+        end_ms: Some(end_ms),
+        is_final: kind == MarkerKind::Credits,
+        version: Some(5),
+        title: None,
+        color: None,
+    };
+    vec![
+        marker(INTRO, MarkerKind::Intro, 12_000, 61_500),
+        marker(602, MarkerKind::Credits, 2_830_000, 2_877_000),
+    ]
+}
+
 fn version(id: i64, item: i64, width: i32, height: i32) -> MediaVersion {
     MediaVersion {
         id: MediaId::new(id),
@@ -394,6 +417,7 @@ fn metadata() -> InMemoryMetadata {
         )
         .with_side_streams(vec![cover])
         .with_tags(tags())
+        .with_markers(markers())
 }
 
 pub struct Harness {

@@ -63,6 +63,7 @@ NOTES = {
     "GET /Genres": "searchTerm completes a word of the name; name ranges answer 501.",
     "GET /Persons": "With searchTerm, or one role at a time; every role unsearched answers 501.",
     "GET /Studios": "A studio's id is a hash of its name; StudioIds on /Items answers 501.",
+    "GET /MediaSegments/{itemId}": "Intro, Outro and Commercial from the work's markers.",
     "GET /Search/Hints": "Items then people, first page only; Live TV and media filters answer 501.",
 }
 

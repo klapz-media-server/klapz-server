@@ -8,8 +8,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `served` | 81 | 22.3 % |
-| `todo` | 283 | 77.7 % |
+| `served` | 82 | 22.5 % |
+| `todo` | 282 | 77.5 % |
 
 ## By domain
 
@@ -37,7 +37,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | Localization | 4 | 0 |
 | Lyric | 6 | 0 |
 | MediaInfo | 5 | 3 |
-| MediaSegment | 1 | 0 |
+| MediaSegment | 1 | 1 |
 | Movie | 1 | 0 |
 | MusicGenre | 1 | 0 |
 | Person | 2 | 2 |
@@ -382,7 +382,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Method | Path | Status | Notes |
 | --- | --- | --- | --- |
-| GET | `/MediaSegments/{itemId}` | `todo` |  |
+| GET | `/MediaSegments/{itemId}` | `served` | Intro, Outro and Commercial from the work's markers. |
 
 ## Movie
 

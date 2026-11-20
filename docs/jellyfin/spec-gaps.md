@@ -218,6 +218,16 @@ studios and years; their artwork is not held.
 - `/Search/Hints` hints the items the official API's search ranks, then the people a term finds
   (`includePeople`); a page past the first, and the Live TV and media filters, answer `501`.
 
+## Segments
+
+`/MediaSegments/{itemId}` lists the work's markers of a film or an episode (`Movie.markers`,
+`Episode.markers`) as Jellyfin's segment types: an intro is an `Intro`, credits an `Outro`, a
+commercial a `Commercial`, each with the marker's id; a bookmark, a viewer's own place, is none,
+nor are the credits the reference library keeps ending before they start.
+`includeSegmentTypes` narrows them. The reference detects none on its test files (no plugin
+installed), and answers the empty list, as this server does for a file no marker was imported
+for: nothing here detects them yet.
+
 ## Measured on the 35 files
 
 `tools/compare_jellyfin.py` compares, for every file, the lookup (`/Items/{id}` and
