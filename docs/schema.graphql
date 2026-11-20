@@ -1167,6 +1167,33 @@ input CreateCollectionInput {
 }
 
 """
+A library to create.
+"""
+input CreateLibraryInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	Its name: 1 to 255 characters, trimmed.
+	"""
+	title: String!
+	"""
+	What it holds: films or series.
+	"""
+	kind: LibraryKind!
+	"""
+	The language its metadata is in, as a BCP 47 tag such as `fr-FR`.
+	"""
+	language: String!
+	"""
+	The directories it scans: absolute paths on the server, 1 to 32 of them, none inside
+	another. Each is stored resolved, links followed; a repeat is kept once.
+	"""
+	roots: [String!]!
+}
+
+"""
 A play queue to create.
 """
 input CreatePlayQueueInput {
@@ -1399,6 +1426,38 @@ type DeleteHistoryEntryPayload {
 	Why nothing was deleted. Empty when the entry was.
 	"""
 	userErrors: [HistoryUserError!]!
+}
+
+"""
+A library to delete.
+"""
+input DeleteLibraryInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The library, as returned in `Library.id`.
+	"""
+	id: ID!
+}
+
+"""
+What a deletion removed.
+"""
+type DeleteLibraryPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The library deleted, as it was returned in `Library.id`. Null when refused.
+	"""
+	deletedLibraryId: ID
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [LibraryUserError!]!
 }
 
 """
@@ -1884,6 +1943,30 @@ type ExtensionCredentials {
 	The token to give the client. Shown only here: the server keeps a digest of it.
 	"""
 	token: String!
+}
+
+type ExtensionDevice {
+	"""
+	What the client calls the device, stable across its sign-ins: what
+	`forgetExtensionDevice` takes.
+	"""
+	deviceId: String!
+	"""
+	The device's name, for a person.
+	"""
+	deviceName: String!
+	"""
+	The application that signed in.
+	"""
+	client: String!
+	"""
+	The application's version.
+	"""
+	clientVersion: String!
+	"""
+	Its last sign-in.
+	"""
+	signedInAt: DateTime!
 }
 
 """
@@ -3539,6 +3622,53 @@ type LibraryEdge {
 }
 
 """
+Why a library mutation did nothing.
+"""
+enum LibraryErrorCode {
+	"""
+	No library the caller may change carries this id.
+	"""
+	LIBRARY_NOT_FOUND
+	"""
+	A title is 1 to 255 characters once trimmed, with no control character.
+	"""
+	INVALID_TITLE
+	"""
+	Not shaped as a BCP 47 language tag, such as `fr-FR`.
+	"""
+	INVALID_LANGUAGE
+	"""
+	Music and photo libraries are not held by this server.
+	"""
+	UNSUPPORTED_KIND
+	"""
+	A library needs a directory to scan.
+	"""
+	NO_ROOT
+	"""
+	A library scans at most 32 directories.
+	"""
+	TOO_MANY_ROOTS
+	"""
+	Not an absolute path to a directory the server reaches.
+	"""
+	ROOT_NOT_FOUND
+	"""
+	Lies inside another of the roots given, or holds one: its files would be found twice.
+	"""
+	OVERLAPPING_ROOTS
+	"""
+	Only the server's owners choose the directories a library scans.
+	"""
+	OWNER_ONLY
+	"""
+	The library is being scanned: its roots stay as they are and it stays until the scan
+	ends or is cancelled.
+	"""
+	SCANNING
+}
+
+"""
 The kind of media a library holds.
 
 Declared here rather than deriving GraphQL traits on the domain enum, so `core` stays free
@@ -3561,6 +3691,24 @@ enum LibraryKind {
 	Photographs and home videos.
 	"""
 	PHOTO
+}
+
+"""
+A library after a change.
+"""
+type LibraryPayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The library as it now stands. Null when the request was refused.
+	"""
+	library: Library
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [LibraryUserError!]!
 }
 
 type LibraryPermission {
@@ -3695,6 +3843,24 @@ type LibraryTagEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+"""
+A request a library mutation refused, and where in the input the reason lies.
+"""
+type LibraryUserError {
+	"""
+	The path to the input field at fault; for a root, its position in `roots` too.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person to read.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program to branch on.
+	"""
+	code: LibraryErrorCode!
 }
 
 type Loudness {
@@ -4941,8 +5107,9 @@ type Mutation {
 		libraryId: ID!
 	): Boolean!
 	"""
-	Switches a user's connection off: its token stops working and its identifier is kept.
-	Whether it was on. For the server's owners only.
+	Switches a user's connection off: its token stops working, its devices are forgotten
+	and its identifier is kept. Whether it was on. For the server's owners; through Jellyfin,
+	for the user itself too.
 	"""
 	disableExtension(
 		"""
@@ -4956,7 +5123,8 @@ type Mutation {
 	): Boolean!
 	"""
 	Connects a user through an extension, returning a new token. Called again, it replaces
-	the token and keeps the identifier clients recognize. For the server's owners only.
+	the token and keeps the identifier clients recognize. For the server's owners; through
+	Jellyfin, whose clients then sign in with the user's password, for the user itself too.
 	"""
 	connectExtension(
 		"""
@@ -4968,6 +5136,37 @@ type Mutation {
 		"""
 		extension: ExtensionType!
 	): ExtensionCredentials!
+	"""
+	Signs one device out of a user's connection: its token opens nothing more, and the
+	device signs in again with the password. Whether there was such a device. For the
+	server's owners, and for the user itself.
+	"""
+	forgetExtensionDevice(
+		"""
+		The user, as returned in `User.id`.
+		"""
+		userId: ID!,
+		"""
+		The protocol the device signed in through.
+		"""
+		extension: ExtensionType!,
+		"""
+		The device, as returned in `ExtensionDevice.deviceId`.
+		"""
+		deviceId: String!
+	): Boolean!
+	"""
+	Gives the caller a new password, which also signs it in through Jellyfin's clients; its
+	current password is asked for when it has one. An owner sets or resets any user's,
+	with none asked. The built-in `admin` account takes `KLAPZ_ADMIN_PASSWORD` again at the
+	next start when that is set.
+	"""
+	setPassword(
+		"""
+		The current password, and the new one.
+		"""
+		input: SetPasswordInput!
+	): SetPasswordPayload!
 	"""
 	Ties a user's connection to its account on the extension's own service, and tells that
 	service where the server can be reached. For the server's owners, and for the user
@@ -5196,6 +5395,37 @@ type Mutation {
 		"""
 		input: ClearPlaylistInput!
 	): PlaylistPayload!
+	"""
+	Creates a library over directories of the server, then scans it. For the server's
+	owners only.
+	"""
+	createLibrary(
+		"""
+		The library to create.
+		"""
+		input: CreateLibraryInput!
+	): LibraryPayload!
+	"""
+	Renames a library or changes its language, for its admins and the server's owners;
+	changes the directories it scans, for the owners only.
+	"""
+	updateLibrary(
+		"""
+		The changes.
+		"""
+		input: UpdateLibraryInput!
+	): LibraryPayload!
+	"""
+	Deletes a library with its items, collections and the permissions given on it, ending
+	every playback of its items; its files stay on disk, and watch state and ratings stay
+	with the works. For the server's owners only.
+	"""
+	deleteLibrary(
+		"""
+		The library to delete.
+		"""
+		input: DeleteLibraryInput!
+	): DeleteLibraryPayload!
 	"""
 	Creates a collection in a library: of chosen items, or smart with a rule. For the
 	library's admins and the server's owners.
@@ -7479,6 +7709,47 @@ input SetLibraryPermissionInput {
 }
 
 """
+A password for the caller, or for a user an owner names.
+"""
+input SetPasswordInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	Whose password, as returned in `User.id`: another user's for an owner only, who needs
+	no current password to set or reset one. Left out, the caller's own.
+	"""
+	userId: ID
+	"""
+	The password the caller has now, to change its own. Required when it has one.
+	"""
+	currentPassword: String
+	"""
+	The new password: between 8 and 256 characters.
+	"""
+	newPassword: String!
+}
+
+"""
+What `setPassword` did.
+"""
+type SetPasswordPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The caller, with its new password. Null when it was refused.
+	"""
+	user: User
+	"""
+	Why it was refused. Empty when it was not.
+	"""
+	userErrors: [AccountUserError!]!
+}
+
+"""
 An offset to shift a subtitle by.
 """
 input SetSubtitleOffsetInput {
@@ -9271,6 +9542,34 @@ type UpdateEpisodePayload {
 }
 
 """
+Changes to a library. An absent field is left as it is.
+"""
+input UpdateLibraryInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The library, as returned in `Library.id`. The caller must be its admin or an owner.
+	"""
+	id: ID!
+	"""
+	Its new name: 1 to 255 characters, trimmed. Clears `titleSort`.
+	"""
+	title: String
+	"""
+	The language its metadata is in, as a BCP 47 tag such as `fr-FR`.
+	"""
+	language: String
+	"""
+	Replaces the directories it scans, as `createLibrary` takes them; for owners only. A
+	root kept keeps its id, and a scan starts: the files of a root taken away leave the
+	library with it. Refused while the library is being scanned.
+	"""
+	roots: [String!]
+}
+
+"""
 Changes to a marker. An absent field is left as it is; `null` clears what can be cleared.
 """
 input UpdateMarkerInput {
@@ -9618,6 +9917,11 @@ type UserExtension {
 	The account this connection is paired with, if any.
 	"""
 	account: AccountLink
+	"""
+	The devices signed in through this connection with the user's password, each holding a
+	token of its own: Jellyfin's clients. The latest sign-in first; empty for Plex.
+	"""
+	devices: [ExtensionDevice!]!
 }
 
 type UserExtensionConnection {

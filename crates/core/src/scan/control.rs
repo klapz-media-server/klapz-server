@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use crate::files::LibraryFiles;
 use crate::ids::SectionId;
 use crate::scan::{scan_section, ScanError, ScanRequest, Scanner};
 
@@ -21,6 +22,10 @@ pub trait ScanControl: Send + Sync + std::fmt::Debug {
     fn cancel(&self, section: SectionId) -> bool;
 
     fn is_running(&self, section: SectionId) -> bool;
+
+    /// What the scans read libraries through, and so where a root an owner names is looked
+    /// up before a library is given it.
+    fn files(&self) -> &dyn LibraryFiles;
 }
 
 /// Runs each scan as a task of the current Tokio runtime.
@@ -93,6 +98,10 @@ impl ScanControl for BackgroundScans {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .contains_key(&section)
+    }
+
+    fn files(&self) -> &dyn LibraryFiles {
+        self.scanner.files.as_ref()
     }
 }
 

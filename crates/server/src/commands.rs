@@ -4,7 +4,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use klapz_core::files::RelativePath;
-use klapz_core::library::SectionKind;
+use klapz_core::library::{
+    checked_roots, is_language_tag, normalized_title, RootError, SectionKind,
+};
 use klapz_core::scan::{scan_section, ScanRequest, Scanner};
 use klapz_core::{LibraryRepository, SectionId};
 use klapz_db::repository::{create_library, NewLibrary};
@@ -28,7 +30,7 @@ pub fn scanner(connection: &DatabaseConnection, library: Arc<dyn LibraryReposito
     }
 }
 
-/// `library add`: the one way a library's roots are set, since no endpoint takes a path.
+/// `library add`: a library over directories of this machine, without serving.
 pub async fn library(
     connection: &DatabaseConnection,
     arguments: &[String],
@@ -55,23 +57,25 @@ pub async fn library(
             }
             "--title" => title = rest.next().cloned(),
             "--language" => language = rest.next().cloned().ok_or(LIBRARY_USAGE)?,
-            root => {
-                // Stored canonical, as the scan and the media engine compare paths with it.
-                let canonical =
-                    std::fs::canonicalize(root).map_err(|error| format!("{root}: {error}"))?;
-                if !canonical.is_dir() {
-                    return Err(format!("{root} is not a directory").into());
-                }
-                roots.push(displayed(&canonical));
-            }
+            root => roots.push(root.to_owned()),
         }
     }
     let (Some(kind), Some(title)) = (kind, title) else {
         return Err(LIBRARY_USAGE.into());
     };
-    if roots.is_empty() {
-        return Err(LIBRARY_USAGE.into());
+    let title = normalized_title(&title).ok_or("the title is empty or too long")?;
+    if !is_language_tag(&language) {
+        return Err(format!("{language} is not a language tag such as fr-FR").into());
     }
+    // The rules the API applies to an owner's roots, so both ways in store the same paths.
+    let roots = checked_roots(&LocalFiles, &roots)
+        .await
+        .map_err(|error| match error {
+            RootError::NotADirectory(index) | RootError::Overlapping(index) => {
+                format!("{}: {error}", roots[index])
+            }
+            other => other.to_string(),
+        })?;
     let section = create_library(
         connection,
         NewLibrary {
@@ -129,40 +133,4 @@ pub async fn scan(
         outcome.added, outcome.updated, outcome.removed, outcome.unavailable_roots
     );
     Ok(())
-}
-
-/// A canonical path as a person writes it. Windows canonicalizes `C:\Films` to the verbatim
-/// `\\?\C:\Films`, and a mapped drive to its share, `\\?\UNC\nas\films`, which every API would
-/// then publish as the files' location.
-fn displayed(path: &std::path::Path) -> String {
-    let text = path.to_string_lossy();
-    if let Some(share) = text.strip_prefix(r"\\?\UNC\") {
-        return format!(r"\\{share}");
-    }
-    match text.strip_prefix(r"\\?\") {
-        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => rest.to_owned(),
-        _ => text.into_owned(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn drops_the_verbatim_prefix_of_a_drive_or_a_share() {
-        assert_eq!(
-            displayed(std::path::Path::new(r"\\?\C:\Films")),
-            r"C:\Films"
-        );
-        assert_eq!(
-            displayed(std::path::Path::new(r"\\?\UNC\nas\films")),
-            r"\\nas\films"
-        );
-        assert_eq!(
-            displayed(std::path::Path::new(r"\\?\GLOBALROOT\Device\Films")),
-            r"\\?\GLOBALROOT\Device\Films"
-        );
-        assert_eq!(displayed(std::path::Path::new("/srv/films")), "/srv/films");
-    }
 }

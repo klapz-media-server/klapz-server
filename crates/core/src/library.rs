@@ -1,7 +1,11 @@
-//! Library sections, and the port through which storage supplies them.
+//! Library sections, the port through which storage supplies them, and the rules for creating,
+//! changing and deleting one.
 
+use crate::files::{FilesError, LibraryFiles};
 use crate::ids::SectionId;
+use crate::lifecycle::Lifecycle;
 use crate::page::{Page, Window};
+use crate::scan::{ScanControl, ScanRequest};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LibraryError {
@@ -65,6 +69,27 @@ pub struct LibrarySection {
     pub hidden: bool,
 }
 
+/// A library to create, with the directories it scans.
+#[derive(Debug, Clone)]
+pub struct NewLibrary {
+    pub kind: SectionKind,
+    pub title: String,
+    /// BCP 47, such as `fr-FR`.
+    pub language: String,
+    /// As the files backend stores them: see [`checked_roots`].
+    pub roots: Vec<String>,
+}
+
+/// Changes to a library. An absent field is left as it is.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LibraryEdit {
+    /// A new title also clears the sort title, which was the old one's.
+    pub title: Option<String>,
+    pub language: Option<String>,
+    /// Replaces every root: one kept keeps its id, the others go.
+    pub roots: Option<Vec<String>>,
+}
+
 /// Storage port for library data.
 ///
 /// This trait exists to invert the dependency: `core` declares what it needs, and `db`
@@ -91,6 +116,22 @@ pub trait LibraryRepository: Send + Sync + std::fmt::Debug {
     /// `DataLoader`: a query over fifty libraries must cost one root query, not fifty.
     /// Sections with no root are simply absent from the result.
     async fn roots_for(&self, sections: &[SectionId]) -> Result<Vec<SectionRoot>, LibraryError>;
+
+    /// Creates a library and its roots. `now` is its creation time, in epoch seconds.
+    async fn create(&self, library: NewLibrary, now: i64) -> Result<LibrarySection, LibraryError>;
+
+    /// Applies an edit. The library as it now is, or [`LibraryError::SectionNotFound`].
+    async fn edit(
+        &self,
+        id: SectionId,
+        edit: &LibraryEdit,
+        now: i64,
+    ) -> Result<LibrarySection, LibraryError>;
+
+    /// Deletes a library with its roots, its items and everything that refers to them, and
+    /// the permissions given on it. Watch state and ratings are kept, keyed by the work as
+    /// they are for every copy of it. Whether there was a library.
+    async fn delete(&self, id: SectionId) -> Result<bool, LibraryError>;
 }
 
 /// Lets an `Arc<dyn LibraryRepository>` be used wherever a repository is expected, so the
@@ -112,6 +153,224 @@ impl<T: LibraryRepository + ?Sized> LibraryRepository for std::sync::Arc<T> {
     async fn roots_for(&self, sections: &[SectionId]) -> Result<Vec<SectionRoot>, LibraryError> {
         (**self).roots_for(sections).await
     }
+
+    async fn create(&self, library: NewLibrary, now: i64) -> Result<LibrarySection, LibraryError> {
+        (**self).create(library, now).await
+    }
+
+    async fn edit(
+        &self,
+        id: SectionId,
+        edit: &LibraryEdit,
+        now: i64,
+    ) -> Result<LibrarySection, LibraryError> {
+        (**self).edit(id, edit, now).await
+    }
+
+    async fn delete(&self, id: SectionId) -> Result<bool, LibraryError> {
+        (**self).delete(id).await
+    }
+}
+
+/// How many directories one library scans at most: a list a client sends needs a ceiling.
+pub const MAX_ROOTS: usize = 32;
+
+/// How long a library's title may be, in characters.
+const MAX_TITLE: usize = 255;
+
+/// A title as it is stored: trimmed, not empty, no longer than 255 characters, and holding no
+/// control character, which a listing or a log line would misread.
+#[must_use]
+pub fn normalized_title(title: &str) -> Option<String> {
+    let title = title.trim();
+    let valid = !title.is_empty()
+        && title.chars().count() <= MAX_TITLE
+        && !title.chars().any(char::is_control);
+    valid.then(|| title.to_owned())
+}
+
+/// Whether `tag` is shaped as a BCP 47 language tag: a language of two or three letters, then
+/// subtags of two to eight letters or digits (`fr-FR`, `es-419`, `zh-Hant-TW`). Whether the
+/// language exists is not checked: clients carry their own lists.
+#[must_use]
+pub fn is_language_tag(tag: &str) -> bool {
+    let mut subtags = tag.split('-');
+    let language_is_valid = subtags.next().is_some_and(|language| {
+        (2..=3).contains(&language.len()) && language.bytes().all(|byte| byte.is_ascii_alphabetic())
+    });
+    language_is_valid
+        && tag.len() <= 35
+        && subtags.all(|subtag| {
+            (2..=8).contains(&subtag.len())
+                && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
+}
+
+/// Why a list of roots was refused, with the position of the one at fault.
+#[derive(Debug, thiserror::Error)]
+pub enum RootError {
+    #[error("a library needs a directory to scan")]
+    NoRoot,
+    #[error("a library scans at most {MAX_ROOTS} directories")]
+    TooMany,
+    /// Not an absolute path to a directory the files backend reaches.
+    #[error("root {0} is not a directory this server reaches")]
+    NotADirectory(usize),
+    /// Lies inside another of the list, or holds one: its files would be found twice.
+    #[error("root {0} lies inside another root, or holds one")]
+    Overlapping(usize),
+    #[error("library files could not be read")]
+    Files(#[source] FilesError),
+}
+
+/// The roots a library is given, each as the files backend stores it. A repeat is kept once.
+///
+/// These paths come from a client, the one place a path does: an owner naming the directories
+/// of the server's own disks. Each is resolved by the backend, links and all, before anything
+/// compares it, so `..`, a link or another spelling cannot pass for another directory.
+///
+/// # Errors
+///
+/// [`RootError`].
+pub async fn checked_roots(
+    files: &dyn LibraryFiles,
+    paths: &[String],
+) -> Result<Vec<String>, RootError> {
+    if paths.is_empty() {
+        return Err(RootError::NoRoot);
+    }
+    if paths.len() > MAX_ROOTS {
+        return Err(RootError::TooMany);
+    }
+    let mut roots: Vec<(usize, String)> = Vec::with_capacity(paths.len());
+    for (index, path) in paths.iter().enumerate() {
+        let root = match files.resolve_root(path.trim()).await {
+            Ok(root) => root,
+            Err(FilesError::NotFound | FilesError::Refused | FilesError::Unavailable) => {
+                return Err(RootError::NotADirectory(index))
+            }
+            Err(error) => return Err(RootError::Files(error)),
+        };
+        if roots.iter().any(|(_, kept)| *kept == root) {
+            continue;
+        }
+        let overlaps = roots.iter().any(|(_, kept)| {
+            files.relative_path(kept, &root).is_some() || files.relative_path(&root, kept).is_some()
+        });
+        if overlaps {
+            return Err(RootError::Overlapping(index));
+        }
+        roots.push((index, root));
+    }
+    Ok(roots.into_iter().map(|(_, root)| root).collect())
+}
+
+/// Starts a scan of a library just given new roots, as the reference scans a library when its
+/// folders change. A scan already running, or a kind that is not scanned, is no failure.
+async fn scan_after_change(scans: &dyn ScanControl, section: &LibrarySection) {
+    if !matches!(section.kind, SectionKind::Movie | SectionKind::Show) {
+        return;
+    }
+    let request = ScanRequest {
+        section: section.id,
+        below: None,
+        force: false,
+    };
+    if let Err(error) = scans.start(request).await {
+        tracing::info!(section = section.id.get(), %error, "no scan after a library change");
+    }
+}
+
+/// Creates a library, then scans it.
+///
+/// # Errors
+///
+/// The storage's failure.
+pub async fn create_library(
+    library: &dyn LibraryRepository,
+    scans: &dyn ScanControl,
+    new: NewLibrary,
+    now: i64,
+) -> Result<LibrarySection, LibraryError> {
+    let created = library.create(new, now).await?;
+    scan_after_change(scans, &created).await;
+    Ok(created)
+}
+
+/// What an edit did.
+#[derive(Debug, Clone)]
+pub enum Edited {
+    Edited(LibrarySection),
+    NotFound,
+    /// Roots are not changed under a running scan, which walks the ones it started with.
+    Scanning,
+}
+
+/// Edits a library, and scans it again when its roots changed.
+///
+/// # Errors
+///
+/// The storage's failure.
+pub async fn edit_library(
+    library: &dyn LibraryRepository,
+    scans: &dyn ScanControl,
+    id: SectionId,
+    edit: &LibraryEdit,
+    now: i64,
+) -> Result<Edited, LibraryError> {
+    if edit.roots.is_some() && scans.is_running(id) {
+        return Ok(Edited::Scanning);
+    }
+    let edited = match library.edit(id, edit, now).await {
+        Ok(edited) => edited,
+        Err(LibraryError::SectionNotFound(_)) => return Ok(Edited::NotFound),
+        Err(error) => return Err(error),
+    };
+    if edit.roots.is_some() {
+        scan_after_change(scans, &edited).await;
+    }
+    Ok(Edited::Edited(edited))
+}
+
+/// What a deletion did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Deletion {
+    Deleted,
+    NotFound,
+    /// A running scan would write into the library as it goes.
+    Scanning,
+}
+
+/// Deletes a library, ending first every playback of its items, stream and session together.
+///
+/// # Errors
+///
+/// The storage's failure.
+pub async fn delete_library(
+    library: &dyn LibraryRepository,
+    lifecycle: &Lifecycle<'_>,
+    scans: &dyn ScanControl,
+    id: SectionId,
+) -> Result<Deletion, LibraryError> {
+    if scans.is_running(id) {
+        return Ok(Deletion::Scanning);
+    }
+    let playing = lifecycle
+        .sessions
+        .keys_in_library(id)
+        .await
+        .map_err(|error| LibraryError::Storage(Box::new(error)))?;
+    for key in playing {
+        lifecycle
+            .end(&key)
+            .await
+            .map_err(|error| LibraryError::Storage(Box::new(error)))?;
+    }
+    Ok(if library.delete(id).await? {
+        Deletion::Deleted
+    } else {
+        Deletion::NotFound
+    })
 }
 
 #[cfg(test)]
@@ -161,5 +420,150 @@ mod tests {
         assert_eq!(page.items.len(), 1);
         assert!(!page.has_next);
         assert!(!page.has_previous);
+    }
+
+    #[test]
+    fn a_title_is_trimmed_and_never_empty() {
+        assert_eq!(normalized_title("  Films  ").as_deref(), Some("Films"));
+        assert_eq!(normalized_title("   "), None);
+        assert_eq!(
+            normalized_title(
+                "Films
+VF"
+            ),
+            None
+        );
+        assert_eq!(
+            normalized_title(&"é".repeat(255)).map(|t| t.chars().count()),
+            Some(255)
+        );
+        assert_eq!(normalized_title(&"é".repeat(256)), None);
+    }
+
+    #[test]
+    fn a_language_is_shaped_as_bcp_47() {
+        for tag in ["fr", "fr-FR", "es-419", "zh-Hant-TW", "yue"] {
+            assert!(is_language_tag(tag), "{tag}");
+        }
+        for tag in ["", "f", "fr_FR", "fr-", "français", "fr-F", "12-FR"] {
+            assert!(!is_language_tag(tag), "{tag}");
+        }
+    }
+
+    #[tokio::test]
+    async fn roots_are_resolved_kept_once_and_never_nested() {
+        let files = crate::testing::KnownDirectories(vec![
+            "/media/films".to_owned(),
+            "/media/films/vf".to_owned(),
+            "/media/series".to_owned(),
+        ]);
+        let paths = |paths: &[&str]| {
+            paths
+                .iter()
+                .map(|path| (*path).to_owned())
+                .collect::<Vec<_>>()
+        };
+        let kept = checked_roots(
+            &files,
+            &paths(&["/media/films/", " /media/films", "/media/series"]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(kept, ["/media/films", "/media/series"]);
+        assert!(matches!(
+            checked_roots(&files, &paths(&["/media/films", "/media/films/vf"])).await,
+            Err(RootError::Overlapping(1))
+        ));
+        assert!(matches!(
+            checked_roots(&files, &paths(&["/media/films/vf", "/media/films"])).await,
+            Err(RootError::Overlapping(1))
+        ));
+        assert!(matches!(
+            checked_roots(&files, &paths(&["/media/series", "/etc"])).await,
+            Err(RootError::NotADirectory(1))
+        ));
+        assert!(matches!(
+            checked_roots(&files, &[]).await,
+            Err(RootError::NoRoot)
+        ));
+        let many = vec!["/media/films".to_owned(); MAX_ROOTS + 1];
+        assert!(matches!(
+            checked_roots(&files, &many).await,
+            Err(RootError::TooMany)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_library_being_scanned_is_neither_deleted_nor_given_roots() {
+        let library = catalog();
+        let scans = crate::testing::RecordedScans::default();
+        scans.running.lock().unwrap().push(SectionId::new(4));
+        let playback = crate::testing::InMemoryPlayback::default();
+        let streams = crate::testing::StubStreams::default();
+        let locks = crate::lifecycle::SessionLocks::default();
+        let lifecycle = Lifecycle {
+            sessions: &playback,
+            streams: &streams,
+            locks: &locks,
+        };
+        let id = SectionId::new(4);
+        let roots = LibraryEdit {
+            roots: Some(vec!["/media".to_owned()]),
+            ..LibraryEdit::default()
+        };
+        assert!(matches!(
+            edit_library(&library, &scans, id, &roots, 1).await.unwrap(),
+            Edited::Scanning
+        ));
+        assert_eq!(
+            delete_library(&library, &lifecycle, &scans, id)
+                .await
+                .unwrap(),
+            Deletion::Scanning
+        );
+        let title = LibraryEdit {
+            title: Some("Films".to_owned()),
+            ..LibraryEdit::default()
+        };
+        assert!(matches!(
+            edit_library(&library, &scans, id, &title, 1).await.unwrap(),
+            Edited::Edited(section) if section.title == "Films"
+        ));
+
+        scans.running.lock().unwrap().clear();
+        assert_eq!(
+            delete_library(&library, &lifecycle, &scans, id)
+                .await
+                .unwrap(),
+            Deletion::Deleted
+        );
+        assert_eq!(
+            delete_library(&library, &lifecycle, &scans, id)
+                .await
+                .unwrap(),
+            Deletion::NotFound
+        );
+    }
+
+    #[tokio::test]
+    async fn new_roots_start_a_scan_and_a_new_title_does_not() {
+        let library = catalog();
+        let scans = crate::testing::RecordedScans::default();
+        let id = SectionId::new(4);
+        let title = LibraryEdit {
+            title: Some("Films".to_owned()),
+            ..LibraryEdit::default()
+        };
+        edit_library(&library, &scans, id, &title, 1).await.unwrap();
+        assert!(scans.started.lock().unwrap().is_empty());
+        let roots = LibraryEdit {
+            roots: Some(vec!["/media".to_owned()]),
+            ..LibraryEdit::default()
+        };
+        edit_library(&library, &scans, id, &roots, 2).await.unwrap();
+        assert_eq!(scans.started.lock().unwrap().len(), 1);
+        let kept = library.roots_for(&[id]).await.unwrap();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].path, "/media");
     }
 }

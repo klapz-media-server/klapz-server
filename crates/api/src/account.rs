@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use async_graphql::{Context, Enum, InputObject, Result, SimpleObject};
+use async_graphql::{Context, Enum, InputObject, Result, SimpleObject, ID};
 use klapz_core::access::{
     new_token, token_digest, AccessError, Extension, ExtensionDevice, Login, NewUser, ServerRole,
     User,
@@ -18,9 +18,10 @@ use klapz_core::account::{
     verify_against_nothing, verify_password, SessionKey, SignInThrottle, PASSWORD_LENGTH,
     SESSION_LIFETIME_SECONDS, USERNAME_LENGTH,
 };
-use klapz_core::now_epoch;
+use klapz_core::{now_epoch, UserId};
 
-use crate::access::{require_caller, ExtensionType, UserObject};
+use crate::access::{require_caller, ExtensionType, UserObject, USER_TYPE};
+use crate::node::GlobalId;
 use crate::schema::ApiContext;
 
 /// The cookie a session travels in.
@@ -459,6 +460,110 @@ pub(crate) async fn sign_out_of_extension(
         .access
         .revoke_device_token(caller.user, extension.into(), &token_digest(token))
         .await?)
+}
+
+/// A password for the caller, or for a user an owner names.
+#[derive(Debug, InputObject)]
+pub struct SetPasswordInput {
+    /// Echoed back in the payload, for the client to match the two.
+    pub client_mutation_id: Option<String>,
+    /// Whose password, as returned in `User.id`: another user's for an owner only, who needs
+    /// no current password to set or reset one. Left out, the caller's own.
+    pub user_id: Option<ID>,
+    /// The password the caller has now, to change its own. Required when it has one.
+    #[graphql(secret)]
+    pub current_password: Option<String>,
+    /// The new password: between 8 and 256 characters.
+    #[graphql(secret)]
+    pub new_password: String,
+}
+
+/// What `setPassword` did.
+#[derive(Debug, SimpleObject)]
+pub struct SetPasswordPayload {
+    /// The value the input carried.
+    pub client_mutation_id: Option<String>,
+    /// The caller, with its new password. Null when it was refused.
+    pub user: Option<UserObject>,
+    /// Why it was refused. Empty when it was not.
+    pub user_errors: Vec<AccountUserError>,
+}
+
+pub(crate) async fn set_password(
+    context: &Context<'_>,
+    input: SetPasswordInput,
+) -> Result<SetPasswordPayload> {
+    let caller = require_caller(context)?;
+    let refuse = |field: &str, code| {
+        Ok(SetPasswordPayload {
+            client_mutation_id: input.client_mutation_id.clone(),
+            user: None,
+            user_errors: vec![AccountUserError::new(field, code)],
+        })
+    };
+    let api = context.data::<ApiContext>()?;
+    let target = match &input.user_id {
+        None => caller.user,
+        Some(id) => {
+            let named = GlobalId::decode(id)
+                .ok()
+                .filter(|decoded| decoded.type_name == USER_TYPE)
+                .map(|decoded| UserId::new(decoded.key));
+            match named {
+                Some(user) if user == caller.user => user,
+                // Whether another user exists is the owners' to know.
+                Some(user) if caller.is_owner() => {
+                    if api.access.user(user).await?.is_none() {
+                        return refuse("userId", AccountErrorCode::UserNotFound);
+                    }
+                    user
+                }
+                _ if caller.is_owner() => return refuse("userId", AccountErrorCode::UserNotFound),
+                _ => return Err(crate::access::denied()),
+            }
+        }
+    };
+    if !is_acceptable_password(&input.new_password) {
+        return refuse("newPassword", AccountErrorCode::WeakPassword);
+    }
+    let sessions = sessions(context)?;
+    // The current password guards a session left open on someone else's screen, and its
+    // failures count with sign-ins', or this would be a way around their limit. An owner
+    // setting another's needs none: it manages the accounts.
+    if target == caller.user && api.access.has_password(caller.user).await? {
+        let now = now_epoch();
+        if !sessions.throttle.allows(&caller.name, now) {
+            return refuse("currentPassword", AccountErrorCode::TooManyAttempts);
+        }
+        let credentials = api
+            .access
+            .credentials(&Login::Username(caller.name.clone()))
+            .await?;
+        let current = input.current_password.clone().unwrap_or_default();
+        let matches = match credentials {
+            Some((user, hash)) if user.id == caller.user => {
+                sessions
+                    .hash_work(move || verify_password(&current, &hash))
+                    .await?
+            }
+            _ => false,
+        };
+        if !matches {
+            sessions.throttle.record_failure(&caller.name, now);
+            return refuse("currentPassword", AccountErrorCode::InvalidCredentials);
+        }
+        sessions.throttle.clear(&caller.name);
+    }
+    let password = input.new_password.clone();
+    let hash = sessions
+        .hash_work(move || hash_password(&password))
+        .await??;
+    api.access.set_password(target, &hash, now_epoch()).await?;
+    Ok(SetPasswordPayload {
+        client_mutation_id: input.client_mutation_id,
+        user: api.access.user(target).await?.map(UserObject),
+        user_errors: Vec::new(),
+    })
 }
 
 /// Clears the session cookie. The token itself stays valid until it expires, as nothing stores

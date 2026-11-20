@@ -169,6 +169,14 @@ pub trait LibraryFiles: Send + Sync + std::fmt::Debug {
 
     /// Where a media tool reads `file`.
     async fn locate(&self, root: &str, file: &RelativePath) -> Result<FileLocation, FilesError>;
+
+    /// The root `path` names, in the one form this backend stores and compares roots in.
+    ///
+    /// # Errors
+    ///
+    /// [`FilesError::NotFound`] when nothing is there, [`FilesError::Refused`] when `path` is
+    /// not one a root can be: relative, or not a directory.
+    async fn resolve_root(&self, path: &str) -> Result<String, FilesError>;
 }
 
 #[cfg(test)]

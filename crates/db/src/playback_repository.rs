@@ -5,13 +5,14 @@ use klapz_core::playback::{
     NewPlaybackSession, PlaybackError, PlaybackOutput, PlaybackRepository, PlaybackSession,
     PlaybackState, SessionStatus, StreamDecision, Termination, SESSION_LIFETIME_SECONDS,
 };
-use klapz_core::{PartId, RatingKey, UserId};
-use sea_orm::sea_query::OnConflict;
+use klapz_core::{PartId, RatingKey, SectionId, UserId};
+use sea_orm::sea_query::{OnConflict, Query};
 use sea_orm::{
     ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter, QueryOrder,
     QuerySelect,
 };
 
+use crate::entity::metadata_item;
 use crate::entity::playback_session::{self, Column, Entity};
 
 #[derive(Debug, Clone)]
@@ -215,6 +216,22 @@ impl PlaybackRepository for SqlPlaybackRepository {
             .column(Column::SessionKey)
             .filter(Column::PlaybackId.eq(playback_id))
             .limit(u64::from(MAX_ITEMS))
+            .into_tuple()
+            .all(&self.connection)
+            .await
+            .map_err(storage)
+    }
+
+    async fn keys_in_library(&self, section: SectionId) -> Result<Vec<String>, PlaybackError> {
+        let items = Query::select()
+            .column(metadata_item::Column::Id)
+            .from(metadata_item::Entity)
+            .and_where(metadata_item::Column::LibrarySectionId.eq(section.get()))
+            .to_owned();
+        Entity::find()
+            .select_only()
+            .column(Column::SessionKey)
+            .filter(Column::ItemId.in_subquery(items))
             .into_tuple()
             .all(&self.connection)
             .await

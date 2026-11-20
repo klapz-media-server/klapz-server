@@ -51,6 +51,15 @@ impl Extension {
     pub const fn signs_in_with_password(self) -> bool {
         matches!(self, Self::Jellyfin)
     }
+
+    /// Whether a user switches the connection on and off for itself, where an owner must for
+    /// the others. Jellyfin's clients sign in with the user's own password, so switching it on
+    /// opens the user's libraries to the user alone; Plex's connection is a token an owner
+    /// hands out with the server it names.
+    #[must_use]
+    pub const fn connected_by_its_user(self) -> bool {
+        matches!(self, Self::Jellyfin)
+    }
 }
 
 /// A client a user signed in from through an extension, with a password: Jellyfin's clients
@@ -147,6 +156,14 @@ impl std::fmt::Debug for RemoteAccount {
             .field("name", &self.name)
             .finish_non_exhaustive()
     }
+}
+
+/// A device signed in through an extension, as its user sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignedInDevice {
+    pub device: ExtensionDevice,
+    /// Its last sign-in, in epoch seconds.
+    pub signed_in_at: i64,
 }
 
 /// A user's connection tied to an account on the extension's own service.
@@ -470,6 +487,22 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
         user: UserId,
         extension: Extension,
         token_digest: &str,
+    ) -> Result<bool, AccessError>;
+
+    /// The devices signed in on a user's connection, the latest sign-in first.
+    async fn devices(
+        &self,
+        user: UserId,
+        extension: Extension,
+    ) -> Result<Vec<SignedInDevice>, AccessError>;
+
+    /// Forgets a device by the id its client gave it: its token opens nothing more. Whether
+    /// there was one.
+    async fn forget_device(
+        &self,
+        user: UserId,
+        extension: Extension,
+        device_id: &str,
     ) -> Result<bool, AccessError>;
 
     /// What a token opens, if it is one of an extension's — the connection's own or one of its

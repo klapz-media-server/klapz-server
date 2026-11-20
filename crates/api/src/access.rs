@@ -12,7 +12,7 @@ use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID
 use klapz_core::access::{
     is_connection_uri, new_external_id, new_token, publish_link, token_digest, AccessError,
     AccessRepository, AccountLink, Extension, LibraryPermission, LibraryRole, NewUser, ServerRole,
-    User, UserExtension,
+    SignedInDevice, User, UserExtension,
 };
 use klapz_core::account::{normalized_email, normalized_username};
 use klapz_core::page::Cursor;
@@ -313,6 +313,63 @@ impl UserExtensionObject {
             .await?
             .map(AccountLinkObject))
     }
+
+    /// The devices signed in through this connection with the user's password, each holding a
+    /// token of its own: Jellyfin's clients. The latest sign-in first; empty for Plex.
+    async fn devices(&self, context: &Context<'_>) -> Result<Vec<ExtensionDeviceObject>> {
+        Ok(repository(context)?
+            .devices(self.0.user, self.0.extension)
+            .await?
+            .into_iter()
+            .map(ExtensionDeviceObject)
+            .collect())
+    }
+}
+
+/// A device signed in through an extension.
+#[derive(Debug, Clone)]
+pub struct ExtensionDeviceObject(SignedInDevice);
+
+#[Object(name = "ExtensionDevice")]
+impl ExtensionDeviceObject {
+    /// What the client calls the device, stable across its sign-ins: what
+    /// `forgetExtensionDevice` takes.
+    async fn device_id(&self) -> &str {
+        &self.0.device.id
+    }
+
+    /// The device's name, for a person.
+    async fn device_name(&self) -> &str {
+        &self.0.device.name
+    }
+
+    /// The application that signed in.
+    async fn client(&self) -> &str {
+        &self.0.device.client
+    }
+
+    /// The application's version.
+    async fn client_version(&self) -> &str {
+        &self.0.device.client_version
+    }
+
+    /// Its last sign-in.
+    async fn signed_in_at(&self) -> DateTime {
+        self.0.signed_in_at.into()
+    }
+}
+
+pub(crate) async fn forget_extension_device(
+    context: &Context<'_>,
+    user: &ID,
+    extension: ExtensionType,
+    device_id: &str,
+) -> Result<bool> {
+    let user = user_id(user)?;
+    require_owner_or_self(context, user)?;
+    Ok(repository(context)?
+        .forget_device(user, extension.into(), device_id)
+        .await?)
 }
 
 /// A connection tied to an account on the extension's own service. The account's token stays
@@ -704,12 +761,21 @@ pub(crate) async fn remove_library_permission(
         .await?)
 }
 
+/// An owner, or for an extension its users connect themselves, the user itself.
+fn require_connector(context: &Context<'_>, user: UserId, extension: ExtensionType) -> Result<()> {
+    if Extension::from(extension).connected_by_its_user() {
+        require_owner_or_self(context, user)
+    } else {
+        require_owner(context).map(drop)
+    }
+}
+
 pub(crate) async fn disable_extension(
     context: &Context<'_>,
     user: &ID,
     extension: ExtensionType,
 ) -> Result<bool> {
-    require_owner(context)?;
+    require_connector(context, user_id(user)?, extension)?;
     Ok(repository(context)?
         .disable_extension(user_id(user)?, extension.into(), now_epoch())
         .await?)
@@ -720,7 +786,7 @@ pub(crate) async fn connect_extension(
     user: &ID,
     extension: ExtensionType,
 ) -> Result<ExtensionCredentials> {
-    require_owner(context)?;
+    require_connector(context, user_id(user)?, extension)?;
     let token = new_token();
     let extension = repository(context)?
         .connect_extension(
