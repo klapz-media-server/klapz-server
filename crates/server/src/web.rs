@@ -1,4 +1,5 @@
-//! The bundled web client, served as static files under `/web`.
+//! The web client, served as static files under `/web` from a directory on disk: nothing of it
+//! is compiled into the server.
 //!
 //! The reference server ships Plex Web and serves it from the same port as its API, which is
 //! what lets a browser pointed at the server open a client with no installation. This is
@@ -43,10 +44,12 @@ pub fn router(dir: &Path) -> Option<Router> {
     )
 }
 
-/// The directory the client is served from: `KLAPZ_WEB_DIR`, or `web` beside the working
-/// directory.
-pub fn directory() -> PathBuf {
-    std::env::var_os("KLAPZ_WEB_DIR").map_or_else(|| PathBuf::from("web"), PathBuf::from)
+/// The directory the client is served from: `KLAPZ_WEB_DIR`, or `web` beside the server's
+/// executable, whatever the working directory.
+pub fn directory() -> Option<PathBuf> {
+    std::env::var_os("KLAPZ_WEB_DIR")
+        .map(PathBuf::from)
+        .or_else(|| crate::beside_executable("web"))
 }
 
 /// Whether a request path belongs to the web client, which is served without a token.
@@ -64,6 +67,15 @@ mod tests {
     use tower::ServiceExt;
 
     use super::*;
+
+    #[test]
+    fn the_client_is_looked_for_beside_the_executable_not_the_working_directory() {
+        if std::env::var_os("KLAPZ_WEB_DIR").is_some() {
+            return;
+        }
+        let executable = std::env::current_exe().unwrap();
+        assert_eq!(directory(), Some(executable.parent().unwrap().join("web")));
+    }
 
     /// A client directory with an index and one asset, unique per test.
     fn client(name: &str) -> PathBuf {
