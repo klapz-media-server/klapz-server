@@ -297,6 +297,85 @@ type CancelLibraryScanPayload {
 	userErrors: [ScanUserError!]!
 }
 
+type Chapter implements Node {
+	"""
+	Globally unique, opaque identifier. Pass it to `node` to refetch this chapter.
+	"""
+	id: ID!
+	"""
+	The film or episode it divides.
+	"""
+	item: Item
+	"""
+	Its place among the item's chapters, from 1.
+	"""
+	index: Int!
+	"""
+	Where it starts, in milliseconds from the start of the media.
+	"""
+	startMs: Int!
+	"""
+	Where it ends, in milliseconds from the start of the media.
+	"""
+	endMs: Int!
+	"""
+	Its name. Null when the media names none, or only numbers them (`Chapter 3`,
+	`00:07:13.224`): a player then names it itself.
+	"""
+	title: String
+	"""
+	The version a frame of which was drawn as the chapter's image. Null when none was drawn.
+	"""
+	imageVersion: MediaVersion
+}
+
+type ChapterConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ChapterEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Chapter!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ChapterEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Chapter!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+Where an item's chapters came from.
+"""
+enum ChapterSource {
+	"""
+	Read from the file.
+	"""
+	MEDIA
+	"""
+	Supplied by a metadata agent, in whole seconds.
+	"""
+	AGENT
+	"""
+	A metadata agent's, over the file's.
+	"""
+	MIXED
+}
+
 """
 A collection of chosen items to empty.
 """
@@ -1583,6 +1662,31 @@ type Episode implements Item & Node {
 		"""
 		last: Int
 	): MarkerConnection!
+	"""
+	Its chapters, in order.
+	"""
+	chapters(
+		"""
+		Return chapters after this cursor.
+		"""
+		after: String,
+		"""
+		Return chapters before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many chapters from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many chapters from the end of the range.
+		"""
+		last: Int
+	): ChapterConnection!
+	"""
+	Where its chapters came from. Null when it has none.
+	"""
+	chapterSource: ChapterSource
 	"""
 	When the item's metadata last changed.
 	"""
@@ -4168,6 +4272,31 @@ type Movie implements Item & Node {
 		"""
 		last: Int
 	): MarkerConnection!
+	"""
+	Its chapters, in order.
+	"""
+	chapters(
+		"""
+		Return chapters after this cursor.
+		"""
+		after: String,
+		"""
+		Return chapters before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many chapters from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many chapters from the end of the range.
+		"""
+		last: Int
+	): ChapterConnection!
+	"""
+	Where its chapters came from. Null when it has none.
+	"""
+	chapterSource: ChapterSource
 	"""
 	When the item's metadata last changed.
 	"""

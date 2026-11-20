@@ -1,4 +1,19 @@
 {
+ "chapterSource": "media",
+ "chapters": [
+  {
+   "index": 1,
+   "start": 0,
+   "end": 79912,
+   "title": "Opening"
+  },
+  {
+   "index": 2,
+   "start": 79913,
+   "end": 84894,
+   "title": "Episode 1"
+  }
+ ],
  "media": {
   "width": 1280,
   "height": 720,

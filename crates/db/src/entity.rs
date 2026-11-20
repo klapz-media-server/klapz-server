@@ -14,6 +14,7 @@ pub mod extension_account;
 pub mod extra;
 pub mod extra_media;
 pub mod extra_track;
+pub mod item_chapter;
 pub mod item_corner_colors;
 pub mod item_external_id;
 pub mod item_field_lock;

@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use open_plex_core::backdrop::{CornerColors, Rgb};
+use open_plex_core::chapter::{Chapter, ChapterSource};
 use open_plex_core::closest::{ClosestTitles, TitleMatch};
 use open_plex_core::collection::{CollectionCondition, CollectionRef};
 use open_plex_core::common::CommonFields;
@@ -28,7 +29,8 @@ use open_plex_core::search::{self, Rung};
 use open_plex_core::similar::TagOverlap;
 use open_plex_core::user_rating::RatingCondition;
 use open_plex_core::{
-    ExtraId, MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
+    ChapterId, ExtraId, MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId,
+    UserId,
 };
 use sea_orm::sea_query::{Alias, CaseStatement, Expr, Func, IntoIden, Query, SimpleExpr};
 use sea_orm::QueryTrait;
@@ -38,6 +40,7 @@ use sea_orm::{
     TransactionTrait,
 };
 
+use crate::chapter_store;
 use crate::closest_store;
 use crate::entity::{
     collection, collection_entry, item_corner_colors, item_external_id, item_field_lock,
@@ -2033,6 +2036,18 @@ impl MetadataRepository for SqlMetadataRepository {
             .map_err(storage)
     }
 
+    async fn chapters(&self, items: &[RatingKey]) -> Result<Vec<Chapter>, MetadataError> {
+        chapter_store::chapters(&self.connection, items)
+            .await
+            .map_err(storage)
+    }
+
+    async fn chapter(&self, id: ChapterId) -> Result<Option<Chapter>, MetadataError> {
+        chapter_store::chapter(&self.connection, id)
+            .await
+            .map_err(storage)
+    }
+
     async fn extras(&self, items: &[RatingKey]) -> Result<Vec<Extra>, MetadataError> {
         extra_store::extras(&self.connection, items)
             .await
@@ -2465,6 +2480,7 @@ fn to_domain(row: metadata_item::Model) -> MetadataItem {
         added_at: row.added_at,
         updated_at: row.updated_at,
         refreshed_at: row.refreshed_at,
+        chapter_source: row.chapter_source.as_deref().and_then(ChapterSource::parse),
     }
 }
 

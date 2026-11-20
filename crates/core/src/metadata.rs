@@ -1,9 +1,11 @@
 //! Library contents: items, their media, and the queries bindings run against them.
 
+use crate::chapter::{Chapter, ChapterSource};
 use crate::edit::{ItemEdit, ItemField};
 use crate::extra::Extra;
 use crate::ids::{
-    ExtraId, MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId, UserId,
+    ChapterId, ExtraId, MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId,
+    UserId,
 };
 use crate::marker::{Marker, NewMarker};
 use crate::page::{Cursor, CursorKey, Direction, Page, Window};
@@ -80,6 +82,8 @@ pub struct MetadataItem {
     pub updated_at: i64,
     /// When the metadata was last refreshed from its agent. `None` for an item never refreshed.
     pub refreshed_at: Option<i64>,
+    /// Where its chapters came from; `None` when it has none.
+    pub chapter_source: Option<ChapterSource>,
 }
 
 /// One encoding of an item.
@@ -1375,6 +1379,14 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
     /// Removes a marker; false when there was none.
     async fn delete_marker(&self, id: MarkerId) -> Result<bool, MetadataError>;
 
+    /// The chapters of these items, each item's in order.
+    ///
+    /// Unwindowed: bounded by the items, a few dozen chapters each.
+    async fn chapters(&self, items: &[RatingKey]) -> Result<Vec<Chapter>, MetadataError>;
+
+    /// One chapter.
+    async fn chapter(&self, id: ChapterId) -> Result<Option<Chapter>, MetadataError>;
+
     /// What every item a query keeps has in common: fields, tags, collections and locks.
     ///
     /// Aggregated where the items are rather than read and compared, because the set can be
@@ -1682,6 +1694,14 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
 
     async fn delete_marker(&self, id: MarkerId) -> Result<bool, MetadataError> {
         (**self).delete_marker(id).await
+    }
+
+    async fn chapters(&self, items: &[RatingKey]) -> Result<Vec<Chapter>, MetadataError> {
+        (**self).chapters(items).await
+    }
+
+    async fn chapter(&self, id: ChapterId) -> Result<Option<Chapter>, MetadataError> {
+        (**self).chapter(id).await
     }
 
     async fn common_fields(

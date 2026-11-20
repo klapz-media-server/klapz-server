@@ -45,6 +45,7 @@ fn item(id: i64) -> metadata_item::ActiveModel {
         added_at: ActiveValue::Set(0),
         updated_at: ActiveValue::Set(0),
         refreshed_at: ActiveValue::Set(None),
+        chapter_source: ActiveValue::Set(None),
     }
 }
 

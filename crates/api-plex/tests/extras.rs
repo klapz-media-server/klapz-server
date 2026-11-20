@@ -85,6 +85,7 @@ fn item(id: i64, section: i64, kind: ItemKind, guid: &str, title: &str) -> Metad
         added_at: 1_794_839_063,
         updated_at: 1_794_839_065,
         refreshed_at: None,
+        chapter_source: None,
     }
 }
 

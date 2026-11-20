@@ -104,6 +104,7 @@ impl Stored {
             added_at: entry["addedAt"].as_i64().unwrap(),
             updated_at: 0,
             refreshed_at: (refreshed >= 0).then_some(refreshed),
+            chapter_source: None,
         });
         for version in entry["MediaItem"].as_array().into_iter().flatten() {
             self.add_version(id, version);

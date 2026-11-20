@@ -5,7 +5,7 @@
 //! its bytes, and the rows the reference stored for that same file
 //! (`tools/capture_scan_samples.py`). Every sample is replayed through the scanner's parsers
 //! and the scan's storage, then read back and written in the reference's vocabulary — its
-//! columns and `ma:` keys — to be compared value for value. What may differ is listed below,
+//! columns and `ma:` keys, and its chapters — to be compared value for value. What may differ is listed below,
 //! each with its reason; anything else differing fails.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::float_cmp)]
@@ -15,7 +15,10 @@ use std::path::{Path, PathBuf};
 
 use open_plex_core::ids::SectionId;
 use open_plex_core::scan::{NewItem, NewMedia, NewPart, ScanRepository};
-use open_plex_db::entity::{library_section, media, media_part, media_stream, stream_dolby_vision};
+use open_plex_db::entity::{
+    item_chapter, library_section, media, media_part, media_stream, metadata_item,
+    stream_dolby_vision,
+};
 use open_plex_db::SqlScanRepository;
 use open_plex_scanner::report::FileIdentity;
 use open_plex_scanner::{analysis_from_ffprobe, sequence_header_from_trace};
@@ -170,6 +173,27 @@ async fn stored(connection: &DatabaseConnection, item: i64) -> BTreeMap<String, 
         flag(part.has_chapter_text_stream),
     );
 
+    let row = metadata_item::Entity::find_by_id(item)
+        .one(connection)
+        .await
+        .unwrap()
+        .unwrap();
+    put("item chapterSource".into(), row.chapter_source);
+    let chapters = item_chapter::Entity::find()
+        .filter(item_chapter::Column::ItemId.eq(item))
+        .all(connection)
+        .await
+        .unwrap();
+    for chapter in chapters {
+        let index = chapter.position;
+        put(
+            format!("chapter {index} start"),
+            text(Some(chapter.start_ms)),
+        );
+        put(format!("chapter {index} end"), text(Some(chapter.end_ms)));
+        put(format!("chapter {index} title"), chapter.title);
+    }
+
     let tracks = media_stream::Entity::find()
         .filter(media_stream::Column::MediaPartId.eq(part.id))
         .all(connection)
@@ -286,6 +310,17 @@ fn reference(sample: &Path) -> (BTreeMap<String, String>, bool) {
     }
     for key in ["size", "duration"] {
         values.insert(format!("part {key}"), scalar(&stored["part"][key]));
+    }
+    if let Some(source) = stored["chapterSource"].as_str() {
+        values.insert("item chapterSource".into(), source.to_owned());
+    }
+    for chapter in stored["chapters"].as_array().unwrap() {
+        let index = &chapter["index"];
+        values.insert(format!("chapter {index} start"), scalar(&chapter["start"]));
+        values.insert(format!("chapter {index} end"), scalar(&chapter["end"]));
+        if let Some(title) = chapter["title"].as_str().filter(|title| !title.is_empty()) {
+            values.insert(format!("chapter {index} title"), title.to_owned());
+        }
     }
     for (key, value) in stored["part"]["analysis"].as_object().unwrap() {
         values.insert(format!("part {key}"), scalar(value));

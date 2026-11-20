@@ -14,6 +14,7 @@
 mod analysis;
 mod languages;
 
+use open_plex_core::chapter::ChapterSource;
 use open_plex_core::ids::{MediaId, PartId, RatingKey, SectionId};
 use open_plex_core::metadata;
 use open_plex_core::scan::{
@@ -28,11 +29,11 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    collection, collection_entry, extra, extra_media, extra_track, item_marker, library_section,
-    media, media_part, media_stream, metadata_item, play_queue_entry, playlist_entry,
-    stream_dolby_vision, track_choice,
+    collection, collection_entry, extra, extra_media, extra_track, item_chapter, item_marker,
+    library_section, media, media_part, media_stream, metadata_item, play_queue_entry,
+    playlist_entry, stream_dolby_vision, track_choice,
 };
-use crate::write;
+use crate::{chapter_store, write};
 use analysis::MediaSummary;
 
 /// `SQLite` refuses a statement with too many bound values.
@@ -157,6 +158,15 @@ impl ScanRepository for SqlScanRepository {
                 .await
                 .map_err(storage)?;
         }
+        let describing = versions.first().and_then(|version| version.parts.first());
+        chapter_store::replace(
+            &transaction,
+            item_id,
+            ChapterSource::Media,
+            chapter_rows(item_id, describing),
+        )
+        .await
+        .map_err(storage)?;
         transaction.commit().await.map_err(storage)?;
         Ok(RatingKey::new(item_id))
     }
@@ -230,6 +240,18 @@ impl ScanRepository for SqlScanRepository {
             .one(&transaction)
             .await
             .map_err(storage)?;
+        let describes_item = parts.first().map(|first| first.id) == Some(stored.id)
+            && first_version.as_ref().map(|first| first.id) == Some(stored.media_id);
+        if describes_item {
+            chapter_store::replace(
+                &transaction,
+                item_id,
+                ChapterSource::Media,
+                chapter_rows(item_id, Some(&file)),
+            )
+            .await
+            .map_err(storage)?;
+        }
         metadata_item::Entity::update_many()
             .col_expr(metadata_item::Column::UpdatedAt, Expr::value(now))
             .col_expr(
@@ -419,6 +441,7 @@ fn item_row(id: i64, section: SectionId, kind: &str, now: i64) -> metadata_item:
         added_at: now,
         updated_at: now,
         refreshed_at: None,
+        chapter_source: None,
     }
 }
 
@@ -619,6 +642,27 @@ async fn add_tracks<C: ConnectionTrait>(
             .await?;
     }
     Ok(())
+}
+
+/// The chapters of the file that describes an item: its first version's first, as for the
+/// item's duration.
+fn chapter_rows(item: i64, file: Option<&NewPart>) -> Vec<item_chapter::ActiveModel> {
+    let chapters = file
+        .and_then(|file| file.analysis.as_ref())
+        .map_or(&[][..], |analysis| analysis.chapters.as_slice());
+    chapters
+        .iter()
+        .map(|chapter| {
+            chapter_store::row(
+                item,
+                i32::try_from(chapter.index).unwrap_or(i32::MAX),
+                i64::try_from(chapter.start_ms).unwrap_or(i64::MAX),
+                i64::try_from(chapter.end_ms).unwrap_or(i64::MAX),
+                chapter.title.clone(),
+                None,
+            )
+        })
+        .collect()
 }
 
 fn version_duration(version: &NewMedia) -> Option<i64> {

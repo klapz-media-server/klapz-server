@@ -1505,6 +1505,24 @@ Every populated column of a marker's `taggings` row, and where it goes:
 | `id` | 217,863 | not kept: our ids are our own |
 | `thumb_url` | 0 | — |
 
+### Chapters
+
+An item's chapters, which the spec mentions only as `includeChapters` on
+`/library/metadata/{ids}`. Measured on the reference:
+
+- `includeChapters=1`, and only `1` (`true` and `0` alike publish nothing), adds one `Chapter`
+  per chapter to a lookup, after the tags: `id`, `filter="thumb={id}"`, `tag` (the title, absent
+  when untitled), `index` from 1, `startTimeOffset`, `endTimeOffset` in milliseconds, and
+  `thumb` `/library/media/{media}/chapterImages/{index}` when an image was drawn. A listing
+  publishes none, with or without the parameter.
+- `chapterSource` (`media`, `agent`, `mixed`) is on every film and episode with chapters,
+  listings included, among the attributes the reference keeps packed and writes in name order.
+
+**Divergence.** The reference's `id` is the tag the title is stored under, shared by every
+chapter of that title — eight chapters of one film all `id="76"`, the untitled tag. Ours is the
+chapter's own number, which `filter` repeats; `Chapter` is a node on the official API. The
+image address is published as imported and answers `501`: no chapter image is stored here.
+
 ### Extras: trailers, deleted scenes, featurettes
 
 **How the reference keeps them.** An extra is a metadata item of `metadata_type` 12 outside any

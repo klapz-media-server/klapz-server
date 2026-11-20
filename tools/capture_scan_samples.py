@@ -8,8 +8,9 @@ For each media file under SAMPLES, a directory of crates/scanner/tests/fixtures/
 - `file.json`: the file's identity and the layout the scanner reads from its bytes (MP4 index,
   MPEG-TS packets), from `open-plex-scanner probe`;
 - `reference.json`: the reference's stored rows for the same file, found at REMOTE_ROOT plus its
-  path below SAMPLES: the media's and part's columns, and each embedded track's with its `ma:`
-  analysis, in the reference's own vocabulary. Identifiers, paths, hashes and dates are left out.
+  path below SAMPLES: the media's and part's columns, each embedded track's with its `ma:`
+  analysis, and the item's chapters with where they came from, in the reference's own
+  vocabulary. Identifiers, paths, hashes and dates are left out.
 
 The fixtures are the reference's real data: `crates/db/tests/scan_samples.rs` replays ffprobe's
 output through the scanner and the scan's storage, and compares with them.
@@ -122,7 +123,19 @@ def reference(db: sqlite3.Connection, remote: str) -> dict | None:
             key: value for key, value in sorted(extra.items()) if key.startswith("ma:") and key not in DEEP_KEYS
         }
         streams.append(stream)
+    item = db.execute("select extra_data from metadata_items where id = ?", (media["metadata_item_id"],)).fetchone()
+    chapters = [
+        {"index": row["index"], "start": row["time_offset"], "end": row["end_time_offset"], "title": row["tag"]}
+        for row in db.execute(
+            "select taggings.[index], time_offset, end_time_offset, tags.tag from taggings "
+            "join tags on tags.id = taggings.tag_id and tags.tag_type = 9 "
+            "where taggings.metadata_item_id = ? order by taggings.[index]",
+            (media["metadata_item_id"],),
+        )
+    ]
     return {
+        "chapterSource": json.loads(item["extra_data"] or "{}").get("ma:chapterSource"),
+        "chapters": chapters,
         "media": {column: media[column] for column in MEDIA_COLUMNS if media[column] not in (None, "")},
         "part": {
             "size": part["size"],

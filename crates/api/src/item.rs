@@ -17,6 +17,7 @@ use open_plex_core::page::{Cursor, MAX_ITEMS};
 use open_plex_core::RatingKey;
 
 use crate::backdrop::CornerColorsObject;
+use crate::chapter::{ChapterConnection, ChapterSourceType};
 use crate::collection::MembershipConnection;
 use crate::cursor::OpaqueCursor;
 use crate::edit::ItemFieldType;
@@ -282,6 +283,25 @@ impl Movie {
         last: Option<i32>,
     ) -> Result<MarkerConnection> {
         crate::marker::markers_of(context, self.0.id, after, before, first, last).await
+    }
+
+    /// Its chapters, in order.
+    async fn chapters(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return chapters after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return chapters before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many chapters from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many chapters from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<ChapterConnection> {
+        crate::chapter::chapters_of(context, self.0.id, after, before, first, last).await
+    }
+
+    /// Where its chapters came from. Null when it has none.
+    async fn chapter_source(&self) -> Option<ChapterSourceType> {
+        self.0.chapter_source.map(Into::into)
     }
 
     /// When the item's metadata last changed.
@@ -1165,6 +1185,25 @@ impl Episode {
         last: Option<i32>,
     ) -> Result<MarkerConnection> {
         crate::marker::markers_of(context, self.0.id, after, before, first, last).await
+    }
+
+    /// Its chapters, in order.
+    async fn chapters(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Return chapters after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return chapters before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many chapters from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many chapters from the end of the range.")]
+        last: Option<i32>,
+    ) -> Result<ChapterConnection> {
+        crate::chapter::chapters_of(context, self.0.id, after, before, first, last).await
+    }
+
+    /// Where its chapters came from. Null when it has none.
+    async fn chapter_source(&self) -> Option<ChapterSourceType> {
+        self.0.chapter_source.map(Into::into)
     }
 
     /// When the item's metadata last changed.

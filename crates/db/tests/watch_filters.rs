@@ -38,6 +38,7 @@ fn item(id: i64, kind: &str, parent: Option<i64>, title: &str) -> metadata_item:
         added_at: ActiveValue::Set(0),
         updated_at: ActiveValue::Set(0),
         refreshed_at: ActiveValue::Set(None),
+        chapter_source: ActiveValue::Set(None),
     }
 }
 

@@ -16,7 +16,7 @@ use serde::Serialize;
 use crate::language::Language;
 
 use crate::gql_items::{
-    GqlCollectionTag, GqlConnection, GqlCornerColors, GqlEdge, GqlExternalId, GqlItem,
+    GqlChapter, GqlCollectionTag, GqlConnection, GqlCornerColors, GqlEdge, GqlExternalId, GqlItem,
     GqlLibraryRef, GqlMarker, GqlPart, GqlProfiled, GqlRating, GqlStream, GqlTag, GqlVersion,
     GqlWatchState,
 };
@@ -215,6 +215,10 @@ pub struct MetadataEntry {
     pub child_count: Option<u64>,
     pub added_at: i64,
     pub updated_at: i64,
+    /// `media`, `agent` or `mixed`, on a film or an episode with chapters, in listings too.
+    /// Among the attributes the reference keeps packed, which it writes in name order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chapter_source: Option<&'static str>,
     /// A film's or a series' first trailer, which a client plays as its trailer. The last
     /// attribute, wherever the item is listed.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -245,6 +249,9 @@ pub struct MetadataEntry {
     pub role: Vec<TagEntry>,
     #[serde(rename = "Producer", skip_serializing_if = "Vec::is_empty")]
     pub producer: Vec<TagEntry>,
+    /// On a lookup with `includeChapters=1` only, after the tags.
+    #[serde(rename = "Chapter", skip_serializing_if = "Vec::is_empty")]
+    pub chapter: Vec<ChapterEntry>,
     /// On `includeMarkers=1` only: after the tags, before the locked fields, measured on a
     /// film's listing and its lookup.
     #[serde(rename = "Marker", skip_serializing_if = "Vec::is_empty")]
@@ -255,6 +262,53 @@ pub struct MetadataEntry {
     /// On a lookup with `includeExtras=1` only, last of all, and then even when empty.
     #[serde(rename = "Extras", skip_serializing_if = "Option::is_none")]
     pub extras: Option<crate::extras::ExtrasEntry>,
+}
+
+/// A chapter, as measured on the reference:
+/// `<Chapter id="15360" filter="thumb=15360" tag="A Day in a Life" index="1"
+/// startTimeOffset="0" endTimeOffset="162000" thumb="/library/media/109578/chapterImages/1"/>`,
+/// no `tag` for an untitled one, no `thumb` without an image. The reference's `id` is the tag
+/// its title is stored under, shared by every chapter of that title; ours is the chapter's.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterEntry {
+    pub id: i64,
+    pub filter: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    pub index: u32,
+    pub start_time_offset: i64,
+    pub end_time_offset: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thumb: Option<String>,
+}
+
+impl ChapterEntry {
+    fn all(chapters: &GqlConnection<GqlChapter>) -> Vec<Self> {
+        chapters.nodes().filter_map(Self::from_graphql).collect()
+    }
+
+    fn from_graphql(chapter: &GqlChapter) -> Option<Self> {
+        let id = open_plex_api::GlobalId::decode(&chapter.id).ok()?.key;
+        let image = chapter
+            .image_version
+            .as_ref()
+            .and_then(|version| open_plex_api::GlobalId::decode(&version.id).ok());
+        Some(Self {
+            id,
+            filter: format!("thumb={id}"),
+            tag: chapter.title.clone(),
+            index: chapter.index,
+            start_time_offset: chapter.start_ms,
+            end_time_offset: chapter.end_ms,
+            thumb: image.map(|version| {
+                format!(
+                    "/library/media/{}/chapterImages/{}",
+                    version.key, chapter.index
+                )
+            }),
+        })
+    }
 }
 
 /// A marker: an intro, credits or a commercial, the work's, or the caller's bookmark.
@@ -1048,11 +1102,22 @@ impl MetadataEntry {
                 .map(TagEntry::from_cast_member)
                 .collect(),
             producer: TagEntry::all(&item.tags.producers, "producer"),
+            chapter: ChapterEntry::all(&item.chapters),
             marker: MarkerEntry::all(&item.markers),
             field: FieldEntry::all(&item.locked_fields),
+            chapter_source: item.chapter_source.as_deref().and_then(chapter_source),
             primary_extra_key: crate::extras::primary_extra_key(item),
             extras: crate::extras::ExtrasEntry::embedded(item, language),
         })
+    }
+}
+
+fn chapter_source(source: &str) -> Option<&'static str> {
+    match source {
+        "MEDIA" => Some("media"),
+        "AGENT" => Some("agent"),
+        "MIXED" => Some("mixed"),
+        _ => None,
     }
 }
 

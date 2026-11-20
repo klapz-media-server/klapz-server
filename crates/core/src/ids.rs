@@ -89,6 +89,11 @@ numeric_id! {
 }
 
 numeric_id! {
+    /// Identifies one chapter of an item.
+    ChapterId
+}
+
+numeric_id! {
     /// Identifies an extra: a trailer, a deleted scene, an interview that comes with an item.
     /// Numbered with the items, as on the reference, where an extra is a metadata item of its
     /// own.

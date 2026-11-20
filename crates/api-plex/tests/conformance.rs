@@ -800,6 +800,7 @@ fn item(id: i64, section: i64, kind: ItemKind, parent: Option<i64>, title: &str)
         added_at: 1_500_000_000,
         updated_at: 1_600_000_000,
         refreshed_at: None,
+        chapter_source: None,
     }
 }
 
@@ -5635,4 +5636,127 @@ async fn top_users_names_the_caller_as_its_servers_account() {
             "{uri}"
         );
     }
+}
+
+/// A film whose chapters came from the reference's agent, with images, and an episode whose
+/// file named none of its chapters, as captured on the reference.
+fn chapters_app() -> axum::Router {
+    use open_plex_core::chapter::{Chapter, ChapterSource};
+    let chapter = |id: i64, item: i64, index: u32, start_ms, end_ms, title: Option<&str>| Chapter {
+        id: open_plex_core::ChapterId::new(id),
+        item: RatingKey::new(item),
+        index,
+        start_ms,
+        end_ms,
+        title: title.map(str::to_owned),
+        image_version: (item == 51_797).then(|| MediaId::new(109_578)),
+    };
+    let mut film = item(51_797, 27, ItemKind::Movie, None, "Groundhog Day");
+    film.chapter_source = Some(ChapterSource::Agent);
+    let mut episode = item(578_173, 28, ItemKind::Episode, Some(577_988), "Episode 1");
+    episode.chapter_source = Some(ChapterSource::Media);
+    let version = MediaVersion {
+        id: MediaId::new(109_578),
+        item_id: RatingKey::new(51_797),
+        width: Some(1280),
+        height: Some(720),
+        aspect_ratio: None,
+        duration_ms: Some(6_060_000),
+        bitrate: None,
+        container: Some("mkv".to_owned()),
+        video_codec: Some("h264".to_owned()),
+        audio_codec: Some("aac".to_owned()),
+        audio_channels: Some(2),
+        frame_rate: None,
+        interlaced: false,
+        optimized_for_streaming: false,
+    };
+    let metadata = InMemoryMetadata::new(vec![
+        film,
+        item(577_987, 28, ItemKind::Show, None, "Bull"),
+        item(577_988, 28, ItemKind::Season, Some(577_987), "Season 1"),
+        episode,
+    ])
+    .with_media(vec![version], Vec::new(), Vec::new())
+    .with_chapters(vec![
+        chapter(1, 51_797, 1, 0, 162_000, Some("A Day in a Life")),
+        chapter(2, 51_797, 2, 162_000, 409_000, Some("Day 10,909")),
+        chapter(3, 578_173, 1, 80, 21_200, None),
+    ]);
+    markers_app_over(
+        std::sync::Arc::new(metadata),
+        open_plex_core::testing::owner(),
+    )
+}
+
+fn chapter_lines(xml: &str) -> Vec<&str> {
+    xml.lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("<Chapter "))
+        .collect()
+}
+
+#[tokio::test]
+async fn chapters_are_published_on_a_lookup_that_asks_for_them() {
+    let app = chapters_app();
+    let (status, _, xml) = marker_request(
+        &app,
+        "GET",
+        "/library/metadata/51797?includeChapters=1",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(xml.contains("chapterSource=\"agent\""), "{xml}");
+    assert_eq!(
+        chapter_lines(&xml),
+        [
+            "<Chapter id=\"1\" filter=\"thumb=1\" tag=\"A Day in a Life\" index=\"1\" startTimeOffset=\"0\" endTimeOffset=\"162000\" thumb=\"/library/media/109578/chapterImages/1\" />",
+            "<Chapter id=\"2\" filter=\"thumb=2\" tag=\"Day 10,909\" index=\"2\" startTimeOffset=\"162000\" endTimeOffset=\"409000\" thumb=\"/library/media/109578/chapterImages/2\" />",
+        ]
+    );
+
+    let (_, _, json) = marker_request(
+        &app,
+        "GET",
+        "/library/metadata/578173?includeChapters=1",
+        Some("application/json"),
+    )
+    .await;
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let episode = &json["MediaContainer"]["Metadata"][0];
+    assert_eq!(episode["chapterSource"], "media");
+    assert_eq!(
+        episode["Chapter"],
+        serde_json::json!([
+            { "id": 3, "filter": "thumb=3", "index": 1, "startTimeOffset": 80,
+              "endTimeOffset": 21_200 },
+        ])
+    );
+
+    // Only `1` asks, as on the reference.
+    for uri in [
+        "/library/metadata/51797",
+        "/library/metadata/51797?includeChapters=0",
+        "/library/metadata/51797?includeChapters=true",
+    ] {
+        let (_, _, xml) = marker_request(&app, "GET", uri, None).await;
+        assert!(chapter_lines(&xml).is_empty(), "{uri}: {xml}");
+        assert!(xml.contains("chapterSource=\"agent\""), "{uri}: {xml}");
+    }
+}
+
+#[tokio::test]
+async fn a_listing_says_where_chapters_came_from_and_lists_none() {
+    let app = chapters_app();
+    let (status, _, xml) = marker_request(
+        &app,
+        "GET",
+        "/library/sections/27/all?includeChapters=1",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(xml.contains("chapterSource=\"agent\""), "{xml}");
+    assert!(chapter_lines(&xml).is_empty(), "{xml}");
 }

@@ -45,7 +45,9 @@ use crate::language::Language;
 ///
 /// `Markers` is selected only when a request carries `includeMarkers=1`, through the
 /// `$markers` variable each query spreading it declares, false by default: the reference
-/// publishes them on request alone. `Extras` likewise, on `includeExtras=1` and `$extras`.
+/// publishes them on request alone. `Chapters` likewise, on `includeChapters=1` and
+/// `$chapters`, which a lookup alone declares: the reference lists none in a listing.
+/// `Extras` too, on `includeExtras=1` and `$extras`.
 ///
 /// `VersionFields` stops short of `files` so each query can select its own depth: a listing
 /// takes the files, a lookup takes the tracks inside them. The alternative — one fragment per
@@ -66,8 +68,9 @@ fragment Shared on Item {
   library { id title uuid kind }
   watchState { viewCount offsetMs lastViewedAt }
   userRating { value ratedAt }
-  ... on Movie { primaryExtra { id } }
+  ... on Movie { primaryExtra { id } chapterSource }
   ... on Show { primaryExtra { id } }
+  ... on Episode { chapterSource }
   cornerColors { topLeft topRight bottomRight bottomLeft }
 }
 
@@ -297,6 +300,24 @@ fragment Markers on Item {
   ... on Episode {
     markers(first: 500) @include(if: $markers) { edges { node { ...MarkerFields } } }
   }
+}
+
+fragment Chapters on Item {
+  ... on Movie {
+    chapters(first: 500) @include(if: $chapters) { edges { node { ...ChapterFields } } }
+  }
+  ... on Episode {
+    chapters(first: 500) @include(if: $chapters) { edges { node { ...ChapterFields } } }
+  }
+}
+
+fragment ChapterFields on Chapter {
+  id
+  index
+  startMs
+  endMs
+  title
+  imageVersion { id }
 }
 
 fragment Extras on Item {
@@ -683,11 +704,17 @@ pub struct GqlForwardPageInfo {
 pub static ITEMS_BY_ID_QUERY: LazyLock<String> = LazyLock::new(|| {
     with_shared_fragments(
         r"
-query PlexItems($ids: [ID!]!, $markers: Boolean = false, $extras: Boolean = false) {
+query PlexItems(
+  $ids: [ID!]!
+  $markers: Boolean = false
+  $chapters: Boolean = false
+  $extras: Boolean = false
+) {
   items: nodes(ids: $ids) {
     ...Shared
     ...References
     ...Markers
+    ...Chapters
     ...Extras
     ... on Item { lockedFields }
     ... on Movie {
@@ -874,6 +901,10 @@ pub struct GqlItem {
     pub locked_fields: Vec<String>,
     /// Asked for on `includeMarkers=1` only.
     pub markers: GqlConnection<GqlMarker>,
+    /// `MEDIA`, `AGENT` or `MIXED`, on a film or an episode with chapters.
+    pub chapter_source: Option<String>,
+    /// Asked for on a lookup with `includeChapters=1` only.
+    pub chapters: GqlConnection<GqlChapter>,
     pub corner_colors: Option<GqlCornerColors>,
     /// A film's or a series' first trailer.
     pub primary_extra: Option<GqlTrackRef>,
@@ -918,6 +949,24 @@ pub struct GqlCornerColors {
     pub top_right: String,
     pub bottom_right: String,
     pub bottom_left: String,
+}
+
+/// A chapter, as `ChapterFields` selects it.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlChapter {
+    pub id: String,
+    pub index: u32,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub title: Option<String>,
+    pub image_version: Option<GqlVersionRef>,
+}
+
+/// A version named by its global id alone.
+#[derive(Debug, Deserialize)]
+pub struct GqlVersionRef {
+    pub id: String,
 }
 
 /// A marker, as `MarkerFields` selects it.

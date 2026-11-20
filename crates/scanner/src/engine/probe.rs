@@ -480,15 +480,11 @@ fn chapters(probed: Vec<ProbedChapter>) -> Vec<Chapter> {
         .zip(1..)
         .map(|(chapter, index)| Chapter {
             index,
-            start_ms: chapter
-                .start_time
-                .as_deref()
-                .and_then(milliseconds)
+            start_ms: chapter_time(chapter.start, chapter.time_base.as_deref())
+                .or_else(|| chapter.start_time.as_deref().and_then(milliseconds))
                 .unwrap_or(0),
-            end_ms: chapter
-                .end_time
-                .as_deref()
-                .and_then(milliseconds)
+            end_ms: chapter_time(chapter.end, chapter.time_base.as_deref())
+                .or_else(|| chapter.end_time.as_deref().and_then(milliseconds))
                 .unwrap_or(0),
             title: chapter
                 .tags
@@ -510,8 +506,45 @@ fn chapters(probed: Vec<ProbedChapter>) -> Vec<Chapter> {
     chapters
 }
 
-/// `Chapter 3`, `chapter.3`, `03`: the reference's `(?:chapter)?\.? ?(\d+)`, whole.
+/// A chapter's time as the reference stores it: the timestamp times its time base in floating
+/// point, kept to six significant digits, in milliseconds — 1462.544417 s is 1462540, 433.224 s
+/// 433224. Measured on the 86 chapters of the sample files.
+fn chapter_time(timestamp: Option<i64>, time_base: Option<&str>) -> Option<u64> {
+    let (numerator, denominator) = time_base?.split_once('/')?;
+    let (numerator, denominator): (f64, f64) = (numerator.parse().ok()?, denominator.parse().ok()?);
+    if denominator == 0.0 {
+        return None;
+    }
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "a timestamp past 2^53 is no time a file holds"
+    )]
+    let seconds = timestamp? as f64 * (numerator / denominator);
+    let seconds: f64 = format!("{seconds:.5e}").parse().ok()?;
+    milliseconds(&seconds.to_string())
+}
+
+/// `Chapter 3`, `chapter.3`, `03`, `00:07:13.224`: the reference's `(?:chapter)?\.? ?(\d+)`
+/// and `[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}`, whole, the second what mkvmerge names chapters
+/// it was given no title for.
 fn is_generic_title(title: &str) -> bool {
+    is_numbered(title) || is_timestamp(title.trim())
+}
+
+fn is_timestamp(title: &str) -> bool {
+    let bytes = title.as_bytes();
+    bytes.len() == 12
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(position, byte)| match position {
+                2 | 5 => *byte == b':',
+                8 => *byte == b'.',
+                _ => byte.is_ascii_digit(),
+            })
+}
+
+fn is_numbered(title: &str) -> bool {
     let lower = title.trim().to_ascii_lowercase();
     let rest = lower.strip_prefix("chapter").unwrap_or(&lower);
     let rest = rest.strip_prefix('.').unwrap_or(rest);
@@ -621,6 +654,9 @@ struct SideData {
 
 #[derive(Debug, Deserialize)]
 struct ProbedChapter {
+    start: Option<i64>,
+    end: Option<i64>,
+    time_base: Option<String>,
     start_time: Option<String>,
     end_time: Option<String>,
     #[serde(default)]
@@ -683,10 +719,25 @@ mod tests {
 
     #[test]
     fn numbered_chapter_titles_are_generic() {
-        for title in ["Chapter 3", "chapter.12", "Chapter3", "07", "Chapter. 1"] {
+        for title in [
+            "Chapter 3",
+            "chapter.12",
+            "Chapter3",
+            "07",
+            "Chapter. 1",
+            "00:07:13.224",
+        ] {
             assert!(is_generic_title(title), "{title}");
         }
-        for title in ["Chapter", "Opening", "Chapter 3: The Hall", "1.5"] {
+        for title in [
+            "Chapter",
+            "Opening",
+            "Chapter 3: The Hall",
+            "1.5",
+            "Chapitre 01",
+            "0:07:13.224",
+            "00:07:13",
+        ] {
             assert!(!is_generic_title(title), "{title}");
         }
     }
@@ -697,6 +748,9 @@ mod tests {
             titles
                 .iter()
                 .map(|title| ProbedChapter {
+                    start: None,
+                    end: None,
+                    time_base: None,
                     start_time: Some("0.000000".to_owned()),
                     end_time: Some("1.000000".to_owned()),
                     tags: BTreeMap::from([("title".to_owned(), (*title).to_owned())]),
@@ -742,6 +796,35 @@ mod tests {
         span.cover(0, 42_000);
         span.cover(6_031_525_000, 6_031_567_000);
         assert_eq!(span.length_us(), Some(6_031_567_000));
+    }
+
+    #[test]
+    fn keeps_a_chapter_time_to_six_significant_digits() {
+        let nanoseconds = Some("1/1000000000");
+        assert_eq!(
+            chapter_time(Some(1_462_544_417_000), nanoseconds),
+            Some(1_462_540)
+        );
+        assert_eq!(
+            chapter_time(Some(247_830_917_000), nanoseconds),
+            Some(247_831)
+        );
+        assert_eq!(
+            chapter_time(Some(433_224_000_000), nanoseconds),
+            Some(433_224)
+        );
+        // 1037.745 in floating point is a hair above, so it rounds up.
+        assert_eq!(
+            chapter_time(Some(1_037_745_000_000), nanoseconds),
+            Some(1_037_750)
+        );
+        assert_eq!(
+            chapter_time(Some(1_037_745), Some("1/1000")),
+            Some(1_037_750)
+        );
+        assert_eq!(chapter_time(Some(80), Some("1/1000")), Some(80));
+        assert_eq!(chapter_time(Some(1), Some("1/0")), None);
+        assert_eq!(chapter_time(None, nanoseconds), None);
     }
 
     #[test]

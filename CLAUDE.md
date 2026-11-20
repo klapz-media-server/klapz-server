@@ -930,8 +930,14 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   over the time the packets span, as the reference measures them. A scanned file's lookup is the
   reference's field for field on `Media`, `Part` and `Stream` for the three test files and 38
   samples covering every container, codec and layout of the library, rates aside: we keep the
-  measured ones where the reference mostly publishes the declared ones (`docs/scanner/analysis.md`, §2). Not yet:
-  `requiredBandwidths`, chapters stored, credits detection.
+  measured ones where the reference mostly publishes the declared ones (`docs/scanner/analysis.md`, §2).
+  **Chapters** too: their times as the reference keeps them (six significant digits) and
+  numbered or timestamp titles cleared, identical on the 86 chapters of the samples; stored in
+  `item_chapter` with the item's `chapter_source`, imported (519,141) or written by a scan from
+  the file that describes the item, on the official API (`Movie.chapters`, `Episode.chapters`,
+  `chapterSource`, `Chapter` as a node) and on the Plex surface (`chapterSource`, and `Chapter`
+  on a lookup with `includeChapters=1`, as measured; `docs/spec-gaps.md`). Not yet:
+  `requiredBandwidths`, credits detection, chapter images stored.
 - 🚧 **library scans in the server**: libraries walked through `LibraryFiles` (local disks for
   now), files grouped into films, series, seasons and episodes by the reference's measured
   naming rules (`CleanName`, stacking, versions, the 18 episode patterns, dates, sidecars,

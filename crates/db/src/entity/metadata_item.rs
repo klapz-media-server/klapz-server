@@ -37,6 +37,8 @@ pub struct Model {
     pub updated_at: i64,
     /// When the metadata was last refreshed from its agent, in Unix seconds.
     pub refreshed_at: Option<i64>,
+    /// `media`, `agent` or `mixed`: where its chapters came from. Null without chapters.
+    pub chapter_source: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

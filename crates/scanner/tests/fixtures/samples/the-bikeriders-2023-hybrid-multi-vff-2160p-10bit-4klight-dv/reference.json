@@ -1,4 +1,133 @@
 {
+ "chapterSource": "media",
+ "chapters": [
+  {
+   "index": 1,
+   "start": 0,
+   "end": 352227,
+   "title": "Chapitre 01"
+  },
+  {
+   "index": 2,
+   "start": 352227,
+   "end": 611694,
+   "title": "Chapitre 02"
+  },
+  {
+   "index": 3,
+   "start": 611694,
+   "end": 926509,
+   "title": "Chapitre 03"
+  },
+  {
+   "index": 4,
+   "start": 926509,
+   "end": 1207210,
+   "title": "Chapitre 04"
+  },
+  {
+   "index": 5,
+   "start": 1207210,
+   "end": 1494620,
+   "title": "Chapitre 05"
+  },
+  {
+   "index": 6,
+   "start": 1494620,
+   "end": 1900070,
+   "title": "Chapitre 06"
+  },
+  {
+   "index": 7,
+   "start": 1900070,
+   "end": 2464000,
+   "title": "Chapitre 07"
+  },
+  {
+   "index": 8,
+   "start": 2464000,
+   "end": 2864950,
+   "title": "Chapitre 08"
+  },
+  {
+   "index": 9,
+   "start": 2864950,
+   "end": 3236360,
+   "title": "Chapitre 09"
+  },
+  {
+   "index": 10,
+   "start": 3236360,
+   "end": 3511170,
+   "title": "Chapitre 10"
+  },
+  {
+   "index": 11,
+   "start": 3511170,
+   "end": 3959500,
+   "title": "Chapitre 11"
+  },
+  {
+   "index": 12,
+   "start": 3959500,
+   "end": 4303760,
+   "title": "Chapitre 12"
+  },
+  {
+   "index": 13,
+   "start": 4303760,
+   "end": 4564440,
+   "title": "Chapitre 13"
+  },
+  {
+   "index": 14,
+   "start": 4564440,
+   "end": 4996580,
+   "title": "Chapitre 14"
+  },
+  {
+   "index": 15,
+   "start": 4996580,
+   "end": 5307550,
+   "title": "Chapitre 15"
+  },
+  {
+   "index": 16,
+   "start": 5307550,
+   "end": 5643470,
+   "title": "Chapitre 16"
+  },
+  {
+   "index": 17,
+   "start": 5643470,
+   "end": 5992240,
+   "title": "Chapitre 17"
+  },
+  {
+   "index": 18,
+   "start": 5992240,
+   "end": 6248830,
+   "title": "Chapitre 18"
+  },
+  {
+   "index": 19,
+   "start": 6248830,
+   "end": 6510130,
+   "title": "Chapitre 19"
+  },
+  {
+   "index": 20,
+   "start": 6510130,
+   "end": 6955700,
+   "title": "Chapitre 20"
+  },
+  {
+   "index": 21,
+   "start": 6955700,
+   "end": 6955970,
+   "title": "Chapitre 21"
+  }
+ ],
  "media": {
   "width": 3840,
   "height": 1608,

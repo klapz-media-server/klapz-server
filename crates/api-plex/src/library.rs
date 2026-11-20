@@ -515,6 +515,14 @@ async fn items_by_id(
         Value::Boolean(crate::markers::requested(&pairs)),
     );
     variables.insert(
+        Name::new("chapters"),
+        Value::Boolean(
+            pairs
+                .iter()
+                .any(|(key, value)| key == "includeChapters" && value == "1"),
+        ),
+    );
+    variables.insert(
         Name::new("extras"),
         Value::Boolean(crate::extras::requested(&pairs)),
     );

@@ -1,4 +1,127 @@
 {
+ "chapterSource": "media",
+ "chapters": [
+  {
+   "index": 1,
+   "start": 0,
+   "end": 433224,
+   "title": ""
+  },
+  {
+   "index": 2,
+   "start": 433224,
+   "end": 721554,
+   "title": ""
+  },
+  {
+   "index": 3,
+   "start": 721554,
+   "end": 1037750,
+   "title": ""
+  },
+  {
+   "index": 4,
+   "start": 1037750,
+   "end": 1277190,
+   "title": ""
+  },
+  {
+   "index": 5,
+   "start": 1277190,
+   "end": 1729810,
+   "title": ""
+  },
+  {
+   "index": 6,
+   "start": 1729810,
+   "end": 2104690,
+   "title": ""
+  },
+  {
+   "index": 7,
+   "start": 2104690,
+   "end": 2451570,
+   "title": ""
+  },
+  {
+   "index": 8,
+   "start": 2451570,
+   "end": 2792500,
+   "title": ""
+  },
+  {
+   "index": 9,
+   "start": 2792500,
+   "end": 3125000,
+   "title": ""
+  },
+  {
+   "index": 10,
+   "start": 3125000,
+   "end": 3659200,
+   "title": ""
+  },
+  {
+   "index": 11,
+   "start": 3659200,
+   "end": 4010260,
+   "title": ""
+  },
+  {
+   "index": 12,
+   "start": 4010260,
+   "end": 4267640,
+   "title": ""
+  },
+  {
+   "index": 13,
+   "start": 4267640,
+   "end": 4641100,
+   "title": ""
+  },
+  {
+   "index": 14,
+   "start": 4641100,
+   "end": 5215210,
+   "title": ""
+  },
+  {
+   "index": 15,
+   "start": 5215210,
+   "end": 5581490,
+   "title": ""
+  },
+  {
+   "index": 16,
+   "start": 5581490,
+   "end": 6175880,
+   "title": ""
+  },
+  {
+   "index": 17,
+   "start": 6175880,
+   "end": 6601550,
+   "title": ""
+  },
+  {
+   "index": 18,
+   "start": 6601550,
+   "end": 6896220,
+   "title": ""
+  },
+  {
+   "index": 19,
+   "start": 6896220,
+   "end": 7117990,
+   "title": ""
+  },
+  {
+   "index": 20,
+   "start": 7117990,
+   "end": 7697700,
+   "title": ""
+  }
+ ],
  "media": {
   "width": 1920,
   "height": 808,

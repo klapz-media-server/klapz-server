@@ -106,6 +106,8 @@ pub enum Node {
     Person(PersonObject),
     /// An item's intro, credits or commercial, or a place the caller bookmarked.
     Marker(crate::marker::MarkerObject),
+    /// A named section of a film or an episode.
+    Chapter(crate::chapter::ChapterObject),
     /// A trailer, a deleted scene or a featurette that comes with an item.
     Extra(crate::extra::ExtraObject),
 }
@@ -198,6 +200,9 @@ impl Query {
             crate::marker::MARKER_TYPE => Ok(crate::marker::marker_node(context, global.key)
                 .await?
                 .map(Node::Marker)),
+            crate::chapter::CHAPTER_TYPE => Ok(crate::chapter::chapter_node(context, global.key)
+                .await?
+                .map(Node::Chapter)),
             crate::extra::EXTRA_TYPE => Ok(crate::extra::extra_node(context, global.key)
                 .await?
                 .map(Node::Extra)),
@@ -876,6 +881,9 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
             Arc::clone(&metadata),
         )))
         .data(loader(crate::marker::MarkersLoader::new(Arc::clone(
+            &metadata,
+        ))))
+        .data(loader(crate::chapter::ChaptersLoader::new(Arc::clone(
             &metadata,
         ))))
         .data(loader(crate::extra::ExtrasLoader::new(Arc::clone(

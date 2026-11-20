@@ -22,7 +22,7 @@ holds was computed when they were reachable.
 
 | Task | Runs in | Trigger | Writes | Our schema |
 | --- | --- | --- | --- | --- |
-| Media analysis | `Plex Media Scanner --analyze` (in-process libav) | new or changed file, `PUT …/analyze`, butler *UpgradeMediaAnalysis* | `media_items`, `media_parts`, `media_streams` columns and `ma:` keys; chapters (taggings type 9) | `media`, `media_part`, `media_stream`, `stream_dolby_vision`; chapters: **none** |
+| Media analysis | `Plex Media Scanner --analyze` (in-process libav) | new or changed file, `PUT …/analyze`, butler *UpgradeMediaAnalysis* | `media_items`, `media_parts`, `media_streams` columns and `ma:` keys; chapters (taggings type 9) | `media`, `media_part`, `media_stream`, `stream_dolby_vision`; chapters: `item_chapter`, `metadata_item.chapter_source` |
 | Thumbnails / art from video | same process, after analysis | analysis without `--no-thumbs` | bundle `Thumbnails/thumbN.jpg`, `Art/artN.jpg`, `user_thumb_url` / `user_art_url` | no artwork kept |
 | Deep analysis | `Plex Media Scanner --analyze-deeply` | butler *DeepMediaAnalysis* | per-track `bitrate`, `ma:requiredBandwidths`, `ma:deepAnalysisVersion`, `GoP-N.xml` | `media_stream.required_bandwidths`, `bitrate` |
 | Video preview thumbnails (BIF) | PMS spawns `Plex Transcoder` | `PUT …/index`, after analysis (`GenerateBIFBehavior`), butler *GenerateMediaIndexFiles* | `Indexes/index-sd.bif`, `mi:indexes`, `mi:failureBIF*` | **none** |
@@ -69,9 +69,11 @@ It logs one summary line per part:
 ```
 
 The hex value is `media_parts.hash`. `[MI] Chapters had generic titles, clearing.` drops
-chapter titles of the form *Chapter N* (**measured**; regex `(?:chapter)?\.? ?(\d+)` in the
-binary). The binary also logs `[MI] Aborting chapter import because there are more than %d
-chapters`.
+every chapter title when each one is of the form *Chapter N* or a timestamp (**measured**: the
+regexes `(?:chapter)?\.? ?(\d+)` and `[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}` in the binary,
+matched whole; Jurassic World's `00:07:13.224`, mkvmerge's names for untitled chapters, are
+cleared, Bikeriders' `Chapitre 01` kept). The binary also logs `[MI] Aborting chapter import
+because there are more than %d chapters`; the limit was not found.
 
 ### What it writes, and what ffprobe gives for it
 
@@ -210,14 +212,32 @@ the version comparison was not observed).
 ### Chapters
 
 **Measured.** Chapters are stored twice: in the part's `pv:chapters` JSON (seconds) and as
-taggings of **tag type 9**, one per chapter, `index` from 1, `time_offset` / `end_time_offset` in
-ms (rounded to 10 ms: 1248.664 s → 1248660), the tag's `tag` being the chapter title and
-`thumb_url` `/library/media/{media_id}/chapterImages/{index}` when a thumbnail exists (418,442
-of 519,141 rows on 64,251 items). `GET /library/metadata/{id}?includeChapters=1` publishes
-`<Chapter id="{tag id}" filter="thumb={tag id}" tag=… index=… startTimeOffset=…
-endTimeOffset=…/>` and `chapterSource="media"` on the item. **Our schema has no chapters**: a
-`chapter` table (part or media, index, start/end ms, title) is needed, and `pv:chapters` is the
-importable source.
+taggings of **tag type 9** on the item, one per chapter, `index` from 1, `time_offset` /
+`end_time_offset` in ms, the tag's `tag` being the chapter title — one tag per title, shared by
+every chapter that bears it, the empty one included — and `thumb_url`
+`/library/media/{media_id}/chapterImages/{index}` when a thumbnail exists (418,442 of 519,141
+rows on 64,251 items; on 81 items with several versions the image is drawn from another than
+the first in 80). The item's `ma:chapterSource` says where they came from: `media` (62,253),
+`agent` (699, whole seconds, from Plex's metadata) or `mixed` (627).
+
+A time is the chapter's timestamp times its time base in floating point, kept to **six
+significant digits**, then in milliseconds: 1462.544417 s is 1462540, 247.830917 s 247831,
+433.224 s 433224, and 1037.745 s, a hair above in floating point, 1037750 (**measured**: 86 of 86
+chapters of the 38 sample files). The ten-millisecond rounding it looks like above 1000 s is the
+sixth digit.
+
+`GET /library/metadata/{id}?includeChapters=1` publishes `<Chapter id="{tag id}"
+filter="thumb={tag id}" tag=… index=… startTimeOffset=… endTimeOffset=… thumb=…/>` after the
+tags, `tag` absent for an untitled chapter and `thumb` without an image; `includeChapters` with
+any other value, and every listing, publish none. `chapterSource` is on the item everywhere,
+listings included, among the packed attributes in name order (**measured**).
+
+**Ours.** `item_chapter` holds one row per chapter (item, position, start and end, title, the
+version its image was drawn from) and `metadata_item.chapter_source` the origin. The importer
+copies the taggings; a scan stores the chapters of the file that describes the item — its first
+version's first, as for its duration — with `media`, and rewrites them when that file changes.
+A stacked version's other files contribute none. The scanner applies both rules above, and the
+replay of the 38 samples compares every chapter with the reference's.
 
 ## 2. Deep analysis (`--analyze-deeply`)
 

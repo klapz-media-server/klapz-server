@@ -86,6 +86,7 @@ fn item(
         added_at: 1_794_320_860,
         updated_at: 1_794_320_862,
         refreshed_at: None,
+        chapter_source: None,
     }
 }
 

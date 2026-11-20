@@ -138,6 +138,7 @@ fn metadata() -> InMemoryMetadata {
         added_at: 1_794_839_063,
         updated_at: 1_794_839_065,
         refreshed_at: None,
+        chapter_source: None,
     };
     let version = MediaVersion {
         id: MediaId::new(VERSION),

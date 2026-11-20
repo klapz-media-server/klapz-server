@@ -420,6 +420,7 @@ mod tests {
             added_at: 0,
             updated_at: 0,
             refreshed_at: None,
+            chapter_source: None,
         }
     }
 

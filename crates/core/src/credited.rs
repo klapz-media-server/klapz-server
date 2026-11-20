@@ -197,6 +197,7 @@ mod tests {
             added_at,
             updated_at: added_at,
             refreshed_at: None,
+            chapter_source: None,
         }
     }
 

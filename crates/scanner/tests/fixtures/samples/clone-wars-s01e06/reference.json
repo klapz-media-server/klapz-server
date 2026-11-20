@@ -1,4 +1,31 @@
 {
+ "chapterSource": "media",
+ "chapters": [
+  {
+   "index": 1,
+   "start": 0,
+   "end": 362904,
+   "title": ""
+  },
+  {
+   "index": 2,
+   "start": 362904,
+   "end": 848514,
+   "title": ""
+  },
+  {
+   "index": 3,
+   "start": 848514,
+   "end": 1238200,
+   "title": ""
+  },
+  {
+   "index": 4,
+   "start": 1238200,
+   "end": 1286980,
+   "title": ""
+  }
+ ],
  "media": {
   "width": 1920,
   "height": 1080,

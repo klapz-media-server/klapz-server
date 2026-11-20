@@ -107,6 +107,7 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
         added_at: 0,
         updated_at: 0,
         refreshed_at: None,
+        chapter_source: None,
     };
     (
         InMemoryLibrary::new(vec![section]),

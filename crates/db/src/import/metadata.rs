@@ -19,12 +19,15 @@
 
 use std::collections::HashSet;
 
+use open_plex_core::chapter::ChapterSource;
 use open_plex_core::edit::{CalendarDate, ItemField};
 use open_plex_core::metadata::{self, ItemKind};
 use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 
 use super::analysis::Analysis;
-use super::{collections, extras, markers, source_error, tags, ImportError, PlexRow, SOURCE_PAGE};
+use super::{
+    chapters, collections, extras, markers, source_error, tags, ImportError, PlexRow, SOURCE_PAGE,
+};
 use crate::entity::{
     item_corner_colors, media, media_part, media_stream, metadata_item, stream_dolby_vision,
     stream_loudness,
@@ -59,6 +62,7 @@ pub struct MetadataSummary {
     pub streams: usize,
     pub tags: tags::TagSummary,
     pub markers: markers::MarkerSummary,
+    pub chapters: chapters::ChapterSummary,
     pub collections: collections::CollectionSummary,
     pub extras: extras::ExtraSummary,
     /// Rows skipped because the parent they reference does not exist.
@@ -130,6 +134,13 @@ pub async fn import(
         markers = summary.markers.markers,
         skipped = summary.markers.skipped,
         "imported markers"
+    );
+    summary.chapters =
+        chapters::import(destination, source, source_path, &item_ids, &media_ids).await?;
+    tracing::info!(
+        chapters = summary.chapters.chapters,
+        skipped = summary.chapters.skipped,
+        "imported chapters"
     );
     summary.collections = collections::import(destination, source, source_path, &item_ids).await?;
     tracing::info!(
@@ -265,6 +276,7 @@ async fn import_items(
                 added_at: ActiveValue::Set(row.plex_opt("added_at").unwrap_or(0)),
                 updated_at: ActiveValue::Set(row.plex_opt("updated_at").unwrap_or(0)),
                 refreshed_at: ActiveValue::Set(row.plex_opt("refreshed_at")),
+                chapter_source: ActiveValue::Set(chapter_source(&extra)),
             });
             item_ids.insert(id);
         }
@@ -283,6 +295,13 @@ async fn import_items(
     }
 
     Ok(imported)
+}
+
+/// Where an item's chapters came from, when the source names an origin we know.
+fn chapter_source(extra: &Analysis) -> Option<String> {
+    extra
+        .text("ma:chapterSource")
+        .filter(|source| ChapterSource::parse(source).is_some())
 }
 
 fn corner_colors_row(

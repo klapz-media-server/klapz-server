@@ -7,6 +7,7 @@ pub mod access;
 pub mod account;
 pub mod auth;
 pub mod backdrop;
+pub mod chapter;
 pub mod closest;
 pub mod collection;
 pub mod common;
@@ -46,8 +47,8 @@ pub use identity::{
     now_epoch, ServerCapabilities, ServerFeatures, ServerIdentity, TranscoderCapabilities,
 };
 pub use ids::{
-    CollectionId, ExtraId, HistoryId, MarkerId, MediaId, PartId, PersonId, PlaylistEntryId,
-    PlaylistId, RatingKey, SectionId, StreamId, TagId, UserId,
+    ChapterId, CollectionId, ExtraId, HistoryId, MarkerId, MediaId, PartId, PersonId,
+    PlaylistEntryId, PlaylistId, RatingKey, SectionId, StreamId, TagId, UserId,
 };
 pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot};
 pub use metadata::{

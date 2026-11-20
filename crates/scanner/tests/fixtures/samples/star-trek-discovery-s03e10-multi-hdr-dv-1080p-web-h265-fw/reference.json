@@ -1,4 +1,37 @@
 {
+ "chapterSource": "media",
+ "chapters": [
+  {
+   "index": 1,
+   "start": 2000,
+   "end": 90000,
+   "title": "Preview Start"
+  },
+  {
+   "index": 2,
+   "start": 90000,
+   "end": 407000,
+   "title": "Preview End"
+  },
+  {
+   "index": 3,
+   "start": 407000,
+   "end": 482000,
+   "title": "openCreditStart"
+  },
+  {
+   "index": 4,
+   "start": 482000,
+   "end": 2865000,
+   "title": "openCreditEnd"
+  },
+  {
+   "index": 5,
+   "start": 2865000,
+   "end": 2963130,
+   "title": "Credits"
+  }
+ ],
  "media": {
   "width": 1920,
   "height": 1080,

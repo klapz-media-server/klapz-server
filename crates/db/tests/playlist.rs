@@ -60,6 +60,7 @@ fn item(id: i64, section: i64, kind: &str, duration_ms: i64) -> metadata_item::A
         added_at: ActiveValue::Set(0),
         updated_at: ActiveValue::Set(0),
         refreshed_at: ActiveValue::Set(None),
+        chapter_source: ActiveValue::Set(None),
     }
 }
 

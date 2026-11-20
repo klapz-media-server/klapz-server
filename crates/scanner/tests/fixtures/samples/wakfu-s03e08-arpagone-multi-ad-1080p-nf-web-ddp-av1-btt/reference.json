@@ -1,4 +1,13 @@
 {
+ "chapterSource": "media",
+ "chapters": [
+  {
+   "index": 1,
+   "start": 1376450,
+   "end": 1386270,
+   "title": "Credits"
+  }
+ ],
  "media": {
   "width": 1920,
   "height": 1080,

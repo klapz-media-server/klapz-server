@@ -1,4 +1,55 @@
 {
+ "chapterSource": "media",
+ "chapters": [
+  {
+   "index": 1,
+   "start": 0,
+   "end": 37704,
+   "title": ""
+  },
+  {
+   "index": 2,
+   "start": 37787,
+   "end": 271271,
+   "title": ""
+  },
+  {
+   "index": 3,
+   "start": 271354,
+   "end": 705246,
+   "title": ""
+  },
+  {
+   "index": 4,
+   "start": 705329,
+   "end": 1125250,
+   "title": ""
+  },
+  {
+   "index": 5,
+   "start": 1125330,
+   "end": 1712630,
+   "title": ""
+  },
+  {
+   "index": 6,
+   "start": 1712710,
+   "end": 2142390,
+   "title": ""
+  },
+  {
+   "index": 7,
+   "start": 2142470,
+   "end": 2598260,
+   "title": ""
+  },
+  {
+   "index": 8,
+   "start": 2598350,
+   "end": 2637090,
+   "title": ""
+  }
+ ],
  "media": {
   "width": 1920,
   "height": 1088,

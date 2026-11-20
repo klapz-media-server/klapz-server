@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 
 use crate::backdrop::CornerColors;
+use crate::chapter::Chapter;
 use crate::collection::{
     Collection, CollectionCondition, CollectionEdit, CollectionEntry, CollectionError,
     CollectionQuery, CollectionRef, CollectionRepository, CollectionSort, CollectionTotals,
@@ -19,8 +20,8 @@ use crate::common::{CommonFields, Shared, SharedTag};
 use crate::edit::{ItemEdit, ItemField};
 use crate::extra::Extra;
 use crate::ids::{
-    CollectionId, ExtraId, MarkerId, MediaId, PartId, PersonId, PlaylistEntryId, PlaylistId,
-    RatingKey, SectionId, StreamId, TagId,
+    ChapterId, CollectionId, ExtraId, MarkerId, MediaId, PartId, PersonId, PlaylistEntryId,
+    PlaylistId, RatingKey, SectionId, StreamId, TagId,
 };
 use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
 use crate::marker::{Marker, NewMarker};
@@ -130,6 +131,7 @@ pub struct InMemoryMetadata {
     external_ids: Vec<ExternalId>,
     ratings: Vec<Rating>,
     corner_colors: Vec<(RatingKey, CornerColors)>,
+    chapters: Vec<Chapter>,
     /// What a collection filter reads, shared with the collections' own store.
     collections: Option<std::sync::Arc<std::sync::Mutex<CollectionStore>>>,
 }
@@ -149,8 +151,16 @@ impl InMemoryMetadata {
             external_ids: Vec::new(),
             ratings: Vec::new(),
             corner_colors: Vec::new(),
+            chapters: Vec::new(),
             collections: None,
         }
+    }
+
+    /// Gives items their chapters, as an import would.
+    #[must_use]
+    pub fn with_chapters(mut self, chapters: Vec<Chapter>) -> Self {
+        self.chapters = chapters;
+        self
     }
 
     /// Gives items their backdrop colors, as an import would.
@@ -1302,6 +1312,25 @@ impl MetadataRepository for InMemoryMetadata {
         let before = markers.len();
         markers.retain(|marker| marker.id != id);
         Ok(markers.len() < before)
+    }
+
+    async fn chapters(&self, items: &[RatingKey]) -> Result<Vec<Chapter>, MetadataError> {
+        let mut chapters: Vec<Chapter> = self
+            .chapters
+            .iter()
+            .filter(|chapter| items.contains(&chapter.item))
+            .cloned()
+            .collect();
+        chapters.sort_by_key(|chapter| (chapter.item, chapter.index));
+        Ok(chapters)
+    }
+
+    async fn chapter(&self, id: ChapterId) -> Result<Option<Chapter>, MetadataError> {
+        Ok(self
+            .chapters
+            .iter()
+            .find(|chapter| chapter.id == id)
+            .cloned())
     }
 
     async fn extras(&self, items: &[RatingKey]) -> Result<Vec<Extra>, MetadataError> {
