@@ -288,6 +288,9 @@ async fn list(
     if let Some(answer) = containers(state, query).await? {
         return Ok(answer);
     }
+    if !query.list("personIds").is_empty() {
+        return credited(state, query).await;
+    }
     let listing = Listing::parse(query)?;
     let fields = fields(query);
     let start = listing.offset;
@@ -430,6 +433,75 @@ async fn lookup(
         }
         _ => Err(JellyfinError::NotFound),
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreditedPage {
+    item_count: i64,
+    items: Connection<Item>,
+}
+
+/// `/Items?PersonIds=`: the films and series crediting one person, in any role, a series for a
+/// credit on one of its episodes, through `Person.items`; the request's other filters apply.
+async fn credited(state: &JellyfinState, query: &Query) -> Result<Response, JellyfinError> {
+    let [person] = query.list("personIds")[..] else {
+        return Err(JellyfinError::NotImplemented("several people at once"));
+    };
+    let person = id::global_of_type(person, open_plex_api::tag::PERSON_TYPE)?;
+    if query.get("parentId").is_some() {
+        return Err(JellyfinError::NotImplemented(
+            "a person's credits below a parent",
+        ));
+    }
+    // Films and series together are what a person's credits list; one of them is a kind.
+    let mut narrowed = query.clone();
+    let types = query.list("includeItemTypes");
+    if !types.is_empty()
+        && types
+            .iter()
+            .all(|kind| kind.eq_ignore_ascii_case("movie") || kind.eq_ignore_ascii_case("series"))
+        && types.len() > 1
+    {
+        narrowed.set("includeItemTypes", "");
+        narrowed.set("recursive", "false");
+    }
+    let listing = Listing::parse(&narrowed)?;
+    if listing.order.is_some_and(|order| order != "TITLE") {
+        // Credits come in the official API's order: library, then title.
+        return Err(JellyfinError::NotImplemented(
+            "a person's credits in another order",
+        ));
+    }
+    let fields = fields(query);
+    let data: NodeData<CreditedPage> = gql::query(
+        &state.schema,
+        &format!(
+            r"query($id: ID!, $filter: ItemFilterInput, $offset: Int, $first: Int,
+                    $people: Boolean!, $chapters: Boolean!) {{
+                node(id: $id) {{ ... on Person {{
+                    itemCount(filter: $filter)
+                    items(filter: $filter, offset: $offset, first: $first) {{ nodes {{ ...JellyfinItem }} }}
+                }} }}
+            }}
+            {ITEM_FIELDS}"
+        ),
+        json!({
+            "id": person,
+            "filter": listing.filter_json(),
+            "offset": listing.offset,
+            "first": listing.first,
+            "people": fields.wants_people(),
+            "chapters": fields.has("Chapters"),
+        }),
+    )
+    .await?;
+    let found = data.node.ok_or(JellyfinError::NotFound)?;
+    Ok(page(
+        shaped(&found.items.nodes, state, &fields),
+        found.item_count,
+        listing.offset,
+    ))
 }
 
 /// Listings of what is not a library's item: the caller's playlists and collections, as a type

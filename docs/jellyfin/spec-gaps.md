@@ -198,6 +198,26 @@ another library or kind is refused `400`. Collections are listed by type
 and opened as a parent; changed by a library's administrators and the owners, as on the
 official API. Deleting one keeps its items.
 
+## Genres, people, studios, years and search
+
+Pages of what items share, from the official API (`Library.tags`, `searchTags`, `tags`,
+`Library.fieldValues`, `Library.years`, `search`), shaped as the reference's genres, people,
+studios and years; their artwork is not held.
+
+- `/Genres` lists a library's genres, or those of every library of the caller's holding the
+  types asked, by name, counted per kind with `Fields=ItemCounts`; `searchTerm` completes a word
+  of the name, as the official API completes one. `/Genres/{name}` finds one by name.
+- `/Persons` lists the people a term finds, or the people of one role (`personTypes`) by name;
+  every role at once with no term answers `501`, more people than a page of credits lists.
+  `/Items?PersonIds=` lists one person's films and series through `Person.items`, a series for
+  a credit on its episodes, with the request's other filters; several people at once, or another
+  order than by name, answer `501`.
+- A studio and a year are no entity of the official API: their ids carry the value, a year its
+  number and a studio a hash of its name, found again among the studios listed. `StudioIds`
+  on `/Items` answers `501`.
+- `/Search/Hints` hints the items the official API's search ranks, then the people a term finds
+  (`includePeople`); a page past the first, and the Live TV and media filters, answer `501`.
+
 ## Measured on the 35 files
 
 `tools/compare_jellyfin.py` compares, for every file, the lookup (`/Items/{id}` and

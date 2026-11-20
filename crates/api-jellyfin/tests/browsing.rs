@@ -60,6 +60,9 @@ const NOT_HELD: &[&str] = &[
     "ColorPrimaries",
     // The reference's latest film has subtitles, and the harness's one film none.
     "HasSubtitles",
+    // A person's portrait, which none is held of.
+    "PrimaryImageTag",
+    "ImageBlurHashes",
     // A trace of the reference's own request handling.
     "traceId",
 ];
@@ -394,7 +397,7 @@ async fn filters_that_cannot_be_honored_are_refused_and_favorites_are_none() {
     let library = jellyfin_id("Library", FILMS);
     for refused in [
         "NameStartsWith=D",
-        "PersonIds=x",
+        "StudioIds=x",
         "SortBy=AlbumArtist",
         "Is4K=true",
     ] {

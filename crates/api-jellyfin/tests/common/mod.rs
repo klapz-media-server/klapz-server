@@ -107,6 +107,7 @@ fn items() -> Vec<MetadataItem> {
     let mut doodlebug = item(DOODLEBUG, FILMS, None, ItemKind::Movie, "doodlebug");
     doodlebug.year = Some(1997);
     doodlebug.duration_ms = Some(178_301);
+    doodlebug.studio = Some("Following Productions".to_owned());
     let mut hidden = item(HIDDEN_FILM, PRIVATE, None, ItemKind::Movie, "Hidden");
     hidden.year = Some(2001);
     let mut show = item(SHOW, SERIES, None, ItemKind::Show, "90210");
@@ -126,6 +127,40 @@ fn items() -> Vec<MetadataItem> {
     episode.duration_ms = Some(287_754);
     episode.summary = Some("Naomi's older sister, Jen, unexpectedly returns.".to_owned());
     vec![doodlebug, hidden, show, season, episode]
+}
+
+pub const THRILLER: i64 = 401;
+pub const NOLAN_DIRECTOR: i64 = 402;
+pub const NOLAN: i64 = 501;
+
+/// `doodlebug`'s genre and director, as the import credits them.
+fn tags() -> Vec<open_plex_core::metadata::ItemTag> {
+    use open_plex_core::metadata::{ItemTag, Person, Tag, TagKind};
+    use open_plex_core::{PersonId, TagId};
+    let tag = |id: i64, kind, name: &str, person: Option<Person>| ItemTag {
+        item_id: RatingKey::new(DOODLEBUG),
+        tag: Tag {
+            id: TagId::new(id),
+            kind,
+            name: name.to_owned(),
+            person,
+        },
+        role: None,
+    };
+    vec![
+        tag(THRILLER, TagKind::Genre, "Thriller", None),
+        tag(
+            NOLAN_DIRECTOR,
+            TagKind::Director,
+            "Christopher Nolan",
+            Some(Person {
+                id: PersonId::new(NOLAN),
+                name: "Christopher Nolan".to_owned(),
+                provider_key: None,
+                thumb_url: None,
+            }),
+        ),
+    ]
 }
 
 fn version(id: i64, item: i64, width: i32, height: i32) -> MediaVersion {
@@ -358,6 +393,7 @@ fn metadata() -> InMemoryMetadata {
             tracks,
         )
         .with_side_streams(vec![cover])
+        .with_tags(tags())
 }
 
 pub struct Harness {

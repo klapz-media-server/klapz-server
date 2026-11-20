@@ -60,6 +60,10 @@ NOTES = {
     "DELETE /Playlists/{playlistId}/Users/{userId}": "501: playlists are not shared.",
     "DELETE /Items/{itemId}": "Playlists and collections; media files answer 501.",
     "POST /Collections": "In its first item's library; no item, ParentId or IsLocked answers 501.",
+    "GET /Genres": "searchTerm completes a word of the name; name ranges answer 501.",
+    "GET /Persons": "With searchTerm, or one role at a time; every role unsearched answers 501.",
+    "GET /Studios": "A studio's id is a hash of its name; StudioIds on /Items answers 501.",
+    "GET /Search/Hints": "Items then people, first page only; Live TV and media filters answer 501.",
 }
 
 

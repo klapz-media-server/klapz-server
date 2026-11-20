@@ -27,7 +27,6 @@ pub fn kind_of(jellyfin_type: &str) -> Option<&'static str> {
 
 /// Filters the reference honors that the official API cannot express.
 const REFUSED: &[&str] = &[
-    "personIds",
     "person",
     "personTypes",
     "studioIds",
@@ -392,7 +391,7 @@ mod tests {
     #[test]
     fn filters_the_official_api_cannot_express_are_refused() {
         for raw in [
-            "PersonIds=x",
+            "StudioIds=x",
             "NameStartsWith=A",
             "Is4K=true",
             "MinCommunityRating=7",

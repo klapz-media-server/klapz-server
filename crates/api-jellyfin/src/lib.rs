@@ -16,6 +16,7 @@
 #![recursion_limit = "256"]
 
 pub mod auth;
+mod browse;
 mod collections;
 mod dto;
 mod error;
@@ -136,6 +137,7 @@ pub fn router(state: JellyfinState) -> Router {
         .merge(filters::router())
         .merge(playlists::router())
         .merge(collections::router())
+        .merge(browse::router())
         .merge(shows::router())
         .merge(playback::router())
         .fallback(not_found)

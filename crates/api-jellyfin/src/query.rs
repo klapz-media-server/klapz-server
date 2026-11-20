@@ -24,6 +24,13 @@ impl Query {
         }
     }
 
+    /// Sets a parameter, in place of what the request gave it.
+    pub fn set(&mut self, name: &str, value: &str) {
+        let name = name.to_ascii_lowercase();
+        self.pairs.retain(|(key, _)| *key != name);
+        self.pairs.push((name, value.to_owned()));
+    }
+
     /// The first non-empty value of a parameter.
     pub fn get(&self, name: &str) -> Option<&str> {
         let name = name.to_ascii_lowercase();

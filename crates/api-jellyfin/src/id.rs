@@ -28,6 +28,8 @@ const TYPES: &[(u32, &str)] = &[
     (12, open_plex_api::extra::EXTRA_TYPE),
     (13, open_plex_api::playback::PLAYBACK_TYPE),
     (14, open_plex_api::playlist::PLAYLIST_ENTRY_TYPE),
+    (15, crate::browse::STUDIO_TYPE),
+    (16, crate::browse::YEAR_TYPE),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

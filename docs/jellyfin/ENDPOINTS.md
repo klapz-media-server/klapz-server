@@ -8,8 +8,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `served` | 72 | 19.8 % |
-| `todo` | 292 | 80.2 % |
+| `served` | 81 | 22.3 % |
+| `todo` | 283 | 77.7 % |
 
 ## By domain
 
@@ -26,7 +26,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | DisplayPreference | 2 | 2 |
 | Environment | 5 | 0 |
 | Filter | 2 | 2 |
-| Genre | 2 | 0 |
+| Genre | 2 | 2 |
 | Image | 37 | 5 |
 | InstantMix | 7 | 0 |
 | ItemLookup | 11 | 0 |
@@ -40,16 +40,16 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | MediaSegment | 1 | 0 |
 | Movie | 1 | 0 |
 | MusicGenre | 1 | 0 |
-| Person | 2 | 0 |
+| Person | 2 | 2 |
 | Playlist | 11 | 11 |
 | Plugin | 17 | 0 |
 | RemoteImage | 3 | 0 |
 | ScheduledTask | 5 | 0 |
-| Search | 1 | 0 |
+| Search | 1 | 1 |
 | Session | 18 | 7 |
 | Show | 4 | 3 |
 | Startup | 7 | 0 |
-| Studio | 2 | 0 |
+| Studio | 2 | 2 |
 | Subtitle | 10 | 0 |
 | Suggestion | 1 | 0 |
 | SyncPlay | 22 | 1 |
@@ -60,7 +60,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | UserData | 8 | 4 |
 | UserView | 2 | 1 |
 | Video | 8 | 4 |
-| Year | 2 | 0 |
+| Year | 2 | 2 |
 
 ## Artist
 
@@ -172,8 +172,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Method | Path | Status | Notes |
 | --- | --- | --- | --- |
-| GET | `/Genres` | `todo` |  |
-| GET | `/Genres/{genreName}` | `todo` |  |
+| GET | `/Genres` | `served` | searchTerm completes a word of the name; name ranges answer 501. |
+| GET | `/Genres/{genreName}` | `served` |  |
 
 ## Image
 
@@ -400,8 +400,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Method | Path | Status | Notes |
 | --- | --- | --- | --- |
-| GET | `/Persons` | `todo` |  |
-| GET | `/Persons/{name}` | `todo` |  |
+| GET | `/Persons` | `served` | With searchTerm, or one role at a time; every role unsearched answers 501. |
+| GET | `/Persons/{name}` | `served` |  |
 
 ## Playlist
 
@@ -463,7 +463,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Method | Path | Status | Notes |
 | --- | --- | --- | --- |
-| GET | `/Search/Hints` | `todo` |  |
+| GET | `/Search/Hints` | `served` | Items then people, first page only; Live TV and media filters answer 501. |
 
 ## Session
 
@@ -513,8 +513,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Method | Path | Status | Notes |
 | --- | --- | --- | --- |
-| GET | `/Studios` | `todo` |  |
-| GET | `/Studios/{name}` | `todo` |  |
+| GET | `/Studios` | `served` | A studio's id is a hash of its name; StudioIds on /Items answers 501. |
+| GET | `/Studios/{name}` | `served` |  |
 
 ## Subtitle
 
@@ -653,8 +653,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Method | Path | Status | Notes |
 | --- | --- | --- | --- |
-| GET | `/Years` | `todo` |  |
-| GET | `/Years/{year}` | `todo` |  |
+| GET | `/Years` | `served` |  |
+| GET | `/Years/{year}` | `served` |  |
 
 ## Served outside the document
 
