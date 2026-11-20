@@ -2690,6 +2690,7 @@ fn to_track(
             .unwrap_or_default(),
         stated: StatedTrack {
             language: row.declared_language,
+            name: row.name_tag,
             handler_name: row.handler_name,
             time_base: row.time_base,
             codec_tag: row.codec_tag,

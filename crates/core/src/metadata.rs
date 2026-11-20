@@ -288,9 +288,11 @@ pub struct MediaStream {
 /// the importer and the scan write in the reference's vocabulary. The scan alone records it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StatedTrack {
-    /// The language as the file states it, before any default: `fre`, `fr-FR`, `und`,
-    /// `fra,fra`. Absent when the file states none, Matroska's implicit English included.
+    /// The language as the file states it: `fre`, `fr-FR`, `und`, `fra,fra`. Absent when it
+    /// states none, as a Matroska track saying `und` does, which `language` reads as English.
     pub language: Option<String>,
+    /// An MP4 track's own name, from its `udta`: a title some muxers write there.
+    pub name: Option<String>,
     /// The handler an MP4 track names: `SoundHandler`, sometimes a title.
     pub handler_name: Option<String>,
     /// The unit of the track's timestamps, `num/den`.
@@ -676,6 +678,10 @@ pub enum TrackField {
     /// The channel layout, as the analysis names it: `5.1(side)`, `stereo`.
     AudioLayout,
     SubtitleCodec,
+    /// The language an audio track states, as written: `fre`, `fra`. A scanned file's only.
+    AudioLanguage,
+    /// The language a subtitle track states, as written.
+    SubtitleLanguage,
 }
 
 impl TrackField {
@@ -683,8 +689,8 @@ impl TrackField {
     pub const fn kind(self) -> StreamKind {
         match self {
             Self::VideoCodec => StreamKind::Video,
-            Self::AudioCodec | Self::AudioLayout => StreamKind::Audio,
-            Self::SubtitleCodec => StreamKind::Subtitle,
+            Self::AudioCodec | Self::AudioLayout | Self::AudioLanguage => StreamKind::Audio,
+            Self::SubtitleCodec | Self::SubtitleLanguage => StreamKind::Subtitle,
         }
     }
 
@@ -696,6 +702,7 @@ impl TrackField {
         match self {
             Self::AudioLayout => track.audio.as_ref()?.channel_layout.as_deref(),
             Self::VideoCodec | Self::AudioCodec | Self::SubtitleCodec => track.codec.as_deref(),
+            Self::AudioLanguage | Self::SubtitleLanguage => track.stated.language.as_deref(),
         }
     }
 }

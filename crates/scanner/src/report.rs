@@ -120,13 +120,17 @@ pub struct Track {
     pub profile: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
-    /// The language as the file states it, before any default: Matroska's `LanguageBCP47` or
-    /// `Language` element (`und` stating none) or a `LANGUAGE` tag; elsewhere ffprobe's tag,
-    /// `und` included. `language` is ffprobe's, which writes Matroska's implicit English.
+    /// The language as the file states it: Matroska's `LanguageBCP47` or `Language` element,
+    /// English when it writes neither and none when it says `und`, or a `LANGUAGE` tag;
+    /// elsewhere ffprobe's tag, `und` included. `language` is ffprobe-plex's, which writes
+    /// `eng` for a Matroska track that says `und`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub declared_language: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// An MP4 track's own name, from its `udta`: a title some muxers write there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// The handler an MP4 track names, often the muxer's (`SoundHandler`), sometimes a title.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub handler_name: Option<String>,
@@ -147,7 +151,8 @@ pub struct Track {
     /// An image subtitle's canvas.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subtitle: Option<SubtitleTrack>,
-    /// An attachment's MIME type and file name, such as a Matroska cover.
+    /// An attachment's MIME type and file name: a font, or a Matroska cover, which ffprobe
+    /// lists as a picture.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachment: Option<Attachment>,
 }
@@ -325,6 +330,13 @@ pub struct Chapter {
     /// clears.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// Where it starts to the microsecond, as ffprobe states it: `start_ms` keeps the
+    /// reference's six significant digits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_us: Option<u64>,
+    /// The title as the file writes it, numbered or not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub declared_title: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,9 +1,9 @@
-//! The languages a Matroska file declares for its tracks, which ffprobe cannot tell apart from
-//! a default.
+//! The languages a Matroska file declares for its tracks, which ffprobe-plex does not report as
+//! declared.
 //!
-//! A track without a `Language` element is English by the format's default, and ffmpeg-plex
-//! writes `eng` for it, exactly as for a track that says `eng`. The reference Jellyfin's prober
-//! leaves the first without a language, so the scanner reads the elements themselves.
+//! A track that declares `und` has no language, and ffmpeg-plex writes `eng` for it, as for a
+//! track without a `Language` element, which is English by the format's default. The reference
+//! Jellyfin's prober leaves the first without a language, so the scanner reads the elements.
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
@@ -33,13 +33,15 @@ pub(crate) struct DeclaredTrack {
 }
 
 impl DeclaredTrack {
-    /// The language the entry states: its BCP 47 tag over its ISO 639-2 code, `und` being none.
+    /// The language the entry states: its BCP 47 tag over its ISO 639-2 code, English when it
+    /// writes neither, as the format's default; `und` is none.
     pub fn language(&self) -> Option<&str> {
-        [&self.language_bcp47, &self.language]
-            .into_iter()
-            .flatten()
-            .map(String::as_str)
-            .find(|language| !language.is_empty() && *language != "und")
+        let declared = self
+            .language_bcp47
+            .as_deref()
+            .or(self.language.as_deref())
+            .unwrap_or("eng");
+        (!declared.is_empty() && declared != "und").then_some(declared)
     }
 }
 
@@ -220,7 +222,7 @@ mod tests {
         )
         .unwrap();
         let languages: Vec<Option<&str>> = tracks.iter().map(DeclaredTrack::language).collect();
-        assert_eq!(languages, [Some("eng"), None, Some("fr-CA"), None]);
+        assert_eq!(languages, [Some("eng"), Some("eng"), Some("fr-CA"), None]);
     }
 
     #[test]

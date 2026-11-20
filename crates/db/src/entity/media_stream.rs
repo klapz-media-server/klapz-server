@@ -75,8 +75,10 @@ pub struct Model {
     /// smallest, joined by commas as the source writes them.
     pub required_bandwidths: Option<String>,
     /// The columns below are what the scan read as ffprobe printed it, which the importer has
-    /// no source for. The language before any default: null when the file states none.
+    /// no source for. The language as the file states it: null when it states none.
     pub declared_language: Option<String>,
+    /// An MP4 track's own name, from its `udta`.
+    pub name_tag: Option<String>,
     pub handler_name: Option<String>,
     /// `num/den`.
     pub time_base: Option<String>,

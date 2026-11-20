@@ -5652,6 +5652,7 @@ fn chapters_app() -> axum::Router {
         end_ms,
         title: title.map(str::to_owned),
         image_version: (item == 51_797).then(|| MediaId::new(109_578)),
+        stated: open_plex_core::chapter::StatedChapter::default(),
     };
     let mut film = item(51_797, 27, ItemKind::Movie, None, "Groundhog Day");
     film.chapter_source = Some(ChapterSource::Agent);

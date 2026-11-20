@@ -3,7 +3,7 @@
 //! Its own module because the repository reads the table and both the importer and the scan
 //! write it.
 
-use open_plex_core::chapter::{Chapter, ChapterSource};
+use open_plex_core::chapter::{Chapter, ChapterSource, StatedChapter};
 use open_plex_core::{ChapterId, MediaId, RatingKey};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
@@ -52,6 +52,10 @@ fn to_domain(row: item_chapter::Model) -> Option<Chapter> {
         end_ms: row.end_ms,
         title: row.title,
         image_version: row.image_media_id.map(MediaId::new),
+        stated: StatedChapter {
+            title: row.declared_title,
+            start_us: row.declared_start_us,
+        },
     })
 }
 
@@ -72,6 +76,8 @@ pub fn row(
         end_ms: ActiveValue::Set(end_ms),
         title: ActiveValue::Set(title),
         image_media_id: ActiveValue::Set(image_media_id),
+        declared_title: ActiveValue::Set(None),
+        declared_start_us: ActiveValue::Set(None),
     }
 }
 

@@ -1,7 +1,9 @@
 //! What a file states about itself, as ffprobe printed it, beside the values the scan writes in
-//! the reference's vocabulary: a track's language before any default, its time base, codec
+//! the reference's vocabulary: a track's language as the file states it, its time base, codec
 //! tag, handler and declared rates, a picture subtitle's canvas; a file's format names,
 //! declared duration and bitrate. The Jellyfin surface publishes these as its reference does.
+//!
+//! A chapter's title as written and its start to the microsecond, beside the reference's.
 //!
 //! And what a file carries besides what plays — cover pictures, data tracks, attached files —
 //! in a table of their own, so that nothing reading tracks meets them.
@@ -19,6 +21,7 @@ impl MigrationTrait for Migration {
             ColumnDef::new(MediaStream::DeclaredLanguage)
                 .string()
                 .to_owned(),
+            ColumnDef::new(MediaStream::NameTag).string().to_owned(),
             ColumnDef::new(MediaStream::HandlerName).string().to_owned(),
             ColumnDef::new(MediaStream::TimeBase).string().to_owned(),
             ColumnDef::new(MediaStream::CodecTag).string().to_owned(),
@@ -64,6 +67,22 @@ impl MigrationTrait for Migration {
                 .await?;
         }
         for column in [
+            ColumnDef::new(ItemChapter::DeclaredTitle).text().to_owned(),
+            ColumnDef::new(ItemChapter::DeclaredStartUs)
+                .big_integer()
+                .to_owned(),
+        ] {
+            let mut column = column;
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ItemChapter::Table)
+                        .add_column(&mut column)
+                        .to_owned(),
+                )
+                .await?;
+        }
+        for column in [
             ColumnDef::new(MediaPart::FormatName).string().to_owned(),
             ColumnDef::new(MediaPart::DeclaredDurationUs)
                 .big_integer()
@@ -89,6 +108,16 @@ impl MigrationTrait for Migration {
         manager
             .drop_table(Table::drop().table(PartSideStream::Table).to_owned())
             .await?;
+        for column in [ItemChapter::DeclaredTitle, ItemChapter::DeclaredStartUs] {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ItemChapter::Table)
+                        .drop_column(column)
+                        .to_owned(),
+                )
+                .await?;
+        }
         for column in [
             MediaPart::FormatName,
             MediaPart::DeclaredDurationUs,
@@ -105,6 +134,7 @@ impl MigrationTrait for Migration {
         }
         for column in [
             MediaStream::DeclaredLanguage,
+            MediaStream::NameTag,
             MediaStream::HandlerName,
             MediaStream::TimeBase,
             MediaStream::CodecTag,
@@ -221,6 +251,7 @@ async fn create_side_streams(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
 enum MediaStream {
     Table,
     DeclaredLanguage,
+    NameTag,
     HandlerName,
     TimeBase,
     CodecTag,
@@ -245,6 +276,13 @@ enum MediaPart {
     FormatName,
     DeclaredDurationUs,
     DeclaredBitrate,
+}
+
+#[derive(DeriveIden)]
+enum ItemChapter {
+    Table,
+    DeclaredTitle,
+    DeclaredStartUs,
 }
 
 #[derive(DeriveIden)]

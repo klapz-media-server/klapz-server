@@ -336,8 +336,7 @@ fn tagged_languages(probed: &Probed) -> Vec<u32> {
 }
 
 /// Matroska's languages as the file declares them, over what ffprobe-plex writes: `eng` for a
-/// track that declares none, or declares `und`. A `LANGUAGE` tag is the file's statement too,
-/// and stands. Track entries are numbered as ffmpeg numbers their streams, attachments coming
+/// track that declares `und`. A `LANGUAGE` tag is the file's statement too, and stands. Track entries are numbered as ffmpeg numbers their streams, attachments coming
 /// after, images among them as cover pictures; when the counts disagree, ffprobe's languages
 /// are kept.
 fn is_track_entry(track: &Track) -> bool {
@@ -420,7 +419,11 @@ fn track(stream: &Stream) -> Option<Track> {
             })
         })
         .flatten();
-    let attachment = (kind == TrackKind::Attachment).then(|| Attachment {
+    // A Matroska attachment that is an image comes as a cover picture, still named and typed.
+    let attached = kind == TrackKind::Attachment
+        || (disposition.attached_picture
+            && (tag("filename").is_some() || tag("mimetype").is_some()));
+    let attachment = attached.then(|| Attachment {
         mime_type: tag("mimetype"),
         filename: tag("filename"),
     });
@@ -442,6 +445,7 @@ fn track(stream: &Stream) -> Option<Track> {
         language: tag("language").filter(|language| language != "und"),
         declared_language: tag("language"),
         title: tag("title"),
+        name: tag("name"),
         handler_name: tag("handler_name"),
         bitrate: stream.bit_rate.as_deref().and_then(integer),
         tagged_bitrate,
@@ -594,6 +598,12 @@ fn chapters(probed: Vec<ProbedChapter>) -> Vec<Chapter> {
                 .get("title")
                 .cloned()
                 .filter(|title| !title.trim().is_empty()),
+            start_us: chapter
+                .start_time
+                .as_deref()
+                .and_then(microseconds)
+                .and_then(|us| u64::try_from(us).ok()),
+            declared_title: chapter.tags.get("title").cloned(),
         })
         .collect();
     // The reference clears the titles when they only number the chapters ("Chapters had
@@ -788,6 +798,7 @@ mod tests {
             language: language.map(ToOwned::to_owned),
             declared_language: language.map(ToOwned::to_owned),
             title: None,
+            name: None,
             handler_name: None,
             bitrate: None,
             tagged_bitrate: None,
@@ -808,7 +819,7 @@ mod tests {
         };
         let mut cover = probed_track(3, TrackKind::Video, Some("eng"));
         cover.disposition.attached_picture = true;
-        // ffprobe-plex writes `eng` for the silent entry, and for the one declaring `und`.
+        // ffprobe-plex writes `eng` for the entry declaring `und`, as for the silent one.
         let mut tracks = vec![
             probed_track(0, TrackKind::Video, Some("eng")),
             probed_track(1, TrackKind::Audio, Some("eng")),
@@ -816,7 +827,7 @@ mod tests {
             cover,
             probed_track(4, TrackKind::Attachment, None),
         ];
-        let entries = [declared(None), declared(Some("eng")), declared(Some("und"))];
+        let entries = [declared(Some("und")), declared(None), declared(Some("und"))];
         apply_declared_languages(&mut tracks, &entries, &[2]);
         let stated: Vec<Option<&str>> = tracks
             .iter()

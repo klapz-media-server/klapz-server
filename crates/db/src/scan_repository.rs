@@ -675,14 +675,18 @@ fn chapter_rows(item: i64, file: Option<&NewPart>) -> Vec<item_chapter::ActiveMo
     chapters
         .iter()
         .map(|chapter| {
-            chapter_store::row(
+            let mut row = chapter_store::row(
                 item,
                 i32::try_from(chapter.index).unwrap_or(i32::MAX),
                 i64::try_from(chapter.start_ms).unwrap_or(i64::MAX),
                 i64::try_from(chapter.end_ms).unwrap_or(i64::MAX),
                 chapter.title.clone(),
                 None,
-            )
+            );
+            row.declared_title = sea_orm::ActiveValue::Set(chapter.declared_title.clone());
+            row.declared_start_us =
+                sea_orm::ActiveValue::Set(chapter.start_us.and_then(|us| i64::try_from(us).ok()));
+            row
         })
         .collect()
 }

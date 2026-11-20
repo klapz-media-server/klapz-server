@@ -20,6 +20,9 @@ pub(crate) const fn track_column(field: TrackField) -> media_stream::Column {
         TrackField::VideoCodec | TrackField::AudioCodec | TrackField::SubtitleCodec => {
             media_stream::Column::Codec
         }
+        TrackField::AudioLanguage | TrackField::SubtitleLanguage => {
+            media_stream::Column::DeclaredLanguage
+        }
     }
 }
 

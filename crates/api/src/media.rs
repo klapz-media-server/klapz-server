@@ -293,8 +293,9 @@ impl File {
     }
 
     /// Whether a player reads this file as it is, so that `startStream` can send it untouched
-    /// with `directPlay`: one of the formats the player declares holds the file's container,
-    /// its video codec and the codec of the audio track it would play — `audioTrack`, or the
+    /// with `directPlay`: one of the formats the player declares holds the file's container (a
+    /// Matroska file of nothing but `WebM`'s codecs is held as `webm` too), its video codec and
+    /// the codec of the audio track it would play — `audioTrack`, or the
     /// caller's — and the version weighs no more than `maxBitrate`. An empty list in a format
     /// admits anything; names are compared without regard to case.
     async fn readable_as_is(
@@ -335,10 +336,19 @@ impl File {
             .and_then(|track| track.codec.as_deref())
             .or(version.video_codec.as_deref());
         let formats: Vec<PlayerFormat> = formats.into_iter().map(Into::into).collect();
+        let others = crate::stated::side_streams_of(context, self.0.id)
+            .await?
+            .iter()
+            .filter(|side| side.0.kind != open_plex_core::SideStreamKind::Attachment)
+            .count();
+        let containers = version
+            .container
+            .as_deref()
+            .map(|container| open_plex_core::stream::container_names(container, &tracks, others));
         Ok(reads_as_is(
             &formats,
             FileFormat {
-                container: version.container.as_deref(),
+                container: containers.as_deref(),
                 video_codec: video,
                 audio_codec: audio,
                 bitrate: version.bitrate.map(i64::from),

@@ -165,6 +165,31 @@ impl PlayerFormat {
     }
 }
 
+/// The names a file's container answers to: its own, and `webm` for a Matroska file holding
+/// nothing but `WebM`'s codecs — VP8, VP9 or AV1 pictures, Vorbis or Opus sound, no subtitle,
+/// cover or data track — which a player of `WebM` reads as one of its own. `other_streams`
+/// counts what the file carries besides its tracks, attached files apart.
+pub fn container_names(
+    container: &str,
+    tracks: &[crate::metadata::MediaStream],
+    other_streams: usize,
+) -> String {
+    use crate::metadata::StreamKind;
+    let webm = container.eq_ignore_ascii_case("mkv")
+        && other_streams == 0
+        && !tracks.is_empty()
+        && tracks.iter().all(|track| match track.kind {
+            StreamKind::Video => matches!(track.codec.as_deref(), Some("vp8" | "vp9" | "av1")),
+            StreamKind::Audio => matches!(track.codec.as_deref(), Some("vorbis" | "opus")),
+            StreamKind::Subtitle => false,
+        });
+    if webm {
+        format!("{container},webm")
+    } else {
+        container.to_owned()
+    }
+}
+
 /// Whether a player reads a file as it is, so that it can be sent untouched: one of the formats
 /// it declares holds the file, and the file weighs no more than the most the player takes. A
 /// file of unknown weight is not held back for it.
@@ -258,6 +283,64 @@ pub trait StreamEngine: Send + Sync + std::fmt::Debug {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn track(kind: crate::metadata::StreamKind, codec: &str) -> crate::metadata::MediaStream {
+        crate::metadata::MediaStream {
+            id: crate::ids::StreamId::new(1),
+            file_id: crate::ids::PartId::new(1),
+            kind,
+            position: 0,
+            codec: Some(codec.to_owned()),
+            language: None,
+            channels: None,
+            bitrate: None,
+            is_default: false,
+            is_forced: false,
+            external_path: None,
+            title: None,
+            stream_identifier: None,
+            profile: None,
+            bit_depth: None,
+            traits: crate::metadata::TrackTraits::default(),
+            video: None,
+            audio: None,
+            subtitle: None,
+            required_bandwidths: Vec::new(),
+            stated: crate::metadata::StatedTrack::default(),
+        }
+    }
+
+    #[test]
+    fn a_matroska_file_of_webm_codecs_answers_to_webm_too() {
+        use crate::metadata::StreamKind;
+        let noob = [
+            track(StreamKind::Video, "vp9"),
+            track(StreamKind::Audio, "vorbis"),
+        ];
+        assert_eq!(container_names("mkv", &noob, 0), "mkv,webm");
+        // A cover or a subtitle is no part of WebM.
+        assert_eq!(container_names("mkv", &noob, 1), "mkv");
+        let subtitled = [
+            track(StreamKind::Video, "av1"),
+            track(StreamKind::Subtitle, "srt"),
+        ];
+        assert_eq!(container_names("mkv", &subtitled, 0), "mkv");
+        let h264 = [
+            track(StreamKind::Video, "h264"),
+            track(StreamKind::Audio, "opus"),
+        ];
+        assert_eq!(container_names("mkv", &h264, 0), "mkv");
+        assert_eq!(container_names("mp4", &noob, 0), "mp4");
+        let webm_player = PlayerFormat {
+            containers: vec!["webm".to_owned()],
+            ..PlayerFormat::default()
+        };
+        let names = container_names("mkv", &noob, 0);
+        assert!(webm_player.reads(FileFormat {
+            container: Some(&names),
+            ..FileFormat::default()
+        }));
+    }
 
     fn format(containers: &[&str], video: &[&str], audio: &[&str]) -> PlayerFormat {
         let owned = |list: &[&str]| list.iter().map(|name| (*name).to_owned()).collect();

@@ -24,11 +24,17 @@ pub struct StatedTrackObject(pub StatedTrack);
 
 #[Object(name = "StatedTrack")]
 impl StatedTrackObject {
-    /// The language as the file states it, before any default and as written: `fre`,
-    /// `fr-FR`, `und`, `fra,fra`. Null when the file states none — Matroska's implicit
-    /// English included, which `MediaStream.language` reads as English.
+    /// The language as the file states it, as written: `fre`, `fr-FR`, `und`, `fra,fra`.
+    /// Null when it states none — a Matroska track saying `und` among them, which
+    /// `MediaStream.language` reads as English.
     async fn language(&self) -> Option<&str> {
         self.0.language.as_deref()
+    }
+
+    /// An MP4 track's own name, from its `udta`: a title some muxers write there, which
+    /// `MediaStream.title` does not read.
+    async fn name(&self) -> Option<&str> {
+        self.0.name.as_deref()
     }
 
     /// The handler an MP4 track names: `SoundHandler`, sometimes a title.

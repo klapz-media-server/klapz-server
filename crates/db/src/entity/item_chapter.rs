@@ -14,6 +14,10 @@ pub struct Model {
     pub title: Option<String>,
     /// The version whose frame the reference drew as the chapter's image.
     pub image_media_id: Option<i64>,
+    /// What a scanned file states, which `title` and `start_ms` keep the reference's way: the
+    /// title as written, numbered or not, and the start to the microsecond.
+    pub declared_title: Option<String>,
+    pub declared_start_us: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -50,4 +50,14 @@ pub struct Chapter {
     pub title: Option<String>,
     /// The version whose frame the reference drew as the chapter's image, when it drew one.
     pub image_version: Option<MediaId>,
+    pub stated: StatedChapter,
+}
+
+/// What a scanned file states of a chapter, beside the reference's reading above.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StatedChapter {
+    /// As written, numbered or not: `Chapter 01`.
+    pub title: Option<String>,
+    /// Where it starts, in microseconds.
+    pub start_us: Option<i64>,
 }

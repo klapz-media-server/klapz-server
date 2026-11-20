@@ -84,6 +84,12 @@ impl ChapterObject {
         self.0.title.clone()
     }
 
+    /// What a scanned file states of the chapter: its title as written, numbered or not, and
+    /// its start to the microsecond, where `title` and `startMs` are the reference's reading.
+    async fn stated(&self) -> StatedChapterObject {
+        StatedChapterObject(self.0.stated.clone())
+    }
+
     /// The version a frame of which was drawn as the chapter's image. Null when none was drawn.
     async fn image_version(&self, context: &Context<'_>) -> Result<Option<Version>> {
         let Some(id) = self.0.image_version else {
@@ -97,6 +103,23 @@ impl ChapterObject {
             .into_iter()
             .find(|version| version.id == id)
             .map(Version))
+    }
+}
+
+/// What a scanned file states of a chapter.
+#[derive(Debug, Clone)]
+pub struct StatedChapterObject(pub open_plex_core::chapter::StatedChapter);
+
+#[Object(name = "StatedChapter")]
+impl StatedChapterObject {
+    /// The title as the file writes it, numbered or not: `Chapter 01`.
+    async fn title(&self) -> Option<&str> {
+        self.0.title.as_deref()
+    }
+
+    /// Where it starts, in microseconds, as a string: it exceeds 32 bits.
+    async fn start_us(&self) -> Option<String> {
+        self.0.start_us.map(|start| start.to_string())
     }
 }
 

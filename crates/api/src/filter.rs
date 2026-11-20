@@ -340,6 +340,11 @@ pub enum TrackField {
     AudioLayout,
     /// The format of a subtitle track, embedded or beside the file: `srt`, `pgs`.
     SubtitleCodec,
+    /// The language an audio track states, as its file writes it: `fre` and `fra` apart. Only
+    /// a scanned file states one.
+    AudioLanguage,
+    /// The language a subtitle track states, as its file writes it.
+    SubtitleLanguage,
 }
 
 impl From<TrackField> for DomainTrackField {
@@ -349,6 +354,8 @@ impl From<TrackField> for DomainTrackField {
             TrackField::AudioCodec => Self::AudioCodec,
             TrackField::AudioLayout => Self::AudioLayout,
             TrackField::SubtitleCodec => Self::SubtitleCodec,
+            TrackField::AudioLanguage => Self::AudioLanguage,
+            TrackField::SubtitleLanguage => Self::SubtitleLanguage,
         }
     }
 }

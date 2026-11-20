@@ -222,3 +222,16 @@ fn a_picture_subtitle_has_a_canvas_and_a_text_one_none() {
     assert_eq!((canvas.width, canvas.height), (1920, 1080));
     assert_eq!(track(&fringe, 4).subtitle, None);
 }
+
+#[test]
+fn a_matroska_cover_keeps_its_name_and_type() {
+    let devil = analysis("devil-in-ohio-s01e07-par-le-sang-1080p-dv-hdr-x265-amen");
+    let cover = track(&devil, 6);
+    assert!(cover.disposition.attached_picture);
+    let attachment = cover.attachment.as_ref().unwrap();
+    assert_eq!(attachment.filename.as_deref(), Some("cover.png"));
+    assert_eq!(attachment.mime_type.as_deref(), Some("image/png"));
+    // An MP4's cover is a track, which names nothing.
+    let mp4 = analysis("90210-beverly-hills-ng-s01e21-vf-sd-tvhdrip-mp4-avc-aac");
+    assert_eq!(track(&mp4, 2).attachment, None);
+}
