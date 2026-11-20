@@ -48,6 +48,14 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Whole-program optimization: the binary is mostly monomorphized code (async-graphql resolvers,
+# async handlers), which per-crate units cannot deduplicate. Slower to build, smaller and no
+# slower to run.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_debug_implementations = "warn"
