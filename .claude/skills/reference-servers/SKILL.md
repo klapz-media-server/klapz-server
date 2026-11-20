@@ -71,7 +71,7 @@ to the reference, JSON and XML. Whole-library comparisons belong on a copy of ou
 
 | Call | Why |
 | --- | --- |
-| `PUT /library/metadata/{id}/match`, `/unmatch`, fix-match, `/refresh` on an item that could share a guid with a real one | They move `metadata_item_settings` (every account's watch state) between guids **server-wide**. In a `none` library the move round-trips, so no API undoes it: 46 accounts' state on the real *Soul* ended up on test item 577986 (see `docs/scanner/matching.md`, side effects). |
+| `PUT /library/metadata/{id}/match`, `/unmatch`, fix-match, `/refresh` on an item that could share a guid with a real one | They move `metadata_item_settings` (every account's watch state) between guids **server-wide**. In a `none` library the move round-trips, so no API undoes it: 46 accounts' state on the real *Soul* ended up on test item 577986, repaired only by SQL with Plex stopped (see `docs/scanner/matching.md`, side effects). |
 | `/library/sections/{id}/refresh?force=1` outside 27/28 | `path=` is ignored and the whole section's metadata is refreshed: episode 578173 lost its title and air date. Expect side effects even on 27/28. |
 
 Some *reads* write too: `GET /library/metadata/{id}/posters` cached about 150 provider-image

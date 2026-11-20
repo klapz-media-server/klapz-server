@@ -489,7 +489,10 @@ images' sources, which need no token.
   because any match in a `none` section round-trips. Restoring means, with PMS stopped:
   `UPDATE metadata_item_settings SET guid='plex://movie/5d77702d594b2b001e746263' WHERE
   guid='tv.plex.agents.none://577986'`. The test item's own row (account 1, unwatched) is gone
-  and need not be recreated.
+  and need not be recreated. **Repaired on 2026-11-17** this way (the database backed up
+  beside it as `…library.db.before-soul-repair-20261117`): checked on 2026-11-20, the 46 rows
+  carry the real guid again, none the test item's, and the owner's *Soul* reads `viewCount` 1
+  through the API.
 - **Test item 577986**: `user_thumb_url` went from `x` (left by an earlier experiment) to its
   video frame, `user_art_url` from `art3.jpg` to `art1.jpg`, `hash` from
   `sha1(local://577986)` to `sha1(tv.plex.agents.none://577986)`, and blur hashes, colours and
