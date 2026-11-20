@@ -10,7 +10,7 @@
 
 use axum::body::Bytes;
 use axum::extract::{Path, RawQuery, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::Router;
@@ -34,6 +34,8 @@ pub fn router() -> Router<JellyfinState> {
             get(playback_info).post(playback_info),
         )
         .route("/videos/{id}/{name}", get(video))
+        .route("/livestreams/open", post(open_live_stream))
+        .route("/livestreams/close", post(close_live_stream))
         .route("/sessions/playing", post(playing))
         .route("/sessions/playing/progress", post(progress))
         .route("/sessions/playing/ping", post(ping))
@@ -596,6 +598,45 @@ async fn report(
         .await?;
     }
     Ok(())
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "PascalCase", default)]
+struct OpenLiveStreamRequest {
+    open_token: Option<String>,
+}
+
+/// No media source here asks to be opened (`RequiresOpening` is false), so no client holds a
+/// token to open one with. The reference answers as here: `400` without a token, and `500` for
+/// one no provider of its knows.
+async fn open_live_stream(
+    State(state): State<JellyfinState>,
+    RawQuery(query): RawQuery,
+    body: Bytes,
+) -> Result<Response, JellyfinError> {
+    gql::viewer(&state.schema).await?;
+    let query = Query::parse(query.as_deref());
+    let token = query.get("openToken").is_some()
+        || serde_json::from_slice::<OpenLiveStreamRequest>(&body)
+            .is_ok_and(|request| request.open_token.is_some_and(|token| !token.is_empty()));
+    Err(JellyfinError::Exception(if token {
+        StatusCode::INTERNAL_SERVER_ERROR
+    } else {
+        StatusCode::BAD_REQUEST
+    }))
+}
+
+/// Nothing is ever open, so there is nothing to close: the reference answers `204` for a
+/// stream it does not know too.
+async fn close_live_stream(
+    State(state): State<JellyfinState>,
+    RawQuery(query): RawQuery,
+) -> Result<Response, JellyfinError> {
+    gql::viewer(&state.schema).await?;
+    Query::parse(query.as_deref())
+        .get("liveStreamId")
+        .ok_or(JellyfinError::BadRequest("liveStreamId is required"))?;
+    Ok(no_content())
 }
 
 async fn playing(

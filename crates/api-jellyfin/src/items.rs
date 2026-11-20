@@ -146,7 +146,7 @@ fn search_query() -> String {
     )
 }
 
-async fn library_page(
+pub(crate) async fn library_page(
     state: &JellyfinState,
     library: &str,
     listing: &Listing,

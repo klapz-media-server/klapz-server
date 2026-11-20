@@ -1,7 +1,8 @@
 //! The binding's error type, answered as the reference answers each case.
 //!
 //! A refused credential is a bare `401`; a missing thing and a malformed request are
-//! ASP.NET's problem details (RFC 9457), JSON; a server fault is a bare `500`.
+//! ASP.NET's problem details (RFC 9457), JSON; a server fault is a bare `500`; an exception
+//! the reference's own code throws is its middleware's line of plain text.
 
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -23,6 +24,10 @@ pub enum JellyfinError {
     /// answered without the part we cannot honor.
     #[error("not implemented: {0}")]
     NotImplemented(&'static str),
+    /// What the reference answers when its own code throws rather than refusing the request
+    /// up front: the status its middleware maps the exception to, over one line of text.
+    #[error("refused as the reference's exception: {0}")]
+    Exception(StatusCode),
     #[error("internal error")]
     Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
@@ -77,6 +82,12 @@ impl IntoResponse for JellyfinError {
                 tracing::warn!(what, "refused a Jellyfin request we cannot honor");
                 StatusCode::NOT_IMPLEMENTED.into_response()
             }
+            Self::Exception(status) => (
+                status,
+                [(header::CONTENT_TYPE, HeaderValue::from_static("text/plain"))],
+                "Error processing request.",
+            )
+                .into_response(),
             Self::Internal(error) => {
                 tracing::error!(%error, "a Jellyfin request failed");
                 StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -123,6 +134,14 @@ mod tests {
                 "status": 404,
             })
         );
+    }
+
+    #[tokio::test]
+    async fn an_exception_is_one_line_of_text() {
+        let response = JellyfinError::Exception(StatusCode::BAD_REQUEST).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "text/plain");
+        assert_eq!(body(response).await, "Error processing request.");
     }
 
     #[tokio::test]

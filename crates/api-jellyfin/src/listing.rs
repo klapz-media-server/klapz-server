@@ -51,7 +51,6 @@ const REFUSED: &[&str] = &[
     "isPlaceHolder",
     "minCommunityRating",
     "minCriticRating",
-    "minPremiereDate",
     "maxPremiereDate",
     "minDateLastSaved",
     "nameStartsWith",
@@ -172,6 +171,12 @@ impl Listing {
                 json!([{ "kind": "GENRE", "ids": genres }]),
             );
         }
+        if let Some(date) = query.get("minPremiereDate") {
+            filter.insert(
+                "releasedFrom".to_owned(),
+                json!(open_plex_api::date_time::format(premiere_date(date)?)),
+            );
+        }
         if let Some(term) = query.get("searchTerm") {
             filter.insert("titleWordPrefix".to_owned(), json!(term));
         }
@@ -191,6 +196,17 @@ impl Listing {
     pub fn filter_json(&self) -> Value {
         Value::Object(self.filter.clone())
     }
+}
+
+/// A date as ASP.NET binds one: RFC 3339, or without an offset, which the reference compares
+/// with its UTC dates as if it were UTC, or a day alone, its midnight.
+fn premiere_date(text: &str) -> Result<i64, JellyfinError> {
+    let unzoned = || format!("{text}Z");
+    let day = || format!("{text}T00:00:00Z");
+    open_plex_api::date_time::parse(text)
+        .or_else(|| open_plex_api::date_time::parse(&unzoned()))
+        .or_else(|| open_plex_api::date_time::parse(&day()))
+        .ok_or(JellyfinError::BadRequest("a date is not a date"))
 }
 
 /// The kinds a request leaves possible: those it includes, or all, less those it excludes.
@@ -345,6 +361,27 @@ mod tests {
         );
         assert!(listing("Filters=IsFavorite").unwrap().favorites_only);
         assert!(listing("isFavorite=true").unwrap().favorites_only);
+    }
+
+    #[test]
+    fn a_minimum_premiere_date_is_a_release_lower_bound() {
+        for written in [
+            "2024-05-01T00:00:00.0000000Z",
+            "2024-05-01T02:00:00%2B02:00",
+            "2024-05-01T00:00:00",
+            "2024-05-01",
+        ] {
+            let listing = listing(&format!("minPremiereDate={written}")).unwrap();
+            assert_eq!(
+                listing.filter_json(),
+                json!({ "releasedFrom": "2024-05-01T00:00:00Z" }),
+                "{written}"
+            );
+        }
+        assert!(matches!(
+            listing("minPremiereDate=yesterday"),
+            Err(JellyfinError::BadRequest(_))
+        ));
     }
 
     #[test]

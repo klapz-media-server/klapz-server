@@ -156,6 +156,17 @@ from Plex's analysis as before. The rules are the reference's own (`ProbeResultN
 - `IsHD` for a picture 720 lines tall at least; `DisplayPreferencesId` the reference's per type
   (the MD5 of its own type's name).
 
+## Upcoming episodes
+
+`/Shows/Upcoming` lists the episodes released from the start of yesterday (UTC) on, the earliest
+first and then by title, as the reference's rule reads; the reference's own library has none to
+measure against (`{"Items":[],"TotalRecordCount":0,"StartIndex":0}`, which we answer alike). It
+looks across the caller's series libraries, or below the library `ParentId` names, through
+`Library.items` with `releasedFrom`; below a series or a season it answers `501`. Its other
+parameters are ignored there too. `TotalRecordCount` counts the episodes returned, not those
+there are, as the reference counts it. `MinPremiereDate` on `/Items` is that same lower bound,
+RFC 3339, without an offset (read as UTC) or a day alone.
+
 ## Filters
 
 `/Items/Filters` and `/Items/Filters2` list what a library's items hold, or every library of the
@@ -284,6 +295,11 @@ reasons excepted.
 - **Reports**: `/Sessions/Playing`, `/Progress` and `/Stopped` go to `reportViewing` (measured
   against the item's own runtime, since Jellyfin clients send none) and `reportPlayback`; `/Ping`
   to `touchPlaybackSession`. A position past a minute is kept; crossing 90% counts a viewing.
+- **Live streams are never opened.** A media source says `RequiresOpening: false`, so no client
+  holds an `OpenToken`. `/LiveStreams/Open` answers as the reference does for a request no
+  provider of its takes: `400` without a token (query or body), `500` with one, both its
+  middleware's `Error processing request.` as `text/plain`. `/LiveStreams/Close` answers `204`
+  for any id, as the reference does for one it does not know, and `400` without one.
 
 ## Measured with Jellyfin Web
 

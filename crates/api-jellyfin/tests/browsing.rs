@@ -639,3 +639,100 @@ async fn filters_that_cannot_be_narrowed_as_asked_are_refused() {
         .await;
     assert_eq!(music.json()["Genres"], serde_json::json!([]));
 }
+
+#[tokio::test]
+async fn upcoming_episodes_are_those_released_from_yesterday_on() {
+    let tomorrow = open_plex_core::now_epoch() + 86_400;
+    let harness = Harness::with_episode_released(tomorrow).await;
+    let token = harness.token().await;
+    let upcoming = harness
+        .get("/jellyfin/Shows/Upcoming?Limit=10&Fields=Overview", &token)
+        .await
+        .json();
+    assert_eq!(upcoming["TotalRecordCount"], 1);
+    assert_eq!(upcoming["StartIndex"], 0);
+    assert_eq!(upcoming["Items"][0]["Id"], jellyfin_id("Item", EPISODE));
+    assert_eq!(upcoming["Items"][0]["Type"], "Episode");
+
+    let below_series = harness
+        .get(
+            &format!(
+                "/jellyfin/Shows/Upcoming?ParentId={}",
+                jellyfin_id("Library", SERIES)
+            ),
+            &token,
+        )
+        .await
+        .json();
+    assert_eq!(below_series["TotalRecordCount"], 1);
+    let below_films = harness
+        .get(
+            &format!(
+                "/jellyfin/Shows/Upcoming?ParentId={}",
+                jellyfin_id("Library", FILMS)
+            ),
+            &token,
+        )
+        .await
+        .json();
+    assert_eq!(below_films["Items"], serde_json::json!([]));
+    // Past the window, the reference counts what it returns.
+    let past = harness
+        .get("/jellyfin/Shows/Upcoming?StartIndex=1", &token)
+        .await
+        .json();
+    assert_eq!(
+        past,
+        serde_json::json!({ "Items": [], "TotalRecordCount": 0, "StartIndex": 1 })
+    );
+}
+
+#[tokio::test]
+async fn an_episode_aired_before_yesterday_is_not_upcoming() {
+    let harness = Harness::with_episode_released(open_plex_core::now_epoch() - 3 * 86_400).await;
+    let token = harness.token().await;
+    let upcoming = harness.get("/jellyfin/Shows/Upcoming", &token).await.json();
+    // As the reference answered about its own library, where nothing is upcoming.
+    assert_eq!(
+        upcoming,
+        serde_json::json!({ "Items": [], "TotalRecordCount": 0, "StartIndex": 0 })
+    );
+    let below_an_item = harness
+        .get(
+            &format!(
+                "/jellyfin/Shows/Upcoming?ParentId={}",
+                jellyfin_id("Item", SHOW)
+            ),
+            &token,
+        )
+        .await;
+    assert_eq!(below_an_item.status, StatusCode::NOT_IMPLEMENTED);
+}
+
+#[tokio::test]
+async fn a_listing_keeps_what_premiered_from_a_date() {
+    let harness = Harness::with_episode_released(1_714_521_600).await;
+    let token = harness.token().await;
+    let ask = |date: &'static str| {
+        let harness = &harness;
+        let token = &token;
+        async move {
+            harness
+                .get(
+                    &format!(
+                        "/jellyfin/Items?Recursive=true&IncludeItemTypes=Episode&MinPremiereDate={date}"
+                    ),
+                    token,
+                )
+                .await
+                .json()["TotalRecordCount"]
+                .clone()
+        }
+    };
+    assert_eq!(ask("2024-05-01T00:00:00.0000000Z").await, 1);
+    assert_eq!(ask("2024-05-02").await, 0);
+    let malformed = harness
+        .get("/jellyfin/Items?MinPremiereDate=soon", &token)
+        .await;
+    assert_eq!(malformed.status, StatusCode::BAD_REQUEST);
+}

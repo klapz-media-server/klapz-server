@@ -322,7 +322,7 @@ fn doodlebug_tracks() -> Vec<MediaStream> {
     vec![video, audio]
 }
 
-fn metadata() -> InMemoryMetadata {
+fn metadata(items: Vec<MetadataItem>) -> InMemoryMetadata {
     // The episode's file, as the scan stores an MP4 of the reference's library.
     let mut episode_video = track(3101, EPISODE_FILE, StreamKind::Video, 0, "h264");
     episode_video.bitrate = Some(1_376_000);
@@ -387,7 +387,7 @@ fn metadata() -> InMemoryMetadata {
     };
     let mut tracks = doodlebug_tracks();
     tracks.extend([episode_video, episode_audio]);
-    InMemoryMetadata::new(items())
+    InMemoryMetadata::new(items)
         .with_media(
             vec![
                 version(1001, DOODLEBUG, 720, 480),
@@ -499,6 +499,21 @@ impl Harness {
     /// `bob`, given the same, connected through Plex only; `carol`, whose Jellyfin connection
     /// was switched off; `owner`, an owner connected through Jellyfin. All with one password.
     pub async fn new() -> Self {
+        Self::with_items(items()).await
+    }
+
+    /// The same, with the episode released at this time.
+    pub async fn with_episode_released(at: i64) -> Self {
+        let mut items = items();
+        for item in &mut items {
+            if item.id == RatingKey::new(EPISODE) {
+                item.released_on = Some(at);
+            }
+        }
+        Self::with_items(items).await
+    }
+
+    async fn with_items(items: Vec<MetadataItem>) -> Self {
         let access = Arc::new(InMemoryAccess::default());
         let hash = open_plex_core::account::hash_password(PASSWORD).unwrap();
         let mut ids = HashMap::new();
@@ -556,14 +571,16 @@ impl Harness {
             .unwrap();
         let streams = Arc::new(StubStreams::default());
         let library = library();
-        let collections = Arc::new(open_plex_core::testing::InMemoryCollections::new(items()));
+        let collections = Arc::new(open_plex_core::testing::InMemoryCollections::new(
+            items.clone(),
+        ));
         let schema = build_schema(ApiContext {
             capabilities: ServerCapabilities::new(ServerIdentity::new(MACHINE, "0.1.0"), 0),
             library: Arc::new(library),
-            metadata: Arc::new(metadata().with_collections(&collections)),
+            metadata: Arc::new(metadata(items.clone()).with_collections(&collections)),
             playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
             play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-            playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::new(items())),
+            playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::new(items)),
             collections,
             access: Arc::clone(&access) as Arc<dyn AccessRepository>,
             directory: Arc::new(open_plex_core::testing::StubDirectory::default()),

@@ -393,3 +393,80 @@ async fn an_episodes_intro_and_credits_are_its_segments() {
         .json();
     assert_eq!(film, fixture("media_segments"));
 }
+
+#[tokio::test]
+async fn live_streams_answer_as_where_none_is_ever_opened() {
+    let harness = Harness::new().await;
+    let token = harness.token().await;
+    let item = jellyfin_id("Item", DOODLEBUG);
+    // As the reference answered: no token is a 400, an unknown one its 500, both one line.
+    let without = harness
+        .post(
+            &format!("/jellyfin/LiveStreams/Open?itemId={item}"),
+            &token,
+            json!({ "ItemId": item }),
+        )
+        .await;
+    assert_eq!(without.status, StatusCode::BAD_REQUEST);
+    assert_eq!(without.content_type(), Some("text/plain"));
+    assert_eq!(without.body, b"Error processing request.");
+    let unknown = harness
+        .post(
+            &format!("/jellyfin/LiveStreams/Open?openToken=abc&itemId={item}"),
+            &token,
+            json!({}),
+        )
+        .await;
+    assert_eq!(unknown.status, StatusCode::INTERNAL_SERVER_ERROR);
+    let in_body = harness
+        .post(
+            "/jellyfin/LiveStreams/Open",
+            &token,
+            json!({ "OpenToken": "abc" }),
+        )
+        .await;
+    assert_eq!(in_body.status, StatusCode::INTERNAL_SERVER_ERROR);
+
+    let closed = harness
+        .bare(
+            Method::POST,
+            "/jellyfin/LiveStreams/Close?liveStreamId=abc",
+            &token,
+        )
+        .await;
+    assert_eq!(closed.status, StatusCode::NO_CONTENT);
+    assert!(closed.body.is_empty());
+    let unnamed = harness
+        .bare(Method::POST, "/jellyfin/LiveStreams/Close", &token)
+        .await;
+    assert_eq!(unnamed.status, StatusCode::BAD_REQUEST);
+    let nobody = harness
+        .bare(
+            Method::POST,
+            "/jellyfin/LiveStreams/Close?liveStreamId=abc",
+            "",
+        )
+        .await;
+    assert_eq!(nobody.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn media_sources_never_ask_to_be_opened() {
+    let harness = Harness::new().await;
+    let token = harness.token().await;
+    let info = harness
+        .post(
+            &format!(
+                "/jellyfin/Items/{}/PlaybackInfo",
+                jellyfin_id("Item", DOODLEBUG)
+            ),
+            &token,
+            browser(120_000_000),
+        )
+        .await
+        .json();
+    for source in info["MediaSources"].as_array().unwrap() {
+        assert_eq!(source["RequiresOpening"], false);
+        assert!(source.get("OpenToken").is_none_or(Value::is_null));
+    }
+}

@@ -11,10 +11,11 @@ use crate::dto::{item_dto, Fields, Item, ItemsResult, Shaping, ITEM_FIELDS};
 use crate::error::JellyfinError;
 use crate::gql;
 use crate::id;
-use crate::items::continue_watching;
-use crate::listing::MAX_PAGE;
+use crate::items::{continue_watching, library_page};
+use crate::listing::{Listing, MAX_PAGE};
 use crate::query::Query;
 use crate::response::json;
+use crate::views::libraries;
 use crate::JellyfinState;
 
 pub fn router() -> Router<JellyfinState> {
@@ -22,6 +23,7 @@ pub fn router() -> Router<JellyfinState> {
         .route("/shows/{id}/seasons", get(seasons))
         .route("/shows/{id}/episodes", get(episodes))
         .route("/shows/nextup", get(next_up))
+        .route("/shows/upcoming", get(upcoming))
 }
 
 #[derive(Deserialize)]
@@ -191,4 +193,110 @@ async fn next_up(
         })
         .collect();
     answer(&next, &query, &state, &fields)
+}
+
+const DAY: i64 = 86_400;
+
+/// Where the reference's upcoming episodes start: the beginning of yesterday, UTC.
+fn upcoming_from(now: i64) -> i64 {
+    now - now.rem_euclid(DAY) - DAY
+}
+
+/// Episodes released from yesterday on, the earliest first and then by title, across the
+/// series libraries or below one. Every other parameter is the reference's to ignore too.
+async fn upcoming(
+    State(state): State<JellyfinState>,
+    RawQuery(query): RawQuery,
+) -> Result<Response, JellyfinError> {
+    let query = Query::parse(query.as_deref());
+    gql::viewer(&state.schema)
+        .await?
+        .require_self(query.get("userId"))?;
+    let fields = Fields::named(query.list("fields"));
+    let start = query.count("startIndex")?.unwrap_or(0);
+    let limit = query.count("limit")?.unwrap_or(MAX_PAGE).min(MAX_PAGE);
+    let wanted: Vec<String> = match query.get("parentId") {
+        Some(parent) => {
+            let parent = id::decode(parent)?;
+            if parent.type_name != open_plex_api::library::LIBRARY_TYPE {
+                return Err(JellyfinError::NotImplemented(
+                    "upcoming episodes below an item",
+                ));
+            }
+            vec![open_plex_api::GlobalId::encode(
+                &parent.type_name,
+                parent.key,
+            )]
+        }
+        None => libraries(&state)
+            .await?
+            .into_iter()
+            .filter(|library| library.kind == "SHOW")
+            .map(|library| library.id)
+            .collect(),
+    };
+    let listing = Listing {
+        filter: serde_json::Map::from_iter([
+            ("kind".to_owned(), json!("EPISODE")),
+            (
+                "releasedFrom".to_owned(),
+                json!(open_plex_api::date_time::format(upcoming_from(
+                    open_plex_core::now_epoch()
+                ))),
+            ),
+        ]),
+        order: Some("RELEASED_ON"),
+        direction: Some("ASCENDING"),
+        offset: 0,
+        first: start.saturating_add(limit).min(MAX_PAGE),
+        kinds: vec!["EPISODE"],
+        favorites_only: false,
+    };
+    let mut episodes = Vec::new();
+    for library in &wanted {
+        episodes.extend(library_page(&state, library, &listing, &fields).await?.0);
+    }
+    episodes.sort_by_cached_key(|episode| {
+        (
+            episode.released_on.clone(),
+            episode
+                .title_sort
+                .as_ref()
+                .or(episode.title.as_ref())
+                .map(|title| title.to_lowercase()),
+        )
+    });
+    let shaping = Shaping {
+        server_id: &state.server.id,
+        fields: &fields,
+    };
+    let shown: Vec<Value> = episodes
+        .iter()
+        .skip(usize::try_from(start).unwrap_or(usize::MAX))
+        .take(usize::try_from(limit).unwrap_or(usize::MAX))
+        .map(|episode| item_dto(episode, &shaping))
+        .collect();
+    // The reference counts what it returns, not what there is.
+    let total = i64::try_from(shown.len()).unwrap_or(i64::MAX);
+    Ok(json(&ItemsResult {
+        items: shown,
+        total_record_count: total,
+        start_index: start,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upcoming_episodes_start_at_the_beginning_of_yesterday() {
+        // 2024-05-02T13:45:00Z
+        assert_eq!(upcoming_from(1_714_657_500), 1_714_521_600);
+        assert_eq!(
+            open_plex_api::date_time::format(upcoming_from(1_714_657_500)),
+            "2024-05-01T00:00:00Z"
+        );
+        assert_eq!(upcoming_from(1_714_608_000), 1_714_521_600);
+    }
 }

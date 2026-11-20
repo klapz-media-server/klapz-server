@@ -8,8 +8,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `served` | 82 | 22.5 % |
-| `todo` | 282 | 77.5 % |
+| `served` | 85 | 23.4 % |
+| `todo` | 279 | 76.6 % |
 
 ## By domain
 
@@ -36,7 +36,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | LiveTv | 38 | 0 |
 | Localization | 4 | 0 |
 | Lyric | 6 | 0 |
-| MediaInfo | 5 | 3 |
+| MediaInfo | 5 | 5 |
 | MediaSegment | 1 | 1 |
 | Movie | 1 | 0 |
 | MusicGenre | 1 | 0 |
@@ -47,7 +47,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | ScheduledTask | 5 | 0 |
 | Search | 1 | 1 |
 | Session | 18 | 7 |
-| Show | 4 | 3 |
+| Show | 4 | 4 |
 | Startup | 7 | 0 |
 | Studio | 2 | 2 |
 | Subtitle | 10 | 0 |
@@ -374,8 +374,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | --- | --- | --- | --- |
 | GET | `/Items/{itemId}/PlaybackInfo` | `served` | Direct play decided by MediaFile.readableAsIs; HLS otherwise. |
 | POST | `/Items/{itemId}/PlaybackInfo` | `served` | Direct play decided by MediaFile.readableAsIs; HLS otherwise. |
-| POST | `/LiveStreams/Close` | `todo` |  |
-| POST | `/LiveStreams/Open` | `todo` |  |
+| POST | `/LiveStreams/Close` | `served` | Nothing is open: 204. |
+| POST | `/LiveStreams/Open` | `served` | No source requires opening: 400 without a token, 500 with one. |
 | GET | `/Playback/BitrateTest` | `served` |  |
 
 ## MediaSegment
@@ -493,7 +493,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | Method | Path | Status | Notes |
 | --- | --- | --- | --- |
 | GET | `/Shows/NextUp` | `served` |  |
-| GET | `/Shows/Upcoming` | `todo` |  |
+| GET | `/Shows/Upcoming` | `served` | Below a library or across them; below an item answers 501. |
 | GET | `/Shows/{seriesId}/Episodes` | `served` |  |
 | GET | `/Shows/{seriesId}/Seasons` | `served` |  |
 

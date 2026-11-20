@@ -30,6 +30,9 @@ METHODS = ("get", "post", "put", "patch", "delete", "head")
 # What a served operation does not do. Keyed by "METHOD /path" as the spec writes it.
 NOTES = {
     "GET /Items": "Filters the official API cannot express answer 501; one sort key.",
+    "GET /Shows/Upcoming": "Below a library or across them; below an item answers 501.",
+    "POST /LiveStreams/Open": "No source requires opening: 400 without a token, 500 with one.",
+    "POST /LiveStreams/Close": "Nothing is open: 204.",
     "GET /Items/{itemId}/PlaybackInfo": "Direct play decided by MediaFile.readableAsIs; HLS otherwise.",
     "POST /Items/{itemId}/PlaybackInfo": "Direct play decided by MediaFile.readableAsIs; HLS otherwise.",
     "GET /Videos/{itemId}/stream": "static=true only: a remux to another container answers 501.",
