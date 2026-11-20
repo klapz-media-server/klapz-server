@@ -10,8 +10,8 @@ use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::GlobalId;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::GlobalId;
 use serde::Deserialize;
 
 use crate::auth::Caller;

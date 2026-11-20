@@ -3,7 +3,7 @@
 //! Field order and types follow a capture of the reference server. Two values deserve a note.
 //!
 //! `myPlexSubscription` reports **true**. Clients read it to decide whether to offer the
-//! features Plex reserves for a subscription, and open-plex gates nothing — so the answer
+//! features Plex reserves for a subscription, and klapz gates nothing — so the answer
 //! that unlocks them is the correct one here.
 //!
 //! `myPlex` reports whether this caller's server is paired with a plex.tv account. Claiming a

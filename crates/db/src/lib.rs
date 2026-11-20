@@ -1,6 +1,6 @@
 //! Storage layer.
 //!
-//! Depends on `core` and is depended on by no binding: a `use open_plex_db::…` inside an API
+//! Depends on `core` and is depended on by no binding: a `use klapz_db::…` inside an API
 //! binding would mean the layering has broken down.
 
 pub mod access_repository;

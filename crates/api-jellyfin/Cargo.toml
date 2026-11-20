@@ -1,13 +1,13 @@
 [package]
-name = "open-plex-api-jellyfin"
+name = "klapz-api-jellyfin"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-open-plex-api.workspace = true
-open-plex-core.workspace = true
+klapz-api.workspace = true
+klapz-core.workspace = true
 async-graphql.workspace = true
 axum.workspace = true
 form_urlencoded = "1"
@@ -22,7 +22,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
-open-plex-core = { workspace = true, features = ["testing"] }
+klapz-core = { workspace = true, features = ["testing"] }
 tower = { workspace = true, features = ["util"] }
 http-body-util = "0.1"
 

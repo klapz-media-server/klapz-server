@@ -6,7 +6,7 @@
 
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use open_plex_core::LibraryError;
+use klapz_core::LibraryError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
@@ -141,9 +141,9 @@ mod tests {
     #[test]
     fn missing_section_becomes_not_found_not_forbidden() {
         // 403 would confirm the object exists, leaking other users' library contents.
-        let error = ApiError::from(LibraryError::SectionNotFound(
-            open_plex_core::SectionId::new(99),
-        ));
+        let error = ApiError::from(LibraryError::SectionNotFound(klapz_core::SectionId::new(
+            99,
+        )));
         assert_eq!(error.status(), StatusCode::NOT_FOUND);
     }
 }

@@ -16,11 +16,11 @@ use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post, put};
 use axum::Router;
-use open_plex_api::collection::COLLECTION_TYPE;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::GlobalId;
-use open_plex_core::page::MAX_ITEMS;
+use klapz_api::collection::COLLECTION_TYPE;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::library::LIBRARY_TYPE;
+use klapz_api::GlobalId;
+use klapz_core::page::MAX_ITEMS;
 use serde::Deserialize;
 use serde_json::{json, Map, Value as Json};
 
@@ -1071,7 +1071,7 @@ mod tests {
             max_year: Some(2021),
             library: Some(GqlLibraryRef {
                 id: GlobalId::encode(LIBRARY_TYPE, 28),
-                title: "open-plex tests series".to_owned(),
+                title: "klapz tests series".to_owned(),
                 uuid: "ba1c46de-199e-4464-8efd-aa7d9c374421".to_owned(),
                 kind: "SHOW".to_owned(),
             }),

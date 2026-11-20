@@ -1,9 +1,9 @@
-//! Jellyfin API binding: open-plex as a Jellyfin server, for Jellyfin's own clients.
+//! Jellyfin API binding: klapz as a Jellyfin server, for Jellyfin's own clients.
 //!
-//! The counterpart of `open-plex-api-plex`, and held to the same rule: translation only. A
+//! The counterpart of `klapz-api-plex`, and held to the same rule: translation only. A
 //! handler parses the request, runs a query against the official GraphQL API in process, and
 //! shapes the answer as the reference Jellyfin server does. This crate depends on neither
-//! `open-plex-db` nor the repository ports; what Jellyfin needs and GraphQL lacks is added to
+//! `klapz-db` nor the repository ports; what Jellyfin needs and GraphQL lacks is added to
 //! the official API first.
 //!
 //! The surface lives under [`BASE_PATH`], which Jellyfin clients support as a server's base
@@ -44,8 +44,8 @@ use std::sync::Arc;
 use axum::extract::Request;
 use axum::http::Uri;
 use axum::Router;
-use open_plex_api::{ApiSchema, Sessions};
-use open_plex_core::ServerIdentity;
+use klapz_api::{ApiSchema, Sessions};
+use klapz_core::ServerIdentity;
 
 pub use error::JellyfinError;
 
@@ -207,7 +207,7 @@ mod tests {
         assert!(one.id.bytes().all(|byte| byte.is_ascii_hexdigit()));
         // Not the machine identifier cut short: the Plex surface publishes that one.
         assert_ne!(one.id, "a".repeat(32));
-        assert_eq!(one.name, "open-plex");
+        assert_eq!(one.name, "klapz");
     }
 
     #[test]

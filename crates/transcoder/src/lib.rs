@@ -1,7 +1,7 @@
 //! Converting media for a client.
 //!
-//! The engine, as `open-plex-api` is the official API: it speaks in images, sizes and formats,
-//! and knows nothing of HTTP or Plex. `open-plex-api-plex` binds Plex's routes onto it, and
+//! The engine, as `klapz-api` is the official API: it speaks in images, sizes and formats,
+//! and knows nothing of HTTP or Plex. `klapz-api-plex` binds Plex's routes onto it, and
 //! keeps what is only Plex's: parameter names, status codes, and a PNG labelled `image/jpeg`.
 
 pub mod adapt;
@@ -135,7 +135,7 @@ impl Default for Config {
             external_libs: None,
             callback_base: "http://127.0.0.1:32500".to_owned(),
             fonts: None,
-            sessions_directory: std::env::temp_dir().join("open-plex-transcode"),
+            sessions_directory: std::env::temp_dir().join("klapz-transcode"),
         }
     }
 }

@@ -7,15 +7,15 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use open_plex_core::backdrop::{CornerColors, Rgb};
-use open_plex_core::chapter::{Chapter, ChapterSource};
-use open_plex_core::closest::{ClosestTitles, TitleMatch};
-use open_plex_core::collection::{CollectionCondition, CollectionRef};
-use open_plex_core::common::CommonFields;
-use open_plex_core::edit::{ItemEdit, ItemField};
-use open_plex_core::extra::Extra;
-use open_plex_core::marker::{Marker, NewMarker};
-use open_plex_core::metadata::{
+use klapz_core::backdrop::{CornerColors, Rgb};
+use klapz_core::chapter::{Chapter, ChapterSource};
+use klapz_core::closest::{ClosestTitles, TitleMatch};
+use klapz_core::collection::{CollectionCondition, CollectionRef};
+use klapz_core::common::CommonFields;
+use klapz_core::edit::{ItemEdit, ItemField};
+use klapz_core::extra::Extra;
+use klapz_core::marker::{Marker, NewMarker};
+use klapz_core::metadata::{
     first_character_bucket, AudioAnalysis, ColorDescription, CreditRef, DolbyVision, Edited,
     EpisodeCredit, ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemFilter,
     ItemKind, ItemQuery, ItemTag, Listed, Loudness, MediaFile, MediaStream, MediaVersion,
@@ -24,12 +24,12 @@ use open_plex_core::metadata::{
     SubtitleAnalysis, Tag, TagCondition, TagKind, TagRef, TagScope, TagSearch, TagUse, TrackField,
     TrackTraits, ValueField, VideoAnalysis,
 };
-use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
-use open_plex_core::recent::EpisodeAddition;
-use open_plex_core::search::{self, Rung};
-use open_plex_core::similar::TagOverlap;
-use open_plex_core::user_rating::RatingCondition;
-use open_plex_core::{
+use klapz_core::page::{Cursor, CursorKey, Direction, Page, Window};
+use klapz_core::recent::EpisodeAddition;
+use klapz_core::search::{self, Rung};
+use klapz_core::similar::TagOverlap;
+use klapz_core::user_rating::RatingCondition;
+use klapz_core::{
     ChapterId, ExtraId, MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId,
     UserId,
 };

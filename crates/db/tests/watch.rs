@@ -5,11 +5,11 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::watch::{Viewing, WatchRepository, WatchState, VIEWING_LIFETIME_SECONDS};
-use open_plex_core::{RatingKey, UserId};
-use open_plex_db::entity::{library_section, metadata_item};
-use open_plex_db::write;
-use open_plex_db::SqlWatchRepository;
+use klapz_core::watch::{Viewing, WatchRepository, WatchState, VIEWING_LIFETIME_SECONDS};
+use klapz_core::{RatingKey, UserId};
+use klapz_db::entity::{library_section, metadata_item};
+use klapz_db::write;
+use klapz_db::SqlWatchRepository;
 use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 const SHOW: i64 = 577_987;
@@ -52,7 +52,7 @@ fn item(id: i64, kind: &str, parent: Option<i64>) -> metadata_item::ActiveModel 
 }
 
 async fn repository() -> SqlWatchRepository {
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     seed(&connection).await;
@@ -63,7 +63,7 @@ async fn seed(connection: &DatabaseConnection) {
     library_section::Entity::insert(library_section::ActiveModel {
         id: ActiveValue::Set(28),
         kind: ActiveValue::Set("show".to_owned()),
-        title: ActiveValue::Set("open-plex tests".to_owned()),
+        title: ActiveValue::Set("klapz tests".to_owned()),
         title_sort: ActiveValue::Set(None),
         language: ActiveValue::Set("fr-FR".to_owned()),
         uuid: ActiveValue::Set("uuid-28".to_owned()),
@@ -225,8 +225,8 @@ async fn remembers_a_playback_until_it_expires() {
 
 #[tokio::test]
 async fn a_track_choice_is_kept_per_viewer_and_file_and_an_empty_one_forgotten() {
-    use open_plex_core::tracks::{SubtitleChoice, TrackChoice};
-    use open_plex_core::{PartId, StreamId};
+    use klapz_core::tracks::{SubtitleChoice, TrackChoice};
+    use klapz_core::{PartId, StreamId};
 
     let (repository, file) = repository_with_a_file().await;
     let off = TrackChoice {
@@ -242,7 +242,7 @@ async fn a_track_choice_is_kept_per_viewer_and_file_and_an_empty_one_forgotten()
         subtitle: Some(SubtitleChoice::Track(StreamId::new(8))),
     };
     repository
-        .choose_tracks(open_plex_core::UserId::new(3), file, chosen)
+        .choose_tracks(klapz_core::UserId::new(3), file, chosen)
         .await
         .unwrap();
 
@@ -256,7 +256,7 @@ async fn a_track_choice_is_kept_per_viewer_and_file_and_an_empty_one_forgotten()
         }
     };
     assert_eq!(read(UserId::new(1)).await, [(file, off)]);
-    assert_eq!(read(open_plex_core::UserId::new(3)).await, [(file, chosen)]);
+    assert_eq!(read(klapz_core::UserId::new(3)).await, [(file, chosen)]);
     repository
         .choose_tracks(UserId::new(1), file, TrackChoice::default())
         .await
@@ -265,17 +265,17 @@ async fn a_track_choice_is_kept_per_viewer_and_file_and_an_empty_one_forgotten()
 }
 
 /// The seeded library, with one file for an episode: a choice of tracks belongs to a file.
-async fn repository_with_a_file() -> (SqlWatchRepository, open_plex_core::PartId) {
+async fn repository_with_a_file() -> (SqlWatchRepository, klapz_core::PartId) {
     (
         SqlWatchRepository::new(connection_with_a_file().await),
-        open_plex_core::PartId::new(5),
+        klapz_core::PartId::new(5),
     )
 }
 
 async fn connection_with_a_file() -> DatabaseConnection {
-    use open_plex_db::entity::{media, media_part};
+    use klapz_db::entity::{media, media_part};
 
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     seed(&connection).await;
@@ -333,9 +333,9 @@ async fn connection_with_a_file() -> DatabaseConnection {
 
 #[tokio::test]
 async fn a_subtitle_offset_is_the_viewers_and_goes_with_its_track() {
-    use open_plex_core::metadata::MetadataRepository;
-    use open_plex_core::StreamId;
-    use open_plex_db::entity::media_stream;
+    use klapz_core::metadata::MetadataRepository;
+    use klapz_core::StreamId;
+    use klapz_db::entity::media_stream;
 
     let connection = connection_with_a_file().await;
     media_stream::Entity::insert(media_stream::ActiveModel {
@@ -393,7 +393,7 @@ async fn a_subtitle_offset_is_the_viewers_and_goes_with_its_track() {
         .unwrap();
     assert!(read(UserId::new(3)).await.is_empty());
 
-    let metadata = open_plex_db::SqlMetadataRepository::new(connection);
+    let metadata = klapz_db::SqlMetadataRepository::new(connection);
     assert!(metadata.delete_stream(track).await.unwrap());
     assert!(!metadata.delete_stream(track).await.unwrap());
     assert!(metadata.stream(track).await.unwrap().is_none());
@@ -402,7 +402,7 @@ async fn a_subtitle_offset_is_the_viewers_and_goes_with_its_track() {
 
 #[tokio::test]
 async fn a_rating_is_the_viewers_and_a_clearing_keeps_its_time() {
-    use open_plex_core::user_rating::{rate, RateOutcome, RatingRecord, UserRating};
+    use klapz_core::user_rating::{rate, RateOutcome, RatingRecord, UserRating};
     let repository = repository().await;
     let viewer = UserId::new(1);
     let seven = UserRating::new(7.26).unwrap();

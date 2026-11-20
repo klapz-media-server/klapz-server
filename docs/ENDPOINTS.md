@@ -447,7 +447,7 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | --- | --- | --- | --- | --- | --- |
 | `stub` | `PUT` | `/updater/apply` | admin | Applying updates |  |
 | `done` | `PUT` | `/updater/check` | admin | Checking for updates | Acknowledged with an empty `200` typed `text/html`, as the reference does; there is no channel to look in. |
-| `done` | `GET` | `/updater/status` | admin | Querying status of updates | An install that cannot update itself: `canInstall` false, no release. open-plex is not updated through plex.tv. |
+| `done` | `GET` | `/updater/status` | admin | Querying status of updates | An install that cannot update itself: `canInstall` false, no release. klapz is not updated through plex.tv. |
 
 ## Activities
 

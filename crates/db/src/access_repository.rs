@@ -1,11 +1,11 @@
 //! Stored users, permissions and extensions.
 
-use open_plex_core::access::{
+use klapz_core::access::{
     AccessError, AccessRepository, AccountLink, Extension, ExtensionDevice, Grant,
     LibraryPermission, LibraryRole, Login, NewUser, RemoteAccount, ServerRole, User, UserExtension,
 };
-use open_plex_core::page::{Page, Window};
-use open_plex_core::{SectionId, UserId};
+use klapz_core::page::{Page, Window};
+use klapz_core::{SectionId, UserId};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter, QueryOrder,

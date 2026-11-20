@@ -132,7 +132,7 @@ impl SectionDirectory {
 /// in our own query, not client input; emitting `0` keeps the listing usable and is visible
 /// in the response rather than silent.
 pub(crate) fn decode_key(global_id: &str) -> i64 {
-    open_plex_api::GlobalId::decode(global_id).map_or(0, |decoded| decoded.key)
+    klapz_api::GlobalId::decode(global_id).map_or(0, |decoded| decoded.key)
 }
 
 /// Orders a section's roots the way the reference server emits them.
@@ -209,7 +209,7 @@ mod tests {
     /// Builds a root carrying the global id the official API would return.
     fn root(database_id: i64, path: &str, created_at: i64) -> GqlRoot {
         GqlRoot {
-            id: open_plex_api::GlobalId::encode("Root", database_id),
+            id: klapz_api::GlobalId::encode("Root", database_id),
             path: path.to_owned(),
             created_at,
         }

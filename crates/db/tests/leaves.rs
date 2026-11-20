@@ -5,14 +5,14 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::metadata::{
+use klapz_core::metadata::{
     ItemDepth, ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataRepository,
 };
-use open_plex_core::page::{Direction, Window};
-use open_plex_core::SectionId;
-use open_plex_db::entity::{library_section, metadata_item};
-use open_plex_db::write;
-use open_plex_db::SqlMetadataRepository;
+use klapz_core::page::{Direction, Window};
+use klapz_core::SectionId;
+use klapz_db::entity::{library_section, metadata_item};
+use klapz_db::write;
+use klapz_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, EntityTrait};
 
 const SECTION: i64 = 5;
@@ -95,7 +95,7 @@ fn episode(
 }
 
 async fn repository() -> SqlMetadataRepository {
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     library_section::Entity::insert(library_section::ActiveModel {

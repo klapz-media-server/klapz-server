@@ -11,7 +11,7 @@
 use async_graphql::connection::CursorType;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use open_plex_core::{Cursor, CursorKey};
+use klapz_core::{Cursor, CursorKey};
 
 /// A [`Cursor`] in its wire form.
 #[derive(Debug, Clone, PartialEq)]

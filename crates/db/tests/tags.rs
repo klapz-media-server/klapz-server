@@ -6,17 +6,17 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::metadata::{
+use klapz_core::metadata::{
     CreditRef, FieldValue, ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataRepository,
     RatingKind, TagCondition, TagKind, TagRef, TagScope, TagSearch, TagUse, ValueField,
 };
-use open_plex_core::page::{Direction, Window};
-use open_plex_core::{PersonId, RatingKey, SectionId, TagId};
-use open_plex_db::entity::{
+use klapz_core::page::{Direction, Window};
+use klapz_core::{PersonId, RatingKey, SectionId, TagId};
+use klapz_db::entity::{
     item_external_id, item_rating, item_tag, library_section, metadata_item, person, tag,
 };
-use open_plex_db::write;
-use open_plex_db::SqlMetadataRepository;
+use klapz_db::write;
+use klapz_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait};
 
 const FILMS: i64 = 6;
@@ -49,7 +49,7 @@ const DAVID_SILVERMAN: i64 = 4;
 const DAN_CASTELLANETA: i64 = 5;
 
 async fn repository() -> SqlMetadataRepository {
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     seed(&connection).await;
@@ -586,7 +586,7 @@ fn films() -> ItemQuery {
     ItemQuery::new(SectionId::new(FILMS))
 }
 
-fn names(page: &open_plex_core::Page<open_plex_core::Tag>) -> Vec<&str> {
+fn names(page: &klapz_core::Page<klapz_core::Tag>) -> Vec<&str> {
     page.items.iter().map(|tag| tag.name.as_str()).collect()
 }
 
@@ -625,7 +625,7 @@ async fn lists_a_librarys_genres_once_each_by_name() {
 async fn every_librarys_tags_list_in_the_order_they_were_recorded() {
     let repository = repository().await;
     let everywhere = [SectionId::new(FILMS), SectionId::new(SERIES)];
-    let ids = |page: &open_plex_core::Page<open_plex_core::Tag>| -> Vec<i64> {
+    let ids = |page: &klapz_core::Page<klapz_core::Tag>| -> Vec<i64> {
         page.items.iter().map(|tag| tag.id.get()).collect()
     };
 
@@ -704,7 +704,7 @@ async fn two_people_sharing_a_name_are_two_entries() {
 
 #[tokio::test]
 async fn lists_distinct_years_newest_first_and_text_values_ascending() {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
     seed(&connection).await;
     connection
         .execute_unprepared(&format!(
@@ -806,7 +806,7 @@ async fn a_person_lists_what_any_of_their_tags_credits_once() {
 
 #[tokio::test]
 async fn a_filmography_runs_library_by_library_films_by_title_series_by_id() {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
     seed(&connection).await;
     // A series titled before The Simpsons but added after it.
     write::insert_items(

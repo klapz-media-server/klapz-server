@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use open_plex_core::access::{token_digest, AccountDirectory};
+use klapz_core::access::{token_digest, AccountDirectory};
 
 /// How long an answer stands. Also how long a token revoked on the service keeps working here.
 const REMEMBERED_FOR: Duration = Duration::from_secs(300);
@@ -113,7 +113,7 @@ impl RemoteTokens {
 mod tests {
     use std::sync::atomic::Ordering;
 
-    use open_plex_core::testing::StubDirectory;
+    use klapz_core::testing::StubDirectory;
 
     use super::*;
 

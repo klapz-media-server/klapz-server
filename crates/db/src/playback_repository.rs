@@ -1,11 +1,11 @@
 //! Stored playback sessions.
 
-use open_plex_core::page::{Page, Window, MAX_ITEMS};
-use open_plex_core::playback::{
+use klapz_core::page::{Page, Window, MAX_ITEMS};
+use klapz_core::playback::{
     NewPlaybackSession, PlaybackError, PlaybackOutput, PlaybackRepository, PlaybackSession,
     PlaybackState, SessionStatus, StreamDecision, Termination, SESSION_LIFETIME_SECONDS,
 };
-use open_plex_core::{PartId, RatingKey, UserId};
+use klapz_core::{PartId, RatingKey, UserId};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter, QueryOrder,

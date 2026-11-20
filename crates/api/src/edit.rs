@@ -10,9 +10,9 @@
 
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, InputObject, MaybeUndefined, Result, SimpleObject, ID};
-use open_plex_core::edit::{CalendarDate, EditError, FieldEdit, ItemEdit, ItemField};
-use open_plex_core::metadata::{ItemKind, MetadataError, MetadataItem};
-use open_plex_core::RatingKey;
+use klapz_core::edit::{CalendarDate, EditError, FieldEdit, ItemEdit, ItemField};
+use klapz_core::metadata::{ItemKind, MetadataError, MetadataItem};
+use klapz_core::RatingKey;
 
 use crate::item::{Episode, Movie, Show, ITEM_TYPE};
 use crate::loader::{ItemLoader, LockedFieldsLoader};

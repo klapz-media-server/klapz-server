@@ -9,11 +9,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use open_plex_api::{build_schema, ApiContext, ApiSchema, GlobalId};
-use open_plex_core::access::{LibraryAccess, LibraryRole};
-use open_plex_core::metadata::{ItemKind, MetadataItem};
-use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata, InMemoryPlaylists};
-use open_plex_core::{LibrarySection, Principal, RatingKey, SectionId, SectionKind, UserId};
+use klapz_api::{build_schema, ApiContext, ApiSchema, GlobalId};
+use klapz_core::access::{LibraryAccess, LibraryRole};
+use klapz_core::metadata::{ItemKind, MetadataItem};
+use klapz_core::testing::{InMemoryLibrary, InMemoryMetadata, InMemoryPlaylists};
+use klapz_core::{LibrarySection, Principal, RatingKey, SectionId, SectionKind, UserId};
 use serde_json::{json, Value};
 
 const FILM: i64 = 577_986;
@@ -73,11 +73,8 @@ fn schema() -> ApiSchema {
         item(EPISODE_2, 28, ItemKind::Episode, "Episode 2", 2_467_480),
     ];
     build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(InMemoryLibrary::new(vec![
@@ -85,28 +82,28 @@ fn schema() -> ApiSchema {
             section(28, SectionKind::Show),
         ])),
         metadata: Arc::new(InMemoryMetadata::new(items.clone())),
-        playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        playback: Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
         playlists: Arc::new(InMemoryPlaylists::new(items)),
-        collections: Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: Arc::new(open_plex_core::testing::StubStreams::default()),
+        collections: Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
 fn owner() -> Principal {
-    open_plex_core::testing::owner()
+    klapz_core::testing::owner()
 }
 
 /// A user who may read only the series library.
 fn user(id: i64) -> Principal {
     Principal {
         name: format!("user {id}"),
-        role: open_plex_core::ServerRole::User,
+        role: klapz_core::ServerRole::User,
         libraries: LibraryAccess::Only(HashMap::from([(SectionId::new(28), LibraryRole::Viewer)])),
         user: UserId::new(id),
         server_identifier: None,

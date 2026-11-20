@@ -1,6 +1,6 @@
 //! Filtering and browsing a library by what its items' tracks hold: codecs, channel layouts.
 
-use open_plex_core::metadata::{StreamKind, TrackCondition, TrackField};
+use klapz_core::metadata::{StreamKind, TrackCondition, TrackField};
 use sea_orm::sea_query::{Expr, Query, SelectStatement};
 use sea_orm::{ColumnTrait, Condition, EntityTrait, QueryFilter, QuerySelect, QueryTrait, Select};
 

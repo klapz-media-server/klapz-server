@@ -182,7 +182,7 @@ mod tests {
 
     fn declared(name: &str, bytes: &[u8]) -> Option<Vec<DeclaredTrack>> {
         let path = std::env::temp_dir().join(format!(
-            "open-plex-scanner-matroska-{}-{name}",
+            "klapz-scanner-matroska-{}-{name}",
             std::process::id()
         ));
         std::fs::write(&path, bytes).unwrap();

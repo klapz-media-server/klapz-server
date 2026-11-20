@@ -642,7 +642,7 @@ async fn filters_that_cannot_be_narrowed_as_asked_are_refused() {
 
 #[tokio::test]
 async fn upcoming_episodes_are_those_released_from_yesterday_on() {
-    let tomorrow = open_plex_core::now_epoch() + 86_400;
+    let tomorrow = klapz_core::now_epoch() + 86_400;
     let harness = Harness::with_episode_released(tomorrow).await;
     let token = harness.token().await;
     let upcoming = harness
@@ -689,7 +689,7 @@ async fn upcoming_episodes_are_those_released_from_yesterday_on() {
 
 #[tokio::test]
 async fn an_episode_aired_before_yesterday_is_not_upcoming() {
-    let harness = Harness::with_episode_released(open_plex_core::now_epoch() - 3 * 86_400).await;
+    let harness = Harness::with_episode_released(klapz_core::now_epoch() - 3 * 86_400).await;
     let token = harness.token().await;
     let upcoming = harness.get("/jellyfin/Shows/Upcoming", &token).await.json();
     // As the reference answered about its own library, where nothing is upcoming.

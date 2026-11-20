@@ -92,10 +92,8 @@ mod tests {
     }
 
     fn layout_of(name: &str, bytes: &[u8]) -> Layout {
-        let path = std::env::temp_dir().join(format!(
-            "open-plex-scanner-mp4-{}-{name}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("klapz-scanner-mp4-{}-{name}", std::process::id()));
         File::create(&path).unwrap().write_all(bytes).unwrap();
         let found = layout(&path).unwrap();
         std::fs::remove_file(&path).unwrap();

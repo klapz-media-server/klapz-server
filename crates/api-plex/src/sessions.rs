@@ -98,7 +98,7 @@ fn entry(session: &GqlSession, item: &GqlItem) -> Option<Json> {
     let mut metadata = serde_json::to_value(metadata).ok()?;
     let fields = metadata.as_object_mut()?;
     // A number of the server's on the reference, as a string.
-    let session_key = open_plex_api::GlobalId::decode(&session.id).ok()?.key;
+    let session_key = klapz_api::GlobalId::decode(&session.id).ok()?.key;
     fields.insert("sessionKey".into(), json!(session_key.to_string()));
     fields.insert("viewOffset".into(), json!(session.position_ms));
     fields.insert(

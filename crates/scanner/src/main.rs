@@ -1,14 +1,14 @@
-//! `open-plex-scanner <command> [options] -- <file>`: one file, one JSON report on standard
+//! `klapz-scanner <command> [options] -- <file>`: one file, one JSON report on standard
 //! output. Errors go to standard error, and the exit status says whose fault they are.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use open_plex_scanner::report::{Output, Report, VERSION};
-use open_plex_scanner::{ScanError, Tools};
+use klapz_scanner::report::{Output, Report, VERSION};
+use klapz_scanner::{ScanError, Tools};
 
 const USAGE: &str = "\
-usage: open-plex-scanner <command> [options] -- <file>
+usage: klapz-scanner <command> [options] -- <file>
 
 commands:
   probe [--deep]                       container, tracks and chapters; --deep measures every packet
@@ -132,10 +132,10 @@ impl Invocation {
     fn run(&self, tools: &Tools) -> Result<Output, ScanError> {
         let file = &self.file;
         Ok(match self.command.as_str() {
-            "probe" => Output::Probe(open_plex_scanner::probe(tools, file, self.deep)?),
-            "hashes" => Output::Hashes(open_plex_scanner::identify(file)?),
-            "loudness" => Output::Loudness(open_plex_scanner::loudness(tools, file, self.stream)?),
-            "fingerprint" => Output::Fingerprint(open_plex_scanner::fingerprint(
+            "probe" => Output::Probe(klapz_scanner::probe(tools, file, self.deep)?),
+            "hashes" => Output::Hashes(klapz_scanner::identify(file)?),
+            "loudness" => Output::Loudness(klapz_scanner::loudness(tools, file, self.stream)?),
+            "fingerprint" => Output::Fingerprint(klapz_scanner::fingerprint(
                 tools,
                 file,
                 self.stream,
@@ -145,23 +145,23 @@ impl Invocation {
                 let track = self
                     .stream
                     .ok_or_else(|| ScanError::Unsupported("subtitles needs --stream".to_owned()))?;
-                Output::Subtitles(open_plex_scanner::extract_subtitle(
+                Output::Subtitles(klapz_scanner::extract_subtitle(
                     tools,
                     file,
                     track,
                     self.out()?,
                 )?)
             }
-            "bif" => Output::Bif(open_plex_scanner::preview_index(
+            "bif" => Output::Bif(klapz_scanner::preview_index(
                 tools,
                 file,
                 self.interval_s,
                 self.out()?,
             )?),
             "chapter-thumbs" => {
-                Output::ChapterThumbs(open_plex_scanner::chapter_thumbs(tools, file, self.out()?)?)
+                Output::ChapterThumbs(klapz_scanner::chapter_thumbs(tools, file, self.out()?)?)
             }
-            "artwork" => Output::Artwork(open_plex_scanner::artwork(tools, file, self.out()?)?),
+            "artwork" => Output::Artwork(klapz_scanner::artwork(tools, file, self.out()?)?),
             other => return Err(ScanError::Unsupported(format!("unknown command {other}"))),
         })
     }

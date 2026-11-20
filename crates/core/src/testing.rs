@@ -2,7 +2,7 @@
 //!
 //! Lives behind the `testing` feature so it never ships in a release build. Bindings use
 //! these to exercise resolvers without a database, which keeps the layering honest: a binding
-//! test that needed `open-plex-db` would prove the dependency rule is not holding.
+//! test that needed `klapz-db` would prove the dependency rule is not holding.
 //!
 //! They apply windows, filters and ordering the way storage does rather than simplifying,
 //! because a stand-in that behaves differently hides exactly the mismatches worth catching.

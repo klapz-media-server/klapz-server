@@ -1,14 +1,14 @@
 //! Listing arguments: what to keep, and in what order.
 
 use async_graphql::{Enum, InputObject};
-use open_plex_core::collection::{CollectionCondition, CollectionRef};
-use open_plex_core::metadata::{
+use klapz_core::collection::{CollectionCondition, CollectionRef};
+use klapz_core::metadata::{
     FrameRange, FrameSize, ItemDepth, ItemFilter, ItemKind, ItemSort, TagCondition, TrackCondition,
     TrackField as DomainTrackField,
 };
-use open_plex_core::page::{Direction, MAX_ITEMS};
-use open_plex_core::user_rating::RatingCondition;
-use open_plex_core::{CollectionId, RatingKey, UserId};
+use klapz_core::page::{Direction, MAX_ITEMS};
+use klapz_core::user_rating::RatingCondition;
+use klapz_core::{CollectionId, RatingKey, UserId};
 
 use crate::tag::{TagFilterError, TagFilterInput};
 use crate::DateTime;

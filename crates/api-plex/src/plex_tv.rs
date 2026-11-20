@@ -7,7 +7,7 @@
 use std::net::IpAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use open_plex_core::access::{AccessError, AccountDirectory, AccountLink, RemoteAccount};
+use klapz_core::access::{AccessError, AccountDirectory, AccountLink, RemoteAccount};
 use reqwest::{redirect, Client, RequestBuilder, Response, StatusCode};
 use serde::Deserialize;
 
@@ -18,7 +18,7 @@ const REGISTRATION: &str = "https://servers.plex.tv/servers.xml";
 /// Short enough that a pairing, four calls in a row, stays inside the server's request timeout.
 const CALL_TIMEOUT: Duration = Duration::from_secs(7);
 /// Presented when no server is concerned, as plex.tv requires some client identifier.
-const OWN_CLIENT_IDENTIFIER: &str = "open-plex";
+const OWN_CLIENT_IDENTIFIER: &str = "klapz";
 
 #[derive(Debug, Clone)]
 pub struct PlexTv {
@@ -45,7 +45,7 @@ fn as_server(request: RequestBuilder, client_identifier: &str) -> RequestBuilder
         .header("X-Plex-Client-Identifier", client_identifier)
         .header("X-Plex-Product", "Plex Media Server")
         .header("X-Plex-Version", crate::general::PLEX_VERSION)
-        .header("X-Plex-Device-Name", "open-plex")
+        .header("X-Plex-Device-Name", "klapz")
         .header("X-Plex-Provides", "server")
         .header("X-Plex-Platform", std::env::consts::OS)
 }
@@ -93,7 +93,7 @@ fn local_address(connection_uri: &str) -> &str {
 /// reduced to letters, digits, dots and dashes: none can need XML escaping.
 fn registration(server_id: &str, local_address: &str, microseconds: u128) -> String {
     format!(
-        "<MediaContainer size=\"0\">\n<Server name=\"open-plex\" host=\"\" \
+        "<MediaContainer size=\"0\">\n<Server name=\"klapz\" host=\"\" \
          localAddresses=\"{local_address}\" machineIdentifier=\"{server_id}\" \
          version=\"{version}\" date=\"{microseconds}\" />\n</MediaContainer>\n",
         version = crate::general::PLEX_VERSION,
@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(
             registration("abc123", "192.168.1.30", 1_794_257_565_727_563),
             format!(
-                "<MediaContainer size=\"0\">\n<Server name=\"open-plex\" host=\"\" \
+                "<MediaContainer size=\"0\">\n<Server name=\"klapz\" host=\"\" \
                  localAddresses=\"192.168.1.30\" machineIdentifier=\"abc123\" \
                  version=\"{}\" date=\"1794257565727563\" />\n</MediaContainer>\n",
                 crate::general::PLEX_VERSION

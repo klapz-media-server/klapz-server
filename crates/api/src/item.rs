@@ -12,9 +12,9 @@
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Interface, Object, Result, ID};
-use open_plex_core::metadata::{ItemKind, MetadataItem};
-use open_plex_core::page::{Cursor, MAX_ITEMS};
-use open_plex_core::RatingKey;
+use klapz_core::metadata::{ItemKind, MetadataItem};
+use klapz_core::page::{Cursor, MAX_ITEMS};
+use klapz_core::RatingKey;
 
 use crate::backdrop::CornerColorsObject;
 use crate::chapter::{ChapterConnection, ChapterSourceType};
@@ -150,7 +150,7 @@ pub type EpisodeConnection = Connection<OpaqueCursor, Episode, EmptyFields, Empt
 
 /// A film's or a series' slug: its title alone.
 fn slug(title: Option<&str>) -> String {
-    open_plex_core::slug::slug(title)
+    klapz_core::slug::slug(title)
 }
 
 // The interface fields are written out on each concrete type rather than generated.
@@ -824,7 +824,7 @@ impl Season {
     pub async fn slug(&self, context: &Context<'_>) -> Result<String> {
         let show = parent_of(context, self.0.parent_id).await?;
         let number = self.0.position.map(|number| format!("s{number:02}"));
-        Ok(open_plex_core::slug::slug(
+        Ok(klapz_core::slug::slug(
             [show.and_then(|show| show.title), number]
                 .iter()
                 .flatten()
@@ -1083,7 +1083,7 @@ impl Episode {
             let season = season.as_ref()?.position?;
             Some(format!("s{season:02}e{:02}", self.0.position?))
         });
-        Ok(open_plex_core::slug::slug(
+        Ok(klapz_core::slug::slug(
             [show.and_then(|show| show.title), own]
                 .iter()
                 .flatten()
@@ -1466,7 +1466,7 @@ async fn similar_connection(
     last: Option<i32>,
 ) -> Result<ItemConnection> {
     let metadata = crate::schema::metadata(context)?;
-    let ids = open_plex_core::similar::similar_items(metadata, item, MAX_ITEMS as usize).await?;
+    let ids = klapz_core::similar::similar_items(metadata, item, MAX_ITEMS as usize).await?;
     let loaded = context
         .data::<DataLoader<ItemLoader>>()?
         .load_many(ids.iter().copied())

@@ -3,10 +3,10 @@
 
 use async_graphql::connection::{self, Connection, ConnectionNameType, Edge, EdgeNameType};
 use async_graphql::{Context, Enum, OutputType, Result, SimpleObject};
-use open_plex_core::credited::search_credits;
-use open_plex_core::metadata::{SearchOrder, SearchQuery};
-use open_plex_core::page::{Cursor, MAX_ITEMS};
-use open_plex_core::search::{self, Rung};
+use klapz_core::credited::search_credits;
+use klapz_core::metadata::{SearchOrder, SearchQuery};
+use klapz_core::page::{Cursor, MAX_ITEMS};
+use klapz_core::search::{self, Rung};
 
 use crate::cursor::OpaqueCursor;
 use crate::filter::ItemType;

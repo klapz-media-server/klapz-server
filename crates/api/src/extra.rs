@@ -16,9 +16,9 @@ use std::sync::Arc;
 use async_graphql::connection::{Connection, EmptyFields};
 use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{Context, Enum, Object, Result, ID};
-use open_plex_core::extra::{self, Extra, ExtraKind};
-use open_plex_core::metadata::{MediaVersion, MetadataError, MetadataRepository};
-use open_plex_core::{ExtraId, RatingKey};
+use klapz_core::extra::{self, Extra, ExtraKind};
+use klapz_core::metadata::{MediaVersion, MetadataError, MetadataRepository};
+use klapz_core::{ExtraId, RatingKey};
 
 use crate::cursor::OpaqueCursor;
 use crate::date_time::DateTime;

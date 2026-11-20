@@ -12,9 +12,9 @@
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::GlobalId;
-use open_plex_core::page::MAX_ITEMS;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::GlobalId;
+use klapz_core::page::MAX_ITEMS;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Caller;

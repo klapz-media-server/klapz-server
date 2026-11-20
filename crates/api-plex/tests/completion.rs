@@ -10,11 +10,11 @@
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use http_body_util::BodyExt;
-use open_plex_api::{build_schema, ApiContext};
-use open_plex_api_plex::{router, PlexState};
-use open_plex_core::metadata::{ItemKind, ItemTag, MetadataItem, Person, Tag, TagKind};
-use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{
+use klapz_api::{build_schema, ApiContext};
+use klapz_api_plex::{router, PlexState};
+use klapz_core::metadata::{ItemKind, ItemTag, MetadataItem, Person, Tag, TagKind};
+use klapz_core::testing::{InMemoryLibrary, InMemoryMetadata};
+use klapz_core::{
     LibrarySection, PersonId, RatingKey, SectionId, SectionKind, ServerCapabilities,
     ServerIdentity, TagId,
 };
@@ -169,19 +169,18 @@ fn app() -> axum::Router {
         capabilities: ServerCapabilities::new(identity.clone(), 0),
         library: std::sync::Arc::new(library),
         metadata: std::sync::Arc::new(metadata),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     });
-    router(PlexState::new(identity, schema))
-        .layer(axum::Extension(open_plex_core::testing::owner()))
+    router(PlexState::new(identity, schema)).layer(axum::Extension(klapz_core::testing::owner()))
 }
 
 async fn get(uri: &str, accept: &str) -> (StatusCode, String) {

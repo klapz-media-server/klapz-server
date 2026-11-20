@@ -17,9 +17,9 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use open_plex_core::closest::{self, ClosestTitles, Distance};
-use open_plex_core::metadata::MetadataError;
-use open_plex_core::page::{Cursor, CursorKey, Page, Window};
+use klapz_core::closest::{self, ClosestTitles, Distance};
+use klapz_core::metadata::MetadataError;
+use klapz_core::page::{Cursor, CursorKey, Page, Window};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, QuerySelect,

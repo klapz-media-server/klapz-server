@@ -9,28 +9,28 @@
 //! type     reserved key, as 64 bits
 //! ```
 
-use open_plex_api::GlobalId;
+use klapz_api::GlobalId;
 
 /// The types a Jellyfin id can name, by the number it carries. Numbers are never reused:
 /// clients keep ids across sessions.
 const TYPES: &[(u32, &str)] = &[
-    (1, open_plex_api::server::SERVER_TYPE),
-    (2, open_plex_api::access::USER_TYPE),
-    (3, open_plex_api::library::LIBRARY_TYPE),
-    (4, open_plex_api::item::ITEM_TYPE),
-    (5, open_plex_api::media::VERSION_TYPE),
-    (6, open_plex_api::media::FILE_TYPE),
-    (7, open_plex_api::media::STREAM_TYPE),
-    (8, open_plex_api::tag::TAG_TYPE),
-    (9, open_plex_api::tag::PERSON_TYPE),
-    (10, open_plex_api::collection::COLLECTION_TYPE),
-    (11, open_plex_api::playlist::PLAYLIST_TYPE),
-    (12, open_plex_api::extra::EXTRA_TYPE),
-    (13, open_plex_api::playback::PLAYBACK_TYPE),
-    (14, open_plex_api::playlist::PLAYLIST_ENTRY_TYPE),
+    (1, klapz_api::server::SERVER_TYPE),
+    (2, klapz_api::access::USER_TYPE),
+    (3, klapz_api::library::LIBRARY_TYPE),
+    (4, klapz_api::item::ITEM_TYPE),
+    (5, klapz_api::media::VERSION_TYPE),
+    (6, klapz_api::media::FILE_TYPE),
+    (7, klapz_api::media::STREAM_TYPE),
+    (8, klapz_api::tag::TAG_TYPE),
+    (9, klapz_api::tag::PERSON_TYPE),
+    (10, klapz_api::collection::COLLECTION_TYPE),
+    (11, klapz_api::playlist::PLAYLIST_TYPE),
+    (12, klapz_api::extra::EXTRA_TYPE),
+    (13, klapz_api::playback::PLAYBACK_TYPE),
+    (14, klapz_api::playlist::PLAYLIST_ENTRY_TYPE),
     (15, crate::browse::STUDIO_TYPE),
     (16, crate::browse::YEAR_TYPE),
-    (17, open_plex_api::marker::MARKER_TYPE),
+    (17, klapz_api::marker::MARKER_TYPE),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

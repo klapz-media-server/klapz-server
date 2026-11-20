@@ -6,24 +6,24 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::metadata::{FrameRange, FrameSize, ScanType};
-use open_plex_core::metadata::{
+use klapz_core::metadata::{FrameRange, FrameSize, ScanType};
+use klapz_core::metadata::{
     ItemDepth, ItemFilter, ItemKind, ItemQuery, ItemSort, Listed, MetadataError, MetadataRepository,
 };
-use open_plex_core::page::{Cursor, CursorKey, Direction, Window};
-use open_plex_core::{MediaId, PartId, RatingKey, SectionId, StreamId};
-use open_plex_db::entity::{
+use klapz_core::page::{Cursor, CursorKey, Direction, Window};
+use klapz_core::{MediaId, PartId, RatingKey, SectionId, StreamId};
+use klapz_db::entity::{
     library_section, media, media_part, media_stream, metadata_item, stream_dolby_vision,
     stream_loudness,
 };
-use open_plex_db::write;
-use open_plex_db::SqlMetadataRepository;
+use klapz_db::write;
+use klapz_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 const SECTION: i64 = 4;
 
 async fn repository() -> SqlMetadataRepository {
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     seed(&connection).await;
@@ -947,7 +947,7 @@ async fn seed_analysed_tracks(connection: &DatabaseConnection) {
 
 #[tokio::test]
 async fn reads_a_tracks_analysis_with_its_dolby_vision_and_loudness() {
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     seed(&connection).await;

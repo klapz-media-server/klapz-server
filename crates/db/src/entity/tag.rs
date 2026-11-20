@@ -1,4 +1,4 @@
-use open_plex_core::TagKind;
+use klapz_core::TagKind;
 use sea_orm::entity::prelude::*;
 
 /// A genre, a country, or a person in one credit role.

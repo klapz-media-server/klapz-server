@@ -17,18 +17,18 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::Router;
 use http_body_util::BodyExt;
-use open_plex_api::{build_schema, ApiContext, ApiSchema};
-use open_plex_api_jellyfin::{router, JellyfinState};
-use open_plex_core::access::{
+use klapz_api::{build_schema, ApiContext, ApiSchema};
+use klapz_api_jellyfin::{router, JellyfinState};
+use klapz_core::access::{
     token_digest, AccessRepository, Extension, LibraryPermission, LibraryRole, NewUser, ServerRole,
 };
-use open_plex_core::metadata::{
+use klapz_core::metadata::{
     AudioAnalysis, FileLayout, ItemKind, MediaFile, MediaStream, MediaVersion, MetadataItem,
     SidePicture, SideStream, SideStreamKind, StatedFile, StatedTrack, StreamKind, TrackTraits,
     VideoAnalysis,
 };
-use open_plex_core::testing::{InMemoryAccess, InMemoryLibrary, InMemoryMetadata, StubStreams};
-use open_plex_core::{
+use klapz_core::testing::{InMemoryAccess, InMemoryLibrary, InMemoryMetadata, StubStreams};
+use klapz_core::{
     LibrarySection, MediaId, PartId, RatingKey, SectionId, SectionKind, ServerCapabilities,
     ServerIdentity, StreamId, UserId,
 };
@@ -134,9 +134,9 @@ pub const NOLAN_DIRECTOR: i64 = 402;
 pub const NOLAN: i64 = 501;
 
 /// `doodlebug`'s genre and director, as the import credits them.
-fn tags() -> Vec<open_plex_core::metadata::ItemTag> {
-    use open_plex_core::metadata::{ItemTag, Person, Tag, TagKind};
-    use open_plex_core::{PersonId, TagId};
+fn tags() -> Vec<klapz_core::metadata::ItemTag> {
+    use klapz_core::metadata::{ItemTag, Person, Tag, TagKind};
+    use klapz_core::{PersonId, TagId};
     let tag = |id: i64, kind, name: &str, person: Option<Person>| ItemTag {
         item_id: RatingKey::new(DOODLEBUG),
         tag: Tag {
@@ -166,10 +166,10 @@ fn tags() -> Vec<open_plex_core::metadata::ItemTag> {
 pub const INTRO: i64 = 601;
 
 /// The episode's intro and final credits, as an analysis found them.
-fn markers() -> Vec<open_plex_core::marker::Marker> {
-    use open_plex_core::marker::{Marker, MarkerKind};
+fn markers() -> Vec<klapz_core::marker::Marker> {
+    use klapz_core::marker::{Marker, MarkerKind};
     let marker = |id: i64, kind, start_ms, end_ms| Marker {
-        id: open_plex_core::MarkerId::new(id),
+        id: klapz_core::MarkerId::new(id),
         item: RatingKey::new(EPISODE),
         kind,
         owner: None,
@@ -424,7 +424,7 @@ pub struct Harness {
     pub schema: ApiSchema,
     pub access: Arc<InMemoryAccess>,
     pub streams: Arc<StubStreams>,
-    sessions: Arc<open_plex_api::Sessions>,
+    sessions: Arc<klapz_api::Sessions>,
     pub alice: UserId,
 }
 
@@ -455,8 +455,8 @@ async fn jellyfin_tokens(
     next: Next,
 ) -> Response {
     let path = request.uri().path().to_owned();
-    let rest = open_plex_api_jellyfin::surface_path(&path).unwrap_or("");
-    let token = open_plex_api_jellyfin::auth::token(request.headers(), request.uri().query());
+    let rest = klapz_api_jellyfin::surface_path(&path).unwrap_or("");
+    let token = klapz_api_jellyfin::auth::token(request.headers(), request.uri().query());
     let grant = match token {
         Some(token) => access
             .grant(Extension::Jellyfin, &token_digest(&token))
@@ -469,7 +469,7 @@ async fn jellyfin_tokens(
             request.extensions_mut().insert(grant.into_principal());
             next.run(request).await
         }
-        None if open_plex_api_jellyfin::auth::is_public(rest) => next.run(request).await,
+        None if klapz_api_jellyfin::auth::is_public(rest) => next.run(request).await,
         None => StatusCode::UNAUTHORIZED.into_response(),
     }
 }
@@ -484,7 +484,7 @@ fn library() -> InMemoryLibrary {
     .with_roots(
         [(1, FILMS, "/media/Movies"), (2, SERIES, "/media/TVShows")]
             .into_iter()
-            .map(|(id, section, path)| open_plex_core::SectionRoot {
+            .map(|(id, section, path)| klapz_core::SectionRoot {
                 id,
                 section_id: SectionId::new(section),
                 path: path.to_owned(),
@@ -515,7 +515,7 @@ impl Harness {
 
     async fn with_items(items: Vec<MetadataItem>) -> Self {
         let access = Arc::new(InMemoryAccess::default());
-        let hash = open_plex_core::account::hash_password(PASSWORD).unwrap();
+        let hash = klapz_core::account::hash_password(PASSWORD).unwrap();
         let mut ids = HashMap::new();
         for (name, role) in [
             ("alice", ServerRole::User),
@@ -571,26 +571,24 @@ impl Harness {
             .unwrap();
         let streams = Arc::new(StubStreams::default());
         let library = library();
-        let collections = Arc::new(open_plex_core::testing::InMemoryCollections::new(
-            items.clone(),
-        ));
+        let collections = Arc::new(klapz_core::testing::InMemoryCollections::new(items.clone()));
         let schema = build_schema(ApiContext {
             capabilities: ServerCapabilities::new(ServerIdentity::new(MACHINE, "0.1.0"), 0),
             library: Arc::new(library),
             metadata: Arc::new(metadata(items.clone()).with_collections(&collections)),
-            playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-            play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-            playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::new(items)),
+            playback: Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+            play_queues: Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+            playlists: Arc::new(klapz_core::testing::InMemoryPlaylists::new(items)),
             collections,
             access: Arc::clone(&access) as Arc<dyn AccessRepository>,
-            directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
-            watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-            streams: Arc::clone(&streams) as Arc<dyn open_plex_core::stream::StreamEngine>,
+            directory: Arc::new(klapz_core::testing::StubDirectory::default()),
+            watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
+            streams: Arc::clone(&streams) as Arc<dyn klapz_core::stream::StreamEngine>,
             session_locks: Arc::default(),
-            scans: Arc::new(open_plex_core::testing::RecordedScans::default()),
+            scans: Arc::new(klapz_core::testing::RecordedScans::default()),
         });
-        let sessions = Arc::new(open_plex_api::Sessions::new(
-            Arc::new(open_plex_core::account::SessionKey::generate()),
+        let sessions = Arc::new(klapz_api::Sessions::new(
+            Arc::new(klapz_core::account::SessionKey::generate()),
             true,
         ));
         Self {
@@ -615,7 +613,7 @@ impl Harness {
     }
 
     pub fn server_id() -> String {
-        open_plex_api_jellyfin::ServerInfo::of(&ServerIdentity::new(MACHINE, "0.1.0")).id
+        klapz_api_jellyfin::ServerInfo::of(&ServerIdentity::new(MACHINE, "0.1.0")).id
     }
 
     pub async fn send(
@@ -714,7 +712,7 @@ pub fn client_header(device: &str, token: Option<&str>) -> String {
 }
 
 pub fn jellyfin_id(type_name: &str, key: i64) -> String {
-    open_plex_api_jellyfin::id::of(type_name, key).unwrap()
+    klapz_api_jellyfin::id::of(type_name, key).unwrap()
 }
 
 /// Every key the reference sent that we do not, and every key we send that it does not, at

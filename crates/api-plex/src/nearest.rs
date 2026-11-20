@@ -10,11 +10,11 @@ use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};
 use axum::routing::get;
 use axum::Router;
-use open_plex_api::collection::COLLECTION_TYPE;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::GlobalId;
-use open_plex_core::page::MAX_ITEMS;
+use klapz_api::collection::COLLECTION_TYPE;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::library::LIBRARY_TYPE;
+use klapz_api::GlobalId;
+use klapz_core::page::MAX_ITEMS;
 use serde::Deserialize;
 
 use crate::auth::Caller;

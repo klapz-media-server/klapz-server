@@ -5,14 +5,14 @@
 //! it records is the stream's identity: `stopStream` names it.
 
 use async_graphql::{Context, Enum, InputObject, Result, SimpleObject, ID};
-use open_plex_core::lifecycle::{FallbackError, StartError};
-use open_plex_core::playback::{NewPlaybackSession, PlaybackOutput, StreamDecision};
-use open_plex_core::stream::{
+use klapz_core::lifecycle::{FallbackError, StartError};
+use klapz_core::playback::{NewPlaybackSession, PlaybackOutput, StreamDecision};
+use klapz_core::stream::{
     Delivery, FallbackRefusal, StartedStream, StreamError, StreamLimits, StreamOrder,
     StreamProtocol, StreamQuality, StreamSource, StreamTrack, SubtitleOutput,
 };
-use open_plex_core::tracks::selected_tracks;
-use open_plex_core::{now_epoch, MediaStream, PartId, RatingKey, StreamKind};
+use klapz_core::tracks::selected_tracks;
+use klapz_core::{now_epoch, MediaStream, PartId, RatingKey, StreamKind};
 
 use crate::node::GlobalId;
 use crate::playback::{PlaybackSessionObject, StreamDecisionType};
@@ -376,7 +376,7 @@ async fn prepare(
         &streams,
         crate::watch::track_choice_of(context, file.id).await?,
     );
-    let chosen = |kind: StreamKind, id: Option<open_plex_core::StreamId>| {
+    let chosen = |kind: StreamKind, id: Option<klapz_core::StreamId>| {
         id.and_then(|id| streams.iter().find(|s| s.kind == kind && s.id == id))
     };
 
@@ -412,7 +412,7 @@ async fn prepare(
     let key = input
         .key
         .clone()
-        .unwrap_or_else(open_plex_core::access::new_token);
+        .unwrap_or_else(klapz_core::access::new_token);
     Ok(Ok(Prepared {
         order: StreamOrder {
             key: caller.session_key(&key),

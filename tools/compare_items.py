@@ -8,9 +8,9 @@ Reports three classes separately, because they call for different work.
   differing - both send it, with different values. A bug, unless explained.
   extra     - we send it, the reference does not. Usually a deliberate deviation.
 
-Usage: PLEX_TOKEN=... OPENPLEX_ADMIN_PASSWORD=... python tools/compare_items.py [section...]
+Usage: PLEX_TOKEN=... KLAPZ_ADMIN_PASSWORD=... python tools/compare_items.py [section...]
 
-Ours is read as its `admin` account, signed in with `OPENPLEX_ADMIN_PASSWORD`.
+Ours is read as its `admin` account, signed in with `KLAPZ_ADMIN_PASSWORD`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import sys
 import urllib.request
 from collections import defaultdict
 
-from open_plex_session import authorization, sign_in
+from klapz_session import authorization, sign_in
 
 REFERENCE = "http://127.0.0.1:32400"
 OURS = "http://127.0.0.1:32500"

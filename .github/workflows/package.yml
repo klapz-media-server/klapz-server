@@ -70,7 +70,7 @@ jobs:
           exe=""; python=python3
           if [[ "$RUNNER_OS" == Windows ]]; then exe=".exe"; python=python; fi
           {
-            echo "PACKAGE=open-plex-$version-${{ matrix.platform }}"
+            echo "PACKAGE=klapz-$version-${{ matrix.platform }}"
             echo "EXE=$exe"
             echo "PYTHON=$python"
           } >> "$GITHUB_ENV"
@@ -90,7 +90,7 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }} -p open-plex-server -p open-plex-scanner
+        run: cargo build --release --locked --target ${{ matrix.target }} -p klapz-server -p klapz-scanner
 
       - name: Fetch ffmpeg-plex
         run: |
@@ -106,8 +106,8 @@ jobs:
       - name: Lay out the package
         run: |
           mkdir "$PACKAGE"
-          cp "target/${{ matrix.target }}/release/open-plex-server$EXE" "$PACKAGE/"
-          cp "target/${{ matrix.target }}/release/open-plex-scanner$EXE" "$PACKAGE/"
+          cp "target/${{ matrix.target }}/release/klapz-server$EXE" "$PACKAGE/"
+          cp "target/${{ matrix.target }}/release/klapz-scanner$EXE" "$PACKAGE/"
           cp "$RUNNER_TEMP/ffmpeg-plex/ffmpeg$EXE" "$PACKAGE/"
           cp "$RUNNER_TEMP/ffmpeg-plex/configure-cmdline.txt" "$PACKAGE/ffmpeg-configure.txt"
           cp packaging/README.txt "$PACKAGE/"
@@ -123,11 +123,11 @@ jobs:
           "$package/ffmpeg$EXE" -hide_banner -v error \
             -filter_complex "testsrc=duration=2:size=320x240:rate=25[v];sine=duration=2[a]" \
             -map "[v]" -map "[a]" -c:v mjpeg -c:a flac "films/Smoke Test (2020)/Smoke Test (2020).mkv"
-          export OPENPLEX_DATABASE_URL="sqlite://smoke.db?mode=rwc"
-          unset OPENPLEX_TRANSCODER OPENPLEX_FFPROBE OPENPLEX_SCANNER
-          "$package/open-plex-server$EXE" library add --kind movie --title Smoke films | tee library.txt
+          export KLAPZ_DATABASE_URL="sqlite://smoke.db?mode=rwc"
+          unset KLAPZ_TRANSCODER KLAPZ_FFPROBE KLAPZ_SCANNER
+          "$package/klapz-server$EXE" library add --kind movie --title Smoke films | tee library.txt
           section=$(sed -n 's/^library \([0-9]*\) created$/\1/p' library.txt)
-          "$package/open-plex-server$EXE" scan "$section"
+          "$package/klapz-server$EXE" scan "$section"
           $PYTHON - smoke.db <<'EOF'
           import sqlite3, sys
           codecs = sorted(row[0] for row in sqlite3.connect(sys.argv[1]).execute("select codec from media_stream"))
@@ -168,6 +168,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sha256sum open-plex-* > SHA256SUMS
+          sha256sum klapz-* > SHA256SUMS
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
-            --generate-notes open-plex-* SHA256SUMS
+            --generate-notes klapz-* SHA256SUMS

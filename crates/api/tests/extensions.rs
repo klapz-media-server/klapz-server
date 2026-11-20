@@ -5,10 +5,10 @@
 
 use std::sync::Arc;
 
-use open_plex_api::{build_schema, ApiContext, ApiSchema, GlobalId};
-use open_plex_core::access::{token_digest, AccessRepository, Extension, NewUser, ServerRole};
-use open_plex_core::testing::{InMemoryAccess, InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{Principal, UserId};
+use klapz_api::{build_schema, ApiContext, ApiSchema, GlobalId};
+use klapz_core::access::{token_digest, AccessRepository, Extension, NewUser, ServerRole};
+use klapz_core::testing::{InMemoryAccess, InMemoryLibrary, InMemoryMetadata};
+use klapz_core::{Principal, UserId};
 use serde_json::{json, Value};
 
 const PASSWORD: &str = "correct horse";
@@ -16,14 +16,14 @@ const PASSWORD: &str = "correct horse";
 struct Fixture {
     schema: ApiSchema,
     access: Arc<InMemoryAccess>,
-    sessions: Arc<open_plex_api::Sessions>,
+    sessions: Arc<klapz_api::Sessions>,
     alice: UserId,
 }
 
 /// `alice`, an active user with a password and no connection yet.
 async fn fixture() -> Fixture {
     let access = Arc::new(InMemoryAccess::default());
-    let hash = open_plex_core::account::hash_password(PASSWORD).unwrap();
+    let hash = klapz_core::account::hash_password(PASSWORD).unwrap();
     let alice = access
         .create_user(
             NewUser {
@@ -39,28 +39,25 @@ async fn fixture() -> Fixture {
         .unwrap()
         .id;
     let schema = build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(InMemoryLibrary::new(Vec::new())),
         metadata: Arc::new(InMemoryMetadata::default()),
-        playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: Arc::new(open_plex_core::testing::InMemoryCollections::default()),
+        playback: Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: Arc::new(klapz_core::testing::InMemoryCollections::default()),
         access: Arc::clone(&access) as Arc<dyn AccessRepository>,
-        directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: Arc::new(open_plex_core::testing::StubStreams::default()),
+        directory: Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: Arc::default(),
-        scans: Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: Arc::new(klapz_core::testing::RecordedScans::default()),
     });
-    let sessions = Arc::new(open_plex_api::Sessions::new(
-        Arc::new(open_plex_core::account::SessionKey::generate()),
+    let sessions = Arc::new(klapz_api::Sessions::new(
+        Arc::new(klapz_core::account::SessionKey::generate()),
         true,
     ));
     Fixture {
@@ -84,7 +81,7 @@ impl Fixture {
     async fn as_owner(&self, query: &str, variables: Value) -> Value {
         self.run(
             async_graphql::Request::new(query)
-                .data(open_plex_core::testing::owner())
+                .data(klapz_core::testing::owner())
                 .variables(async_graphql::Variables::from_json(variables)),
         )
         .await
@@ -151,7 +148,7 @@ impl Fixture {
             user: self.alice,
             name: "alice".to_owned(),
             role: ServerRole::User,
-            libraries: open_plex_core::access::LibraryAccess::Only(std::collections::HashMap::new()),
+            libraries: klapz_core::access::LibraryAccess::Only(std::collections::HashMap::new()),
             server_identifier: None,
         }
     }

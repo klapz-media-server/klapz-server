@@ -161,7 +161,7 @@ impl Listing {
             .list("genreIds")
             .iter()
             .map(|genre| {
-                crate::id::global_of_type(genre, open_plex_api::tag::TAG_TYPE)
+                crate::id::global_of_type(genre, klapz_api::tag::TAG_TYPE)
                     .map_err(JellyfinError::from)
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -174,7 +174,7 @@ impl Listing {
         if let Some(date) = query.get("minPremiereDate") {
             filter.insert(
                 "releasedFrom".to_owned(),
-                json!(open_plex_api::date_time::format(premiere_date(date)?)),
+                json!(klapz_api::date_time::format(premiere_date(date)?)),
             );
         }
         if let Some(term) = query.get("searchTerm") {
@@ -203,9 +203,9 @@ impl Listing {
 fn premiere_date(text: &str) -> Result<i64, JellyfinError> {
     let unzoned = || format!("{text}Z");
     let day = || format!("{text}T00:00:00Z");
-    open_plex_api::date_time::parse(text)
-        .or_else(|| open_plex_api::date_time::parse(&unzoned()))
-        .or_else(|| open_plex_api::date_time::parse(&day()))
+    klapz_api::date_time::parse(text)
+        .or_else(|| klapz_api::date_time::parse(&unzoned()))
+        .or_else(|| klapz_api::date_time::parse(&day()))
         .ok_or(JellyfinError::BadRequest("a date is not a date"))
 }
 
@@ -409,7 +409,7 @@ mod tests {
         let genre = crate::id::of("Tag", 12).unwrap();
         assert_eq!(
             listing(&format!("GenreIds={genre}")).unwrap().filter_json(),
-            json!({ "tags": [{ "kind": "GENRE", "ids": [open_plex_api::GlobalId::encode("Tag", 12)] }] })
+            json!({ "tags": [{ "kind": "GENRE", "ids": [klapz_api::GlobalId::encode("Tag", 12)] }] })
         );
         assert!(matches!(
             listing("GenreIds=zzz"),

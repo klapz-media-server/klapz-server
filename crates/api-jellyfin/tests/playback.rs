@@ -9,7 +9,7 @@ use common::{
     client_header, fixture, jellyfin_id, shape_differences, Harness, DOODLEBUG, DOODLEBUG_AUDIO,
     EPISODE, HIDDEN_FILM,
 };
-use open_plex_core::stream::Delivery;
+use klapz_core::stream::Delivery;
 use serde_json::{json, Value};
 
 /// A browser's profile: MKV and MP4 with H.264, AAC or Opus, as Jellyfin Web posts it.
@@ -188,7 +188,7 @@ async fn the_transcoding_address_starts_an_hls_conversion() {
     let started = harness.streams.started.lock().unwrap();
     assert_eq!(
         started[0].delivery,
-        Delivery::Converted(open_plex_core::stream::StreamProtocol::Hls)
+        Delivery::Converted(klapz_core::stream::StreamProtocol::Hls)
     );
     assert_eq!(started[0].position_ms, 60_000);
     assert_eq!(started[0].source.audio.codec, "opus");

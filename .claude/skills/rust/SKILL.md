@@ -1,11 +1,11 @@
 ---
 name: rust
-description: Rust conventions for open-plex, an Axum server reimplementing the Plex Media Server API. Load this skill before writing or modifying any .rs file in the repo, before adding a dependency to a Cargo.toml, and before designing a module, a domain type or a handler. It covers the DB/Core/binding layering, strong typing through newtypes, error handling, the async/blocking boundary, dual XML/JSON MediaContainer serialization, security, testing and lints — and above all the anti-slop rules that keep the code from reading as machine-generated. Use it whenever the task mentions Rust, Axum, tokio, serde, SeaORM, clippy, Cargo, ffmpeg, or code quality and maintainability, even when no file is named.
+description: Rust conventions for klapz, an Axum server reimplementing the Plex Media Server API. Load this skill before writing or modifying any .rs file in the repo, before adding a dependency to a Cargo.toml, and before designing a module, a domain type or a handler. It covers the DB/Core/binding layering, strong typing through newtypes, error handling, the async/blocking boundary, dual XML/JSON MediaContainer serialization, security, testing and lints — and above all the anti-slop rules that keep the code from reading as machine-generated. Use it whenever the task mentions Rust, Axum, tokio, serde, SeaORM, clippy, Cargo, ffmpeg, or code quality and maintainability, even when no file is named.
 ---
 
-# Rust in open-plex
+# Rust in klapz
 
-open-plex reimplements the Plex Media Server API: ~260 HTTP operations described by the official
+klapz reimplements the Plex Media Server API: ~260 HTTP operations described by the official
 spec in `docs/openapi.json`. The dominant risk in this project is surface area — 260 handlers
 written without discipline become an unreadable mass where every bug costs three times over.
 
@@ -83,7 +83,7 @@ directly past the official API; merging them into one owner removed several bugs
   it to the new method. Re-read the file after `cargo fmt` before patching it: the anchors move.
 - **A GraphQL `Int` is 32 bits.** A field backed by an `i64` that can exceed it (a size in bytes,
   a counter, microseconds) is the `Int64` scalar (`api::int64`), never a bare `String`; the
-  adapters read it with `open_plex_api::int64::deserialize` or `deserialize_optional`.
+  adapters read it with `klapz_api::int64::deserialize` or `deserialize_optional`.
 - **`std::fs::canonicalize` returns verbatim paths on Windows**: `\\?\C:\…`, and a mapped
   network drive becomes `\\?\UNC\server\share\…`. Store and publish the plain form; the
   standard library adds the prefix back itself when a path is long.
@@ -219,7 +219,7 @@ writing any endpoint that touches disk, `ffmpeg`, authentication or SQL.
 ## Transcoding is process supervision
 
 Plex does not decode video itself — it **executes `ffmpeg`** (its `Plex Transcoder` is a patched
-ffmpeg binary) and supervises the process. open-plex does the same, and this is an architectural
+ffmpeg binary) and supervises the process. klapz does the same, and this is an architectural
 decision rather than a detail: no libav bindings, no video decoding inside the server's address
 space. Images are the exception: `/photo/:/transcode` uses the `image` crate in process.
 
@@ -236,7 +236,7 @@ handed to a shell.
 ## No feature behind a paywall
 
 Plex reserves part of its functionality for Plex Pass: hardware transcoding, offline sync, skip
-intro, Live TV and DVR, loudness analysis, and more. **open-plex has no paid tier** — everything
+intro, Live TV and DVR, loudness analysis, and more. **klapz has no paid tier** — everything
 ships in the base version.
 
 This has a concrete effect on the code, not just on the pitch. Endpoints and attributes that Plex
@@ -263,7 +263,7 @@ Two rules make the separation real rather than decorative, and both are enforced
 through the dependencies declared in each `Cargo.toml`:
 
 **A binding never depends on `db`.** If it needs data, `core` must expose it. A
-`use open_plex_db::…` inside `api-plex` is an architectural defect, not a shortcut.
+`use klapz_db::…` inside `api-plex` is an architectural defect, not a shortcut.
 
 **`core` knows nothing of HTTP, `MediaContainer`, or Plex vocabulary.** No `StatusCode` in its
 signatures, no type named after the spec. `core` talks about `Movie`, `Episode`,
@@ -361,7 +361,7 @@ No Rust-touching task is finished until these five steps have passed, in order:
 
 Judge the test run by cargo's exit code and the `FAILED` lines, not by summing `test result`
 lines. A GraphQL change also regenerates `docs/schema.graphql` and `docs/introspection.json`
-(`cargo run -p open-plex-api --example sdl` and `--example introspect`).
+(`cargo run -p klapz-api --example sdl` and `--example introspect`).
 
 These commands passing is not proof of quality, it is the floor. The reviewer test at the top of
 this page remains the real criterion.

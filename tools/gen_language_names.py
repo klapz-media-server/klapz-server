@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LOCALES = ROOT / "files" / "Resources" / "locale"
 OUT = ROOT / "crates" / "api-plex" / "src" / "language_names.rs"
 CLDR = "https://raw.githubusercontent.com/unicode-org/cldr-json/39.0.0/cldr-json"
-CACHE = Path(tempfile.gettempdir()) / "open-plex-cldr-39"
+CACHE = Path(tempfile.gettempdir()) / "klapz-cldr-39"
 
 # Codes a stream can carry that are not languages of one country but still have names.
 SPECIAL = ("mul", "und", "zxx", "mis")

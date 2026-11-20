@@ -25,9 +25,7 @@ pub fn date(official: &str) -> String {
 
 /// The current time, as Jellyfin writes it.
 pub fn now() -> String {
-    date(&open_plex_api::date_time::format(
-        open_plex_core::now_epoch(),
-    ))
+    date(&klapz_api::date_time::format(klapz_core::now_epoch()))
 }
 
 #[cfg(test)]

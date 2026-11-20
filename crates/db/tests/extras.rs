@@ -4,14 +4,14 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::extra::ExtraKind;
-use open_plex_core::metadata::{MetadataRepository, StreamKind};
-use open_plex_core::{ExtraId, MediaId, PartId, RatingKey, StreamId};
-use open_plex_db::entity::{
+use klapz_core::extra::ExtraKind;
+use klapz_core::metadata::{MetadataRepository, StreamKind};
+use klapz_core::{ExtraId, MediaId, PartId, RatingKey, StreamId};
+use klapz_db::entity::{
     extra, extra_media, extra_track, library_section, media, media_part, metadata_item,
 };
-use open_plex_db::write;
-use open_plex_db::SqlMetadataRepository;
+use klapz_db::write;
+use klapz_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 const FILM: i64 = 576_947;
@@ -113,7 +113,7 @@ fn track(id: i64, version: i64, kind: &str, position: i32) -> extra_track::Activ
 }
 
 async fn repository() -> (SqlMetadataRepository, DatabaseConnection) {
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     library_section::Entity::insert(library_section::ActiveModel {
@@ -189,7 +189,7 @@ async fn extras_come_by_position_then_id_with_the_unplaced_last() {
         ]
     );
     assert_eq!(
-        open_plex_core::extra::primary(&extras).map(|extra| extra.id.get()),
+        klapz_core::extra::primary(&extras).map(|extra| extra.id.get()),
         Some(FRENCH)
     );
     let french = &extras[1];

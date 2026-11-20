@@ -4,11 +4,11 @@
 //! Its own module because the repository and the importer both need the kind's encoding, and
 //! because the repository's media lookups fall back to it for what the items' tables lack.
 
-use open_plex_core::extra::{Extra, ExtraKind};
-use open_plex_core::metadata::{
+use klapz_core::extra::{Extra, ExtraKind};
+use klapz_core::metadata::{
     AudioAnalysis, FileLayout, StatedFile, StatedTrack, StreamKind, TrackTraits, VideoAnalysis,
 };
-use open_plex_core::{
+use klapz_core::{
     ExtraId, MediaFile, MediaId, MediaStream, MediaVersion, PartId, RatingKey, StreamId,
 };
 use sea_orm::sea_query::NullOrdering;

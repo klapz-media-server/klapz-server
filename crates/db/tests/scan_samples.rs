@@ -13,15 +13,15 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use open_plex_core::ids::SectionId;
-use open_plex_core::scan::{NewItem, NewMedia, NewPart, ScanRepository};
-use open_plex_db::entity::{
+use klapz_core::ids::SectionId;
+use klapz_core::scan::{NewItem, NewMedia, NewPart, ScanRepository};
+use klapz_db::entity::{
     item_chapter, library_section, media, media_part, media_stream, metadata_item,
     stream_dolby_vision,
 };
-use open_plex_db::SqlScanRepository;
-use open_plex_scanner::report::FileIdentity;
-use open_plex_scanner::{analysis_from_ffprobe, sequence_header_from_trace};
+use klapz_db::SqlScanRepository;
+use klapz_scanner::report::FileIdentity;
+use klapz_scanner::{analysis_from_ffprobe, sequence_header_from_trace};
 use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::Value;
 
@@ -397,7 +397,7 @@ async fn a_scanned_sample_stores_what_the_reference_stored() {
 }
 
 async fn films_library() -> DatabaseConnection {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
     library_section::Entity::insert(library_section::ActiveModel {
         id: ActiveValue::Set(FILMS.get()),
         kind: ActiveValue::Set("movie".to_owned()),
@@ -419,10 +419,10 @@ async fn films_library() -> DatabaseConnection {
 
 #[tokio::test]
 async fn a_scan_keeps_what_ffprobe_states_and_what_does_not_play() {
-    use open_plex_core::metadata::{MetadataRepository, SideStreamKind, StreamKind};
+    use klapz_core::metadata::{MetadataRepository, SideStreamKind, StreamKind};
     let connection = films_library().await;
     let scan = SqlScanRepository::new(connection.clone());
-    let metadata = open_plex_db::SqlMetadataRepository::new(connection.clone());
+    let metadata = klapz_db::SqlMetadataRepository::new(connection.clone());
     let sample = samples().join("90210-beverly-hills-ng-s01e21-vf-sd-tvhdrip-mp4-avc-aac");
     let item = scan
         .add_item(FILMS, new_item(&sample), 1_763_400_000)

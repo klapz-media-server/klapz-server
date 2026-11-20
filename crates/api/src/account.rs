@@ -9,22 +9,22 @@
 use std::sync::Arc;
 
 use async_graphql::{Context, Enum, InputObject, Result, SimpleObject};
-use open_plex_core::access::{
+use klapz_core::access::{
     new_token, token_digest, AccessError, Extension, ExtensionDevice, Login, NewUser, ServerRole,
     User,
 };
-use open_plex_core::account::{
+use klapz_core::account::{
     hash_password, is_acceptable_password, login_of, normalized_email, normalized_username,
     verify_against_nothing, verify_password, SessionKey, SignInThrottle, PASSWORD_LENGTH,
     SESSION_LIFETIME_SECONDS, USERNAME_LENGTH,
 };
-use open_plex_core::now_epoch;
+use klapz_core::now_epoch;
 
 use crate::access::{require_caller, ExtensionType, UserObject};
 use crate::schema::ApiContext;
 
 /// The cookie a session travels in.
-pub const SESSION_COOKIE: &str = "open_plex_session";
+pub const SESSION_COOKIE: &str = "klapz_session";
 
 /// Argon2 runs at once at most this many times: each one holds a blocking thread and 19 MiB,
 /// and sign-ins are open to anyone.
@@ -204,7 +204,7 @@ pub struct SignInInput {
     pub password: String,
 }
 
-/// What `signIn` did. On success the session is in the `open_plex_session` cookie, out of reach
+/// What `signIn` did. On success the session is in the `klapz_session` cookie, out of reach
 /// of a page's scripts: there is no token here to keep. A client that is no browser reads the
 /// cookie's value from `Set-Cookie` and presents it as `Authorization: Bearer <value>`.
 #[derive(Debug, SimpleObject)]

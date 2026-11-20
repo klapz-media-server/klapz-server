@@ -11,9 +11,9 @@ use std::sync::Arc;
 use async_graphql::connection::{Connection, EmptyFields};
 use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{Context, Enum, Object, Result, ID};
-use open_plex_core::chapter::{Chapter, ChapterSource};
-use open_plex_core::metadata::{MetadataError, MetadataRepository};
-use open_plex_core::{ChapterId, RatingKey};
+use klapz_core::chapter::{Chapter, ChapterSource};
+use klapz_core::metadata::{MetadataError, MetadataRepository};
+use klapz_core::{ChapterId, RatingKey};
 
 use crate::cursor::OpaqueCursor;
 use crate::int64::Int64;
@@ -109,7 +109,7 @@ impl ChapterObject {
 
 /// What a scanned file states of a chapter.
 #[derive(Debug, Clone)]
-pub struct StatedChapterObject(pub open_plex_core::chapter::StatedChapter);
+pub struct StatedChapterObject(pub klapz_core::chapter::StatedChapter);
 
 #[Object(name = "StatedChapter")]
 impl StatedChapterObject {

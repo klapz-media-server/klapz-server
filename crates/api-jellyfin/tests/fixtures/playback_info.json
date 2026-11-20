@@ -92,7 +92,7 @@
       "Formats": [],
       "Bitrate": 667480,
       "RequiredHttpHeaders": {},
-      "TranscodingUrl": "/videos/c4927ec3-8c9f-3d59-490e-df05de2d8a2a/master.m3u8?DeviceId=open-plex-capture&MediaSourceId=c4927ec38c9f3d59490edf05de2d8a2a&VideoCodec=h264&AudioCodec=aac&AudioStreamIndex=1&VideoBitrate=119616000&AudioBitrate=384000&MaxFramerate=29.97003&SegmentContainer=ts&PlaySessionId=906d1a1b65f1467c95849bfdc1e61c96&ApiKey=<token>&TranscodingMaxAudioChannels=2&RequireAvc=false&EnableAudioVbrEncoding=true&Tag=482e902bd606907fd63eb1c3df52a895&h264-level=30&h264-videobitdepth=8&h264-profile=main&TranscodeReasons=ContainerNotSupported,AudioCodecNotSupported",
+      "TranscodingUrl": "/videos/c4927ec3-8c9f-3d59-490e-df05de2d8a2a/master.m3u8?DeviceId=klapz-capture&MediaSourceId=c4927ec38c9f3d59490edf05de2d8a2a&VideoCodec=h264&AudioCodec=aac&AudioStreamIndex=1&VideoBitrate=119616000&AudioBitrate=384000&MaxFramerate=29.97003&SegmentContainer=ts&PlaySessionId=906d1a1b65f1467c95849bfdc1e61c96&ApiKey=<token>&TranscodingMaxAudioChannels=2&RequireAvc=false&EnableAudioVbrEncoding=true&Tag=482e902bd606907fd63eb1c3df52a895&h264-level=30&h264-videobitdepth=8&h264-profile=main&TranscodeReasons=ContainerNotSupported,AudioCodecNotSupported",
       "TranscodingSubProtocol": "hls",
       "TranscodingContainer": "ts",
       "DefaultAudioStreamIndex": 1,

@@ -3,19 +3,19 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::collection::{CollectionRepository, NewCollection};
-use open_plex_core::common::Shared;
-use open_plex_core::edit::ItemField;
-use open_plex_core::metadata::{
+use klapz_core::collection::{CollectionRepository, NewCollection};
+use klapz_core::common::Shared;
+use klapz_core::edit::ItemField;
+use klapz_core::metadata::{
     FieldValue, ItemDepth, ItemFilter, ItemKind, ItemQuery, MetadataRepository, TagKind,
     TrackCondition, TrackField, ValueField,
 };
-use open_plex_core::page::Window;
-use open_plex_core::{RatingKey, SectionId};
-use open_plex_db::entity::{
+use klapz_core::page::Window;
+use klapz_core::{RatingKey, SectionId};
+use klapz_db::entity::{
     item_field_lock, item_tag, library_section, media, media_part, media_stream, metadata_item, tag,
 };
-use open_plex_db::{write, SqlCollectionRepository, SqlMetadataRepository};
+use klapz_db::{write, SqlCollectionRepository, SqlMetadataRepository};
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 const FILMS: i64 = 4;
@@ -169,7 +169,7 @@ fn lock(item: i64, field: ItemField) -> item_field_lock::ActiveModel {
 /// Avatar in two versions (h264 then hevc, a 5.1 and a stereo track), Avatar 2 in one, a
 /// film with no media, and a series whose two episodes share a season.
 async fn connection() -> DatabaseConnection {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
     library_section::Entity::insert_many([section(FILMS, "movie"), section(SERIES, "show")])
         .exec(&connection)
         .await
@@ -460,5 +460,5 @@ async fn episodes_share_their_season_and_series() {
 async fn an_empty_set_shares_nothing_and_differs_on_nothing() {
     let repository = SqlMetadataRepository::new(connection().await);
     let common = repository.common_fields(&films(ids(&[999]))).await.unwrap();
-    assert_eq!(common, open_plex_core::common::CommonFields::empty());
+    assert_eq!(common, klapz_core::common::CommonFields::empty());
 }

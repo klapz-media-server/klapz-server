@@ -1159,7 +1159,7 @@ pub(crate) mod tests {
 
     pub fn track(kind: &str, codec: &str) -> Track {
         Track {
-            id: open_plex_api::GlobalId::encode("MediaStream", 1),
+            id: klapz_api::GlobalId::encode("MediaStream", 1),
             kind: kind.to_owned(),
             position: 0,
             codec: Some(codec.to_owned()),

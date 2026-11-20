@@ -7,15 +7,15 @@
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use http_body_util::BodyExt;
-use open_plex_api::{build_schema, ApiContext, ApiSchema};
-use open_plex_api_plex::{router, PlexState};
-use open_plex_core::edit::{CalendarDate, ItemField};
-use open_plex_core::metadata::{
+use klapz_api::{build_schema, ApiContext, ApiSchema};
+use klapz_api_plex::{router, PlexState};
+use klapz_core::edit::{CalendarDate, ItemField};
+use klapz_core::metadata::{
     AudioAnalysis, FileLayout, ItemKind, MediaFile, MediaStream, MediaVersion, MetadataItem,
     StreamKind, TrackTraits,
 };
-use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{
+use klapz_core::testing::{InMemoryLibrary, InMemoryMetadata};
+use klapz_core::{
     LibrarySection, MediaId, PartId, RatingKey, SectionId, SectionKind, ServerCapabilities,
     ServerIdentity, StreamId,
 };
@@ -187,7 +187,7 @@ fn tracks(
             stream_url: None,
             content_hash: None,
             open_subtitles_hash: None,
-            stated: open_plex_core::metadata::StatedFile::default(),
+            stated: klapz_core::metadata::StatedFile::default(),
         });
         let audio = kind == StreamKind::Audio;
         media.2.push(MediaStream {
@@ -215,7 +215,7 @@ fn tracks(
             }),
             subtitle: None,
             required_bandwidths: Vec::new(),
-            stated: open_plex_core::metadata::StatedTrack::default(),
+            stated: klapz_core::metadata::StatedTrack::default(),
         });
     }
     media
@@ -294,16 +294,16 @@ fn schema() -> ApiSchema {
             section(5, SectionKind::Show, "VF - Series"),
         ])),
         metadata: std::sync::Arc::new(metadata),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -312,7 +312,7 @@ async fn get(uri: &str, json: bool) -> (StatusCode, String) {
         ServerIdentity::new(MACHINE, "0.1.0-dev"),
         schema(),
     ))
-    .layer(axum::Extension(open_plex_core::testing::owner()));
+    .layer(axum::Extension(klapz_core::testing::owner()));
     let mut request = Request::builder().uri(uri);
     if json {
         request = request.header(header::ACCEPT, "application/json");

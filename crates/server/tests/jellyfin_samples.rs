@@ -19,13 +19,13 @@ use axum::extract::Request;
 use axum::middleware::Next;
 use axum::response::Response;
 use http_body_util::BodyExt;
-use open_plex_api::{build_schema, ApiContext};
-use open_plex_core::access::{AccessRepository, NewUser, ServerRole};
-use open_plex_core::scan::{NewItem, NewMedia, NewPart, ScanRepository};
-use open_plex_core::{SectionKind, ServerCapabilities, ServerIdentity};
-use open_plex_db::repository::{create_library, NewLibrary};
-use open_plex_db::{SqlLibraryRepository, SqlMetadataRepository, SqlScanRepository};
-use open_plex_scanner::report::{Output, Report};
+use klapz_api::{build_schema, ApiContext};
+use klapz_core::access::{AccessRepository, NewUser, ServerRole};
+use klapz_core::scan::{NewItem, NewMedia, NewPart, ScanRepository};
+use klapz_core::{SectionKind, ServerCapabilities, ServerIdentity};
+use klapz_db::repository::{create_library, NewLibrary};
+use klapz_db::{SqlLibraryRepository, SqlMetadataRepository, SqlScanRepository};
+use klapz_scanner::report::{Output, Report};
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -143,7 +143,7 @@ fn same(ours: Option<&Value>, theirs: Option<&Value>) -> bool {
 
 /// Lets every request through as the server's owner.
 async fn as_owner(
-    axum::extract::State(principal): axum::extract::State<open_plex_core::Principal>,
+    axum::extract::State(principal): axum::extract::State<klapz_core::Principal>,
     mut request: Request,
     next: Next,
 ) -> Response {
@@ -152,8 +152,8 @@ async fn as_owner(
 }
 
 /// The Jellyfin surface over the official API over storage, every request the owner's.
-async fn jellyfin_app(connection: &open_plex_db::DatabaseConnection) -> axum::Router {
-    let access = Arc::new(open_plex_core::testing::InMemoryAccess::default());
+async fn jellyfin_app(connection: &klapz_db::DatabaseConnection) -> axum::Router {
+    let access = Arc::new(klapz_core::testing::InMemoryAccess::default());
     let owner = access
         .create_user(
             NewUser {
@@ -167,28 +167,28 @@ async fn jellyfin_app(connection: &open_plex_db::DatabaseConnection) -> axum::Ro
         )
         .await
         .unwrap();
-    let principal = open_plex_core::access::user_principal(owner, &[]);
+    let principal = klapz_core::access::user_principal(owner, &[]);
     let identity = ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0");
     let schema = build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity.clone(), 0),
         library: Arc::new(SqlLibraryRepository::new(connection.clone())),
         metadata: Arc::new(SqlMetadataRepository::new(connection.clone())),
-        playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: Arc::new(open_plex_core::testing::InMemoryCollections::default()),
+        playback: Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: Arc::new(klapz_core::testing::InMemoryCollections::default()),
         access: Arc::clone(&access) as Arc<dyn AccessRepository>,
-        directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: Arc::new(open_plex_core::testing::StubStreams::default()),
+        directory: Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: Arc::default(),
-        scans: Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: Arc::new(klapz_core::testing::RecordedScans::default()),
     });
-    let sessions = Arc::new(open_plex_api::Sessions::new(
-        Arc::new(open_plex_core::account::SessionKey::generate()),
+    let sessions = Arc::new(klapz_api::Sessions::new(
+        Arc::new(klapz_core::account::SessionKey::generate()),
         true,
     ));
-    open_plex_api_jellyfin::router(open_plex_api_jellyfin::JellyfinState::new(
+    klapz_api_jellyfin::router(klapz_api_jellyfin::JellyfinState::new(
         schema, sessions, &identity,
     ))
     .layer(axum::middleware::from_fn_with_state(principal, as_owner))
@@ -232,7 +232,7 @@ fn differences_of(name: &str, answer: &Value, reference: &Value) -> Vec<String> 
 
 #[tokio::test]
 async fn every_sample_is_published_as_the_reference_publishes_it() {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
     let mut sections = BTreeMap::new();
     // The reference's films are in a French library, its series in one of no language, which
     // its server reads as English: unnamed chapters are named in it.
@@ -274,7 +274,7 @@ async fn every_sample_is_published_as_the_reference_publishes_it() {
     let mut differences = Vec::new();
     for (sample, item, reference) in items {
         let name = sample.file_name().unwrap().to_str().unwrap();
-        let id = open_plex_api_jellyfin::id::of("Item", item.get()).unwrap();
+        let id = klapz_api_jellyfin::id::of("Item", item.get()).unwrap();
         let response = app
             .clone()
             .oneshot(

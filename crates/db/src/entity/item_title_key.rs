@@ -3,7 +3,7 @@ use sea_orm::entity::prelude::*;
 /// One whole title of one item, folded, as a search ranks it.
 ///
 /// Keyed by item first: ranking looks up the keys of a row already matched, never searches
-/// them. See `open_plex_core::search::title_keys` and `migration::m0031_title_key`.
+/// them. See `klapz_core::search::title_keys` and `migration::m0031_title_key`.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "item_title_key")]
 pub struct Model {

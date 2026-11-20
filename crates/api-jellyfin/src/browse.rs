@@ -127,7 +127,7 @@ async fn covered(state: &JellyfinState, query: &Query) -> Result<Vec<Library>, J
     let all = libraries(state).await?;
     match query.get("parentId") {
         Some(parent) => {
-            let global = id::global_of_type(parent, open_plex_api::library::LIBRARY_TYPE)
+            let global = id::global_of_type(parent, klapz_api::library::LIBRARY_TYPE)
                 .map_err(|_| JellyfinError::NotImplemented("shared values below a library"))?;
             Ok(all
                 .into_iter()

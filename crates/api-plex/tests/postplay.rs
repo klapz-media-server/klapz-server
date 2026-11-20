@@ -8,12 +8,12 @@
 use axum::body::Body;
 use axum::http::{header, Method, Request, StatusCode};
 use http_body_util::BodyExt;
-use open_plex_api::{build_schema, ApiContext, ApiSchema};
-use open_plex_api_plex::{router, PlexState};
-use open_plex_core::edit::CalendarDate;
-use open_plex_core::metadata::{ItemKind, MetadataItem};
-use open_plex_core::testing::{InMemoryCollections, InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{
+use klapz_api::{build_schema, ApiContext, ApiSchema};
+use klapz_api_plex::{router, PlexState};
+use klapz_core::edit::CalendarDate;
+use klapz_core::metadata::{ItemKind, MetadataItem};
+use klapz_core::testing::{InMemoryCollections, InMemoryLibrary, InMemoryMetadata};
+use klapz_core::{
     LibrarySection, RatingKey, SectionId, SectionKind, ServerCapabilities, ServerIdentity,
 };
 use serde_json::Value;
@@ -129,19 +129,19 @@ fn schema() -> ApiSchema {
         library: std::sync::Arc::new(InMemoryLibrary::new(vec![
             section(4, SectionKind::Movie, "VF - Films", false),
             section(9, SectionKind::Movie, "VF - Films 3D", true),
-            section(28, SectionKind::Show, "open-plex tests series", false),
+            section(28, SectionKind::Show, "klapz tests series", false),
         ])),
         metadata: std::sync::Arc::new(metadata),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
         collections: std::sync::Arc::new(collections),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::over(items)),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::over(items)),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -150,7 +150,7 @@ fn app() -> axum::Router {
         ServerIdentity::new(MACHINE, "0.1.0-dev"),
         schema(),
     ))
-    .layer(axum::Extension(open_plex_core::testing::owner()))
+    .layer(axum::Extension(klapz_core::testing::owner()))
 }
 
 async fn send(app: &axum::Router, method: Method, uri: &str, json: bool) -> (StatusCode, String) {
@@ -530,7 +530,7 @@ async fn the_official_api_names_the_next_film_and_the_collection_it_follows_in()
         ServerIdentity::new(MACHINE, "0.1.0-dev"),
         schema.clone(),
     ))
-    .layer(axum::Extension(open_plex_core::testing::owner()));
+    .layer(axum::Extension(klapz_core::testing::owner()));
     let films: Vec<i64> = SAGA.iter().map(|(id, _, _)| *id).collect();
     collect(&app, "Terminator - Saga", &films).await;
     collect(&app, "The Terminator Collection", &films[1..4]).await;
@@ -546,9 +546,9 @@ query Next($id: ID!) {
 }";
     let request = async_graphql::Request::new(query)
         .variables(async_graphql::Variables::from_json(serde_json::json!({
-            "id": open_plex_api::GlobalId::encode("Item", 445_826),
+            "id": klapz_api::GlobalId::encode("Item", 445_826),
         })))
-        .data(open_plex_core::testing::owner());
+        .data(klapz_core::testing::owner());
     let response = schema.execute(request).await;
     assert!(response.errors.is_empty(), "{:?}", response.errors);
     let data = response.data.into_json().unwrap();

@@ -9,14 +9,14 @@
 
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
-use open_plex_core::access::{
+use klapz_core::access::{
     is_connection_uri, new_external_id, new_token, publish_link, token_digest, AccessError,
     AccessRepository, AccountLink, Extension, LibraryPermission, LibraryRole, NewUser, ServerRole,
     User, UserExtension,
 };
-use open_plex_core::account::{normalized_email, normalized_username};
-use open_plex_core::page::Cursor;
-use open_plex_core::{now_epoch, Principal, SectionId, UserId};
+use klapz_core::account::{normalized_email, normalized_username};
+use klapz_core::page::Cursor;
+use klapz_core::{now_epoch, Principal, SectionId, UserId};
 
 use crate::account::{AccountErrorCode, AccountUserError};
 

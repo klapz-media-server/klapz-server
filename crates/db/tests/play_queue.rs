@@ -2,12 +2,12 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::page::Window;
-use open_plex_core::play_queue::{
+use klapz_core::page::Window;
+use klapz_core::play_queue::{
     ChangeRefusal, NewPlayQueue, PlayQueueChange, PlayQueueKind, PlayQueueRepository,
 };
-use open_plex_core::RatingKey;
-use open_plex_db::{connect, SqlPlayQueueRepository};
+use klapz_core::RatingKey;
+use klapz_db::{connect, SqlPlayQueueRepository};
 
 const NOW: i64 = 1_700_000_000;
 
@@ -18,7 +18,7 @@ async fn repository() -> SqlPlayQueueRepository {
 fn queue(count: i64, selected: usize) -> NewPlayQueue {
     NewPlayQueue {
         playlist: None,
-        user: open_plex_core::UserId::new(1),
+        user: klapz_core::UserId::new(1),
         client: None,
         kind: PlayQueueKind::Video,
         source_uri: "library://x/item/1".to_owned(),
@@ -154,7 +154,7 @@ async fn a_player_s_new_queue_replaces_its_previous_one_of_the_same_kind() {
         assert!(repository.queue(kept).await.expect("read").is_some());
     }
     let mut another_user = for_client("a", PlayQueueKind::Video);
-    another_user.user = open_plex_core::UserId::new(7);
+    another_user.user = klapz_core::UserId::new(7);
     repository.create(another_user, NOW).await.expect("create");
     assert!(repository.queue(second.id).await.expect("read").is_some());
 }

@@ -3,16 +3,16 @@ reports of it, so that `crates/server/tests/jellyfin_samples.rs` replays the cha
 
 For every sample under `crates/scanner/tests/fixtures/samples` the reference holds:
 
-  scanner.json   `open-plex-scanner probe` on the file (no `--deep`): the report the scan stores.
+  scanner.json   `klapz-scanner probe` on the file (no `--deep`): the report the scan stores.
   jellyfin.json  the reference's lookup of the file's item, scrubbed: the file-derived fields of the
                  item and its first media source, without ids, paths, entity tags or chapter images.
 
 Reads the reference's lookups from `captures/jellyfin/items` (`tools/capture_jellyfin.py
 --all-items`), and runs the scanner on the files themselves, which must be reachable at the
 paths the reference stores; the scanner finds ffmpeg-plex as it does in the server
-(`OPENPLEX_TRANSCODER`).
+(`KLAPZ_TRANSCODER`).
 
-Usage: OPENPLEX_TRANSCODER=... python tools/capture_jellyfin_samples.py SCANNER
+Usage: KLAPZ_TRANSCODER=... python tools/capture_jellyfin_samples.py SCANNER
 """
 
 from __future__ import annotations

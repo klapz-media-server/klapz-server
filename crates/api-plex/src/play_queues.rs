@@ -15,12 +15,12 @@ use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, RawQuery, State};
 use axum::routing::{delete, get, post, put};
 use axum::Router;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::play_queue::{PLAY_QUEUE_ENTRY_TYPE, PLAY_QUEUE_TYPE};
-use open_plex_api::playlist::PLAYLIST_TYPE;
-use open_plex_api::GlobalId;
-use open_plex_core::page::MAX_ITEMS;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::library::LIBRARY_TYPE;
+use klapz_api::play_queue::{PLAY_QUEUE_ENTRY_TYPE, PLAY_QUEUE_TYPE};
+use klapz_api::playlist::PLAYLIST_TYPE;
+use klapz_api::GlobalId;
+use klapz_core::page::MAX_ITEMS;
 use serde::Deserialize;
 use serde_json::{json, Map, Value as Json};
 

@@ -15,10 +15,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use open_plex_core::collection::{Collection, CollectionField, CollectionMode, CollectionOrder};
-use open_plex_core::metadata::ItemKind;
-use open_plex_core::playlist::POSITION_GAP;
-use open_plex_core::{CollectionId, RatingKey, SectionId};
+use klapz_core::collection::{Collection, CollectionField, CollectionMode, CollectionOrder};
+use klapz_core::metadata::ItemKind;
+use klapz_core::playlist::POSITION_GAP;
+use klapz_core::{CollectionId, RatingKey, SectionId};
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement, TransactionTrait};
 
 use super::{source_error, ImportError, PlexRow, SOURCE_PAGE};

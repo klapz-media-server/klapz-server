@@ -13,13 +13,13 @@ use async_graphql::dataloader::DataLoader;
 use async_graphql::{
     Context, Enum, InputObject, Object, ObjectType, OutputType, Result, SimpleObject, ID,
 };
-use open_plex_core::library::LibrarySection;
-use open_plex_core::metadata::{
+use klapz_core::library::LibrarySection;
+use klapz_core::metadata::{
     credits_with_episodes, Credit, CreditRef, ExternalId, ItemDepth, ItemFilter, ItemQuery,
     ItemSort, Person, Rating, RatingKind, Tag, TagCondition, TagKind, TagRef, TagSearch, TagUse,
 };
-use open_plex_core::page::{Cursor, Direction, Window, MAX_ITEMS};
-use open_plex_core::{PersonId, RatingKey, SectionId, TagId};
+use klapz_core::page::{Cursor, Direction, Window, MAX_ITEMS};
+use klapz_core::{PersonId, RatingKey, SectionId, TagId};
 
 use crate::cursor::OpaqueCursor;
 use crate::filter::ItemFilterInput;
@@ -744,7 +744,7 @@ async fn own_tags(
     context: &Context<'_>,
     item: RatingKey,
     kind: TagKind,
-) -> Result<Vec<open_plex_core::ItemTag>> {
+) -> Result<Vec<klapz_core::ItemTag>> {
     Ok(context
         .data::<DataLoader<TagsLoader>>()?
         .load_one(item)

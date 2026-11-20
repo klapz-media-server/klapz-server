@@ -80,7 +80,7 @@ pub struct WatchedState {
 /// The view a user's playlists hang from, as the reference lists it among the libraries once
 /// the user has one.
 pub fn view_id() -> String {
-    id::of(open_plex_api::server::SERVER_TYPE, 1).unwrap_or_default()
+    id::of(klapz_api::server::SERVER_TYPE, 1).unwrap_or_default()
 }
 
 pub fn view_dto(server_id: &str, count: usize) -> Value {
@@ -269,7 +269,7 @@ async fn entries_of(
 fn playlist_global(jellyfin: &str) -> Result<String, JellyfinError> {
     Ok(id::global_of_type(
         jellyfin,
-        open_plex_api::playlist::PLAYLIST_TYPE,
+        klapz_api::playlist::PLAYLIST_TYPE,
     )?)
 }
 
@@ -277,7 +277,7 @@ fn playlist_global(jellyfin: &str) -> Result<String, JellyfinError> {
 fn item_globals(ids: &[&str]) -> Result<Vec<String>, JellyfinError> {
     ids.iter()
         .map(|jellyfin| {
-            id::global_of_type(jellyfin, open_plex_api::item::ITEM_TYPE).map_err(Into::into)
+            id::global_of_type(jellyfin, klapz_api::item::ITEM_TYPE).map_err(Into::into)
         })
         .collect()
 }
@@ -554,7 +554,7 @@ async fn add(
 
 /// The global id of an entry a request names, which must be of this playlist.
 fn entry_of<'a>(entries: &'a [Entry], jellyfin: &str) -> Result<&'a Entry, JellyfinError> {
-    let global = id::global_of_type(jellyfin, open_plex_api::playlist::PLAYLIST_ENTRY_TYPE)?;
+    let global = id::global_of_type(jellyfin, klapz_api::playlist::PLAYLIST_ENTRY_TYPE)?;
     entries
         .iter()
         .find(|entry| entry.id == global)
@@ -668,7 +668,7 @@ mod tests {
             watch_state: Some(WatchedState { is_watched }),
         };
         let playlist = Playlist {
-            id: open_plex_api::GlobalId::encode("Playlist", 3),
+            id: klapz_api::GlobalId::encode("Playlist", 3),
             title: "Soirée".to_owned(),
             kind: "VIDEO".to_owned(),
             item_count: 2,

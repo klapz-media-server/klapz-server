@@ -185,7 +185,7 @@ struct Readable {
 }
 
 async fn playable_item(state: &JellyfinState, item: &str) -> Result<Item, JellyfinError> {
-    let global = id::global_of_type(item, open_plex_api::item::ITEM_TYPE)?;
+    let global = id::global_of_type(item, klapz_api::item::ITEM_TYPE)?;
     let data: NodeData<Item> = gql::query(
         &state.schema,
         &item_query(),
@@ -205,7 +205,7 @@ fn track_at<'a>(tracks: &'a [Track], index: Option<i32>, kind: &str) -> Option<&
 
 /// The play session a `PlaybackInfo` opens: what the client reports progress and stops under.
 fn new_play_session() -> String {
-    let mut token = open_plex_core::access::new_token();
+    let mut token = klapz_core::access::new_token();
     token.truncate(32);
     token
 }
@@ -568,7 +568,7 @@ async fn report(
     if let (Some(item), Some(session), Some(position_ms)) =
         (&report.item_id, &report.play_session_id, position_ms)
     {
-        let item = id::global_of_type(item, open_plex_api::item::ITEM_TYPE)?;
+        let item = id::global_of_type(item, klapz_api::item::ITEM_TYPE)?;
         // Jellyfin's clients report no runtime: the item's own is what the position is
         // measured against.
         let runtime: NodeData<Runtime> =
@@ -723,7 +723,7 @@ async fn mark(
     watched: bool,
 ) -> Result<Response, JellyfinError> {
     gql::viewer(&state.schema).await?.require_self(user)?;
-    let global = id::global_of_type(item, open_plex_api::item::ITEM_TYPE)?;
+    let global = id::global_of_type(item, klapz_api::item::ITEM_TYPE)?;
     let mutation = if watched {
         MARK_WATCHED
     } else {

@@ -992,7 +992,7 @@ impl GqlItem {
     /// client input — the item is then dropped from the response instead of appearing with a
     /// key no client could follow.
     pub fn database_id(&self) -> Option<i64> {
-        open_plex_api::GlobalId::decode(&self.id)
+        klapz_api::GlobalId::decode(&self.id)
             .ok()
             .map(|decoded| decoded.key)
     }
@@ -1273,7 +1273,7 @@ impl GqlVersion {
 pub struct GqlPart {
     pub id: String,
     pub path: String,
-    #[serde(deserialize_with = "open_plex_api::int64::deserialize_optional")]
+    #[serde(deserialize_with = "klapz_api::int64::deserialize_optional")]
     pub size_bytes: Option<i64>,
     pub duration_ms: Option<i64>,
     pub has_thumbnail: bool,
@@ -1436,7 +1436,7 @@ impl GqlStream {
 /// Zero when the id does not decode. That is a schema defect rather than client input, and a
 /// visibly wrong key in the response is easier to diagnose than a dropped field.
 pub(crate) fn database_id(global_id: &str) -> i64 {
-    open_plex_api::GlobalId::decode(global_id).map_or(0, |decoded| decoded.key)
+    klapz_api::GlobalId::decode(global_id).map_or(0, |decoded| decoded.key)
 }
 
 #[cfg(test)]

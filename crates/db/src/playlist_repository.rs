@@ -3,13 +3,13 @@
 //! Every read of an entry joins it to its item, so that what a reader may see is decided by
 //! the item's library at the moment of reading, and an entry whose item is gone is hidden.
 
-use open_plex_core::page::{Cursor, CursorKey, Page, Window};
-use open_plex_core::playlist::{
+use klapz_core::page::{Cursor, CursorKey, Page, Window};
+use klapz_core::playlist::{
     new_entries, new_guid, position_between, sort_key, Destination, NewPlaylist, Playlist,
     PlaylistEdit, PlaylistEntry, PlaylistError, PlaylistField, PlaylistKind, PlaylistQuery,
     PlaylistRepository, PlaylistSort, PlaylistTotals, SmartRule, POSITION_GAP,
 };
-use open_plex_core::{PlaylistEntryId, PlaylistId, RatingKey, SectionId, UserId};
+use klapz_core::{PlaylistEntryId, PlaylistId, RatingKey, SectionId, UserId};
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection,

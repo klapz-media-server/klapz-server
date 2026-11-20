@@ -12,7 +12,7 @@ use async_graphql::Variables;
 use axum::extract::{Query, State};
 use axum::routing::get;
 use axum::Router;
-use open_plex_core::page::MAX_ITEMS;
+use klapz_core::page::MAX_ITEMS;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 

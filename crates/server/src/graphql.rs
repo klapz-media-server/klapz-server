@@ -14,8 +14,8 @@ use axum::routing::{get, post};
 use axum::{Extension, Router};
 use std::sync::Arc;
 
-use open_plex_api::{ApiSchema, Sessions};
-use open_plex_core::Principal;
+use klapz_api::{ApiSchema, Sessions};
+use klapz_core::Principal;
 
 #[derive(Clone)]
 struct GraphqlState {

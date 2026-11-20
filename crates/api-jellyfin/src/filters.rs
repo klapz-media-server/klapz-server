@@ -130,7 +130,7 @@ async fn values(state: &JellyfinState, query: &Query) -> Result<Values, Jellyfin
     }
     let mut libraries_named = match query.get("parentId") {
         Some(parent) => {
-            let global = id::global_of_type(parent, open_plex_api::library::LIBRARY_TYPE)
+            let global = id::global_of_type(parent, klapz_api::library::LIBRARY_TYPE)
                 .map_err(|_| JellyfinError::NotImplemented("filters below a library"))?;
             vec![(global, None)]
         }

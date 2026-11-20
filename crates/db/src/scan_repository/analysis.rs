@@ -6,8 +6,8 @@
 //! one, so the renaming happens here, once, measured against what the reference stored for
 //! the test files (`docs/scanner/analysis.md`, §1).
 
-use open_plex_core::scan::NewSidecar;
-use open_plex_scanner::report::{Analysis, DolbyVision, Track, TrackKind, VideoTrack};
+use klapz_core::scan::NewSidecar;
+use klapz_scanner::report::{Analysis, DolbyVision, Track, TrackKind, VideoTrack};
 
 use crate::entity::{media_stream, part_side_stream, stream_dolby_vision};
 
@@ -748,7 +748,7 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::float_cmp)]
 
     use super::*;
-    use open_plex_scanner::report::Cropping;
+    use klapz_scanner::report::Cropping;
 
     #[test]
     fn names_containers_as_the_reference() {

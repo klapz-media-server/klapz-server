@@ -2,13 +2,13 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::metadata::{ItemFilter, ItemKind, ItemQuery, MetadataRepository};
-use open_plex_core::page::Window;
-use open_plex_core::user_rating::RatingCondition;
-use open_plex_core::{SectionId, UserId};
-use open_plex_db::entity::{library_section, metadata_item, user_rating, watch_state};
-use open_plex_db::write;
-use open_plex_db::SqlMetadataRepository;
+use klapz_core::metadata::{ItemFilter, ItemKind, ItemQuery, MetadataRepository};
+use klapz_core::page::Window;
+use klapz_core::user_rating::RatingCondition;
+use klapz_core::{SectionId, UserId};
+use klapz_db::entity::{library_section, metadata_item, user_rating, watch_state};
+use klapz_db::write;
+use klapz_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 const LIBRARY: i64 = 4;
@@ -137,7 +137,7 @@ async fn seed(connection: &DatabaseConnection) {
 }
 
 async fn titles(filter: ItemFilter) -> Vec<String> {
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     seed(&connection).await;

@@ -1,4 +1,4 @@
-"""Set open-plex's Jellyfin answers against the reference's, file by file and field by field.
+"""Set klapz's Jellyfin answers against the reference's, file by file and field by field.
 
 Both sides come from `tools/capture_jellyfin.py --all-items`: the reference's in
 `captures/jellyfin`, ours in `captures/jellyfin-ours`. The two servers number items differently,

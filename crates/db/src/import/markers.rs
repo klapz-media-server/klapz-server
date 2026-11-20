@@ -12,7 +12,7 @@
 
 use std::collections::HashSet;
 
-use open_plex_core::marker::MarkerKind;
+use klapz_core::marker::MarkerKind;
 use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 
 use super::analysis::Analysis;

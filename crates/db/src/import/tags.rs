@@ -11,7 +11,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use open_plex_core::{RatingKind, TagKind};
+use klapz_core::{RatingKind, TagKind};
 use sea_orm::{
     ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait, QueryResult, Statement,
 };

@@ -3,9 +3,7 @@
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use open_plex_core::files::{
-    Entry, EntryKind, FileLocation, FilesError, LibraryFiles, RelativePath,
-};
+use klapz_core::files::{Entry, EntryKind, FileLocation, FilesError, LibraryFiles, RelativePath};
 use tokio::io::AsyncReadExt;
 
 /// Roots are directories of this machine, as `section_root.path` holds them.
@@ -147,7 +145,7 @@ mod tests {
     impl Scratch {
         fn new(name: &str) -> Self {
             let path =
-                std::env::temp_dir().join(format!("open-plex-files-{}-{name}", std::process::id()));
+                std::env::temp_dir().join(format!("klapz-files-{}-{name}", std::process::id()));
             let _ = std::fs::remove_dir_all(&path);
             std::fs::create_dir_all(path.join("Films/Soul (2020)")).unwrap();
             std::fs::write(path.join("Films/Soul (2020)/Soul.mkv"), b"12345").unwrap();

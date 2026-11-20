@@ -23,9 +23,9 @@ use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::media::{STREAM_TYPE, VERSION_TYPE};
-use open_plex_api::GlobalId;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::media::{STREAM_TYPE, VERSION_TYPE};
+use klapz_api::GlobalId;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 

@@ -3,20 +3,20 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use open_plex_core::files::RelativePath;
-use open_plex_core::library::SectionKind;
-use open_plex_core::scan::{scan_section, ScanRequest, Scanner};
-use open_plex_core::{LibraryRepository, SectionId};
-use open_plex_db::repository::{create_library, NewLibrary};
-use open_plex_db::{DatabaseConnection, SqlLibraryRepository, SqlScanRepository};
+use klapz_core::files::RelativePath;
+use klapz_core::library::SectionKind;
+use klapz_core::scan::{scan_section, ScanRequest, Scanner};
+use klapz_core::{LibraryRepository, SectionId};
+use klapz_db::repository::{create_library, NewLibrary};
+use klapz_db::{DatabaseConnection, SqlLibraryRepository, SqlScanRepository};
 
 use crate::analyzer::ScannerProcess;
 use crate::files::LocalFiles;
 
 const LIBRARY_USAGE: &str =
-    "usage: open-plex-server library add --kind movie|show --title TITLE [--language fr-FR] ROOT...";
+    "usage: klapz-server library add --kind movie|show --title TITLE [--language fr-FR] ROOT...";
 const SCAN_USAGE: &str =
-    "usage: open-plex-server scan LIBRARY_ID [--force] [--root ROOT --below DIRECTORY]";
+    "usage: klapz-server scan LIBRARY_ID [--force] [--root ROOT --below DIRECTORY]";
 
 /// What a scan reads and writes with, for the server and the command line alike.
 pub fn scanner(connection: &DatabaseConnection, library: Arc<dyn LibraryRepository>) -> Scanner {

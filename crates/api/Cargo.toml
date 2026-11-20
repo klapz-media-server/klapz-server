@@ -1,5 +1,5 @@
 [package]
-name = "open-plex-api"
+name = "klapz-api"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 
 [dependencies]
 serde_json.workspace = true
-open-plex-core.workspace = true
+klapz-core.workspace = true
 async-graphql.workspace = true
 base64.workspace = true
 chrono.workspace = true
@@ -18,7 +18,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
-open-plex-core = { workspace = true, features = ["testing"] }
+klapz-core = { workspace = true, features = ["testing"] }
 serde_json.workspace = true
 
 [lints]

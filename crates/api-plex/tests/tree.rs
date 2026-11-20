@@ -10,16 +10,16 @@
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use http_body_util::BodyExt;
-use open_plex_api::{build_schema, ApiContext, ApiSchema};
-use open_plex_api_plex::{router, PlexState};
-use open_plex_core::edit::CalendarDate;
-use open_plex_core::metadata::{
+use klapz_api::{build_schema, ApiContext, ApiSchema};
+use klapz_api_plex::{router, PlexState};
+use klapz_core::edit::CalendarDate;
+use klapz_core::metadata::{
     AudioAnalysis, ColorDescription, FileLayout, ItemKind, MediaFile, MediaStream, MediaVersion,
     MetadataItem, ScanType, StreamKind, SubtitleAnalysis, TrackTraits, VideoAnalysis,
 };
-use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata, InMemoryWatch};
-use open_plex_core::watch::{WatchRepository, WatchState};
-use open_plex_core::{
+use klapz_core::testing::{InMemoryLibrary, InMemoryMetadata, InMemoryWatch};
+use klapz_core::watch::{WatchRepository, WatchState};
+use klapz_core::{
     LibrarySection, MediaId, PartId, RatingKey, SectionId, SectionKind, ServerCapabilities,
     ServerIdentity, StreamId,
 };
@@ -150,7 +150,7 @@ impl Stored {
                 stream_url: None,
                 content_hash: part["hash"].as_str().map(ToOwned::to_owned),
                 open_subtitles_hash: part["openSubtitleHash"].as_str().map(ToOwned::to_owned),
-                stated: open_plex_core::metadata::StatedFile::default(),
+                stated: klapz_core::metadata::StatedFile::default(),
             });
             for track in part["MediaStream"].as_array().unwrap() {
                 self.streams.push(track_of(file, track));
@@ -227,7 +227,7 @@ fn track_of(file: i64, track: &Value) -> MediaStream {
                     .collect()
             })
             .unwrap_or_default(),
-        stated: open_plex_core::metadata::StatedTrack::default(),
+        stated: klapz_core::metadata::StatedTrack::default(),
     }
 }
 
@@ -250,7 +250,7 @@ async fn schema(played_bull: bool) -> ApiSchema {
     )];
     watch
         .save(
-            open_plex_core::testing::owner().user,
+            klapz_core::testing::owner().user,
             if played_bull { played } else { &[] },
         )
         .await
@@ -267,16 +267,16 @@ async fn schema(played_bull: bool) -> ApiSchema {
             section(28, SectionKind::Show),
         ])),
         metadata: std::sync::Arc::new(metadata),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
         watch: std::sync::Arc::new(watch),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -289,7 +289,7 @@ async fn send_as(uri: &str, json: bool, played_bull: bool) -> (StatusCode, Strin
         ServerIdentity::new(MACHINE, "0.1.0-dev"),
         schema(played_bull).await,
     ))
-    .layer(axum::Extension(open_plex_core::testing::owner()));
+    .layer(axum::Extension(klapz_core::testing::owner()));
     let mut request = Request::builder().uri(uri);
     if json {
         request = request.header(header::ACCEPT, "application/json");

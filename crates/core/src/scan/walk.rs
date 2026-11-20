@@ -474,7 +474,7 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    use open_plex_scanner::report::{Analysis, FileIdentity};
+    use klapz_scanner::report::{Analysis, FileIdentity};
 
     use crate::files::{Entry, FileLocation};
     use crate::ids::{MediaId, RatingKey};

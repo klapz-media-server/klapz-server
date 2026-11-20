@@ -13,8 +13,8 @@ use async_graphql::{Name, Value, Variables};
 use axum::extract::{RawQuery, State};
 use axum::routing::get;
 use axum::Router;
-use open_plex_core::closest::MAX_TERM_BYTES;
-use open_plex_core::page::MAX_ITEMS;
+use klapz_core::closest::MAX_TERM_BYTES;
+use klapz_core::page::MAX_ITEMS;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Caller;

@@ -10,16 +10,16 @@
 use axum::body::Body;
 use axum::http::{header, Method, Request, StatusCode};
 use http_body_util::BodyExt;
-use open_plex_api::{build_schema, ApiContext, ApiSchema};
-use open_plex_api_plex::{router, PlexState};
-use open_plex_core::edit::CalendarDate;
-use open_plex_core::extra::{Extra, ExtraKind};
-use open_plex_core::metadata::{
+use klapz_api::{build_schema, ApiContext, ApiSchema};
+use klapz_api_plex::{router, PlexState};
+use klapz_core::edit::CalendarDate;
+use klapz_core::extra::{Extra, ExtraKind};
+use klapz_core::metadata::{
     AudioAnalysis, ColorDescription, FileLayout, ItemKind, MediaFile, MediaStream, MediaVersion,
     MetadataItem, ScanType, StreamKind, TrackTraits, VideoAnalysis,
 };
-use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{
+use klapz_core::testing::{InMemoryLibrary, InMemoryMetadata};
+use klapz_core::{
     ExtraId, LibrarySection, MediaId, PartId, RatingKey, SectionId, SectionKind,
     ServerCapabilities, ServerIdentity, StreamId,
 };
@@ -201,7 +201,7 @@ impl Stored {
             stream_url: streamed.then(|| text(part, "key").unwrap()),
             content_hash: None,
             open_subtitles_hash: None,
-            stated: open_plex_core::metadata::StatedFile::default(),
+            stated: klapz_core::metadata::StatedFile::default(),
         });
         for track in tracks {
             self.streams.push(stream(part_id, track));
@@ -258,7 +258,7 @@ fn stream(file: PartId, track: &Value) -> MediaStream {
         }),
         subtitle: None,
         required_bandwidths: Vec::new(),
-        stated: open_plex_core::metadata::StatedTrack::default(),
+        stated: klapz_core::metadata::StatedTrack::default(),
     }
 }
 
@@ -327,20 +327,20 @@ fn schema() -> ApiSchema {
         capabilities: ServerCapabilities::new(ServerIdentity::new(MACHINE, "0.1.0-dev"), 0),
         library: std::sync::Arc::new(InMemoryLibrary::new(vec![
             section(4, SectionKind::Movie, "VF - Films"),
-            section(27, SectionKind::Movie, "open-plex tests"),
-            section(28, SectionKind::Show, "open-plex tests series"),
+            section(27, SectionKind::Movie, "klapz tests"),
+            section(28, SectionKind::Show, "klapz tests series"),
         ])),
         metadata: std::sync::Arc::new(metadata),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -355,7 +355,7 @@ async fn send(method: Method, uri: &str, json: bool) -> Answer {
         ServerIdentity::new(MACHINE, "0.1.0-dev"),
         schema(),
     ))
-    .layer(axum::Extension(open_plex_core::testing::owner()));
+    .layer(axum::Extension(klapz_core::testing::owner()));
     // The captures name languages in English, which the reference does on request only: with
     // no language it names each in itself (`Français`), where we fall back to English.
     let mut request = Request::builder()

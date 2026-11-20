@@ -2,13 +2,13 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::access::{
+use klapz_core::access::{
     token_digest, AccessError, AccessRepository, Extension, ExtensionDevice, LibraryPermission,
     LibraryRole, Login, NewUser, RemoteAccount, ServerRole,
 };
-use open_plex_core::page::Window;
-use open_plex_core::{SectionId, UserId};
-use open_plex_db::{connect, SqlAccessRepository};
+use klapz_core::page::Window;
+use klapz_core::{SectionId, UserId};
+use klapz_db::{connect, SqlAccessRepository};
 
 const NOW: i64 = 1_700_000_000;
 

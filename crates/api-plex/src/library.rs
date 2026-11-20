@@ -4,10 +4,10 @@ use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};
 use axum::routing::get;
 use axum::Router;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::GlobalId;
-use open_plex_core::page::MAX_ITEMS;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::library::LIBRARY_TYPE;
+use klapz_api::GlobalId;
+use klapz_core::page::MAX_ITEMS;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Caller;
@@ -178,7 +178,7 @@ pub struct GqlLibrary {
     pub updated_at: i64,
     #[serde(default, deserialize_with = "crate::gql::date_time::optional_seconds")]
     pub scanned_at: Option<i64>,
-    #[serde(deserialize_with = "open_plex_api::int64::deserialize")]
+    #[serde(deserialize_with = "klapz_api::int64::deserialize")]
     pub content_changed_at: i64,
     pub roots: Vec<GqlRoot>,
 }
@@ -292,7 +292,7 @@ const SHUFFLE_PERIOD_SECONDS: i64 = 600;
 
 /// The seed of the shuffle in effect.
 pub(crate) fn shuffle_seed() -> u32 {
-    u32::try_from(open_plex_core::now_epoch() / SHUFFLE_PERIOD_SECONDS).unwrap_or(0)
+    u32::try_from(klapz_core::now_epoch() / SHUFFLE_PERIOD_SECONDS).unwrap_or(0)
 }
 
 /// `GET /library/sections/{sectionId}/all` — the listing clients spend their time in.

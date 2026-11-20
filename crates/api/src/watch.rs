@@ -12,13 +12,13 @@ use async_graphql::connection::{
 };
 use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{Context, Enum, InputObject, Object, OutputType, Result, SimpleObject, ID};
-use open_plex_core::metadata::{MetadataItem, StreamKind};
-use open_plex_core::page::{Cursor, MAX_ITEMS};
-use open_plex_core::tracks::{SubtitleChoice, TrackChoice};
-use open_plex_core::watch::{
+use klapz_core::metadata::{MetadataItem, StreamKind};
+use klapz_core::page::{Cursor, MAX_ITEMS};
+use klapz_core::tracks::{SubtitleChoice, TrackChoice};
+use klapz_core::watch::{
     DeckReason, ReportOutcome, WatchError, WatchRepository, WatchState, Watching,
 };
-use open_plex_core::{now_epoch, PartId, RatingKey, SectionId, UserId};
+use klapz_core::{now_epoch, PartId, RatingKey, SectionId, UserId};
 
 use crate::cursor::OpaqueCursor;
 use crate::item::{Item, ITEM_TYPE};

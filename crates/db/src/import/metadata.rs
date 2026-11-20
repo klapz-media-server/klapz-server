@@ -19,9 +19,9 @@
 
 use std::collections::HashSet;
 
-use open_plex_core::chapter::ChapterSource;
-use open_plex_core::edit::{CalendarDate, ItemField};
-use open_plex_core::metadata::{self, ItemKind};
+use klapz_core::chapter::ChapterSource;
+use klapz_core::edit::{CalendarDate, ItemField};
+use klapz_core::metadata::{self, ItemKind};
 use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 
 use super::analysis::Analysis;

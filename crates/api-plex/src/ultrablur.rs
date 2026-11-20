@@ -14,9 +14,9 @@ use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::GlobalId;
-use open_plex_transcoder::{CornerColors, Rgb, TranscodeError, MAX_BACKDROP_PIXELS};
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::GlobalId;
+use klapz_transcoder::{CornerColors, Rgb, TranscodeError, MAX_BACKDROP_PIXELS};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Caller;

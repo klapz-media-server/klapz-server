@@ -24,7 +24,7 @@ impl ServerIdentity {
     pub fn new(machine_identifier: impl Into<String>, version: impl Into<String>) -> Self {
         Self {
             machine_identifier: machine_identifier.into(),
-            friendly_name: "open-plex".to_owned(),
+            friendly_name: "klapz".to_owned(),
             version: version.into(),
             api_version: "1.2.3".to_owned(),
             platform: capitalise(std::env::consts::OS),
@@ -231,6 +231,6 @@ mod tests {
         let identity = ServerIdentity::new("abc", "0.1.0");
         assert_eq!(identity.platform.to_lowercase(), std::env::consts::OS);
         assert_eq!(identity.api_version, "1.2.3");
-        assert_eq!(identity.friendly_name, "open-plex");
+        assert_eq!(identity.friendly_name, "klapz");
     }
 }

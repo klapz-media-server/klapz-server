@@ -20,14 +20,14 @@ use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{
     Context, Enum, InputObject, InputType, Object, Result, SimpleObject, Value, ID,
 };
-use open_plex_core::metadata::{ItemFilter, ItemKind, ItemQuery};
-use open_plex_core::page::{Page, Window};
-use open_plex_core::playlist::{
+use klapz_core::metadata::{ItemFilter, ItemKind, ItemQuery};
+use klapz_core::page::{Page, Window};
+use klapz_core::playlist::{
     Destination, NewPlaylist, Playlist, PlaylistEdit, PlaylistEntry, PlaylistError, PlaylistField,
     PlaylistFilter, PlaylistKind, PlaylistQuery, PlaylistRepository, PlaylistSort, PlaylistTotals,
     SmartRule,
 };
-use open_plex_core::{
+use klapz_core::{
     now_epoch, MetadataItem, PlaylistEntryId, PlaylistId, RatingKey, SectionId, SectionKind, UserId,
 };
 

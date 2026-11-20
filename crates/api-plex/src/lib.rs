@@ -2,9 +2,9 @@
 //!
 //! Translation only: parse the request, run a query against the official GraphQL API, shape
 //! the response. Domain rules belong in `core`, and this crate depends on neither
-//! `open-plex-db` nor the repository ports — if a handler
+//! `klapz-db` nor the repository ports — if a handler
 //! needs data, the official GraphQL API must expose it. Converting media is the other thing
-//! it binds, onto `open-plex-transcoder`: bytes in and out, which is not a data source.
+//! it binds, onto `klapz-transcoder`: bytes in and out, which is not a data source.
 
 pub mod activities;
 pub mod auth;
@@ -75,9 +75,9 @@ mod library;
 use std::sync::Arc;
 
 use axum::Router;
-use open_plex_api::ApiSchema;
-use open_plex_core::ServerIdentity;
-use open_plex_transcoder::Transcoder;
+use klapz_api::ApiSchema;
+use klapz_core::ServerIdentity;
+use klapz_transcoder::Transcoder;
 
 /// What the adapter needs from the rest of the application.
 ///

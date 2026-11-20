@@ -10,11 +10,11 @@ use std::sync::Arc;
 
 use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{Context, Enum, Object, Result};
-use open_plex_core::metadata::{
+use klapz_core::metadata::{
     MediaFile, MetadataError, MetadataRepository, SidePicture, SideStream, SideStreamKind,
     StatedFile, StatedTrack,
 };
-use open_plex_core::PartId;
+use klapz_core::PartId;
 
 use crate::int64::Int64;
 use crate::loader::StreamsLoader;
@@ -317,7 +317,7 @@ pub(crate) async fn side_streams_of(
 /// A track's rate as its file states it, else estimated (`core::bitrate`).
 pub(crate) async fn estimated_bitrate(
     context: &Context<'_>,
-    track: &open_plex_core::MediaStream,
+    track: &klapz_core::MediaStream,
 ) -> Result<Option<i64>> {
     let siblings = context
         .data::<DataLoader<StreamsLoader>>()?
@@ -328,8 +328,7 @@ pub(crate) async fn estimated_bitrate(
         .data::<DataLoader<FileLoader>>()?
         .load_one(track.file_id)
         .await?;
-    let rates =
-        open_plex_core::bitrate::estimate(&siblings, file.and_then(|file| file.stated.bitrate));
+    let rates = klapz_core::bitrate::estimate(&siblings, file.and_then(|file| file.stated.bitrate));
     Ok(siblings
         .iter()
         .zip(rates)

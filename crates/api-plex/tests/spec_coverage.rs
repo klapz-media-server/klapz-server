@@ -15,12 +15,12 @@ use std::collections::BTreeSet;
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
-use open_plex_api::{build_schema, ApiContext};
-use open_plex_api_plex::{router, PlexState};
-use open_plex_core::library::{LibrarySection, SectionKind};
-use open_plex_core::metadata::{ItemKind, MetadataItem};
-use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{RatingKey, SectionId, ServerCapabilities, ServerIdentity};
+use klapz_api::{build_schema, ApiContext};
+use klapz_api_plex::{router, PlexState};
+use klapz_core::library::{LibrarySection, SectionKind};
+use klapz_core::metadata::{ItemKind, MetadataItem};
+use klapz_core::testing::{InMemoryLibrary, InMemoryMetadata};
+use klapz_core::{RatingKey, SectionId, ServerCapabilities, ServerIdentity};
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -122,22 +122,21 @@ fn app() -> axum::Router {
         capabilities: ServerCapabilities::new(identity.clone(), 0),
         library: std::sync::Arc::new(library),
         metadata: std::sync::Arc::new(metadata),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     });
 
     // A principal is attached directly: authentication lives in the `server` crate, and this
     // test is about routing, not about credentials.
-    router(PlexState::new(identity, schema))
-        .layer(axum::Extension(open_plex_core::testing::owner()))
+    router(PlexState::new(identity, schema)).layer(axum::Extension(klapz_core::testing::owner()))
 }
 
 /// Fills path parameters with values of a plausible shape.

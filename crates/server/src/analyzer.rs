@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use open_plex_core::files::FileLocation;
-use open_plex_core::scan::{AnalyzeError, MediaAnalyzer};
-use open_plex_scanner::report::{Analysis, Output, Report, VERSION};
+use klapz_core::files::FileLocation;
+use klapz_core::scan::{AnalyzeError, MediaAnalyzer};
+use klapz_scanner::report::{Analysis, Output, Report, VERSION};
 use tokio::process::Command;
 use tokio::sync::Semaphore;
 
@@ -27,10 +27,10 @@ pub struct ScannerProcess {
 }
 
 impl ScannerProcess {
-    /// `OPENPLEX_SCANNER`, or `open-plex-scanner` beside this server's own executable.
+    /// `KLAPZ_SCANNER`, or `klapz-scanner` beside this server's own executable.
     pub fn from_env() -> Self {
-        let binary = std::env::var_os("OPENPLEX_SCANNER")
-            .map_or_else(|| crate::bundled("open-plex-scanner"), PathBuf::from);
+        let binary = std::env::var_os("KLAPZ_SCANNER")
+            .map_or_else(|| crate::bundled("klapz-scanner"), PathBuf::from);
         Self {
             binary,
             permits: Semaphore::new(CONCURRENT),

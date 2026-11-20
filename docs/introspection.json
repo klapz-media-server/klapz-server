@@ -6493,7 +6493,7 @@
         {
           "kind": "OBJECT",
           "name": "Features",
-          "description": "Optional behaviours a client may ask about before offering them.\n\nEvery field is true. open-plex has no paid tier, so there is nothing to report as\nunavailable — including the features Plex reserves for a subscription, such as offline\nsync, skipping intros, loudness levelling, Live TV and hardware transcoding.",
+          "description": "Optional behaviours a client may ask about before offering them.\n\nEvery field is true. klapz has no paid tier, so there is nothing to report as\nunavailable — including the features Plex reserves for a subscription, such as offline\nsync, skipping intros, loudness levelling, Live TV and hardware transcoding.",
           "fields": [
             {
               "name": "sync",
@@ -23240,7 +23240,7 @@
         {
           "kind": "OBJECT",
           "name": "SignInPayload",
-          "description": "What `signIn` did. On success the session is in the `open_plex_session` cookie, out of reach\nof a page's scripts: there is no token here to keep. A client that is no browser reads the\ncookie's value from `Set-Cookie` and presents it as `Authorization: Bearer <value>`.",
+          "description": "What `signIn` did. On success the session is in the `klapz_session` cookie, out of reach\nof a page's scripts: there is no token here to keep. A client that is no browser reads the\ncookie's value from `Set-Cookie` and presents it as `Authorization: Bearer <value>`.",
           "fields": [
             {
               "name": "clientMutationId",

@@ -56,7 +56,7 @@ struct Nodes {
 /// The folder every view hangs from, which Jellyfin calls the user's root. One for the whole
 /// server: each user's views are what it may read.
 pub fn user_root_id() -> String {
-    id::of(open_plex_api::server::SERVER_TYPE, 0).unwrap_or_default()
+    id::of(klapz_api::server::SERVER_TYPE, 0).unwrap_or_default()
 }
 
 /// Jellyfin's collection type for a kind of library.
@@ -192,7 +192,7 @@ mod tests {
 
     fn films() -> Library {
         Library {
-            id: open_plex_api::GlobalId::encode("Library", 1),
+            id: klapz_api::GlobalId::encode("Library", 1),
             kind: "MOVIE".to_owned(),
             title: "Films".to_owned(),
             title_sort: None,

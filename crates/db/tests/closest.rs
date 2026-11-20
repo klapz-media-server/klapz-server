@@ -7,16 +7,16 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::closest::{self, ClosestTitles, Distance};
-use open_plex_core::edit::{FieldEdit, ItemEdit};
-use open_plex_core::metadata::{
+use klapz_core::closest::{self, ClosestTitles, Distance};
+use klapz_core::edit::{FieldEdit, ItemEdit};
+use klapz_core::metadata::{
     ItemFilter, ItemKind, ItemQuery, MetadataRepository, TagKind, TagScope,
 };
-use open_plex_core::page::Window;
-use open_plex_core::{RatingKey, SectionId};
-use open_plex_db::entity::{item_tag, library_section, metadata_item, person, tag};
-use open_plex_db::write;
-use open_plex_db::SqlMetadataRepository;
+use klapz_core::page::Window;
+use klapz_core::{RatingKey, SectionId};
+use klapz_db::entity::{item_tag, library_section, metadata_item, person, tag};
+use klapz_db::write;
+use klapz_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 const FILMS: i64 = 4;
@@ -97,7 +97,7 @@ fn item(
         guid: ActiveValue::Set(format!("plex://{kind}/{id}")),
         title: ActiveValue::Set(Some(title.to_owned())),
         title_sort: ActiveValue::Set(title_sort.map(ToOwned::to_owned)),
-        sort_key: ActiveValue::Set(open_plex_core::metadata::sort_key(title_sort, Some(title))),
+        sort_key: ActiveValue::Set(klapz_core::metadata::sort_key(title_sort, Some(title))),
         original_title: ActiveValue::Set(None),
         summary: ActiveValue::Set(None),
         tagline: ActiveValue::Set(None),
@@ -189,7 +189,7 @@ async fn seed(connection: &DatabaseConnection) {
 }
 
 async fn repository() -> SqlMetadataRepository {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
     seed(&connection).await;
     SqlMetadataRepository::new(connection)
 }

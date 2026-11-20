@@ -94,7 +94,7 @@ different schemas bearing the same version, which is the hardest class of data b
 Since the schema is ours and the project is young, prefer getting the shape right over
 accumulating corrective migrations — but once a migration is in a release, it is frozen.
 Nothing has shipped yet, so an unreleased migration may still be rewritten in place: the local
-`open-plex.db` then has to be deleted and imported again (`tools/reimport.py` keeps what was made
+`klapz.db` then has to be deleted and imported again (`tools/reimport.py` keeps what was made
 here).
 
 ## Measuring queries
@@ -102,7 +102,7 @@ here).
 A claim about performance or batching is proven from the SQL log and `EXPLAIN QUERY PLAN`, and
 the number goes into the migration or the commit: "320 ms per page without the index, 0.5 ms with
 it"; "50 films and their media chain in 6 queries, not 357". Time it on the real library — a
-copy of `open-plex.db` — since the test fixtures never show a slow query.
+copy of `klapz.db` — since the test fixtures never show a slow query.
 
 SQLite traps met here:
 

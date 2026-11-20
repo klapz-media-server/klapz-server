@@ -6,15 +6,15 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::history::{
+use klapz_core::history::{
     HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, NewViewing, ViewerCount, ViewingKind,
 };
-use open_plex_core::page::{Direction, Window};
-use open_plex_core::watch::{WatchRepository, WatchState};
-use open_plex_core::{HistoryId, RatingKey, SectionId, UserId};
-use open_plex_db::entity::{library_section, metadata_item};
-use open_plex_db::write;
-use open_plex_db::SqlWatchRepository;
+use klapz_core::page::{Direction, Window};
+use klapz_core::watch::{WatchRepository, WatchState};
+use klapz_core::{HistoryId, RatingKey, SectionId, UserId};
+use klapz_db::entity::{library_section, metadata_item};
+use klapz_db::write;
+use klapz_db::SqlWatchRepository;
 use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 const SOUL: i64 = 577_986;
@@ -61,7 +61,7 @@ fn section(id: i64, kind: &str) -> library_section::ActiveModel {
     library_section::ActiveModel {
         id: ActiveValue::Set(id),
         kind: ActiveValue::Set(kind.to_owned()),
-        title: ActiveValue::Set(format!("open-plex tests {id}")),
+        title: ActiveValue::Set(format!("klapz tests {id}")),
         title_sort: ActiveValue::Set(None),
         language: ActiveValue::Set("fr-FR".to_owned()),
         uuid: ActiveValue::Set(format!("uuid-{id}")),
@@ -74,7 +74,7 @@ fn section(id: i64, kind: &str) -> library_section::ActiveModel {
 }
 
 async fn repository() -> (SqlWatchRepository, DatabaseConnection) {
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     library_section::Entity::insert_many([section(27, "movie"), section(28, "show")])
@@ -324,7 +324,7 @@ async fn deleting_an_entry_leaves_the_state_and_an_entry_goes_with_its_item() {
     assert_eq!(everyone, vec![EPISODE_1, EPISODE_2, EPISODE_1]);
 }
 
-fn ranking(page: &open_plex_core::Page<ViewerCount>) -> Vec<(i64, u64)> {
+fn ranking(page: &klapz_core::Page<ViewerCount>) -> Vec<(i64, u64)> {
     page.items
         .iter()
         .map(|count| (count.viewer.get(), count.viewings))

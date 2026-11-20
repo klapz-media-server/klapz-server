@@ -1,5 +1,5 @@
 {
-  "Name": "open-plex capture",
+  "Name": "klapz capture",
   "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
   "Id": "fa0974433b104c0e42ab50df5c04b501",
   "Etag": "d48403d519be5dcafeddf1adca9e4f19",
@@ -9,7 +9,7 @@
   "CanDownload": false,
   "SortName": "openplex capture",
   "ExternalUrls": [],
-  "Path": "/var/lib/jellyfin/data/playlists/open-plex capture",
+  "Path": "/var/lib/jellyfin/data/playlists/klapz capture",
   "EnableMediaSourceDisplay": true,
   "OfficialRating": "FR-TP",
   "ChannelId": null,

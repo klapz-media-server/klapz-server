@@ -2,13 +2,13 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::page::Window;
-use open_plex_core::playback::{
+use klapz_core::page::Window;
+use klapz_core::playback::{
     NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackState, SessionStatus,
     StreamDecision, SESSION_LIFETIME_SECONDS,
 };
-use open_plex_core::{PartId, RatingKey};
-use open_plex_db::{connect, SqlPlaybackRepository};
+use klapz_core::{PartId, RatingKey};
+use klapz_db::{connect, SqlPlaybackRepository};
 
 const NOW: i64 = 1_700_000_000;
 
@@ -19,7 +19,7 @@ async fn repository() -> SqlPlaybackRepository {
 fn session(key: &str) -> NewPlaybackSession {
     NewPlaybackSession {
         key: key.to_owned(),
-        user: open_plex_core::UserId::new(1),
+        user: klapz_core::UserId::new(1),
         playback_id: Some("player".to_owned()),
         item: RatingKey::new(10),
         part: PartId::new(20),

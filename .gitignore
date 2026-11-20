@@ -1,7 +1,7 @@
 # Build and local database
 target/
-open-plex.db
-open-plex.db-*
+klapz.db
+klapz.db-*
 
 # Reference material too large or too personal to version. Anchored to the root: an
 # unanchored `db/` also matches `crates/db/`, and silently kept the storage crate out of git.

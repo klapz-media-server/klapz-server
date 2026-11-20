@@ -82,7 +82,7 @@ async fn seasons(
     gql::viewer(&state.schema)
         .await?
         .require_self(query.get("userId"))?;
-    let show = id::global_of_type(&show, open_plex_api::item::ITEM_TYPE)?;
+    let show = id::global_of_type(&show, klapz_api::item::ITEM_TYPE)?;
     let fields = Fields::named(query.list("fields"));
     let seasons_query = format!(
         r"query($id: ID!, $people: Boolean!,
@@ -118,7 +118,7 @@ async fn episodes(
     gql::viewer(&state.schema)
         .await?
         .require_self(query.get("userId"))?;
-    let show = id::global_of_type(&show, open_plex_api::item::ITEM_TYPE)?;
+    let show = id::global_of_type(&show, klapz_api::item::ITEM_TYPE)?;
     let fields = Fields::named(query.list("fields"));
     let episodes_query = format!(
         r"query($id: ID!, $people: Boolean!,
@@ -142,7 +142,7 @@ async fn episodes(
         .ok_or(JellyfinError::NotFound)?
         .nodes;
     if let Some(season) = query.get("seasonId") {
-        let season = id::global_of_type(season, open_plex_api::item::ITEM_TYPE)?;
+        let season = id::global_of_type(season, klapz_api::item::ITEM_TYPE)?;
         episodes.retain(|episode| {
             episode
                 .season
@@ -175,11 +175,11 @@ async fn next_up(
     let fields = Fields::named(query.list("fields"));
     let library = query
         .get("parentId")
-        .map(|parent| id::global_of_type(parent, open_plex_api::library::LIBRARY_TYPE))
+        .map(|parent| id::global_of_type(parent, klapz_api::library::LIBRARY_TYPE))
         .transpose()?;
     let series = query
         .get("seriesId")
-        .map(|series| id::global_of_type(series, open_plex_api::item::ITEM_TYPE))
+        .map(|series| id::global_of_type(series, klapz_api::item::ITEM_TYPE))
         .transpose()?;
     let next: Vec<Item> = continue_watching(&state, library, &fields)
         .await?
@@ -218,15 +218,12 @@ async fn upcoming(
     let wanted: Vec<String> = match query.get("parentId") {
         Some(parent) => {
             let parent = id::decode(parent)?;
-            if parent.type_name != open_plex_api::library::LIBRARY_TYPE {
+            if parent.type_name != klapz_api::library::LIBRARY_TYPE {
                 return Err(JellyfinError::NotImplemented(
                     "upcoming episodes below an item",
                 ));
             }
-            vec![open_plex_api::GlobalId::encode(
-                &parent.type_name,
-                parent.key,
-            )]
+            vec![klapz_api::GlobalId::encode(&parent.type_name, parent.key)]
         }
         None => libraries(&state)
             .await?
@@ -240,8 +237,8 @@ async fn upcoming(
             ("kind".to_owned(), json!("EPISODE")),
             (
                 "releasedFrom".to_owned(),
-                json!(open_plex_api::date_time::format(upcoming_from(
-                    open_plex_core::now_epoch()
+                json!(klapz_api::date_time::format(upcoming_from(
+                    klapz_core::now_epoch()
                 ))),
             ),
         ]),
@@ -294,7 +291,7 @@ mod tests {
         // 2024-05-02T13:45:00Z
         assert_eq!(upcoming_from(1_714_657_500), 1_714_521_600);
         assert_eq!(
-            open_plex_api::date_time::format(upcoming_from(1_714_657_500)),
+            klapz_api::date_time::format(upcoming_from(1_714_657_500)),
             "2024-05-01T00:00:00Z"
         );
         assert_eq!(upcoming_from(1_714_608_000), 1_714_521_600);

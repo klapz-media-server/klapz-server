@@ -1,4 +1,4 @@
-//! open-plex server binary: configuration, composition, and mounting the bindings.
+//! klapz server binary: configuration, composition, and mounting the bindings.
 //!
 //! Also carries the one-off `import` subcommand, which seeds our schema from a real Plex
 //! database. Keeping it here rather than in a separate crate avoids a crate whose only job
@@ -22,17 +22,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::http::{header, HeaderValue, StatusCode};
-use open_plex_api::{build_schema, ApiContext};
-use open_plex_api_plex::PlexState;
-use open_plex_core::access::{publish_link, AccessRepository, AccountDirectory, Extension};
-use open_plex_core::account::{ensure_admin, AdminAccount, AdminAccountError, SessionKey};
-use open_plex_core::lifecycle::SessionLocks;
-use open_plex_core::metadata::MetadataRepository;
-use open_plex_core::play_queue::PlayQueueRepository;
-use open_plex_core::playback::PlaybackRepository;
-use open_plex_core::scan::BackgroundScans;
-use open_plex_core::{LibraryRepository, ServerCapabilities, ServerIdentity};
-use open_plex_db::{
+use klapz_api::{build_schema, ApiContext};
+use klapz_api_plex::PlexState;
+use klapz_core::access::{publish_link, AccessRepository, AccountDirectory, Extension};
+use klapz_core::account::{ensure_admin, AdminAccount, AdminAccountError, SessionKey};
+use klapz_core::lifecycle::SessionLocks;
+use klapz_core::metadata::MetadataRepository;
+use klapz_core::play_queue::PlayQueueRepository;
+use klapz_core::playback::PlaybackRepository;
+use klapz_core::scan::BackgroundScans;
+use klapz_core::{LibraryRepository, ServerCapabilities, ServerIdentity};
+use klapz_db::{
     import, SqlAccessRepository, SqlLibraryRepository, SqlMetadataRepository,
     SqlPlayQueueRepository, SqlPlaybackRepository, SqlWatchRepository,
 };
@@ -41,7 +41,7 @@ use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
 /// Where our own database lives. `rwc` creates it on first run.
-const DEFAULT_DATABASE_URL: &str = "sqlite://open-plex.db?mode=rwc";
+const DEFAULT_DATABASE_URL: &str = "sqlite://klapz.db?mode=rwc";
 /// How often expired playback sessions and idle streams are ended. Reads already skip them.
 const EXPIRY_SWEEP: Duration = Duration::from_secs(30);
 /// How long a stopping server waits for its connections once every session has ended: a
@@ -57,15 +57,14 @@ const PUBLISH_INTERVAL: Duration = Duration::from_secs(3600);
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                "open_plex_server=info,open_plex_api_plex=info,open_plex_db=info".into()
-            }),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "klapz_server=info,klapz_api_plex=info,klapz_db=info".into()),
         )
         .init();
 
     let database_url =
-        std::env::var("OPENPLEX_DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_owned());
-    let connection = open_plex_db::connect(&database_url).await?;
+        std::env::var("KLAPZ_DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_owned());
+    let connection = klapz_db::connect(&database_url).await?;
 
     // `import`, `library` and `scan` do their job and exit; anything else starts the server.
     let arguments: Vec<String> = std::env::args().skip(1).collect();
@@ -84,8 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ensure_admin_account(users.as_ref()).await?;
     let metadata: Arc<dyn MetadataRepository> =
         Arc::new(SqlMetadataRepository::new(connection.clone()));
-    let directory: Arc<dyn AccountDirectory> =
-        Arc::new(open_plex_api_plex::plex_tv::PlexTv::new()?);
+    let directory: Arc<dyn AccountDirectory> = Arc::new(klapz_api_plex::plex_tv::PlexTv::new()?);
     let transcoder = Arc::new(transcoder());
     transcoder.remove_leftover_sessions();
     let streams = Arc::new(streams::Streams::new(Arc::clone(&transcoder)));
@@ -97,19 +95,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     clear_stale_sessions(&sessions).await?;
     let schema = build_schema(ApiContext {
-        capabilities: ServerCapabilities::new(identity(), open_plex_core::now_epoch()),
+        capabilities: ServerCapabilities::new(identity(), klapz_core::now_epoch()),
         library,
         metadata,
         playback: Arc::clone(&playback),
         play_queues: Arc::clone(&play_queues),
-        playlists: Arc::new(open_plex_db::SqlPlaylistRepository::new(connection.clone())),
-        collections: Arc::new(open_plex_db::SqlCollectionRepository::new(
-            connection.clone(),
-        )),
+        playlists: Arc::new(klapz_db::SqlPlaylistRepository::new(connection.clone())),
+        collections: Arc::new(klapz_db::SqlCollectionRepository::new(connection.clone())),
         access: Arc::clone(&users),
         directory: Arc::clone(&directory),
         watch: Arc::new(SqlWatchRepository::new(connection)),
-        streams: Arc::clone(&streams) as Arc<dyn open_plex_core::stream::StreamEngine>,
+        streams: Arc::clone(&streams) as Arc<dyn klapz_core::stream::StreamEngine>,
         session_locks: locks,
         scans: Arc::new(scans),
     });
@@ -134,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     plex_state.transcoder = Arc::clone(&transcoder);
     let sweep = expire_playback(sessions.clone(), play_queues, Arc::clone(&transcoder));
     tokio::spawn(sweep);
-    let app = open_plex_api_plex::router(plex_state)
+    let app = klapz_api_plex::router(plex_state)
         .merge(jellyfin_surface(&schema, &sign_in))
         .merge(graphql::router(schema, sign_in))
         .merge(admin::router())
@@ -164,9 +160,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
         ));
 
-    let bind = std::env::var("OPENPLEX_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
+    let bind = std::env::var("KLAPZ_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
     let listener = listen(&bind).await?;
-    tracing::info!(address = %bind, "open-plex listening");
+    tracing::info!(address = %bind, "klapz listening");
     serve_until_signal(listener, app, sessions).await?;
     transcoder.remove_leftover_sessions();
     Ok(())
@@ -251,14 +247,14 @@ async fn clear_stale_sessions(
 /// A job the command line names, run to its end; `None` when it names none and the server is to
 /// start.
 async fn run_command(
-    connection: &open_plex_db::DatabaseConnection,
+    connection: &klapz_db::DatabaseConnection,
     arguments: &[String],
 ) -> Option<Result<(), Box<dyn std::error::Error>>> {
     let (command, rest) = arguments.split_first()?;
     Some(match command.as_str() {
         "import" => match rest.first() {
             Some(source) => run_import(connection, &PathBuf::from(source)).await,
-            None => Err("usage: open-plex-server import <plex.db>".into()),
+            None => Err("usage: klapz-server import <plex.db>".into()),
         },
         "library" => commands::library(connection, rest).await,
         "scan" => commands::scan(connection, rest).await,
@@ -267,7 +263,7 @@ async fn run_command(
 }
 
 async fn run_import(
-    connection: &open_plex_db::DatabaseConnection,
+    connection: &klapz_db::DatabaseConnection,
     source: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let summary = import::import_library(connection, source).await?;
@@ -295,34 +291,34 @@ async fn run_import(
 
 /// Makes sure the built-in `admin` account exists, an active owner, before anything is served.
 ///
-/// `OPENPLEX_ADMIN_PASSWORD` sets its password, at creation and on every start; without it, a
+/// `KLAPZ_ADMIN_PASSWORD` sets its password, at creation and on every start; without it, a
 /// new account gets a generated one and an existing one keeps its own. A password the policy
 /// refuses stops the server. A generated password goes to standard output, once, and never
 /// to the logs, which may be kept or shipped where a password must not go.
 async fn ensure_admin_account(users: &dyn AccessRepository) -> Result<(), String> {
-    let configured = std::env::var("OPENPLEX_ADMIN_PASSWORD")
+    let configured = std::env::var("KLAPZ_ADMIN_PASSWORD")
         .ok()
         .filter(|password| !password.is_empty());
-    match ensure_admin(users, configured.as_deref(), open_plex_core::now_epoch()).await {
+    match ensure_admin(users, configured.as_deref(), klapz_core::now_epoch()).await {
         Ok(AdminAccount::Created {
             generated_password: Some(password),
         }) => {
             println!(
-                "\nopen-plex created its `admin` account. Its password, shown this once:\n\n    \
-                 {password}\n\nSign in with it at /admin. Set OPENPLEX_ADMIN_PASSWORD to \
+                "\nklapz created its `admin` account. Its password, shown this once:\n\n    \
+                 {password}\n\nSign in with it at /admin. Set KLAPZ_ADMIN_PASSWORD to \
                  choose another.\n"
             );
             tracing::info!("created the admin account, with a generated password");
         }
         Ok(AdminAccount::Created {
             generated_password: None,
-        }) => tracing::info!("created the admin account, with OPENPLEX_ADMIN_PASSWORD"),
+        }) => tracing::info!("created the admin account, with KLAPZ_ADMIN_PASSWORD"),
         Ok(AdminAccount::PasswordReplaced) => {
-            tracing::info!("the admin account takes OPENPLEX_ADMIN_PASSWORD");
+            tracing::info!("the admin account takes KLAPZ_ADMIN_PASSWORD");
         }
         Ok(AdminAccount::Kept) => {}
         Err(error @ AdminAccountError::WeakPassword) => {
-            return Err(format!("OPENPLEX_ADMIN_PASSWORD: {error}"));
+            return Err(format!("KLAPZ_ADMIN_PASSWORD: {error}"));
         }
         Err(error) => return Err(format!("could not set the admin account up: {error}")),
     }
@@ -331,42 +327,40 @@ async fn ensure_admin_account(users: &dyn AccessRepository) -> Result<(), String
 
 /// The key sessions are signed with, for the transport to check them, and the sign-in
 /// machinery around it, for the schema.
-fn sign_in() -> Result<(Arc<SessionKey>, Arc<open_plex_api::Sessions>), String> {
+fn sign_in() -> Result<(Arc<SessionKey>, Arc<klapz_api::Sessions>), String> {
     let key = Arc::new(session_key()?);
-    let sessions = open_plex_api::Sessions::new(Arc::clone(&key), secure_cookies());
+    let sessions = klapz_api::Sessions::new(Arc::clone(&key), secure_cookies());
     Ok((key, Arc::new(sessions)))
 }
 
-/// What sessions are signed with, from `OPENPLEX_SESSION_SECRET`.
+/// What sessions are signed with, from `KLAPZ_SESSION_SECRET`.
 ///
 /// Without one, a key is drawn for this process: signing in works, but every session ends when
 /// the server stops. A secret too short to sign with stops the server instead of being used.
 fn session_key() -> Result<SessionKey, String> {
-    match std::env::var("OPENPLEX_SESSION_SECRET") {
+    match std::env::var("KLAPZ_SESSION_SECRET") {
         Ok(secret) if !secret.is_empty() => {
             SessionKey::from_secret(secret.as_bytes()).ok_or_else(|| {
                 format!(
-                    "OPENPLEX_SESSION_SECRET: at least {} bytes are needed",
+                    "KLAPZ_SESSION_SECRET: at least {} bytes are needed",
                     SessionKey::MIN_SECRET_BYTES
                 )
             })
         }
         _ => {
-            tracing::warn!(
-                "OPENPLEX_SESSION_SECRET is not set: sessions will not survive a restart"
-            );
+            tracing::warn!("KLAPZ_SESSION_SECRET is not set: sessions will not survive a restart");
             Ok(SessionKey::generate())
         }
     }
 }
 
-/// Whether the session cookie is for HTTPS only. On unless `OPENPLEX_INSECURE_COOKIES=1`, for a
+/// Whether the session cookie is for HTTPS only. On unless `KLAPZ_INSECURE_COOKIES=1`, for a
 /// server reached over plain HTTP on a local network; browsers count `http://localhost` as
 /// secure either way.
 fn secure_cookies() -> bool {
-    let insecure = std::env::var("OPENPLEX_INSECURE_COOKIES").is_ok_and(|value| value == "1");
+    let insecure = std::env::var("KLAPZ_INSECURE_COOKIES").is_ok_and(|value| value == "1");
     if insecure {
-        tracing::warn!("OPENPLEX_INSECURE_COOKIES=1: session cookies also travel over plain HTTP");
+        tracing::warn!("KLAPZ_INSECURE_COOKIES=1: session cookies also travel over plain HTTP");
     }
     !insecure
 }
@@ -381,8 +375,8 @@ fn request_span(request: &axum::extract::Request) -> tracing::Span {
     )
 }
 
-/// `OPENPLEX_TRANSCODER` is the patched ffmpeg to run; `OPENPLEX_TRANSCODER_CODECS` where its
-/// separately distributed codecs are, for Plex's own build; `OPENPLEX_TRANSCODER_FONTS` the
+/// `KLAPZ_TRANSCODER` is the patched ffmpeg to run; `KLAPZ_TRANSCODER_CODECS` where its
+/// separately distributed codecs are, for Plex's own build; `KLAPZ_TRANSCODER_FONTS` the
 /// fonts subtitles are burned in with, by default `Resources/Fonts` beside the binary, where a
 /// Plex install keeps them.
 /// Plex Web at `/web`, when its directory holds it.
@@ -399,22 +393,19 @@ fn with_web_client(app: axum::Router) -> axum::Router {
 
 /// The Jellyfin surface, with Jellyfin Web when there is one to serve.
 fn jellyfin_surface(
-    schema: &open_plex_api::ApiSchema,
-    sign_in: &Arc<open_plex_api::Sessions>,
+    schema: &klapz_api::ApiSchema,
+    sign_in: &Arc<klapz_api::Sessions>,
 ) -> axum::Router {
-    let mut state = open_plex_api_jellyfin::JellyfinState::new(
-        schema.clone(),
-        Arc::clone(sign_in),
-        &identity(),
-    );
+    let mut state =
+        klapz_api_jellyfin::JellyfinState::new(schema.clone(), Arc::clone(sign_in), &identity());
     state.web_dir = jellyfin_web_dir();
-    open_plex_api_jellyfin::router(state)
+    klapz_api_jellyfin::router(state)
 }
 
-/// Jellyfin Web, served below the Jellyfin surface when `OPENPLEX_JELLYFIN_WEB_DIR` names a
+/// Jellyfin Web, served below the Jellyfin surface when `KLAPZ_JELLYFIN_WEB_DIR` names a
 /// directory holding it. Not versioned here: it is Jellyfin's code.
 fn jellyfin_web_dir() -> Option<PathBuf> {
-    let directory = PathBuf::from(std::env::var_os("OPENPLEX_JELLYFIN_WEB_DIR")?);
+    let directory = PathBuf::from(std::env::var_os("KLAPZ_JELLYFIN_WEB_DIR")?);
     if directory.join("index.html").is_file() {
         tracing::info!(directory = %directory.display(), "serving Jellyfin Web at /jellyfin/web");
         Some(directory)
@@ -435,12 +426,12 @@ pub(crate) fn bundled(program: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(name))
 }
 
-fn transcoder() -> open_plex_transcoder::Transcoder {
-    let bind = std::env::var("OPENPLEX_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
+fn transcoder() -> klapz_transcoder::Transcoder {
+    let bind = std::env::var("KLAPZ_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
     let port = bind.rsplit(':').next().unwrap_or("32500");
     let binary =
-        std::env::var_os("OPENPLEX_TRANSCODER").map_or_else(|| bundled("ffmpeg"), PathBuf::from);
-    let fonts = std::env::var_os("OPENPLEX_TRANSCODER_FONTS")
+        std::env::var_os("KLAPZ_TRANSCODER").map_or_else(|| bundled("ffmpeg"), PathBuf::from);
+    let fonts = std::env::var_os("KLAPZ_TRANSCODER_FONTS")
         .map(std::path::PathBuf::from)
         .or_else(|| {
             binary
@@ -452,13 +443,13 @@ fn transcoder() -> open_plex_transcoder::Transcoder {
     if fonts.is_none() {
         tracing::warn!("no subtitle fonts found: subtitles cannot be burned in");
     }
-    open_plex_transcoder::Transcoder::new(open_plex_transcoder::Config {
+    klapz_transcoder::Transcoder::new(klapz_transcoder::Config {
         binary,
-        external_libs: std::env::var_os("OPENPLEX_TRANSCODER_CODECS").map(std::path::PathBuf::from),
+        external_libs: std::env::var_os("KLAPZ_TRANSCODER_CODECS").map(std::path::PathBuf::from),
         callback_base: format!("http://127.0.0.1:{port}"),
         fonts,
         // One per port, so that two servers on one machine never empty each other's.
-        sessions_directory: std::env::temp_dir().join(format!("open-plex-transcode-{port}")),
+        sessions_directory: std::env::temp_dir().join(format!("klapz-transcode-{port}")),
     })
 }
 
@@ -467,18 +458,14 @@ fn transcoder() -> open_plex_transcoder::Transcoder {
 async fn expire_playback(
     sessions: streams::Sessions,
     play_queues: Arc<dyn PlayQueueRepository>,
-    transcoder: Arc<open_plex_transcoder::Transcoder>,
+    transcoder: Arc<klapz_transcoder::Transcoder>,
 ) {
     let mut ticks = tokio::time::interval(EXPIRY_SWEEP);
     loop {
         ticks.tick().await;
         transcoder.remove_orphan_directories().await;
-        match sessions
-            .lifecycle()
-            .sweep(open_plex_core::now_epoch())
-            .await
-        {
-            Ok(swept) if swept == open_plex_core::lifecycle::Swept::default() => {}
+        match sessions.lifecycle().sweep(klapz_core::now_epoch()).await {
+            Ok(swept) if swept == klapz_core::lifecycle::Swept::default() => {}
             Ok(swept) => tracing::info!(
                 expired = swept.expired,
                 idle = swept.idle,
@@ -486,8 +473,7 @@ async fn expire_playback(
             ),
             Err(error) => tracing::warn!(%error, "could not expire playback sessions"),
         }
-        let cutoff =
-            open_plex_core::now_epoch() - open_plex_core::play_queue::QUEUE_RETENTION_SECONDS;
+        let cutoff = klapz_core::now_epoch() - klapz_core::play_queue::QUEUE_RETENTION_SECONDS;
         if let Err(error) = play_queues.delete_created_before(cutoff).await {
             tracing::warn!(%error, "could not remove old play queues");
         }
@@ -514,19 +500,15 @@ async fn publish_all(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut after = None;
     loop {
-        let window = open_plex_core::page::Window::by_id(
-            after,
-            None,
-            Some(open_plex_core::page::MAX_ITEMS),
-            None,
-        )?;
+        let window =
+            klapz_core::page::Window::by_id(after, None, Some(klapz_core::page::MAX_ITEMS), None)?;
         let page = users.users(window).await?;
         for user in &page.items {
             let link = users.account_link(user.id, Extension::Plex).await?;
             let Some(link) = link.filter(|link| link.enabled) else {
                 continue;
             };
-            let now = open_plex_core::now_epoch();
+            let now = klapz_core::now_epoch();
             if let Err(error) = publish_link(users, directory, &link, now).await {
                 tracing::warn!(%error, user = user.id.get(), "could not publish a server");
             }
@@ -544,7 +526,7 @@ async fn publish_all(
 /// server, so it comes from configuration rather than being generated per boot. Persisting a
 /// generated one belongs with the settings work.
 fn identity() -> ServerIdentity {
-    let machine_identifier = std::env::var("OPENPLEX_MACHINE_ID")
+    let machine_identifier = std::env::var("KLAPZ_MACHINE_ID")
         .unwrap_or_else(|_| "0000000000000000000000000000000000000000".to_owned());
     ServerIdentity::new(machine_identifier, env!("CARGO_PKG_VERSION"))
 }

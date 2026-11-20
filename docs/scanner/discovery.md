@@ -1,6 +1,6 @@
 # How Plex discovers files and groups them into items
 
-Research for the open-plex scanner: how Plex Media Server 1.43.5 walks a library location, decides
+Research for the klapz scanner: how Plex Media Server 1.43.5 walks a library location, decides
 what changed, classifies files, and groups them into movies, shows, seasons and episodes before
 any metadata agent runs. Each rule carries its source:
 
@@ -410,7 +410,7 @@ For each directory with kept files [M]:
    (flat folder) and `Versions Film (2011)/… - 1080p.mkv` + `… - 4K.mkv` each gave **two** movies,
    titled `Brazil`/`Brazil` and `Versions Film`/`Versions Film` [M]. On the reference with real agents
    the two would match the same guid and merge into one item with two `media_items` (the Agent Match
-   stage); with agent `none` they cannot. So a new open-plex scanner must decide versions itself: by
+   stage); with agent `none` they cannot. So a new klapz scanner must decide versions itself: by
    identical (title, year, edition) in one directory, presumably.
 6. **CD subfolders** [M]: `Disc Film (2003)/CD1/a.mkv` + `CD2/b.mkv` → **one** movie `Disc Film`
    2003 with two parts (legacy: more than one subfolder matching `cd[ ]*([0-9]+)`; binary has
@@ -701,17 +701,17 @@ changes for part …`), as are BIF and chapter-thumbnail jobs and BlurHash/Ultra
 
 ---
 
-## 7. Notes for the open-plex scanner
+## 7. Notes for the klapz scanner
 
 - Keep the skip rule exactly (count, existence, mtime, size, deleted flag per directory), and keep
   "everything not visited is removed" scoped to the scanned subtree. A partial scan of a vanished
   directory must delete its subtree, and a vanished **location root** must not (§2.5).
 - Identify a moved file by size, then content hash, then accept the move only if the regrouped
-  "hint name" matches. Otherwise make a new item and carry the per-user state, which in open-plex
+  "hint name" matches. Otherwise make a new item and carry the per-user state, which in klapz
   is keyed by `guid` (watch state, ratings), so a move must not lose it.
 - The folder-name rule for single-film folders and the "first path component is the show" rule are
   the two decisions that most change grouping; both are measured.
-- Versions of a film are merged by the reference's agent match, not by its scanner. open-plex has
+- Versions of a film are merged by the reference's agent match, not by its scanner. klapz has
   no agent, so it must merge them itself: same cleaned (title, year, edition) in one directory is the
   conservative choice.
 - `force=1` on the reference is a section-wide metadata refresh. Reproducing it as "rescan

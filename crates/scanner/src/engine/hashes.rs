@@ -63,10 +63,8 @@ mod tests {
     use std::io::Write;
 
     fn hash_of(name: &str, bytes: &[u8]) -> u64 {
-        let path = std::env::temp_dir().join(format!(
-            "open-plex-scanner-hash-{}-{name}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("klapz-scanner-hash-{}-{name}", std::process::id()));
         File::create(&path).unwrap().write_all(bytes).unwrap();
         let mut file = File::open(&path).unwrap();
         let hash = open_subtitles_hash(&mut file, bytes.len() as u64).unwrap();

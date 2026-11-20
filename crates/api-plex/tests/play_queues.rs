@@ -6,12 +6,12 @@
 use axum::body::Body;
 use axum::http::{header, Method, Request, StatusCode};
 use http_body_util::BodyExt;
-use open_plex_api::{build_schema, ApiContext, ApiSchema};
-use open_plex_api_plex::{router, PlexState};
-use open_plex_core::access::{LibraryAccess, LibraryRole};
-use open_plex_core::metadata::{ItemKind, MetadataItem};
-use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata, InMemoryPlaylists};
-use open_plex_core::{
+use klapz_api::{build_schema, ApiContext, ApiSchema};
+use klapz_api_plex::{router, PlexState};
+use klapz_core::access::{LibraryAccess, LibraryRole};
+use klapz_core::metadata::{ItemKind, MetadataItem};
+use klapz_core::testing::{InMemoryLibrary, InMemoryMetadata, InMemoryPlaylists};
+use klapz_core::{
     LibrarySection, Principal, RatingKey, SectionId, SectionKind, ServerCapabilities,
     ServerIdentity, UserId,
 };
@@ -84,20 +84,20 @@ fn schema() -> ApiSchema {
     build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity, 0),
         library: std::sync::Arc::new(InMemoryLibrary::new(vec![
-            section(27, SectionKind::Movie, "open-plex tests"),
-            section(28, SectionKind::Show, "open-plex tests series"),
+            section(27, SectionKind::Movie, "klapz tests"),
+            section(28, SectionKind::Show, "klapz tests series"),
         ])),
         metadata: std::sync::Arc::new(InMemoryMetadata::new(items.clone())),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
         playlists: std::sync::Arc::new(InMemoryPlaylists::new(items)),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -107,7 +107,7 @@ fn app_as(schema: &ApiSchema, caller: Principal) -> axum::Router {
 }
 
 fn owner(schema: &ApiSchema) -> axum::Router {
-    app_as(schema, open_plex_core::testing::owner())
+    app_as(schema, klapz_core::testing::owner())
 }
 
 fn user(schema: &ApiSchema, id: i64) -> axum::Router {
@@ -115,7 +115,7 @@ fn user(schema: &ApiSchema, id: i64) -> axum::Router {
         schema,
         Principal {
             name: format!("user{id}"),
-            role: open_plex_core::ServerRole::User,
+            role: klapz_core::ServerRole::User,
             libraries: LibraryAccess::Only(
                 [
                     (SectionId::new(27), LibraryRole::Viewer),

@@ -2,7 +2,7 @@
 
 use async_graphql::connection::{query, Connection, Edge};
 use async_graphql::{Context, Object, Result};
-use open_plex_core::closest::{ClosestTitles, TitleMatch, MAX_TERM_BYTES};
+use klapz_core::closest::{ClosestTitles, TitleMatch, MAX_TERM_BYTES};
 
 use crate::cursor::OpaqueCursor;
 use crate::filter::ItemType;

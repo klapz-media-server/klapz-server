@@ -11,7 +11,7 @@ mod control;
 pub mod layout;
 mod walk;
 
-use open_plex_scanner::report::Analysis;
+use klapz_scanner::report::Analysis;
 
 use crate::files::{FileLocation, RelativePath};
 use crate::ids::{MediaId, PartId, RatingKey, SectionId};

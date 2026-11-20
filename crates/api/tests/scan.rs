@@ -6,10 +6,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use open_plex_api::{build_schema, ApiContext, ApiSchema, GlobalId};
-use open_plex_core::access::{LibraryAccess, LibraryRole};
-use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata, RecordedScans};
-use open_plex_core::{LibrarySection, Principal, SectionId, SectionKind, UserId};
+use klapz_api::{build_schema, ApiContext, ApiSchema, GlobalId};
+use klapz_core::access::{LibraryAccess, LibraryRole};
+use klapz_core::testing::{InMemoryLibrary, InMemoryMetadata, RecordedScans};
+use klapz_core::{LibrarySection, Principal, SectionId, SectionKind, UserId};
 use serde_json::{json, Value};
 
 fn section(id: i64, kind: SectionKind) -> LibrarySection {
@@ -30,11 +30,8 @@ fn section(id: i64, kind: SectionKind) -> LibrarySection {
 
 fn schema(scans: Arc<RecordedScans>) -> ApiSchema {
     build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(InMemoryLibrary::new(vec![
@@ -43,14 +40,14 @@ fn schema(scans: Arc<RecordedScans>) -> ApiSchema {
             section(29, SectionKind::Artist),
         ])),
         metadata: Arc::new(InMemoryMetadata::new(Vec::new())),
-        playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::new(Vec::new())),
-        collections: Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: Arc::new(open_plex_core::testing::StubStreams::default()),
+        playback: Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: Arc::new(klapz_core::testing::InMemoryPlaylists::new(Vec::new())),
+        collections: Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: Arc::default(),
         scans,
     })
@@ -60,7 +57,7 @@ fn schema(scans: Arc<RecordedScans>) -> ApiSchema {
 fn user() -> Principal {
     Principal {
         name: "user".to_owned(),
-        role: open_plex_core::ServerRole::User,
+        role: klapz_core::ServerRole::User,
         libraries: LibraryAccess::Only(HashMap::from([
             (SectionId::new(27), LibraryRole::Viewer),
             (SectionId::new(28), LibraryRole::Admin),
@@ -105,7 +102,7 @@ async fn an_owner_starts_a_scan() {
     let schema = schema(Arc::clone(&scans));
     let data = run(
         &schema,
-        open_plex_core::testing::owner(),
+        klapz_core::testing::owner(),
         SCAN,
         json!({ "input": { "clientMutationId": "a", "libraryId": library(27), "force": true } }),
     )
@@ -161,7 +158,7 @@ async fn music_is_not_scanned() {
     let schema = schema(Arc::clone(&scans));
     let data = run(
         &schema,
-        open_plex_core::testing::owner(),
+        klapz_core::testing::owner(),
         SCAN,
         json!({ "input": { "libraryId": library(29) } }),
     )
@@ -178,7 +175,7 @@ async fn cancelling_with_no_scan_running_cancels_nothing() {
     let schema = schema(Arc::new(RecordedScans::default()));
     let data = run(
         &schema,
-        open_plex_core::testing::owner(),
+        klapz_core::testing::owner(),
         CANCEL,
         json!({ "input": { "libraryId": library(27) } }),
     )

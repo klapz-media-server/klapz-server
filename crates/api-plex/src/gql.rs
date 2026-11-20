@@ -11,9 +11,9 @@
 use async_graphql::{Request, Variables};
 use axum::middleware::Next;
 use axum::response::Response;
-use open_plex_api::in_process::{self, RequestOrigin};
-use open_plex_api::ApiSchema;
-use open_plex_core::{Principal, PublishedServer};
+use klapz_api::in_process::{self, RequestOrigin};
+use klapz_api::ApiSchema;
+use klapz_core::{Principal, PublishedServer};
 use serde::de::DeserializeOwned;
 
 use crate::error::ApiError;
@@ -76,13 +76,13 @@ pub async fn execute<T: DeserializeOwned>(
 /// The official API's `DateTime`, read back into the Unix seconds Plex publishes; for
 /// `#[serde(deserialize_with)]`.
 pub(crate) mod date_time {
-    use open_plex_core::edit::CalendarDate;
+    use klapz_core::edit::CalendarDate;
     use serde::de::Error;
     use serde::{Deserialize, Deserializer};
 
     pub fn seconds<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
         let text = String::deserialize(deserializer)?;
-        open_plex_api::date_time::parse(&text)
+        klapz_api::date_time::parse(&text)
             .ok_or_else(|| D::Error::custom(format!("`{text}` is not a DateTime")))
     }
 
@@ -91,7 +91,7 @@ pub(crate) mod date_time {
     ) -> Result<Option<i64>, D::Error> {
         Option::<String>::deserialize(deserializer)?
             .map(|text| {
-                open_plex_api::date_time::parse(&text)
+                klapz_api::date_time::parse(&text)
                     .ok_or_else(|| D::Error::custom(format!("`{text}` is not a DateTime")))
             })
             .transpose()

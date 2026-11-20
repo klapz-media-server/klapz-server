@@ -28,23 +28,23 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use futures_util::StreamExt as _;
-use open_plex_core::lifecycle::{Lifecycle, SessionLocks};
-use open_plex_core::playback::{PlaybackOutput, PlaybackRepository, StreamDecision};
-use open_plex_core::sidecar::{SidecarError, SidecarSource};
-use open_plex_core::stream::{
+use klapz_core::lifecycle::{Lifecycle, SessionLocks};
+use klapz_core::playback::{PlaybackOutput, PlaybackRepository, StreamDecision};
+use klapz_core::sidecar::{SidecarError, SidecarSource};
+use klapz_core::stream::{
     Delivery, FallbackRefusal, StartedStream, StreamEngine, StreamError, StreamOrder,
     StreamProtocol, StreamQuality, StreamTrack, SubtitleOutput,
 };
-use open_plex_transcoder::adapt;
-use open_plex_transcoder::media::{read_sidecar, resolve_sidecar, resolve_within};
-use open_plex_transcoder::plan::{
+use klapz_transcoder::adapt;
+use klapz_transcoder::media::{read_sidecar, resolve_sidecar, resolve_within};
+use klapz_transcoder::plan::{
     plan_ladder, Adaptation, AudioAction, Ladder, Limits, StreamPlan, StreamSource, Track,
     VideoAction,
 };
-use open_plex_transcoder::session::{
+use klapz_transcoder::session::{
     DashTrack, Output, Protocol, StreamRequest, SubtitleDelivery, SubtitleReader,
 };
-use open_plex_transcoder::{TranscodeError, Transcoder};
+use klapz_transcoder::{TranscodeError, Transcoder};
 use serde::Deserialize;
 use subtle::ConstantTimeEq;
 use tokio::io::AsyncReadExt as _;
@@ -119,7 +119,7 @@ struct Picture {
 }
 
 impl Picture {
-    fn of(source: &open_plex_core::stream::StreamSource, plan: &StreamPlan) -> Self {
+    fn of(source: &klapz_core::stream::StreamSource, plan: &StreamPlan) -> Self {
         match plan.video {
             VideoAction::Copy => Self {
                 video_bandwidth: i64::from(source.bitrate.unwrap_or(0)),
@@ -218,7 +218,7 @@ impl Streams {
     /// Records a stream and returns its id and secret.
     fn admit(&self, key: String, content: Content) -> (String, String) {
         let id = uuid::Uuid::new_v4().to_string();
-        let token = open_plex_core::access::new_token();
+        let token = klapz_core::access::new_token();
         let mut entries = self.entries();
         self.prune(&mut entries);
         let now = Instant::now();
@@ -512,7 +512,7 @@ impl Sessions {
         if opened.touch_due {
             match self
                 .lifecycle()
-                .read(&opened.key, open_plex_core::now_epoch())
+                .read(&opened.key, klapz_core::now_epoch())
                 .await
             {
                 Ok(true) => {}
@@ -1053,9 +1053,9 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use axum::body::to_bytes;
-    use open_plex_core::playback::NewPlaybackSession;
-    use open_plex_core::testing::InMemoryPlayback;
-    use open_plex_transcoder::session::Segment;
+    use klapz_core::playback::NewPlaybackSession;
+    use klapz_core::testing::InMemoryPlayback;
+    use klapz_transcoder::session::Segment;
 
     use super::*;
 
@@ -1272,10 +1272,8 @@ mod tests {
 
     impl Scratch {
         fn new(name: &str) -> Self {
-            let path = std::env::temp_dir().join(format!(
-                "open-plex-streams-test-{name}-{}",
-                std::process::id()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("klapz-streams-test-{name}-{}", std::process::id()));
             std::fs::create_dir_all(path.join("movies")).unwrap();
             std::fs::write(path.join("movies").join("film.mkv"), b"the film").unwrap();
             Self(path)
@@ -1298,7 +1296,7 @@ mod tests {
         StreamOrder {
             key: "u1~k".to_owned(),
             playback: None,
-            source: open_plex_core::stream::StreamSource {
+            source: klapz_core::stream::StreamSource {
                 path: scratch
                     .0
                     .join("movies")
@@ -1315,7 +1313,7 @@ mod tests {
                 audio: track("aac"),
             },
             delivery: Delivery::Original,
-            limits: open_plex_core::stream::StreamLimits::default(),
+            limits: klapz_core::stream::StreamLimits::default(),
             subtitle: None,
             position_ms: 0,
         }
@@ -1347,10 +1345,10 @@ mod tests {
     fn recorded(key: &str) -> NewPlaybackSession {
         NewPlaybackSession {
             key: key.to_owned(),
-            user: open_plex_core::UserId::new(1),
+            user: klapz_core::UserId::new(1),
             playback_id: None,
-            item: open_plex_core::RatingKey::new(1),
-            part: open_plex_core::PartId::new(1),
+            item: klapz_core::RatingKey::new(1),
+            part: klapz_core::PartId::new(1),
             client: None,
             product: None,
             video: StreamDecision::Copy,
@@ -1400,7 +1398,7 @@ mod tests {
 
         // Within the interval, a read writes nothing.
         assert_eq!(fetch(app.clone(), &started.url).await.0, StatusCode::OK);
-        let now = open_plex_core::now_epoch();
+        let now = klapz_core::now_epoch();
         assert!(sessions.session(first.id, now).await.unwrap().is_none());
 
         // The session expired meanwhile: a due read finds it gone and stops the stream.
@@ -1425,7 +1423,7 @@ mod tests {
         let streams = Arc::new(Streams::new(Arc::new(Transcoder::default())));
         let sessions = Arc::new(InMemoryPlayback::default());
         let started = streams.start(order(&scratch)).await.unwrap();
-        let now = open_plex_core::now_epoch();
+        let now = klapz_core::now_epoch();
         sessions.start(recorded("u1~k"), now).await.unwrap();
         // Marked terminated without the stream being reached.
         sessions.terminate("u1~k", None, now).await.unwrap();

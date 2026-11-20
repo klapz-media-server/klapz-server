@@ -1,8 +1,8 @@
 //! Scanning a library: starting a scan, and stopping it.
 
 use async_graphql::{Context, Enum, InputObject, Result, SimpleObject, ID};
-use open_plex_core::scan::{ScanError, ScanRequest};
-use open_plex_core::SectionId;
+use klapz_core::scan::{ScanError, ScanRequest};
+use klapz_core::SectionId;
 
 use crate::library::{Library, LIBRARY_TYPE};
 use crate::node::GlobalId;

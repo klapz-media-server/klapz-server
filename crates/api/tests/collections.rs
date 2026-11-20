@@ -9,12 +9,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use open_plex_api::{build_schema, ApiContext, ApiSchema, GlobalId};
-use open_plex_core::access::{LibraryAccess, LibraryRole};
-use open_plex_core::edit::CalendarDate;
-use open_plex_core::metadata::{ItemKind, MetadataItem};
-use open_plex_core::testing::{InMemoryCollections, InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{LibrarySection, Principal, RatingKey, SectionId, SectionKind, UserId};
+use klapz_api::{build_schema, ApiContext, ApiSchema, GlobalId};
+use klapz_core::access::{LibraryAccess, LibraryRole};
+use klapz_core::edit::CalendarDate;
+use klapz_core::metadata::{ItemKind, MetadataItem};
+use klapz_core::testing::{InMemoryCollections, InMemoryLibrary, InMemoryMetadata};
+use klapz_core::{LibrarySection, Principal, RatingKey, SectionId, SectionKind, UserId};
 use serde_json::{json, Value};
 
 const FILM: i64 = 577_986;
@@ -88,11 +88,8 @@ fn schema() -> ApiSchema {
     let collections = InMemoryCollections::new(items.clone());
     let metadata = InMemoryMetadata::new(items).with_collections(&collections);
     build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(InMemoryLibrary::new(vec![
@@ -100,28 +97,28 @@ fn schema() -> ApiSchema {
             section(28, SectionKind::Show),
         ])),
         metadata: Arc::new(metadata),
-        playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        playback: Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
         collections: Arc::new(collections),
-        access: Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: Arc::new(open_plex_core::testing::StubStreams::default()),
+        access: Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
 fn owner() -> Principal {
-    open_plex_core::testing::owner()
+    klapz_core::testing::owner()
 }
 
 /// A user given the series library in this role, and nothing else.
 fn user(role: LibraryRole) -> Principal {
     Principal {
         name: "user 7".to_owned(),
-        role: open_plex_core::ServerRole::User,
+        role: klapz_core::ServerRole::User,
         libraries: LibraryAccess::Only(HashMap::from([(SectionId::new(28), role)])),
         user: UserId::new(7),
         server_identifier: None,

@@ -8,7 +8,7 @@
 //! Filled here from the tags already imported, so a database migrated in place finds people
 //! without a new import. From then on `write::insert_tags` is its only writer.
 
-use open_plex_core::search;
+use klapz_core::search;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{big_integer, string};
 

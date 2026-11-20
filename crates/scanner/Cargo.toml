@@ -1,12 +1,12 @@
 [package]
-name = "open-plex-scanner"
+name = "klapz-scanner"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "open-plex-scanner"
+name = "klapz-scanner"
 path = "src/main.rs"
 required-features = ["engine"]
 

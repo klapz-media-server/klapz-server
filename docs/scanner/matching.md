@@ -1,7 +1,7 @@
 # Matching and metadata refresh on Plex Media Server
 
 How the reference server (PMS 1.43.5.11029) matches a library item to an online record and
-fetches its metadata, written for open-plex's scanner, which will do the same through the
+fetches its metadata, written for klapz's scanner, which will do the same through the
 official API. Researched on 2026-11-17 against the live reference at `127.0.0.1:32400`, its
 database (opened read-only), its DEBUG logs, the strings of `Plex Media Server.exe` and
 `Plex Media Scanner.exe`, and direct calls to `metadata.provider.plex.tv` with the owner's token.
@@ -139,7 +139,7 @@ the full record (§3, *Record*).
 | `includeAdultContent=1` | Accepted; no difference seen on a non-adult title. |
 
 There is **no score in the provider's answer** and none in PMS's `/matches` answer either. The
-automatic match threshold lives on plex.tv: open-plex cannot reproduce it, only call it.
+automatic match threshold lives on plex.tv: klapz cannot reproduce it, only call it.
 Nonsense (`qwzxv`) or an unparseable release name (`random.release.name.mkv`) gives
 `totalSize: 0`.
 

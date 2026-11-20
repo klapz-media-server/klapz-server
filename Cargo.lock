@@ -1412,6 +1412,149 @@ dependencies = [
 ]
 
 [[package]]
+name = "klapz-api"
+version = "0.1.0"
+dependencies = [
+ "async-graphql",
+ "base64 0.22.1",
+ "chrono",
+ "klapz-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "klapz-api-jellyfin"
+version = "0.1.0"
+dependencies = [
+ "async-graphql",
+ "axum",
+ "form_urlencoded",
+ "http-body-util",
+ "klapz-api",
+ "klapz-core",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
+name = "klapz-api-plex"
+version = "0.1.0"
+dependencies = [
+ "async-graphql",
+ "async-trait",
+ "axum",
+ "form_urlencoded",
+ "futures-util",
+ "http-body-util",
+ "klapz-api",
+ "klapz-core",
+ "klapz-transcoder",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
+name = "klapz-core"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "async-trait",
+ "jsonwebtoken",
+ "klapz-scanner",
+ "serde",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "unicode-normalization",
+ "uuid",
+]
+
+[[package]]
+name = "klapz-db"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "klapz-core",
+ "klapz-scanner",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "klapz-scanner"
+version = "0.1.0"
+dependencies = [
+ "rusty-chromaprint",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "klapz-server"
+version = "0.1.0"
+dependencies = [
+ "async-graphql",
+ "async-graphql-axum",
+ "async-trait",
+ "axum",
+ "form_urlencoded",
+ "futures-util",
+ "http-body-util",
+ "klapz-api",
+ "klapz-api-jellyfin",
+ "klapz-api-plex",
+ "klapz-core",
+ "klapz-db",
+ "klapz-scanner",
+ "klapz-transcoder",
+ "serde",
+ "serde_json",
+ "subtle",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "klapz-transcoder"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "reqwest",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1691,149 +1834,6 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
-
-[[package]]
-name = "open-plex-api"
-version = "0.1.0"
-dependencies = [
- "async-graphql",
- "base64 0.22.1",
- "chrono",
- "open-plex-core",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "open-plex-api-jellyfin"
-version = "0.1.0"
-dependencies = [
- "async-graphql",
- "axum",
- "form_urlencoded",
- "http-body-util",
- "open-plex-api",
- "open-plex-core",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
-]
-
-[[package]]
-name = "open-plex-api-plex"
-version = "0.1.0"
-dependencies = [
- "async-graphql",
- "async-trait",
- "axum",
- "form_urlencoded",
- "futures-util",
- "http-body-util",
- "open-plex-api",
- "open-plex-core",
- "open-plex-transcoder",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
-]
-
-[[package]]
-name = "open-plex-core"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "async-trait",
- "jsonwebtoken",
- "open-plex-scanner",
- "serde",
- "sha2",
- "thiserror",
- "tokio",
- "tracing",
- "unicode-normalization",
- "uuid",
-]
-
-[[package]]
-name = "open-plex-db"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "open-plex-core",
- "open-plex-scanner",
- "sea-orm",
- "sea-orm-migration",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "open-plex-scanner"
-version = "0.1.0"
-dependencies = [
- "rusty-chromaprint",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "open-plex-server"
-version = "0.1.0"
-dependencies = [
- "async-graphql",
- "async-graphql-axum",
- "async-trait",
- "axum",
- "form_urlencoded",
- "futures-util",
- "http-body-util",
- "open-plex-api",
- "open-plex-api-jellyfin",
- "open-plex-api-plex",
- "open-plex-core",
- "open-plex-db",
- "open-plex-scanner",
- "open-plex-transcoder",
- "serde",
- "serde_json",
- "subtle",
- "thiserror",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "open-plex-transcoder"
-version = "0.1.0"
-dependencies = [
- "image",
- "reqwest",
- "thiserror",
- "tokio",
- "tracing",
- "uuid",
-]
 
 [[package]]
 name = "ordered-float"

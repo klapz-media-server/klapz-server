@@ -13,7 +13,7 @@
 //! were a date and two numbers in strings and are now RFC 3339 date-times; left alone, a rule
 //! would no longer read.
 
-use open_plex_core::edit::CalendarDate;
+use klapz_core::edit::CalendarDate;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::{ConnectionTrait, Value};
 use serde_json::{Map, Value as Json};

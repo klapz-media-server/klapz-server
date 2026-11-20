@@ -13,7 +13,7 @@
 //! per kind, and neither the items nor this table's rows are visited. Filled here from the
 //! items already imported.
 
-use open_plex_core::closest;
+use klapz_core::closest;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{big_integer, integer, string};
 

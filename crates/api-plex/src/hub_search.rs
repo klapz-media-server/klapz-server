@@ -17,10 +17,10 @@ use async_graphql::{Name, Value, Variables};
 use axum::extract::{RawQuery, State};
 use axum::routing::get;
 use axum::Router;
-use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::GlobalId;
-use open_plex_core::page::MAX_ITEMS;
-use open_plex_core::search::{fold, name_rung, name_score, tag_order, ListedTag, Rung};
+use klapz_api::library::LIBRARY_TYPE;
+use klapz_api::GlobalId;
+use klapz_core::page::MAX_ITEMS;
+use klapz_core::search::{fold, name_rung, name_score, tag_order, ListedTag, Rung};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Caller;

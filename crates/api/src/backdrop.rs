@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{Context, Object, Result};
-use open_plex_core::backdrop::{CornerColors, Rgb};
-use open_plex_core::metadata::{MetadataError, MetadataRepository};
-use open_plex_core::RatingKey;
+use klapz_core::backdrop::{CornerColors, Rgb};
+use klapz_core::metadata::{MetadataError, MetadataRepository};
+use klapz_core::RatingKey;
 
 /// Loads the backdrop colors of several items in one call.
 #[derive(Debug, Clone)]

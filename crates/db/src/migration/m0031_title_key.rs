@@ -10,7 +10,7 @@
 //! Filled here from the items already imported. From then on `write::insert_items` and
 //! `write::update_item` are its only writers.
 
-use open_plex_core::search;
+use klapz_core::search;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{big_integer, boolean, string};
 

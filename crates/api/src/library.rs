@@ -5,14 +5,14 @@ use async_graphql::connection::{
 };
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, Object, OutputType, Result, SimpleObject, ID};
-use open_plex_core::library::{LibrarySection, SectionKind, SectionRoot};
-use open_plex_core::metadata::{
+use klapz_core::library::{LibrarySection, SectionKind, SectionRoot};
+use klapz_core::metadata::{
     FieldValue, FirstCharacter as DomainFirstCharacter, ItemFilter, ItemQuery, ItemSort, TagScope,
     ValueField,
 };
-use open_plex_core::page::{Cursor, Direction, Window, MAX_ITEMS};
-use open_plex_core::recent::recently_added_episodes;
-use open_plex_core::{Listed, RatingKey, SectionId};
+use klapz_core::page::{Cursor, Direction, Window, MAX_ITEMS};
+use klapz_core::recent::recently_added_episodes;
+use klapz_core::{Listed, RatingKey, SectionId};
 
 use crate::common::CommonFieldsObject;
 use crate::cursor::OpaqueCursor;
@@ -727,7 +727,7 @@ async fn recent(
     film_order: ItemSort,
     start: usize,
     count: usize,
-) -> Result<(Vec<(open_plex_core::MetadataItem, i64)>, bool)> {
+) -> Result<(Vec<(klapz_core::MetadataItem, i64)>, bool)> {
     let metadata = schema::metadata(context)?;
     if kind != SectionKind::Show {
         let query = ItemQuery::across(sections).sorted_by(film_order, Direction::Descending);

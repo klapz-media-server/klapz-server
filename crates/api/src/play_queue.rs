@@ -11,12 +11,12 @@
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
-use open_plex_core::page::Cursor;
-use open_plex_core::play_queue::{
+use klapz_core::page::Cursor;
+use klapz_core::play_queue::{
     ChangeRefusal, NewPlayQueue, PlayQueue, PlayQueueChange, PlayQueueEntry, PlayQueueKind,
     PlayQueueRepository,
 };
-use open_plex_core::{now_epoch, RatingKey};
+use klapz_core::{now_epoch, RatingKey};
 
 use crate::cursor::OpaqueCursor;
 use crate::item::{Item, ITEM_TYPE};
@@ -285,7 +285,7 @@ pub(crate) async fn create(
             let playlist = GlobalId::decode(id)
                 .ok()
                 .filter(|decoded| decoded.type_name == crate::playlist::PLAYLIST_TYPE)
-                .map(|decoded| open_plex_core::PlaylistId::new(decoded.key))
+                .map(|decoded| klapz_core::PlaylistId::new(decoded.key))
                 .ok_or_else(crate::access::denied)?;
             if !crate::playlist::record_play(context, playlist).await? {
                 return Err(crate::access::denied());

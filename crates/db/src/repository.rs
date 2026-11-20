@@ -3,11 +3,11 @@
 //! This is the only place that knows both vocabularies. Mapping here rather than returning
 //! entities is what lets `core` and the bindings stay unaware of the schema.
 
-use open_plex_core::library::{
+use klapz_core::library::{
     LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot,
 };
-use open_plex_core::page::{Page, Window};
-use open_plex_core::SectionId;
+use klapz_core::page::{Page, Window};
+use klapz_core::SectionId;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
@@ -170,7 +170,7 @@ pub async fn create_library(
     library: NewLibrary,
 ) -> Result<SectionId, DbErr> {
     let transaction = connection.begin().await?;
-    let now = open_plex_core::now_epoch();
+    let now = klapz_core::now_epoch();
     let next_section = library_section::Entity::find()
         .select_only()
         .column_as(library_section::Column::Id.max(), "id")

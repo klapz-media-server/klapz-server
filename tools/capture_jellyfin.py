@@ -18,7 +18,7 @@ Usage: JELLYFIN_USER=... JELLYFIN_PASSWORD=... python tools/capture_jellyfin.py 
 `--writes` makes a playlist and a collection on the server, captures what they answer, and
 deletes them.
 
-Pointed at open-plex's own surface (`JELLYFIN_URL=http://127.0.0.1:32500/jellyfin`) with
+Pointed at klapz's own surface (`JELLYFIN_URL=http://127.0.0.1:32500/jellyfin`) with
 `--out captures/jellyfin-ours`, the same requests capture our answers, for
 `tools/compare_jellyfin.py` to set against the reference's.
 """
@@ -39,7 +39,7 @@ CAPTURES = ROOT / "captures" / "jellyfin"
 FIXTURES = ROOT / "crates" / "api-jellyfin" / "tests" / "fixtures"
 
 BASE = os.environ.get("JELLYFIN_URL", "http://localhost:8096").rstrip("/")
-CLIENT = 'Client="open-plex capture", Device="capture", DeviceId="open-plex-capture", Version="1.0"'
+CLIENT = 'Client="klapz capture", Device="capture", DeviceId="klapz-capture", Version="1.0"'
 
 # What scrubbing puts in place of the reference's own identifiers.
 SERVER_ID = "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e"
@@ -190,7 +190,7 @@ def capture_writes(token: str, user: str, record) -> None:
     films = get(f"/Items?userId={user}&ParentId={movies}&Recursive=true&IncludeItemTypes=Movie&SortBy=SortName")["Items"]
     ids = [film["Id"] for film in films]
     created = record("playlist_create", "POST", "/Playlists",
-                     {"Name": "open-plex capture", "Ids": ids[:2], "UserId": user, "MediaType": "Video"})
+                     {"Name": "klapz capture", "Ids": ids[:2], "UserId": user, "MediaType": "Video"})
     playlist = created["Id"]
     record("playlist_add", "POST", f"/Playlists/{playlist}/Items?ids={ids[2]}&userId={user}")
     record("playlist", "GET", f"/Playlists/{playlist}")
@@ -206,7 +206,7 @@ def capture_writes(token: str, user: str, record) -> None:
     record("playlist_remove", "DELETE", f"/Playlists/{playlist}/Items?entryIds={moved}")
     record("playlist_delete", "DELETE", f"/Items/{playlist}")
 
-    collection = record("collection_create", "POST", f"/Collections?Name=open-plex%20capture&Ids={ids[0]},{ids[1]}")
+    collection = record("collection_create", "POST", f"/Collections?Name=klapz%20capture&Ids={ids[0]},{ids[1]}")
     boxset = collection["Id"]
     record("collection_lookup", "GET", f"/Items/{boxset}?userId={user}")
     record("collection_items", "GET", f"/Items?userId={user}&ParentId={boxset}&Fields=PrimaryImageAspectRatio")

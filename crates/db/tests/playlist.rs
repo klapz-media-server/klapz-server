@@ -4,14 +4,14 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::page::{Direction, Window};
-use open_plex_core::playlist::{
+use klapz_core::page::{Direction, Window};
+use klapz_core::playlist::{
     Destination, NewPlaylist, PlaylistEdit, PlaylistError, PlaylistField, PlaylistFilter,
     PlaylistKind, PlaylistQuery, PlaylistRepository, PlaylistSort, SmartRule,
 };
-use open_plex_core::{PlaylistEntryId, RatingKey, SectionId, UserId};
-use open_plex_db::entity::{library_section, media, metadata_item};
-use open_plex_db::{write, SqlPlaylistRepository};
+use klapz_core::{PlaylistEntryId, RatingKey, SectionId, UserId};
+use klapz_db::entity::{library_section, media, metadata_item};
+use klapz_db::{write, SqlPlaylistRepository};
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 const FILM: i64 = 577_986;
@@ -82,7 +82,7 @@ async fn seed(connection: &DatabaseConnection) {
 }
 
 async fn repository() -> SqlPlaylistRepository {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
     seed(&connection).await;
     SqlPlaylistRepository::new(connection)
 }
@@ -107,10 +107,7 @@ fn page(size: u32) -> Window {
     Window::new(None, None, Some(size), None).unwrap()
 }
 
-async fn order(
-    repository: &SqlPlaylistRepository,
-    playlist: open_plex_core::PlaylistId,
-) -> Vec<i64> {
+async fn order(repository: &SqlPlaylistRepository, playlist: klapz_core::PlaylistId) -> Vec<i64> {
     repository
         .entries(playlist, None, page(50))
         .await
@@ -506,7 +503,7 @@ fn version(id: i64, item: i64, duration_ms: i64) -> media::ActiveModel {
 
 #[tokio::test]
 async fn a_duration_is_the_first_versions_before_the_items_own() {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
     seed(&connection).await;
     // The second version is ignored; an item with a version reads its version.
     media::Entity::insert_many([

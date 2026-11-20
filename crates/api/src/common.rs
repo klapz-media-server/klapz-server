@@ -2,9 +2,9 @@
 
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, Object, Result};
-use open_plex_core::common::{CommonFields, Shared};
-use open_plex_core::metadata::TagKind;
-use open_plex_core::RatingKey;
+use klapz_core::common::{CommonFields, Shared};
+use klapz_core::metadata::TagKind;
+use klapz_core::RatingKey;
 
 use crate::collection::MembershipConnection;
 use crate::edit::ItemFieldType;

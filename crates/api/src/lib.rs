@@ -1,4 +1,4 @@
-//! The official open-plex API: GraphQL.
+//! The official klapz API: GraphQL.
 //!
 //! This is the project's primary interface, and the Plex REST surface is an adapter that
 //! executes queries against this schema. That ordering is deliberate: it makes it impossible
@@ -6,7 +6,7 @@
 //! no other source of data.
 //!
 //! Like any binding, this crate owns its wire types and maps them from `core`. It depends on
-//! `core` and never on `open-plex-db`.
+//! `core` and never on `klapz-db`.
 
 pub mod access;
 pub mod account;

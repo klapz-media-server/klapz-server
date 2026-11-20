@@ -128,10 +128,7 @@ pub struct Chapter {
 pub struct StatedChapter {
     pub title: Option<String>,
     /// Microseconds.
-    #[serde(
-        default,
-        deserialize_with = "open_plex_api::int64::deserialize_optional"
-    )]
+    #[serde(default, deserialize_with = "klapz_api::int64::deserialize_optional")]
     pub start_us: Option<i64>,
 }
 
@@ -289,10 +286,7 @@ pub struct File {
     pub id: String,
     pub path: String,
     pub filename: String,
-    #[serde(
-        default,
-        deserialize_with = "open_plex_api::int64::deserialize_optional"
-    )]
+    #[serde(default, deserialize_with = "klapz_api::int64::deserialize_optional")]
     pub size_bytes: Option<i64>,
     pub duration_ms: Option<i64>,
     pub packet_length: Option<i32>,
@@ -309,10 +303,7 @@ pub struct File {
 pub struct StatedFile {
     pub format_name: Option<String>,
     /// Microseconds.
-    #[serde(
-        default,
-        deserialize_with = "open_plex_api::int64::deserialize_optional"
-    )]
+    #[serde(default, deserialize_with = "klapz_api::int64::deserialize_optional")]
     pub duration_us: Option<i64>,
     pub bitrate: Option<i64>,
 }
@@ -1032,13 +1023,13 @@ mod tests {
     fn movie() -> Item {
         Item {
             type_name: "Movie".to_owned(),
-            id: open_plex_api::GlobalId::encode("Item", 101),
+            id: klapz_api::GlobalId::encode("Item", 101),
             title: Some("doodlebug".to_owned()),
             title_sort: None,
             summary: Some("A man chases a bug.".to_owned()),
             added_at: "2017-10-07T15:07:33Z".to_owned(),
             library: Some(Reference {
-                id: open_plex_api::GlobalId::encode("Library", 1),
+                id: klapz_api::GlobalId::encode("Library", 1),
                 title: None,
                 language: Some("fr-FR".to_owned()),
             }),
@@ -1197,12 +1188,12 @@ mod tests {
         episode.type_name = "Episode".to_owned();
         episode.number = Some(21);
         episode.show = Some(Reference {
-            id: open_plex_api::GlobalId::encode("Item", 201),
+            id: klapz_api::GlobalId::encode("Item", 201),
             title: Some("90210".to_owned()),
             language: None,
         });
         episode.season = Some(SeasonReference {
-            id: open_plex_api::GlobalId::encode("Item", 202),
+            id: klapz_api::GlobalId::encode("Item", 202),
             number: Some(1),
             title: None,
         });
@@ -1315,7 +1306,7 @@ mod tests {
         episode.title = None;
         episode.number = Some(302);
         episode.season = Some(SeasonReference {
-            id: open_plex_api::GlobalId::encode("Item", 202),
+            id: klapz_api::GlobalId::encode("Item", 202),
             number: Some(0),
             title: None,
         });
@@ -1375,7 +1366,7 @@ mod tests {
             duration_ms: Some(178_301),
             bitrate: Some(667_480),
             files: vec![File {
-                id: open_plex_api::GlobalId::encode("MediaFile", 2001),
+                id: klapz_api::GlobalId::encode("MediaFile", 2001),
                 path: "/media/doodlebug.1997.VO.H264.mkv".to_owned(),
                 filename: "doodlebug.1997.VO.H264.mkv".to_owned(),
                 size_bytes: Some(14_876_546),

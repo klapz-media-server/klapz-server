@@ -17,9 +17,9 @@ use std::sync::Arc;
 use async_graphql::connection::{Connection, EmptyFields};
 use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{Context, Enum, InputObject, MaybeUndefined, Object, Result, SimpleObject, ID};
-use open_plex_core::marker::{Marker, MarkerError, MarkerKind, MarkerValues, NewMarker};
-use open_plex_core::metadata::{MetadataError, MetadataItem, MetadataRepository};
-use open_plex_core::{MarkerId, RatingKey, UserId};
+use klapz_core::marker::{Marker, MarkerError, MarkerKind, MarkerValues, NewMarker};
+use klapz_core::metadata::{MetadataError, MetadataItem, MetadataRepository};
+use klapz_core::{MarkerId, RatingKey, UserId};
 
 use crate::cursor::OpaqueCursor;
 use crate::item::{Item, ITEM_TYPE};

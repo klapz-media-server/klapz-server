@@ -153,7 +153,7 @@ mod tests {
     #[test]
     fn packs_the_reference_layout() {
         let directory =
-            std::env::temp_dir().join(format!("open-plex-scanner-bif-{}", std::process::id()));
+            std::env::temp_dir().join(format!("klapz-scanner-bif-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let first = directory.join("img-000001.jpg");
         let second = directory.join("img-000002.jpg");

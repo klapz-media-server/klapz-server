@@ -7,13 +7,13 @@
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
-use open_plex_core::page::Cursor;
-use open_plex_core::play_queue::PlayQueueChange;
-use open_plex_core::playback::{
+use klapz_core::page::Cursor;
+use klapz_core::play_queue::PlayQueueChange;
+use klapz_core::playback::{
     NewPlaybackSession, PlaybackOutput, PlaybackRepository, PlaybackSession, PlaybackState,
     SessionStatus, StreamDecision,
 };
-use open_plex_core::{now_epoch, PartId, RatingKey};
+use klapz_core::{now_epoch, PartId, RatingKey};
 
 use crate::cursor::OpaqueCursor;
 use crate::item::Item;

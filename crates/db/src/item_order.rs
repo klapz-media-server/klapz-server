@@ -10,8 +10,8 @@
 //! the largest, so the position is stated in every `ORDER BY` and spelt out in every keyset
 //! comparison rather than left to the engine.
 
-use open_plex_core::metadata::{ItemKind, ItemQuery, ItemSort, MetadataError, SearchOrder};
-use open_plex_core::page::{Cursor, CursorKey, Direction};
+use klapz_core::metadata::{ItemKind, ItemQuery, ItemSort, MetadataError, SearchOrder};
+use klapz_core::page::{Cursor, CursorKey, Direction};
 use sea_orm::sea_query::{
     Alias, CaseStatement, Expr, Func, JoinType, NullOrdering, Query, SimpleExpr,
 };
@@ -254,7 +254,7 @@ pub(crate) struct SearchRanking {
 
 impl SearchRanking {
     /// By relevance, `hundredths` is the score's leading part, as
-    /// `open_plex_core::search::hundredths` computes it for each row.
+    /// `klapz_core::search::hundredths` computes it for each row.
     pub(crate) fn new(order: SearchOrder, hundredths: SimpleExpr) -> Self {
         let column = |column: metadata_item::Column, descending| Term {
             expr: Expr::col((metadata_item::Entity, column)).into(),
@@ -414,7 +414,7 @@ fn episode_added_at(direction: Direction) -> SimpleExpr {
 /// A `CASE` over the list the caller gave rather than a join on the library's title: which
 /// order libraries come in is the caller's choice, and a list of a dozen libraries makes a
 /// short expression.
-fn library_rank(sections: &[open_plex_core::SectionId]) -> SimpleExpr {
+fn library_rank(sections: &[klapz_core::SectionId]) -> SimpleExpr {
     let mut rank = CaseStatement::new();
     for (position, section) in (0_i64..).zip(sections) {
         rank = rank.case(

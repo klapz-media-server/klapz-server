@@ -10,8 +10,8 @@ use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, State};
 use axum::routing::get;
 use axum::Router;
-use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::GlobalId;
+use klapz_api::library::LIBRARY_TYPE;
+use klapz_api::GlobalId;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Caller;

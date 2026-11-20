@@ -10,11 +10,11 @@ use std::sync::Arc;
 
 use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
-use open_plex_core::sidecar::{
+use klapz_core::sidecar::{
     check_offset_target, subtitle_text, OffsetRefusal, Sidecar, SidecarError, SidecarSource,
 };
-use open_plex_core::watch::{WatchError, WatchRepository};
-use open_plex_core::{MediaFile, MediaStream, MetadataItem, StreamId, UserId};
+use klapz_core::watch::{WatchError, WatchRepository};
+use klapz_core::{MediaFile, MediaStream, MetadataItem, StreamId, UserId};
 
 use crate::media::{Track, STREAM_TYPE};
 use crate::node::GlobalId;

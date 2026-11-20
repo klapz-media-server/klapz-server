@@ -19,8 +19,8 @@
 //! Down restores the old shapes, without what was deleted and without the users that have no
 //! address, who cannot exist there.
 
-use open_plex_core::access::ADMIN_USERNAME;
-use open_plex_core::account::username_from_email;
+use klapz_core::access::ADMIN_USERNAME;
+use klapz_core::account::username_from_email;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::{ConnectionTrait, DbBackend};
 

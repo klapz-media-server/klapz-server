@@ -12,8 +12,8 @@ use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::put;
 use axum::Router;
-use open_plex_api::media::{FILE_TYPE, STREAM_TYPE};
-use open_plex_api::GlobalId;
+use klapz_api::media::{FILE_TYPE, STREAM_TYPE};
+use klapz_api::GlobalId;
 
 use crate::auth::Caller;
 use crate::error::ApiError;

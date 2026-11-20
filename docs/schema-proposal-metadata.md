@@ -270,7 +270,7 @@ The `guid` namespace also argues against it: of 204,388 items, 81% are `plex://`
 agent strings. Building an entity keyed on a namespace we do not control, where a fifth of the
 values are not works in any meaningful sense, is the wrong foundation.
 
-**Revisit when open-plex has its own metadata agent.** At that point the server needs a work
+**Revisit when klapz has its own metadata agent.** At that point the server needs a work
 identity it controls, `plex://` can no longer serve as the key, and the table earns its place.
 
 ### `view_state`

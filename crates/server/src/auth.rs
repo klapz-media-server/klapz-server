@@ -15,7 +15,7 @@
 //!
 //! The Jellyfin surface, below its own base path, takes Jellyfin tokens and nothing else: only
 //! a user connected through the Jellyfin extension reaches it, whatever else it holds. Its
-//! clients carry the token in their own headers, which `open-plex-api-jellyfin` reads.
+//! clients carry the token in their own headers, which `klapz-api-jellyfin` reads.
 
 use std::sync::Arc;
 
@@ -23,11 +23,11 @@ use axum::extract::{Request, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use open_plex_core::access::{
+use klapz_core::access::{
     connection_uris_for_host, token_digest, user_principal, AccessRepository, Extension,
 };
-use open_plex_core::account::SessionKey;
-use open_plex_core::{Principal, PublishedServer};
+use klapz_core::account::SessionKey;
+use klapz_core::{Principal, PublishedServer};
 
 use crate::remote_tokens::RemoteTokens;
 
@@ -84,7 +84,7 @@ impl Access {
         let user = self
             .sessions
             .as_ref()?
-            .verify(token, open_plex_core::now_epoch())?;
+            .verify(token, klapz_core::now_epoch())?;
         let found = match self.users.user(user).await {
             Ok(found) => found.filter(|user| user.active)?,
             Err(error) => {
@@ -126,7 +126,7 @@ impl Access {
             found => found,
         };
         match grant {
-            Ok(grant) => grant.map(open_plex_core::access::Grant::into_principal),
+            Ok(grant) => grant.map(klapz_core::access::Grant::into_principal),
             Err(error) => {
                 tracing::warn!(%error, "could not look a token up");
                 None
@@ -141,7 +141,7 @@ impl Access {
             .grant(Extension::Jellyfin, &token_digest(token))
             .await
         {
-            Ok(grant) => grant.map(open_plex_core::access::Grant::into_principal),
+            Ok(grant) => grant.map(klapz_core::access::Grant::into_principal),
             Err(error) => {
                 tracing::warn!(%error, "could not look a Jellyfin token up");
                 None
@@ -216,9 +216,9 @@ pub async fn require_token(
     next: Next,
 ) -> Response {
     let path = request.uri().path();
-    if let Some(jellyfin_path) = open_plex_api_jellyfin::surface_path(path) {
-        let public = open_plex_api_jellyfin::auth::is_public(jellyfin_path);
-        let token = open_plex_api_jellyfin::auth::token(request.headers(), request.uri().query());
+    if let Some(jellyfin_path) = klapz_api_jellyfin::surface_path(path) {
+        let public = klapz_api_jellyfin::auth::is_public(jellyfin_path);
+        let token = klapz_api_jellyfin::auth::token(request.headers(), request.uri().query());
         let caller = match token {
             Some(token) => access.jellyfin_token_of(&token).await,
             None => None,
@@ -285,7 +285,7 @@ fn session_cookie(request: &Request) -> Option<&str> {
         .filter_map(|value| value.to_str().ok())
         .flat_map(|value| value.split(';'))
         .filter_map(|pair| pair.trim().split_once('='))
-        .find(|(name, _)| *name == open_plex_api::SESSION_COOKIE)
+        .find(|(name, _)| *name == klapz_api::SESSION_COOKIE)
         .map(|(_, value)| value)
         .filter(|value| !value.is_empty())
 }
@@ -341,12 +341,12 @@ mod tests {
     use axum::http::Request;
     use axum::routing::get;
     use axum::{Extension, Router};
-    use open_plex_core::access::{
+    use klapz_core::access::{
         token_digest, AccessRepository, Extension as Protocol, NewUser, RemoteAccount, ServerRole,
     };
-    use open_plex_core::account::SessionKey;
-    use open_plex_core::testing::{InMemoryAccess, StubDirectory};
-    use open_plex_core::{Principal, PublishedServer};
+    use klapz_core::account::SessionKey;
+    use klapz_core::testing::{InMemoryAccess, StubDirectory};
+    use klapz_core::{Principal, PublishedServer};
     use tower::ServiceExt;
 
     use super::{require_token, Access, Arc, StatusCode};
@@ -369,8 +369,8 @@ mod tests {
     struct Fixture {
         app: Router,
         key: Arc<SessionKey>,
-        alice: open_plex_core::UserId,
-        bob: open_plex_core::UserId,
+        alice: klapz_core::UserId,
+        bob: klapz_core::UserId,
     }
 
     /// `alice`, an active owner with a Plex token and paired with the stub directory's account
@@ -606,7 +606,7 @@ mod tests {
     }
 
     fn cookie(session: &str) -> String {
-        format!("theme=dark; {}={session}", open_plex_api::SESSION_COOKIE)
+        format!("theme=dark; {}={session}", klapz_api::SESSION_COOKIE)
     }
 
     #[tokio::test]
@@ -614,7 +614,7 @@ mod tests {
         let fixture = fixture(false, true).await;
         let session = fixture
             .key
-            .issue(fixture.alice, open_plex_core::now_epoch())
+            .issue(fixture.alice, klapz_core::now_epoch())
             .unwrap();
         for request in [
             Request::builder().header("Cookie", cookie(&session)),
@@ -631,7 +631,7 @@ mod tests {
     #[tokio::test]
     async fn the_session_of_an_inactive_user_or_an_altered_one_opens_nothing() {
         let fixture = fixture(false, true).await;
-        let now = open_plex_core::now_epoch();
+        let now = klapz_core::now_epoch();
         let waiting = fixture.key.issue(fixture.bob, now).unwrap();
         let altered = format!("{}x", fixture.key.issue(fixture.alice, now).unwrap());
         let foreign = SessionKey::generate().issue(fixture.alice, now).unwrap();
@@ -663,7 +663,7 @@ mod tests {
         let fixture = fixture(false, true).await;
         let session = fixture
             .key
-            .issue(fixture.alice, open_plex_core::now_epoch())
+            .issue(fixture.alice, klapz_core::now_epoch())
             .unwrap();
         let (status, name) = send(
             fixture.app,
@@ -718,7 +718,7 @@ mod tests {
                 .connect_extension(alice, Protocol::Jellyfin, "jf", &token_digest("key"), 0)
                 .await
                 .unwrap();
-            let device = open_plex_core::access::ExtensionDevice {
+            let device = klapz_core::access::ExtensionDevice {
                 id: "d1".to_owned(),
                 name: "Firefox".to_owned(),
                 client: "Jellyfin Web".to_owned(),
@@ -801,7 +801,7 @@ mod tests {
         let fixture = jellyfin_fixture(false, true).await;
         let session = fixture
             .key
-            .issue(fixture.alice, open_plex_core::now_epoch())
+            .issue(fixture.alice, klapz_core::now_epoch())
             .unwrap();
         for request in [
             Request::builder().header("Authorization", jellyfin_header(DEVICE_TOKEN)),

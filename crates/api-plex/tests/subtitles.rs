@@ -10,15 +10,15 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{header, Method, Request, StatusCode};
 use http_body_util::BodyExt;
-use open_plex_api::{build_schema, ApiContext, ApiSchema};
-use open_plex_api_plex::{router, PlexState};
-use open_plex_core::access::{LibraryAccess, LibraryRole};
-use open_plex_core::metadata::{
+use klapz_api::{build_schema, ApiContext, ApiSchema};
+use klapz_api_plex::{router, PlexState};
+use klapz_core::access::{LibraryAccess, LibraryRole};
+use klapz_core::metadata::{
     FileLayout, ItemKind, MediaFile, MediaStream, MediaVersion, MetadataItem, StreamKind,
     SubtitleAnalysis, TrackTraits,
 };
-use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata, StubStreams};
-use open_plex_core::{
+use klapz_core::testing::{InMemoryLibrary, InMemoryMetadata, StubStreams};
+use klapz_core::{
     LibrarySection, MediaId, PartId, Principal, RatingKey, SectionId, SectionKind, SectionRoot,
     ServerCapabilities, ServerIdentity, StreamId,
 };
@@ -78,7 +78,7 @@ fn track(id: i64, kind: StreamKind, position: i32, codec: &str, language: &str) 
         audio: None,
         subtitle: (kind == StreamKind::Subtitle).then(SubtitleAnalysis::default),
         required_bandwidths: Vec::new(),
-        stated: open_plex_core::metadata::StatedTrack::default(),
+        stated: klapz_core::metadata::StatedTrack::default(),
     }
 }
 
@@ -168,7 +168,7 @@ fn metadata() -> InMemoryMetadata {
         stream_url: None,
         content_hash: None,
         open_subtitles_hash: None,
-        stated: open_plex_core::metadata::StatedFile::default(),
+        stated: klapz_core::metadata::StatedFile::default(),
     };
     InMemoryMetadata::new(vec![soul]).with_media(vec![version], vec![file], streams())
 }
@@ -177,7 +177,7 @@ fn section(id: i64) -> LibrarySection {
     LibrarySection {
         id: SectionId::new(id),
         kind: SectionKind::Movie,
-        title: "open-plex tests".to_owned(),
+        title: "klapz tests".to_owned(),
         title_sort: None,
         language: "fr-FR".to_owned(),
         uuid: format!("uuid-{id}"),
@@ -211,16 +211,16 @@ impl Server {
             capabilities: ServerCapabilities::new(ServerIdentity::new(MACHINE, "0.1.0-dev"), 0),
             library: Arc::new(library),
             metadata: Arc::new(metadata()),
-            playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-            play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-            playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-            collections: Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-            access: Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-            directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
-            watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-            streams: Arc::clone(&disk) as Arc<dyn open_plex_core::stream::StreamEngine>,
+            playback: Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+            play_queues: Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+            playlists: Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+            collections: Arc::new(klapz_core::testing::InMemoryCollections::default()),
+            access: Arc::new(klapz_core::testing::InMemoryAccess::default()),
+            directory: Arc::new(klapz_core::testing::StubDirectory::default()),
+            watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
+            streams: Arc::clone(&disk) as Arc<dyn klapz_core::stream::StreamEngine>,
             session_locks: Arc::default(),
-            scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+            scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         });
         Self { schema, disk }
     }
@@ -256,7 +256,7 @@ impl Server {
     }
 
     async fn send(&self, method: Method, uri: &str) -> Answer {
-        self.send_as(open_plex_core::testing::owner(), method, uri, &[])
+        self.send_as(klapz_core::testing::owner(), method, uri, &[])
             .await
     }
 
@@ -268,7 +268,7 @@ impl Server {
     async fn subtitle_streams(&self) -> Vec<Value> {
         let answer = self
             .send_as(
-                open_plex_core::testing::owner(),
+                klapz_core::testing::owner(),
                 Method::GET,
                 &format!("/library/metadata/{FILM}"),
                 &[("Accept", "application/json")],
@@ -293,9 +293,9 @@ struct Answer {
 
 fn viewer() -> Principal {
     Principal {
-        user: open_plex_core::UserId::new(2_000),
+        user: klapz_core::UserId::new(2_000),
         name: "viewer".to_owned(),
-        role: open_plex_core::ServerRole::User,
+        role: klapz_core::ServerRole::User,
         libraries: LibraryAccess::Only(HashMap::from([(SectionId::new(27), LibraryRole::Viewer)])),
         server_identifier: None,
     }
@@ -414,7 +414,7 @@ async fn one_range_is_served_alone() {
     let server = Server::new();
     let answer = server
         .send_as(
-            open_plex_core::testing::owner(),
+            klapz_core::testing::owner(),
             Method::GET,
             &format!("/library/streams/{GERMAN}"),
             &[("Range", "bytes=0-9")],
@@ -618,7 +618,7 @@ async fn a_search_finds_nothing_after_the_references_checks() {
     let server = Server::new();
     let answer = server
         .send_as(
-            open_plex_core::testing::owner(),
+            klapz_core::testing::owner(),
             Method::GET,
             &format!("/library/metadata/{FILM}/subtitles?language=zu"),
             &[("Accept", "application/json")],

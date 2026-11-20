@@ -3,8 +3,8 @@
 //! Its own module because the repository reads the table and both the importer and the scan
 //! write it.
 
-use open_plex_core::chapter::{Chapter, ChapterSource, StatedChapter};
-use open_plex_core::{ChapterId, MediaId, RatingKey};
+use klapz_core::chapter::{Chapter, ChapterSource, StatedChapter};
+use klapz_core::{ChapterId, MediaId, RatingKey};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveValue, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QueryOrder,

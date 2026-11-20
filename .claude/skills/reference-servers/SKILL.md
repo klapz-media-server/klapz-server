@@ -1,6 +1,6 @@
 ---
 name: reference-servers
-description: How to measure behavior on a reference Plex Media Server or Jellyfin without damaging it, and how to compare open-plex against it. Load before any capture, probe, experiment or comparison against a reference server, before writing a capture or compare script, and whenever a question about "what Plex does" could be answered by measuring instead of guessing.
+description: How to measure behavior on a reference Plex Media Server or Jellyfin without damaging it, and how to compare klapz against it. Load before any capture, probe, experiment or comparison against a reference server, before writing a capture or compare script, and whenever a question about "what Plex does" could be answered by measuring instead of guessing.
 ---
 
 # Working against a reference server
@@ -38,7 +38,7 @@ artwork, they are also where a fixture can be byte-identical to the reference, J
   dropped an episode that was a hard link.
 - With the agent `none`, matching, intro and credits detection answer `403`/`404`; studying them
   needs a library with a real agent, which writes metadata.
-- Whole-library comparisons belong on a copy of open-plex's own database, not on the reference.
+- Whole-library comparisons belong on a copy of klapz's own database, not on the reference.
 
 ## Rules for every request
 
@@ -107,17 +107,17 @@ binary, Plex Web or the spec. Say so where it is used.
 - When a measurement and a settled decision in CLAUDE.md disagree, the decision wins: apply it
   and record where the measurement differs.
 
-## Comparing open-plex with a reference
+## Comparing klapz with a reference
 
 - Rebuild and restart before a live comparison: a server running an older binary shows nothing of
   the change.
-- Run a private server on a port of its own over a **copy** of `open-plex.db`, taken through
+- Run a private server on a port of its own over a **copy** of `klapz.db`, taken through
   SQLite's backup API if a server holds the file open. Sign in as `admin`
-  (`tools/open_plex_session.py`). Stop it and delete the copy afterwards.
+  (`tools/klapz_session.py`). Stop it and delete the copy afterwards.
 - For the scanner: scan the folder the reference scanned into a throwaway database, then diff
   `Media`, `Part`, `Stream` and `Chapter` field by field, aligning tracks by `index`.
   `tools/capture_scan_samples.py` and `crates/db/tests/scan_samples.rs` are the committed form.
-- Anything that runs ffprobe uses `OPENPLEX_FFPROBE`'s (`ffmpeg -probe`), not a stock ffprobe:
+- Anything that runs ffprobe uses `KLAPZ_FFPROBE`'s (`ffmpeg -probe`), not a stock ffprobe:
   they disagree on languages (`fr` against `fre`, `eng` on Matroska video).
 - New sample files: query the reference database read-only for the smallest file of each case,
   avoid names with a real or look-alike `:`, cut a large one without re-encoding

@@ -15,9 +15,9 @@
 
 use std::collections::BTreeSet;
 
-use open_plex_core::edit::ItemField;
-use open_plex_core::metadata::{self, MetadataItem};
-use open_plex_core::{closest, search};
+use klapz_core::edit::ItemField;
+use klapz_core::metadata::{self, MetadataItem};
+use klapz_core::{closest, search};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter,
 };

@@ -9,12 +9,12 @@
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use http_body_util::BodyExt;
-use open_plex_api::{build_schema, ApiContext, ApiSchema, GlobalId};
-use open_plex_api_plex::{router, PlexState};
-use open_plex_core::backdrop::{CornerColors, Rgb};
-use open_plex_core::metadata::{ItemKind, MetadataItem};
-use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{
+use klapz_api::{build_schema, ApiContext, ApiSchema, GlobalId};
+use klapz_api_plex::{router, PlexState};
+use klapz_core::backdrop::{CornerColors, Rgb};
+use klapz_core::metadata::{ItemKind, MetadataItem};
+use klapz_core::testing::{InMemoryLibrary, InMemoryMetadata};
+use klapz_core::{
     LibrarySection, RatingKey, SectionId, SectionKind, ServerCapabilities, ServerIdentity,
 };
 use serde_json::{json, Value};
@@ -79,16 +79,16 @@ fn schema() -> ApiSchema {
             hidden: false,
         }])),
         metadata: std::sync::Arc::new(metadata),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -114,7 +114,7 @@ async fn get(uri: &str, json: bool) -> Answer {
         ServerIdentity::new(MACHINE, "0.1.0-dev"),
         schema(),
     ))
-    .layer(axum::Extension(open_plex_core::testing::owner()));
+    .layer(axum::Extension(klapz_core::testing::owner()));
     let mut request = Request::builder().uri(uri);
     if json {
         request = request.header(header::ACCEPT, "application/json");
@@ -292,7 +292,7 @@ async fn the_official_api_publishes_the_colors_as_css() {
         GlobalId::encode("Item", FILM)
     );
     let response = schema()
-        .execute(async_graphql::Request::new(query).data(open_plex_core::testing::owner()))
+        .execute(async_graphql::Request::new(query).data(klapz_core::testing::owner()))
         .await;
     assert!(response.errors.is_empty(), "{:?}", response.errors);
     assert_eq!(

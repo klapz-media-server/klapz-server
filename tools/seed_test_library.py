@@ -8,7 +8,7 @@ one film per file, with its tracks read by ffprobe and the subtitle files beside
 Development only. It writes straight to the tables, so these films are absent from the title
 word index, whose only proper writer is `db::write::insert_items`: they list but do not search.
 
-Usage: python tools/seed_test_library.py DIRECTORY [--database open-plex.db] [--remove]
+Usage: python tools/seed_test_library.py DIRECTORY [--database klapz.db] [--remove]
 """
 
 from __future__ import annotations
@@ -196,7 +196,7 @@ def seed(database: sqlite3.Connection, directory: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("directory", type=Path, nargs="?")
-    parser.add_argument("--database", default="open-plex.db")
+    parser.add_argument("--database", default="klapz.db")
     parser.add_argument("--remove", action="store_true")
     args = parser.parse_args()
     database = sqlite3.connect(args.database, timeout=30)

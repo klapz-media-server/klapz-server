@@ -44,7 +44,7 @@ fn may_fetch(url: &Url) -> bool {
 
 pub(crate) fn client() -> Result<Client, TranscodeError> {
     Client::builder()
-        .user_agent("open-plex")
+        .user_agent("klapz")
         .timeout(FETCH_TIMEOUT)
         // Stopping hands back the 3xx itself, which `fetch` treats as no image.
         .redirect(redirect::Policy::custom(|attempt| {

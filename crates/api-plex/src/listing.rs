@@ -15,12 +15,12 @@
 use std::fmt::Write as _;
 
 use async_graphql::{Name, Value};
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::tag::TAG_TYPE;
-use open_plex_api::{date_time, GlobalId};
-use open_plex_core::edit::CalendarDate;
-use open_plex_core::metadata::TagCondition;
-use open_plex_core::user_rating::RatingCondition;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::tag::TAG_TYPE;
+use klapz_api::{date_time, GlobalId};
+use klapz_core::edit::CalendarDate;
+use klapz_core::metadata::TagCondition;
+use klapz_core::user_rating::RatingCondition;
 
 /// Filters the reference advertises, captured from its `Meta/Type/Filter` declarations for
 /// films, series and episodes, the fields its shelves filter on without advertising them
@@ -688,7 +688,7 @@ fn apply(
         // What the shelves link to: out within a year, rated 7 or more, watched and not being
         // rewatched, not begun. Other values of these answer `501`.
         ("originallyAvailableAt", Operator::AtLeast) => {
-            let today = open_plex_core::now_epoch().div_euclid(SECONDS_PER_DAY);
+            let today = klapz_core::now_epoch().div_euclid(SECONDS_PER_DAY);
             let date = calendar_date(value, today).and_then(|date| CalendarDate::parse(&date));
             filters.released_from = Some(date.ok_or_else(unsupported)?.midnight());
         }
@@ -705,11 +705,11 @@ fn apply(
         ("viewCount", Operator::Equals) if value == "0" => filters.watched = Some(false),
         ("lastViewedAt", Operator::AtLeast) => {
             filters.last_viewed_from =
-                Some(instant(value, open_plex_core::now_epoch()).ok_or_else(unsupported)?);
+                Some(instant(value, klapz_core::now_epoch()).ok_or_else(unsupported)?);
         }
         ("lastViewedAt", Operator::AtMost) => {
             filters.last_viewed_to =
-                Some(instant(value, open_plex_core::now_epoch()).ok_or_else(unsupported)?);
+                Some(instant(value, klapz_core::now_epoch()).ok_or_else(unsupported)?);
         }
         ("viewedOrInProgressLeafCount", Operator::Equals) if value == "0" => {
             filters.any_episode_started = Some(false);

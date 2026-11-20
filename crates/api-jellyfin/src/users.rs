@@ -357,7 +357,7 @@ mod tests {
 
     fn alice() -> Viewer {
         Viewer {
-            id: open_plex_api::GlobalId::encode("User", 3),
+            id: klapz_api::GlobalId::encode("User", 3),
             username: "alice".to_owned(),
             has_password: true,
         }
@@ -396,7 +396,7 @@ mod tests {
     fn a_session_is_one_user_on_one_device() {
         let alice = alice();
         let mut bob = alice.clone();
-        bob.id = open_plex_api::GlobalId::encode("User", 4);
+        bob.id = klapz_api::GlobalId::encode("User", 4);
         assert_eq!(session_id(&alice, "d1"), session_id(&alice, "d1"));
         assert_ne!(session_id(&alice, "d1"), session_id(&alice, "d2"));
         assert_ne!(session_id(&alice, "d1"), session_id(&bob, "d1"));

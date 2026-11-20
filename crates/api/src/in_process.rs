@@ -9,7 +9,7 @@
 use std::future::Future;
 
 use async_graphql::Request;
-use open_plex_core::{Principal, PublishedServer};
+use klapz_core::{Principal, PublishedServer};
 use serde::de::DeserializeOwned;
 
 use crate::ApiSchema;
@@ -95,7 +95,7 @@ mod tests {
     #[tokio::test]
     async fn the_caller_is_the_one_of_the_scope_and_nobody_outside_it() {
         assert!(caller().is_none());
-        let owner = open_plex_core::testing::owner();
+        let owner = klapz_core::testing::owner();
         let seen = scope(
             RequestOrigin {
                 caller: Some(owner.clone()),

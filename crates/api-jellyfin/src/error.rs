@@ -32,8 +32,8 @@ pub enum JellyfinError {
     Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
-impl From<open_plex_api::in_process::InProcessError> for JellyfinError {
-    fn from(error: open_plex_api::in_process::InProcessError) -> Self {
+impl From<klapz_api::in_process::InProcessError> for JellyfinError {
+    fn from(error: klapz_api::in_process::InProcessError) -> Self {
         Self::Internal(Box::new(error))
     }
 }

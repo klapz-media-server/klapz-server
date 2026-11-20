@@ -10,11 +10,11 @@
 
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
-use open_plex_core::history::{
+use klapz_core::history::{
     HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, ViewerCount, ViewingKind,
 };
-use open_plex_core::metadata::MetadataItem;
-use open_plex_core::{HistoryId, RatingKey, SectionId, UserId};
+use klapz_core::metadata::MetadataItem;
+use klapz_core::{HistoryId, RatingKey, SectionId, UserId};
 
 use crate::cursor::OpaqueCursor;
 use crate::filter::SortDirection;

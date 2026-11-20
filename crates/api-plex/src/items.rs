@@ -289,11 +289,11 @@ impl ChapterEntry {
     }
 
     fn from_graphql(chapter: &GqlChapter) -> Option<Self> {
-        let id = open_plex_api::GlobalId::decode(&chapter.id).ok()?.key;
+        let id = klapz_api::GlobalId::decode(&chapter.id).ok()?.key;
         let image = chapter
             .image_version
             .as_ref()
-            .and_then(|version| open_plex_api::GlobalId::decode(&version.id).ok());
+            .and_then(|version| klapz_api::GlobalId::decode(&version.id).ok());
         Some(Self {
             id,
             filter: format!("thumb={id}"),
@@ -374,7 +374,7 @@ pub struct MarkerAttributes {
 
 impl MarkerEntry {
     pub fn from_graphql(marker: &GqlMarker) -> Option<Self> {
-        let id = open_plex_api::GlobalId::decode(&marker.id).ok()?.key;
+        let id = klapz_api::GlobalId::decode(&marker.id).ok()?.key;
         let kind = match marker.kind.as_str() {
             "INTRO" => "intro",
             "CREDITS" => "credits",

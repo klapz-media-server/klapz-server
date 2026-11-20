@@ -1,6 +1,6 @@
 //! Playback: a file served as it is, or converted for a player.
 //!
-//! The binding over `open-plex-transcoder`, as `photo` is. It covers Direct Play, Direct Stream
+//! The binding over `klapz-transcoder`, as `photo` is. It covers Direct Play, Direct Stream
 //! and H.264 re-encoded to a lower quality. Video of any other codec answers `501`.
 //!
 //! A conversion is started through the official API's `startStream`, and `start.mpd` and
@@ -17,15 +17,15 @@ use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::Router;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::media::FILE_TYPE;
-use open_plex_api::GlobalId;
-use open_plex_transcoder::media::resolve_within;
-use open_plex_transcoder::plan::{
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::media::FILE_TYPE;
+use klapz_api::GlobalId;
+use klapz_transcoder::media::resolve_within;
+use klapz_transcoder::plan::{
     plan_stream, Adaptation, AudioAction, Limits, StreamPlan, StreamSource, VideoAction,
     VideoEncode,
 };
-use open_plex_transcoder::session::Protocol;
+use klapz_transcoder::session::Protocol;
 use serde::Deserialize;
 use serde_json::{json, Value as Json};
 use tower::ServiceExt as _;
@@ -738,8 +738,8 @@ async fn subtitles(
 
 /// Where a subtitle response stands: waiting for its stream, then reading it.
 enum Feed {
-    Waiting(Arc<open_plex_transcoder::Transcoder>, String),
-    Reading(open_plex_transcoder::session::SubtitleReader),
+    Waiting(Arc<klapz_transcoder::Transcoder>, String),
+    Reading(klapz_transcoder::session::SubtitleReader),
 }
 
 /// The reference answers `200` to a session it knows and `404` otherwise, for both.

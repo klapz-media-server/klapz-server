@@ -1117,7 +1117,7 @@ ladder — and draws the subtitle in. The decision marks it `decision="burn"`,
 
 Ours writes the same filter, character for character on the reference's own paths, from the
 fonts of the Plex install (`Resources/Fonts` beside its binary, or
-`OPENPLEX_TRANSCODER_FONTS`). Checked on a frame: the subtitle is drawn. Not handled, and
+`KLAPZ_TRANSCODER_FONTS`). Checked on a frame: the subtitle is drawn. Not handled, and
 answering `501`: image subtitles (PGS, VobSub), which the process overlays by a command not
 captured, and sidecar files.
 
@@ -2514,7 +2514,7 @@ by `hubIdentifier`, comma-separated; `includeStations=1` changes nothing, and
 
 `GET /hubs/promoted` keeps the first two, then each library's own recently added shelf —
 `movie.recentlyadded.{s}` or `tv.recentlyadded.{s}`, as in `/hubs/sections/{s}` — then the
-playlists. The libraries come by title, case aside (`open-plex tests` before `VF - Films`),
+playlists. The libraries come by title, case aside (`klapz tests` before `VF - Films`),
 and the two hidden ones have none. The reference's personal-video library shows as
 `video.recent.{s}`, a kind this server does not hold. Ours are identical in `hubKey` to the
 reference on its eight film and series libraries.

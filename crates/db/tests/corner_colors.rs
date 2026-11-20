@@ -3,12 +3,12 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::backdrop::{CornerColors, Rgb};
-use open_plex_core::metadata::MetadataRepository;
-use open_plex_core::RatingKey;
-use open_plex_db::entity::{item_corner_colors, library_section, metadata_item};
-use open_plex_db::write;
-use open_plex_db::SqlMetadataRepository;
+use klapz_core::backdrop::{CornerColors, Rgb};
+use klapz_core::metadata::MetadataRepository;
+use klapz_core::RatingKey;
+use klapz_db::entity::{item_corner_colors, library_section, metadata_item};
+use klapz_db::write;
+use klapz_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 const FILM: i64 = 21_812;
@@ -44,7 +44,7 @@ fn film(id: i64) -> metadata_item::ActiveModel {
 }
 
 async fn repository() -> (SqlMetadataRepository, DatabaseConnection) {
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     library_section::Entity::insert(library_section::ActiveModel {

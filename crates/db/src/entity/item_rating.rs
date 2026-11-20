@@ -1,4 +1,4 @@
-use open_plex_core::RatingKind;
+use klapz_core::RatingKind;
 use sea_orm::entity::prelude::*;
 
 /// A score an external provider gives an item.

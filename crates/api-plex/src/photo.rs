@@ -14,7 +14,7 @@ use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
-use open_plex_transcoder::{Fit, ImageRequest, OutputFormat, TranscodeError};
+use klapz_transcoder::{Fit, ImageRequest, OutputFormat, TranscodeError};
 
 use crate::auth::Caller;
 use crate::error::ApiError;

@@ -7,18 +7,18 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::float_cmp)]
 
-use open_plex_core::ids::{PartId, RatingKey, SectionId};
-use open_plex_core::metadata::{
+use klapz_core::ids::{PartId, RatingKey, SectionId};
+use klapz_core::metadata::{
     ItemKind, ItemQuery, MediaStream, MetadataRepository, SearchQuery, StreamKind,
 };
-use open_plex_core::page::Window;
-use open_plex_core::scan::{NewItem, NewMedia, NewPart, NewSidecar, ScanRepository, ShowKey};
-use open_plex_db::entity::{
+use klapz_core::page::Window;
+use klapz_core::scan::{NewItem, NewMedia, NewPart, NewSidecar, ScanRepository, ShowKey};
+use klapz_db::entity::{
     item_marker, item_title_word, library_section, media, media_stream, metadata_item,
     subtitle_offset, track_choice,
 };
-use open_plex_db::{SqlMetadataRepository, SqlScanRepository};
-use open_plex_scanner::report::{Analysis, Output, Report};
+use klapz_db::{SqlMetadataRepository, SqlScanRepository};
+use klapz_scanner::report::{Analysis, Output, Report};
 use sea_orm::{
     ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
 };
@@ -56,7 +56,7 @@ fn section(id: SectionId, kind: &str) -> library_section::ActiveModel {
 }
 
 async fn seeded() -> (DatabaseConnection, SqlScanRepository, SqlMetadataRepository) {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
     library_section::Entity::insert_many([section(FILMS, "movie"), section(SERIES, "show")])
         .exec(&connection)
         .await
@@ -272,9 +272,7 @@ async fn a_scanned_films_tracks_carry_the_reference_vocabulary() {
         Some("srt")
     );
     assert_eq!(
-        open_plex_core::sidecar::Sidecar::of(sidecar)
-            .unwrap()
-            .path(),
+        klapz_core::sidecar::Sidecar::of(sidecar).unwrap().path(),
         Some("C:\\Films\\Soul (2020)\\Soul.fre.forced.srt")
     );
 }
@@ -386,7 +384,7 @@ fn film_at(path: &str, analysis: Analysis) -> NewItem {
 
 fn untagged_audio(mut analysis: Analysis) -> Analysis {
     for track in &mut analysis.tracks {
-        if track.kind == open_plex_scanner::report::TrackKind::Audio {
+        if track.kind == klapz_scanner::report::TrackKind::Audio {
             track.language = None;
         }
     }
@@ -699,7 +697,7 @@ async fn new_items_are_numbered_past_the_highest() {
 
 #[tokio::test]
 async fn a_version_names_its_widest_audio_and_keeps_no_cover_as_a_track() {
-    use open_plex_scanner::report::TrackKind;
+    use klapz_scanner::report::TrackKind;
 
     let (_, scan, metadata) = seeded().await;
     let mut analysis = probe("soul");

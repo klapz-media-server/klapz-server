@@ -13,8 +13,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use open_plex_core::edit::CalendarDate;
-use open_plex_core::extra::ExtraKind;
+use klapz_core::edit::CalendarDate;
+use klapz_core::extra::ExtraKind;
 use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 
 use super::analysis::Analysis;

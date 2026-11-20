@@ -7,7 +7,7 @@
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
-use open_plex_core::Principal;
+use klapz_core::Principal;
 
 use crate::error::ApiError;
 

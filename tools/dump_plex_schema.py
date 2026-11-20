@@ -68,7 +68,7 @@ def main() -> None:
         "",
         "**Generated** — regenerate with `python tools/dump_plex_schema.py`.",
         "",
-        "This is a *reference*, not a target. open-plex designs its own schema; this "
+        "This is a *reference*, not a target. klapz designs its own schema; this "
         "document exists to understand how Plex models its entities and which columns feed "
         "which API response attributes. See the notes at the end for the traps it reveals.",
         "",
@@ -115,7 +115,7 @@ def main() -> None:
     lines += [
         "## Notes",
         "",
-        "What this schema tells us, and why open-plex does not clone it:",
+        "What this schema tells us, and why klapz does not clone it:",
         "",
         "- **Types are integers, the API emits strings.** `metadata_items.metadata_type` and "
         "`library_sections.section_type` are integer codes, while the API exposes "

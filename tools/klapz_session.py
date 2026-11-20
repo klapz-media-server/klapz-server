@@ -1,8 +1,8 @@
-"""Sign in to a running open-plex as its built-in `admin` account, for the other tools.
+"""Sign in to a running klapz as its built-in `admin` account, for the other tools.
 
-Every request to open-plex comes from a user. A tool signs in through the `signIn` mutation
-with the password in `OPENPLEX_ADMIN_PASSWORD`, reads the session the server sets in its
-`open_plex_session` cookie, and sends it back as `Authorization: Bearer <session>` — on
+Every request to klapz comes from a user. A tool signs in through the `signIn` mutation
+with the password in `KLAPZ_ADMIN_PASSWORD`, reads the session the server sets in its
+`klapz_session` cookie, and sends it back as `Authorization: Bearer <session>` — on
 `/graphql` and on the Plex surface alike. Neither the password nor the session is ever
 printed: the session opens everything the admin can.
 """
@@ -16,7 +16,7 @@ import urllib.request
 from http.cookies import SimpleCookie
 
 ADMIN_USERNAME = "admin"
-SESSION_COOKIE = "open_plex_session"
+SESSION_COOKIE = "klapz_session"
 
 SIGN_IN = """mutation($input: SignInInput!) {
   signIn(input: $input) { user { username } userErrors { code message } } }"""
@@ -24,9 +24,9 @@ SIGN_IN = """mutation($input: SignInInput!) {
 
 def sign_in(graphql_endpoint: str) -> str:
     """The admin's session, to present as a bearer token."""
-    password = os.environ.get("OPENPLEX_ADMIN_PASSWORD")
+    password = os.environ.get("KLAPZ_ADMIN_PASSWORD")
     if not password:
-        raise SystemExit("set OPENPLEX_ADMIN_PASSWORD to the admin account's password")
+        raise SystemExit("set KLAPZ_ADMIN_PASSWORD to the admin account's password")
     body = json.dumps({
         "query": SIGN_IN,
         "variables": {"input": {"login": ADMIN_USERNAME, "password": password}},

@@ -2710,7 +2710,7 @@ mod tests {
     }
 
     fn scratch_directory() -> PathBuf {
-        std::env::temp_dir().join(format!("open-plex-test-{}", uuid::Uuid::new_v4().simple()))
+        std::env::temp_dir().join(format!("klapz-test-{}", uuid::Uuid::new_v4().simple()))
     }
 
     /// Two runs of one rendition: the first from chunk 0, then one moved to another rung at

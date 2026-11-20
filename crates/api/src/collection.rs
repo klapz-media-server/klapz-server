@@ -19,14 +19,14 @@ use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{
     Context, Enum, InputObject, InputType, Object, Result, SimpleObject, Value, ID,
 };
-use open_plex_core::collection::{
+use klapz_core::collection::{
     Collection, CollectionCondition, CollectionEdit, CollectionError, CollectionField,
     CollectionMode, CollectionOrder, CollectionQuery, CollectionRef, CollectionRepository,
     CollectionSort, CollectionTotals, Destination, NewCollection,
 };
-use open_plex_core::metadata::{ItemDepth, ItemFilter, ItemKind, ItemQuery, ItemSort};
-use open_plex_core::page::{Direction, MAX_ITEMS};
-use open_plex_core::{now_epoch, CollectionId, MetadataItem, RatingKey, SectionId};
+use klapz_core::metadata::{ItemDepth, ItemFilter, ItemKind, ItemQuery, ItemSort};
+use klapz_core::page::{Direction, MAX_ITEMS};
+use klapz_core::{now_epoch, CollectionId, MetadataItem, RatingKey, SectionId};
 
 use crate::cursor::OpaqueCursor;
 use crate::filter::{ItemFilterInput, ItemOrder, ItemType, SortDirection};
@@ -641,8 +641,7 @@ pub(crate) async fn next_film(
         );
     }
     let within = within.map(|within| within as usize);
-    let Some((index, next)) =
-        open_plex_core::collection::next_in_collections(film.id, &listed, within)
+    let Some((index, next)) = klapz_core::collection::next_in_collections(film.id, &listed, within)
     else {
         return Ok(None);
     };

@@ -5,13 +5,11 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::metadata::{
-    ItemKind, MetadataItem, MetadataRepository, SearchOrder, SearchQuery,
-};
-use open_plex_core::page::Window;
-use open_plex_core::search;
-use open_plex_db::entity::{library_section, metadata_item};
-use open_plex_db::{write, SqlMetadataRepository};
+use klapz_core::metadata::{ItemKind, MetadataItem, MetadataRepository, SearchOrder, SearchQuery};
+use klapz_core::page::Window;
+use klapz_core::search;
+use klapz_db::entity::{library_section, metadata_item};
+use klapz_db::{write, SqlMetadataRepository};
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 struct Seed {
@@ -149,7 +147,7 @@ fn section(id: i64, kind: &str) -> library_section::ActiveModel {
 }
 
 async fn seeded() -> (DatabaseConnection, SqlMetadataRepository) {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
     library_section::Entity::insert_many([
         section(4, "movie"),
         section(5, "show"),

@@ -260,7 +260,7 @@ mod tests {
     fn the_public_info_names_a_jellyfin_server_of_the_reference_version() {
         let server = ServerInfo {
             id: "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e".to_owned(),
-            name: "open-plex".to_owned(),
+            name: "klapz".to_owned(),
         };
         let value = serde_json::to_value(public(&server, &HeaderMap::new())).unwrap();
         assert_eq!(value["ProductName"], "Jellyfin Server");

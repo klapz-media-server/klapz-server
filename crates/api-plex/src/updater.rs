@@ -1,6 +1,6 @@
 //! The updater: Plex's way of updating itself from plex.tv.
 //!
-//! Plex Web checks it on every load to decide whether to show an update banner. open-plex
+//! Plex Web checks it on every load to decide whether to show an update banner. klapz
 //! is not updated through plex.tv, so the honest answer is the updater of an install that
 //! cannot update itself: `canInstall` false and no release. Inventing one would show a
 //! banner nothing can act on; borrowing Plex's would offer a Plex build.

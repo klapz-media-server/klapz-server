@@ -30,7 +30,7 @@ pub const SESSION_LIFETIME_SECONDS: i64 = 30 * 24 * 3600;
 pub const MAX_FAILED_SIGN_INS: u32 = 5;
 pub const THROTTLE_WINDOW_SECONDS: i64 = 15 * 60;
 
-const ISSUER: &str = "open-plex";
+const ISSUER: &str = "klapz";
 
 /// The username as it is stored and compared: trimmed and in lower case, so that two users
 /// cannot differ by case alone. `None` unless it is 3 to 32 of `a-z`, `0-9`, `.`, `_` and `-`,

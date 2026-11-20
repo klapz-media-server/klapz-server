@@ -1,4 +1,4 @@
-"""Open a Cloudflare quick tunnel to open-plex, and publish its address to plex.tv.
+"""Open a Cloudflare quick tunnel to klapz, and publish its address to plex.tv.
 
 A quick tunnel gets a new `https://*.trycloudflare.com` address every time it starts. This
 starts `cloudflared`, waits for the address, and hands it to the running server through the
@@ -7,13 +7,13 @@ no pairing again. Then it stays in the foreground with the tunnel; Ctrl-C closes
 
 The origin must not be a loopback address: the transcoder's callbacks answer requests from
 loopback alone, and a tunnel ending there would make every stranger's request one. Point it at
-the machine's LAN address, which the server must listen on (`OPENPLEX_BIND=0.0.0.0:32500`).
+the machine's LAN address, which the server must listen on (`KLAPZ_BIND=0.0.0.0:32500`).
 
 Usage:
-    OPENPLEX_ADMIN_PASSWORD=... python tools/plex_tunnel.py --origin http://192.168.1.30:32500
+    KLAPZ_ADMIN_PASSWORD=... python tools/plex_tunnel.py --origin http://192.168.1.30:32500
         [--user alice] [--cloudflared PATH] [--graphql http://127.0.0.1:32500/graphql]
 
-The mutation needs an owner: the tool signs in as `admin` with `OPENPLEX_ADMIN_PASSWORD`.
+The mutation needs an owner: the tool signs in as `admin` with `KLAPZ_ADMIN_PASSWORD`.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import sys
 import urllib.parse
 import urllib.request
 
-from open_plex_session import authorization, sign_in
+from klapz_session import authorization, sign_in
 
 ADDRESS = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
@@ -72,7 +72,7 @@ def refuse_loopback(origin: str) -> None:
         loopback = host == "localhost"
     if loopback:
         raise SystemExit(
-            f"{origin} is a loopback address, where open-plex answers the transcoder's callbacks: "
+            f"{origin} is a loopback address, where klapz answers the transcoder's callbacks: "
             "point the tunnel at the machine's LAN address instead"
         )
 

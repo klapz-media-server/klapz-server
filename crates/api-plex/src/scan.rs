@@ -15,8 +15,8 @@ use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{delete, get};
 use axum::Router;
-use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::GlobalId;
+use klapz_api::library::LIBRARY_TYPE;
+use klapz_api::GlobalId;
 use serde::Deserialize;
 use serde_json::json;
 

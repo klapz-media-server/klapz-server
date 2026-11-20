@@ -6,14 +6,14 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::page::Window;
-use open_plex_core::{LibraryError, LibraryRepository, SectionId, SectionKind};
-use open_plex_db::entity::{library_section, section_root};
-use open_plex_db::SqlLibraryRepository;
+use klapz_core::page::Window;
+use klapz_core::{LibraryError, LibraryRepository, SectionId, SectionKind};
+use klapz_db::entity::{library_section, section_root};
+use klapz_db::SqlLibraryRepository;
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 async fn repository() -> SqlLibraryRepository {
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     seed(&connection).await;
@@ -79,7 +79,7 @@ fn window(
     Window::by_id(after, before, first, last).expect("valid window")
 }
 
-fn ids(sections: &[open_plex_core::LibrarySection]) -> Vec<i64> {
+fn ids(sections: &[klapz_core::LibrarySection]) -> Vec<i64> {
     sections.iter().map(|section| section.id.get()).collect()
 }
 

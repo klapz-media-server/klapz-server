@@ -3,9 +3,9 @@
 use async_graphql::{Request, Variables};
 use axum::middleware::Next;
 use axum::response::Response;
-use open_plex_api::in_process::{self, RequestOrigin};
-use open_plex_api::ApiSchema;
-use open_plex_core::Principal;
+use klapz_api::in_process::{self, RequestOrigin};
+use klapz_api::ApiSchema;
+use klapz_core::Principal;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
@@ -87,7 +87,7 @@ impl Viewer {
         let Some(user_id) = user_id else {
             return Ok(());
         };
-        let named = crate::id::global_of_type(user_id, open_plex_api::access::USER_TYPE)?;
+        let named = crate::id::global_of_type(user_id, klapz_api::access::USER_TYPE)?;
         if named == self.id {
             Ok(())
         } else {
@@ -104,7 +104,7 @@ mod tests {
 
     fn alice() -> Viewer {
         Viewer {
-            id: open_plex_api::GlobalId::encode("User", 3),
+            id: klapz_api::GlobalId::encode("User", 3),
             username: "alice".to_owned(),
             has_password: true,
         }

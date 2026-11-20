@@ -14,13 +14,11 @@
 mod analysis;
 mod languages;
 
-use open_plex_core::chapter::ChapterSource;
-use open_plex_core::ids::{MediaId, PartId, RatingKey, SectionId};
-use open_plex_core::metadata;
-use open_plex_core::scan::{
-    KnownPart, NewItem, NewMedia, NewPart, ScanError, ScanRepository, ShowKey,
-};
-use open_plex_scanner::report::Analysis;
+use klapz_core::chapter::ChapterSource;
+use klapz_core::ids::{MediaId, PartId, RatingKey, SectionId};
+use klapz_core::metadata;
+use klapz_core::scan::{KnownPart, NewItem, NewMedia, NewPart, ScanError, ScanRepository, ShowKey};
+use klapz_scanner::report::Analysis;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection,

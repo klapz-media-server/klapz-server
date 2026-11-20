@@ -29,9 +29,9 @@ use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{post, put};
 use axum::Router;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::marker::MARKER_TYPE;
-use open_plex_api::GlobalId;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::marker::MARKER_TYPE;
+use klapz_api::GlobalId;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value as Json};
 

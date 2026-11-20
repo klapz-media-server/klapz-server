@@ -5,19 +5,19 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::collection::{
+use klapz_core::collection::{
     CollectionCondition, CollectionEdit, CollectionError, CollectionField, CollectionMode,
     CollectionOrder, CollectionQuery, CollectionRef, CollectionRepository, CollectionSort,
     Destination, NewCollection,
 };
-use open_plex_core::edit::CalendarDate;
-use open_plex_core::metadata::{
+use klapz_core::edit::CalendarDate;
+use klapz_core::metadata::{
     ItemDepth, ItemFilter, ItemKind, ItemQuery, ItemSort, MetadataRepository,
 };
-use open_plex_core::page::{Direction, Window};
-use open_plex_core::{CollectionId, RatingKey, SectionId};
-use open_plex_db::entity::{library_section, metadata_item};
-use open_plex_db::{write, SqlCollectionRepository, SqlMetadataRepository};
+use klapz_core::page::{Direction, Window};
+use klapz_core::{CollectionId, RatingKey, SectionId};
+use klapz_db::entity::{library_section, metadata_item};
+use klapz_db::{write, SqlCollectionRepository, SqlMetadataRepository};
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 const FILM: i64 = 577_986;
@@ -81,7 +81,7 @@ fn item(
 }
 
 async fn connection() -> DatabaseConnection {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
     library_section::Entity::insert_many([section(27, "movie"), section(28, "show")])
         .exec(&connection)
         .await
@@ -336,7 +336,7 @@ async fn listings_order_by_title_or_date_and_page_by_cursor() {
         repository.create(episodes(title, &[]), at).await.unwrap();
     }
     let mut query = CollectionQuery::across(vec![SectionId::new(28), SectionId::new(27)]);
-    let titles = |page: &open_plex_core::page::Page<open_plex_core::collection::Collection>| {
+    let titles = |page: &klapz_core::page::Page<klapz_core::collection::Collection>| {
         page.items
             .iter()
             .map(|collection| collection.title.clone())

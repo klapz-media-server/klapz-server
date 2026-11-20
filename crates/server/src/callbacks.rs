@@ -17,7 +17,7 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::Router;
-use open_plex_transcoder::Transcoder;
+use klapz_transcoder::Transcoder;
 use tower::ServiceExt as _;
 use tower_http::services::ServeFile;
 
@@ -154,7 +154,7 @@ mod tests {
     #[tokio::test]
     async fn a_session_that_does_not_exist_is_not_found() {
         let router = router(Arc::new(Transcoder::new(
-            open_plex_transcoder::Config::default(),
+            klapz_transcoder::Config::default(),
         )));
         let local = Some("127.0.0.1:5000");
         for (method, path) in [

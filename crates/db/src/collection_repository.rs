@@ -4,15 +4,15 @@
 //! collection lies in one library, so who may read it is its library's question, answered
 //! above storage.
 
-use open_plex_core::collection::{
+use klapz_core::collection::{
     new_guid, Collection, CollectionEdit, CollectionEntry, CollectionError, CollectionField,
     CollectionMode, CollectionOrder, CollectionQuery, CollectionRepository, CollectionSort,
     CollectionTotals, Destination, Membership, NewCollection,
 };
-use open_plex_core::edit::derived_title_sort;
-use open_plex_core::page::{Cursor, Page, Window};
-use open_plex_core::playlist::{new_entries, position_between, POSITION_GAP};
-use open_plex_core::{search, CollectionId, RatingKey, SectionId};
+use klapz_core::edit::derived_title_sort;
+use klapz_core::page::{Cursor, Page, Window};
+use klapz_core::playlist::{new_entries, position_between, POSITION_GAP};
+use klapz_core::{search, CollectionId, RatingKey, SectionId};
 use sea_orm::sea_query::{Expr, Query, SimpleExpr};
 use sea_orm::{
     ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, JoinType,

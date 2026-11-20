@@ -8,13 +8,13 @@ rust-version = "1.82"
 license = "MIT"
 
 [workspace.dependencies]
-open-plex-core = { path = "crates/core" }
-open-plex-db = { path = "crates/db" }
-open-plex-api = { path = "crates/api" }
-open-plex-api-plex = { path = "crates/api-plex" }
-open-plex-api-jellyfin = { path = "crates/api-jellyfin" }
-open-plex-transcoder = { path = "crates/transcoder" }
-open-plex-scanner = { path = "crates/scanner", default-features = false }
+klapz-core = { path = "crates/core" }
+klapz-db = { path = "crates/db" }
+klapz-api = { path = "crates/api" }
+klapz-api-plex = { path = "crates/api-plex" }
+klapz-api-jellyfin = { path = "crates/api-jellyfin" }
+klapz-transcoder = { path = "crates/transcoder" }
+klapz-scanner = { path = "crates/scanner", default-features = false }
 
 async-graphql = { version = "7", features = ["dataloader"] }
 base64 = "0.22"
@@ -60,5 +60,5 @@ todo = "warn"
 # Annotating every getter and constructor with #[must_use] adds noise on every line it
 # touches without catching a bug we can plausibly write; the lint fires on ~all public fns.
 must_use_candidate = "allow"
-# Crate names are prefixed `open_plex_`, so types inevitably echo their module.
+# Crate names are prefixed `klapz_`, so types inevitably echo their module.
 module_name_repetitions = "allow"

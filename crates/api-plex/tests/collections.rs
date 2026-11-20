@@ -7,13 +7,13 @@
 use axum::body::Body;
 use axum::http::{header, Method, Request, StatusCode};
 use http_body_util::BodyExt;
-use open_plex_api::{build_schema, ApiContext, ApiSchema};
-use open_plex_api_plex::{router, PlexState};
-use open_plex_core::access::{LibraryAccess, LibraryRole};
-use open_plex_core::edit::CalendarDate;
-use open_plex_core::metadata::{ItemKind, MetadataItem};
-use open_plex_core::testing::{InMemoryCollections, InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{
+use klapz_api::{build_schema, ApiContext, ApiSchema};
+use klapz_api_plex::{router, PlexState};
+use klapz_core::access::{LibraryAccess, LibraryRole};
+use klapz_core::edit::CalendarDate;
+use klapz_core::metadata::{ItemKind, MetadataItem};
+use klapz_core::testing::{InMemoryCollections, InMemoryLibrary, InMemoryMetadata};
+use klapz_core::{
     LibrarySection, Principal, RatingKey, SectionId, SectionKind, ServerCapabilities,
     ServerIdentity, UserId,
 };
@@ -94,20 +94,20 @@ fn schema() -> ApiSchema {
     build_schema(ApiContext {
         capabilities: ServerCapabilities::new(ServerIdentity::new(MACHINE, "0.1.0-dev"), 0),
         library: std::sync::Arc::new(InMemoryLibrary::new(vec![
-            section(27, SectionKind::Movie, "open-plex tests"),
-            section(28, SectionKind::Show, "open-plex tests series"),
+            section(27, SectionKind::Movie, "klapz tests"),
+            section(28, SectionKind::Show, "klapz tests series"),
         ])),
         metadata: std::sync::Arc::new(metadata),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
         collections: std::sync::Arc::new(collections),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -120,7 +120,7 @@ fn app_as(schema: &ApiSchema, caller: Principal) -> axum::Router {
 }
 
 fn owner(schema: &ApiSchema) -> axum::Router {
-    app_as(schema, open_plex_core::testing::owner())
+    app_as(schema, klapz_core::testing::owner())
 }
 
 /// A user given the series library as a viewer, and nothing else.
@@ -129,7 +129,7 @@ fn viewer(schema: &ApiSchema) -> axum::Router {
         schema,
         Principal {
             name: "user7".to_owned(),
-            role: open_plex_core::ServerRole::User,
+            role: klapz_core::ServerRole::User,
             libraries: LibraryAccess::Only(
                 std::iter::once((SectionId::new(28), LibraryRole::Viewer)).collect(),
             ),
@@ -258,7 +258,7 @@ async fn a_lookup_and_a_listing_show_a_collection_with_its_library_where_the_ref
     let lookup = json(&app, Method::GET, &format!("/library/metadata/{key}")).await;
     let container = &lookup["MediaContainer"];
     assert_eq!(container["librarySectionID"], 28);
-    assert_eq!(container["librarySectionTitle"], "open-plex tests series");
+    assert_eq!(container["librarySectionTitle"], "klapz tests series");
     let found = &container["Metadata"][0];
     assert_eq!(found["librarySectionKey"], "/library/sections/28");
     assert_eq!(found["subtype"], "episode");
@@ -285,7 +285,7 @@ async fn a_lookup_and_a_listing_show_a_collection_with_its_library_where_the_ref
 
     let listing = json(&app, Method::GET, "/library/sections/28/collections").await;
     let container = &listing["MediaContainer"];
-    assert_eq!(container["title1"], "open-plex tests series");
+    assert_eq!(container["title1"], "klapz tests series");
     assert_eq!(container["viewGroup"], "show");
     let listed = &container["Metadata"][0];
     assert!(listed.get("librarySectionID").is_none());

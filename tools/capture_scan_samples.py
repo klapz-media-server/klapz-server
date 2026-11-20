@@ -6,7 +6,7 @@ For each media file under SAMPLES, a directory of crates/scanner/tests/fixtures/
   directory dropped;
 - `trace-N.txt`: the sequence parameter set `trace_headers` prints for H.264 track N;
 - `file.json`: the file's identity and the layout the scanner reads from its bytes (MP4 index,
-  MPEG-TS packets), from `open-plex-scanner probe`;
+  MPEG-TS packets), from `klapz-scanner probe`;
 - `reference.json`: the reference's stored rows for the same file, found at REMOTE_ROOT plus its
   path below SAMPLES: the media's and part's columns, each embedded track's with its `ma:`
   analysis, and the item's chapters with where they came from, in the reference's own

@@ -2214,7 +2214,7 @@ type FallBackStreamUserError {
 """
 Optional behaviours a client may ask about before offering them.
 
-Every field is true. open-plex has no paid tier, so there is nothing to report as
+Every field is true. klapz has no paid tier, so there is nothing to report as
 unavailable — including the features Plex reserves for a subscription, such as offline
 sync, skipping intros, loudness levelling, Live TV and hardware transcoding.
 """
@@ -8034,7 +8034,7 @@ input SignInInput {
 }
 
 """
-What `signIn` did. On success the session is in the `open_plex_session` cookie, out of reach
+What `signIn` did. On success the session is in the `klapz_session` cookie, out of reach
 of a page's scripts: there is no token here to keep. A client that is no browser reads the
 cookie's value from `Set-Cookie` and presents it as `Authorization: Bearer <value>`.
 """

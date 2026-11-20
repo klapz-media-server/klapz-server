@@ -106,10 +106,8 @@ mod tests {
 
     impl Scratch {
         fn new(name: &str) -> Self {
-            let path = std::env::temp_dir().join(format!(
-                "open-plex-media-test-{name}-{}",
-                std::process::id()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("klapz-media-test-{name}-{}", std::process::id()));
             std::fs::create_dir_all(path.join("movies")).unwrap();
             std::fs::create_dir_all(path.join("movies2")).unwrap();
             std::fs::write(path.join("movies").join("film.mkv"), b"x").unwrap();

@@ -9,9 +9,9 @@
 //! item's tags, collections and locks: over a library's 79,518 episodes, a few dozen rows
 //! to count rather than every credit of every episode.
 
-use open_plex_core::common::{order_shared_tags, CommonFields, Shared, SharedTag};
-use open_plex_core::edit::ItemField;
-use open_plex_core::{CollectionId, RatingKey};
+use klapz_core::common::{order_shared_tags, CommonFields, Shared, SharedTag};
+use klapz_core::edit::ItemField;
+use klapz_core::{CollectionId, RatingKey};
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SelectStatement};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, FromQueryResult,

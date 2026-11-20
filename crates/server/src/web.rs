@@ -43,10 +43,10 @@ pub fn router(dir: &Path) -> Option<Router> {
     )
 }
 
-/// The directory the client is served from: `OPENPLEX_WEB_DIR`, or `web` beside the working
+/// The directory the client is served from: `KLAPZ_WEB_DIR`, or `web` beside the working
 /// directory.
 pub fn directory() -> PathBuf {
-    std::env::var_os("OPENPLEX_WEB_DIR").map_or_else(|| PathBuf::from("web"), PathBuf::from)
+    std::env::var_os("KLAPZ_WEB_DIR").map_or_else(|| PathBuf::from("web"), PathBuf::from)
 }
 
 /// Whether a request path belongs to the web client, which is served without a token.
@@ -67,7 +67,7 @@ mod tests {
 
     /// A client directory with an index and one asset, unique per test.
     fn client(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("open-plex-web-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("klapz-web-{name}-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("js")).unwrap();
         std::fs::write(dir.join("index.html"), "<html>plex</html>").unwrap();
         std::fs::write(dir.join("js").join("main.js"), "console.log(1)").unwrap();
@@ -127,12 +127,12 @@ mod tests {
     async fn never_leaves_the_client_directory() {
         // A file beside the client directory, reachable by `..` if traversal were possible.
         let dir = client("traversal");
-        std::fs::write(dir.parent().unwrap().join("open-plex-secret.txt"), "secret").unwrap();
+        std::fs::write(dir.parent().unwrap().join("klapz-secret.txt"), "secret").unwrap();
         let router = router(&dir).unwrap();
         for uri in [
-            "/web/../open-plex-secret.txt",
-            "/web/%2e%2e/open-plex-secret.txt",
-            "/web/js/..%2f..%2fopen-plex-secret.txt",
+            "/web/../klapz-secret.txt",
+            "/web/%2e%2e/klapz-secret.txt",
+            "/web/js/..%2f..%2fklapz-secret.txt",
         ] {
             let (status, _, body) = get(router.clone(), uri).await;
             assert_ne!(status, StatusCode::OK, "{uri}");
@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn mounts_nothing_without_a_client() {
-        let empty = std::env::temp_dir().join(format!("open-plex-web-none-{}", std::process::id()));
+        let empty = std::env::temp_dir().join(format!("klapz-web-none-{}", std::process::id()));
         std::fs::create_dir_all(&empty).unwrap();
         assert!(router(&empty).is_none());
     }

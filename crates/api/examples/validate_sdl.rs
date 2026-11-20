@@ -4,7 +4,7 @@
 //! parse wastes everyone's time. This checks syntax only — it cannot verify that referenced
 //! types exist, since a proposal names types defined elsewhere.
 //!
-//! Usage: `cargo run -p open-plex-api --example validate_sdl -- docs/proposal-items.graphql`
+//! Usage: `cargo run -p klapz-api --example validate_sdl -- docs/proposal-items.graphql`
 
 // Build-time tooling: a failure here must stop the build loudly.
 #![allow(clippy::expect_used)]

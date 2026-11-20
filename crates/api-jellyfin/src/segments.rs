@@ -82,7 +82,7 @@ async fn segments(
     RawQuery(raw): RawQuery,
 ) -> Result<Response, JellyfinError> {
     let query = Query::parse(raw.as_deref());
-    let global = id::global_of_type(&item, open_plex_api::item::ITEM_TYPE)?;
+    let global = id::global_of_type(&item, klapz_api::item::ITEM_TYPE)?;
     let item = id::of_global(&global).unwrap_or_default();
     let wanted: Vec<String> = query
         .list("includeSegmentTypes")
@@ -117,7 +117,7 @@ mod tests {
 
     fn marker(kind: &str, start_ms: i64, end_ms: Option<i64>) -> Marker {
         Marker {
-            id: open_plex_api::GlobalId::encode("Marker", 9),
+            id: klapz_api::GlobalId::encode("Marker", 9),
             kind: kind.to_owned(),
             start_ms,
             end_ms,

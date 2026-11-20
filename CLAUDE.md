@@ -1,7 +1,7 @@
-# open-plex
+# klapz
 
 A media server reimplementing the Plex Media Server API, in Rust. The goal is **API
-compatibility**: clients and tools that talk to a PMS must be able to talk to open-plex
+compatibility**: clients and tools that talk to a PMS must be able to talk to klapz
 unmodified.
 
 Everything in this repository is written in English — code, comments, documentation.
@@ -53,7 +53,7 @@ without them saying so.
   one.
 - **Scanning is being brought in, split as Plex splits it.** Walking libraries, deciding what
   changed, matching and storing belong to the server, as they run inside Plex Media Server;
-  reading a file's content belongs to `open-plex-scanner`, a separate binary, as Plex leaves it
+  reading a file's content belongs to `klapz-scanner`, a separate binary, as Plex leaves it
   to `Plex Media Scanner`, its Fingerprinter and its Transcoder. The endpoints of matching and
   of analysis on demand stay `deferred` in `docs/ENDPOINTS.md` until they exist. How Plex does
   each part is in `docs/scanner/` (`discovery.md`, `matching.md`, `analysis.md`).
@@ -72,7 +72,7 @@ without them saying so.
   already serve.
 - **Jellyfin is a second adapter, `api-jellyfin`, held to the same rule.** It depends on
   `api` (and `core`'s types) only, runs every query in process through
-  `open_plex_api::in_process` as `api-plex` does, and holds no domain rule: whether a player
+  `klapz_api::in_process` as `api-plex` does, and holds no domain rule: whether a player
   reads a file as it is is `core::stream::reads_as_is`, on the official API as
   `MediaFile.readableAsIs`. It is mounted below `/jellyfin`, Jellyfin's own notion of a base
   URL, because Jellyfin routes without regard to case and its paths would meet Plex's; below it
@@ -158,7 +158,7 @@ without them saying so.
   items go through `db::write` like every other. What is gone is removed, unless its whole root
   cannot be reached: an unmounted disk is not an empty library. `BackgroundScans` keeps one scan
   per library and cancels between files.
-- **A library's roots are set on the command line only** (`open-plex-server library add`),
+- **A library's roots are set on the command line only** (`klapz-server library add`),
   because no endpoint accepts a path: creating a library is not on the API yet.
 - **HTTP authentication lives in `server`**, because both surfaces share it. It attaches a
   `Principal`, which is always a user; each surface then enforces roles in its own idiom
@@ -169,7 +169,7 @@ without them saying so.
 - **Relay-compliant.** Every identifiable type implements `Node` and carries an opaque,
   type-qualified global `id` (base64 of `Type:key`), refetchable through a single `node(id:)`
   field. The schema publishes no other identifier: the compatibility layer reads the number
-  Plex publishes by decoding `id` with the same codec (`open_plex_api::GlobalId`), and builds
+  Plex publishes by decoding `id` with the same codec (`klapz_api::GlobalId`), and builds
   the global id from an incoming Plex number to query with.
 - **Lists are cursor connections** (`edges`/`node`/`cursor`, `pageInfo`), never bare arrays.
 - **A type links to an entity, never to its id.** `HistoryEntry.library: Library`, not
@@ -179,7 +179,7 @@ without them saying so.
   termination is `PlaybackSession.terminatedAt` and `terminationReason`, listed through
   `playbackSessions(status:)`, not a `PlaybackTermination` type.
 - **After any schema change, regenerate the published schema**:
-  `cargo run -p open-plex-api --example sdl > docs/schema.graphql` and
+  `cargo run -p klapz-api --example sdl > docs/schema.graphql` and
   `--example introspect > docs/introspection.json`.
 - **Every field, argument and enum value carries a description.** Enforced by a test that walks
   introspection, not by review.
@@ -189,7 +189,7 @@ without them saying so.
   since GraphQL's `Int` only guarantees 32 bits and a JSON number loses precision past 2^53:
   `contentChangedAt` (a counter that reaches 8×10^18), `MediaFile.sizeBytes`, the stated
   microseconds. It reads a string or an integer literal; the adapters deserialize it with
-  `open_plex_api::int64::deserialize`. Durations in milliseconds and bitrates stay `Int`.
+  `klapz_api::int64::deserialize`. Durations in milliseconds and bitrates stay `Int`.
 - **Points in time are `DateTime`** (`@specifiedBy` the andimarek date-time spec): RFC 3339,
   written in UTC with `Z` to the second, read with any offset. Storage, `core` and `db` keep
   Unix seconds as integers, converted in `api` (`date_time`); a release date is its day's
@@ -198,14 +198,14 @@ without them saying so.
   PostgreSQL / MySQL / SQLite, built-in migrations, natively async). SQLite is one backend among
   several, not the design.
 - **Transcoding video is process supervision.** Plex does not decode video itself, it executes
-  `ffmpeg`. open-plex does the same: no libav bindings, no video decoding inside the server's
+  `ffmpeg`. klapz does the same: no libav bindings, no video decoding inside the server's
   address space. Images are the exception, by the repo owner's decision: `/photo/:/transcode`
   converts in process with the `image` crate, memory-safe decoders on a format allowlist, because
   two processes per thumbnail cost more than the work.
-- **The scanner is a command line over one file, and keeps nothing.** `open-plex-scanner
+- **The scanner is a command line over one file, and keeps nothing.** `klapz-scanner
   <command> [options] -- <file>`: `probe [--deep]`, `hashes`, `loudness`, `fingerprint`,
   `subtitles`, `bif`, `chapter-thumbs`, `artwork`. It prints one JSON report on standard output
-  (`open_plex_scanner::report`, the same types the server reads back, versioned), writes the
+  (`klapz_scanner::report`, the same types the server reads back, versioned), writes the
   files it makes into an `--out` directory the server created and owns, creates no directory
   and overwrites nothing, and exits `3` when the media is at fault, `2` on bad usage. It
   decodes nothing itself — ffprobe and ffmpeg-plex do, as its children — reaches no network
@@ -233,9 +233,9 @@ without them saying so.
   grants or revokes `OWNER`, for owners only.
 - **The built-in `admin` account always exists.** At startup, before serving, the server makes
   sure a user named `admin` exists, is active and is an owner (`core::account::ensure_admin`,
-  called from `main`). Created, it takes `OPENPLEX_ADMIN_PASSWORD`, or a password drawn from the
+  called from `main`). Created, it takes `KLAPZ_ADMIN_PASSWORD`, or a password drawn from the
   OS RNG that is printed on standard output once and goes nowhere else, not even the logs;
-  existing, it takes `OPENPLEX_ADMIN_PASSWORD` when that is set and keeps its own otherwise. A
+  existing, it takes `KLAPZ_ADMIN_PASSWORD` when that is set and keeps its own otherwise. A
   configured password the policy refuses stops the server. `admin` has no address, and it cannot
   be demoted, deactivated or deleted: those mutations answer `BUILT_IN_ACCOUNT`.
 - **Rights are enforced in the schema.** The transport attaches a `Principal`, and the resolvers
@@ -253,16 +253,16 @@ without them saying so.
   username or an address, answers `INVALID_CREDENTIALS` alike for an unknown account and a wrong
   password (a decoy hash keeps the timing the same), tells `INACTIVE` only with the right
   password, and limits failures to five per identifier per fifteen minutes.
-- **A session is a signed JWT in an `HttpOnly; SameSite=Lax` cookie**, `open_plex_session`,
-  HS256 with `OPENPLEX_SESSION_SECRET` (32 bytes at least; without it a key is drawn per process
-  and sessions end with it), `Secure` unless `OPENPLEX_INSECURE_COOKIES=1`. Nothing stores it:
+- **A session is a signed JWT in an `HttpOnly; SameSite=Lax` cookie**, `klapz_session`,
+  HS256 with `KLAPZ_SESSION_SECRET` (32 bytes at least; without it a key is drawn per process
+  and sessions end with it), `Secure` unless `KLAPZ_INSECURE_COOKIES=1`. Nothing stores it:
   the transport checks the signature and expiry, then the user's current state, on every
   request. A script or an API client reads the session from the `Set-Cookie` of `signIn` and
   sends it as `Authorization: Bearer <session>`, on every surface; the payload carries no token,
   so a page's scripts never see one. Precedence is the Plex token, then the bearer, then the
   cookie. `signOut` clears the cookie; a copied session stays valid until it expires (30 days)
   unless its user is shut out. The tools sign in as `admin` this way
-  (`tools/open_plex_session.py`, with `OPENPLEX_ADMIN_PASSWORD`).
+  (`tools/klapz_session.py`, with `KLAPZ_ADMIN_PASSWORD`).
 - **`/graphql` admits nobody**, so a browser can sign in before it is anyone. The request goes
   through with no principal, which every resolver already answers as "nothing exists";
   `nobody_reads_nothing_from_any_entry_point` keeps it that way. Every other route still
@@ -453,7 +453,7 @@ Places where we knowingly answer differently, each decided rather than overlooke
   `/media/providers` report `1.43.5.11029-6bf8af3f0`, the reference server every capture comes
   from: Plex Web refuses a server older than 1.18.3, and `0.1.0` reads as one. Clients that
   enable features by version then expect exactly the behavior we copied. The official API keeps
-  open-plex's own version (`api-plex::general::PLEX_VERSION`).
+  klapz's own version (`api-plex::general::PLEX_VERSION`).
 - **A playlist is its viewer's, and its ids are its own.** One user's, an owner's included, as
   watch state is; another's answers `404`, and an entry whose library its owner may no longer
   read is hidden. Ids start at 1 rather than sharing the items' numbering, so a film's id is not a
@@ -620,28 +620,28 @@ a merge regenerate them on the merged tree rather than resolving their conflicts
 
 ```sh
 # Seed our schema from a real Plex database (idempotent; reads the source read-only).
-cargo run -p open-plex-server -- import db/com.plexapp.plugins.library.db
+cargo run -p klapz-server -- import db/com.plexapp.plugins.library.db
 
-# Serve. The first start creates the `admin` account; without OPENPLEX_ADMIN_PASSWORD its
+# Serve. The first start creates the `admin` account; without KLAPZ_ADMIN_PASSWORD its
 # generated password is printed once on standard output.
-OPENPLEX_ADMIN_PASSWORD='a long passphrase' cargo run -p open-plex-server
+KLAPZ_ADMIN_PASSWORD='a long passphrase' cargo run -p klapz-server
 ```
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `OPENPLEX_DATABASE_URL` | `sqlite://open-plex.db?mode=rwc` | Any SeaORM backend; migrations run on connect. |
-| `OPENPLEX_ADMIN_PASSWORD` | *(none)* | The password of the built-in `admin` owner, set at every start. Unset, a new `admin` gets a generated one, printed once on standard output, and an existing one keeps its own. Outside the password policy (8 to 256 characters), the server refuses to start. The tools sign in with it. |
-| `OPENPLEX_SESSION_SECRET` | *(drawn per process)* | The HS256 key sessions are signed with, 32 bytes at least. Without it, sessions end when the server stops. |
-| `OPENPLEX_INSECURE_COOKIES` | *(off)* | `1` drops `Secure` from the session cookie, for plain HTTP on a local network. |
-| `OPENPLEX_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
-| `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
-| `OPENPLEX_JELLYFIN_WEB_DIR` | *(none)* | Jellyfin Web, served without a token at `/jellyfin/web`: a Jellyfin install's `jellyfin-web` directory. Not versioned: it is Jellyfin's code. |
-| `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
-| `OPENPLEX_TRANSCODER` | `ffmpeg` beside the server's executable, else on `PATH` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
-| `OPENPLEX_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
-| `OPENPLEX_FFPROBE` | `OPENPLEX_TRANSCODER -probe` | The ffprobe the scanner reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. |
-| `OPENPLEX_SCANNER` | `open-plex-scanner` beside the server's executable, else on `PATH` | The scanner binary a library scan runs on each new or changed file. |
-| `OPENPLEX_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which Plex's own binary needs. The rebuilt one has them built in and needs none. |
+| `KLAPZ_DATABASE_URL` | `sqlite://klapz.db?mode=rwc` | Any SeaORM backend; migrations run on connect. |
+| `KLAPZ_ADMIN_PASSWORD` | *(none)* | The password of the built-in `admin` owner, set at every start. Unset, a new `admin` gets a generated one, printed once on standard output, and an existing one keeps its own. Outside the password policy (8 to 256 characters), the server refuses to start. The tools sign in with it. |
+| `KLAPZ_SESSION_SECRET` | *(drawn per process)* | The HS256 key sessions are signed with, 32 bytes at least. Without it, sessions end when the server stops. |
+| `KLAPZ_INSECURE_COOKIES` | *(off)* | `1` drops `Secure` from the session cookie, for plain HTTP on a local network. |
+| `KLAPZ_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
+| `KLAPZ_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
+| `KLAPZ_JELLYFIN_WEB_DIR` | *(none)* | Jellyfin Web, served without a token at `/jellyfin/web`: a Jellyfin install's `jellyfin-web` directory. Not versioned: it is Jellyfin's code. |
+| `KLAPZ_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
+| `KLAPZ_TRANSCODER` | `ffmpeg` beside the server's executable, else on `PATH` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
+| `KLAPZ_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
+| `KLAPZ_FFPROBE` | `KLAPZ_TRANSCODER -probe` | The ffprobe the scanner reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. |
+| `KLAPZ_SCANNER` | `klapz-scanner` beside the server's executable, else on `PATH` | The scanner binary a library scan runs on each new or changed file. |
+| `KLAPZ_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which Plex's own binary needs. The rebuilt one has them built in and needs none. |
 
 `.github/workflows/package.yml` builds the server and the scanner for Linux (x86_64, arm64),
 Windows and macOS (arm64, x86_64), packages each with the ffmpeg-plex release it pins by
@@ -655,8 +655,8 @@ Cloudflare quick tunnel and publishes its new address to plex.tv through `moveEx
 in as `admin`, with the server running; it refuses a loopback origin, where the transcoder's
 callbacks answer without a token. A quick tunnel buffers whole responses, so a streamed body
 arrives only at its end: test streamed responses without it.
-`open-plex-server library add --kind movie|show --title TITLE ROOT...` creates a library over
-directories of this machine, and `open-plex-server scan ID [--force]` scans it without serving
+`klapz-server library add --kind movie|show --title TITLE ROOT...` creates a library over
+directories of this machine, and `klapz-server scan ID [--force]` scans it without serving
 (a running server scans on `scanLibrary` or `/library/sections/{id}/refresh`); this supersedes
 `python tools/seed_test_library.py DIRECTORY`, which writes a `Test` library straight to the
 tables; `python tools/capture_transcoder.py` studies the transcoder alone.
@@ -966,7 +966,7 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   (migration `m0037`) are on the official API: `Item.refreshedAt`, `MediaFile.contentHash` and
   `openSubtitlesHash`, `MediaStream.requiredBandwidths`, and `MediaStream.externalUrl` for a
   sidecar. Both `nearest` routes answer as the reference does without music (`docs/spec-gaps.md`).
-- 🚧 **the scanner's file half**, `open-plex-scanner`, measured against the reference on the
+- 🚧 **the scanner's file half**, `klapz-scanner`, measured against the reference on the
   test files: the analysis (every track field ffprobe gives, chapters with generic titles
   cleared, MP4 layout, MPEG-TS packet length; `--deep` measures each track's rate over every
   packet, the video's equal to Matroska's `BPS`), the OpenSubtitles hash (identical), the BIF

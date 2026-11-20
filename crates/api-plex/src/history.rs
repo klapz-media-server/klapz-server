@@ -16,11 +16,11 @@ use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};
 use axum::routing::get;
 use axum::Router;
-use open_plex_api::history::HISTORY_ENTRY_TYPE;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::{date_time, GlobalId};
-use open_plex_core::page::MAX_ITEMS;
+use klapz_api::history::HISTORY_ENTRY_TYPE;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::library::LIBRARY_TYPE;
+use klapz_api::{date_time, GlobalId};
+use klapz_core::page::MAX_ITEMS;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Caller;

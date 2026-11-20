@@ -246,7 +246,7 @@ fn middleware_stack() -> impl Layer<Route> + Clone {
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(SetResponseHeaderLayer::overriding(
             header::SERVER,
-            HeaderValue::from_static("open-plex"),
+            HeaderValue::from_static("klapz"),
         ))
 }
 ```

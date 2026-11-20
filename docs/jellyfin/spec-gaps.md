@@ -1,7 +1,7 @@
 # Jellyfin: measured behaviors and deliberate divergences
 
 The Jellyfin surface answers as the reference Jellyfin (12.4.0) does, measured on a test instance
-holding the same 35 files as an open-plex library (`Z:\samples\Movies` and `Z:\samples\TVShows`).
+holding the same 35 files as an klapz library (`Z:\samples\Movies` and `Z:\samples\TVShows`).
 Captures come from `tools/capture_jellyfin.py`, which also writes the scrubbed fixtures of
 `crates/api-jellyfin/tests/fixtures`; `tools/compare_jellyfin.py` sets our answers against the
 reference's file by file and field by field (below, *Measured on the 35 files*). The operations
@@ -303,8 +303,8 @@ reasons excepted.
 
 ## Measured with Jellyfin Web
 
-Jellyfin Web 12.4, served by open-plex at `/jellyfin/web` from the reference's install
-(`OPENPLEX_JELLYFIN_WEB_DIR`), finds the server, signs in, shows both libraries and their latest
+Jellyfin Web 12.4, served by klapz at `/jellyfin/web` from the reference's install
+(`KLAPZ_JELLYFIN_WEB_DIR`), finds the server, signs in, shows both libraries and their latest
 items, opens a film with its tracks labelled, and plays `doodlebug` directly (720×480, H.264 and
 Opus in Matroska) and *Jurassic World: Fallen Kingdom* through an HLS conversion (its DTS tracks
 converted), reporting progress back. The other clients (Swiftfin, Findroid, Infuse, the Android

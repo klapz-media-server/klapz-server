@@ -1,18 +1,18 @@
 [package]
-name = "open-plex-server"
+name = "klapz-server"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-open-plex-core.workspace = true
-open-plex-api.workspace = true
-open-plex-api-plex.workspace = true
-open-plex-api-jellyfin.workspace = true
-open-plex-transcoder.workspace = true
-open-plex-db.workspace = true
-open-plex-scanner.workspace = true
+klapz-core.workspace = true
+klapz-api.workspace = true
+klapz-api-plex.workspace = true
+klapz-api-jellyfin.workspace = true
+klapz-transcoder.workspace = true
+klapz-db.workspace = true
+klapz-scanner.workspace = true
 async-graphql.workspace = true
 async-trait.workspace = true
 futures-util.workspace = true
@@ -32,7 +32,7 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 http-body-util = "0.1"
-open-plex-core = { workspace = true, features = ["testing"] }
+klapz-core = { workspace = true, features = ["testing"] }
 tower = { workspace = true, features = ["util"] }
 
 [lints]

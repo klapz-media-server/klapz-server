@@ -7,16 +7,14 @@
 
 use std::sync::Arc;
 
-use open_plex_api::{build_schema, ApiContext, ApiSchema, GlobalId};
-use open_plex_core::metadata::{ItemKind, ItemTag, MetadataItem, Person, Tag, TagKind};
-use open_plex_core::testing::{InMemoryLibrary, InMemoryMetadata};
-use open_plex_core::{
-    LibrarySection, PersonId, RatingKey, SectionId, SectionKind, SectionRoot, TagId,
-};
+use klapz_api::{build_schema, ApiContext, ApiSchema, GlobalId};
+use klapz_core::metadata::{ItemKind, ItemTag, MetadataItem, Person, Tag, TagKind};
+use klapz_core::testing::{InMemoryLibrary, InMemoryMetadata};
+use klapz_core::{LibrarySection, PersonId, RatingKey, SectionId, SectionKind, SectionRoot, TagId};
 use serde_json::Value;
 
 fn as_owner(query: impl Into<String>) -> async_graphql::Request {
-    async_graphql::Request::new(query.into()).data(open_plex_core::testing::owner())
+    async_graphql::Request::new(query.into()).data(klapz_core::testing::owner())
 }
 
 fn schema() -> ApiSchema {
@@ -41,25 +39,22 @@ fn schema() -> ApiSchema {
     }]);
 
     build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(library),
         metadata: Arc::new(InMemoryMetadata::default()),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -81,25 +76,22 @@ fn searchable() -> ApiSchema {
     ];
 
     build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(InMemoryLibrary::new(vec![films, series])),
         metadata: Arc::new(InMemoryMetadata::new(items)),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -553,25 +545,22 @@ fn series_with_episodes() -> ApiSchema {
     ];
 
     build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(InMemoryLibrary::new(vec![series])),
         metadata: Arc::new(InMemoryMetadata::new(items).with_tags(tags)),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -761,12 +750,12 @@ async fn a_tag_list_pages_by_cursor() {
 }
 
 fn as_user(query: &str) -> async_graphql::Request {
-    use open_plex_core::access::{LibraryAccess, LibraryRole};
-    use open_plex_core::{Principal, SectionId, UserId};
+    use klapz_core::access::{LibraryAccess, LibraryRole};
+    use klapz_core::{Principal, SectionId, UserId};
     let libraries = std::iter::once((SectionId::new(4), LibraryRole::Viewer)).collect();
     async_graphql::Request::new(query).data(Principal {
         name: "someone".to_owned(),
-        role: open_plex_core::ServerRole::User,
+        role: klapz_core::ServerRole::User,
         libraries: LibraryAccess::Only(libraries),
         user: UserId::new(1),
         server_identifier: None,
@@ -953,12 +942,12 @@ async fn connected_user(schema: &ApiSchema) -> String {
 
 /// A request from the user `id` names, with no library.
 fn as_user_with_id(id: &str, query: &str) -> async_graphql::Request {
-    use open_plex_core::access::LibraryAccess;
-    use open_plex_core::{Principal, UserId};
+    use klapz_core::access::LibraryAccess;
+    use klapz_core::{Principal, UserId};
     let key = GlobalId::decode(id).unwrap().key;
     async_graphql::Request::new(query).data(Principal {
         name: "someone".to_owned(),
-        role: open_plex_core::ServerRole::User,
+        role: klapz_core::ServerRole::User,
         libraries: LibraryAccess::Only(std::collections::HashMap::new()),
         user: UserId::new(key),
         server_identifier: None,
@@ -998,7 +987,7 @@ async fn pairing_stores_the_account_and_publishes_the_address() {
     let paired = &response.data.into_json().unwrap()["pairExtension"];
     assert_eq!(paired["accountName"], "account 7");
     assert_eq!(paired["connectionUri"], "https://a.example.org:443");
-    assert!(open_plex_api::date_time::parse(paired["publishedAt"].as_str().unwrap()).is_some());
+    assert!(klapz_api::date_time::parse(paired["publishedAt"].as_str().unwrap()).is_some());
 }
 
 const MOVE: &str = r"mutation($input: MoveExtensionInput!) {
@@ -1032,10 +1021,7 @@ async fn moving_a_paired_server_publishes_its_new_address_at_once() {
     // Stored in lower case, as `Host` headers are matched.
     assert_eq!(link["connectionUri"], "https://new.trycloudflare.com");
     let published = link["publishedAt"].as_str().unwrap();
-    assert!(
-        open_plex_api::date_time::parse(published).is_some(),
-        "{link}"
-    );
+    assert!(klapz_api::date_time::parse(published).is_some(), "{link}");
 }
 
 #[tokio::test]
@@ -1203,11 +1189,8 @@ fn watchable() -> ApiSchema {
     items[3].parent_id = Some(RatingKey::new(577_988));
     items[4].parent_id = Some(RatingKey::new(577_988));
     build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(InMemoryLibrary::new(vec![
@@ -1215,16 +1198,16 @@ fn watchable() -> ApiSchema {
             section(5, SectionKind::Show, "Series"),
         ])),
         metadata: Arc::new(InMemoryMetadata::new(items.clone())),
-        playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: Arc::new(open_plex_core::testing::InMemoryWatch::over(items)),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        playback: Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: Arc::new(klapz_core::testing::InMemoryWatch::over(items)),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -1430,13 +1413,13 @@ async fn deleting_a_history_entry_is_for_its_viewer_and_owners() {
 
 fn track(
     id: i64,
-    kind: open_plex_core::StreamKind,
+    kind: klapz_core::StreamKind,
     position: i32,
     codec: &str,
-) -> open_plex_core::MediaStream {
-    open_plex_core::MediaStream {
-        id: open_plex_core::StreamId::new(id),
-        file_id: open_plex_core::PartId::new(910),
+) -> klapz_core::MediaStream {
+    klapz_core::MediaStream {
+        id: klapz_core::StreamId::new(id),
+        file_id: klapz_core::PartId::new(910),
         kind,
         position,
         codec: Some(codec.to_owned()),
@@ -1450,24 +1433,24 @@ fn track(
         stream_identifier: None,
         profile: None,
         bit_depth: None,
-        traits: open_plex_core::metadata::TrackTraits::default(),
+        traits: klapz_core::metadata::TrackTraits::default(),
         video: None,
         audio: None,
         subtitle: None,
         required_bandwidths: Vec::new(),
-        stated: open_plex_core::metadata::StatedTrack::default(),
+        stated: klapz_core::metadata::StatedTrack::default(),
     }
 }
 
 /// Soul's one version: one file of three tracks.
 fn soul_media() -> (
-    open_plex_core::MediaVersion,
-    open_plex_core::MediaFile,
-    Vec<open_plex_core::MediaStream>,
+    klapz_core::MediaVersion,
+    klapz_core::MediaFile,
+    Vec<klapz_core::MediaStream>,
 ) {
-    use open_plex_core::StreamKind;
-    let version = open_plex_core::MediaVersion {
-        id: open_plex_core::MediaId::new(900),
+    use klapz_core::StreamKind;
+    let version = klapz_core::MediaVersion {
+        id: klapz_core::MediaId::new(900),
         item_id: RatingKey::new(577_986),
         width: Some(1920),
         height: Some(1080),
@@ -1482,18 +1465,18 @@ fn soul_media() -> (
         interlaced: false,
         optimized_for_streaming: false,
     };
-    let file = open_plex_core::MediaFile {
-        id: open_plex_core::PartId::new(910),
-        version_id: open_plex_core::MediaId::new(900),
+    let file = klapz_core::MediaFile {
+        id: klapz_core::PartId::new(910),
+        version_id: klapz_core::MediaId::new(900),
         position: 0,
         path: "/films/Soul.mkv".to_owned(),
         size_bytes: None,
         duration_ms: Some(6_031_568),
-        layout: open_plex_core::metadata::FileLayout::default(),
+        layout: klapz_core::metadata::FileLayout::default(),
         stream_url: None,
         content_hash: None,
         open_subtitles_hash: None,
-        stated: open_plex_core::metadata::StatedFile::default(),
+        stated: klapz_core::metadata::StatedFile::default(),
     };
     let tracks = vec![
         track(920, StreamKind::Video, 0, "h264"),
@@ -1504,7 +1487,7 @@ fn soul_media() -> (
 }
 
 /// Soul with one file of three tracks, and an engine that records what it is asked.
-fn streamable(engine: Arc<open_plex_core::testing::StubStreams>) -> ApiSchema {
+fn streamable(engine: Arc<klapz_core::testing::StubStreams>) -> ApiSchema {
     let (version, file, tracks) = soul_media();
     serving(
         engine,
@@ -1516,16 +1499,10 @@ fn streamable(engine: Arc<open_plex_core::testing::StubStreams>) -> ApiSchema {
     )
 }
 
-fn serving(
-    engine: Arc<open_plex_core::testing::StubStreams>,
-    metadata: InMemoryMetadata,
-) -> ApiSchema {
+fn serving(engine: Arc<klapz_core::testing::StubStreams>, metadata: InMemoryMetadata) -> ApiSchema {
     build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(
@@ -1539,16 +1516,16 @@ fn serving(
             ]),
         ),
         metadata: Arc::new(metadata),
-        playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),
+        playback: Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: engine,
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -1573,7 +1550,7 @@ async fn start(schema: &ApiSchema, input: serde_json::Value) -> Value {
 
 #[tokio::test]
 async fn starting_a_stream_hands_out_its_address_and_records_its_session() {
-    let engine = Arc::new(open_plex_core::testing::StubStreams::default());
+    let engine = Arc::new(klapz_core::testing::StubStreams::default());
     let schema = streamable(Arc::clone(&engine));
     let started = start(
         &schema,
@@ -1608,13 +1585,13 @@ async fn starting_a_stream_hands_out_its_address_and_records_its_session() {
     assert_eq!(order.position_ms, 60_000);
     assert!(matches!(
         &order.subtitle,
-        Some(open_plex_core::stream::SubtitleOutput::Text { track }) if track.position == 2
+        Some(klapz_core::stream::SubtitleOutput::Text { track }) if track.position == 2
     ));
 }
 
 #[tokio::test]
 async fn a_stream_of_a_file_nobody_can_see_is_refused_as_a_user_error() {
-    let engine = Arc::new(open_plex_core::testing::StubStreams::default());
+    let engine = Arc::new(klapz_core::testing::StubStreams::default());
     let schema = streamable(Arc::clone(&engine));
     let refused = start(
         &schema,
@@ -1640,7 +1617,7 @@ async fn a_stream_of_a_file_nobody_can_see_is_refused_as_a_user_error() {
 
 #[tokio::test]
 async fn stopping_a_stream_closes_its_session_once() {
-    let schema = streamable(Arc::new(open_plex_core::testing::StubStreams::default()));
+    let schema = streamable(Arc::new(klapz_core::testing::StubStreams::default()));
     let started = start(
         &schema,
         serde_json::json!({ "file": GlobalId::encode("MediaFile", 910), "directPlay": true }),
@@ -1667,7 +1644,7 @@ mutation Stop($input: StopStreamInput!) {
 
 #[tokio::test]
 async fn a_conversion_falls_back_only_for_its_own_player_and_never_here() {
-    let schema = streamable(Arc::new(open_plex_core::testing::StubStreams::default()));
+    let schema = streamable(Arc::new(klapz_core::testing::StubStreams::default()));
     let started = start(
         &schema,
         serde_json::json!({ "file": GlobalId::encode("MediaFile", 910), "key": "k1" }),
@@ -1726,7 +1703,7 @@ mutation FallBack($input: FallBackStreamInput!) {
 
 #[tokio::test]
 async fn an_owner_terminates_a_session_which_its_player_can_still_read() {
-    let engine = Arc::new(open_plex_core::testing::StubStreams::default());
+    let engine = Arc::new(klapz_core::testing::StubStreams::default());
     let schema = streamable(Arc::clone(&engine));
     let started = start(
         &schema,
@@ -1822,7 +1799,7 @@ mutation Terminate($input: TerminatePlaybackSessionInput!) {
 
 #[tokio::test]
 async fn a_player_stopping_stops_every_stream_of_its_playback() {
-    let engine = Arc::new(open_plex_core::testing::StubStreams::default());
+    let engine = Arc::new(klapz_core::testing::StubStreams::default());
     let schema = streamable(Arc::clone(&engine));
     for key in ["k1", "k2"] {
         start(
@@ -1867,32 +1844,29 @@ fn editable() -> ApiSchema {
     ];
     let metadata = InMemoryMetadata::new(items).with_locked_fields(vec![(
         RatingKey::new(577_986),
-        open_plex_core::edit::ItemField::TitleSort,
+        klapz_core::edit::ItemField::TitleSort,
     )]);
 
     build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(InMemoryLibrary::new(vec![
-            section(27, SectionKind::Movie, "open-plex tests"),
-            section(28, SectionKind::Show, "open-plex tests series"),
+            section(27, SectionKind::Movie, "klapz tests"),
+            section(28, SectionKind::Show, "klapz tests series"),
         ])),
         metadata: Arc::new(metadata),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -1916,16 +1890,16 @@ async fn update_movie(
     serde_json::to_value(response.data).unwrap()["updateMovie"].clone()
 }
 
-fn as_role(role: open_plex_core::access::LibraryRole) -> async_graphql::Request {
-    use open_plex_core::access::LibraryAccess;
-    use open_plex_core::{Principal, UserId};
+fn as_role(role: klapz_core::access::LibraryRole) -> async_graphql::Request {
+    use klapz_core::access::LibraryAccess;
+    use klapz_core::{Principal, UserId};
     let libraries = [27, 28]
         .into_iter()
         .map(|section| (SectionId::new(section), role))
         .collect();
     async_graphql::Request::new(UPDATE_MOVIE).data(Principal {
         name: "someone".to_owned(),
-        role: open_plex_core::ServerRole::User,
+        role: klapz_core::ServerRole::User,
         libraries: LibraryAccess::Only(libraries),
         user: UserId::new(1),
         server_identifier: None,
@@ -2004,7 +1978,7 @@ async fn editing_a_film_writes_what_it_derives_and_changes_only_the_locks_asked(
 
 #[tokio::test]
 async fn only_a_librarys_admin_edits_and_the_others_find_nothing() {
-    use open_plex_core::access::LibraryRole;
+    use klapz_core::access::LibraryRole;
     let schema = editable();
     let input = serde_json::json!({
         "id": GlobalId::encode("Item", 577_986),
@@ -2127,9 +2101,9 @@ async fn an_item_is_named_for_a_url_after_its_series_and_itself() {
     );
 }
 
-fn sessions() -> Arc<open_plex_api::Sessions> {
-    Arc::new(open_plex_api::Sessions::new(
-        Arc::new(open_plex_core::account::SessionKey::generate()),
+fn sessions() -> Arc<klapz_api::Sessions> {
+    Arc::new(klapz_api::Sessions::new(
+        Arc::new(klapz_core::account::SessionKey::generate()),
         true,
     ))
 }
@@ -2137,7 +2111,7 @@ fn sessions() -> Arc<open_plex_api::Sessions> {
 /// A request from nobody, as the transport sends sign-ins: no principal, the session keys.
 fn anonymous(
     query: &str,
-    sessions: &Arc<open_plex_api::Sessions>,
+    sessions: &Arc<klapz_api::Sessions>,
     variables: Value,
 ) -> async_graphql::Request {
     async_graphql::Request::new(query)
@@ -2263,7 +2237,7 @@ async fn a_user_who_signs_up_waits_for_an_owner_then_signs_in_with_a_cookie() {
         .to_str()
         .unwrap()
         .to_owned();
-    assert!(cookie.starts_with("open_plex_session="), "{cookie}");
+    assert!(cookie.starts_with("klapz_session="), "{cookie}");
     for attribute in ["HttpOnly", "SameSite=Lax", "Secure", "Path=/"] {
         assert!(cookie.contains(attribute), "{cookie}");
     }
@@ -2274,13 +2248,13 @@ async fn a_user_who_signs_up_waits_for_an_owner_then_signs_in_with_a_cookie() {
 
     // The cookie names this user, for the transport to read back.
     let token = cookie
-        .trim_start_matches("open_plex_session=")
+        .trim_start_matches("klapz_session=")
         .split(';')
         .next()
         .unwrap();
     let named = sessions
         .key()
-        .verify(token, open_plex_core::now_epoch())
+        .verify(token, klapz_core::now_epoch())
         .unwrap();
     assert_eq!(GlobalId::encode("User", named.get()), id);
 }
@@ -2444,7 +2418,7 @@ async fn letting_users_in_is_for_owners_and_signing_out_clears_the_cookie() {
         .to_str()
         .unwrap();
     assert!(
-        cookie.starts_with("open_plex_session=;") && cookie.contains("Max-Age=0"),
+        cookie.starts_with("klapz_session=;") && cookie.contains("Max-Age=0"),
         "{cookie}"
     );
 }
@@ -2583,25 +2557,22 @@ fn filmography() -> ApiSchema {
         .collect();
 
     build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(InMemoryLibrary::new(sections)),
         metadata: Arc::new(InMemoryMetadata::new(items).with_tags(tags)),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
@@ -2692,9 +2663,9 @@ async fn nobody_reads_a_tag_or_a_person() {
 /// The test libraries, with an episode carrying the credits and intro the reference found on
 /// an episode of *The Farewell*, in the order it found them.
 fn markable() -> ApiSchema {
-    use open_plex_core::marker::{Marker, MarkerKind};
+    use klapz_core::marker::{Marker, MarkerKind};
     let marker = |id: i64, kind, start_ms, end_ms, is_final, version| Marker {
-        id: open_plex_core::MarkerId::new(id),
+        id: klapz_core::MarkerId::new(id),
         item: RatingKey::new(578_173),
         kind,
         owner: None,
@@ -2720,46 +2691,43 @@ fn markable() -> ApiSchema {
         marker(2, MarkerKind::Intro, 136_180, 176_381, false, 5),
     ]);
     build_schema(ApiContext {
-        capabilities: open_plex_core::ServerCapabilities::new(
-            open_plex_core::ServerIdentity::new(
-                "0000000000000000000000000000000000000000",
-                "0.1.0",
-            ),
+        capabilities: klapz_core::ServerCapabilities::new(
+            klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
         library: Arc::new(InMemoryLibrary::new(vec![
-            section(27, SectionKind::Movie, "open-plex tests"),
-            section(28, SectionKind::Show, "open-plex tests series"),
+            section(27, SectionKind::Movie, "klapz tests"),
+            section(28, SectionKind::Show, "klapz tests series"),
         ])),
         metadata: Arc::new(metadata),
-        playback: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
-        play_queues: std::sync::Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
-        playlists: std::sync::Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
-        access: std::sync::Arc::new(open_plex_core::testing::InMemoryAccess::default()),
-        directory: std::sync::Arc::new(open_plex_core::testing::StubDirectory::default()),
-        watch: std::sync::Arc::new(open_plex_core::testing::InMemoryWatch::default()),
-        streams: std::sync::Arc::new(open_plex_core::testing::StubStreams::default()),
-        collections: std::sync::Arc::new(open_plex_core::testing::InMemoryCollections::default()),
+        playback: std::sync::Arc::new(klapz_core::testing::InMemoryPlayback::default()),
+        play_queues: std::sync::Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
+        playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
+        access: std::sync::Arc::new(klapz_core::testing::InMemoryAccess::default()),
+        directory: std::sync::Arc::new(klapz_core::testing::StubDirectory::default()),
+        watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
+        streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
+        collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(open_plex_core::testing::RecordedScans::default()),
+        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
     })
 }
 
 /// A user given the test libraries in one role.
 fn user_in(
     user: i64,
-    role: open_plex_core::access::LibraryRole,
+    role: klapz_core::access::LibraryRole,
     query: &str,
 ) -> async_graphql::Request {
-    use open_plex_core::access::LibraryAccess;
-    use open_plex_core::{Principal, UserId};
+    use klapz_core::access::LibraryAccess;
+    use klapz_core::{Principal, UserId};
     let libraries = [27, 28]
         .into_iter()
         .map(|section| (SectionId::new(section), role))
         .collect();
     async_graphql::Request::new(query).data(Principal {
         name: format!("user {user}"),
-        role: open_plex_core::ServerRole::User,
+        role: klapz_core::ServerRole::User,
         libraries: LibraryAccess::Only(libraries),
         user: UserId::new(user),
         server_identifier: None,
@@ -2824,7 +2792,7 @@ async fn mutate(schema: &ApiSchema, request: async_graphql::Request, input: Valu
 
 #[tokio::test]
 async fn an_episode_lists_the_markers_its_detection_found_in_order() {
-    use open_plex_core::access::LibraryRole;
+    use klapz_core::access::LibraryRole;
     let schema = markable();
     let expected = serde_json::json!([
         { "kind": "CREDITS", "startMs": 2_233_609, "endMs": 2_397_344, "final": true,
@@ -2867,7 +2835,7 @@ async fn a_marker_is_refetched_by_node_and_hidden_from_who_cannot_read_its_item(
 
 #[tokio::test]
 async fn the_works_markers_are_written_by_a_librarys_admins_only() {
-    use open_plex_core::access::LibraryRole;
+    use klapz_core::access::LibraryRole;
     let schema = markable();
     let episode = GlobalId::encode("Item", 578_173);
     let intro = serde_json::json!({
@@ -2939,7 +2907,7 @@ async fn the_works_markers_are_written_by_a_librarys_admins_only() {
 
 #[tokio::test]
 async fn a_bookmark_is_its_keepers_alone() {
-    use open_plex_core::access::LibraryRole;
+    use klapz_core::access::LibraryRole;
     let schema = markable();
     let film = markers_query(577_986, "Movie");
     let mut bookmark = serde_json::json!({
@@ -3232,7 +3200,7 @@ async fn viewers_rank_everyone_for_an_owner_and_the_caller_alone_for_a_user() {
 
 #[tokio::test]
 async fn a_file_states_its_rates_and_what_does_not_play() {
-    use open_plex_core::metadata::{SidePicture, SideStream, SideStreamKind};
+    use klapz_core::metadata::{SidePicture, SideStream, SideStreamKind};
     let (version, mut file, mut tracks) = soul_media();
     file.stated.format_name = Some("matroska,webm".to_owned());
     file.stated.duration_us = Some(6_031_567_890);
@@ -3261,7 +3229,7 @@ async fn a_file_states_its_rates_and_what_does_not_play() {
         is_forced: false,
     };
     let schema = serving(
-        Arc::new(open_plex_core::testing::StubStreams::default()),
+        Arc::new(klapz_core::testing::StubStreams::default()),
         InMemoryMetadata::new(vec![item(577_986, 4, ItemKind::Movie, "Soul", None)])
             .with_media(vec![version], vec![file], tracks)
             .with_side_streams(vec![cover]),

@@ -303,7 +303,7 @@ async fn list(
             .iter()
             .map(|jellyfin| {
                 id::decode(jellyfin)
-                    .map(|global| open_plex_api::GlobalId::encode(&global.type_name, global.key))
+                    .map(|global| klapz_api::GlobalId::encode(&global.type_name, global.key))
             })
             .collect::<Result<Vec<_>, _>>()?;
         let items = shaped(
@@ -316,13 +316,13 @@ async fn list(
     }
     if let Some(parent) = query.get("parentId") {
         let parent = id::decode(parent)?;
-        let global = open_plex_api::GlobalId::encode(&parent.type_name, parent.key);
+        let global = klapz_api::GlobalId::encode(&parent.type_name, parent.key);
         return match parent.type_name.as_str() {
-            open_plex_api::library::LIBRARY_TYPE => {
+            klapz_api::library::LIBRARY_TYPE => {
                 let (items, total) = library_page(state, &global, &listing, &fields).await?;
                 Ok(page(shaped(&items, state, &fields), total, start))
             }
-            open_plex_api::item::ITEM_TYPE => {
+            klapz_api::item::ITEM_TYPE => {
                 let all = children(state, &global, &fields).await?;
                 let items: Vec<Item> = all
                     .into_iter()
@@ -335,7 +335,7 @@ async fn list(
                     .collect();
                 Ok(page(shown, total, start))
             }
-            open_plex_api::server::SERVER_TYPE => {
+            klapz_api::server::SERVER_TYPE => {
                 let views: Vec<Value> = libraries(state)
                     .await?
                     .iter()
@@ -384,9 +384,9 @@ async fn lookup(
     let viewer = gql::viewer(&state.schema).await?;
     viewer.require_self(user)?;
     let global = id::decode(item)?;
-    let encoded = open_plex_api::GlobalId::encode(&global.type_name, global.key);
+    let encoded = klapz_api::GlobalId::encode(&global.type_name, global.key);
     match global.type_name.as_str() {
-        open_plex_api::item::ITEM_TYPE => {
+        klapz_api::item::ITEM_TYPE => {
             let fields = Fields::all();
             let found = items_by_id(state, &[encoded], &fields).await?;
             let item = found.first().ok_or(JellyfinError::NotFound)?;
@@ -398,7 +398,7 @@ async fn lookup(
                 },
             )))
         }
-        open_plex_api::library::LIBRARY_TYPE => {
+        klapz_api::library::LIBRARY_TYPE => {
             let library = libraries(state)
                 .await?
                 .into_iter()
@@ -406,11 +406,11 @@ async fn lookup(
                 .ok_or(JellyfinError::NotFound)?;
             Ok(json(&library_dto(&library, &state.server.id)))
         }
-        open_plex_api::server::SERVER_TYPE if global.key == 2 => {
+        klapz_api::server::SERVER_TYPE if global.key == 2 => {
             let count = crate::collections::collections(state).await?.len();
             Ok(json(&crate::collections::view_dto(&state.server.id, count)))
         }
-        open_plex_api::collection::COLLECTION_TYPE => {
+        klapz_api::collection::COLLECTION_TYPE => {
             let collection = crate::collections::collection_of(state, &encoded).await?;
             Ok(json(&crate::collections::collection_dto(
                 &collection,
@@ -418,12 +418,12 @@ async fn lookup(
                 &Fields::all(),
             )))
         }
-        open_plex_api::server::SERVER_TYPE if global.key == 1 => {
+        klapz_api::server::SERVER_TYPE if global.key == 1 => {
             let count = crate::playlists::playlists(state).await?.len();
             Ok(json(&crate::playlists::view_dto(&state.server.id, count)))
         }
-        open_plex_api::server::SERVER_TYPE => Ok(json(&user_root(state))),
-        open_plex_api::playlist::PLAYLIST_TYPE => {
+        klapz_api::server::SERVER_TYPE => Ok(json(&user_root(state))),
+        klapz_api::playlist::PLAYLIST_TYPE => {
             let playlist = crate::playlists::playlist_of(state, &encoded).await?;
             Ok(json(&crate::playlists::playlist_dto(
                 &playlist,
@@ -448,7 +448,7 @@ async fn credited(state: &JellyfinState, query: &Query) -> Result<Response, Jell
     let [person] = query.list("personIds")[..] else {
         return Err(JellyfinError::NotImplemented("several people at once"));
     };
-    let person = id::global_of_type(person, open_plex_api::tag::PERSON_TYPE)?;
+    let person = id::global_of_type(person, klapz_api::tag::PERSON_TYPE)?;
     if query.get("parentId").is_some() {
         return Err(JellyfinError::NotImplemented(
             "a person's credits below a parent",
@@ -518,13 +518,13 @@ async fn containers(
     let names = |name: &str| types.iter().any(|kind| kind.eq_ignore_ascii_case(name));
     let view = |key: i64| {
         parent.as_ref().is_some_and(|parent| {
-            parent.type_name == open_plex_api::server::SERVER_TYPE && parent.key == key
+            parent.type_name == klapz_api::server::SERVER_TYPE && parent.key == key
         })
     };
     let under_library = parent
         .as_ref()
-        .filter(|parent| parent.type_name == open_plex_api::library::LIBRARY_TYPE)
-        .map(|library| open_plex_api::GlobalId::encode(&library.type_name, library.key));
+        .filter(|parent| parent.type_name == klapz_api::library::LIBRARY_TYPE)
+        .map(|library| klapz_api::GlobalId::encode(&library.type_name, library.key));
     if view(1) || (only("playlist") && parent.is_none()) {
         return Ok(Some(playlists_page(state, query).await?));
     }
@@ -541,12 +541,12 @@ async fn containers(
     let Some(parent) = parent else {
         return Ok(None);
     };
-    let global = open_plex_api::GlobalId::encode(&parent.type_name, parent.key);
+    let global = klapz_api::GlobalId::encode(&parent.type_name, parent.key);
     match parent.type_name.as_str() {
-        open_plex_api::playlist::PLAYLIST_TYPE => Ok(Some(
+        klapz_api::playlist::PLAYLIST_TYPE => Ok(Some(
             crate::playlists::entries_page(state, &global, query).await?,
         )),
-        open_plex_api::collection::COLLECTION_TYPE => Ok(Some(
+        klapz_api::collection::COLLECTION_TYPE => Ok(Some(
             crate::collections::items_page(state, &global, query).await?,
         )),
         _ => Ok(None),
@@ -588,12 +588,12 @@ async fn delete_item(
     Path(item): Path<String>,
 ) -> Result<Response, JellyfinError> {
     let global = id::decode(&item)?;
-    let encoded = open_plex_api::GlobalId::encode(&global.type_name, global.key);
+    let encoded = klapz_api::GlobalId::encode(&global.type_name, global.key);
     match global.type_name.as_str() {
-        open_plex_api::playlist::PLAYLIST_TYPE => {
+        klapz_api::playlist::PLAYLIST_TYPE => {
             crate::playlists::delete(&state, &encoded).await?;
         }
-        open_plex_api::collection::COLLECTION_TYPE => {
+        klapz_api::collection::COLLECTION_TYPE => {
             crate::collections::delete(&state, &encoded).await?;
         }
         _ => {
@@ -666,7 +666,7 @@ async fn latest_items(
     let limit = query.count("limit")?.unwrap_or(20).min(MAX_PAGE);
     let mut kinds: Vec<(&str, Option<String>)> = Vec::new();
     if let Some(parent) = query.get("parentId") {
-        let library = id::global_of_type(parent, open_plex_api::library::LIBRARY_TYPE)?;
+        let library = id::global_of_type(parent, klapz_api::library::LIBRARY_TYPE)?;
         let kind = libraries(state)
             .await?
             .into_iter()
@@ -788,7 +788,7 @@ async fn resume_items(
     let fields = fields(query);
     let library = query
         .get("parentId")
-        .map(|parent| id::global_of_type(parent, open_plex_api::library::LIBRARY_TYPE))
+        .map(|parent| id::global_of_type(parent, klapz_api::library::LIBRARY_TYPE))
         .transpose()?;
     let start = query.count("startIndex")?.unwrap_or(0);
     let limit = query.count("limit")?.unwrap_or(MAX_PAGE).min(MAX_PAGE);
@@ -836,7 +836,7 @@ async fn similar(
     let query = Query::parse(query.as_deref());
     let viewer = gql::viewer(&state.schema).await?;
     viewer.require_self(query.get("userId"))?;
-    let global = id::global_of_type(&item, open_plex_api::item::ITEM_TYPE)?;
+    let global = id::global_of_type(&item, klapz_api::item::ITEM_TYPE)?;
     let fields = fields(&query);
     let limit = query.count("limit")?.unwrap_or(12).min(MAX_PAGE);
     let similar_query = format!(
@@ -874,7 +874,7 @@ async fn ancestors(
     Path(item): Path<String>,
 ) -> Result<Response, JellyfinError> {
     gql::viewer(&state.schema).await?;
-    let global = id::global_of_type(&item, open_plex_api::item::ITEM_TYPE)?;
+    let global = id::global_of_type(&item, klapz_api::item::ITEM_TYPE)?;
     let fields = Fields::all();
     let found = items_by_id(&state, &[global], &fields).await?;
     let item = found.first().ok_or(JellyfinError::NotFound)?;

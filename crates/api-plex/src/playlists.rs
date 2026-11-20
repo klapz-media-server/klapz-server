@@ -15,11 +15,11 @@ use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post, put};
 use axum::Router;
-use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::play_queue::PLAY_QUEUE_TYPE;
-use open_plex_api::playlist::{PLAYLIST_ENTRY_TYPE, PLAYLIST_TYPE};
-use open_plex_api::GlobalId;
-use open_plex_core::page::MAX_ITEMS;
+use klapz_api::library::LIBRARY_TYPE;
+use klapz_api::play_queue::PLAY_QUEUE_TYPE;
+use klapz_api::playlist::{PLAYLIST_ENTRY_TYPE, PLAYLIST_TYPE};
+use klapz_api::GlobalId;
+use klapz_core::page::MAX_ITEMS;
 use serde::Deserialize;
 use serde_json::{json, Map, Value as Json};
 

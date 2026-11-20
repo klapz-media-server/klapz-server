@@ -5,10 +5,10 @@ use std::sync::Arc;
 use async_graphql::connection;
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, EmptySubscription, Interface, Object, Result, Schema, ID};
-use open_plex_core::library::LibraryRepository;
-use open_plex_core::metadata::MetadataRepository;
-use open_plex_core::page::{Cursor, Window, WindowError};
-use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
+use klapz_core::library::LibraryRepository;
+use klapz_core::metadata::MetadataRepository;
+use klapz_core::page::{Cursor, Window, WindowError};
+use klapz_core::{MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId};
 
 use crate::cursor::OpaqueCursor;
 use crate::item::{Episode, Item, Movie, Season, Show, ITEM_TYPE};
@@ -33,25 +33,25 @@ pub type ApiSchema = Schema<Query, crate::playback::Mutation, EmptySubscription>
 pub struct ApiContext {
     /// What this server reports about itself. Fixed for the life of the process, so it is
     /// carried rather than queried.
-    pub capabilities: open_plex_core::ServerCapabilities,
+    pub capabilities: klapz_core::ServerCapabilities,
     pub library: Arc<dyn LibraryRepository>,
     pub metadata: Arc<dyn MetadataRepository>,
-    pub playback: Arc<dyn open_plex_core::playback::PlaybackRepository>,
-    pub play_queues: Arc<dyn open_plex_core::play_queue::PlayQueueRepository>,
-    pub playlists: Arc<dyn open_plex_core::playlist::PlaylistRepository>,
-    pub collections: Arc<dyn open_plex_core::collection::CollectionRepository>,
-    pub access: Arc<dyn open_plex_core::access::AccessRepository>,
-    pub directory: Arc<dyn open_plex_core::access::AccountDirectory>,
-    pub watch: Arc<dyn open_plex_core::watch::WatchRepository>,
-    pub streams: Arc<dyn open_plex_core::stream::StreamEngine>,
+    pub playback: Arc<dyn klapz_core::playback::PlaybackRepository>,
+    pub play_queues: Arc<dyn klapz_core::play_queue::PlayQueueRepository>,
+    pub playlists: Arc<dyn klapz_core::playlist::PlaylistRepository>,
+    pub collections: Arc<dyn klapz_core::collection::CollectionRepository>,
+    pub access: Arc<dyn klapz_core::access::AccessRepository>,
+    pub directory: Arc<dyn klapz_core::access::AccountDirectory>,
+    pub watch: Arc<dyn klapz_core::watch::WatchRepository>,
+    pub streams: Arc<dyn klapz_core::stream::StreamEngine>,
     /// Shared with whatever else ends sessions outside a request: the sweep, the stream routes.
-    pub session_locks: Arc<open_plex_core::lifecycle::SessionLocks>,
-    pub scans: Arc<dyn open_plex_core::scan::ScanControl>,
+    pub session_locks: Arc<klapz_core::lifecycle::SessionLocks>,
+    pub scans: Arc<dyn klapz_core::scan::ScanControl>,
 }
 
 impl ApiContext {
-    pub(crate) fn lifecycle(&self) -> open_plex_core::lifecycle::Lifecycle<'_> {
-        open_plex_core::lifecycle::Lifecycle {
+    pub(crate) fn lifecycle(&self) -> klapz_core::lifecycle::Lifecycle<'_> {
+        klapz_core::lifecycle::Lifecycle {
             sessions: self.playback.as_ref(),
             streams: self.streams.as_ref(),
             locks: &self.session_locks,
@@ -122,7 +122,7 @@ pub const DEFAULT_PAGE_SIZE: u32 = 50;
 ///
 /// The same reasoning as the page-size cap: a list supplied by the client needs a ceiling,
 /// or one request can make the server do unbounded work.
-const MAX_NODES: usize = open_plex_core::page::MAX_ITEMS as usize;
+const MAX_NODES: usize = klapz_core::page::MAX_ITEMS as usize;
 
 #[derive(Debug, Default)]
 pub struct Query;
@@ -224,7 +224,7 @@ impl Query {
             crate::playback::PLAYBACK_TYPE => {
                 let caller = crate::access::require_caller(context)?;
                 Ok(crate::playback::playback(context)?
-                    .session(global.key, open_plex_core::now_epoch())
+                    .session(global.key, klapz_core::now_epoch())
                     .await?
                     .filter(|session| caller.owns(session.user))
                     .map(|session| {
@@ -233,7 +233,7 @@ impl Query {
             }
             crate::history::HISTORY_ENTRY_TYPE => Ok(crate::history::visible_entry(
                 context,
-                open_plex_core::HistoryId::new(global.key),
+                klapz_core::HistoryId::new(global.key),
             )
             .await?
             .map(Node::HistoryEntry)),
@@ -675,7 +675,7 @@ impl Query {
             context,
             sections,
             kind,
-            open_plex_core::ItemSort::Arrival,
+            klapz_core::ItemSort::Arrival,
             (after, first, offset),
         )
         .await
@@ -779,7 +779,7 @@ async fn load_root(context: &Context<'_>, id: i64) -> Result<Option<Root>> {
 async fn load_item(
     context: &Context<'_>,
     id: RatingKey,
-) -> Result<Option<open_plex_core::MetadataItem>> {
+) -> Result<Option<klapz_core::MetadataItem>> {
     let loader = context.data::<DataLoader<ItemLoader>>()?;
     Ok(loader.load_one(id).await?)
 }
@@ -788,7 +788,7 @@ async fn load_item(
 pub(crate) async fn readable_item(
     context: &Context<'_>,
     id: RatingKey,
-) -> Result<Option<open_plex_core::MetadataItem>> {
+) -> Result<Option<klapz_core::MetadataItem>> {
     Ok(load_item(context, id)
         .await?
         .filter(|item| crate::access::can_read(context, item.section_id)))
@@ -797,7 +797,7 @@ pub(crate) async fn readable_item(
 pub(crate) async fn readable_version(
     context: &Context<'_>,
     id: MediaId,
-) -> Result<Option<open_plex_core::MediaVersion>> {
+) -> Result<Option<klapz_core::MediaVersion>> {
     let Some(version) = metadata(context)?.version(id).await? else {
         return Ok(None);
     };
@@ -809,7 +809,7 @@ pub(crate) async fn readable_version(
 pub(crate) async fn readable_file(
     context: &Context<'_>,
     id: PartId,
-) -> Result<Option<open_plex_core::MediaFile>> {
+) -> Result<Option<klapz_core::MediaFile>> {
     let Some(file) = metadata(context)?.file(id).await? else {
         return Ok(None);
     };

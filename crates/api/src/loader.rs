@@ -9,13 +9,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_graphql::dataloader::Loader;
-use open_plex_core::edit::ItemField;
-use open_plex_core::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
-use open_plex_core::metadata::{
+use klapz_core::edit::ItemField;
+use klapz_core::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
+use klapz_core::metadata::{
     EpisodeCredit, ExternalId, ItemTag, MediaFile, MediaStream, MediaVersion, MetadataError,
     MetadataItem, MetadataRepository, PersonCredit, Rating,
 };
-use open_plex_core::{MediaId, PartId, PersonId, RatingKey, SectionId};
+use klapz_core::{MediaId, PartId, PersonId, RatingKey, SectionId};
 
 /// `Arc` because a `DataLoader` hands the same error to every caller that shared the batch,
 /// so it has to be cloneable.
@@ -73,7 +73,7 @@ impl Loader<SectionId> for LibraryLoader {
     ) -> Result<HashMap<SectionId, Self::Value>, Self::Error> {
         // A library listing is a handful of rows, so fetching one page of them and indexing
         // is cheaper than a lookup per key.
-        let window = open_plex_core::page::Window::by_id(None, None, Some(500), None)
+        let window = klapz_core::page::Window::by_id(None, None, Some(500), None)
             .map_err(|error| Arc::new(LibraryError::Storage(Box::new(error))))?;
         let sections = self
             .repository

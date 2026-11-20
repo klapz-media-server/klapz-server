@@ -4,12 +4,12 @@
 //! new order, all in one transaction: a queue holds at most `MAX_ITEMS` entries, and the
 //! reference's rules are about positions, which a rewrite keeps simple.
 
-use open_plex_core::page::{Page, Window};
-use open_plex_core::play_queue::{
+use klapz_core::page::{Page, Window};
+use klapz_core::play_queue::{
     ChangeOutcome, NewPlayQueue, PlayQueue, PlayQueueChange, PlayQueueContents, PlayQueueEntry,
     PlayQueueError, PlayQueueKind, PlayQueueRepository, Slot,
 };
-use open_plex_core::RatingKey;
+use klapz_core::RatingKey;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr,
     EntityTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
@@ -79,7 +79,7 @@ async fn loaded<C: ConnectionTrait>(
     let last_added = entry_at(connection, row.id, row.last_added_position).await?;
     Ok(PlayQueue {
         id: row.id,
-        user: open_plex_core::UserId::new(row.user_id),
+        user: klapz_core::UserId::new(row.user_id),
         client: row.client,
         kind: PlayQueueKind::parse(&row.kind).unwrap_or_default(),
         source_uri: row.source_uri,
@@ -88,7 +88,7 @@ async fn loaded<C: ConnectionTrait>(
         total,
         selected,
         last_added,
-        playlist: row.playlist_id.map(open_plex_core::PlaylistId::new),
+        playlist: row.playlist_id.map(klapz_core::PlaylistId::new),
     })
 }
 
@@ -186,7 +186,7 @@ impl PlayQueueRepository for SqlPlayQueueRepository {
             selected_position: ActiveValue::Set(contents.selected.map(position)),
             last_added_position: ActiveValue::Set(None),
             created_at: ActiveValue::Set(now),
-            playlist_id: ActiveValue::Set(queue.playlist.map(open_plex_core::PlaylistId::get)),
+            playlist_id: ActiveValue::Set(queue.playlist.map(klapz_core::PlaylistId::get)),
         }
         .insert(&transaction)
         .await
@@ -196,7 +196,7 @@ impl PlayQueueRepository for SqlPlayQueueRepository {
         let source: Vec<play_queue_source::ActiveModel> = queue
             .source
             .iter()
-            .take(open_plex_core::page::MAX_ITEMS as usize)
+            .take(klapz_core::page::MAX_ITEMS as usize)
             .zip(0_i64..)
             .map(|(item, position)| play_queue_source::ActiveModel {
                 queue_id: ActiveValue::Set(row.id),

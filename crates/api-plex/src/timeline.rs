@@ -6,8 +6,8 @@ use async_graphql::{Name, Value, Variables};
 use axum::extract::{Query, State};
 use axum::routing::get;
 use axum::Router;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::GlobalId;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::GlobalId;
 use serde::Deserialize;
 use serde_json::{json, Value as Json};
 
@@ -352,10 +352,7 @@ struct Sent {
 }
 
 impl Sent {
-    fn of(
-        session: &GqlSession,
-        status: Option<&open_plex_transcoder::session::SessionStatus>,
-    ) -> Self {
+    fn of(session: &GqlSession, status: Option<&klapz_transcoder::session::SessionStatus>) -> Self {
         let recorded = Self {
             video_bits: session.video_bitrate,
             video_copied: session.video_decision == "COPY",
@@ -403,7 +400,7 @@ impl Sent {
 fn describe_session(
     body: &mut Json,
     session: &GqlSession,
-    status: Option<&open_plex_transcoder::session::SessionStatus>,
+    status: Option<&klapz_transcoder::session::SessionStatus>,
 ) {
     let sent = Sent::of(session, status);
     body["size"] = json!(2);
@@ -423,7 +420,7 @@ fn describe_session(
 fn transcode_session(
     key: &str,
     session: &GqlSession,
-    status: Option<&open_plex_transcoder::session::SessionStatus>,
+    status: Option<&klapz_transcoder::session::SessionStatus>,
 ) -> Json {
     let Some(status) = status else {
         return json!({
@@ -456,7 +453,7 @@ fn transcode_session(
         "videoCodec": status.video_codec,
         "audioCodec": status.audio_codec,
         "transcodeHwRequested": false,
-        "timeStamp": open_plex_core::now_epoch(),
+        "timeStamp": klapz_core::now_epoch(),
         "maxOffsetAvailable": status.max_offset_seconds,
         "minOffsetAvailable": status.min_offset_seconds,
     });
@@ -468,8 +465,8 @@ fn transcode_session(
 
 #[cfg(test)]
 mod tests {
-    use open_plex_transcoder::plan::{KeyFrames, VideoEncode};
-    use open_plex_transcoder::session::SessionStatus;
+    use klapz_transcoder::plan::{KeyFrames, VideoEncode};
+    use klapz_transcoder::session::SessionStatus;
 
     use super::*;
 

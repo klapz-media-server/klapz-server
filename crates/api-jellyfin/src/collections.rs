@@ -77,7 +77,7 @@ pub struct WatchedState {
 
 /// The view the caller's collections hang from, among the libraries once there is one.
 pub fn view_id() -> String {
-    id::of(open_plex_api::server::SERVER_TYPE, 2).unwrap_or_default()
+    id::of(klapz_api::server::SERVER_TYPE, 2).unwrap_or_default()
 }
 
 pub fn view_dto(server_id: &str, count: usize) -> Value {
@@ -335,7 +335,7 @@ async fn mutate(
 fn item_globals(ids: &[&str]) -> Result<Vec<String>, JellyfinError> {
     ids.iter()
         .map(|jellyfin| {
-            id::global_of_type(jellyfin, open_plex_api::item::ITEM_TYPE).map_err(Into::into)
+            id::global_of_type(jellyfin, klapz_api::item::ITEM_TYPE).map_err(Into::into)
         })
         .collect()
 }
@@ -423,7 +423,7 @@ async fn create(
 fn collection_global(jellyfin: &str) -> Result<String, JellyfinError> {
     Ok(id::global_of_type(
         jellyfin,
-        open_plex_api::collection::COLLECTION_TYPE,
+        klapz_api::collection::COLLECTION_TYPE,
     )?)
 }
 
@@ -500,7 +500,7 @@ async fn item_collections(
     gql::viewer(&state.schema)
         .await?
         .require_self(query.get("userId"))?;
-    let global = id::global_of_type(&id, open_plex_api::item::ITEM_TYPE)?;
+    let global = id::global_of_type(&id, klapz_api::item::ITEM_TYPE)?;
     let data: Memberships = gql::query(
         &state.schema,
         &format!(
@@ -539,7 +539,7 @@ mod tests {
             watch_state: Some(WatchedState { is_watched }),
         };
         Collection {
-            id: open_plex_api::GlobalId::encode("Collection", 7),
+            id: klapz_api::GlobalId::encode("Collection", 7),
             title: "Jurassic".to_owned(),
             title_sort: None,
             content_rating: Some("FR-12".to_owned()),

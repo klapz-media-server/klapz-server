@@ -25,7 +25,7 @@ have no access to, a file path outside any library, or a thousand transcode sess
 endpoint authorizes *the requested object*, not just *the token bearer*.
 
 **Unauthenticated local network.** Plex deliberately exposes part of its surface without a token
-(`/identity`, GDM discovery) and allows exempting address ranges. open-plex exempts none: anything
+(`/identity`, GDM discovery) and allows exempting address ranges. klapz exempts none: anything
 reachable without a credential must be treated as public.
 
 **The internet.** A self-hosted server ends up exposed, through port forwarding or a tunnel.
@@ -171,7 +171,7 @@ rather than afterwards — a forgotten filter is invisible, while a missing join
 ## No unauthenticated access
 
 Plex lets an administrator declare address ranges exempt from authentication (`allowedNetworks`).
-open-plex does not: an address proves nothing about who sends from it, and a tunnel or a reverse
+klapz does not: an address proves nothing about who sends from it, and a tunnel or a reverse
 proxy makes every stranger a local peer. Every request that reaches content is a user's.
 
 What stays open without a credential is short and opens nothing: `/identity` (the server
@@ -184,7 +184,7 @@ address, never `X-Forwarded-For` or `X-Real-IP`, which the client writes; and an
 address (`::ffff:a.b.c.d`) is reduced to its IPv4 form before the check.
 
 The built-in `admin` account exists so that someone can always manage the server. Its password is
-`OPENPLEX_ADMIN_PASSWORD` or one drawn from the OS RNG, printed once on standard output and never
+`KLAPZ_ADMIN_PASSWORD` or one drawn from the OS RNG, printed once on standard output and never
 logged: a password in a log file outlives every rotation.
 
 ## SQL

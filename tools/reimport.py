@@ -8,14 +8,14 @@ wrote about those items goes with them. This wraps it so that nothing the server
 3. it keeps the rows the cascade would delete that the importer does not bring back — viewing
    history, track choices, field locks, collections made here — and the libraries added by
    `seed_test_library.py`, which are not in the Plex database;
-4. it runs the importer (`open-plex-server import`);
+4. it runs the importer (`klapz-server import`);
 5. it seeds those libraries again, then puts the kept rows back, each one whose parent still
    exists: item ids are Plex's, and the seeder numbers from the largest id, so both come back
    under the same numbers.
 
 Usage: python tools/reimport.py [--source db/com.plexapp.plugins.library.db]
-                                [--database open-plex.db]
-                                [--server target/release/open-plex-server.exe]
+                                [--database klapz.db]
+                                [--server target/release/klapz-server.exe]
 """
 
 from __future__ import annotations
@@ -125,7 +125,7 @@ def seeded_directories(connection: sqlite3.Connection) -> list[str]:
 
 
 def run_import(server: Path, source: Path, database: Path) -> None:
-    environment = dict(os.environ, OPENPLEX_DATABASE_URL=f"sqlite://{database.as_posix()}?mode=rwc")
+    environment = dict(os.environ, KLAPZ_DATABASE_URL=f"sqlite://{database.as_posix()}?mode=rwc")
     began = time.time()
     subprocess.run([str(server), "import", str(source)], cwd=ROOT, env=environment, check=True)
     print(f"import finished in {time.time() - began:.0f} s")
@@ -158,8 +158,8 @@ def put_back(connection: sqlite3.Connection, kept: dict[str, tuple[list[str], li
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--source", type=Path, default=ROOT / "db" / "com.plexapp.plugins.library.db")
-    parser.add_argument("--database", type=Path, default=ROOT / "open-plex.db")
-    parser.add_argument("--server", type=Path, default=ROOT / "target" / "release" / "open-plex-server.exe")
+    parser.add_argument("--database", type=Path, default=ROOT / "klapz.db")
+    parser.add_argument("--server", type=Path, default=ROOT / "target" / "release" / "klapz-server.exe")
     arguments = parser.parse_args()
     for path in (arguments.source, arguments.database, arguments.server):
         if not path.exists():

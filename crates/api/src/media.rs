@@ -5,15 +5,15 @@
 
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, Object, Result, ID};
-use open_plex_core::metadata::{
+use klapz_core::metadata::{
     AudioAnalysis, ColorDescription, DolbyVision, Loudness, MediaFile, MediaStream, MediaVersion,
     ScanType, StreamKind, SubtitleAnalysis, TrackTraits, VideoAnalysis,
 };
 
-use open_plex_core::tracks::{selected_tracks, SelectedTracks};
-use open_plex_core::StreamId;
+use klapz_core::tracks::{selected_tracks, SelectedTracks};
+use klapz_core::StreamId;
 
-use open_plex_core::stream::{reads_as_is, FileFormat, PlayerFormat};
+use klapz_core::stream::{reads_as_is, FileFormat, PlayerFormat};
 
 use crate::int64::Int64;
 use crate::loader::{FilesLoader, StreamsLoader};
@@ -340,12 +340,12 @@ impl File {
         let others = crate::stated::side_streams_of(context, self.0.id)
             .await?
             .iter()
-            .filter(|side| side.0.kind != open_plex_core::SideStreamKind::Attachment)
+            .filter(|side| side.0.kind != klapz_core::SideStreamKind::Attachment)
             .count();
         let containers = version
             .container
             .as_deref()
-            .map(|container| open_plex_core::stream::container_names(container, &tracks, others));
+            .map(|container| klapz_core::stream::container_names(container, &tracks, others));
         Ok(reads_as_is(
             &formats,
             FileFormat {

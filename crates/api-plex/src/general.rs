@@ -19,7 +19,7 @@ use crate::PlexState;
 /// anything older than 1.18.3 — `0.1.0` reads as a very old Plex. This is the version of the
 /// reference server every capture in this repository was taken from, so a client that
 /// enables a feature by version expects exactly the behavior we copied. The official API
-/// keeps publishing open-plex's own version.
+/// keeps publishing klapz's own version.
 pub const PLEX_VERSION: &str = "1.43.5.11029-6bf8af3f0";
 
 pub fn router() -> Router<PlexState> {

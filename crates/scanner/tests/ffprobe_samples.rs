@@ -9,8 +9,8 @@
 
 use std::path::{Path, PathBuf};
 
-use open_plex_scanner::report::{Analysis, Cropping, FileIdentity, Track, TrackKind};
-use open_plex_scanner::{analysis_from_ffprobe, sequence_header_from_trace};
+use klapz_scanner::report::{Analysis, Cropping, FileIdentity, Track, TrackKind};
+use klapz_scanner::{analysis_from_ffprobe, sequence_header_from_trace};
 
 fn sample(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

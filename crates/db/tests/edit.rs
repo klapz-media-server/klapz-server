@@ -5,26 +5,26 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use open_plex_core::edit::{CalendarDate, FieldEdit, ItemEdit, ItemField};
-use open_plex_core::metadata::{ItemKind, ItemQuery, MetadataError, MetadataRepository};
-use open_plex_core::page::Window;
-use open_plex_core::{RatingKey, SectionId};
-use open_plex_db::entity::{library_section, metadata_item};
-use open_plex_db::write;
-use open_plex_db::SqlMetadataRepository;
+use klapz_core::edit::{CalendarDate, FieldEdit, ItemEdit, ItemField};
+use klapz_core::metadata::{ItemKind, ItemQuery, MetadataError, MetadataRepository};
+use klapz_core::page::Window;
+use klapz_core::{RatingKey, SectionId};
+use klapz_db::entity::{library_section, metadata_item};
+use klapz_db::write;
+use klapz_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
 
 const FILM: i64 = 577_986;
 const FILE_NAME: &str = "Soul.2020.MULTi.TRUEFRENCH.1080p.WEB.H264-EXTREME_wWw.Extreme-Down.Video";
 
 async fn repository() -> (SqlMetadataRepository, DatabaseConnection) {
-    let connection = open_plex_db::connect("sqlite::memory:")
+    let connection = klapz_db::connect("sqlite::memory:")
         .await
         .expect("in-memory database");
     library_section::Entity::insert(library_section::ActiveModel {
         id: ActiveValue::Set(27),
         kind: ActiveValue::Set("movie".to_owned()),
-        title: ActiveValue::Set("open-plex tests".to_owned()),
+        title: ActiveValue::Set("klapz tests".to_owned()),
         title_sort: ActiveValue::Set(None),
         language: ActiveValue::Set("en-US".to_owned()),
         uuid: ActiveValue::Set("16785456-a589-4342-a96d-58911d98d98b".to_owned()),

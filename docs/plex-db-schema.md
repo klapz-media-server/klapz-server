@@ -4,7 +4,7 @@ Reference extracted from the pristine template database shipped with Plex Media 
 
 **Generated** — regenerate with `python tools/dump_plex_schema.py`.
 
-This is a *reference*, not a target. open-plex designs its own schema; this document exists to understand how Plex models its entities and which columns feed which API response attributes. See the notes at the end for the traps it reveals.
+This is a *reference*, not a target. klapz designs its own schema; this document exists to understand how Plex models its entities and which columns feed which API response attributes. See the notes at the end for the traps it reveals.
 
 71 tables in total; 19 internal SQLite, FTS and R-tree tables omitted.
 
@@ -1026,7 +1026,7 @@ Not on the API read path.
 
 ## Notes
 
-What this schema tells us, and why open-plex does not clone it:
+What this schema tells us, and why klapz does not clone it:
 
 - **Types are integers, the API emits strings.** `metadata_items.metadata_type` and `library_sections.section_type` are integer codes, while the API exposes `type="movie"`. The mapping lives at the binding boundary.
 - **Timestamps are `datetime`, the API emits epoch seconds.** Another conversion the binding owns; `core` should hold one unambiguous time type.

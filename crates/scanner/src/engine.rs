@@ -36,14 +36,13 @@ pub struct Tools {
 }
 
 impl Tools {
-    /// `OPENPLEX_TRANSCODER`, the ffmpeg the server streams with, and `OPENPLEX_FFPROBE`.
+    /// `KLAPZ_TRANSCODER`, the ffmpeg the server streams with, and `KLAPZ_FFPROBE`.
     /// Without the first, the ffmpeg beside the scanner, as the packages lay it out, or else
     /// the one on `PATH`.
     pub fn from_env() -> Self {
         Self {
-            ffmpeg: std::env::var_os("OPENPLEX_TRANSCODER")
-                .map_or_else(bundled_ffmpeg, PathBuf::from),
-            ffprobe: std::env::var_os("OPENPLEX_FFPROBE").map(PathBuf::from),
+            ffmpeg: std::env::var_os("KLAPZ_TRANSCODER").map_or_else(bundled_ffmpeg, PathBuf::from),
+            ffprobe: std::env::var_os("KLAPZ_FFPROBE").map(PathBuf::from),
         }
     }
 

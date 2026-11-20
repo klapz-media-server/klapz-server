@@ -1,5 +1,5 @@
 [package]
-name = "open-plex-core"
+name = "klapz-core"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ argon2.workspace = true
 async-trait.workspace = true
 jsonwebtoken.workspace = true
 # The analysis report the scanner prints, which the scan stores; only its types.
-open-plex-scanner.workspace = true
+klapz-scanner.workspace = true
 serde.workspace = true
 sha2.workspace = true
 thiserror.workspace = true

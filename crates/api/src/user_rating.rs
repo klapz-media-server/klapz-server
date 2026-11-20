@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 use async_graphql::dataloader::{DataLoader, Loader};
 use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
-use open_plex_core::user_rating::{self, RateOutcome, RatingError, RatingRecord, UserRating};
-use open_plex_core::watch::{WatchError, WatchRepository};
-use open_plex_core::{now_epoch, RatingKey, UserId};
+use klapz_core::user_rating::{self, RateOutcome, RatingError, RatingRecord, UserRating};
+use klapz_core::watch::{WatchError, WatchRepository};
+use klapz_core::{now_epoch, RatingKey, UserId};
 
 use crate::item::{Item, ITEM_TYPE};
 use crate::node::GlobalId;

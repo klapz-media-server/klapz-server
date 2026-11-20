@@ -5,7 +5,7 @@
 //! compatibility layer stay a translator with no data of its own.
 
 use async_graphql::{Object, SimpleObject, ID};
-use open_plex_core::identity::{ServerCapabilities, ServerFeatures, TranscoderCapabilities};
+use klapz_core::identity::{ServerCapabilities, ServerFeatures, TranscoderCapabilities};
 
 use crate::node::GlobalId;
 use crate::DateTime;
@@ -45,7 +45,7 @@ impl From<TranscoderCapabilities> for Transcoder {
 
 /// Optional behaviours a client may ask about before offering them.
 ///
-/// Every field is true. open-plex has no paid tier, so there is nothing to report as
+/// Every field is true. klapz has no paid tier, so there is nothing to report as
 /// unavailable — including the features Plex reserves for a subscription, such as offline
 /// sync, skipping intros, loudness levelling, Live TV and hardware transcoding.
 #[allow(clippy::struct_excessive_bools)]

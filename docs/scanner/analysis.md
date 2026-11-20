@@ -2,7 +2,7 @@
 
 What Plex Media Server 1.43.5.11029 computes from a media file once the scanner has
 attached it to an item, how, where it keeps the result, and where that result belongs in our
-schema. This document is the basis for the analysis half of an open-plex scanner: a separate
+schema. This document is the basis for the analysis half of an klapz scanner: a separate
 binary that reads files and writes through the GraphQL API.
 
 Every statement carries its source:
@@ -321,7 +321,7 @@ The blur hashes and UltraBlur corner colors (`pv:thumbBlurHash`, `pv:artBlurHash
 `pv:ultraBlur*`) are computed from the chosen image afterwards, by PMS (already in
 `item_corner_colors`; `transcoder::backdrop` reproduces the algorithm).
 
-Our server keeps no artwork today; an open-plex scanner would produce these with ffmpeg-plex
+Our server keeps no artwork today; an klapz scanner would produce these with ffmpeg-plex
 (`-ss`, one frame, scaled) and needs somewhere to store images.
 
 ## 4. Video preview thumbnails (BIF)
@@ -490,7 +490,7 @@ library setting `enableCreditsMarkerGeneration` is absent from the test librarie
 
 **Reproducible:** frame extraction and EAST (OpenCV `dnn`, or ONNX after conversion) are
 available, but the decision rule from the CSV features to a start time is unknown, and
-open-plex keeps decoding out of process (EAST would run in the scanner binary on JPEGs, which
+klapz keeps decoding out of process (EAST would run in the scanner binary on JPEGs, which
 the image rule allows only if the owner extends it). Results go to `item_marker` (`credits`,
 `is_final`, `version`).
 

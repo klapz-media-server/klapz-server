@@ -2,16 +2,16 @@
 
 use std::collections::HashMap;
 
-use open_plex_core::history::{
+use klapz_core::history::{
     HistoryEntry, HistoryOrder, HistoryQuery, HistoryScope, NewViewing, ViewerCount, ViewingKind,
 };
-use open_plex_core::page::{Cursor, CursorKey, Page, Window};
-use open_plex_core::tracks::{SubtitleChoice, TrackChoice};
-use open_plex_core::user_rating::{RatingRecord, UserRating};
-use open_plex_core::watch::{
+use klapz_core::page::{Cursor, CursorKey, Page, Window};
+use klapz_core::tracks::{SubtitleChoice, TrackChoice};
+use klapz_core::user_rating::{RatingRecord, UserRating};
+use klapz_core::watch::{
     Viewing, WatchError, WatchRepository, WatchState, VIEWING_LIFETIME_SECONDS,
 };
-use open_plex_core::{HistoryId, PartId, RatingKey, SectionId, StreamId, UserId};
+use klapz_core::{HistoryId, PartId, RatingKey, SectionId, StreamId, UserId};
 use sea_orm::sea_query::{Alias, Expr, OnConflict, Query, SimpleExpr};
 use sea_orm::{
     ActiveValue, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait,

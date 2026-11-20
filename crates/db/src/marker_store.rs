@@ -4,8 +4,8 @@
 //! Its own module because both the repository and the importer write the table, and they must
 //! agree on the encoding.
 
-use open_plex_core::marker::{Marker, MarkerKind, NewMarker};
-use open_plex_core::{MarkerId, RatingKey, UserId};
+use klapz_core::marker::{Marker, MarkerKind, NewMarker};
+use klapz_core::{MarkerId, RatingKey, UserId};
 use sea_orm::{
     ActiveValue, ColumnTrait, Condition, ConnectionTrait, DbErr, EntityTrait, QueryFilter,
     QueryOrder, TransactionTrait,

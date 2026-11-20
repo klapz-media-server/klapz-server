@@ -32,12 +32,12 @@ use async_graphql::Variables;
 use axum::extract::{Path, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
-use open_plex_api::collection::COLLECTION_TYPE;
-use open_plex_api::item::ITEM_TYPE;
-use open_plex_api::library::LIBRARY_TYPE;
-use open_plex_api::{date_time, GlobalId};
-use open_plex_core::edit::CalendarDate;
-use open_plex_core::page::MAX_ITEMS;
+use klapz_api::collection::COLLECTION_TYPE;
+use klapz_api::item::ITEM_TYPE;
+use klapz_api::library::LIBRARY_TYPE;
+use klapz_api::{date_time, GlobalId};
+use klapz_core::edit::CalendarDate;
+use klapz_core::page::MAX_ITEMS;
 use serde::Deserialize;
 use serde_json::{json, Map, Value as Json};
 
