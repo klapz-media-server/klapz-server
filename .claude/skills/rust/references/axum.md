@@ -41,6 +41,24 @@ Watch the Plex paths containing `:/` — `/:/timeline`, `/photo/:/transcode`,
 parameter marker. In Axum 0.8 syntax parameters are written `{name}`, so the literal `:` creates
 no conflict. That is one reason not to stay on the older `:param` syntax.
 
+Axum 0.8 still refuses a segment that *starts* with a colon (`/:/prefs`) unless the router calls
+`without_v07_checks()`, and `merge` does not carry that setting: routes merged in are
+re-validated with the default rules. So the colon routes are added through `add_routes(router)`
+functions onto the router that already called it (`api-plex/src/lib.rs`), never merged in.
+
+Traps measured against the reference, each of which cost a debugging round:
+
+- `Redirect::temporary` answers `307`; Plex answers `302`. Write
+  `(StatusCode::FOUND, [(header::LOCATION, …)])` by hand.
+- A malformed path parameter is rejected by the extractor with `400`; the reference answers
+  `404`. Where the status matters, take the segment as `String` and parse it yourself.
+- A `{a}.{b}` segment (two parameters in one segment) is unroutable: take the whole segment and
+  split it.
+- `nest_service("/web", …)` conflicts with a route on the same prefix: nest a small router that
+  holds both instead.
+- rustfmt wraps method chains past `chain_width` (60): generated routes are a `const` table
+  walked by a loop, not a thousand-line `.route()` chain.
+
 ## Application state
 
 `core` is exposed to the binding through a state that is cheap to clone, since it is cloned per

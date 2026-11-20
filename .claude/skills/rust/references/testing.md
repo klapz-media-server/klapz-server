@@ -124,6 +124,30 @@ When a comparison needs normalization — a timestamp, a generated session id �
 specific field explicitly rather than loosening the comparison. A fuzzy comparison stops catching
 the thing it was written for.
 
+Keep captured output **byte for byte**. "Normalizing" a captured trace prefix
+(`[trace_headers @ 0000000000000000]` to `[trace_headers]`) broke the parser the fixture was meant
+to guard. Tests of the scanner's parsing replay captured ffprobe output, so a change in analysis
+cannot slip through.
+
+Route tests live in one file per domain (`tests/play_queues.rs`, `tests/markers.rs`…);
+`conformance.rs` keeps the cross-cutting ones.
+
+## Making sure a test can fail
+
+- **Break the rule the test guards, once.** After writing a test for a measured rule, mutate the
+  code (drop the rounding, invert the comparison), watch the test fail, restore. A test that
+  survives the mutation tests nothing.
+- **When a test "finds nothing", suspect the fixture first.** A fixture that inserts rows
+  directly bypasses `db::write`, and with it the derived indexes: the search found nothing because
+  the title-word index was empty.
+- **In-memory fakes apply every filter, or refuse it.** A fake that ignored the watch filters
+  let a "recently watched" shelf show a film nobody had watched.
+- **A probe that tells "missing route" from "unknown id" needs an id no route accepts**
+  (`not-a-number`), not a weakened assertion. Say so when a test is adapted.
+- A route test that compares names with the schema should be run after regenerating the SDL:
+  three `500`s came from a Plex spelling of a field (`has64bitOffsets` for `has64BitOffsets`) and
+  from selecting a field the type lacks.
+
 ## Field completeness against the reference database
 
 The reference database under `db/` is a real populated library. Its purpose in testing is to

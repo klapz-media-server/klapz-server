@@ -66,6 +66,25 @@ it reads as such in context.
 **Delete instead of commenting out.** No dead code in comments, no `#[allow(dead_code)]` on code
 kept "for later". Git remembers everything.
 
+**One owner per lifecycle.** When two pieces of code start and stop the same thing, they drift
+apart: `main::Sessions` duplicated `streams::StreamRoutes`, and `/stop` drove the transcoder
+directly past the official API; merging them into one owner removed several bugs at once.
+
+## Traps this codebase has already met
+
+- **async-graphql's `#[Object]` does not expand a `macro_rules!` call inside its impl block**:
+  it sees an opaque token, and the type silently loses those fields. Only the generated SDL
+  shows it — regenerate and read it after touching a resolver impl.
+- **GraphQL descriptions are not inherited from an interface**: every concrete type documents
+  its own fields, which the introspection test enforces.
+- **Global ids do not sort.** They are base64 strings; ordering by them compares text, not
+  numbers. Decode with `GlobalId` before sorting.
+- **Inserting a method above a doc comment or an attribute** (`#[must_use]`) silently re-attaches
+  it to the new method. Re-read the file after `cargo fmt` before patching it: the anchors move.
+- **A GraphQL `Int` is 32 bits.** A field backed by an `i64` that can exceed it (a size in bytes,
+  a counter) is a `String` on the schema, as CLAUDE.md says; `MediaFile.sizeBytes` is still an
+  `Int`, a known gap.
+
 ## Typing: make illegal states unrepresentable
 
 This is the project's strongest lever. The Plex API juggles a dozen different numeric
@@ -336,6 +355,12 @@ No Rust-touching task is finished until these five steps have passed, in order:
    `#[cfg(test)]`.
 5. Summarize the commands you ran and their actual results, failures included. A summary claiming
    "everything passes" without the command having run is worse than none.
+
+On this machine, run steps 2 and 3 with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
+CARGO_PROFILE_TEST_DEBUG=0`, the full suite in the background with its output in a log, and
+judge it by cargo's exit code and the `FAILED` lines (the `windows-shell` skill). A GraphQL
+change also regenerates `docs/schema.graphql` and `docs/introspection.json`
+(`cargo run -p open-plex-api --example sdl` and `--example introspect`).
 
 These commands passing is not proof of quality, it is the floor. The reviewer test at the top of
 this page remains the real criterion.

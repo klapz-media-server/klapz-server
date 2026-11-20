@@ -28,6 +28,9 @@ with the repo owner happens in French.
 | `tools/capture_jellyfin.py` | Captures the reference Jellyfin (`JELLYFIN_USER`, `JELLYFIN_PASSWORD`), or our own surface with `--out`; `--all-items` every file's lookups and `PlaybackInfo` and every series' seasons and episodes, `--fixtures` the scrubbed fixtures of `crates/api-jellyfin/tests`. `tools/compare_jellyfin.py` sets the two side by side file by file, field by field, every difference either explained (its reason in `docs/jellyfin/spec-gaps.md`) or reported. |
 | `tools/capture_jellyfin_samples.py` | Gives each scan sample our scanner's report and the reference Jellyfin's answer about its file: the fixtures `crates/server/tests/jellyfin_samples.rs` replays through storage, the official API and the binding. |
 | `.claude/skills/rust/` | The project's Rust conventions. Load before writing Rust. |
+| `.claude/skills/reference-servers/` | Measuring on the reference Plex and Jellyfin without damaging them: the test libraries, the forbidden calls, what is already left changed, how rules were measured. Load before any capture or comparison. |
+| `.claude/skills/agent-delegation/` | The brief that works for parallel agents, what they get wrong, the merge checklist and the generated files to rebuild. |
+| `.claude/skills/windows-shell/` | This machine's traps: a disk always nearly full, Git Bash path rewriting, heredocs, CRLF, locked executables, low-disk cargo builds. |
 
 Three finds inside `files/` worth knowing about:
 
@@ -172,6 +175,15 @@ without them saying so.
   Plex publishes by decoding `id` with the same codec (`open_plex_api::GlobalId`), and builds
   the global id from an incoming Plex number to query with.
 - **Lists are cursor connections** (`edges`/`node`/`cursor`, `pageInfo`), never bare arrays.
+- **A type links to an entity, never to its id.** `HistoryEntry.library: Library`, not
+  `libraryId`; likewise `PlayQueueEntry` and `PlaylistEntry` link their queue and playlist. The
+  one exception is a delete payload's `deleted…Id`, whose object no longer exists.
+- **What describes an entity lives on it**, not in a root field of its own: a session's
+  termination is `PlaybackSession.terminatedAt` and `terminationReason`, listed through
+  `playbackSessions(status:)`, not a `PlaybackTermination` type.
+- **After any schema change, regenerate the published schema**:
+  `cargo run -p open-plex-api --example sdl > docs/schema.graphql` and
+  `--example introspect > docs/introspection.json`.
 - **Every field, argument and enum value carries a description.** Enforced by a test that walks
   introspection, not by review.
 - **DataLoaders for anything resolved per parent.** `Library.roots` batches: ten libraries cost

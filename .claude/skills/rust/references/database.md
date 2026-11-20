@@ -93,6 +93,38 @@ different schemas bearing the same version, which is the hardest class of data b
 
 Since the schema is ours and the project is young, prefer getting the shape right over
 accumulating corrective migrations — but once a migration is in a release, it is frozen.
+Nothing has shipped yet, so an unreleased migration may still be rewritten in place: the local
+`open-plex.db` then has to be deleted and imported again (`tools/reimport.py` keeps what was made
+here), which takes several minutes — run it in the background and keep working.
+
+## Measuring queries
+
+A claim about performance or batching is proven from the SQL log and `EXPLAIN QUERY PLAN`, and
+the number goes into the migration or the commit: "320 ms per page without the index, 0.5 ms with
+it"; "50 films and their media chain in 6 queries, not 357". Time it on the real library — a
+copy of `open-plex.db` — since the test fixtures never show a slow query.
+
+SQLite traps met here:
+
+- the default `LIKE` is case-insensitive, so it cannot use a binary index for a prefix. Filter
+  on a folded column (`sort_key`) as an explicit range, `>= prefix AND < upper`: search went
+  from 20 ms to 0.043 ms, with no wildcard to escape;
+- filtering on a folded column while ordering on a raw one forces a scan: one folded column
+  serves both;
+- `range` is reserved in MySQL, `index` everywhere: neither is a column name.
+
+## Reading Plex's database
+
+- **Never default a required column.** `unwrap_or(0)` on a column an edited `SELECT` no longer
+  returned imported `hidden` and `content_changed_at` as zero for every row; propagating the
+  error showed `ColumnNotFound` at once. A defaulting combinator on required data is an
+  `unwrap()` that lies.
+- **Qualify every column in a join.** Plex's `tags` has a `metadata_item_id` of its own, so a
+  bare one is ambiguous next to `taggings`.
+- **A synthetic Plex database** for a test needs the `naturalsort` collation registered and
+  `user_fields` set to `''` (not null), as the importer expects them.
+- Plex's `extra_data` values are all JSON strings, and `-1` stands for an unknown year: it is
+  not imported.
 
 ## Our schema, not Plex's
 
