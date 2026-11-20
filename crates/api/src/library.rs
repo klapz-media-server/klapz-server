@@ -17,6 +17,7 @@ use open_plex_core::{Listed, RatingKey, SectionId};
 use crate::common::CommonFieldsObject;
 use crate::cursor::OpaqueCursor;
 use crate::filter::{ItemFilterInput, ItemOrder, SortDirection, TrackField};
+use crate::int64::Int64;
 use crate::item::{Item, ItemConnection};
 use crate::loader::{ItemLoader, RootsLoader};
 use crate::node::GlobalId;
@@ -303,11 +304,10 @@ impl Library {
 
     /// Monotonic counter that advances whenever the library's contents change.
     ///
-    /// A string rather than an `Int` because the value exceeds 32 bits, which is the width
-    /// GraphQL's `Int` guarantees. It is a counter, not a timestamp: compare it for
-    /// inequality to detect a change, do not read it as a time.
-    async fn content_changed_at(&self) -> String {
-        self.section.content_changed_at.to_string()
+    /// It is a counter, not a timestamp: compare it for inequality to detect a change, do not
+    /// read it as a time.
+    async fn content_changed_at(&self) -> Int64 {
+        Int64(self.section.content_changed_at)
     }
 
     /// What was added to this library most recently, newest first.

@@ -118,10 +118,7 @@ impl SectionDirectory {
             scanned_at: library.scanned_at,
             content: true,
             directory: true,
-            // The schema returns this as a string because it exceeds GraphQL's 32-bit Int.
-            // A value we cannot parse would be a schema defect, not client input; emitting 0
-            // keeps the listing usable and is visible in the response rather than silent.
-            content_changed_at: library.content_changed_at.parse().unwrap_or(0),
+            content_changed_at: library.content_changed_at,
             hidden: u8::from(library.hidden),
             location: ordered_locations(&library.roots),
         }

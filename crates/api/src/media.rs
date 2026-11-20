@@ -15,6 +15,7 @@ use open_plex_core::StreamId;
 
 use open_plex_core::stream::{reads_as_is, FileFormat, PlayerFormat};
 
+use crate::int64::Int64;
 use crate::loader::{FilesLoader, StreamsLoader};
 use crate::node::GlobalId;
 
@@ -223,8 +224,8 @@ impl File {
     }
 
     /// File size in bytes.
-    async fn size_bytes(&self) -> Option<i64> {
-        self.0.size_bytes
+    async fn size_bytes(&self) -> Option<Int64> {
+        self.0.size_bytes.map(Int64)
     }
 
     /// Runtime in milliseconds.

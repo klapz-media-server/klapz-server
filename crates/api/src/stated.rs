@@ -16,6 +16,7 @@ use open_plex_core::metadata::{
 };
 use open_plex_core::PartId;
 
+use crate::int64::Int64;
 use crate::loader::StreamsLoader;
 
 /// What a track states as the prober printed it.
@@ -76,10 +77,10 @@ impl StatedFileObject {
         self.0.format_name.as_deref()
     }
 
-    /// The duration the container declares, in microseconds, as a string: it exceeds 32 bits.
+    /// The duration the container declares, in microseconds.
     /// `MediaFile.durationMs` may be the time the packets were measured to span instead.
-    async fn duration_us(&self) -> Option<String> {
-        self.0.duration_us.map(|duration| duration.to_string())
+    async fn duration_us(&self) -> Option<Int64> {
+        self.0.duration_us.map(Int64)
     }
 
     /// The bitrate the container declares, in bits per second.

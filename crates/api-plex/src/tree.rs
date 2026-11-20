@@ -351,6 +351,10 @@ struct GqlVersion {
 struct GqlFile {
     id: String,
     path: String,
+    #[serde(
+        default,
+        deserialize_with = "open_plex_api::int64::deserialize_optional"
+    )]
     size_bytes: Option<i64>,
     duration_ms: Option<i64>,
     content_hash: Option<String>,

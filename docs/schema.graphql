@@ -333,6 +333,11 @@ type Chapter implements Node {
 	"""
 	title: String
 	"""
+	What a scanned file states of the chapter: its title as written, numbered or not, and
+	its start to the microsecond, where `title` and `startMs` are the reference's reading.
+	"""
+	stated: StatedChapter!
+	"""
 	The version a frame of which was drawn as the chapter's image. Null when none was drawn.
 	"""
 	imageVersion: MediaVersion
@@ -2498,6 +2503,13 @@ type HistoryUserError {
 }
 
 """
+A signed 64-bit integer, written as a decimal string: GraphQL's `Int` stops at 32 bits, and
+a JSON number loses precision past 2^53 in most clients. Read from such a string or from an
+integer literal.
+"""
+scalar Int64
+
+"""
 Anything that appears in a library listing.
 """
 interface Item {
@@ -3193,11 +3205,10 @@ type Library implements Node {
 	"""
 	Monotonic counter that advances whenever the library's contents change.
 	
-	A string rather than an `Int` because the value exceeds 32 bits, which is the width
-	GraphQL's `Int` guarantees. It is a counter, not a timestamp: compare it for
-	inequality to detect a change, do not read it as a time.
+	It is a counter, not a timestamp: compare it for inequality to detect a change, do not
+	read it as a time.
 	"""
-	contentChangedAt: String!
+	contentChangedAt: Int64!
 	"""
 	What was added to this library most recently, newest first.
 	
@@ -3897,7 +3908,7 @@ type MediaFile implements Node {
 	"""
 	File size in bytes.
 	"""
-	sizeBytes: Int
+	sizeBytes: Int64
 	"""
 	Runtime in milliseconds.
 	"""
@@ -3936,13 +3947,24 @@ type MediaFile implements Node {
 	"""
 	hasChapterTextStream: Boolean!
 	"""
+	What the file's container states about itself, as the prober printed it. Empty for a
+	file the scan did not read.
+	"""
+	stated: StatedFile!
+	"""
+	What the file carries besides the tracks that play — cover pictures, data tracks,
+	attached files — by position.
+	"""
+	sideStreams: [SideStream!]!
+	"""
 	The tracks inside this file, plus any sidecar subtitle files.
 	"""
 	streams: [MediaStream!]!
 	"""
 	Whether a player reads this file as it is, so that `startStream` can send it untouched
-	with `directPlay`: one of the formats the player declares holds the file's container,
-	its video codec and the codec of the audio track it would play — `audioTrack`, or the
+	with `directPlay`: one of the formats the player declares holds the file's container (a
+	Matroska file of nothing but `WebM`'s codecs is held as `webm` too), its video codec and
+	the codec of the audio track it would play — `audioTrack`, or the
 	caller's — and the version weighs no more than `maxBitrate`. An empty list in a format
 	admits anything; names are compared without regard to case.
 	"""
@@ -4075,6 +4097,19 @@ type MediaStream implements Node {
 	What the analysis says about a subtitle track. Null on any other kind.
 	"""
 	subtitle: SubtitleAnalysis
+	"""
+	What the file states about the track as the prober printed it, beside the values above,
+	which are in the reference's vocabulary. Empty for a track the scan did not read.
+	"""
+	stated: StatedTrack!
+	"""
+	Bits per second as the file states them, else estimated, for a player budgeting its
+	bandwidth before reading anything: the header's rate, else the muxer's tagged one (not a
+	subtitle's), else a rate typical of an audio codec and its channels, and for a file's
+	one video what the container's declared rate leaves once every other track's is counted.
+	`bitrate` is the measurement over every packet.
+	"""
+	estimatedBitrate: Int
 }
 
 type MediaVersion implements Node {
@@ -7840,6 +7875,123 @@ type ShowStats {
 	watchedEpisodeCount: Int!
 }
 
+type SidePicture {
+	"""
+	In pixels.
+	"""
+	width: Int
+	"""
+	In pixels.
+	"""
+	height: Int
+	"""
+	ffmpeg's pixel format: `yuvj420p`, `bgra`.
+	"""
+	pixelFormat: String
+	"""
+	Bits per component, where ffprobe states it.
+	"""
+	bitDepth: Int
+	"""
+	The color matrix: `bt470bg`.
+	"""
+	colorSpace: String
+	"""
+	The codec's level as ffprobe states it, `-99` for none.
+	"""
+	level: Int
+	"""
+	The lowest rate every timestamp falls on, `num/den`: a cover's is its time base.
+	"""
+	realFrameRate: String
+	"""
+	The average frame rate, `num/den`; `0/0` for a still picture.
+	"""
+	averageFrameRate: String
+	"""
+	The sample aspect ratio, `num:den`.
+	"""
+	sampleAspectRatio: String
+	"""
+	The display aspect ratio, `num:den`.
+	"""
+	displayAspectRatio: String
+	"""
+	Whether the picture is interlaced.
+	"""
+	isInterlaced: Boolean!
+}
+
+type SideStream {
+	"""
+	Which of the three it is.
+	"""
+	kind: SideStreamKind!
+	"""
+	ffmpeg's index of the stream in the file, numbered with the tracks.
+	"""
+	position: Int!
+	"""
+	As ffprobe names it: `mjpeg`, `timed_id3`, `ttf`.
+	"""
+	codec: String
+	"""
+	The container's codec tag as ffprobe prints it.
+	"""
+	codecTag: String
+	"""
+	The codec profile, as ffprobe names it: `Baseline`.
+	"""
+	profile: String
+	"""
+	The language as the file states it.
+	"""
+	language: String
+	"""
+	The unit of the stream's timestamps, `num/den`.
+	"""
+	timeBase: String
+	"""
+	An attached file's MIME type: `application/x-truetype-font`.
+	"""
+	mimeType: String
+	"""
+	An attached file's name, as the file stores it.
+	"""
+	filename: String
+	"""
+	A cover's picture. Null for data and attached files.
+	"""
+	picture: SidePicture
+	"""
+	Whether the file flags it default.
+	"""
+	isDefault: Boolean!
+	"""
+	Whether the file flags it forced.
+	"""
+	isForced: Boolean!
+}
+
+"""
+What a file carries besides the tracks a player plays.
+"""
+enum SideStreamKind {
+	"""
+	A picture stored as a video track: an MP4 cover, a Matroska attachment that is an
+	image.
+	"""
+	COVER
+	"""
+	Timed metadata: ID3 tags, a `QuickTime` chapter track.
+	"""
+	DATA
+	"""
+	A file attached to a Matroska file: a font, an image.
+	"""
+	ATTACHMENT
+}
+
 type SidecarFile {
 	"""
 	The file's path, as the library was scanned. Null for a subtitle downloaded into the
@@ -8175,6 +8327,69 @@ type StartStreamPayload {
 	userErrors: [StreamUserError!]!
 }
 
+type StatedChapter {
+	"""
+	The title as the file writes it, numbered or not: `Chapter 01`.
+	"""
+	title: String
+	"""
+	Where it starts, in microseconds.
+	"""
+	startUs: Int64
+}
+
+type StatedFile {
+	"""
+	The demuxer's names for the format: `matroska,webm`, `mov,mp4,m4a,3gp,3g2,mj2`.
+	"""
+	formatName: String
+	"""
+	The duration the container declares, in microseconds.
+	`MediaFile.durationMs` may be the time the packets were measured to span instead.
+	"""
+	durationUs: Int64
+	"""
+	The bitrate the container declares, in bits per second.
+	"""
+	bitrate: Int
+}
+
+type StatedTrack {
+	"""
+	The language as the file states it, as written: `fre`, `fr-FR`, `und`, `fra,fra`.
+	Null when it states none — a Matroska track saying `und` among them, which
+	`MediaStream.language` reads as English.
+	"""
+	language: String
+	"""
+	An MP4 track's own name, from its `udta`: a title some muxers write there, which
+	`MediaStream.title` does not read.
+	"""
+	name: String
+	"""
+	The handler an MP4 track names: `SoundHandler`, sometimes a title.
+	"""
+	handlerName: String
+	"""
+	The unit of the track's timestamps, `num/den`: `1/1000` in Matroska.
+	"""
+	timeBase: String
+	"""
+	The container's codec tag as ffprobe prints it: `avc1`, or `[0][0][0][0]` where the
+	container names none.
+	"""
+	codecTag: String
+	"""
+	Bits per second the track's header declares.
+	"""
+	bitrate: Int
+	"""
+	Bits per second the muxer measured and tagged: Matroska's `BPS`, else its bytes over its
+	duration.
+	"""
+	taggedBitrate: Int
+}
+
 """
 A stream to stop.
 """
@@ -8385,6 +8600,14 @@ type SubtitleAnalysis {
 	track of their own.
 	"""
 	isEmbeddedInVideo: Boolean!
+	"""
+	The width of the frame a picture subtitle is drawn for: 1920 for a Blu-ray's PGS.
+	"""
+	canvasWidth: Int
+	"""
+	The height of that frame.
+	"""
+	canvasHeight: Int
 }
 
 """
@@ -8807,6 +9030,15 @@ enum TrackField {
 	The format of a subtitle track, embedded or beside the file: `srt`, `pgs`.
 	"""
 	SUBTITLE_CODEC
+	"""
+	The language an audio track states, as its file writes it: `fre` and `fra` apart. Only
+	a scanned file states one.
+	"""
+	AUDIO_LANGUAGE
+	"""
+	The language a subtitle track states, as its file writes it.
+	"""
+	SUBTITLE_LANGUAGE
 }
 
 """
@@ -9579,6 +9811,42 @@ type VideoAnalysis {
 	The Dolby Vision configuration. Null on a track without Dolby Vision.
 	"""
 	dolbyVision: DolbyVision
+	"""
+	The average frame rate as the prober states it, an exact ratio: `24000/1001`; `0/0`
+	when it could not average one. Null where the scan did not read the file.
+	"""
+	averageFrameRate: String
+	"""
+	The lowest rate every timestamp falls on, as the prober states it: `25/1` for a file
+	whose average drifts to 25.011.
+	"""
+	realFrameRate: String
+	"""
+	The display aspect ratio as the prober states it, `num:den`: `16:9`, `240:101`.
+	"""
+	displayAspectRatio: String
+	"""
+	The sample aspect ratio as the prober states it, after the container's crop, `num:den`:
+	1:1 for a picture `pixelAspectRatio` reads as 27:20 before Fleabag's crop.
+	"""
+	sampleAspectRatio: String
+	"""
+	Whether the container asks a player to hide lines or columns of the picture.
+	"""
+	isCropped: Boolean
+	"""
+	ffmpeg's pixel format: `yuv420p`, `yuv420p10le`.
+	"""
+	pixelFormat: String
+	"""
+	H.264: whether NAL units are prefixed by their length, as MP4 and Matroska carry them
+	(`avcC`), rather than by start codes (Annex B, as MPEG-TS and AVI do).
+	"""
+	isAvc: Boolean
+	"""
+	H.264: the size of that length prefix in bytes, 0 under Annex B.
+	"""
+	nalLengthSize: Int
 }
 
 type Viewer {

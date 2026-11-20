@@ -178,8 +178,8 @@ pub struct GqlLibrary {
     pub updated_at: i64,
     #[serde(default, deserialize_with = "crate::gql::date_time::optional_seconds")]
     pub scanned_at: Option<i64>,
-    /// A string in the schema because it exceeds GraphQL's 32-bit `Int`.
-    pub content_changed_at: String,
+    #[serde(deserialize_with = "open_plex_api::int64::deserialize")]
+    pub content_changed_at: i64,
     pub roots: Vec<GqlRoot>,
 }
 

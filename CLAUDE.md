@@ -188,8 +188,11 @@ without them saying so.
   introspection, not by review.
 - **DataLoaders for anything resolved per parent.** `Library.roots` batches: ten libraries cost
   one `WHERE section_id IN (…)` query, verified against the SQL log.
-- Values exceeding 32 bits are exposed as `String`, since GraphQL's `Int` only guarantees 32
-  bits — `contentChangedAt`, a counter rather than a time, routinely exceeds it.
+- **Values exceeding 32 bits are `Int64`**, a scalar of our own written as a decimal string,
+  since GraphQL's `Int` only guarantees 32 bits and a JSON number loses precision past 2^53:
+  `contentChangedAt` (a counter that reaches 8×10^18), `MediaFile.sizeBytes`, the stated
+  microseconds. It reads a string or an integer literal; the adapters deserialize it with
+  `open_plex_api::int64::deserialize`. Durations in milliseconds and bitrates stay `Int`.
 - **Points in time are `DateTime`** (`@specifiedBy` the andimarek date-time spec): RFC 3339,
   written in UTC with `Z` to the second, read with any offset. Storage, `core` and `db` keep
   Unix seconds as integers, converted in `api` (`date_time`); a release date is its day's

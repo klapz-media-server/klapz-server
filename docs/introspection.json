@@ -976,6 +976,22 @@
               "deprecationReason": null
             },
             {
+              "name": "stated",
+              "description": "What a scanned file states of the chapter: its title as written, numbered or not, and\nits start to the microsecond, where `title` and `startMs` are the reference's reading.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "StatedChapter",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "imageVersion",
               "description": "The version a frame of which was drawn as the chapter's image. Null when none was drawn.",
               "args": [],
@@ -7440,6 +7456,16 @@
           "possibleTypes": null
         },
         {
+          "kind": "SCALAR",
+          "name": "Int64",
+          "description": "A signed 64-bit integer, written as a decimal string: GraphQL's `Int` stops at 32 bits, and\na JSON number loses precision past 2^53 in most clients. Read from such a string or from an\ninteger literal.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "INTERFACE",
           "name": "Item",
           "description": "Anything that appears in a library listing.",
@@ -9138,14 +9164,14 @@
             },
             {
               "name": "contentChangedAt",
-              "description": "Monotonic counter that advances whenever the library's contents change.\n\nA string rather than an `Int` because the value exceeds 32 bits, which is the width\nGraphQL's `Int` guarantees. It is a counter, not a timestamp: compare it for\ninequality to detect a change, do not read it as a time.",
+              "description": "Monotonic counter that advances whenever the library's contents change.\n\nIt is a counter, not a timestamp: compare it for inequality to detect a change, do not\nread it as a time.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "String",
+                  "name": "Int64",
                   "ofType": null
                 }
               },
@@ -11150,7 +11176,7 @@
               "args": [],
               "type": {
                 "kind": "SCALAR",
-                "name": "Int",
+                "name": "Int64",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -11261,6 +11287,46 @@
               "deprecationReason": null
             },
             {
+              "name": "stated",
+              "description": "What the file's container states about itself, as the prober printed it. Empty for a\nfile the scan did not read.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "StatedFile",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "sideStreams",
+              "description": "What the file carries besides the tracks that play — cover pictures, data tracks,\nattached files — by position.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "SideStream",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "streams",
               "description": "The tracks inside this file, plus any sidecar subtitle files.",
               "args": [],
@@ -11286,7 +11352,7 @@
             },
             {
               "name": "readableAsIs",
-              "description": "Whether a player reads this file as it is, so that `startStream` can send it untouched\nwith `directPlay`: one of the formats the player declares holds the file's container,\nits video codec and the codec of the audio track it would play — `audioTrack`, or the\ncaller's — and the version weighs no more than `maxBitrate`. An empty list in a format\nadmits anything; names are compared without regard to case.",
+              "description": "Whether a player reads this file as it is, so that `startStream` can send it untouched\nwith `directPlay`: one of the formats the player declares holds the file's container (a\nMatroska file of nothing but `WebM`'s codecs is held as `webm` too), its video codec and\nthe codec of the audio track it would play — `audioTrack`, or the\ncaller's — and the version weighs no more than `maxBitrate`. An empty list in a format\nadmits anything; names are compared without regard to case.",
               "args": [
                 {
                   "name": "formats",
@@ -11687,6 +11753,34 @@
               "type": {
                 "kind": "OBJECT",
                 "name": "SubtitleAnalysis",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "stated",
+              "description": "What the file states about the track as the prober printed it, beside the values above,\nwhich are in the reference's vocabulary. Empty for a track the scan did not read.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "StatedTrack",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "estimatedBitrate",
+              "description": "Bits per second as the file states them, else estimated, for a player budgeting its\nbandwidth before reading anything: the header's rate, else the muxer's tagged one (not a\nsubtitle's), else a rate typical of an audio codec and its channels, and for a file's\none video what the container's declared rate leaves once every other track's is counted.\n`bitrate` is the measurement over every packet.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -22686,6 +22780,353 @@
         },
         {
           "kind": "OBJECT",
+          "name": "SidePicture",
+          "description": null,
+          "fields": [
+            {
+              "name": "width",
+              "description": "In pixels.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "height",
+              "description": "In pixels.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "pixelFormat",
+              "description": "ffmpeg's pixel format: `yuvj420p`, `bgra`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "bitDepth",
+              "description": "Bits per component, where ffprobe states it.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "colorSpace",
+              "description": "The color matrix: `bt470bg`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "level",
+              "description": "The codec's level as ffprobe states it, `-99` for none.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "realFrameRate",
+              "description": "The lowest rate every timestamp falls on, `num/den`: a cover's is its time base.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "averageFrameRate",
+              "description": "The average frame rate, `num/den`; `0/0` for a still picture.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "sampleAspectRatio",
+              "description": "The sample aspect ratio, `num:den`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "displayAspectRatio",
+              "description": "The display aspect ratio, `num:den`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "isInterlaced",
+              "description": "Whether the picture is interlaced.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "SideStream",
+          "description": null,
+          "fields": [
+            {
+              "name": "kind",
+              "description": "Which of the three it is.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "SideStreamKind",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "position",
+              "description": "ffmpeg's index of the stream in the file, numbered with the tracks.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "codec",
+              "description": "As ffprobe names it: `mjpeg`, `timed_id3`, `ttf`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "codecTag",
+              "description": "The container's codec tag as ffprobe prints it.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "profile",
+              "description": "The codec profile, as ffprobe names it: `Baseline`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "language",
+              "description": "The language as the file states it.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "timeBase",
+              "description": "The unit of the stream's timestamps, `num/den`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "mimeType",
+              "description": "An attached file's MIME type: `application/x-truetype-font`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "filename",
+              "description": "An attached file's name, as the file stores it.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "picture",
+              "description": "A cover's picture. Null for data and attached files.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "SidePicture",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "isDefault",
+              "description": "Whether the file flags it default.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "isForced",
+              "description": "Whether the file flags it forced.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "SideStreamKind",
+          "description": "What a file carries besides the tracks a player plays.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "COVER",
+              "description": "A picture stored as a video track: an MP4 cover, a Matroska attachment that is an\nimage.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DATA",
+              "description": "Timed metadata: ID3 tags, a `QuickTime` chapter track.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ATTACHMENT",
+              "description": "A file attached to a Matroska file: a font, an image.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
           "name": "SidecarFile",
           "description": null,
           "fields": [
@@ -23634,6 +24075,183 @@
           "possibleTypes": null
         },
         {
+          "kind": "OBJECT",
+          "name": "StatedChapter",
+          "description": null,
+          "fields": [
+            {
+              "name": "title",
+              "description": "The title as the file writes it, numbered or not: `Chapter 01`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "startUs",
+              "description": "Where it starts, in microseconds.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int64",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "StatedFile",
+          "description": null,
+          "fields": [
+            {
+              "name": "formatName",
+              "description": "The demuxer's names for the format: `matroska,webm`, `mov,mp4,m4a,3gp,3g2,mj2`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "durationUs",
+              "description": "The duration the container declares, in microseconds.\n`MediaFile.durationMs` may be the time the packets were measured to span instead.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int64",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "bitrate",
+              "description": "The bitrate the container declares, in bits per second.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "StatedTrack",
+          "description": null,
+          "fields": [
+            {
+              "name": "language",
+              "description": "The language as the file states it, as written: `fre`, `fr-FR`, `und`, `fra,fra`.\nNull when it states none — a Matroska track saying `und` among them, which\n`MediaStream.language` reads as English.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "name",
+              "description": "An MP4 track's own name, from its `udta`: a title some muxers write there, which\n`MediaStream.title` does not read.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "handlerName",
+              "description": "The handler an MP4 track names: `SoundHandler`, sometimes a title.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "timeBase",
+              "description": "The unit of the track's timestamps, `num/den`: `1/1000` in Matroska.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "codecTag",
+              "description": "The container's codec tag as ffprobe prints it: `avc1`, or `[0][0][0][0]` where the\ncontainer names none.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "bitrate",
+              "description": "Bits per second the track's header declares.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "taggedBitrate",
+              "description": "Bits per second the muxer measured and tagged: Matroska's `BPS`, else its bytes over its\nduration.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "INPUT_OBJECT",
           "name": "StopStreamInput",
           "description": "A stream to stop.",
@@ -24133,6 +24751,30 @@
                   "name": "Boolean",
                   "ofType": null
                 }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "canvasWidth",
+              "description": "The width of the frame a picture subtitle is drawn for: 1920 for a Blu-ray's PGS.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "canvasHeight",
+              "description": "The height of that frame.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -25287,6 +25929,18 @@
             {
               "name": "SUBTITLE_CODEC",
               "description": "The format of a subtitle track, embedded or beside the file: `srt`, `pgs`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AUDIO_LANGUAGE",
+              "description": "The language an audio track states, as its file writes it: `fre` and `fra` apart. Only\na scanned file states one.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SUBTITLE_LANGUAGE",
+              "description": "The language a subtitle track states, as its file writes it.",
               "isDeprecated": false,
               "deprecationReason": null
             }
@@ -27700,6 +28354,102 @@
               "type": {
                 "kind": "OBJECT",
                 "name": "DolbyVision",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "averageFrameRate",
+              "description": "The average frame rate as the prober states it, an exact ratio: `24000/1001`; `0/0`\nwhen it could not average one. Null where the scan did not read the file.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "realFrameRate",
+              "description": "The lowest rate every timestamp falls on, as the prober states it: `25/1` for a file\nwhose average drifts to 25.011.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "displayAspectRatio",
+              "description": "The display aspect ratio as the prober states it, `num:den`: `16:9`, `240:101`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "sampleAspectRatio",
+              "description": "The sample aspect ratio as the prober states it, after the container's crop, `num:den`:\n1:1 for a picture `pixelAspectRatio` reads as 27:20 before Fleabag's crop.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "isCropped",
+              "description": "Whether the container asks a player to hide lines or columns of the picture.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "pixelFormat",
+              "description": "ffmpeg's pixel format: `yuv420p`, `yuv420p10le`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "isAvc",
+              "description": "H.264: whether NAL units are prefixed by their length, as MP4 and Matroska carry them\n(`avcC`), rather than by start codes (Annex B, as MPEG-TS and AVI do).",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nalLengthSize",
+              "description": "H.264: the size of that length prefix in bytes, 0 under Annex B.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
                 "ofType": null
               },
               "isDeprecated": false,

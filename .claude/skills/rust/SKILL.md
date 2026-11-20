@@ -82,8 +82,8 @@ directly past the official API; merging them into one owner removed several bugs
 - **Inserting a method above a doc comment or an attribute** (`#[must_use]`) silently re-attaches
   it to the new method. Re-read the file after `cargo fmt` before patching it: the anchors move.
 - **A GraphQL `Int` is 32 bits.** A field backed by an `i64` that can exceed it (a size in bytes,
-  a counter) is a `String` on the schema, as CLAUDE.md says; `MediaFile.sizeBytes` is still an
-  `Int`, a known gap.
+  a counter, microseconds) is the `Int64` scalar (`api::int64`), never a bare `String`; the
+  adapters read it with `open_plex_api::int64::deserialize` or `deserialize_optional`.
 
 ## Typing: make illegal states unrepresentable
 

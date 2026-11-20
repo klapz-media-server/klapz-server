@@ -1273,6 +1273,7 @@ impl GqlVersion {
 pub struct GqlPart {
     pub id: String,
     pub path: String,
+    #[serde(deserialize_with = "open_plex_api::int64::deserialize_optional")]
     pub size_bytes: Option<i64>,
     pub duration_ms: Option<i64>,
     pub has_thumbnail: bool,

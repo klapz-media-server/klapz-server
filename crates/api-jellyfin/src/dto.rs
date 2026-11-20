@@ -127,19 +127,19 @@ pub struct Chapter {
 #[serde(rename_all = "camelCase")]
 pub struct StatedChapter {
     pub title: Option<String>,
-    /// Microseconds, as a string.
-    pub start_us: Option<String>,
+    /// Microseconds.
+    #[serde(
+        default,
+        deserialize_with = "open_plex_api::int64::deserialize_optional"
+    )]
+    pub start_us: Option<i64>,
 }
 
 impl Chapter {
     /// Where it starts in ticks, to the millisecond as the reference keeps it: what the file
     /// states rounded half to even, else the stored milliseconds.
     fn start_ticks(&self) -> i64 {
-        let stated = self
-            .stated
-            .start_us
-            .as_deref()
-            .and_then(|us| us.parse::<i64>().ok());
+        let stated = self.stated.start_us;
         #[allow(
             clippy::cast_precision_loss,
             clippy::cast_possible_truncation,
@@ -289,6 +289,10 @@ pub struct File {
     pub id: String,
     pub path: String,
     pub filename: String,
+    #[serde(
+        default,
+        deserialize_with = "open_plex_api::int64::deserialize_optional"
+    )]
     pub size_bytes: Option<i64>,
     pub duration_ms: Option<i64>,
     pub packet_length: Option<i32>,
@@ -304,8 +308,12 @@ pub struct File {
 #[serde(rename_all = "camelCase")]
 pub struct StatedFile {
     pub format_name: Option<String>,
-    /// Microseconds, as a string: it exceeds 32 bits.
-    pub duration_us: Option<String>,
+    /// Microseconds.
+    #[serde(
+        default,
+        deserialize_with = "open_plex_api::int64::deserialize_optional"
+    )]
+    pub duration_us: Option<i64>,
     pub bitrate: Option<i64>,
 }
 
@@ -333,7 +341,7 @@ impl File {
     /// The container's declared duration in ticks, as .NET reads ffprobe's seconds: a
     /// double times ten million, truncated (`178.301` is 1783009999).
     pub fn declared_ticks(&self) -> Option<i64> {
-        let micros: i64 = self.stated.duration_us.as_deref()?.parse().ok()?;
+        let micros = self.stated.duration_us?;
         #[allow(
             clippy::cast_precision_loss,
             clippy::cast_possible_truncation,
@@ -1262,26 +1270,26 @@ mod tests {
 
     #[test]
     fn a_scanned_chapter_is_named_as_written_unless_it_reads_as_a_time() {
-        let chapter = |title: &str, start_us: &str| Chapter {
+        let chapter = |title: &str, start_us: i64| Chapter {
             start_ms: 1_238_200,
             title: None,
             stated: StatedChapter {
                 title: Some(title.to_owned()),
-                start_us: Some(start_us.to_owned()),
+                start_us: Some(start_us),
             },
         };
-        let numbered = chapter("Chapter 04", "1238195000");
+        let numbered = chapter("Chapter 04", 1_238_195_000);
         assert_eq!(numbered.name(), Some("Chapter 04"));
         // The reference keeps milliseconds; storage, Plex's six significant digits.
         assert_eq!(numbered.start_ticks(), 12_381_950_000);
-        assert_eq!(chapter("00:07:13.224", "433224000").name(), None);
-        assert_eq!(chapter("01", "0").name(), None);
-        assert_eq!(chapter(" ", "0").name(), None);
-        assert_eq!(chapter("Opening", "0").name(), Some("Opening"));
-        assert_eq!(chapter("Episode 1", "0").name(), Some("Episode 1"));
-        assert_eq!(chapter("1:2:3:4", "0").name(), Some("1:2:3:4"));
+        assert_eq!(chapter("00:07:13.224", 433_224_000).name(), None);
+        assert_eq!(chapter("01", 0).name(), None);
+        assert_eq!(chapter(" ", 0).name(), None);
+        assert_eq!(chapter("Opening", 0).name(), Some("Opening"));
+        assert_eq!(chapter("Episode 1", 0).name(), Some("Episode 1"));
+        assert_eq!(chapter("1:2:3:4", 0).name(), Some("1:2:3:4"));
         assert_eq!(
-            chapter("x", "1500").start_ticks(),
+            chapter("x", 1_500).start_ticks(),
             20_000,
             "1.5 ms rounds to even"
         );

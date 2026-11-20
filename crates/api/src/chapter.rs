@@ -16,6 +16,7 @@ use open_plex_core::metadata::{MetadataError, MetadataRepository};
 use open_plex_core::{ChapterId, RatingKey};
 
 use crate::cursor::OpaqueCursor;
+use crate::int64::Int64;
 use crate::item::Item;
 use crate::loader::VersionsLoader;
 use crate::media::Version;
@@ -117,9 +118,9 @@ impl StatedChapterObject {
         self.0.title.as_deref()
     }
 
-    /// Where it starts, in microseconds, as a string: it exceeds 32 bits.
-    async fn start_us(&self) -> Option<String> {
-        self.0.start_us.map(|start| start.to_string())
+    /// Where it starts, in microseconds.
+    async fn start_us(&self) -> Option<Int64> {
+        self.0.start_us.map(Int64)
     }
 }
 
