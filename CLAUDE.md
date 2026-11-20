@@ -22,6 +22,10 @@ with the repo owner happens in French.
 | `docs/endpoint-probe.md` | Which spec `GET` operations the reference server answers. **Generated**: `PLEX_TOKEN=... python tools/probe_endpoints.py`. |
 | `files/` | A complete Plex Media Server install for Windows (233 MB) — binaries, bundled web app, plug-in framework, transcoder profiles. For reverse engineering. |
 | `db/` | A real populated Plex library: `com.plexapp.plugins.library.db` (2.4 GB) and its blobs (5.8 GB). Contains the owner's personal data. |
+| `docs/jellyfin/openapi.json` | The reference Jellyfin's (12.4.0) own OpenAPI document, 364 operations. Refreshed by `python tools/gen_jellyfin_endpoints.py --fetch`. |
+| `docs/jellyfin/ENDPOINTS.md` | Tracker of the Jellyfin operations served below `/jellyfin`. **Generated**: `python tools/gen_jellyfin_endpoints.py`, from the routes `crates/api-jellyfin` declares. |
+| `docs/jellyfin/spec-gaps.md` | What the Jellyfin surface measured on the reference, and where it knowingly differs. Hand-verified. |
+| `tools/capture_jellyfin.py` | Captures the reference Jellyfin (`JELLYFIN_USER`, `JELLYFIN_PASSWORD`), or our own surface with `--out`; `--fixtures` writes the scrubbed fixtures of `crates/api-jellyfin/tests`. `tools/compare_jellyfin.py` sets the two side by side, track by track. |
 | `.claude/skills/rust/` | The project's Rust conventions. Load before writing Rust. |
 
 Three finds inside `files/` worth knowing about:
@@ -65,6 +69,15 @@ without them saying so.
   executes a query against it in-process. That is the point: the official API can never become
   a second-class citizen, because nothing can be exposed through Plex that GraphQL does not
   already serve.
+- **Jellyfin is a second adapter, `api-jellyfin`, held to the same rule.** It depends on
+  `api` (and `core`'s types) only, runs every query in process through
+  `open_plex_api::in_process` as `api-plex` does, and holds no domain rule: whether a player
+  reads a file as it is is `core::stream::reads_as_is`, on the official API as
+  `MediaFile.readableAsIs`. It is mounted below `/jellyfin`, Jellyfin's own notion of a base
+  URL, because Jellyfin routes without regard to case and its paths would meet Plex's; below it
+  the server's authentication takes Jellyfin tokens and nothing else. Jellyfin ids are a wire
+  encoding of global ids (`api-jellyfin::id`). What it measured and where it differs is in
+  `docs/jellyfin/spec-gaps.md`.
 - **Layers: `db` → `core` → `api` (GraphQL) → `api-plex` (adapter).** Dependency direction makes
   it compiler-enforced: `core` declares the storage ports and knows nothing of HTTP or GraphQL,
   `db` implements them, `api` depends only on `core`, and `api-plex` depends on `api` — never on
@@ -241,6 +254,14 @@ without them saying so.
   through with no principal, which every resolver already answers as "nothing exists";
   `nobody_reads_nothing_from_any_entry_point` keeps it that way. Every other route still
   answers `401`.
+- **Jellyfin is an extension too.** `user_extension` holds a `jellyfin` connection beside a
+  `plex` one, switched on by an owner (`connectExtension(JELLYFIN)`, or `/admin`). Jellyfin's
+  clients sign in with the user's own password (`signInThroughExtension`, checked and throttled
+  as `signIn`), each device keeping a token of its own in `extension_device`; `signOutOfExtension`
+  forgets the caller's device, and switching the connection off or deleting the user forgets
+  them all. Plex's clients do not sign in with a password (`NO_PASSWORD_SIGN_IN`). Every Jellyfin
+  user sees one server id, derived from the machine identifier, and none is an administrator to
+  Jellyfin's clients.
 - **A user pairs its own server.** `pairExtension`, `moveExtension` and `unpairExtension` are
   open to owners and to the user they name, so a client can offer pairing in the user's own
   settings; issuing and revoking the token (`connectExtension`, `disableExtension`) stays the
@@ -588,6 +609,7 @@ OPENPLEX_ADMIN_PASSWORD='a long passphrase' cargo run -p open-plex-server
 | `OPENPLEX_INSECURE_COOKIES` | *(off)* | `1` drops `Secure` from the session cookie, for plain HTTP on a local network. |
 | `OPENPLEX_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
+| `OPENPLEX_JELLYFIN_WEB_DIR` | *(none)* | Jellyfin Web, served without a token at `/jellyfin/web`: a Jellyfin install's `jellyfin-web` directory. Not versioned: it is Jellyfin's code. |
 | `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
 | `OPENPLEX_TRANSCODER` | `ffmpeg` beside the server's executable, else on `PATH` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases, kept locally under `.work/ffmpeg-plex/<version>/`. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `OPENPLEX_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
@@ -948,11 +970,21 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `/refresh` operations. Not yet: matching and metadata, finding a renamed or moved file again
   by size and hash, adding a version to an item already stored, a multi-episode file on every
   episode it holds, local extras and artwork, generated images, scan activities.
+- 🚧 **a Jellyfin surface**, `api-jellyfin` below `/jellyfin`, turned on per user as a
+  `jellyfin` extension (`signInThroughExtension`, devices in `extension_device`): discovery,
+  sign-in and out, views, listings and lookups with the reference's shapes and track labels,
+  latest, resume, next up, seasons and episodes, `PlaybackInfo` deciding through
+  `MediaFile.readableAsIs`, direct play and HLS started through `startStream`, progress
+  reports, played marks. Jellyfin Web signs in, browses and plays directly and through a
+  conversion. Not yet: artwork, favorites, subtitles delivered to the client, remuxing,
+  people and genre pages, search hints, the other clients tried (`docs/jellyfin/`).
 
 ## Reference server
 
 A live Plex server runs at `http://127.0.0.1:32400`. It is the arbiter for every behavioral
-question: capture first, then implement. Token comes from the environment (`PLEX_TOKEN`) and is
+question: capture first, then implement. For the Jellyfin surface, a reference Jellyfin runs at
+`http://localhost:8096`, reached with `JELLYFIN_USER` and `JELLYFIN_PASSWORD` from the
+environment, never committed. Token comes from the environment (`PLEX_TOKEN`) and is
 never committed; `captures/` is gitignored because it holds library content.
 
 **The spec alone cannot drive this project.** Verified deviations so far, all in
