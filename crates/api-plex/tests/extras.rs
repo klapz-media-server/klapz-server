@@ -201,6 +201,7 @@ impl Stored {
             stream_url: streamed.then(|| text(part, "key").unwrap()),
             content_hash: None,
             open_subtitles_hash: None,
+            stated: open_plex_core::metadata::StatedFile::default(),
         });
         for track in tracks {
             self.streams.push(stream(part_id, track));
@@ -257,6 +258,7 @@ fn stream(file: PartId, track: &Value) -> MediaStream {
         }),
         subtitle: None,
         required_bandwidths: Vec::new(),
+        stated: open_plex_core::metadata::StatedTrack::default(),
     }
 }
 

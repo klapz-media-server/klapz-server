@@ -20,8 +20,9 @@ use open_plex_core::metadata::{
     EpisodeCredit, ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemFilter,
     ItemKind, ItemQuery, ItemTag, Listed, Loudness, MediaFile, MediaStream, MediaVersion,
     MetadataError, MetadataItem, MetadataRepository, Person, PersonCredit, Rating, ScanType,
-    SearchQuery, StreamKind, SubtitleAnalysis, Tag, TagCondition, TagKind, TagRef, TagScope,
-    TagSearch, TagUse, TrackField, TrackTraits, ValueField, VideoAnalysis,
+    SearchQuery, SidePicture, SideStream, SideStreamKind, StatedFile, StatedTrack, StreamKind,
+    SubtitleAnalysis, Tag, TagCondition, TagKind, TagRef, TagScope, TagSearch, TagUse, TrackField,
+    TrackTraits, ValueField, VideoAnalysis,
 };
 use open_plex_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use open_plex_core::recent::EpisodeAddition;
@@ -45,8 +46,8 @@ use crate::closest_store;
 use crate::entity::{
     collection, collection_entry, item_corner_colors, item_external_id, item_field_lock,
     item_rating, item_tag, item_title_key, item_title_word, media, media_part, media_stream,
-    metadata_item, person, stream_dolby_vision, stream_loudness, tag, tag_word, user_rating,
-    watch_state,
+    metadata_item, part_side_stream, person, stream_dolby_vision, stream_loudness, tag, tag_word,
+    user_rating, watch_state,
 };
 use crate::extra_store;
 use crate::item_order::{ItemOrder, SearchRanking};
@@ -1371,6 +1372,23 @@ impl MetadataRepository for SqlMetadataRepository {
         Ok(streams)
     }
 
+    async fn side_streams_for(&self, files: &[PartId]) -> Result<Vec<SideStream>, MetadataError> {
+        if files.is_empty() {
+            return Ok(Vec::new());
+        }
+        let keys: Vec<i64> = files.iter().map(|id| id.get()).collect();
+        Ok(part_side_stream::Entity::find()
+            .filter(part_side_stream::Column::MediaPartId.is_in(keys))
+            .order_by_asc(part_side_stream::Column::MediaPartId)
+            .order_by_asc(part_side_stream::Column::Position)
+            .all(&self.connection)
+            .await
+            .map_err(storage)?
+            .into_iter()
+            .map(to_side_stream)
+            .collect())
+    }
+
     async fn version(&self, id: MediaId) -> Result<Option<MediaVersion>, MetadataError> {
         if let Some(row) = media::Entity::find_by_id(id.get())
             .one(&self.connection)
@@ -2521,9 +2539,54 @@ fn to_file(row: media_part::Model) -> MediaFile {
         stream_url: None,
         content_hash: row.content_hash,
         open_subtitles_hash: row.open_subtitles_hash,
+        stated: StatedFile {
+            format_name: row.format_name,
+            duration_us: row.declared_duration_us,
+            bitrate: row.declared_bitrate,
+        },
     }
 }
 
+fn to_side_stream(row: part_side_stream::Model) -> SideStream {
+    let kind = match row.kind.as_str() {
+        "cover" => SideStreamKind::Cover,
+        "data" => SideStreamKind::Data,
+        _ => SideStreamKind::Attachment,
+    };
+    let picture = (kind == SideStreamKind::Cover).then_some(SidePicture {
+        width: row.width,
+        height: row.height,
+        pixel_format: row.pixel_format,
+        bit_depth: row.bit_depth,
+        color_space: row.color_space,
+        level: row.level,
+        real_frame_rate: row.real_frame_rate,
+        average_frame_rate: row.average_frame_rate,
+        sample_aspect_ratio: row.sample_aspect_ratio,
+        display_aspect_ratio: row.display_aspect_ratio,
+        interlaced: row.is_interlaced,
+    });
+    SideStream {
+        file_id: PartId::new(row.media_part_id),
+        kind,
+        position: row.position,
+        codec: row.codec,
+        codec_tag: row.codec_tag,
+        profile: row.profile,
+        language: row.language,
+        time_base: row.time_base,
+        mime_type: row.mime_type,
+        filename: row.filename,
+        picture,
+        is_default: row.is_default,
+        is_forced: row.is_forced,
+    }
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "one column after another, into the domain's nested shape"
+)]
 fn to_track(
     row: media_stream::Model,
     dolby_vision: Option<stream_dolby_vision::Model>,
@@ -2564,6 +2627,14 @@ fn to_track(
                 has_enhancement_layer: record.has_enhancement_layer,
                 has_rpu: record.has_rpu,
             }),
+            average_frame_rate: row.average_frame_rate.clone(),
+            real_frame_rate: row.real_frame_rate.clone(),
+            display_aspect_ratio: row.display_aspect_ratio.clone(),
+            sample_aspect_ratio: row.sample_aspect_ratio.clone(),
+            cropped: row.is_cropped,
+            pixel_format: row.pixel_format.clone(),
+            is_avc: row.is_avc,
+            nal_length_size: row.nal_length_size,
         })
     });
     let audio = (kind == StreamKind::Audio).then(|| AudioAnalysis {
@@ -2581,6 +2652,8 @@ fn to_track(
     let subtitle = (kind == StreamKind::Subtitle).then(|| SubtitleAnalysis {
         format: row.subtitle_format.clone(),
         embedded_in_video: row.is_embedded_in_video,
+        canvas_width: row.canvas_width,
+        canvas_height: row.canvas_height,
     });
 
     MediaStream {
@@ -2615,6 +2688,14 @@ fn to_track(
             .as_deref()
             .map(parse_bandwidths)
             .unwrap_or_default(),
+        stated: StatedTrack {
+            language: row.declared_language,
+            handler_name: row.handler_name,
+            time_base: row.time_base,
+            codec_tag: row.codec_tag,
+            bitrate: row.declared_bitrate,
+            tagged_bitrate: row.tagged_bitrate,
+        },
     }
 }
 

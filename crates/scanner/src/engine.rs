@@ -5,6 +5,7 @@ mod bif;
 mod fingerprint;
 mod hashes;
 mod loudness;
+mod matroska;
 mod mp4;
 mod probe;
 mod sequence_header;

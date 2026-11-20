@@ -52,6 +52,9 @@ pub struct Analysis {
     pub container: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+    /// The same duration to the microsecond, as ffprobe prints it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_us: Option<u64>,
     /// The container's own bitrate, in bits per second.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bitrate: Option<u64>,
@@ -107,23 +110,43 @@ pub struct Track {
     /// The container's codec identifier (a `FourCC`), when it carries one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codec_tag: Option<String>,
+    /// ffprobe's `codec_tag_string` as printed: `[0][0][0][0]` where the container names none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_codec_tag: Option<String>,
+    /// The unit of the track's timestamps, `num/den`: `1/1000` in Matroska.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_base: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    /// The language as the file states it, before any default: Matroska's `LanguageBCP47` or
+    /// `Language` element (`und` stating none) or a `LANGUAGE` tag; elsewhere ffprobe's tag,
+    /// `und` included. `language` is ffprobe's, which writes Matroska's implicit English.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub declared_language: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// The handler an MP4 track names, often the muxer's (`SoundHandler`), sometimes a title.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handler_name: Option<String>,
     /// Declared by the stream header, in bits per second.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bitrate: Option<u64>,
     /// Matroska's `BPS` statistics tag, which the muxer measured.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tagged_bitrate: Option<u64>,
+    /// Every statistics tag the muxer wrote, under their names old (`BPS-eng`) or new.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub statistics: Option<Statistics>,
     pub disposition: Disposition,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video: Option<VideoTrack>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio: Option<AudioTrack>,
+    /// An image subtitle's canvas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subtitle: Option<SubtitleTrack>,
     /// An attachment's MIME type and file name, such as a Matroska cover.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachment: Option<Attachment>,
@@ -181,6 +204,19 @@ pub struct VideoTrack {
     /// 25.011 the reference stores for an MP4 whose timestamps drift from its nominal 25.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frame_rate: Option<f64>,
+    /// `avg_frame_rate` as written, `num/den`: `0/0` when ffprobe could not average one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub average_frame_rate: Option<String>,
+    /// `r_frame_rate`, the lowest rate every timestamp falls on, as written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub real_frame_rate: Option<String>,
+    /// H.264 only: whether NAL units are prefixed by their length (the `avcC` framing of MP4 and
+    /// Matroska) rather than by start codes (Annex B, MPEG-TS's).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_avc: Option<bool>,
+    /// H.264 only: the bytes of that length prefix, 0 under Annex B.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nal_length_size: Option<u32>,
     /// `progressive`, `tt`, `bb`, `tb`, `bt`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field_order: Option<String>,
@@ -247,6 +283,26 @@ pub struct AudioTrack {
     /// Lossless formats only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bit_depth: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleTrack {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// What a muxer measured of a track and wrote as tags: mkvmerge's `BPS`, `NUMBER_OF_BYTES` and
+/// `DURATION`, or the same with `-eng` appended, as it named them before 2015.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Statistics {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitrate: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_us: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1455,11 +1455,16 @@ fn track(
         audio: None,
         subtitle: None,
         required_bandwidths: Vec::new(),
+        stated: open_plex_core::metadata::StatedTrack::default(),
     }
 }
 
-/// Soul with one file of three tracks, and an engine that records what it is asked.
-fn streamable(engine: Arc<open_plex_core::testing::StubStreams>) -> ApiSchema {
+/// Soul's one version: one file of three tracks.
+fn soul_media() -> (
+    open_plex_core::MediaVersion,
+    open_plex_core::MediaFile,
+    Vec<open_plex_core::MediaStream>,
+) {
     use open_plex_core::StreamKind;
     let version = open_plex_core::MediaVersion {
         id: open_plex_core::MediaId::new(900),
@@ -1488,12 +1493,33 @@ fn streamable(engine: Arc<open_plex_core::testing::StubStreams>) -> ApiSchema {
         stream_url: None,
         content_hash: None,
         open_subtitles_hash: None,
+        stated: open_plex_core::metadata::StatedFile::default(),
     };
     let tracks = vec![
         track(920, StreamKind::Video, 0, "h264"),
         track(921, StreamKind::Audio, 1, "aac"),
         track(922, StreamKind::Subtitle, 2, "srt"),
     ];
+    (version, file, tracks)
+}
+
+/// Soul with one file of three tracks, and an engine that records what it is asked.
+fn streamable(engine: Arc<open_plex_core::testing::StubStreams>) -> ApiSchema {
+    let (version, file, tracks) = soul_media();
+    serving(
+        engine,
+        InMemoryMetadata::new(vec![item(577_986, 4, ItemKind::Movie, "Soul", None)]).with_media(
+            vec![version],
+            vec![file],
+            tracks,
+        ),
+    )
+}
+
+fn serving(
+    engine: Arc<open_plex_core::testing::StubStreams>,
+    metadata: InMemoryMetadata,
+) -> ApiSchema {
     build_schema(ApiContext {
         capabilities: open_plex_core::ServerCapabilities::new(
             open_plex_core::ServerIdentity::new(
@@ -1512,10 +1538,7 @@ fn streamable(engine: Arc<open_plex_core::testing::StubStreams>) -> ApiSchema {
                 },
             ]),
         ),
-        metadata: Arc::new(
-            InMemoryMetadata::new(vec![item(577_986, 4, ItemKind::Movie, "Soul", None)])
-                .with_media(vec![version], vec![file], tracks),
-        ),
+        metadata: Arc::new(metadata),
         playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
         play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
         playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::default()),
@@ -3205,4 +3228,75 @@ async fn viewers_rank_everyone_for_an_owner_and_the_caller_alone_for_a_user() {
         }
     };
     assert_eq!(counts(&as_viewer(viewers(577_986, false)).await), [1]);
+}
+
+#[tokio::test]
+async fn a_file_states_its_rates_and_what_does_not_play() {
+    use open_plex_core::metadata::{SidePicture, SideStream, SideStreamKind};
+    let (version, mut file, mut tracks) = soul_media();
+    file.stated.format_name = Some("matroska,webm".to_owned());
+    file.stated.duration_us = Some(6_031_567_890);
+    file.stated.bitrate = Some(4_000_000);
+    // The video states nothing, the audio its header's rate, the subtitle only tags.
+    tracks[1].stated.bitrate = Some(192_000);
+    tracks[2].stated.tagged_bitrate = Some(54);
+    tracks[0].stated.time_base = Some("1/1000".to_owned());
+    let cover = SideStream {
+        file_id: file.id,
+        kind: SideStreamKind::Cover,
+        position: 3,
+        codec: Some("mjpeg".to_owned()),
+        codec_tag: Some("[0][0][0][0]".to_owned()),
+        profile: None,
+        language: None,
+        time_base: Some("1/90000".to_owned()),
+        mime_type: Some("image/jpeg".to_owned()),
+        filename: Some("cover.jpg".to_owned()),
+        picture: Some(SidePicture {
+            width: Some(350),
+            height: Some(197),
+            ..SidePicture::default()
+        }),
+        is_default: false,
+        is_forced: false,
+    };
+    let schema = serving(
+        Arc::new(open_plex_core::testing::StubStreams::default()),
+        InMemoryMetadata::new(vec![item(577_986, 4, ItemKind::Movie, "Soul", None)])
+            .with_media(vec![version], vec![file], tracks)
+            .with_side_streams(vec![cover]),
+    );
+    let soul = GlobalId::encode("Item", 577_986);
+    let data = run_on(
+        &schema,
+        &format!(
+            r#"{{ node(id: "{soul}") {{ ... on Movie {{ versions {{ files {{
+                stated {{ formatName durationUs bitrate }}
+                streams {{ estimatedBitrate stated {{ timeBase }} }}
+                sideStreams {{ kind position codec filename picture {{ width height }} }}
+            }} }} }} }} }}"#
+        ),
+    )
+    .await;
+    let file = &data["node"]["versions"][0]["files"][0];
+    assert_eq!(file["stated"]["formatName"], "matroska,webm");
+    assert_eq!(file["stated"]["durationUs"], "6031567890");
+    let rates: Vec<&Value> = file["streams"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|track| &track["estimatedBitrate"])
+        .collect();
+    // The video takes what the container leaves; a subtitle's tags are not its rate.
+    assert_eq!(
+        rates,
+        [
+            &serde_json::json!(3_808_000),
+            &serde_json::json!(192_000),
+            &Value::Null
+        ]
+    );
+    assert_eq!(file["streams"][0]["stated"]["timeBase"], "1/1000");
+    assert_eq!(file["sideStreams"][0]["kind"], "COVER");
+    assert_eq!(file["sideStreams"][0]["picture"]["width"], 350);
 }

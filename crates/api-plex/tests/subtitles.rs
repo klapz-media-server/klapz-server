@@ -78,6 +78,7 @@ fn track(id: i64, kind: StreamKind, position: i32, codec: &str, language: &str) 
         audio: None,
         subtitle: (kind == StreamKind::Subtitle).then(SubtitleAnalysis::default),
         required_bandwidths: Vec::new(),
+        stated: open_plex_core::metadata::StatedTrack::default(),
     }
 }
 
@@ -167,6 +168,7 @@ fn metadata() -> InMemoryMetadata {
         stream_url: None,
         content_hash: None,
         open_subtitles_hash: None,
+        stated: open_plex_core::metadata::StatedFile::default(),
     };
     InMemoryMetadata::new(vec![soul]).with_media(vec![version], vec![file], streams())
 }

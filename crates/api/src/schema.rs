@@ -895,6 +895,12 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
         .data(loader(VersionsLoader::new(Arc::clone(&metadata))))
         .data(loader(FilesLoader::new(Arc::clone(&metadata))))
         .data(loader(StreamsLoader::new(Arc::clone(&metadata))))
+        .data(loader(crate::stated::SideStreamsLoader::new(Arc::clone(
+            &metadata,
+        ))))
+        .data(loader(crate::stated::FileLoader::new(Arc::clone(
+            &metadata,
+        ))))
         .data(loader(ChildCountLoader::new(Arc::clone(&metadata))))
         .data(loader(LeafCountLoader::new(Arc::clone(&metadata))))
         .data(loader(TagsLoader::new(Arc::clone(&metadata))))

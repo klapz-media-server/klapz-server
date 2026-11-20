@@ -323,6 +323,7 @@ async fn connection_with_a_file() -> DatabaseConnection {
         has_chapter_text_stream: ActiveValue::Set(false),
         content_hash: ActiveValue::Set(None),
         open_subtitles_hash: ActiveValue::Set(None),
+        ..Default::default()
     })
     .exec(&connection)
     .await

@@ -41,6 +41,7 @@ mod m0036_subtitle_offset;
 mod m0037_tree_fields;
 mod m0038_chapter;
 mod m0039_extension_device;
+mod m0040_stated_probe;
 
 use sea_orm_migration::prelude::*;
 
@@ -89,6 +90,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0037_tree_fields::Migration),
             Box::new(m0038_chapter::Migration),
             Box::new(m0039_extension_device::Migration),
+            Box::new(m0040_stated_probe::Migration),
         ]
     }
 }

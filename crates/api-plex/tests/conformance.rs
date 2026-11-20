@@ -499,6 +499,7 @@ fn avatar_audio() -> MediaStream {
         }),
         subtitle: None,
         required_bandwidths: Vec::new(),
+        stated: open_plex_core::metadata::StatedTrack::default(),
     }
 }
 
@@ -575,6 +576,7 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
         stream_url: None,
         content_hash: None,
         open_subtitles_hash: None,
+        stated: open_plex_core::metadata::StatedFile::default(),
     };
 
     let (external_ids, ratings) = references();

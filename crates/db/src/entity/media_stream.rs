@@ -74,6 +74,34 @@ pub struct Model {
     /// Kilobits per second the analysis found the track needs, one per buffer size from the
     /// smallest, joined by commas as the source writes them.
     pub required_bandwidths: Option<String>,
+    /// The columns below are what the scan read as ffprobe printed it, which the importer has
+    /// no source for. The language before any default: null when the file states none.
+    pub declared_language: Option<String>,
+    pub handler_name: Option<String>,
+    /// `num/den`.
+    pub time_base: Option<String>,
+    /// As ffprobe prints it: `[0][0][0][0]` where the container names none.
+    pub codec_tag: Option<String>,
+    /// What the track's header declares, bits per second.
+    pub declared_bitrate: Option<i64>,
+    /// What the muxer measured and tagged, bits per second.
+    pub tagged_bitrate: Option<i64>,
+    /// `num/den`, as ffprobe states them.
+    pub average_frame_rate: Option<String>,
+    pub real_frame_rate: Option<String>,
+    pub display_aspect_ratio: Option<String>,
+    /// As ffprobe states it, after the container's crop; `pixel_aspect_ratio` is the
+    /// reference's, before it, and written only for pixels that are not square.
+    pub sample_aspect_ratio: Option<String>,
+    /// Whether the container asks for lines or columns to be hidden.
+    pub is_cropped: Option<bool>,
+    /// ffmpeg's pixel format: `yuv420p10le`.
+    pub pixel_format: Option<String>,
+    pub is_avc: Option<bool>,
+    pub nal_length_size: Option<i32>,
+    /// The frame a picture subtitle is drawn for.
+    pub canvas_width: Option<i32>,
+    pub canvas_height: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

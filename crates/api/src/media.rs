@@ -272,6 +272,21 @@ impl File {
         self.0.layout.has_chapter_text_stream
     }
 
+    /// What the file's container states about itself, as the prober printed it. Empty for a
+    /// file the scan did not read.
+    async fn stated(&self) -> crate::stated::StatedFileObject {
+        crate::stated::StatedFileObject(self.0.stated.clone())
+    }
+
+    /// What the file carries besides the tracks that play — cover pictures, data tracks,
+    /// attached files — by position.
+    async fn side_streams(
+        &self,
+        context: &Context<'_>,
+    ) -> Result<Vec<crate::stated::SideStreamObject>> {
+        crate::stated::side_streams_of(context, self.0.id).await
+    }
+
     /// The tracks inside this file, plus any sidecar subtitle files.
     async fn streams(&self, context: &Context<'_>) -> Result<Vec<Track>> {
         Ok(self.tracks(context).await?.into_iter().map(Track).collect())
@@ -510,6 +525,21 @@ impl Track {
     async fn subtitle(&self) -> Option<Subtitle> {
         self.0.subtitle.clone().map(Subtitle)
     }
+
+    /// What the file states about the track as the prober printed it, beside the values above,
+    /// which are in the reference's vocabulary. Empty for a track the scan did not read.
+    async fn stated(&self) -> crate::stated::StatedTrackObject {
+        crate::stated::StatedTrackObject(self.0.stated.clone())
+    }
+
+    /// Bits per second as the file states them, else estimated, for a player budgeting its
+    /// bandwidth before reading anything: the header's rate, else the muxer's tagged one (not a
+    /// subtitle's), else a rate typical of an audio codec and its channels, and for a file's
+    /// one video what the container's declared rate leaves once every other track's is counted.
+    /// `bitrate` is the measurement over every packet.
+    async fn estimated_bitrate(&self, context: &Context<'_>) -> Result<Option<i64>> {
+        crate::stated::estimated_bitrate(context, &self.0).await
+    }
 }
 
 /// What a file says a track is for.
@@ -670,6 +700,50 @@ impl Video {
     async fn dolby_vision(&self) -> Option<DolbyVisionObject> {
         self.0.dolby_vision.clone().map(DolbyVisionObject)
     }
+
+    /// The average frame rate as the prober states it, an exact ratio: `24000/1001`; `0/0`
+    /// when it could not average one. Null where the scan did not read the file.
+    async fn average_frame_rate(&self) -> Option<&str> {
+        self.0.average_frame_rate.as_deref()
+    }
+
+    /// The lowest rate every timestamp falls on, as the prober states it: `25/1` for a file
+    /// whose average drifts to 25.011.
+    async fn real_frame_rate(&self) -> Option<&str> {
+        self.0.real_frame_rate.as_deref()
+    }
+
+    /// The display aspect ratio as the prober states it, `num:den`: `16:9`, `240:101`.
+    async fn display_aspect_ratio(&self) -> Option<&str> {
+        self.0.display_aspect_ratio.as_deref()
+    }
+
+    /// The sample aspect ratio as the prober states it, after the container's crop, `num:den`:
+    /// 1:1 for a picture `pixelAspectRatio` reads as 27:20 before Fleabag's crop.
+    async fn sample_aspect_ratio(&self) -> Option<&str> {
+        self.0.sample_aspect_ratio.as_deref()
+    }
+
+    /// Whether the container asks a player to hide lines or columns of the picture.
+    async fn is_cropped(&self) -> Option<bool> {
+        self.0.cropped
+    }
+
+    /// ffmpeg's pixel format: `yuv420p`, `yuv420p10le`.
+    async fn pixel_format(&self) -> Option<&str> {
+        self.0.pixel_format.as_deref()
+    }
+
+    /// H.264: whether NAL units are prefixed by their length, as MP4 and Matroska carry them
+    /// (`avcC`), rather than by start codes (Annex B, as MPEG-TS and AVI do).
+    async fn is_avc(&self) -> Option<bool> {
+        self.0.is_avc
+    }
+
+    /// H.264: the size of that length prefix in bytes, 0 under Annex B.
+    async fn nal_length_size(&self) -> Option<i32> {
+        self.0.nal_length_size
+    }
 }
 
 /// How a video track's colors are to be read, in ffmpeg's vocabulary.
@@ -819,6 +893,16 @@ impl Subtitle {
     /// track of their own.
     async fn is_embedded_in_video(&self) -> bool {
         self.0.embedded_in_video
+    }
+
+    /// The width of the frame a picture subtitle is drawn for: 1920 for a Blu-ray's PGS.
+    async fn canvas_width(&self) -> Option<i32> {
+        self.0.canvas_width
+    }
+
+    /// The height of that frame.
+    async fn canvas_height(&self) -> Option<i32> {
+        self.0.canvas_height
     }
 }
 

@@ -589,6 +589,7 @@ mod tests {
                 },
                 container: "matroska,webm".to_owned(),
                 duration_ms: Some(1000),
+                duration_us: Some(1_000_000),
                 bitrate: None,
                 optimized_for_streaming: None,
                 has_64bit_offsets: None,

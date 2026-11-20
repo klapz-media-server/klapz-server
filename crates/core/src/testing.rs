@@ -28,8 +28,8 @@ use crate::marker::{Marker, NewMarker};
 use crate::metadata::{
     self, CreditRef, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind, ItemQuery,
     ItemSort, ItemTag, Listed, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
-    MetadataRepository, Person, PersonCredit, Rating, SearchOrder, SearchQuery, Tag, TagCondition,
-    TagKind, TagRef, TagScope, TagSearch, TagUse, ValueField,
+    MetadataRepository, Person, PersonCredit, Rating, SearchOrder, SearchQuery, SideStream, Tag,
+    TagCondition, TagKind, TagRef, TagScope, TagSearch, TagUse, ValueField,
 };
 use crate::page::{Cursor, Page, Window};
 use crate::playlist::{
@@ -124,6 +124,7 @@ pub struct InMemoryMetadata {
     versions: Vec<MediaVersion>,
     files: Vec<MediaFile>,
     streams: std::sync::Mutex<Vec<MediaStream>>,
+    side_streams: Vec<SideStream>,
     extras: Vec<Extra>,
     /// Apart from `versions`, which are an item's own: an extra's name its item too.
     extra_versions: Vec<(ExtraId, MediaVersion)>,
@@ -145,6 +146,7 @@ impl InMemoryMetadata {
             versions: Vec::new(),
             files: Vec::new(),
             streams: std::sync::Mutex::default(),
+            side_streams: Vec::new(),
             extras: Vec::new(),
             extra_versions: Vec::new(),
             tags: Vec::new(),
@@ -154,6 +156,13 @@ impl InMemoryMetadata {
             chapters: Vec::new(),
             collections: None,
         }
+    }
+
+    /// Gives files the covers, data tracks and attachments a scan would find.
+    #[must_use]
+    pub fn with_side_streams(mut self, side_streams: Vec<SideStream>) -> Self {
+        self.side_streams = side_streams;
+        self
     }
 
     /// Gives items their chapters, as an import would.
@@ -820,6 +829,15 @@ impl MetadataRepository for InMemoryMetadata {
 
     async fn streams_for(&self, files: &[PartId]) -> Result<Vec<MediaStream>, MetadataError> {
         Ok(locked(&self.streams)
+            .iter()
+            .filter(|stream| files.contains(&stream.file_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn side_streams_for(&self, files: &[PartId]) -> Result<Vec<SideStream>, MetadataError> {
+        Ok(self
+            .side_streams
             .iter()
             .filter(|stream| files.contains(&stream.file_id))
             .cloned()

@@ -358,23 +358,7 @@ fn same(key: &str, ours: Option<&String>, theirs: Option<&String>) -> bool {
 
 #[tokio::test]
 async fn a_scanned_sample_stores_what_the_reference_stored() {
-    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
-    library_section::Entity::insert(library_section::ActiveModel {
-        id: ActiveValue::Set(FILMS.get()),
-        kind: ActiveValue::Set("movie".to_owned()),
-        title: ActiveValue::Set("Samples".to_owned()),
-        title_sort: ActiveValue::Set(None),
-        language: ActiveValue::Set("fr-FR".to_owned()),
-        uuid: ActiveValue::Set("uuid-samples".to_owned()),
-        created_at: ActiveValue::Set(0),
-        updated_at: ActiveValue::Set(0),
-        scanned_at: ActiveValue::Set(None),
-        content_changed_at: ActiveValue::Set(0),
-        hidden: ActiveValue::Set(false),
-    })
-    .exec(&connection)
-    .await
-    .unwrap();
+    let connection = films_library().await;
     let scan = SqlScanRepository::new(connection.clone());
 
     let mut samples: Vec<PathBuf> = std::fs::read_dir(samples())
@@ -410,6 +394,75 @@ async fn a_scanned_sample_stores_what_the_reference_stored() {
         }
     }
     assert!(differences.is_empty(), "\n{}", differences.join("\n"));
+}
+
+async fn films_library() -> DatabaseConnection {
+    let connection = open_plex_db::connect("sqlite::memory:").await.unwrap();
+    library_section::Entity::insert(library_section::ActiveModel {
+        id: ActiveValue::Set(FILMS.get()),
+        kind: ActiveValue::Set("movie".to_owned()),
+        title: ActiveValue::Set("Samples".to_owned()),
+        title_sort: ActiveValue::Set(None),
+        language: ActiveValue::Set("fr-FR".to_owned()),
+        uuid: ActiveValue::Set("uuid-samples".to_owned()),
+        created_at: ActiveValue::Set(0),
+        updated_at: ActiveValue::Set(0),
+        scanned_at: ActiveValue::Set(None),
+        content_changed_at: ActiveValue::Set(0),
+        hidden: ActiveValue::Set(false),
+    })
+    .exec(&connection)
+    .await
+    .unwrap();
+    connection
+}
+
+#[tokio::test]
+async fn a_scan_keeps_what_ffprobe_states_and_what_does_not_play() {
+    use open_plex_core::metadata::{MetadataRepository, SideStreamKind, StreamKind};
+    let connection = films_library().await;
+    let scan = SqlScanRepository::new(connection.clone());
+    let metadata = open_plex_db::SqlMetadataRepository::new(connection.clone());
+    let sample = samples().join("90210-beverly-hills-ng-s01e21-vf-sd-tvhdrip-mp4-avc-aac");
+    let item = scan
+        .add_item(FILMS, new_item(&sample), 1_763_400_000)
+        .await
+        .unwrap();
+    let versions = metadata.versions_for(&[item]).await.unwrap();
+    let files = metadata.files_for(&[versions[0].id]).await.unwrap();
+    let file = &files[0];
+    assert_eq!(
+        file.stated.format_name.as_deref(),
+        Some("mov,mp4,m4a,3gp,3g2,mj2")
+    );
+    assert_eq!(file.stated.duration_us, Some(287_754_134));
+    assert_eq!(file.stated.bitrate, Some(1_986_929));
+
+    let tracks = metadata.streams_for(&[file.id]).await.unwrap();
+    assert_eq!(tracks.len(), 2, "the cover is no track");
+    let video = tracks
+        .iter()
+        .find(|track| track.kind == StreamKind::Video)
+        .unwrap();
+    assert_eq!(video.stated.time_base.as_deref(), Some("1/30000"));
+    assert_eq!(video.stated.codec_tag.as_deref(), Some("avc1"));
+    assert_eq!(video.stated.language.as_deref(), Some("und"));
+    assert_eq!(video.stated.bitrate, Some(1_510_916));
+    let analysis = video.video.as_ref().unwrap();
+    assert_eq!(analysis.average_frame_rate.as_deref(), Some("30000/1001"));
+    assert_eq!(analysis.nal_length_size, Some(4));
+    assert_eq!(analysis.is_avc, Some(true));
+    assert_eq!(analysis.pixel_format.as_deref(), Some("yuv420p"));
+
+    let side = metadata.side_streams_for(&[file.id]).await.unwrap();
+    assert_eq!(side.len(), 1);
+    assert_eq!(side[0].kind, SideStreamKind::Cover);
+    assert_eq!(side[0].position, 2);
+    assert_eq!(side[0].codec.as_deref(), Some("bmp"));
+    assert_eq!(side[0].codec_tag.as_deref(), Some("[0][0][0][0]"));
+    let picture = side[0].picture.as_ref().unwrap();
+    assert_eq!((picture.width, picture.height), (Some(640), Some(360)));
+    assert_eq!(picture.real_frame_rate.as_deref(), Some("90000/1"));
 }
 
 #[test]

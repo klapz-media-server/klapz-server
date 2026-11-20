@@ -158,6 +158,7 @@ fn file(id: i64, version: i64, path: &str, size: i64) -> MediaFile {
         stream_url: None,
         content_hash: None,
         open_subtitles_hash: None,
+        stated: open_plex_core::metadata::StatedFile::default(),
     }
 }
 
@@ -183,6 +184,7 @@ fn track(id: i64, file: i64, kind: StreamKind, position: i32, codec: &str) -> Me
         audio: None,
         subtitle: None,
         required_bandwidths: Vec::new(),
+        stated: open_plex_core::metadata::StatedTrack::default(),
     }
 }
 

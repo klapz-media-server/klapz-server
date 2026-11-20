@@ -30,6 +30,12 @@ pub struct Model {
     pub content_hash: Option<String>,
     /// The file's `OpenSubtitles` hash, in hex.
     pub open_subtitles_hash: Option<String>,
+    /// ffprobe's `format_name`, as printed: `matroska,webm`.
+    pub format_name: Option<String>,
+    /// The duration the container declares, in microseconds.
+    pub declared_duration_us: Option<i64>,
+    /// The bitrate the container declares, bits per second.
+    pub declared_bitrate: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -43,6 +49,8 @@ pub enum Relation {
     Media,
     #[sea_orm(has_many = "super::media_stream::Entity")]
     MediaStream,
+    #[sea_orm(has_many = "super::part_side_stream::Entity")]
+    SideStream,
 }
 
 impl Related<super::media::Entity> for Entity {

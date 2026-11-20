@@ -6,10 +6,12 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::engine::{hashes, input, mp4, run, sequence_header, ScanError, Streaming, Tools};
+use crate::engine::{
+    hashes, input, matroska, mp4, run, sequence_header, ScanError, Streaming, Tools,
+};
 use crate::report::{
     Analysis, Attachment, AudioTrack, Chapter, Cropping, DeepAnalysis, Disposition, DolbyVision,
-    FileIdentity, MeasuredTrack, Track, TrackKind, VideoTrack,
+    FileIdentity, MeasuredTrack, Statistics, SubtitleTrack, Track, TrackKind, VideoTrack,
 };
 
 /// Reads what the file declares; with `deep`, also every packet's size, which measures each
@@ -21,7 +23,8 @@ use crate::report::{
 /// file cannot be read at all.
 pub fn probe(tools: &Tools, path: &Path, deep: bool) -> Result<Analysis, ScanError> {
     let file = hashes::identify(path)?;
-    let mut analysis = analysis_from_ffprobe(&ffprobe(tools, path)?, file)?;
+    let output = ffprobe(tools, path)?;
+    let mut analysis = analysis_from_ffprobe(&output, file)?;
     if analysis.container.split(',').any(|name| name == "mp4") {
         // The layout is a nicety; a file ffprobe could read but this walk cannot stays analyzed.
         if let Ok(layout) = mp4::layout(path) {
@@ -31,6 +34,12 @@ pub fn probe(tools: &Tools, path: &Path, deep: bool) -> Result<Analysis, ScanErr
     }
     if analysis.container == "mpegts" {
         analysis.packet_length = transport_packet_length(path);
+    }
+    if analysis.container.split(',').any(|name| name == "matroska") {
+        if let Some(declared) = matroska::declared_tracks(path) {
+            let tagged = tagged_languages(&parse(&output)?);
+            apply_declared_languages(&mut analysis.tracks, &declared, &tagged);
+        }
     }
     for track in &mut analysis.tracks {
         if track.codec.as_deref() != Some("h264") || track.disposition.attached_picture {
@@ -58,6 +67,12 @@ pub fn analysis_from_ffprobe(output: &[u8], file: FileIdentity) -> Result<Analys
     Ok(Analysis {
         file,
         duration_ms: probed.format.duration.as_deref().and_then(milliseconds),
+        duration_us: probed
+            .format
+            .duration
+            .as_deref()
+            .and_then(microseconds)
+            .and_then(|us| u64::try_from(us).ok()),
         bitrate: probed.format.bit_rate.as_deref().and_then(integer),
         optimized_for_streaming: None,
         has_64bit_offsets: None,
@@ -309,6 +324,46 @@ fn transport_packet_length(path: &Path) -> Option<u32> {
     }
 }
 
+/// The streams whose language comes from a Matroska `LANGUAGE` tag: ffmpeg keeps the tag's own
+/// spelling of the key, where the `Language` element is written `language`.
+fn tagged_languages(probed: &Probed) -> Vec<u32> {
+    probed
+        .streams
+        .iter()
+        .filter(|stream| stream.tags.contains_key("LANGUAGE"))
+        .map(|stream| stream.index)
+        .collect()
+}
+
+/// Matroska's languages as the file declares them, over what ffprobe-plex writes: `eng` for a
+/// track that declares none, or declares `und`. A `LANGUAGE` tag is the file's statement too,
+/// and stands. Track entries are numbered as ffmpeg numbers their streams, attachments coming
+/// after, images among them as cover pictures; when the counts disagree, ffprobe's languages
+/// are kept.
+fn is_track_entry(track: &Track) -> bool {
+    track.kind != TrackKind::Attachment && !track.disposition.attached_picture
+}
+
+fn apply_declared_languages(
+    tracks: &mut [Track],
+    declared: &[matroska::DeclaredTrack],
+    tagged: &[u32],
+) {
+    let entries = tracks.iter().filter(|track| is_track_entry(track)).count();
+    if entries != declared.len() {
+        return;
+    }
+    for (track, entry) in tracks
+        .iter_mut()
+        .filter(|track| is_track_entry(track))
+        .zip(declared)
+    {
+        if !tagged.contains(&track.index) {
+            track.declared_language = entry.language().map(ToOwned::to_owned);
+        }
+    }
+}
+
 fn track(stream: &Stream) -> Option<Track> {
     let kind = match stream.codec_type.as_deref()? {
         "video" => TrackKind::Video,
@@ -343,7 +398,87 @@ fn track(stream: &Stream) -> Option<Track> {
         comment: flag("comment"),
         attached_picture: flag("attached_pic"),
     };
-    let video = (kind == TrackKind::Video).then(|| VideoTrack {
+    let video = (kind == TrackKind::Video).then(|| video_track(stream));
+    let audio = (kind == TrackKind::Audio).then(|| AudioTrack {
+        sample_rate: stream
+            .sample_rate
+            .as_deref()
+            .and_then(|rate| rate.parse().ok()),
+        channels: stream.channels,
+        channel_layout: stream.channel_layout.clone(),
+        bit_depth: stream
+            .bits_per_raw_sample
+            .as_deref()
+            .and_then(|bits| bits.parse().ok())
+            .filter(|bits| *bits > 0),
+    });
+    let subtitle = (kind == TrackKind::Subtitle)
+        .then(|| {
+            Some(SubtitleTrack {
+                width: stream.width.filter(|width| *width > 0)?,
+                height: stream.height.filter(|height| *height > 0)?,
+            })
+        })
+        .flatten();
+    let attachment = (kind == TrackKind::Attachment).then(|| Attachment {
+        mime_type: tag("mimetype"),
+        filename: tag("filename"),
+    });
+    Some(Track {
+        index: stream.index,
+        identifier: stream
+            .id
+            .as_deref()
+            .and_then(|id| u32::from_str_radix(id.strip_prefix("0x")?, 16).ok()),
+        kind,
+        codec: stream.codec_name.clone(),
+        codec_tag: stream
+            .codec_tag_string
+            .clone()
+            .filter(|tag| !tag.starts_with("[0]") && tag != "0x0000"),
+        raw_codec_tag: stream.codec_tag_string.clone(),
+        time_base: stream.time_base.clone(),
+        profile: stream.profile.clone(),
+        language: tag("language").filter(|language| language != "und"),
+        declared_language: tag("language"),
+        title: tag("title"),
+        handler_name: tag("handler_name"),
+        bitrate: stream.bit_rate.as_deref().and_then(integer),
+        tagged_bitrate,
+        statistics: statistics(&tag),
+        disposition,
+        video,
+        audio,
+        subtitle,
+        attachment,
+    })
+}
+
+/// mkvmerge's statistics tags, under either of their names.
+fn statistics(tag: &dyn Fn(&str) -> Option<String>) -> Option<Statistics> {
+    let either = |name: &str| tag(name).or_else(|| tag(&format!("{name}-eng")));
+    let statistics = Statistics {
+        bitrate: either("BPS").as_deref().and_then(integer),
+        bytes: either("NUMBER_OF_BYTES").as_deref().and_then(integer),
+        duration_us: either("DURATION").as_deref().and_then(tag_duration_us),
+    };
+    (statistics != Statistics::default()).then_some(statistics)
+}
+
+/// A `DURATION` tag, `00:00:50.040000000`, in microseconds.
+fn tag_duration_us(text: &str) -> Option<u64> {
+    let mut parts = text.trim().splitn(3, ':');
+    let hours: u64 = parts.next()?.parse().ok()?;
+    let minutes: u64 = parts.next()?.parse().ok()?;
+    let seconds = u64::try_from(microseconds(parts.next()?)?).ok()?;
+    hours
+        .checked_mul(3_600_000_000)?
+        .checked_add(minutes.checked_mul(60_000_000)?)?
+        .checked_add(seconds)
+}
+
+fn video_track(stream: &Stream) -> VideoTrack {
+    VideoTrack {
         width: stream.width.unwrap_or(0),
         height: stream.height.unwrap_or(0),
         coded_width: stream.coded_width.filter(|width| *width > 0),
@@ -368,52 +503,20 @@ fn track(stream: &Stream) -> Option<Track> {
             .as_deref()
             .and_then(ratio)
             .or_else(|| stream.r_frame_rate.as_deref().and_then(ratio)),
+        average_frame_rate: stream.avg_frame_rate.clone(),
+        real_frame_rate: stream.r_frame_rate.clone(),
+        is_avc: stream.is_avc.as_deref().map(|framing| framing == "true"),
+        nal_length_size: stream
+            .nal_length_size
+            .as_deref()
+            .and_then(|size| size.parse().ok()),
         field_order: stream.field_order.clone(),
         sample_aspect_ratio: stream.sample_aspect_ratio.clone(),
         display_aspect_ratio: stream.display_aspect_ratio.clone(),
         cropping: stream.side_data_list.iter().find_map(cropping),
         closed_captions: stream.closed_captions.is_some_and(|captions| captions != 0),
         dolby_vision: stream.side_data_list.iter().find_map(dolby_vision),
-    });
-    let audio = (kind == TrackKind::Audio).then(|| AudioTrack {
-        sample_rate: stream
-            .sample_rate
-            .as_deref()
-            .and_then(|rate| rate.parse().ok()),
-        channels: stream.channels,
-        channel_layout: stream.channel_layout.clone(),
-        bit_depth: stream
-            .bits_per_raw_sample
-            .as_deref()
-            .and_then(|bits| bits.parse().ok())
-            .filter(|bits| *bits > 0),
-    });
-    let attachment = (kind == TrackKind::Attachment).then(|| Attachment {
-        mime_type: tag("mimetype"),
-        filename: tag("filename"),
-    });
-    Some(Track {
-        index: stream.index,
-        identifier: stream
-            .id
-            .as_deref()
-            .and_then(|id| u32::from_str_radix(id.strip_prefix("0x")?, 16).ok()),
-        kind,
-        codec: stream.codec_name.clone(),
-        codec_tag: stream
-            .codec_tag_string
-            .clone()
-            .filter(|tag| !tag.starts_with("[0]") && tag != "0x0000"),
-        profile: stream.profile.clone(),
-        language: tag("language").filter(|language| language != "und"),
-        title: tag("title"),
-        bitrate: stream.bit_rate.as_deref().and_then(integer),
-        tagged_bitrate,
-        disposition,
-        video,
-        audio,
-        attachment,
-    })
+    }
 }
 
 fn cropping(side_data: &SideData) -> Option<Cropping> {
@@ -621,6 +724,9 @@ struct Stream {
     avg_frame_rate: Option<String>,
     sample_aspect_ratio: Option<String>,
     display_aspect_ratio: Option<String>,
+    is_avc: Option<String>,
+    nal_length_size: Option<String>,
+    time_base: Option<String>,
     closed_captions: Option<u8>,
     sample_rate: Option<String>,
     channels: Option<u32>,
@@ -668,6 +774,73 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+
+    fn probed_track(index: u32, kind: TrackKind, language: Option<&str>) -> Track {
+        Track {
+            index,
+            identifier: None,
+            kind,
+            codec: None,
+            codec_tag: None,
+            raw_codec_tag: None,
+            time_base: None,
+            profile: None,
+            language: language.map(ToOwned::to_owned),
+            declared_language: language.map(ToOwned::to_owned),
+            title: None,
+            handler_name: None,
+            bitrate: None,
+            tagged_bitrate: None,
+            statistics: None,
+            disposition: Disposition::default(),
+            video: None,
+            audio: None,
+            subtitle: None,
+            attachment: None,
+        }
+    }
+
+    #[test]
+    fn matroska_states_only_the_languages_its_entries_declare() {
+        let declared = |language: Option<&str>| matroska::DeclaredTrack {
+            language: language.map(ToOwned::to_owned),
+            language_bcp47: None,
+        };
+        let mut cover = probed_track(3, TrackKind::Video, Some("eng"));
+        cover.disposition.attached_picture = true;
+        // ffprobe-plex writes `eng` for the silent entry, and for the one declaring `und`.
+        let mut tracks = vec![
+            probed_track(0, TrackKind::Video, Some("eng")),
+            probed_track(1, TrackKind::Audio, Some("eng")),
+            probed_track(2, TrackKind::Audio, Some("und")),
+            cover,
+            probed_track(4, TrackKind::Attachment, None),
+        ];
+        let entries = [declared(None), declared(Some("eng")), declared(Some("und"))];
+        apply_declared_languages(&mut tracks, &entries, &[2]);
+        let stated: Vec<Option<&str>> = tracks
+            .iter()
+            .map(|track| track.declared_language.as_deref())
+            .collect();
+        // The third keeps the `LANGUAGE` tag its file wrote; the cover is not an entry.
+        assert_eq!(stated, [None, Some("eng"), Some("und"), Some("eng"), None]);
+        // Plex's reading stays ffprobe's.
+        assert_eq!(tracks[0].language.as_deref(), Some("eng"));
+    }
+
+    #[test]
+    fn keeps_ffprobes_languages_when_the_entries_do_not_match_the_streams() {
+        let mut tracks = vec![probed_track(0, TrackKind::Video, Some("eng"))];
+        apply_declared_languages(&mut tracks, &[], &[]);
+        assert_eq!(tracks[0].declared_language.as_deref(), Some("eng"));
+    }
+
+    #[test]
+    fn reads_a_duration_tag_to_the_microsecond() {
+        assert_eq!(tag_duration_us("00:00:50.048000000"), Some(50_048_000));
+        assert_eq!(tag_duration_us("01:02:03.5"), Some(3_723_500_000));
+        assert_eq!(tag_duration_us("50.0"), None);
+    }
 
     #[test]
     fn reads_the_depth_a_pixel_format_names() {

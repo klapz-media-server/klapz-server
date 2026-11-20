@@ -274,8 +274,8 @@ async fn an_extras_files_and_tracks_are_found_where_an_items_are() {
         optimized_for_streaming: ActiveValue::Set(None),
         packet_length: ActiveValue::Set(None),
         has_chapter_text_stream: ActiveValue::Set(false),
-        content_hash: ActiveValue::Set(None),
-        open_subtitles_hash: ActiveValue::Set(None),
+        // The hashes and what ffprobe states: none.
+        ..Default::default()
     })
     .exec(&connection)
     .await

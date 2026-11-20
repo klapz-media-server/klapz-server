@@ -9,7 +9,7 @@
 use open_plex_core::scan::NewSidecar;
 use open_plex_scanner::report::{Analysis, DolbyVision, Track, TrackKind, VideoTrack};
 
-use crate::entity::{media_stream, stream_dolby_vision};
+use crate::entity::{media_stream, part_side_stream, stream_dolby_vision};
 
 /// What a version states about itself, from its first video track and its widest audio.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -290,6 +290,10 @@ fn track_language(analysis: &Analysis, track: &Track, path: &str) -> Option<Stri
 /// The rows of a file's tracks, numbered from `first_id`. Attachments, data tracks and cover
 /// pictures have no row: the reference keeps video, audio and subtitles only, and a cover as
 /// the part's `hasThumbnail`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one column after another, each from what the scanner reported"
+)]
 pub(super) fn track_rows(
     analysis: &Analysis,
     path: &str,
@@ -389,6 +393,33 @@ pub(super) fn track_rows(
                 is_visual_impaired: disposition.visual_impaired,
                 has_header_compression: false,
                 required_bandwidths: None,
+                declared_language: track.declared_language.clone(),
+                handler_name: track.handler_name.clone(),
+                time_base: track.time_base.clone(),
+                codec_tag: track.raw_codec_tag.clone(),
+                declared_bitrate: track
+                    .bitrate
+                    .filter(|rate| *rate > 0)
+                    .and_then(|rate| i64::try_from(rate).ok()),
+                tagged_bitrate: tagged_rate(track).and_then(|rate| i64::try_from(rate).ok()),
+                average_frame_rate: picture.and_then(|picture| picture.average_frame_rate.clone()),
+                real_frame_rate: picture.and_then(|picture| picture.real_frame_rate.clone()),
+                display_aspect_ratio: picture
+                    .and_then(|picture| picture.display_aspect_ratio.clone()),
+                sample_aspect_ratio: picture
+                    .and_then(|picture| picture.sample_aspect_ratio.clone()),
+                is_cropped: picture.map(|picture| picture.cropping.is_some()),
+                pixel_format: picture.and_then(|picture| picture.pixel_format.clone()),
+                is_avc: picture.and_then(|picture| picture.is_avc),
+                nal_length_size: picture
+                    .and_then(|picture| picture.nal_length_size)
+                    .and_then(|size| i32::try_from(size).ok()),
+                canvas_width: track
+                    .subtitle
+                    .and_then(|canvas| i32::try_from(canvas.width).ok()),
+                canvas_height: track
+                    .subtitle
+                    .and_then(|canvas| i32::try_from(canvas.height).ok()),
             };
             TrackRows {
                 dolby_vision: picture
@@ -428,6 +459,23 @@ fn track_bitrate(analysis: &Analysis, track: &Track) -> Option<u64> {
             TrackKind::Video if videos == 1 => video_bitrate_fallback(analysis).or_else(tagged),
             _ => tagged(),
         })
+}
+
+/// The rate a muxer measured and tagged: its `BPS`, else its bytes over its duration when that
+/// spans a second at least, rounded half to even as the reference Jellyfin reads the tags.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a file's bytes and microseconds are far below 2^52, and the quotient is a rate"
+)]
+fn tagged_rate(track: &Track) -> Option<u64> {
+    let statistics = track.statistics?;
+    statistics.bitrate.filter(|rate| *rate > 0).or_else(|| {
+        let duration_us = statistics.duration_us.filter(|us| *us >= 1_000_000)?;
+        let rate = statistics.bytes? as f64 * 8.0 / (duration_us as f64 / 1_000_000.0);
+        Some(rate.round_ties_even() as u64).filter(|rate| *rate > 0)
+    })
 }
 
 /// How a video track was coded, as the reference stores it.
@@ -515,6 +563,65 @@ fn dolby_vision_row(stream: i64, record: DolbyVision) -> stream_dolby_vision::Mo
     }
 }
 
+/// What the file carries besides its tracks: covers, data tracks and attached files, which the
+/// reference Jellyfin lists beside them.
+pub(super) fn side_stream_rows(
+    analysis: &Analysis,
+    part: i64,
+) -> Vec<part_side_stream::ActiveModel> {
+    use sea_orm::ActiveValue::{NotSet, Set};
+    analysis
+        .tracks
+        .iter()
+        .filter_map(|track| {
+            let kind = match track.kind {
+                TrackKind::Video if track.disposition.attached_picture => "cover",
+                TrackKind::Data => "data",
+                TrackKind::Attachment => "attachment",
+                _ => return None,
+            };
+            let picture = track.video.as_ref();
+            let attachment = track.attachment.as_ref();
+            Some(part_side_stream::ActiveModel {
+                id: NotSet,
+                media_part_id: Set(part),
+                position: Set(i32::try_from(track.index).unwrap_or(i32::MAX)),
+                kind: Set(kind.to_owned()),
+                codec: Set(track.codec.clone()),
+                codec_tag: Set(track.raw_codec_tag.clone()),
+                profile: Set(track.profile.clone()),
+                language: Set(track.declared_language.clone()),
+                time_base: Set(track.time_base.clone()),
+                mime_type: Set(attachment.and_then(|attachment| attachment.mime_type.clone())),
+                filename: Set(attachment.and_then(|attachment| attachment.filename.clone())),
+                width: Set(picture.and_then(|picture| i32::try_from(picture.width).ok())),
+                height: Set(picture.and_then(|picture| i32::try_from(picture.height).ok())),
+                pixel_format: Set(picture.and_then(|picture| picture.pixel_format.clone())),
+                bit_depth: Set(picture
+                    .and_then(|picture| picture.bit_depth)
+                    .and_then(|depth| i32::try_from(depth).ok())),
+                color_space: Set(picture.and_then(|picture| picture.color_space.clone())),
+                level: Set(picture.and_then(|picture| picture.level)),
+                real_frame_rate: Set(picture.and_then(|picture| picture.real_frame_rate.clone())),
+                average_frame_rate: Set(
+                    picture.and_then(|picture| picture.average_frame_rate.clone())
+                ),
+                sample_aspect_ratio: Set(
+                    picture.and_then(|picture| picture.sample_aspect_ratio.clone())
+                ),
+                display_aspect_ratio: Set(
+                    picture.and_then(|picture| picture.display_aspect_ratio.clone())
+                ),
+                is_interlaced: Set(picture
+                    .and_then(|picture| scan_type(picture.field_order.as_deref()?))
+                    .is_some_and(|scan| scan == "interlaced")),
+                is_default: Set(track.disposition.default),
+                is_forced: Set(track.disposition.forced),
+            })
+        })
+        .collect()
+}
+
 /// A subtitle file beside the media, as the reference records one: an embedded track's row
 /// with no index, and the file's location as a URL.
 pub(super) fn sidecar_row(sidecar: &NewSidecar, part: i64, id: i64) -> media_stream::Model {
@@ -567,6 +674,22 @@ pub(super) fn sidecar_row(sidecar: &NewSidecar, part: i64, id: i64) -> media_str
         is_visual_impaired: false,
         has_header_compression: false,
         required_bandwidths: None,
+        declared_language: None,
+        handler_name: None,
+        time_base: None,
+        codec_tag: None,
+        declared_bitrate: None,
+        tagged_bitrate: None,
+        average_frame_rate: None,
+        real_frame_rate: None,
+        display_aspect_ratio: None,
+        sample_aspect_ratio: None,
+        is_cropped: None,
+        pixel_format: None,
+        is_avc: None,
+        nal_length_size: None,
+        canvas_width: None,
+        canvas_height: None,
     }
 }
 
@@ -769,6 +892,10 @@ mod tests {
             color_transfer: None,
             chroma_location: None,
             frame_rate: None,
+            average_frame_rate: None,
+            real_frame_rate: None,
+            is_avc: None,
+            nal_length_size: None,
             field_order: None,
             sample_aspect_ratio: Some(sample),
             display_aspect_ratio: None,

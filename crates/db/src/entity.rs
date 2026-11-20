@@ -31,6 +31,7 @@ pub mod media;
 pub mod media_part;
 pub mod media_stream;
 pub mod metadata_item;
+pub mod part_side_stream;
 pub mod person;
 pub mod play_queue;
 pub mod play_queue_entry;

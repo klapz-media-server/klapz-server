@@ -187,6 +187,7 @@ fn tracks(
             stream_url: None,
             content_hash: None,
             open_subtitles_hash: None,
+            stated: open_plex_core::metadata::StatedFile::default(),
         });
         let audio = kind == StreamKind::Audio;
         media.2.push(MediaStream {
@@ -214,6 +215,7 @@ fn tracks(
             }),
             subtitle: None,
             required_bandwidths: Vec::new(),
+            stated: open_plex_core::metadata::StatedTrack::default(),
         });
     }
     media

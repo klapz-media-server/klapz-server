@@ -30,8 +30,8 @@ use sea_orm::{
 
 use crate::entity::{
     collection, collection_entry, extra, extra_media, extra_track, item_chapter, item_marker,
-    library_section, media, media_part, media_stream, metadata_item, play_queue_entry,
-    playlist_entry, stream_dolby_vision, track_choice,
+    library_section, media, media_part, media_stream, metadata_item, part_side_stream,
+    play_queue_entry, playlist_entry, stream_dolby_vision, track_choice,
 };
 use crate::{chapter_store, write};
 use analysis::MediaSummary;
@@ -195,6 +195,11 @@ impl ScanRepository for SqlScanRepository {
             .map_err(storage)?;
         media_stream::Entity::delete_many()
             .filter(media_stream::Column::MediaPartId.eq(part.get()))
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
+        part_side_stream::Entity::delete_many()
+            .filter(part_side_stream::Column::MediaPartId.eq(part.get()))
             .exec(&transaction)
             .await
             .map_err(storage)?;
@@ -598,6 +603,13 @@ fn part_row(file: &NewPart, media: i64, id: i64, position: i32) -> media_part::M
         // The reference's identity hash is not one the scanner can reproduce yet.
         content_hash: None,
         open_subtitles_hash: analysis.map(|analysis| analysis.file.open_subtitles_hash.clone()),
+        format_name: analysis.map(|analysis| analysis.container.clone()),
+        declared_duration_us: analysis
+            .and_then(|analysis| analysis.duration_us)
+            .and_then(|duration| i64::try_from(duration).ok()),
+        declared_bitrate: analysis
+            .and_then(|analysis| analysis.bitrate)
+            .and_then(|rate| i64::try_from(rate).ok()),
     }
 }
 
@@ -638,6 +650,16 @@ async fn add_tracks<C: ConnectionTrait>(
     }
     if !dolby_vision.is_empty() {
         stream_dolby_vision::Entity::insert_many(dolby_vision)
+            .exec_without_returning(connection)
+            .await?;
+    }
+    let side_streams = file
+        .analysis
+        .as_ref()
+        .map(|analysis| analysis::side_stream_rows(analysis, part))
+        .unwrap_or_default();
+    for chunk in side_streams.chunks(BATCH / 4) {
+        part_side_stream::Entity::insert_many(chunk.to_vec())
             .exec_without_returning(connection)
             .await?;
     }

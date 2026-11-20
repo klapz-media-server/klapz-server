@@ -169,3 +169,56 @@ fn reads_an_h264_sequence_header_from_its_trace() {
     assert_eq!(header.ref_frames, 4);
     assert!(header.has_scaling_matrix);
 }
+
+#[test]
+fn keeps_what_ffprobe_states_as_written() {
+    let bloques = analysis("bloques-s01e10-comment-tu-sais-que-tu-l-aimes");
+    assert_eq!(bloques.duration_us, Some(90_372_063));
+    let video = track(&bloques, 0);
+    assert_eq!(video.time_base.as_deref(), Some("1/90000"));
+    assert_eq!(video.raw_codec_tag.as_deref(), Some("avc1"));
+    assert_eq!(video.handler_name.as_deref(), Some("VideoHandler"));
+    // An MP4 states `und`, which is a statement, unlike Matroska's silence.
+    assert_eq!(video.declared_language.as_deref(), Some("und"));
+    assert_eq!(video.language, None);
+    let picture = video.video.as_ref().unwrap();
+    assert_eq!(
+        picture.average_frame_rate.as_deref(),
+        Some("203220000/8125199")
+    );
+    assert_eq!(picture.real_frame_rate.as_deref(), Some("25/1"));
+    assert_eq!(picture.is_avc, Some(true));
+    assert_eq!(picture.nal_length_size, Some(4));
+}
+
+#[test]
+fn tells_annex_b_framing_from_length_prefixes() {
+    let peur = analysis("peur-primale-1996-multi-vff-1080i-hdtv-full-avc-he-aac-2-0");
+    let picture = track(&peur, 1).video.as_ref().unwrap();
+    assert_eq!(picture.is_avc, Some(false));
+    assert_eq!(picture.nal_length_size, Some(0));
+    // Teletext lists a language per page, kept as written.
+    assert_eq!(
+        track(&peur, 0).declared_language.as_deref(),
+        Some("fra,fra")
+    );
+}
+
+#[test]
+fn reads_a_muxers_statistics_under_either_name() {
+    let kaamelott = analysis("kaamelott-s00e602-bonus-s5-bande-annonce-livre-vi");
+    let statistics = track(&kaamelott, 1).statistics.unwrap();
+    assert_eq!(statistics.bitrate, Some(1_668_865));
+    assert_eq!(statistics.bytes, Some(10_440_420));
+    assert_eq!(statistics.duration_us, Some(50_048_000));
+    // `BPS-eng` alone: the rate Plex's rule reads stays unset.
+    assert_eq!(track(&kaamelott, 1).tagged_bitrate, None);
+}
+
+#[test]
+fn a_picture_subtitle_has_a_canvas_and_a_text_one_none() {
+    let fringe = analysis("fringe-s03e19-multi-1080p-bluray-h-265-dts-hdma-5-1-celestis");
+    let canvas = track(&fringe, 5).subtitle.unwrap();
+    assert_eq!((canvas.width, canvas.height), (1920, 1080));
+    assert_eq!(track(&fringe, 4).subtitle, None);
+}

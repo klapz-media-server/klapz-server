@@ -150,6 +150,7 @@ impl Stored {
                 stream_url: None,
                 content_hash: part["hash"].as_str().map(ToOwned::to_owned),
                 open_subtitles_hash: part["openSubtitleHash"].as_str().map(ToOwned::to_owned),
+                stated: open_plex_core::metadata::StatedFile::default(),
             });
             for track in part["MediaStream"].as_array().unwrap() {
                 self.streams.push(track_of(file, track));
@@ -226,6 +227,7 @@ fn track_of(file: i64, track: &Value) -> MediaStream {
                     .collect()
             })
             .unwrap_or_default(),
+        stated: open_plex_core::metadata::StatedTrack::default(),
     }
 }
 

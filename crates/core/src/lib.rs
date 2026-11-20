@@ -7,6 +7,7 @@ pub mod access;
 pub mod account;
 pub mod auth;
 pub mod backdrop;
+pub mod bitrate;
 pub mod chapter;
 pub mod closest;
 pub mod collection;
@@ -54,7 +55,8 @@ pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, 
 pub use metadata::{
     Credit, EpisodeCredit, ExternalId, FieldValue, ItemFilter, ItemKind, ItemQuery, ItemSort,
     ItemTag, Listed, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
-    MetadataRepository, Person, Rating, RatingKind, SearchQuery, StreamKind, Tag, TagCondition,
-    TagKind, TagRef, TagScope, TagSearch, TagUse, ValueField,
+    MetadataRepository, Person, Rating, RatingKind, SearchQuery, SidePicture, SideStream,
+    SideStreamKind, StatedFile, StatedTrack, StreamKind, Tag, TagCondition, TagKind, TagRef,
+    TagScope, TagSearch, TagUse, ValueField,
 };
 pub use page::{Bound, Cursor, CursorKey, Direction, Page, Window, WindowError};

@@ -155,6 +155,70 @@ pub struct MediaFile {
     /// The `OpenSubtitles` hash, in hex: the file's size plus the 64-bit sums of its first and
     /// last 64 KiB, what subtitle services find a file by.
     pub open_subtitles_hash: Option<String>,
+    pub stated: StatedFile,
+}
+
+/// What a file's container states about itself, as the prober printed it. The scan alone
+/// records it: an imported file states nothing.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StatedFile {
+    /// The demuxer's names for the format: `matroska,webm`, `mov,mp4,m4a,3gp,3g2,mj2`.
+    pub format_name: Option<String>,
+    /// The duration the container declares, in microseconds, where `duration_ms` may be the
+    /// time the packets were measured to span.
+    pub duration_us: Option<i64>,
+    /// The bitrate the container declares, in bits per second.
+    pub bitrate: Option<i64>,
+}
+
+/// What a file carries besides the tracks a player plays.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SideStreamKind {
+    /// A picture stored as a video track: an MP4 cover, a Matroska attachment that is an image.
+    Cover,
+    /// Timed metadata: ID3 tags, a `QuickTime` chapter track.
+    Data,
+    /// A file attached to a Matroska file: a font, an image.
+    Attachment,
+}
+
+/// A cover, a data track or an attached file, as the scan found it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SideStream {
+    pub file_id: PartId,
+    pub kind: SideStreamKind,
+    /// ffmpeg's index of the stream.
+    pub position: i32,
+    pub codec: Option<String>,
+    /// The container's codec tag as ffprobe prints it: `[0][0][0][0]` where it names none.
+    pub codec_tag: Option<String>,
+    pub profile: Option<String>,
+    /// As the file states it.
+    pub language: Option<String>,
+    pub time_base: Option<String>,
+    /// An attachment's.
+    pub mime_type: Option<String>,
+    pub filename: Option<String>,
+    pub picture: Option<SidePicture>,
+    pub is_default: bool,
+    pub is_forced: bool,
+}
+
+/// A cover's picture, in ffprobe's terms.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SidePicture {
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    pub pixel_format: Option<String>,
+    pub bit_depth: Option<i32>,
+    pub color_space: Option<String>,
+    pub level: Option<i32>,
+    /// As written, `num/den`.
+    pub real_frame_rate: Option<String>,
+    pub average_frame_rate: Option<String>,
+    pub sample_aspect_ratio: Option<String>,
+    pub display_aspect_ratio: Option<String>,
+    pub interlaced: bool,
 }
 
 /// How a file is laid out, as its analysis found it.
@@ -217,6 +281,27 @@ pub struct MediaStream {
     /// Kilobits per second the track needs to play without stalling, one per buffer size
     /// from the smallest, as the analysis found them. Empty when it never measured them.
     pub required_bandwidths: Vec<i32>,
+    pub stated: StatedTrack,
+}
+
+/// What a file states about a track as the prober printed it, beside the values above, which
+/// the importer and the scan write in the reference's vocabulary. The scan alone records it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StatedTrack {
+    /// The language as the file states it, before any default: `fre`, `fr-FR`, `und`,
+    /// `fra,fra`. Absent when the file states none, Matroska's implicit English included.
+    pub language: Option<String>,
+    /// The handler an MP4 track names: `SoundHandler`, sometimes a title.
+    pub handler_name: Option<String>,
+    /// The unit of the track's timestamps, `num/den`.
+    pub time_base: Option<String>,
+    /// The container's codec tag as ffprobe prints it: `avc1`, `[0][0][0][0]` for none.
+    pub codec_tag: Option<String>,
+    /// Bits per second the track's header declares.
+    pub bitrate: Option<i64>,
+    /// Bits per second the muxer measured and tagged: Matroska's `BPS`, else its bytes over
+    /// its duration.
+    pub tagged_bitrate: Option<i64>,
 }
 
 /// What a file says a track is for, beyond its language.
@@ -274,6 +359,24 @@ pub struct VideoAnalysis {
     pub separate_fields: bool,
     pub hdr10_plus: bool,
     pub dolby_vision: Option<DolbyVision>,
+    /// The average frame rate as ffprobe states it, `24000/1001`; `0/0` when it has none.
+    pub average_frame_rate: Option<String>,
+    /// The lowest rate every timestamp falls on, as ffprobe states it.
+    pub real_frame_rate: Option<String>,
+    /// The display aspect ratio as ffprobe states it: `16:9`, `240:101`.
+    pub display_aspect_ratio: Option<String>,
+    /// The sample aspect ratio as ffprobe states it, after the container's crop: Fleabag's
+    /// 1:1 where `pixel_aspect_ratio` is 27:20.
+    pub sample_aspect_ratio: Option<String>,
+    /// Whether the container asks for lines or columns to be hidden.
+    pub cropped: Option<bool>,
+    /// ffmpeg's pixel format: `yuv420p10le`.
+    pub pixel_format: Option<String>,
+    /// H.264: whether NAL units are prefixed by their length (`avcC`) rather than by start
+    /// codes (Annex B).
+    pub is_avc: Option<bool>,
+    /// H.264: the length prefix's size in bytes, 0 under Annex B.
+    pub nal_length_size: Option<i32>,
 }
 
 /// How a video track's colors are to be read, in ffmpeg's vocabulary.
@@ -339,6 +442,9 @@ pub struct SubtitleAnalysis {
     pub format: Option<String>,
     /// Captions carried inside the video bitstream (EIA-608) rather than as a track.
     pub embedded_in_video: bool,
+    /// The frame an image subtitle is drawn for: 1920×1080 for a Blu-ray's PGS.
+    pub canvas_width: Option<i32>,
+    pub canvas_height: Option<i32>,
 }
 
 /// What a tag classifies or credits.
@@ -1251,6 +1357,9 @@ pub trait MetadataRepository: Send + Sync + std::fmt::Debug {
     /// The tracks of these files, an item's or an extra's.
     async fn streams_for(&self, files: &[PartId]) -> Result<Vec<MediaStream>, MetadataError>;
 
+    /// The covers, data tracks and attachments of these files, by position in each.
+    async fn side_streams_for(&self, files: &[PartId]) -> Result<Vec<SideStream>, MetadataError>;
+
     /// One encoding by id, an item's or an extra's, for a Relay refetch.
     async fn version(&self, id: MediaId) -> Result<Option<MediaVersion>, MetadataError>;
 
@@ -1584,6 +1693,10 @@ impl<T: MetadataRepository + ?Sized> MetadataRepository for std::sync::Arc<T> {
 
     async fn streams_for(&self, files: &[PartId]) -> Result<Vec<MediaStream>, MetadataError> {
         (**self).streams_for(files).await
+    }
+
+    async fn side_streams_for(&self, files: &[PartId]) -> Result<Vec<SideStream>, MetadataError> {
+        (**self).side_streams_for(files).await
     }
 
     async fn version(&self, id: MediaId) -> Result<Option<MediaVersion>, MetadataError> {

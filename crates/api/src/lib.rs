@@ -36,6 +36,7 @@ pub mod schema;
 pub mod search;
 pub mod server;
 pub mod sidecar;
+pub mod stated;
 pub mod stream;
 pub mod tag;
 pub mod user_rating;

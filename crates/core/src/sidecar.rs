@@ -184,6 +184,7 @@ mod tests {
             audio: None,
             subtitle: None,
             required_bandwidths: Vec::new(),
+            stated: crate::metadata::StatedTrack::default(),
         }
     }
 

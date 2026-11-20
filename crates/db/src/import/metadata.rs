@@ -520,6 +520,8 @@ async fn import_parts(
                 has_chapter_text_stream: ActiveValue::Set(analysis.flag("ma:hasChapterTextStream")),
                 content_hash: ActiveValue::Set(row.plex_text("hash")),
                 open_subtitles_hash: ActiveValue::Set(row.plex_text("open_subtitle_hash")),
+                // What ffprobe states as printed, which the source's analysis does not keep.
+                ..Default::default()
             });
             written.insert(id);
         }
@@ -659,6 +661,8 @@ fn stream_row(
         is_visual_impaired: ActiveValue::Set(analysis.flag("ma:visualImpaired")),
         has_header_compression: ActiveValue::Set(analysis.flag("ma:headerCompression")),
         required_bandwidths: ActiveValue::Set(analysis.text("ma:requiredBandwidths")),
+        // What ffprobe states as printed, which the source's analysis does not keep.
+        ..Default::default()
     }
 }
 

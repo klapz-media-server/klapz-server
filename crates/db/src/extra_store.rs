@@ -5,7 +5,9 @@
 //! because the repository's media lookups fall back to it for what the items' tables lack.
 
 use open_plex_core::extra::{Extra, ExtraKind};
-use open_plex_core::metadata::{AudioAnalysis, FileLayout, StreamKind, TrackTraits, VideoAnalysis};
+use open_plex_core::metadata::{
+    AudioAnalysis, FileLayout, StatedFile, StatedTrack, StreamKind, TrackTraits, VideoAnalysis,
+};
 use open_plex_core::{
     ExtraId, MediaFile, MediaId, MediaStream, MediaVersion, PartId, RatingKey, StreamId,
 };
@@ -127,6 +129,7 @@ fn to_file(row: extra_media::Model) -> MediaFile {
         stream_url: row.stream_url,
         content_hash: None,
         open_subtitles_hash: None,
+        stated: StatedFile::default(),
     }
 }
 
@@ -159,6 +162,7 @@ fn to_track(row: extra_track::Model, file: PartId) -> MediaStream {
         audio: (kind == StreamKind::Audio).then(AudioAnalysis::default),
         subtitle: None,
         required_bandwidths: Vec::new(),
+        stated: StatedTrack::default(),
     }
 }
 
