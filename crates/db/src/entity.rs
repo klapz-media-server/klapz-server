@@ -11,6 +11,7 @@ pub mod collection;
 pub mod collection_entry;
 pub mod collection_word;
 pub mod extension_account;
+pub mod extension_device;
 pub mod extra;
 pub mod extra_media;
 pub mod extra_track;

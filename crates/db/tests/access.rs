@@ -3,8 +3,8 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use open_plex_core::access::{
-    token_digest, AccessError, AccessRepository, Extension, LibraryPermission, LibraryRole, Login,
-    NewUser, RemoteAccount, ServerRole,
+    token_digest, AccessError, AccessRepository, Extension, ExtensionDevice, LibraryPermission,
+    LibraryRole, Login, NewUser, RemoteAccount, ServerRole,
 };
 use open_plex_core::page::Window;
 use open_plex_core::{SectionId, UserId};
@@ -708,4 +708,281 @@ async fn deleting_a_user_forgets_its_password() {
         "$argon2id$other"
     );
     assert_ne!(again.id, user.id);
+}
+
+fn device(id: &str) -> ExtensionDevice {
+    ExtensionDevice {
+        id: id.to_owned(),
+        name: "Chrome".to_owned(),
+        client: "Jellyfin Web".to_owned(),
+        client_version: "10.11.0".to_owned(),
+    }
+}
+
+async fn on_jellyfin(repository: &SqlAccessRepository, email: &'static str) -> UserId {
+    let user = repository.create_user(active(email), NOW).await.unwrap().id;
+    repository
+        .connect_extension(
+            user,
+            Extension::Jellyfin,
+            email,
+            &token_digest(&format!("key of {email}")),
+            NOW,
+        )
+        .await
+        .unwrap();
+    user
+}
+
+async fn opener(
+    repository: &SqlAccessRepository,
+    extension: Extension,
+    token: &str,
+) -> Option<UserId> {
+    repository
+        .grant(extension, &token_digest(token))
+        .await
+        .unwrap()
+        .map(|grant| grant.user.id)
+}
+
+#[tokio::test]
+async fn a_jellyfin_connection_is_stored_beside_a_plex_one() {
+    let repository = repository().await;
+    let user = connected(&repository, "a@example.org").await;
+    repository
+        .connect_extension(
+            user,
+            Extension::Jellyfin,
+            "jf",
+            &token_digest("jf-key"),
+            NOW,
+        )
+        .await
+        .unwrap();
+    let mut extensions: Vec<_> = repository
+        .extensions(user)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|connection| {
+            (
+                connection.extension == Extension::Jellyfin,
+                connection.external_id,
+            )
+        })
+        .collect();
+    extensions.sort();
+    assert_eq!(
+        extensions,
+        [(false, "a@example.org".to_owned()), (true, "jf".to_owned())]
+    );
+    assert_eq!(
+        opener(&repository, Extension::Jellyfin, "jf-key").await,
+        Some(user)
+    );
+    assert_eq!(opener(&repository, Extension::Plex, "jf-key").await, None);
+    assert_eq!(
+        opener(&repository, Extension::Plex, "a@example.org").await,
+        Some(user)
+    );
+    assert_eq!(
+        opener(&repository, Extension::Jellyfin, "a@example.org").await,
+        None
+    );
+}
+
+#[tokio::test]
+async fn a_device_token_opens_its_users_access_through_its_extension_only() {
+    let repository = repository().await;
+    let user = on_jellyfin(&repository, "a@example.org").await;
+    repository
+        .set_permission(permission(user, 4, LibraryRole::Viewer), NOW)
+        .await
+        .unwrap();
+    repository
+        .issue_device_token(
+            user,
+            Extension::Jellyfin,
+            &device("d1"),
+            &token_digest("t1"),
+            NOW,
+        )
+        .await
+        .unwrap();
+    let grant = repository
+        .grant(Extension::Jellyfin, &token_digest("t1"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(grant.user.id, user);
+    assert_eq!(grant.extension.extension, Extension::Jellyfin);
+    assert_eq!(
+        grant.permissions,
+        [permission(user, 4, LibraryRole::Viewer)]
+    );
+    assert_eq!(opener(&repository, Extension::Plex, "t1").await, None);
+}
+
+#[tokio::test]
+async fn a_device_token_needs_a_switched_on_connection() {
+    let repository = repository().await;
+    let bare = repository
+        .create_user(active("a@example.org"), NOW)
+        .await
+        .unwrap()
+        .id;
+    let plex_only = connected(&repository, "b@example.org").await;
+    for user in [bare, plex_only] {
+        assert!(matches!(
+            repository
+                .issue_device_token(
+                    user,
+                    Extension::Jellyfin,
+                    &device("d1"),
+                    &token_digest("t"),
+                    NOW
+                )
+                .await,
+            Err(AccessError::NotConnected)
+        ));
+    }
+    let user = on_jellyfin(&repository, "c@example.org").await;
+    repository
+        .disable_extension(user, Extension::Jellyfin, NOW)
+        .await
+        .unwrap();
+    assert!(matches!(
+        repository
+            .issue_device_token(
+                user,
+                Extension::Jellyfin,
+                &device("d1"),
+                &token_digest("t"),
+                NOW
+            )
+            .await,
+        Err(AccessError::NotConnected)
+    ));
+}
+
+#[tokio::test]
+async fn a_device_signing_in_again_replaces_its_token_and_keeps_the_others() {
+    let repository = repository().await;
+    let user = on_jellyfin(&repository, "a@example.org").await;
+    for (id, token) in [("d1", "first"), ("d2", "other"), ("d1", "second")] {
+        repository
+            .issue_device_token(
+                user,
+                Extension::Jellyfin,
+                &device(id),
+                &token_digest(token),
+                NOW,
+            )
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        opener(&repository, Extension::Jellyfin, "first").await,
+        None
+    );
+    assert_eq!(
+        opener(&repository, Extension::Jellyfin, "second").await,
+        Some(user)
+    );
+    assert_eq!(
+        opener(&repository, Extension::Jellyfin, "other").await,
+        Some(user)
+    );
+}
+
+#[tokio::test]
+async fn revoking_a_device_token_takes_only_the_users_own() {
+    let repository = repository().await;
+    let alice = on_jellyfin(&repository, "a@example.org").await;
+    let bob = on_jellyfin(&repository, "b@example.org").await;
+    repository
+        .issue_device_token(
+            alice,
+            Extension::Jellyfin,
+            &device("d1"),
+            &token_digest("t"),
+            NOW,
+        )
+        .await
+        .unwrap();
+    assert!(!repository
+        .revoke_device_token(bob, Extension::Jellyfin, &token_digest("t"))
+        .await
+        .unwrap());
+    assert!(!repository
+        .revoke_device_token(alice, Extension::Plex, &token_digest("t"))
+        .await
+        .unwrap());
+    assert_eq!(
+        opener(&repository, Extension::Jellyfin, "t").await,
+        Some(alice)
+    );
+    assert!(repository
+        .revoke_device_token(alice, Extension::Jellyfin, &token_digest("t"))
+        .await
+        .unwrap());
+    assert_eq!(opener(&repository, Extension::Jellyfin, "t").await, None);
+}
+
+#[tokio::test]
+async fn switching_a_connection_off_or_deleting_its_user_forgets_its_devices() {
+    let repository = repository().await;
+    let alice = on_jellyfin(&repository, "a@example.org").await;
+    repository
+        .issue_device_token(
+            alice,
+            Extension::Jellyfin,
+            &device("d1"),
+            &token_digest("t"),
+            NOW,
+        )
+        .await
+        .unwrap();
+    repository
+        .disable_extension(alice, Extension::Jellyfin, NOW)
+        .await
+        .unwrap();
+    repository
+        .connect_extension(alice, Extension::Jellyfin, "again", &token_digest("k"), NOW)
+        .await
+        .unwrap();
+    assert_eq!(opener(&repository, Extension::Jellyfin, "t").await, None);
+
+    let bob = on_jellyfin(&repository, "b@example.org").await;
+    repository
+        .issue_device_token(
+            bob,
+            Extension::Jellyfin,
+            &device("d1"),
+            &token_digest("u"),
+            NOW,
+        )
+        .await
+        .unwrap();
+    assert!(repository.delete_user(bob).await.unwrap());
+    assert_eq!(opener(&repository, Extension::Jellyfin, "u").await, None);
+}
+
+#[tokio::test]
+async fn an_inactive_user_opens_nothing_through_a_device() {
+    let repository = repository().await;
+    let user = on_jellyfin(&repository, "a@example.org").await;
+    repository
+        .issue_device_token(
+            user,
+            Extension::Jellyfin,
+            &device("d1"),
+            &token_digest("t"),
+            NOW,
+        )
+        .await
+        .unwrap();
+    repository.set_active(user, false, NOW).await.unwrap();
+    assert_eq!(opener(&repository, Extension::Jellyfin, "t").await, None);
 }

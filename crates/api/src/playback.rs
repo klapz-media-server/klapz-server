@@ -873,6 +873,31 @@ impl Mutation {
         crate::account::sign_out(context)
     }
 
+    /// Checks a username or an address and its password, as `signIn` does, for a client of an
+    /// extension whose clients sign in with a password — Jellyfin's — and gives the client's
+    /// device a token of its own. The user must be connected through the extension, and its
+    /// connection on. Open to anyone; failed attempts count with `signIn`'s.
+    async fn sign_in_through_extension(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The extension, the credentials and the device signing in.")]
+        input: crate::account::ExtensionSignInInput,
+    ) -> Result<crate::account::ExtensionSignInPayload> {
+        crate::account::sign_in_through_extension(context, input).await
+    }
+
+    /// Signs a device out of an extension: its token opens nothing more. Only the caller's own
+    /// devices; whether the token was one.
+    async fn sign_out_of_extension(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The protocol the token was issued for.")]
+        extension: crate::access::ExtensionType,
+        #[graphql(secret, desc = "The token the device was given.")] token: String,
+    ) -> Result<bool> {
+        crate::account::sign_out_of_extension(context, extension, &token).await
+    }
+
     /// Lets in a user who signed up, or one that was shut out. For the server's owners only.
     async fn activate_user(
         &self,

@@ -1,8 +1,8 @@
 //! Stored users, permissions and extensions.
 
 use open_plex_core::access::{
-    AccessError, AccessRepository, AccountLink, Extension, Grant, LibraryPermission, LibraryRole,
-    Login, NewUser, RemoteAccount, ServerRole, User, UserExtension,
+    AccessError, AccessRepository, AccountLink, Extension, ExtensionDevice, Grant,
+    LibraryPermission, LibraryRole, Login, NewUser, RemoteAccount, ServerRole, User, UserExtension,
 };
 use open_plex_core::page::{Page, Window};
 use open_plex_core::{SectionId, UserId};
@@ -13,8 +13,8 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    extension_account, library_permission, subtitle_offset, track_choice, user_extension,
-    user_password, user_rating, users, viewing, viewing_history, watch_state,
+    extension_account, extension_device, library_permission, subtitle_offset, track_choice,
+    user_extension, user_password, user_rating, users, viewing, viewing_history, watch_state,
 };
 
 #[derive(Debug, Clone)]
@@ -119,11 +119,16 @@ fn role_of(name: &str) -> LibraryRole {
 const fn extension_name(extension: Extension) -> &'static str {
     match extension {
         Extension::Plex => "plex",
+        Extension::Jellyfin => "jellyfin",
     }
 }
 
 fn extension_of(name: &str) -> Option<Extension> {
-    (name == "plex").then_some(Extension::Plex)
+    match name {
+        "plex" => Some(Extension::Plex),
+        "jellyfin" => Some(Extension::Jellyfin),
+        _ => None,
+    }
 }
 
 fn user_of(row: users::Model) -> User {
@@ -348,6 +353,11 @@ impl AccessRepository for SqlAccessRepository {
 
     async fn delete_user(&self, id: UserId) -> Result<bool, AccessError> {
         let transaction = self.connection.begin().await.map_err(storage)?;
+        extension_device::Entity::delete_many()
+            .filter(extension_device::Column::UserId.eq(id.get()))
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
         extension_account::Entity::delete_many()
             .filter(extension_account::Column::UserId.eq(id.get()))
             .exec(&transaction)
@@ -516,15 +526,23 @@ impl AccessRepository for SqlAccessRepository {
         extension: Extension,
         now: i64,
     ) -> Result<bool, AccessError> {
+        let transaction = self.connection.begin().await.map_err(storage)?;
+        extension_device::Entity::delete_many()
+            .filter(extension_device::Column::UserId.eq(user.get()))
+            .filter(extension_device::Column::Extension.eq(extension_name(extension)))
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
         let result = user_extension::Entity::update_many()
             .col_expr(user_extension::Column::Enabled, false.into())
             .col_expr(user_extension::Column::UpdatedAt, now.into())
             .filter(user_extension::Column::UserId.eq(user.get()))
             .filter(user_extension::Column::Extension.eq(extension_name(extension)))
             .filter(user_extension::Column::Enabled.eq(true))
-            .exec(&self.connection)
+            .exec(&transaction)
             .await
             .map_err(storage)?;
+        transaction.commit().await.map_err(storage)?;
         Ok(result.rows_affected > 0)
     }
 
@@ -544,20 +562,98 @@ impl AccessRepository for SqlAccessRepository {
         extension: Extension,
         token_digest: &str,
     ) -> Result<Option<Grant>, AccessError> {
-        let Some(row) = user_extension::Entity::find()
+        let connection = user_extension::Entity::find()
             .filter(user_extension::Column::Extension.eq(extension_name(extension)))
             .filter(user_extension::Column::TokenDigest.eq(token_digest))
-            .filter(user_extension::Column::Enabled.eq(true))
             .one(&self.connection)
             .await
             .map_err(storage)?
-        else {
-            return Ok(None);
+            .and_then(user_extension_of);
+        let connection = match connection {
+            Some(connection) => Some(connection),
+            None => match extension_device::Entity::find()
+                .filter(extension_device::Column::Extension.eq(extension_name(extension)))
+                .filter(extension_device::Column::TokenDigest.eq(token_digest))
+                .one(&self.connection)
+                .await
+                .map_err(storage)?
+            {
+                Some(device) => {
+                    self.connection(UserId::new(device.user_id), extension)
+                        .await?
+                }
+                None => None,
+            },
         };
-        let Some(extension) = user_extension_of(row) else {
-            return Ok(None);
+        match connection.filter(|connection| connection.enabled) {
+            Some(connection) => self.grant_of(connection).await,
+            None => Ok(None),
+        }
+    }
+
+    async fn issue_device_token(
+        &self,
+        user: UserId,
+        extension: Extension,
+        device: &ExtensionDevice,
+        token_digest: &str,
+        now: i64,
+    ) -> Result<(), AccessError> {
+        let connected = self
+            .connection(user, extension)
+            .await?
+            .is_some_and(|connection| connection.enabled);
+        if !connected {
+            return Err(AccessError::NotConnected);
+        }
+        let row = extension_device::ActiveModel {
+            id: ActiveValue::NotSet,
+            user_id: ActiveValue::Set(user.get()),
+            extension: ActiveValue::Set(extension_name(extension).to_owned()),
+            device_id: ActiveValue::Set(device.id.clone()),
+            device_name: ActiveValue::Set(device.name.clone()),
+            client: ActiveValue::Set(device.client.clone()),
+            client_version: ActiveValue::Set(device.client_version.clone()),
+            token_digest: ActiveValue::Set(token_digest.to_owned()),
+            created_at: ActiveValue::Set(now),
+            updated_at: ActiveValue::Set(now),
         };
-        self.grant_of(extension).await
+        extension_device::Entity::insert(row)
+            .on_conflict(
+                OnConflict::columns([
+                    extension_device::Column::UserId,
+                    extension_device::Column::Extension,
+                    extension_device::Column::DeviceId,
+                ])
+                .update_columns([
+                    extension_device::Column::DeviceName,
+                    extension_device::Column::Client,
+                    extension_device::Column::ClientVersion,
+                    extension_device::Column::TokenDigest,
+                    extension_device::Column::UpdatedAt,
+                ])
+                .to_owned(),
+            )
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(())
+    }
+
+    async fn revoke_device_token(
+        &self,
+        user: UserId,
+        extension: Extension,
+        token_digest: &str,
+    ) -> Result<bool, AccessError> {
+        let result = extension_device::Entity::delete_many()
+            .filter(extension_device::Column::UserId.eq(user.get()))
+            .filter(extension_device::Column::Extension.eq(extension_name(extension)))
+            .filter(extension_device::Column::TokenDigest.eq(token_digest))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(result.rows_affected > 0)
     }
 
     async fn link_account(

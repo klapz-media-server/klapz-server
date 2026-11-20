@@ -9,7 +9,10 @@
 use std::sync::Arc;
 
 use async_graphql::{Context, Enum, InputObject, Result, SimpleObject};
-use open_plex_core::access::{AccessError, Login, NewUser, ServerRole};
+use open_plex_core::access::{
+    new_token, token_digest, AccessError, Extension, ExtensionDevice, Login, NewUser, ServerRole,
+    User,
+};
 use open_plex_core::account::{
     hash_password, is_acceptable_password, login_of, normalized_email, normalized_username,
     verify_against_nothing, verify_password, SessionKey, SignInThrottle, PASSWORD_LENGTH,
@@ -17,7 +20,7 @@ use open_plex_core::account::{
 };
 use open_plex_core::now_epoch;
 
-use crate::access::UserObject;
+use crate::access::{require_caller, ExtensionType, UserObject};
 use crate::schema::ApiContext;
 
 /// The cookie a session travels in.
@@ -104,6 +107,11 @@ pub enum AccountErrorCode {
     /// The built-in `admin` account stays an active owner: it cannot be demoted, deactivated
     /// or deleted.
     BuiltInAccount,
+    /// The password is right, but the user is not connected through this extension, or its
+    /// connection is off.
+    NotConnected,
+    /// The extension's clients do not sign in with a password: Plex's are handed a token.
+    NoPasswordSignIn,
 }
 
 /// A problem with what was asked, as opposed to a failure of the server.
@@ -142,6 +150,12 @@ impl AccountUserError {
             AccountErrorCode::UserNotFound => "no such user".to_owned(),
             AccountErrorCode::BuiltInAccount => {
                 "the admin account stays an active owner".to_owned()
+            }
+            AccountErrorCode::NotConnected => {
+                "this account may not sign in through this extension".to_owned()
+            }
+            AccountErrorCode::NoPasswordSignIn => {
+                "this extension's clients do not sign in with a password".to_owned()
             }
         };
         Self {
@@ -262,28 +276,30 @@ fn throttle_key(login: Option<&Login>) -> &str {
     }
 }
 
-pub(crate) async fn sign_in(context: &Context<'_>, input: SignInInput) -> Result<SignInPayload> {
-    let refuse = |field: &str, code| {
-        Ok(SignInPayload {
-            client_mutation_id: input.client_mutation_id.clone(),
-            user: None,
-            user_errors: vec![AccountUserError::new(field, code)],
-        })
-    };
-    let sessions = sessions(context)?;
+/// The active user a login and a password name, or why there is none. Failures count against
+/// the login, and a login with no account costs as much time as a wrong password.
+async fn authenticate(
+    context: &Context<'_>,
+    sessions: &Sessions,
+    login: &str,
+    password: &str,
+) -> Result<std::result::Result<User, AccountUserError>> {
     let now = now_epoch();
     // What can be no login cannot have an account: the same answer as a wrong password.
-    let login = login_of(&input.login);
+    let login = login_of(login);
     let key = throttle_key(login.as_ref());
     if !sessions.throttle.allows(key, now) {
-        return refuse("login", AccountErrorCode::TooManyAttempts);
+        return Ok(Err(AccountUserError::new(
+            "login",
+            AccountErrorCode::TooManyAttempts,
+        )));
     }
     let api = context.data::<ApiContext>()?;
     let credentials = match &login {
         Some(login) => api.access.credentials(login).await?,
         None => None,
     };
-    let password = input.password.clone();
+    let password = password.to_owned();
     let (user, matches) = if let Some((user, hash)) = credentials {
         let matches = sessions
             .hash_work(move || verify_password(&password, &hash))
@@ -297,13 +313,34 @@ pub(crate) async fn sign_in(context: &Context<'_>, input: SignInInput) -> Result
     };
     let Some(user) = user.filter(|_| matches) else {
         sessions.throttle.record_failure(key, now);
-        return refuse("password", AccountErrorCode::InvalidCredentials);
+        return Ok(Err(AccountUserError::new(
+            "password",
+            AccountErrorCode::InvalidCredentials,
+        )));
     };
     sessions.throttle.clear(key);
     if !user.active {
-        return refuse("login", AccountErrorCode::Inactive);
+        return Ok(Err(AccountUserError::new(
+            "login",
+            AccountErrorCode::Inactive,
+        )));
     }
-    let token = sessions.key.issue(user.id, now)?;
+    Ok(Ok(user))
+}
+
+pub(crate) async fn sign_in(context: &Context<'_>, input: SignInInput) -> Result<SignInPayload> {
+    let sessions = sessions(context)?;
+    let user = match authenticate(context, sessions, &input.login, &input.password).await? {
+        Ok(user) => user,
+        Err(error) => {
+            return Ok(SignInPayload {
+                client_mutation_id: input.client_mutation_id,
+                user: None,
+                user_errors: vec![error],
+            })
+        }
+    };
+    let token = sessions.key.issue(user.id, now_epoch())?;
     context.append_http_header(
         "Set-Cookie",
         sessions.cookie(&token, SESSION_LIFETIME_SECONDS),
@@ -313,6 +350,115 @@ pub(crate) async fn sign_in(context: &Context<'_>, input: SignInInput) -> Result
         user: Some(UserObject(user)),
         user_errors: Vec::new(),
     })
+}
+
+/// A client signing a user in through an extension whose clients sign in with a password.
+#[derive(Debug, InputObject)]
+pub struct ExtensionSignInInput {
+    /// Echoed back in the payload, for the client to match the two.
+    pub client_mutation_id: Option<String>,
+    /// The protocol the client speaks. The user must be connected through it.
+    pub extension: ExtensionType,
+    /// The account's username, or its e-mail address.
+    pub login: String,
+    /// Its password.
+    #[graphql(secret)]
+    pub password: String,
+    /// What the client calls the device, stable across its sign-ins: signing in again from it
+    /// replaces its token.
+    pub device_id: String,
+    /// The device's name, for a person.
+    pub device_name: String,
+    /// The application signing in.
+    pub client: String,
+    /// The application's version.
+    pub client_version: String,
+}
+
+/// What `signInThroughExtension` did.
+#[derive(Debug, SimpleObject)]
+pub struct ExtensionSignInPayload {
+    /// The value the input carried.
+    pub client_mutation_id: Option<String>,
+    /// Who signed in. Null when nobody did.
+    pub user: Option<UserObject>,
+    /// The token the device presents from now on, shown only here: the server keeps a digest
+    /// of it. Null when nobody signed in.
+    pub token: Option<String>,
+    /// Why nobody did. Empty when someone did.
+    pub user_errors: Vec<AccountUserError>,
+}
+
+pub(crate) async fn sign_in_through_extension(
+    context: &Context<'_>,
+    input: ExtensionSignInInput,
+) -> Result<ExtensionSignInPayload> {
+    let refuse = |error| {
+        Ok(ExtensionSignInPayload {
+            client_mutation_id: input.client_mutation_id.clone(),
+            user: None,
+            token: None,
+            user_errors: vec![error],
+        })
+    };
+    let extension: Extension = input.extension.into();
+    if !extension.signs_in_with_password() {
+        return refuse(AccountUserError::new(
+            "extension",
+            AccountErrorCode::NoPasswordSignIn,
+        ));
+    }
+    let sessions = sessions(context)?;
+    let user = match authenticate(context, sessions, &input.login, &input.password).await? {
+        Ok(user) => user,
+        Err(error) => return refuse(error),
+    };
+    let token = new_token();
+    let device = ExtensionDevice {
+        id: input.device_id.clone(),
+        name: input.device_name.clone(),
+        client: input.client.clone(),
+        client_version: input.client_version.clone(),
+    };
+    let api = context.data::<ApiContext>()?;
+    let issued = api
+        .access
+        .issue_device_token(
+            user.id,
+            extension,
+            &device,
+            &token_digest(&token),
+            now_epoch(),
+        )
+        .await;
+    match issued {
+        Ok(()) => Ok(ExtensionSignInPayload {
+            client_mutation_id: input.client_mutation_id,
+            user: Some(UserObject(user)),
+            token: Some(token),
+            user_errors: Vec::new(),
+        }),
+        Err(AccessError::NotConnected) => refuse(AccountUserError::new(
+            "extension",
+            AccountErrorCode::NotConnected,
+        )),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Forgets the device a token was issued to, so that it opens nothing more. Only the
+/// caller's own devices.
+pub(crate) async fn sign_out_of_extension(
+    context: &Context<'_>,
+    extension: ExtensionType,
+    token: &str,
+) -> Result<bool> {
+    let caller = require_caller(context)?;
+    let api = context.data::<ApiContext>()?;
+    Ok(api
+        .access
+        .revoke_device_token(caller.user, extension.into(), &token_digest(token))
+        .await?)
 }
 
 /// Clears the session cookie. The token itself stays valid until it expires, as nothing stores

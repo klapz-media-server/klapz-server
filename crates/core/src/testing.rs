@@ -1812,6 +1812,15 @@ pub struct InMemoryAccess {
     users: std::sync::Mutex<Vec<crate::access::User>>,
     permissions: std::sync::Mutex<Vec<crate::access::LibraryPermission>>,
     extensions: std::sync::Mutex<Vec<(crate::access::UserExtension, String)>>,
+    /// Each with its user, its extension and its token's digest.
+    devices: std::sync::Mutex<
+        Vec<(
+            crate::ids::UserId,
+            crate::access::Extension,
+            crate::access::ExtensionDevice,
+            String,
+        )>,
+    >,
     accounts: std::sync::Mutex<Vec<crate::access::AccountLink>>,
     passwords: std::sync::Mutex<Vec<(crate::ids::UserId, String)>>,
 }
@@ -2072,6 +2081,7 @@ impl crate::access::AccessRepository for InMemoryAccess {
     ) -> Result<bool, crate::access::AccessError> {
         locked(&self.permissions).retain(|permission| permission.user != id);
         locked(&self.extensions).retain(|(extension, _)| extension.user != id);
+        locked(&self.devices).retain(|(owner, ..)| *owner != id);
         locked(&self.accounts).retain(|link| link.user != id);
         locked(&self.passwords).retain(|(owner, _)| *owner != id);
         let mut users = locked(&self.users);
@@ -2153,11 +2163,48 @@ impl crate::access::AccessRepository for InMemoryAccess {
         extension: crate::access::Extension,
         _now: i64,
     ) -> Result<bool, crate::access::AccessError> {
+        locked(&self.devices).retain(|(owner, of, ..)| (*owner, *of) != (user, extension));
         let mut extensions = locked(&self.extensions);
         let found = extensions
             .iter_mut()
             .find(|(held, _)| held.user == user && held.extension == extension && held.enabled);
         Ok(found.map(|(held, _)| held.enabled = false).is_some())
+    }
+
+    async fn issue_device_token(
+        &self,
+        user: crate::ids::UserId,
+        extension: crate::access::Extension,
+        device: &crate::access::ExtensionDevice,
+        token_digest: &str,
+        _now: i64,
+    ) -> Result<(), crate::access::AccessError> {
+        let connected = locked(&self.extensions)
+            .iter()
+            .any(|(held, _)| held.user == user && held.extension == extension && held.enabled);
+        if !connected {
+            return Err(crate::access::AccessError::NotConnected);
+        }
+        let mut devices = locked(&self.devices);
+        devices.retain(|(owner, of, held, _)| {
+            (*owner, *of) != (user, extension) || held.id != device.id
+        });
+        devices.push((user, extension, device.clone(), token_digest.to_owned()));
+        Ok(())
+    }
+
+    async fn revoke_device_token(
+        &self,
+        user: crate::ids::UserId,
+        extension: crate::access::Extension,
+        token_digest: &str,
+    ) -> Result<bool, crate::access::AccessError> {
+        let mut devices = locked(&self.devices);
+        let before = devices.len();
+        devices.retain(|(owner, of, _, digest)| {
+            (*owner, *of) != (user, extension) || digest != token_digest
+        });
+        Ok(devices.len() < before)
     }
 
     async fn extensions(
@@ -2176,10 +2223,16 @@ impl crate::access::AccessRepository for InMemoryAccess {
         extension: crate::access::Extension,
         token_digest: &str,
     ) -> Result<Option<crate::access::Grant>, crate::access::AccessError> {
+        let device_user = locked(&self.devices)
+            .iter()
+            .find(|(_, of, _, digest)| *of == extension && digest == token_digest)
+            .map(|(owner, ..)| *owner);
         let found = locked(&self.extensions)
             .iter()
             .find(|(held, digest)| {
-                held.extension == extension && held.enabled && digest == token_digest
+                held.extension == extension
+                    && held.enabled
+                    && (digest == token_digest || Some(held.user) == device_user)
             })
             .map(|(held, _)| held.clone());
         let Some(extension) = found else {
