@@ -1,0 +1,71 @@
+{
+  "Items": [
+    {
+      "Name": "The Dionysian Debacle",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "0e4c88a9e803249425b656dfd2cdb3de",
+      "Container": "mov,mp4,m4a,3gp,3g2,mj2",
+      "PremiereDate": "2009-04-27T22:00:00.0000000Z",
+      "OfficialRating": "TV-14",
+      "ChannelId": null,
+      "Overview": "Naomi's older sister, Jen, unexpectedly returns to Beverly Hills. Meanwhile, Naomi persuades Annie to go on a double date, and Adrianna and Navid reveal their decision to his parents.",
+      "CommunityRating": 8,
+      "RunTimeTicks": 2877541340,
+      "ProductionYear": 2009,
+      "IndexNumber": 21,
+      "ParentIndexNumber": 1,
+      "IsFolder": false,
+      "Type": "Episode",
+      "ParentLogoItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+      "ParentBackdropItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+      "ParentBackdropImageTags": [
+        "bc43018dc61e72a1e85f51b25ac344df"
+      ],
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "82716001021",
+        "ItemId": "0e4c88a9e803249425b656dfd2cdb3de"
+      },
+      "SeriesName": "90210",
+      "SeriesId": "b0090a8c4dfbb2490dab2caf36536d9f",
+      "SeasonId": "d7cd792800f0b24c3b4f0bc3ccfd510a",
+      "PrimaryImageAspectRatio": 1.7777777777777777,
+      "SeriesPrimaryImageTag": "50ce5c92fe72d9e7d70979f35b041a3d",
+      "SeasonName": "Saison 1",
+      "VideoType": "VideoFile",
+      "ImageTags": {
+        "Primary": "0e2f9c6b1e46317d96fc5a13f8db978e"
+      },
+      "BackdropImageTags": [],
+      "ParentLogoImageTag": "200c89c832e477571e7a1ce4df91fdb8",
+      "ImageBlurHashes": {
+        "Primary": {
+          "0e2f9c6b1e46317d96fc5a13f8db978e": "WSIhNu-..T^+$*%g~q-oNLx]ocoMbrIURQIoWBaLIAIVIUInNGRj",
+          "50ce5c92fe72d9e7d70979f35b041a3d": "d]L;?CxuWAxuPXbbkBW=ESbIWrWVNHkCoLWXE2WBj[WW",
+          "71d37e5c30f3e92a41b55cfb7299bc68": "dZJulr-;kW%hPXogWrbvThbcslsnNzofnhRkIWn$bvNH"
+        },
+        "Logo": {
+          "200c89c832e477571e7a1ce4df91fdb8": "PNLEN8Rk9H?at7IUt6D%xuofxuxuWBay%Lt6_2IVD*D*WB?aRj~p"
+        },
+        "Thumb": {
+          "cc3f7975d486039dde8b7b927eb8ed4f": "WYKUl:yEPV.TxC-;-gFzoyVXaJV@PTEnM_IpRiMx?^NLS5t8xCr="
+        },
+        "Backdrop": {
+          "bc43018dc61e72a1e85f51b25ac344df": "WaK0{Mozo|ofj[-p_4WqW=R*M{%2.8S4ofofIVxa?bWXocs.t6s:"
+        }
+      },
+      "ParentThumbItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+      "ParentThumbImageTag": "cc3f7975d486039dde8b7b927eb8ed4f",
+      "ParentPrimaryImageItemId": "d7cd792800f0b24c3b4f0bc3ccfd510a",
+      "ParentPrimaryImageTag": "71d37e5c30f3e92a41b55cfb7299bc68",
+      "LocationType": "FileSystem",
+      "MediaType": "Video",
+      "OriginalLanguage": "en"
+    }
+  ],
+  "TotalRecordCount": 1,
+  "StartIndex": 0
+}

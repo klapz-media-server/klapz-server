@@ -1,0 +1,261 @@
+{
+  "Name": "Chuyện Vợ Chồng Sáo",
+  "OriginalTitle": "Chuyện Vợ Chồng Sáo",
+  "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+  "Id": "c4927ec38c9f3d59490edf05de2d8a2a",
+  "Etag": "3422c051f781fc337582e4d5cea4a321",
+  "DateCreated": "2017-10-07T15:07:33.0000000Z",
+  "CanDelete": true,
+  "CanDownload": true,
+  "Container": "mkv",
+  "SortName": "chuyen vo chong sao",
+  "PremiereDate": "1997-06-01T00:00:00.0000000Z",
+  "ExternalUrls": [
+    {
+      "Name": "IMDb",
+      "Url": "https://www.imdb.com/title/tt21968368"
+    },
+    {
+      "Name": "TMDB",
+      "Url": "https://www.themoviedb.org/movie/923453"
+    }
+  ],
+  "MediaSources": [
+    {
+      "Protocol": "File",
+      "Id": "c4927ec38c9f3d59490edf05de2d8a2a",
+      "Path": "/media/Movies/VO/doodlebug.1997.VO.H264.mkv",
+      "Type": "Default",
+      "Container": "mkv",
+      "Size": 14876546,
+      "Name": "doodlebug.1997.VO.H264",
+      "IsRemote": false,
+      "ETag": "482e902bd606907fd63eb1c3df52a895",
+      "RunTimeTicks": 1783009999,
+      "ReadAtNativeFramerate": false,
+      "IgnoreDts": false,
+      "IgnoreIndex": false,
+      "GenPtsInput": false,
+      "SupportsTranscoding": true,
+      "SupportsDirectStream": true,
+      "SupportsDirectPlay": true,
+      "IsInfiniteStream": false,
+      "UseMostCompatibleTranscodingProfile": false,
+      "RequiresOpening": false,
+      "RequiresClosing": false,
+      "RequiresLooping": false,
+      "SupportsProbing": true,
+      "VideoType": "VideoFile",
+      "MediaStreams": [
+        {
+          "Codec": "h264",
+          "Language": "und",
+          "TimeBase": "1/1000",
+          "VideoRange": "SDR",
+          "VideoRangeType": "SDR",
+          "AudioSpatialFormat": "None",
+          "DisplayTitle": "480p H264 SDR",
+          "NalLengthSize": "4",
+          "IsInterlaced": false,
+          "IsAVC": true,
+          "BitRate": 539480,
+          "BitDepth": 8,
+          "RefFrames": 1,
+          "IsDefault": true,
+          "IsForced": false,
+          "IsHearingImpaired": false,
+          "IsOriginal": false,
+          "Height": 480,
+          "Width": 720,
+          "AverageFrameRate": 29.97003,
+          "RealFrameRate": 29.97003,
+          "ReferenceFrameRate": 29.97003,
+          "Profile": "Main",
+          "Type": "Video",
+          "AspectRatio": "1.5:1",
+          "Index": 0,
+          "IsExternal": false,
+          "IsTextSubtitleStream": false,
+          "SupportsExternalStream": false,
+          "PixelFormat": "yuv420p",
+          "Level": 30,
+          "IsAnamorphic": false
+        },
+        {
+          "Codec": "opus",
+          "Language": "eng",
+          "TimeBase": "1/1000",
+          "VideoRange": "Unknown",
+          "VideoRangeType": "Unknown",
+          "AudioSpatialFormat": "None",
+          "LocalizedDefault": "Default",
+          "LocalizedExternal": "External",
+          "LocalizedLanguage": "English",
+          "LocalizedOriginal": "Original",
+          "DisplayTitle": "English - OPUS - Stereo - Default",
+          "IsInterlaced": false,
+          "ChannelLayout": "stereo",
+          "BitRate": 128000,
+          "Channels": 2,
+          "SampleRate": 48000,
+          "IsDefault": true,
+          "IsForced": false,
+          "IsHearingImpaired": false,
+          "IsOriginal": false,
+          "Type": "Audio",
+          "Index": 1,
+          "IsExternal": false,
+          "IsTextSubtitleStream": false,
+          "SupportsExternalStream": false
+        }
+      ],
+      "MediaAttachments": [],
+      "Formats": [],
+      "Bitrate": 667480,
+      "RequiredHttpHeaders": {},
+      "TranscodingSubProtocol": "http",
+      "DefaultAudioStreamIndex": 1,
+      "HasSegments": false
+    }
+  ],
+  "ProductionLocations": [],
+  "Path": "/media/Movies/VO/doodlebug.1997.VO.H264.mkv",
+  "EnableMediaSourceDisplay": true,
+  "ChannelId": null,
+  "Taglines": [],
+  "Genres": [
+    "Animation"
+  ],
+  "RunTimeTicks": 1783009999,
+  "PlayAccess": "Full",
+  "ProductionYear": 1997,
+  "RemoteTrailers": [],
+  "ProviderIds": {
+    "Tmdb": "923453",
+    "Imdb": "tt21968368"
+  },
+  "IsFolder": false,
+  "ParentId": "c174a028cbf8fc763c9eedd389caffe7",
+  "Type": "Movie",
+  "People": [
+    {
+      "Name": "Hà Bắc",
+      "Id": "27cb5a9ad717d5aca5b2c1feef165715",
+      "Role": "Director",
+      "Type": "Director",
+      "PrimaryImageTag": "1b8aa50bb4e3c74c7d78cefd3e7b736a",
+      "ImageBlurHashes": {
+        "Primary": {
+          "1b8aa50bb4e3c74c7d78cefd3e7b736a": "dCAS-,T00#kC}@IpIpR+5lo3={NH5RWX-UaeoeNItQ$%"
+        }
+      }
+    }
+  ],
+  "Studios": [],
+  "GenreItems": [
+    {
+      "Name": "Animation",
+      "Id": "074229225b7254292f131f9f49f8dcd6"
+    }
+  ],
+  "LocalTrailerCount": 0,
+  "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false,
+    "Key": "923453",
+    "ItemId": "c4927ec38c9f3d59490edf05de2d8a2a"
+  },
+  "SpecialFeatureCount": 0,
+  "DisplayPreferencesId": "dbf7709c41faaa746463d67978eb863d",
+  "Tags": [],
+  "PrimaryImageAspectRatio": 0.6679035250463822,
+  "MediaStreams": [
+    {
+      "Codec": "h264",
+      "Language": "und",
+      "TimeBase": "1/1000",
+      "VideoRange": "SDR",
+      "VideoRangeType": "SDR",
+      "AudioSpatialFormat": "None",
+      "DisplayTitle": "480p H264 SDR",
+      "NalLengthSize": "4",
+      "IsInterlaced": false,
+      "IsAVC": true,
+      "BitRate": 539480,
+      "BitDepth": 8,
+      "RefFrames": 1,
+      "IsDefault": true,
+      "IsForced": false,
+      "IsHearingImpaired": false,
+      "IsOriginal": false,
+      "Height": 480,
+      "Width": 720,
+      "AverageFrameRate": 29.97003,
+      "RealFrameRate": 29.97003,
+      "ReferenceFrameRate": 29.97003,
+      "Profile": "Main",
+      "Type": "Video",
+      "AspectRatio": "1.5:1",
+      "Index": 0,
+      "IsExternal": false,
+      "IsTextSubtitleStream": false,
+      "SupportsExternalStream": false,
+      "PixelFormat": "yuv420p",
+      "Level": 30,
+      "IsAnamorphic": false
+    },
+    {
+      "Codec": "opus",
+      "Language": "eng",
+      "TimeBase": "1/1000",
+      "VideoRange": "Unknown",
+      "VideoRangeType": "Unknown",
+      "AudioSpatialFormat": "None",
+      "LocalizedDefault": "Default",
+      "LocalizedExternal": "External",
+      "LocalizedLanguage": "English",
+      "LocalizedOriginal": "Original",
+      "DisplayTitle": "English - OPUS - Stereo - Default",
+      "IsInterlaced": false,
+      "ChannelLayout": "stereo",
+      "BitRate": 128000,
+      "Channels": 2,
+      "SampleRate": 48000,
+      "IsDefault": true,
+      "IsForced": false,
+      "IsHearingImpaired": false,
+      "IsOriginal": false,
+      "Type": "Audio",
+      "Index": 1,
+      "IsExternal": false,
+      "IsTextSubtitleStream": false,
+      "SupportsExternalStream": false
+    }
+  ],
+  "VideoType": "VideoFile",
+  "ImageTags": {
+    "Primary": "09d7f14edc8b4791c14b4b3449079abc"
+  },
+  "BackdropImageTags": [
+    "246884c4d58be19e83d4809b266b9ee1"
+  ],
+  "ImageBlurHashes": {
+    "Backdrop": {
+      "246884c4d58be19e83d4809b266b9ee1": "NBCZObiwTykXyCpboyNyR%xtIqNG4VoyDQMyRPRP"
+    },
+    "Primary": {
+      "09d7f14edc8b4791c14b4b3449079abc": "dAD,73rX?[%y6Bi^jcE3KjWBr?WEkCS6Rjo|J:bEkBjs"
+    }
+  },
+  "Chapters": [],
+  "Trickplay": {},
+  "LocationType": "FileSystem",
+  "MediaType": "Video",
+  "LockedFields": [],
+  "LockData": false,
+  "Width": 720,
+  "Height": 480,
+  "OriginalLanguage": "vi"
+}

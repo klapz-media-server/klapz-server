@@ -1,0 +1,182 @@
+[
+  {
+    "Name": "Peur primale",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "09b1fc322bc9803ef87ae9a19c22960b",
+    "HasSubtitles": true,
+    "Container": "ts",
+    "PremiereDate": "1996-04-02T22:00:00.0000000Z",
+    "CriticRating": 77,
+    "OfficialRating": "FR-TP",
+    "ChannelId": null,
+    "CommunityRating": 7.666,
+    "RunTimeTicks": 73947303780,
+    "ProductionYear": 1996,
+    "IsFolder": false,
+    "Type": "Movie",
+    "UserData": {
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "09b1fc32-2bc9-803e-f87a-e9a19c22960b",
+      "ItemId": "09b1fc322bc9803ef87ae9a19c22960b"
+    },
+    "PrimaryImageAspectRatio": 0.6666666666666666,
+    "VideoType": "VideoFile",
+    "ImageTags": {
+      "Thumb": "4f6ab37f5cffa77a25d75688a2743fb7",
+      "Logo": "386c0a2f5727446bd4d3395f1498ba50",
+      "Primary": "6eeb225bb8b96635d0e460e11fd2fbd2"
+    },
+    "BackdropImageTags": [
+      "9031c8d1f77733c624aaddcd80190f09"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "9031c8d1f77733c624aaddcd80190f09": "WWEo9#~9M{%0?FNHt7NHIWa}t7NH9bE3WXR,RkoJaeoft7a{WBj["
+      },
+      "Thumb": {
+        "4f6ab37f5cffa77a25d75688a2743fb7": "WQCs84~UE2E2-o_0E2IpWCj[NHIW4;IWxtxtNHIpayoes:oeoet6"
+      },
+      "Logo": {
+        "386c0a2f5727446bd4d3395f1498ba50": "H8F={%%Mxu~q%M9FM{t7?b_3-;j]t7%MWBWBWB%M"
+      },
+      "Primary": {
+        "6eeb225bb8b96635d0e460e11fd2fbd2": "daFrIUoyIp^%xuNIRkj[0NoMxZE3W=%Kt5azkCofWBoe"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Video",
+    "OriginalLanguage": "en"
+  },
+  {
+    "Name": "Post 2070: A Documentary on the Monrovia VFW",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "32ee702dcb0784c194a77057ed75903d",
+    "Container": "mkv,webm",
+    "PremiereDate": "2025-01-23T23:00:00.0000000Z",
+    "ChannelId": null,
+    "RunTimeTicks": 1500209999,
+    "ProductionYear": 2025,
+    "IsFolder": false,
+    "Type": "Movie",
+    "UserData": {
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "32ee702d-cb07-84c1-94a7-7057ed75903d",
+      "ItemId": "32ee702dcb0784c194a77057ed75903d"
+    },
+    "PrimaryImageAspectRatio": 0.6627673796791443,
+    "VideoType": "VideoFile",
+    "ImageTags": {
+      "Primary": "bb75c61dae08944754888d8d3d47f6f9"
+    },
+    "BackdropImageTags": [
+      "4b8b477d2b2979b52c64de2c6bd95851"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "4b8b477d2b2979b52c64de2c6bd95851": "NLC$}z.RJA%L%Kaf~V%fOXxYxDS#ozRjjExZt7X7"
+      },
+      "Primary": {
+        "bb75c61dae08944754888d8d3d47f6f9": "dsJt|~-;t7%L~qxufkt79FRjayRjIUWBs:ay-;ozoft6"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Video",
+    "OriginalLanguage": "en"
+  },
+  {
+    "Name": "Jurassic World : Fallen Kingdom",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "2c12ede1c31ea4a572acda786256343c",
+    "HasSubtitles": true,
+    "Container": "mkv",
+    "PremiereDate": "2018-06-05T22:00:00.0000000Z",
+    "CriticRating": 47,
+    "OfficialRating": "FR-12",
+    "ChannelId": null,
+    "CommunityRating": 6.518,
+    "RunTimeTicks": 76977030000,
+    "ProductionYear": 2018,
+    "IsFolder": false,
+    "Type": "Movie",
+    "UserData": {
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "2c12ede1-c31e-a4a5-72ac-da786256343c",
+      "ItemId": "2c12ede1c31ea4a572acda786256343c"
+    },
+    "PrimaryImageAspectRatio": 0.6666666666666666,
+    "VideoType": "VideoFile",
+    "ImageTags": {
+      "Thumb": "d5a0cd5453dbbcee2353011f811db4a6",
+      "Logo": "998d96df72b9dcda1fb9ce85cdafd6b9",
+      "Primary": "f5ce1f8f9623508ca73ae440258ca178"
+    },
+    "BackdropImageTags": [
+      "091c8bcecbf53cad96aeffbab6194821"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "091c8bcecbf53cad96aeffbab6194821": "WTCjFM%g%Mt6M{oz_Nx^x]t6a{t7-=x]xuofkCoL?bx]t7aeRkWX"
+      },
+      "Thumb": {
+        "d5a0cd5453dbbcee2353011f811db4a6": "WfEW8k%N%gxaRQoz_N%Mx]ofWUo#-;t7tRe.Rjoz-:WBozn%M{bH"
+      },
+      "Logo": {
+        "998d96df72b9dcda1fb9ce85cdafd6b9": "VIDJS7WB00j[WAt7WBD%t7t700Rjayt7xu-;WBxuayRj"
+      },
+      "Primary": {
+        "f5ce1f8f9623508ca73ae440258ca178": "dTCt5-Met6k=_MRQw^o}%MOEnNtQx[Ndi_kWxYNas:W;"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Video",
+    "OriginalLanguage": "en"
+  },
+  {
+    "Name": "Chuyện Vợ Chồng Sáo",
+    "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+    "Id": "c4927ec38c9f3d59490edf05de2d8a2a",
+    "Container": "mkv",
+    "PremiereDate": "1997-05-31T22:00:00.0000000Z",
+    "ChannelId": null,
+    "RunTimeTicks": 1783009999,
+    "ProductionYear": 1997,
+    "IsFolder": false,
+    "Type": "Movie",
+    "UserData": {
+      "PlaybackPositionTicks": 0,
+      "PlayCount": 0,
+      "IsFavorite": false,
+      "Played": false,
+      "Key": "c4927ec3-8c9f-3d59-490e-df05de2d8a2a",
+      "ItemId": "c4927ec38c9f3d59490edf05de2d8a2a"
+    },
+    "PrimaryImageAspectRatio": 0.6679035250463822,
+    "VideoType": "VideoFile",
+    "ImageTags": {
+      "Primary": "09d7f14edc8b4791c14b4b3449079abc"
+    },
+    "BackdropImageTags": [
+      "246884c4d58be19e83d4809b266b9ee1"
+    ],
+    "ImageBlurHashes": {
+      "Backdrop": {
+        "246884c4d58be19e83d4809b266b9ee1": "NBCZObiwTykXyCpboyNyR%xtIqNG4VoyDQMyRPRP"
+      },
+      "Primary": {
+        "09d7f14edc8b4791c14b4b3449079abc": "dAD,73rX?[%y6Bi^jcE3KjWBr?WEkCS6Rjo|J:bEkBjs"
+      }
+    },
+    "LocationType": "FileSystem",
+    "MediaType": "Video",
+    "OriginalLanguage": "vi"
+  }
+]

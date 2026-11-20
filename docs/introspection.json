@@ -11285,6 +11285,65 @@
               "deprecationReason": null
             },
             {
+              "name": "readableAsIs",
+              "description": "Whether a player reads this file as it is, so that `startStream` can send it untouched\nwith `directPlay`: one of the formats the player declares holds the file's container,\nits video codec and the codec of the audio track it would play — `audioTrack`, or the\ncaller's — and the version weighs no more than `maxBitrate`. An empty list in a format\nadmits anything; names are compared without regard to case.",
+              "args": [
+                {
+                  "name": "formats",
+                  "description": "What the player reads as it is, each format on its own.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "LIST",
+                      "name": null,
+                      "ofType": {
+                        "kind": "NON_NULL",
+                        "name": null,
+                        "ofType": {
+                          "kind": "INPUT_OBJECT",
+                          "name": "PlayerFormatInput",
+                          "ofType": null
+                        }
+                      }
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "maxBitrate",
+                  "description": "The most the player takes, in bits per second.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "audioTrack",
+                  "description": "The audio track it would play, as returned in `MediaStream.id`.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "ID",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "selectedAudio",
               "description": "The audio track the caller plays this file with: the one it chose with `chooseTracks`,\nelse the file's default, else its first.",
               "args": [],
@@ -16840,6 +16899,83 @@
               "deprecationReason": null
             }
           ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "PlayerFormatInput",
+          "description": "A format a player reads as it is.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "containers",
+              "description": "Containers, as ffmpeg names them: `mkv`, `mp4`, `webm`. Empty for any.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": "[]"
+            },
+            {
+              "name": "videoCodecs",
+              "description": "Video codecs it reads in them: `h264`, `hevc`. Empty for any.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": "[]"
+            },
+            {
+              "name": "audioCodecs",
+              "description": "Audio codecs it reads in them: `aac`, `opus`. Empty for any.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": "[]"
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
           "possibleTypes": null
         },
         {

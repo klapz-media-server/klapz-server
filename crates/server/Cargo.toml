@@ -9,6 +9,7 @@ license.workspace = true
 open-plex-core.workspace = true
 open-plex-api.workspace = true
 open-plex-api-plex.workspace = true
+open-plex-api-jellyfin.workspace = true
 open-plex-transcoder.workspace = true
 open-plex-db.workspace = true
 open-plex-scanner.workspace = true

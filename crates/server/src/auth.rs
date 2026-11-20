@@ -12,6 +12,10 @@
 //! - a session as `Authorization: Bearer`, what a script or an API client sends after
 //!   `signIn`;
 //! - the same session in its cookie, what a browser sends.
+//!
+//! The Jellyfin surface, below its own base path, takes Jellyfin tokens and nothing else: only
+//! a user connected through the Jellyfin extension reaches it, whatever else it holds. Its
+//! clients carry the token in their own headers, which `open-plex-api-jellyfin` reads.
 
 use std::sync::Arc;
 
@@ -130,6 +134,21 @@ impl Access {
         }
     }
 
+    /// Who a Jellyfin token belongs to: a device's, or the connection's own.
+    async fn jellyfin_token_of(&self, token: &str) -> Option<Principal> {
+        match self
+            .users
+            .grant(Extension::Jellyfin, &token_digest(token))
+            .await
+        {
+            Ok(grant) => grant.map(open_plex_core::access::Grant::into_principal),
+            Err(error) => {
+                tracing::warn!(%error, "could not look a Jellyfin token up");
+                None
+            }
+        }
+    }
+
     /// The server published at the address a request naming no account was sent to.
     async fn published_at(&self, host: &str) -> Option<PublishedServer> {
         let uris = connection_uris_for_host(host);
@@ -197,6 +216,23 @@ pub async fn require_token(
     next: Next,
 ) -> Response {
     let path = request.uri().path();
+    if let Some(jellyfin_path) = open_plex_api_jellyfin::surface_path(path) {
+        let public = open_plex_api_jellyfin::auth::is_public(jellyfin_path);
+        let token = open_plex_api_jellyfin::auth::token(request.headers(), request.uri().query());
+        let caller = match token {
+            Some(token) => access.jellyfin_token_of(&token).await,
+            None => None,
+        };
+        return match caller {
+            Some(principal) => {
+                request.extensions_mut().insert(principal);
+                next.run(request).await
+            }
+            None if public => next.run(request).await,
+            // Bare, as the reference refuses.
+            None => StatusCode::UNAUTHORIZED.into_response(),
+        };
+    }
     // The web client is public on the reference too: it has to load before it can sign in.
     if crate::web::is_client_path(path) || is_transcoder_callback(path) || is_native_stream(path) {
         return next.run(request).await;
@@ -649,6 +685,171 @@ mod tests {
         assert_eq!(
             call("/library/sections", None).await.0,
             StatusCode::UNAUTHORIZED
+        );
+    }
+
+    /// The Jellyfin token of `alice`'s device.
+    const DEVICE_TOKEN: &str = "alice-jellyfin-device";
+
+    /// `alice` as in [`fixture`], connected through Jellyfin as well when `jellyfin` and
+    /// signed in from a device, then switched off unless `enabled`; and the Jellyfin routes.
+    async fn jellyfin_fixture(jellyfin: bool, enabled: bool) -> Fixture {
+        let users = Arc::new(InMemoryAccess::default());
+        let alice = users
+            .create_user(
+                NewUser {
+                    username: "alice",
+                    email: None,
+                    role: ServerRole::User,
+                    active: true,
+                    password_hash: None,
+                },
+                0,
+            )
+            .await
+            .unwrap()
+            .id;
+        users
+            .connect_extension(alice, Protocol::Plex, "server", &token_digest(TOKEN), 0)
+            .await
+            .unwrap();
+        if jellyfin {
+            users
+                .connect_extension(alice, Protocol::Jellyfin, "jf", &token_digest("key"), 0)
+                .await
+                .unwrap();
+            let device = open_plex_core::access::ExtensionDevice {
+                id: "d1".to_owned(),
+                name: "Firefox".to_owned(),
+                client: "Jellyfin Web".to_owned(),
+                client_version: "10.11.0".to_owned(),
+            };
+            users
+                .issue_device_token(
+                    alice,
+                    Protocol::Jellyfin,
+                    &device,
+                    &token_digest(DEVICE_TOKEN),
+                    0,
+                )
+                .await
+                .unwrap();
+            if !enabled {
+                users
+                    .disable_extension(alice, Protocol::Jellyfin, 0)
+                    .await
+                    .unwrap();
+            }
+        }
+        let key = Arc::new(SessionKey::generate());
+        let access = Arc::new(Access::new(users).with_sessions(Arc::clone(&key)));
+        let app = Router::new()
+            .route("/jellyfin/System/Info", get(whoami))
+            .route("/jellyfin/System/Info/Public", get(whoami))
+            .route("/library/sections", get(whoami))
+            .layer(axum::middleware::from_fn_with_state(access, require_token));
+        Fixture {
+            app,
+            key,
+            alice,
+            bob: alice,
+        }
+    }
+
+    fn jellyfin_header(token: &str) -> String {
+        format!(r#"MediaBrowser Client="Jellyfin Web", DeviceId="d1", Token="{token}""#)
+    }
+
+    #[tokio::test]
+    async fn a_jellyfin_token_acts_as_its_user_on_the_jellyfin_surface() {
+        let app = jellyfin_fixture(true, true).await.app;
+        for request in [
+            Request::builder().header("Authorization", jellyfin_header(DEVICE_TOKEN)),
+            Request::builder().header("X-Emby-Token", DEVICE_TOKEN),
+            Request::builder().header("Authorization", jellyfin_header("key")),
+        ] {
+            assert_eq!(
+                send(app.clone(), request.uri("/jellyfin/System/Info")).await,
+                (StatusCode::OK, "alice".to_owned())
+            );
+        }
+        assert_eq!(
+            send(
+                app,
+                Request::builder().uri(format!("/jellyfin/System/Info?ApiKey={DEVICE_TOKEN}"))
+            )
+            .await,
+            (StatusCode::OK, "alice".to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn the_jellyfin_surface_refuses_nobody_with_a_bare_401_but_its_public_paths() {
+        let app = jellyfin_fixture(true, true).await.app;
+        let (status, body) =
+            send(app.clone(), Request::builder().uri("/jellyfin/System/Info")).await;
+        assert_eq!((status, body.as_str()), (StatusCode::UNAUTHORIZED, ""));
+        assert_eq!(
+            send(app, Request::builder().uri("/jellyfin/System/Info/Public")).await,
+            (StatusCode::OK, "anonymous".to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn refuses_a_user_without_a_jellyfin_extension() {
+        // A Plex connection, a session or a Plex token open nothing on the Jellyfin surface.
+        let fixture = jellyfin_fixture(false, true).await;
+        let session = fixture
+            .key
+            .issue(fixture.alice, open_plex_core::now_epoch())
+            .unwrap();
+        for request in [
+            Request::builder().header("Authorization", jellyfin_header(DEVICE_TOKEN)),
+            Request::builder().header("Authorization", jellyfin_header(TOKEN)),
+            Request::builder().header("X-Plex-Token", TOKEN),
+            Request::builder().header("Authorization", format!("Bearer {session}")),
+            Request::builder().header("Cookie", cookie(&session)),
+        ] {
+            let (status, _) = send(fixture.app.clone(), request.uri("/jellyfin/System/Info")).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_disabled_jellyfin_extension_refuses_its_tokens() {
+        let app = jellyfin_fixture(true, false).await.app;
+        for token in [DEVICE_TOKEN, "key"] {
+            let (status, _) = send(
+                app.clone(),
+                Request::builder()
+                    .uri("/jellyfin/System/Info")
+                    .header("Authorization", jellyfin_header(token)),
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{token}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_jellyfin_token_opens_nothing_on_the_plex_surface() {
+        let app = jellyfin_fixture(true, true).await.app;
+        for request in [
+            Request::builder().header("X-Plex-Token", DEVICE_TOKEN),
+            Request::builder().header("Authorization", jellyfin_header(DEVICE_TOKEN)),
+        ] {
+            let (status, _) = send(app.clone(), request.uri("/library/sections")).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+        }
+        // Plex's own token keeps working there.
+        assert_eq!(
+            send(
+                app,
+                Request::builder()
+                    .uri("/library/sections")
+                    .header("X-Plex-Token", TOKEN)
+            )
+            .await,
+            (StatusCode::OK, "alice".to_owned())
         );
     }
 }

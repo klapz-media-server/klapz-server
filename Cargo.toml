@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/db", "crates/api", "crates/transcoder", "crates/api-plex", "crates/server", "crates/scanner"]
+members = ["crates/core", "crates/db", "crates/api", "crates/transcoder", "crates/api-plex", "crates/api-jellyfin", "crates/server", "crates/scanner"]
 resolver = "2"
 
 [workspace.package]
@@ -12,6 +12,7 @@ open-plex-core = { path = "crates/core" }
 open-plex-db = { path = "crates/db" }
 open-plex-api = { path = "crates/api" }
 open-plex-api-plex = { path = "crates/api-plex" }
+open-plex-api-jellyfin = { path = "crates/api-jellyfin" }
 open-plex-transcoder = { path = "crates/transcoder" }
 open-plex-scanner = { path = "crates/scanner", default-features = false }
 
