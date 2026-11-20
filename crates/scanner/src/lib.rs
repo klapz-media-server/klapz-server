@@ -8,6 +8,7 @@
 //! are the server's.
 
 pub mod report;
+pub mod transcoder;
 
 #[cfg(feature = "engine")]
 mod engine;

@@ -12,7 +12,8 @@ Contents
                   scanner reads files with (as `ffmpeg -probe`).
 
 The server finds the scanner and ffmpeg beside its own executable; KLAPZ_SCANNER and
-KLAPZ_TRANSCODER override them. A web client put in a `web` directory beside it (one with
+KLAPZ_TRANSCODER override them. The transcoder may also be named klapz-transcoder, which
+wins over ffmpeg; with neither beside them, the ffmpeg on PATH is used. A web client put in a `web` directory beside it (one with
 an index.html, such as Plex Web) is served at /web; without one, /web is not served.
 KLAPZ_WEB_DIR names another directory.
 

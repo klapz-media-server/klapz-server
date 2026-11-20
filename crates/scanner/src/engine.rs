@@ -36,12 +36,10 @@ pub struct Tools {
 }
 
 impl Tools {
-    /// `KLAPZ_TRANSCODER`, the ffmpeg the server streams with, and `KLAPZ_FFPROBE`.
-    /// Without the first, the ffmpeg beside the scanner, as the packages lay it out, or else
-    /// the one on `PATH`.
+    /// The ffmpeg the server streams with ([`crate::transcoder::binary`]), and `KLAPZ_FFPROBE`.
     pub fn from_env() -> Self {
         Self {
-            ffmpeg: std::env::var_os("KLAPZ_TRANSCODER").map_or_else(bundled_ffmpeg, PathBuf::from),
+            ffmpeg: crate::transcoder::binary(),
             ffprobe: std::env::var_os("KLAPZ_FFPROBE").map(PathBuf::from),
         }
     }
@@ -54,15 +52,6 @@ impl Tools {
         command.arg("-probe");
         command
     }
-}
-
-fn bundled_ffmpeg() -> PathBuf {
-    let name = format!("ffmpeg{}", std::env::consts::EXE_SUFFIX);
-    std::env::current_exe()
-        .ok()
-        .and_then(|scanner| Some(scanner.parent()?.join(&name)))
-        .filter(|path| path.is_file())
-        .unwrap_or_else(|| PathBuf::from(name))
 }
 
 #[derive(Debug, thiserror::Error)]

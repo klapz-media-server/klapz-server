@@ -424,38 +424,21 @@ pub(crate) fn beside_executable(name: &str) -> Option<PathBuf> {
     Some(std::env::current_exe().ok()?.parent()?.join(name))
 }
 
-fn executable_name(program: &str) -> String {
-    format!("{program}{}", std::env::consts::EXE_SUFFIX)
-}
-
 /// A program beside this server's executable, where Cargo and the packages put it, or else the
 /// one `PATH` finds.
 pub(crate) fn bundled(program: &str) -> PathBuf {
-    let name = executable_name(program);
+    let name = format!("{program}{}", std::env::consts::EXE_SUFFIX);
     beside_executable(&name)
         .filter(|path| path.is_file())
         .unwrap_or_else(|| PathBuf::from(name))
 }
 
-/// The ffmpeg beside this server's executable. Never one from `PATH`: a stock build lacks the
-/// options the conversions' command lines use, and would fail every stream in a way that reads
-/// as a server bug.
-fn bundled_ffmpeg() -> PathBuf {
-    let name = executable_name("ffmpeg");
-    let binary = beside_executable(&name).unwrap_or_else(|| PathBuf::from(&name));
-    if !binary.is_file() {
-        tracing::warn!(
-            path = %binary.display(),
-            "no ffmpeg beside the server and no KLAPZ_TRANSCODER: conversions will fail"
-        );
-    }
-    binary
-}
-
 fn transcoder() -> klapz_transcoder::Transcoder {
     let bind = std::env::var("KLAPZ_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
     let port = bind.rsplit(':').next().unwrap_or("32500");
-    let binary = std::env::var_os("KLAPZ_TRANSCODER").map_or_else(bundled_ffmpeg, PathBuf::from);
+    let binary = klapz_scanner::transcoder::binary();
+    // A bare name is the one `PATH` finds, which may be a stock build without Plex's options.
+    tracing::info!(binary = %binary.display(), "transcoder");
     let fonts = std::env::var_os("KLAPZ_TRANSCODER_FONTS")
         .map(std::path::PathBuf::from)
         .or_else(|| {
