@@ -20,6 +20,9 @@ pub fn router() -> Router<JellyfinState> {
         .route("/branding/css", get(css))
         .route("/branding/css.css", get(css))
         .route("/quickconnect/enabled", get(quick_connect))
+        .route("/system/endpoint", get(endpoint))
+        .route("/playback/bitratetest", get(bitrate_test))
+        .route("/syncplay/list", get(sync_play_groups))
 }
 
 #[derive(Debug, Serialize)]
@@ -170,11 +173,77 @@ async fn quick_connect() -> Response {
     json(&false)
 }
 
+/// Whether the client is on this machine or its network, which clients read to choose a
+/// quality.
+async fn endpoint(
+    State(state): State<JellyfinState>,
+    peer: Option<axum::Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
+) -> Result<Response, JellyfinError> {
+    crate::gql::viewer(&state.schema).await?;
+    let ip = peer.map(|axum::Extension(axum::extract::ConnectInfo(peer))| peer.ip());
+    Ok(json(&serde_json::json!({
+        "IsLocal": ip.is_some_and(|ip| ip.is_loopback()),
+        "IsInNetwork": ip.is_some_and(is_in_network),
+    })))
+}
+
+fn is_in_network(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(ip) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+        // Unique local addresses, fc00::/7.
+        std::net::IpAddr::V6(ip) => ip.is_loopback() || (ip.segments()[0] & 0xfe00) == 0xfc00,
+    }
+}
+
+/// The most a bitrate test sends: what clients ask (500 kB to a few MB), and a ceiling on what
+/// one request makes the server write.
+const MAX_BITRATE_TEST_BYTES: usize = 10 * 1024 * 1024;
+
+/// Bytes for a client to time, which tells it how fast the link is.
+async fn bitrate_test(
+    State(state): State<JellyfinState>,
+    axum::extract::RawQuery(query): axum::extract::RawQuery,
+) -> Result<Response, JellyfinError> {
+    crate::gql::viewer(&state.schema).await?;
+    let query = crate::query::Query::parse(query.as_deref());
+    let size = query
+        .count("size")?
+        .ok_or(JellyfinError::BadRequest("a bitrate test has a size"))?;
+    let size = usize::try_from(size).unwrap_or(MAX_BITRATE_TEST_BYTES);
+    if size > MAX_BITRATE_TEST_BYTES {
+        return Err(JellyfinError::BadRequest("a bitrate test is too large"));
+    }
+    Ok((
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        )],
+        vec![0_u8; size],
+    )
+        .into_response())
+}
+
+/// Groups watching together. No such group is held here.
+async fn sync_play_groups(State(state): State<JellyfinState>) -> Result<Response, JellyfinError> {
+    crate::gql::viewer(&state.schema).await?;
+    Ok(json(&[(); 0]))
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+
+    #[test]
+    fn the_local_network_is_loopback_and_private_addresses() {
+        for inside in ["127.0.0.1", "192.168.1.4", "10.0.0.2", "::1", "fd00::1"] {
+            assert!(is_in_network(inside.parse().unwrap()), "{inside}");
+        }
+        for outside in ["8.8.8.8", "2001:4860::8888"] {
+            assert!(!is_in_network(outside.parse().unwrap()), "{outside}");
+        }
+    }
 
     #[test]
     fn the_local_address_is_the_host_asked_and_the_base() {

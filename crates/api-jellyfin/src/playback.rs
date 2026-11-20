@@ -17,7 +17,7 @@ use axum::Router;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::dto::{media_source, Item, Version, ITEM_FIELDS};
+use crate::dto::{media_source, source_id, Item, ITEM_FIELDS};
 use crate::error::JellyfinError;
 use crate::gql;
 use crate::id;
@@ -61,9 +61,14 @@ pub fn router() -> Router<JellyfinState> {
 #[serde(rename_all = "PascalCase", default)]
 struct PlaybackInfoRequest {
     media_source_id: Option<String>,
+    #[serde(deserialize_with = "lenient::number")]
     audio_stream_index: Option<i32>,
+    /// `-1` for no subtitle.
+    #[serde(deserialize_with = "lenient::number")]
     subtitle_stream_index: Option<i32>,
+    #[serde(deserialize_with = "lenient::number")]
     max_streaming_bitrate: Option<i64>,
+    #[serde(deserialize_with = "lenient::number")]
     start_time_ticks: Option<i64>,
     enable_direct_play: Option<bool>,
     device_profile: Option<DeviceProfile>,
@@ -72,6 +77,7 @@ struct PlaybackInfoRequest {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
 struct DeviceProfile {
+    #[serde(deserialize_with = "lenient::number")]
     max_streaming_bitrate: Option<i64>,
     direct_play_profiles: Vec<DirectPlayProfile>,
 }
@@ -116,6 +122,11 @@ fn player_formats(profile: &DeviceProfile) -> Vec<Value> {
                 .kind
                 .as_deref()
                 .is_none_or(|kind| kind.eq_ignore_ascii_case("video"))
+                // Entries for sources that already are HLS: no file of ours is.
+                && !format
+                    .container
+                    .as_deref()
+                    .is_some_and(|container| container.eq_ignore_ascii_case("hls"))
         })
         .map(|format| {
             json!({
@@ -228,11 +239,10 @@ async fn playback_info(
     let item_id = id::of_global(&item.id).unwrap_or_default();
 
     let mut sources = Vec::new();
-    for version in &item.versions {
-        let Some(file) = version.files.first() else {
+    for (index, version) in item.versions.iter().enumerate() {
+        let (Some(file), Some(source_id)) = (version.files.first(), source_id(&item, index)) else {
             continue;
         };
-        let source_id = id::of_global(&file.id).unwrap_or_default();
         if request
             .media_source_id
             .as_deref()
@@ -256,13 +266,15 @@ async fn playback_info(
             && readable
                 .node
                 .is_some_and(|readable| readable.readable_as_is);
-        let Some(mut source) = media_source(version, item.duration_ms) else {
+        let Some(mut source) = media_source(version, &source_id, item.duration_ms) else {
             continue;
         };
         source["SupportsDirectPlay"] = json!(direct_play);
-        // A copy of the tracks into another container is one of our conversions: it is
-        // offered as one, at the transcoding address.
-        source["SupportsDirectStream"] = json!(false);
+        // A client that cannot open the file's path — any browser — reads a file it plays as
+        // it is from `/videos/{id}/stream?static=true`, which Jellyfin calls direct
+        // streaming. A copy of the tracks into another container is one of our conversions,
+        // offered at the transcoding address.
+        source["SupportsDirectStream"] = json!(direct_play);
         if !direct_play {
             source["TranscodingUrl"] = json!(transcoding_url(&TranscodingRequest {
                 item: &item_id,
@@ -360,20 +372,18 @@ fn file_of<'a>(
     item: &'a Item,
     source: Option<&str>,
 ) -> Result<&'a crate::dto::File, JellyfinError> {
-    let files = item
-        .versions
+    let wanted = source.map(id::decode).transpose()?;
+    item.versions
         .iter()
-        .filter_map(|version: &Version| version.files.first());
-    match source {
-        Some(source) => {
-            let wanted = id::global_of_type(source, open_plex_api::media::FILE_TYPE)?;
-            files
-                .into_iter()
-                .find(|file| file.id == wanted)
-                .ok_or(JellyfinError::NotFound)
-        }
-        None => files.into_iter().next().ok_or(JellyfinError::NotFound),
-    }
+        .enumerate()
+        .filter_map(|(index, version)| Some((source_id(item, index)?, version.files.first()?)))
+        .find(|(source_id, _)| {
+            wanted.as_ref().is_none_or(|wanted| {
+                id::decode(source_id).is_ok_and(|candidate| candidate == *wanted)
+            })
+        })
+        .map(|(_, file)| file)
+        .ok_or(JellyfinError::NotFound)
 }
 
 /// `/videos/{id}/stream[.container]?static=true` plays the file as it is;
@@ -453,8 +463,39 @@ async fn video(
 struct PlaybackReport {
     item_id: Option<String>,
     play_session_id: Option<String>,
+    #[serde(deserialize_with = "lenient::number")]
     position_ticks: Option<i64>,
     is_paused: bool,
+}
+
+/// Numbers as ASP.NET binds them: a JSON number, or a string holding one. Jellyfin Web sends
+/// its stream indexes as strings.
+mod lenient {
+    use serde::{Deserialize, Deserializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Number<T> {
+        Number(T),
+        Text(String),
+    }
+
+    pub fn number<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de> + std::str::FromStr,
+    {
+        match Option::<Number<T>>::deserialize(deserializer)? {
+            None => Ok(None),
+            Some(Number::Number(number)) => Ok(Some(number)),
+            Some(Number::Text(text)) if text.trim().is_empty() => Ok(None),
+            Some(Number::Text(text)) => text
+                .trim()
+                .parse()
+                .map(Some)
+                .map_err(|_| serde::de::Error::custom(format!("`{text}` is not a number"))),
+        }
+    }
 }
 
 const REPORT_VIEWING: &str = r"mutation($input: ReportViewingInput!) {
@@ -718,6 +759,42 @@ mod tests {
         let session = new_play_session();
         assert_eq!(session.len(), 32);
         assert_ne!(session, new_play_session());
+    }
+
+    #[test]
+    fn indexes_sent_as_strings_are_read_as_numbers() {
+        let request: PlaybackInfoRequest = serde_json::from_value(json!({
+            "AudioStreamIndex": "1",
+            "SubtitleStreamIndex": "-1",
+            "MaxStreamingBitrate": 2_147_483_647,
+            "StartTimeTicks": "",
+            "DeviceProfile": { "MaxStreamingBitrate": "120000000" },
+        }))
+        .unwrap();
+        assert_eq!(request.audio_stream_index, Some(1));
+        assert_eq!(request.subtitle_stream_index, Some(-1));
+        assert_eq!(request.max_streaming_bitrate, Some(2_147_483_647));
+        assert_eq!(request.start_time_ticks, None);
+        assert_eq!(
+            request.device_profile.unwrap().max_streaming_bitrate,
+            Some(120_000_000)
+        );
+        assert!(serde_json::from_value::<PlaybackInfoRequest>(json!({
+            "AudioStreamIndex": "one"
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn hls_entries_of_a_profile_are_no_file_format() {
+        let profile: DeviceProfile = serde_json::from_value(json!({
+            "DirectPlayProfiles": [
+                { "Container": "hls", "Type": "Video", "VideoCodec": "h264" },
+                { "Container": "mkv", "Type": "Video" },
+            ],
+        }))
+        .unwrap();
+        assert_eq!(player_formats(&profile).len(), 1);
     }
 
     #[test]

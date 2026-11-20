@@ -7,7 +7,7 @@ mod common;
 use axum::http::{Method, StatusCode};
 use common::{
     client_header, fixture, jellyfin_id, shape_differences, Harness, DOODLEBUG, DOODLEBUG_AUDIO,
-    DOODLEBUG_FILE, HIDDEN_FILM,
+    HIDDEN_FILM,
 };
 use open_plex_core::stream::Delivery;
 use serde_json::{json, Value};
@@ -62,9 +62,10 @@ async fn a_player_that_reads_the_file_plays_it_directly() {
     let token = harness.token().await;
     let info = playback_info(&harness, &token, browser(120_000_000)).await;
     let source = &info["MediaSources"][0];
-    assert_eq!(source["Id"], jellyfin_id("MediaFile", DOODLEBUG_FILE));
+    assert_eq!(source["Id"], jellyfin_id("Item", DOODLEBUG));
     assert_eq!(source["SupportsDirectPlay"], true);
-    assert_eq!(source["SupportsDirectStream"], false);
+    // What a browser, which cannot open the path, reads it through.
+    assert_eq!(source["SupportsDirectStream"], true);
     assert_eq!(source["SupportsTranscoding"], true);
     assert!(source.get("TranscodingUrl").is_none());
     assert_eq!(info["PlaySessionId"].as_str().unwrap().len(), 32);
@@ -93,6 +94,7 @@ async fn a_player_that_cannot_read_it_is_given_a_conversion_with_the_reference_s
     );
     let source = &info["MediaSources"][0];
     assert_eq!(source["SupportsDirectPlay"], false);
+    assert_eq!(source["SupportsDirectStream"], false);
     assert_eq!(source["TranscodingSubProtocol"], "hls");
     assert_eq!(source["TranscodingContainer"], "ts");
     let url = source["TranscodingUrl"].as_str().unwrap();
@@ -150,7 +152,7 @@ async fn direct_play_starts_the_stream_and_sends_the_player_to_the_file() {
             &format!(
                 "/jellyfin/Videos/{}/stream.mkv?static=true&mediaSourceId={}&PlaySessionId=ps1",
                 jellyfin_id("Item", DOODLEBUG),
-                jellyfin_id("MediaFile", DOODLEBUG_FILE)
+                jellyfin_id("Item", DOODLEBUG)
             ),
             &token,
         )
@@ -230,7 +232,7 @@ async fn progress_reports_keep_the_position_and_stopping_ends_the_session() {
                 &token,
                 json!({
                     "ItemId": film,
-                    "MediaSourceId": jellyfin_id("MediaFile", DOODLEBUG_FILE),
+                    "MediaSourceId": jellyfin_id("Item", DOODLEBUG),
                     "PlaySessionId": "ps1",
                     "PositionTicks": ticks,
                     "IsPaused": false,
@@ -341,7 +343,7 @@ async fn an_audio_track_named_by_its_index_is_the_one_played() {
             &format!(
                 "/jellyfin/Videos/{}/master.m3u8?MediaSourceId={}&AudioStreamIndex=1",
                 jellyfin_id("Item", DOODLEBUG),
-                jellyfin_id("MediaFile", DOODLEBUG_FILE)
+                jellyfin_id("Item", DOODLEBUG)
             ),
             &token,
         )

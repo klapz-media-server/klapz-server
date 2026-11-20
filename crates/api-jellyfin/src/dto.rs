@@ -347,7 +347,10 @@ pub fn item_dto(item: &Item, shaping: &Shaping<'_>) -> Value {
         let sources: Vec<Value> = item
             .versions
             .iter()
-            .filter_map(|version| media_source(version, item.duration_ms))
+            .enumerate()
+            .filter_map(|(index, version)| {
+                media_source(version, &source_id(item, index)?, item.duration_ms)
+            })
             .collect();
         put("MediaSources", Value::Array(sources));
     }
@@ -571,13 +574,27 @@ fn people(tags: Option<&Tags>) -> Vec<Value> {
     people
 }
 
+/// The id of an item's version as a media source. Jellyfin names an item's first source by
+/// the item's own id, and its clients count on it: Jellyfin Web looks the item up again by
+/// the id of the source it plays. Other versions go by their first file's id.
+pub fn source_id(item: &Item, index: usize) -> Option<String> {
+    if index == 0 {
+        return id::of_global(&item.id);
+    }
+    id::of_global(&item.versions.get(index)?.files.first()?.id)
+}
+
 /// One version as a Jellyfin media source: its first file, which is what plays.
-pub fn media_source(version: &Version, item_duration_ms: Option<i64>) -> Option<Value> {
+pub fn media_source(
+    version: &Version,
+    source_id: &str,
+    item_duration_ms: Option<i64>,
+) -> Option<Value> {
     let file = version.files.first()?;
     let streams: Vec<Value> = in_order(&file.streams).map(media_stream).collect();
     let mut source = json!({
         "Protocol": "File",
-        "Id": jellyfin(&file.id),
+        "Id": source_id,
         "Path": file.path,
         "Type": "Default",
         "Name": file
@@ -878,8 +895,8 @@ mod tests {
                 streams: vec![crate::track::tests::track("VIDEO", "h264"), audio],
             }],
         };
-        let source = media_source(&version, None).unwrap();
-        assert_eq!(source["Id"], id::of("MediaFile", 2001).unwrap());
+        let source = media_source(&version, "source", None).unwrap();
+        assert_eq!(source["Id"], "source");
         assert_eq!(source["Name"], "doodlebug.1997.VO.H264");
         assert_eq!(source["Container"], "mkv");
         assert_eq!(source["Size"], 14_876_546);
@@ -891,6 +908,6 @@ mod tests {
             files: Vec::new(),
             ..version
         };
-        assert!(media_source(&empty, None).is_none());
+        assert!(media_source(&empty, "source", None).is_none());
     }
 }

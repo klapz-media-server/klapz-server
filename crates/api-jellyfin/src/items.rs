@@ -28,6 +28,10 @@ pub fn router() -> Router<JellyfinState> {
         .route("/items/{id}", get(item))
         .route("/users/{user}/items/{id}", get(legacy_item))
         .route("/items/{id}/similar", get(similar))
+        .route("/items/{id}/ancestors", get(ancestors))
+        .route("/items/{id}/thememedia", get(no_theme_media))
+        .route("/users/{user}/items/{id}/intros", get(no_intros))
+        .route("/items/{id}/intros", get(no_intros))
         .route("/items/{id}/specialfeatures", get(no_items_list))
         .route(
             "/users/{user}/items/{id}/specialfeatures",
@@ -647,6 +651,59 @@ async fn similar(
     let shown = shaped(&items, &state, &fields);
     let total = count(&shown);
     Ok(page(shown, total, 0))
+}
+
+/// What an item hangs from, nearest first: its season and series, its library, the user's
+/// root.
+async fn ancestors(
+    State(state): State<JellyfinState>,
+    Path(item): Path<String>,
+) -> Result<Response, JellyfinError> {
+    gql::viewer(&state.schema).await?;
+    let global = id::global_of_type(&item, open_plex_api::item::ITEM_TYPE)?;
+    let fields = Fields::all();
+    let found = items_by_id(&state, &[global], &fields).await?;
+    let item = found.first().ok_or(JellyfinError::NotFound)?;
+    let mut parents: Vec<String> = Vec::new();
+    if let Some(season) = &item.season {
+        parents.push(season.id.clone());
+    }
+    if let Some(show) = &item.show {
+        parents.push(show.id.clone());
+    }
+    let mut chain = shaped(
+        &items_by_id(&state, &parents, &fields).await?,
+        &state,
+        &fields,
+    );
+    if let Some(library) = &item.library {
+        if let Some(library) = libraries(&state)
+            .await?
+            .iter()
+            .find(|candidate| candidate.id == library.id)
+        {
+            chain.push(library_dto(library, &state.server.id));
+        }
+    }
+    chain.push(user_root(&state));
+    Ok(json(&chain))
+}
+
+/// Theme songs and videos: none is held here.
+async fn no_theme_media(State(state): State<JellyfinState>) -> Result<Response, JellyfinError> {
+    gql::viewer(&state.schema).await?;
+    let none = || json!({ "Items": [], "TotalRecordCount": 0, "StartIndex": 0, "OwnerId": null });
+    Ok(json(&json!({
+        "ThemeVideosResult": none(),
+        "ThemeSongsResult": none(),
+        "SoundtrackSongsResult": none(),
+    })))
+}
+
+/// What plays before an item: nothing is set up to here.
+async fn no_intros(State(state): State<JellyfinState>) -> Result<Response, JellyfinError> {
+    gql::viewer(&state.schema).await?;
+    Ok(page(Vec::new(), 0, 0))
 }
 
 /// Trailers, special features: none is listed here, an empty array as on an item without.

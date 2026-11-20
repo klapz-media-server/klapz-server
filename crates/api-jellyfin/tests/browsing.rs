@@ -7,8 +7,8 @@ mod common;
 
 use axum::http::StatusCode;
 use common::{
-    fixture, jellyfin_id, shape_differences, Harness, DOODLEBUG, DOODLEBUG_FILE, EPISODE, FILMS,
-    HIDDEN_FILM, PRIVATE, SEASON, SERIES, SHOW,
+    fixture, jellyfin_id, shape_differences, Harness, DOODLEBUG, EPISODE, FILMS, HIDDEN_FILM,
+    PRIVATE, SEASON, SERIES, SHOW,
 };
 use serde_json::Value;
 
@@ -258,7 +258,7 @@ async fn a_film_looked_up_carries_every_field_and_its_media_as_the_reference() {
     let reference = fixture("item_movie");
     no_differences(&film, &reference);
     let source = &film["MediaSources"][0];
-    assert_eq!(source["Id"], jellyfin_id("MediaFile", DOODLEBUG_FILE));
+    assert_eq!(source["Id"], jellyfin_id("Item", DOODLEBUG));
     assert_eq!(source["Container"], "mkv");
     assert_eq!(source["Size"], 14_876_546);
     assert_eq!(source["DefaultAudioStreamIndex"], 1);
@@ -485,6 +485,70 @@ async fn the_home_shelves_answer_as_the_reference() {
     let latest = latest.json();
     no_differences(&latest, &fixture("latest_movies"));
     assert_eq!(latest[0]["Id"], jellyfin_id("Item", DOODLEBUG));
+}
+
+#[tokio::test]
+async fn an_episode_hangs_from_its_season_series_library_and_root() {
+    let harness = Harness::new().await;
+    let token = harness.token().await;
+    let answer = harness
+        .get(
+            &format!("/jellyfin/Items/{}/Ancestors", jellyfin_id("Item", EPISODE)),
+            &token,
+        )
+        .await;
+    assert_eq!(answer.status, StatusCode::OK);
+    let types: Vec<String> = answer
+        .json()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|ancestor| ancestor["Type"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        types,
+        ["Season", "Series", "CollectionFolder", "UserRootFolder"]
+    );
+}
+
+#[tokio::test]
+async fn what_is_held_nowhere_here_is_listed_empty() {
+    let harness = Harness::new().await;
+    let token = harness.token().await;
+    let film = jellyfin_id("Item", DOODLEBUG);
+    let theme = harness
+        .get(&format!("/jellyfin/Items/{film}/ThemeMedia"), &token)
+        .await
+        .json();
+    assert_eq!(theme["ThemeSongsResult"]["TotalRecordCount"], 0);
+    let intros = harness
+        .get(
+            &format!(
+                "/jellyfin/Users/{}/Items/{film}/Intros",
+                jellyfin_id("User", harness.alice.get())
+            ),
+            &token,
+        )
+        .await
+        .json();
+    assert_eq!(intros["Items"], serde_json::json!([]));
+    let groups = harness.get("/jellyfin/SyncPlay/List", &token).await.json();
+    assert_eq!(groups, serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn a_bitrate_test_sends_the_bytes_asked_within_a_ceiling() {
+    let harness = Harness::new().await;
+    let token = harness.token().await;
+    let answer = harness
+        .get("/jellyfin/Playback/BitrateTest?Size=500000", &token)
+        .await;
+    assert_eq!(answer.status, StatusCode::OK);
+    assert_eq!(answer.body.len(), 500_000);
+    let too_large = harness
+        .get("/jellyfin/Playback/BitrateTest?Size=100000000", &token)
+        .await;
+    assert_eq!(too_large.status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

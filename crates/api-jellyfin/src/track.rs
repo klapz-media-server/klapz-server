@@ -113,6 +113,8 @@ fn codec(track: &Track) -> Option<String> {
             "dca" => "dts",
             "srt" => "subrip",
             "pgs" => "PGSSUB",
+            "dvb_subtitle" => "DVBSUB",
+            "dvb_teletext" => "DVBTXT",
             "vobsub" => "dvd_subtitle",
             other => other,
         }
@@ -123,8 +125,23 @@ fn codec(track: &Track) -> Option<String> {
 fn is_text_subtitle(codec: &str) -> bool {
     matches!(
         codec,
-        "srt" | "subrip" | "ass" | "ssa" | "vtt" | "webvtt" | "mov_text" | "smi" | "text"
+        "srt"
+            | "subrip"
+            | "ass"
+            | "ssa"
+            | "vtt"
+            | "webvtt"
+            | "mov_text"
+            | "smi"
+            | "text"
+            | "dvb_teletext"
     )
+}
+
+/// Whether the reference extracts the subtitle for a client to fetch: text, and PGS images,
+/// which it writes out as they are.
+fn is_extractable_subtitle(codec: &str) -> bool {
+    is_text_subtitle(codec) || codec == "pgs"
 }
 
 /// The profile as ffprobe writes it, which the reference publishes: Plex's importer kept
@@ -137,7 +154,11 @@ fn profile(codec: Option<&str>, profile: &str) -> String {
         (Some("dca" | "dts"), "ma") => "DTS-HD MA".to_owned(),
         (Some("dca" | "dts"), "hra") => "DTS-HD HRA".to_owned(),
         (Some("dca" | "dts"), "es") => "DTS-ES".to_owned(),
-        (Some("dca" | "dts"), "x") => "DTS-HD MA + DTS:X".to_owned(),
+        (Some("dca" | "dts"), "x" | "ma + dts:x") => "DTS-HD MA + DTS:X".to_owned(),
+        (Some("dca" | "dts"), "dts") => "DTS".to_owned(),
+        (Some("mpeg4"), "advanced simple" | "simple") => {
+            format!("{} Profile", capitalized(profile))
+        }
         _ => capitalized(profile),
     }
 }
@@ -167,7 +188,7 @@ fn friendly_audio_codec(codec: &str) -> String {
 /// The reference's label for a picture's size: the smallest of its classes that holds both
 /// sides, interlaced pictures with an `i`.
 fn resolution_label(width: i32, height: i32, interlaced: bool) -> String {
-    const CLASSES: [(i32, i32, &str); 12] = [
+    const CLASSES: [(i32, i32, &str); 13] = [
         (256, 144, "144"),
         (426, 240, "240"),
         (640, 360, "360"),
@@ -177,7 +198,9 @@ fn resolution_label(width: i32, height: i32, interlaced: bool) -> String {
         (960, 544, "540"),
         (1024, 576, "576"),
         (1280, 720, "720"),
-        (2560, 1080, "1080"),
+        // A coded height of 1088 is a 1080 picture with its last macroblock row.
+        (2560, 1152, "1080"),
+        (2560, 1440, "1440"),
         (4096, 3072, "4K"),
         (8192, 6144, "8K"),
     ];
@@ -475,7 +498,10 @@ pub fn media_stream(track: &Track) -> Value {
     put("IsExternal", json!(track.is_external));
     let text = track.codec.as_deref().is_some_and(is_text_subtitle);
     put("IsTextSubtitleStream", json!(kind == "Subtitle" && text));
-    put("SupportsExternalStream", json!(kind == "Subtitle" && text));
+    put(
+        "SupportsExternalStream",
+        json!(kind == "Subtitle" && track.codec.as_deref().is_some_and(is_extractable_subtitle)),
+    );
     if let Some(video) = video {
         for (key, value) in [
             ("ColorSpace", &video.color.space),
@@ -565,6 +591,7 @@ pub(crate) mod tests {
             (1920, 808, "PROGRESSIVE", "1080p H264 SDR"),
             (1440, 1080, "INTERLACED", "1080i H264 SDR"),
             (720, 576, "INTERLACED", "576i H264 SDR"),
+            (1920, 1088, "PROGRESSIVE", "1080p H264 SDR"),
             (3840, 2160, "PROGRESSIVE", "4K H264 SDR"),
         ] {
             let mut sdr = track("VIDEO", "h264");
@@ -650,6 +677,13 @@ pub(crate) mod tests {
         assert_eq!(stream["Codec"], "dts");
         assert_eq!(stream["Profile"], "DTS-HD MA");
         assert_eq!(stream["DisplayTitle"], "English - DTS-HD MA - 5.1");
+        let mut dts_x = audio("en", "dca", "7.1");
+        dts_x.profile = Some("ma + dts:x".to_owned());
+        assert_eq!(media_stream(&dts_x)["Profile"], "DTS-HD MA + DTS:X");
+        assert_eq!(media_stream(&dts_x)["AudioSpatialFormat"], "DTSX");
+        let mut core = audio("fr", "dca", "5.1");
+        core.profile = Some("dts".to_owned());
+        assert_eq!(media_stream(&core)["Profile"], "DTS");
         let mut atmos = audio("en", "eac3", "5.1");
         atmos.profile = Some("dolby digital plus + dolby atmos".to_owned());
         assert_eq!(media_stream(&atmos)["AudioSpatialFormat"], "DolbyAtmos");
@@ -701,7 +735,14 @@ pub(crate) mod tests {
         let image = media_stream(&track("SUBTITLE", "pgs"));
         assert_eq!(image["Codec"], "PGSSUB");
         assert_eq!(image["IsTextSubtitleStream"], false);
+        assert_eq!(image["SupportsExternalStream"], true);
         assert_eq!(image["DisplayTitle"], "PGSSUB");
+        let broadcast = media_stream(&track("SUBTITLE", "dvb_subtitle"));
+        assert_eq!(broadcast["Codec"], "DVBSUB");
+        assert_eq!(broadcast["SupportsExternalStream"], false);
+        let teletext = media_stream(&track("SUBTITLE", "dvb_teletext"));
+        assert_eq!(teletext["Codec"], "DVBTXT");
+        assert_eq!(teletext["IsTextSubtitleStream"], true);
     }
 
     #[test]
