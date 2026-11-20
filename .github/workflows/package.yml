@@ -1,0 +1,173 @@
+# Builds the server and the scanner for each platform and packages them with the matching
+# ffmpeg-plex release. Every push and pull request gets the packages as workflow artifacts; a
+# `v*` tag also publishes them as a GitHub release.
+
+name: Package
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The release the packages carry. Its assets publish no checksums, so each platform's is
+  # pinned in the matrix below: a release asset replaced upstream fails the build rather than
+  # shipping. Bump the version and the five hashes together.
+  FFMPEG_PLEX_REPOSITORY: Maxou44/ffmpeg-plex
+  FFMPEG_PLEX_VERSION: v8.1.3-15
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 22.04 for glibc 2.35, the version ffmpeg-plex's Linux builds require: built
+          # on anything newer, the server would refuse to start where ffmpeg runs.
+          - platform: linux-x86_64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            ffmpeg_sha256: 7a2573a8ad0fd962a56885577ec6aff85de67040289d995ec21f60bdcbf18f91
+          - platform: linux-arm64
+            runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            ffmpeg_sha256: ac558d4a52466436156c8e73dcbc6aa73e3f885635115246e6fdc364dd4b3041
+          - platform: windows-x86_64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            ffmpeg_sha256: 1a3992ec5e1ddfb142858e3ab6b1a80558f0d4f141f26d2c3ba395f11188d80d
+          - platform: macos-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            ffmpeg_sha256: b5954a733a94feb28922e46c8679c274e49821df7a114feb30ef7a24798bf3b7
+          - platform: macos-x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            ffmpeg_sha256: 4a68d1dbc36700059728f8aff94b6fa77e19abd8db21994aee6ff267a6048805
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Name the package
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then version="$GITHUB_REF_NAME"; else version="${GITHUB_SHA::7}"; fi
+          exe=""; python=python3
+          if [[ "$RUNNER_OS" == Windows ]]; then exe=".exe"; python=python; fi
+          {
+            echo "PACKAGE=open-plex-$version-${{ matrix.platform }}"
+            echo "EXE=$exe"
+            echo "PYTHON=$python"
+          } >> "$GITHUB_ENV"
+
+      - name: Install Rust
+        run: |
+          if ! command -v rustup > /dev/null; then
+            curl --proto '=https' --tlsv1.2 --fail --silent --show-error https://sh.rustup.rs | sh -s -- -y --profile minimal
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }} -p open-plex-server -p open-plex-scanner
+
+      - name: Fetch ffmpeg-plex
+        run: |
+          asset="ffmpeg-${{ matrix.platform }}.tar.xz"
+          curl --fail --location --silent --show-error --retry 3 --output "$RUNNER_TEMP/$asset" \
+            "https://github.com/$FFMPEG_PLEX_REPOSITORY/releases/download/$FFMPEG_PLEX_VERSION/$asset"
+          cd "$RUNNER_TEMP"
+          if command -v sha256sum > /dev/null; then sum=sha256sum; else sum="shasum -a 256"; fi
+          echo "${{ matrix.ffmpeg_sha256 }}  $asset" | $sum --check
+          mkdir ffmpeg-plex
+          tar -xJf "$asset" -C ffmpeg-plex
+
+      - name: Lay out the package
+        run: |
+          mkdir "$PACKAGE"
+          cp "target/${{ matrix.target }}/release/open-plex-server$EXE" "$PACKAGE/"
+          cp "target/${{ matrix.target }}/release/open-plex-scanner$EXE" "$PACKAGE/"
+          cp "$RUNNER_TEMP/ffmpeg-plex/ffmpeg$EXE" "$PACKAGE/"
+          cp "$RUNNER_TEMP/ffmpeg-plex/configure-cmdline.txt" "$PACKAGE/ffmpeg-configure.txt"
+          cp packaging/README.txt "$PACKAGE/"
+          echo "https://github.com/$FFMPEG_PLEX_REPOSITORY/tree/$FFMPEG_PLEX_VERSION" > "$PACKAGE/FFMPEG-SOURCE.txt"
+
+      # The server scans a library through the scanner, which reads the file with ffmpeg: all
+      # three as packaged, found beside each other with no variable set.
+      - name: Scan a file with the package
+        run: |
+          package="$PWD/$PACKAGE"
+          mkdir -p "smoke/films/Smoke Test (2020)"
+          cd smoke
+          "$package/ffmpeg$EXE" -hide_banner -v error \
+            -filter_complex "testsrc=duration=2:size=320x240:rate=25[v];sine=duration=2[a]" \
+            -map "[v]" -map "[a]" -c:v mjpeg -c:a flac "films/Smoke Test (2020)/Smoke Test (2020).mkv"
+          export OPENPLEX_DATABASE_URL="sqlite://smoke.db?mode=rwc"
+          unset OPENPLEX_TRANSCODER OPENPLEX_FFPROBE OPENPLEX_SCANNER
+          "$package/open-plex-server$EXE" library add --kind movie --title Smoke films | tee library.txt
+          section=$(sed -n 's/^library \([0-9]*\) created$/\1/p' library.txt)
+          "$package/open-plex-server$EXE" scan "$section"
+          $PYTHON - smoke.db <<'EOF'
+          import sqlite3, sys
+          codecs = sorted(row[0] for row in sqlite3.connect(sys.argv[1]).execute("select codec from media_stream"))
+          print("tracks stored:", codecs)
+          sys.exit(0 if codecs == ["flac", "mjpeg"] else 1)
+          EOF
+
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        run: 7z a -tzip "$PACKAGE.zip" "$PACKAGE" > /dev/null
+
+      # tar keeps the executable bits a zip would lose.
+      - name: Archive (Linux, macOS)
+        if: runner.os != 'Windows'
+        run: tar -cJf "$PACKAGE.tar.xz" "$PACKAGE"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.PACKAGE }}
+          path: ${{ env.PACKAGE }}.*
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: packages
+          merge-multiple: true
+
+      - name: Publish the release
+        working-directory: packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha256sum open-plex-* > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+            --generate-notes open-plex-* SHA256SUMS

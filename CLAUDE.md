@@ -584,11 +584,17 @@ OPENPLEX_ADMIN_PASSWORD='a long passphrase' cargo run -p open-plex-server
 | `OPENPLEX_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
-| `OPENPLEX_TRANSCODER` | `ffmpeg` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases, kept locally under `.work/ffmpeg-plex/<version>/`. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
+| `OPENPLEX_TRANSCODER` | `ffmpeg` beside the server's executable, else on `PATH` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases, kept locally under `.work/ffmpeg-plex/<version>/`. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `OPENPLEX_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
 | `OPENPLEX_FFPROBE` | `OPENPLEX_TRANSCODER -probe` | The ffprobe the scanner reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. |
-| `OPENPLEX_SCANNER` | `open-plex-scanner` beside the server's executable | The scanner binary a library scan runs on each new or changed file. |
+| `OPENPLEX_SCANNER` | `open-plex-scanner` beside the server's executable, else on `PATH` | The scanner binary a library scan runs on each new or changed file. |
 | `OPENPLEX_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which Plex's own binary needs. The rebuilt one has them built in and needs none. |
+
+`.github/workflows/package.yml` builds the server and the scanner for Linux (x86_64, arm64),
+Windows and macOS (arm64, x86_64), packages each with the ffmpeg-plex release it pins by
+version and checksum and `packaging/README.txt`, scans a generated file with the package as a
+test, and publishes the archives as a release on a `v*` tag. Laid side by side, the three
+programs find each other with no variable set.
 
 The imported library's files live on another machine, so nothing imported can be played here.
 `python tools/plex_tunnel.py --origin http://LAN-IP:32500` opens a Cloudflare quick tunnel and

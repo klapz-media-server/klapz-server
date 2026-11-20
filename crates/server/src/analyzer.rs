@@ -27,19 +27,10 @@ pub struct ScannerProcess {
 }
 
 impl ScannerProcess {
-    /// `OPENPLEX_SCANNER`, or `open-plex-scanner` beside this server's own executable, where
-    /// Cargo puts both.
+    /// `OPENPLEX_SCANNER`, or `open-plex-scanner` beside this server's own executable.
     pub fn from_env() -> Self {
-        let binary = std::env::var_os("OPENPLEX_SCANNER").map_or_else(
-            || {
-                let name = format!("open-plex-scanner{}", std::env::consts::EXE_SUFFIX);
-                std::env::current_exe()
-                    .ok()
-                    .and_then(|server| server.parent().map(|directory| directory.join(&name)))
-                    .unwrap_or_else(|| PathBuf::from(name))
-            },
-            PathBuf::from,
-        );
+        let binary = std::env::var_os("OPENPLEX_SCANNER")
+            .map_or_else(|| crate::bundled("open-plex-scanner"), PathBuf::from);
         Self {
             binary,
             permits: Semaphore::new(CONCURRENT),

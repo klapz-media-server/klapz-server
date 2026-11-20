@@ -35,12 +35,13 @@ pub struct Tools {
 }
 
 impl Tools {
-    /// `OPENPLEX_TRANSCODER`, the ffmpeg the server streams with, found on `PATH` when unset,
-    /// and `OPENPLEX_FFPROBE`.
+    /// `OPENPLEX_TRANSCODER`, the ffmpeg the server streams with, and `OPENPLEX_FFPROBE`.
+    /// Without the first, the ffmpeg beside the scanner, as the packages lay it out, or else
+    /// the one on `PATH`.
     pub fn from_env() -> Self {
         Self {
             ffmpeg: std::env::var_os("OPENPLEX_TRANSCODER")
-                .map_or_else(|| PathBuf::from("ffmpeg"), PathBuf::from),
+                .map_or_else(bundled_ffmpeg, PathBuf::from),
             ffprobe: std::env::var_os("OPENPLEX_FFPROBE").map(PathBuf::from),
         }
     }
@@ -53,6 +54,15 @@ impl Tools {
         command.arg("-probe");
         command
     }
+}
+
+fn bundled_ffmpeg() -> PathBuf {
+    let name = format!("ffmpeg{}", std::env::consts::EXE_SUFFIX);
+    std::env::current_exe()
+        .ok()
+        .and_then(|scanner| Some(scanner.parent()?.join(&name)))
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| PathBuf::from(name))
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -396,11 +396,22 @@ fn with_web_client(app: axum::Router) -> axum::Router {
     }
 }
 
+/// A program beside this server's executable, where Cargo and the packages put it, or else the
+/// one `PATH` finds.
+pub(crate) fn bundled(program: &str) -> PathBuf {
+    let name = format!("{program}{}", std::env::consts::EXE_SUFFIX);
+    std::env::current_exe()
+        .ok()
+        .and_then(|server| Some(server.parent()?.join(&name)))
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| PathBuf::from(name))
+}
+
 fn transcoder() -> open_plex_transcoder::Transcoder {
     let bind = std::env::var("OPENPLEX_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
     let port = bind.rsplit(':').next().unwrap_or("32500");
-    let binary: std::path::PathBuf = std::env::var_os("OPENPLEX_TRANSCODER")
-        .map_or_else(|| "ffmpeg".into(), std::path::PathBuf::from);
+    let binary =
+        std::env::var_os("OPENPLEX_TRANSCODER").map_or_else(|| bundled("ffmpeg"), PathBuf::from);
     let fonts = std::env::var_os("OPENPLEX_TRANSCODER_FONTS")
         .map(std::path::PathBuf::from)
         .or_else(|| {
