@@ -4,8 +4,7 @@ A media server reimplementing the Plex Media Server API, in Rust. The goal is **
 compatibility**: clients and tools that talk to a PMS must be able to talk to open-plex
 unmodified.
 
-Everything in this repository is written in English — code, comments, documentation. Discussion
-with the repo owner happens in French.
+Everything in this repository is written in English — code, comments, documentation.
 
 ## Reference material
 
@@ -20,17 +19,15 @@ with the repo owner happens in French.
 | `tools/capture_scan_samples.py` | ffprobe's output for sample files of the reference's library, with the rows the reference stored for them: the fixtures `crates/db/tests/scan_samples.rs` replays through the scan and compares column for column. |
 | `tools/compare_items.py` | Field-by-field diff of our listings and lookups against the reference, aligned by `ratingKey` so ordering and field fidelity stay separate questions. |
 | `docs/endpoint-probe.md` | Which spec `GET` operations the reference server answers. **Generated**: `PLEX_TOKEN=... python tools/probe_endpoints.py`. |
-| `files/` | A complete Plex Media Server install for Windows (233 MB) — binaries, bundled web app, plug-in framework, transcoder profiles. For reverse engineering. |
-| `db/` | A real populated Plex library: `com.plexapp.plugins.library.db` (2.4 GB) and its blobs (5.8 GB). Contains the owner's personal data. |
+| `files/` | *Not versioned.* A copy of a Plex Media Server install — binaries, bundled web app, plug-in framework, transcoder profiles. For reverse engineering. |
+| `db/` | *Not versioned.* A copy of a real populated Plex library database (`com.plexapp.plugins.library.db` and its blobs), what the importer reads. It holds personal data: accounts, addresses, paths. |
 | `docs/jellyfin/openapi.json` | The reference Jellyfin's (12.4.0) own OpenAPI document, 364 operations. Refreshed by `python tools/gen_jellyfin_endpoints.py --fetch`. |
 | `docs/jellyfin/ENDPOINTS.md` | Tracker of the Jellyfin operations served below `/jellyfin`. **Generated**: `python tools/gen_jellyfin_endpoints.py`, from the routes `crates/api-jellyfin` declares. |
 | `docs/jellyfin/spec-gaps.md` | What the Jellyfin surface measured on the reference, and where it knowingly differs. Hand-verified. |
 | `tools/capture_jellyfin.py` | Captures the reference Jellyfin (`JELLYFIN_USER`, `JELLYFIN_PASSWORD`), or our own surface with `--out`; `--all-items` every file's lookups and `PlaybackInfo` and every series' seasons and episodes, `--fixtures` the scrubbed fixtures of `crates/api-jellyfin/tests`. `tools/compare_jellyfin.py` sets the two side by side file by file, field by field, every difference either explained (its reason in `docs/jellyfin/spec-gaps.md`) or reported. |
 | `tools/capture_jellyfin_samples.py` | Gives each scan sample our scanner's report and the reference Jellyfin's answer about its file: the fixtures `crates/server/tests/jellyfin_samples.rs` replays through storage, the official API and the binding. |
 | `.claude/skills/rust/` | The project's Rust conventions. Load before writing Rust. |
-| `.claude/skills/reference-servers/` | Measuring on the reference Plex and Jellyfin without damaging them: the test libraries, the forbidden calls, what is already left changed, how rules were measured. Load before any capture or comparison. |
-| `.claude/skills/agent-delegation/` | The brief that works for parallel agents, what they get wrong, the merge checklist and the generated files to rebuild. |
-| `.claude/skills/windows-shell/` | This machine's traps: a disk always nearly full, Git Bash path rewriting, heredocs, CRLF, locked executables, low-disk cargo builds. |
+| `.claude/skills/reference-servers/` | Measuring on a reference Plex or Jellyfin without damaging it: test libraries, the forbidden calls, where answers come from, how rules are measured and compared. Load before any capture or comparison. |
 
 Three finds inside `files/` worth knowing about:
 
@@ -606,6 +603,19 @@ No Rust-touching task is finished until these five steps have passed, in order:
 4. Verify no `unwrap()`, `expect()` or `panic!` was added outside `#[cfg(test)]`.
 5. Summarize the commands run and their actual results, failures included.
 
+### Generated files
+
+Some files are generated and never edited by hand; regenerate them in the same change, and after
+a merge regenerate them on the merged tree rather than resolving their conflicts:
+
+- `docs/schema.graphql` and `docs/introspection.json` after any schema change (above);
+- `python tools/gen_stub_routes.py` when a stubbed route becomes real, then `cargo fmt`: a stub
+  left beside the real route crashes the server at startup on the duplicate;
+- `python tools/gen_endpoints.py`, which carries over `partial` and `done` rows with their notes
+  from the existing `docs/ENDPOINTS.md`: a row it cannot parse falls back to `todo` silently, so
+  diff the result;
+- `python tools/gen_jellyfin_endpoints.py` for the Jellyfin tracker.
+
 ## Running it
 
 ```sh
@@ -627,7 +637,7 @@ OPENPLEX_ADMIN_PASSWORD='a long passphrase' cargo run -p open-plex-server
 | `OPENPLEX_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `OPENPLEX_JELLYFIN_WEB_DIR` | *(none)* | Jellyfin Web, served without a token at `/jellyfin/web`: a Jellyfin install's `jellyfin-web` directory. Not versioned: it is Jellyfin's code. |
 | `OPENPLEX_WEB_DIR` | `web` | Plex Web, served without a token at `/web` as the reference serves it. Not versioned: it is Plex's code. Absent means `/web` is not served. |
-| `OPENPLEX_TRANSCODER` | `ffmpeg` beside the server's executable, else on `PATH` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases, kept locally under `.work/ffmpeg-plex/<version>/`. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
+| `OPENPLEX_TRANSCODER` | `ffmpeg` beside the server's executable, else on `PATH` | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `OPENPLEX_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
 | `OPENPLEX_FFPROBE` | `OPENPLEX_TRANSCODER -probe` | The ffprobe the scanner reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. |
 | `OPENPLEX_SCANNER` | `open-plex-scanner` beside the server's executable, else on `PATH` | The scanner binary a library scan runs on each new or changed file. |
@@ -639,11 +649,12 @@ version and checksum and `packaging/README.txt`, scans a generated file with the
 test, and publishes the archives as a release on a `v*` tag. Laid side by side, the three
 programs find each other with no variable set.
 
-The imported library's files live on another machine, so nothing imported can be played here.
-`python tools/plex_tunnel.py --origin http://LAN-IP:32500` opens a Cloudflare quick tunnel and
-publishes its new address to plex.tv through `moveExtension`, signed in as `admin`, with the
-server running; it refuses a loopback origin, where the transcoder's callbacks answer without a
-token.
+Imported items point at the paths of the server they were imported from: they play only where
+those paths resolve. `python tools/plex_tunnel.py --origin http://LAN-IP:32500` opens a
+Cloudflare quick tunnel and publishes its new address to plex.tv through `moveExtension`, signed
+in as `admin`, with the server running; it refuses a loopback origin, where the transcoder's
+callbacks answer without a token. A quick tunnel buffers whole responses, so a streamed body
+arrives only at its end: test streamed responses without it.
 `open-plex-server library add --kind movie|show --title TITLE ROOT...` creates a library over
 directories of this machine, and `open-plex-server scan ID [--force]` scans it without serving
 (a running server scans on `scanLibrary` or `/library/sections/{id}/refresh`); this supersedes

@@ -95,7 +95,7 @@ Since the schema is ours and the project is young, prefer getting the shape righ
 accumulating corrective migrations — but once a migration is in a release, it is frozen.
 Nothing has shipped yet, so an unreleased migration may still be rewritten in place: the local
 `open-plex.db` then has to be deleted and imported again (`tools/reimport.py` keeps what was made
-here), which takes several minutes — run it in the background and keep working.
+here).
 
 ## Measuring queries
 

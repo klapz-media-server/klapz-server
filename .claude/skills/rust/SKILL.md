@@ -84,6 +84,9 @@ directly past the official API; merging them into one owner removed several bugs
 - **A GraphQL `Int` is 32 bits.** A field backed by an `i64` that can exceed it (a size in bytes,
   a counter, microseconds) is the `Int64` scalar (`api::int64`), never a bare `String`; the
   adapters read it with `open_plex_api::int64::deserialize` or `deserialize_optional`.
+- **`std::fs::canonicalize` returns verbatim paths on Windows**: `\\?\C:\…`, and a mapped
+  network drive becomes `\\?\UNC\server\share\…`. Store and publish the plain form; the
+  standard library adds the prefix back itself when a path is long.
 
 ## Typing: make illegal states unrepresentable
 
@@ -356,10 +359,8 @@ No Rust-touching task is finished until these five steps have passed, in order:
 5. Summarize the commands you ran and their actual results, failures included. A summary claiming
    "everything passes" without the command having run is worse than none.
 
-On this machine, run steps 2 and 3 with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
-CARGO_PROFILE_TEST_DEBUG=0`, the full suite in the background with its output in a log, and
-judge it by cargo's exit code and the `FAILED` lines (the `windows-shell` skill). A GraphQL
-change also regenerates `docs/schema.graphql` and `docs/introspection.json`
+Judge the test run by cargo's exit code and the `FAILED` lines, not by summing `test result`
+lines. A GraphQL change also regenerates `docs/schema.graphql` and `docs/introspection.json`
 (`cargo run -p open-plex-api --example sdl` and `--example introspect`).
 
 These commands passing is not proof of quality, it is the floor. The reviewer test at the top of
