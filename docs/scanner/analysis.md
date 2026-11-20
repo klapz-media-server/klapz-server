@@ -268,6 +268,11 @@ not on the file. Scanned twice, with and without `--deep`, every rate and durati
 reference's older libav estimated differently (80 where ffprobe 8.1 declares 73), an E-AC-3
 Atmos track it stored at 320 kb/s against a declared and tagged 768, and 1 ms of duration.
 
+**We keep the measured rates**, the repo owner's decision (2026-11-20): a scan stores what the
+deep analysis measured, the reference's state when its analyses ran in the right order, rather
+than copying the declared rates most of its files show. A measured rate is the one a transcode
+decision should rest on; the headers alone serve only when the deep analysis cannot finish.
+
 **Not reproduced.** The buffer sizes behind the eight `requiredBandwidths` values were not found. On Soul, video
 stored `10639,9885,9182,9033,9033,9033,9033,9033` against an average of 6700 kbps; neither a
 startup-delay model (`max_t S(t)/(t+d)`), nor sliding windows, nor a leaky bucket of fixed size

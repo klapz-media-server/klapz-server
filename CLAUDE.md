@@ -513,6 +513,11 @@ Places where we knowingly answer differently, each decided rather than overlooke
   sets one — `VFQ` `fr-CA`, `VFF`, `VFI`, `FRENCH` and `TRUEFRENCH` `fr-FR`, `VFQ` winning over the others —
   where the reference leaves the track without a language. A tag, or a second audio track,
   turns it off (`db::scan_repository::analysis::dub_language`).
+- **A scanned track's rate is the one measured over its packets.** The repo owner's decision:
+  the scan stores the deep analysis' rates and durations, where the reference mostly publishes
+  the declared ones (33 of 38 samples), its deep analysis overwritten by a later normal one.
+  The headers' rates stand only when the deep analysis cannot finish
+  (`docs/scanner/analysis.md`, §2).
 - **A category's tile shows no item's art.** The reference draws each genre's tile from the
   background art of its best-rated item not already shown; this server keeps no artwork, so
   every tile names the image the reference uses for a genre without art,
@@ -924,8 +929,8 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   matrix from its sequence header (`trace_headers`), and the deep analysis' rates and duration
   over the time the packets span, as the reference measures them. A scanned file's lookup is the
   reference's field for field on `Media`, `Part` and `Stream` for the three test files and 38
-  samples covering every container, codec and layout of the library, rates aside: the reference
-  mostly publishes the declared ones, its deep analysis overwritten (`docs/scanner/analysis.md`, §2). Not yet:
+  samples covering every container, codec and layout of the library, rates aside: we keep the
+  measured ones where the reference mostly publishes the declared ones (`docs/scanner/analysis.md`, §2). Not yet:
   `requiredBandwidths`, chapters stored, credits detection.
 - 🚧 **library scans in the server**: libraries walked through `LibraryFiles` (local disks for
   now), files grouped into films, series, seasons and episodes by the reference's measured
