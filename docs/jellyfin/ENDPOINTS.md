@@ -8,8 +8,8 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Status | Operations | Share |
 | --- | --: | --: |
-| `served` | 68 | 18.7 % |
-| `todo` | 296 | 81.3 % |
+| `served` | 72 | 19.8 % |
+| `todo` | 292 | 80.2 % |
 
 ## By domain
 
@@ -21,7 +21,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | Backup | 4 | 0 |
 | Branding | 3 | 3 |
 | Channel | 5 | 0 |
-| Collection | 3 | 0 |
+| Collection | 3 | 3 |
 | Device | 5 | 0 |
 | DisplayPreference | 2 | 2 |
 | Environment | 5 | 0 |
@@ -31,7 +31,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | InstantMix | 7 | 0 |
 | ItemLookup | 11 | 0 |
 | ItemUpdate | 3 | 0 |
-| Library | 34 | 12 |
+| Library | 34 | 13 |
 | LibraryStructure | 8 | 0 |
 | LiveTv | 38 | 0 |
 | Localization | 4 | 0 |
@@ -130,9 +130,9 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 
 | Method | Path | Status | Notes |
 | --- | --- | --- | --- |
-| POST | `/Collections` | `todo` |  |
-| POST | `/Collections/{collectionId}/Items` | `todo` |  |
-| DELETE | `/Collections/{collectionId}/Items` | `todo` |  |
+| POST | `/Collections` | `served` | In its first item's library; no item, ParentId or IsLocked answers 501. |
+| POST | `/Collections/{collectionId}/Items` | `served` |  |
+| DELETE | `/Collections/{collectionId}/Items` | `served` |  |
 
 ## Device
 
@@ -267,7 +267,7 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | GET | `/Items/{itemId}` | `served` |  |
 | DELETE | `/Items/{itemId}` | `served` | Playlists and collections; media files answer 501. |
 | GET | `/Items/{itemId}/Ancestors` | `served` |  |
-| GET | `/Items/{itemId}/Collections` | `todo` |  |
+| GET | `/Items/{itemId}/Collections` | `served` |  |
 | GET | `/Items/{itemId}/Download` | `todo` |  |
 | GET | `/Items/{itemId}/File` | `todo` |  |
 | GET | `/Items/{itemId}/Intros` | `served` |  |

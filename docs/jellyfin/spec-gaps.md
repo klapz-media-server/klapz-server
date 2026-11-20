@@ -185,6 +185,19 @@ The caller's own playlists, over the official API's (`createPlaylist`, `addToPla
 - items are appended: a `position` before the end answers `501`. `DELETE /Items/{id}` deletes a
   playlist, and never a media file (`501`).
 
+## Collections
+
+Box sets are the official API's collections (`createCollection`, `addToCollection`,
+`removeFromCollection`, `deleteCollection`, `Item.collections`), as measured on a collection
+made on the reference for the capture. A collection here belongs to a library: one made from a
+Jellyfin client goes to the library of its first item, and holds that item's kind; made with no
+item, in a folder of its own (`ParentId`) or locked (`IsLocked`), it answers `501`. An item of
+another library or kind is refused `400`. Collections are listed by type
+(`IncludeItemTypes=BoxSet`, across the caller's libraries or one), in a `Collections` view
+(`CollectionType` `boxsets`) among the libraries once there is one, by `/Items/{id}/Collections`,
+and opened as a parent; changed by a library's administrators and the owners, as on the
+official API. Deleting one keeps its items.
+
 ## Measured on the 35 files
 
 `tools/compare_jellyfin.py` compares, for every file, the lookup (`/Items/{id}` and

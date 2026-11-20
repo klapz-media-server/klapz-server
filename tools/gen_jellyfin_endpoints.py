@@ -59,6 +59,7 @@ NOTES = {
     "POST /Playlists/{playlistId}/Users/{userId}": "501: playlists are not shared.",
     "DELETE /Playlists/{playlistId}/Users/{userId}": "501: playlists are not shared.",
     "DELETE /Items/{itemId}": "Playlists and collections; media files answer 501.",
+    "POST /Collections": "In its first item's library; no item, ParentId or IsLocked answers 501.",
 }
 
 

@@ -414,6 +414,26 @@ async fn jellyfin_tokens(
     }
 }
 
+/// The films, the series and a library nobody but an owner was given.
+fn library() -> InMemoryLibrary {
+    InMemoryLibrary::new(vec![
+        section(FILMS, SectionKind::Movie, "Films"),
+        section(SERIES, SectionKind::Show, "Séries"),
+        section(PRIVATE, SectionKind::Movie, "Private"),
+    ])
+    .with_roots(
+        [(1, FILMS, "/media/Movies"), (2, SERIES, "/media/TVShows")]
+            .into_iter()
+            .map(|(id, section, path)| open_plex_core::SectionRoot {
+                id,
+                section_id: SectionId::new(section),
+                path: path.to_owned(),
+                created_at: 0,
+            })
+            .collect(),
+    )
+}
+
 impl Harness {
     /// `alice`, a user given the films and the series and connected through Jellyfin;
     /// `bob`, given the same, connected through Plex only; `carol`, whose Jellyfin connection
@@ -475,30 +495,16 @@ impl Harness {
             .await
             .unwrap();
         let streams = Arc::new(StubStreams::default());
-        let library = InMemoryLibrary::new(vec![
-            section(FILMS, SectionKind::Movie, "Films"),
-            section(SERIES, SectionKind::Show, "Séries"),
-            section(PRIVATE, SectionKind::Movie, "Private"),
-        ])
-        .with_roots(
-            [(1, FILMS, "/media/Movies"), (2, SERIES, "/media/TVShows")]
-                .into_iter()
-                .map(|(id, section, path)| open_plex_core::SectionRoot {
-                    id,
-                    section_id: SectionId::new(section),
-                    path: path.to_owned(),
-                    created_at: 0,
-                })
-                .collect(),
-        );
+        let library = library();
+        let collections = Arc::new(open_plex_core::testing::InMemoryCollections::new(items()));
         let schema = build_schema(ApiContext {
             capabilities: ServerCapabilities::new(ServerIdentity::new(MACHINE, "0.1.0"), 0),
             library: Arc::new(library),
-            metadata: Arc::new(metadata()),
+            metadata: Arc::new(metadata().with_collections(&collections)),
             playback: Arc::new(open_plex_core::testing::InMemoryPlayback::default()),
             play_queues: Arc::new(open_plex_core::testing::InMemoryPlayQueues::default()),
             playlists: Arc::new(open_plex_core::testing::InMemoryPlaylists::new(items())),
-            collections: Arc::new(open_plex_core::testing::InMemoryCollections::default()),
+            collections,
             access: Arc::clone(&access) as Arc<dyn AccessRepository>,
             directory: Arc::new(open_plex_core::testing::StubDirectory::default()),
             watch: Arc::new(open_plex_core::testing::InMemoryWatch::default()),

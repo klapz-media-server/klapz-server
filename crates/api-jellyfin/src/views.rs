@@ -152,6 +152,13 @@ async fn views(state: &JellyfinState, user: Option<&str>) -> Result<Response, Je
             playlists.len(),
         ));
     }
+    let collections = crate::collections::collections(state).await?;
+    if !collections.is_empty() {
+        items.push(crate::collections::view_dto(
+            &state.server.id,
+            collections.len(),
+        ));
+    }
     items.sort_by_key(|view| view["Name"].as_str().unwrap_or_default().to_lowercase());
     Ok(json(&ItemsResult {
         total_record_count: i64::try_from(items.len()).unwrap_or(i64::MAX),

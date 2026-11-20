@@ -403,6 +403,18 @@ async fn lookup(
                 .ok_or(JellyfinError::NotFound)?;
             Ok(json(&library_dto(&library, &state.server.id)))
         }
+        open_plex_api::server::SERVER_TYPE if global.key == 2 => {
+            let count = crate::collections::collections(state).await?.len();
+            Ok(json(&crate::collections::view_dto(&state.server.id, count)))
+        }
+        open_plex_api::collection::COLLECTION_TYPE => {
+            let collection = crate::collections::collection_of(state, &encoded).await?;
+            Ok(json(&crate::collections::collection_dto(
+                &collection,
+                &state.server.id,
+                &Fields::all(),
+            )))
+        }
         open_plex_api::server::SERVER_TYPE if global.key == 1 => {
             let count = crate::playlists::playlists(state).await?.len();
             Ok(json(&crate::playlists::view_dto(&state.server.id, count)))
@@ -420,64 +432,105 @@ async fn lookup(
     }
 }
 
-/// Listings of what is not a library's item: the caller's playlists, as a type or as their
-/// view, and a playlist's entries. `None` for every other listing.
+/// Listings of what is not a library's item: the caller's playlists and collections, as a type
+/// or as their view, and what a playlist or a collection holds. `None` for every other
+/// listing.
 async fn containers(
     state: &JellyfinState,
     query: &Query,
 ) -> Result<Option<Response>, JellyfinError> {
     let parent = query.get("parentId").map(id::decode).transpose()?;
     let types = query.list("includeItemTypes");
-    let playlists_view = parent.as_ref().is_some_and(|parent| {
-        parent.type_name == open_plex_api::server::SERVER_TYPE && parent.key == 1
-    });
-    let only_playlists = !types.is_empty()
-        && types
-            .iter()
-            .all(|kind| kind.eq_ignore_ascii_case("playlist"));
-    if playlists_view || (only_playlists && parent.is_none()) {
-        let fields = fields(query);
-        let items: Vec<Value> = crate::playlists::playlists(state)
-            .await?
-            .iter()
-            .map(|playlist| crate::playlists::playlist_dto(playlist, &state.server.id, &fields))
-            .collect();
-        let total = count(&items);
-        return Ok(Some(page(items, total, 0)));
+    let only =
+        |name: &str| !types.is_empty() && types.iter().all(|kind| kind.eq_ignore_ascii_case(name));
+    let names = |name: &str| types.iter().any(|kind| kind.eq_ignore_ascii_case(name));
+    let view = |key: i64| {
+        parent.as_ref().is_some_and(|parent| {
+            parent.type_name == open_plex_api::server::SERVER_TYPE && parent.key == key
+        })
+    };
+    let under_library = parent
+        .as_ref()
+        .filter(|parent| parent.type_name == open_plex_api::library::LIBRARY_TYPE)
+        .map(|library| open_plex_api::GlobalId::encode(&library.type_name, library.key));
+    if view(1) || (only("playlist") && parent.is_none()) {
+        return Ok(Some(playlists_page(state, query).await?));
     }
-    if types
-        .iter()
-        .any(|kind| kind.eq_ignore_ascii_case("playlist"))
-    {
-        return Err(JellyfinError::NotImplemented(
-            "playlists among other types, or below a library",
+    if view(2) || (only("boxset") && (parent.is_none() || under_library.is_some())) {
+        return Ok(Some(
+            collections_page(state, query, under_library.as_deref()).await?,
         ));
     }
-    match parent {
-        Some(parent) if parent.type_name == open_plex_api::playlist::PLAYLIST_TYPE => {
-            let global = open_plex_api::GlobalId::encode(&parent.type_name, parent.key);
-            Ok(Some(
-                crate::playlists::entries_page(state, &global, query).await?,
-            ))
-        }
+    if names("playlist") || names("boxset") {
+        return Err(JellyfinError::NotImplemented(
+            "playlists or collections among other types, or below an item",
+        ));
+    }
+    let Some(parent) = parent else {
+        return Ok(None);
+    };
+    let global = open_plex_api::GlobalId::encode(&parent.type_name, parent.key);
+    match parent.type_name.as_str() {
+        open_plex_api::playlist::PLAYLIST_TYPE => Ok(Some(
+            crate::playlists::entries_page(state, &global, query).await?,
+        )),
+        open_plex_api::collection::COLLECTION_TYPE => Ok(Some(
+            crate::collections::items_page(state, &global, query).await?,
+        )),
         _ => Ok(None),
     }
 }
 
-/// `DELETE /Items/{id}`: a playlist the caller owns. Media files are never deleted here.
+async fn playlists_page(state: &JellyfinState, query: &Query) -> Result<Response, JellyfinError> {
+    let fields = fields(query);
+    let items: Vec<Value> = crate::playlists::playlists(state)
+        .await?
+        .iter()
+        .map(|playlist| crate::playlists::playlist_dto(playlist, &state.server.id, &fields))
+        .collect();
+    let total = count(&items);
+    Ok(page(items, total, 0))
+}
+
+/// The caller's collections, or one library's.
+async fn collections_page(
+    state: &JellyfinState,
+    query: &Query,
+    library: Option<&str>,
+) -> Result<Response, JellyfinError> {
+    let fields = fields(query);
+    let items: Vec<Value> = crate::collections::collections(state)
+        .await?
+        .iter()
+        .filter(|collection| library.is_none_or(|library| collection.library_id() == Some(library)))
+        .map(|collection| crate::collections::collection_dto(collection, &state.server.id, &fields))
+        .collect();
+    let total = count(&items);
+    Ok(page(items, total, 0))
+}
+
+/// `DELETE /Items/{id}`: a playlist the caller owns, or a collection of a library it may change.
+/// Media files are never deleted here.
 async fn delete_item(
     State(state): State<JellyfinState>,
     Path(item): Path<String>,
 ) -> Result<Response, JellyfinError> {
     let global = id::decode(&item)?;
     let encoded = open_plex_api::GlobalId::encode(&global.type_name, global.key);
-    if global.type_name == open_plex_api::playlist::PLAYLIST_TYPE {
-        crate::playlists::delete(&state, &encoded).await?;
-        return Ok(crate::response::no_content());
+    match global.type_name.as_str() {
+        open_plex_api::playlist::PLAYLIST_TYPE => {
+            crate::playlists::delete(&state, &encoded).await?;
+        }
+        open_plex_api::collection::COLLECTION_TYPE => {
+            crate::collections::delete(&state, &encoded).await?;
+        }
+        _ => {
+            return Err(JellyfinError::NotImplemented(
+                "deleting media from the library",
+            ))
+        }
     }
-    Err(JellyfinError::NotImplemented(
-        "deleting media from the library",
-    ))
+    Ok(crate::response::no_content())
 }
 
 /// The folder a user's views hang from.
