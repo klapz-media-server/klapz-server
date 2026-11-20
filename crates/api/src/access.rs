@@ -149,12 +149,15 @@ impl From<ServerRoleType> for ServerRole {
 pub enum ExtensionType {
     /// The Plex Media Server API.
     Plex,
+    /// The Jellyfin server API.
+    Jellyfin,
 }
 
 impl From<Extension> for ExtensionType {
     fn from(extension: Extension) -> Self {
         match extension {
             Extension::Plex => Self::Plex,
+            Extension::Jellyfin => Self::Jellyfin,
         }
     }
 }
@@ -163,6 +166,7 @@ impl From<ExtensionType> for Extension {
     fn from(extension: ExtensionType) -> Self {
         match extension {
             ExtensionType::Plex => Self::Plex,
+            ExtensionType::Jellyfin => Self::Jellyfin,
         }
     }
 }
@@ -291,6 +295,8 @@ impl UserExtensionObject {
     }
 
     /// What the protocol calls this user's side of the server: for Plex, a machine identifier.
+    /// A Jellyfin connection has one too, unused while every Jellyfin user shares the
+    /// server's identifier.
     async fn external_id(&self) -> &str {
         &self.0.external_id
     }

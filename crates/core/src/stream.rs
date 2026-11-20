@@ -122,6 +122,64 @@ pub struct StartedStream {
     pub replaced: Vec<String>,
 }
 
+/// A format a player declares it reads as it is: containers, and the video and audio codecs
+/// it reads in them. An empty list admits anything.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PlayerFormat {
+    pub containers: Vec<String>,
+    pub video_codecs: Vec<String>,
+    pub audio_codecs: Vec<String>,
+}
+
+/// What a player has to read of a file to play it as it is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FileFormat<'a> {
+    pub container: Option<&'a str>,
+    pub video_codec: Option<&'a str>,
+    /// The audio track it would play.
+    pub audio_codec: Option<&'a str>,
+    /// Bits per second, of the whole version.
+    pub bitrate: Option<i64>,
+}
+
+impl PlayerFormat {
+    /// Whether this format holds the file: its container, and each of its codecs it has.
+    /// Names are compared without regard to case; a container named by several names, as
+    /// ffmpeg names MP4 (`mov,mp4,m4a`), is held when one of them is.
+    pub fn reads(&self, file: FileFormat<'_>) -> bool {
+        let admits = |list: &[String], value: Option<&str>| {
+            list.is_empty()
+                || value.is_some_and(|value| {
+                    value.split(',').any(|name| {
+                        list.iter()
+                            .any(|held| held.eq_ignore_ascii_case(name.trim()))
+                    })
+                })
+        };
+        // A file without such a track needs no codec for it.
+        let codec_admitted =
+            |list: &[String], codec: Option<&str>| codec.is_none() || admits(list, codec);
+        admits(&self.containers, file.container)
+            && codec_admitted(&self.video_codecs, file.video_codec)
+            && codec_admitted(&self.audio_codecs, file.audio_codec)
+    }
+}
+
+/// Whether a player reads a file as it is, so that it can be sent untouched: one of the formats
+/// it declares holds the file, and the file weighs no more than the most the player takes. A
+/// file of unknown weight is not held back for it.
+pub fn reads_as_is(
+    formats: &[PlayerFormat],
+    file: FileFormat<'_>,
+    max_bitrate: Option<i64>,
+) -> bool {
+    let light_enough = match (file.bitrate, max_bitrate) {
+        (Some(bitrate), Some(max)) => bitrate <= max,
+        _ => true,
+    };
+    light_enough && formats.iter().any(|format| format.reads(file))
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum StreamError {
     #[error("the file is not on this machine")]
@@ -195,4 +253,73 @@ pub trait StreamEngine: Send + Sync + std::fmt::Debug {
     ///
     /// [`SidecarError::Missing`] for a file not where a sidecar may be, an I/O failure.
     async fn remove_sidecar(&self, sidecar: &SidecarSource) -> Result<(), SidecarError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn format(containers: &[&str], video: &[&str], audio: &[&str]) -> PlayerFormat {
+        let owned = |list: &[&str]| list.iter().map(|name| (*name).to_owned()).collect();
+        PlayerFormat {
+            containers: owned(containers),
+            video_codecs: owned(video),
+            audio_codecs: owned(audio),
+        }
+    }
+
+    fn mkv(video: &'static str, audio: &'static str) -> FileFormat<'static> {
+        FileFormat {
+            container: Some("mkv"),
+            video_codec: Some(video),
+            audio_codec: Some(audio),
+            bitrate: Some(8_000_000),
+        }
+    }
+
+    #[test]
+    fn a_format_holds_a_file_whose_container_and_codecs_it_names() {
+        let browser = format(&["mkv", "mp4"], &["h264"], &["aac", "opus"]);
+        assert!(browser.reads(mkv("h264", "aac")));
+        assert!(!browser.reads(mkv("hevc", "aac")));
+        assert!(!browser.reads(mkv("h264", "dca")));
+        assert!(!format(&["mp4"], &[], &[]).reads(mkv("h264", "aac")));
+    }
+
+    #[test]
+    fn an_empty_list_admits_anything_and_a_missing_track_needs_nothing() {
+        assert!(format(&[], &[], &[]).reads(mkv("hevc", "dca")));
+        let silent = FileFormat {
+            audio_codec: None,
+            ..mkv("h264", "aac")
+        };
+        assert!(format(&["MKV"], &["H264"], &["aac"]).reads(silent));
+    }
+
+    #[test]
+    fn a_container_of_several_names_is_held_by_one_of_them() {
+        let file = FileFormat {
+            container: Some("mov,mp4,m4a,3gp,3g2,mj2"),
+            ..mkv("h264", "aac")
+        };
+        assert!(format(&["mp4"], &[], &[]).reads(file));
+        assert!(!format(&["webm"], &[], &[]).reads(file));
+    }
+
+    #[test]
+    fn a_player_reads_as_is_what_one_format_holds_under_its_bitrate() {
+        let formats = [
+            format(&["webm"], &["vp9"], &["opus"]),
+            format(&["mkv"], &["h264"], &["aac"]),
+        ];
+        assert!(reads_as_is(&formats, mkv("h264", "aac"), Some(10_000_000)));
+        assert!(!reads_as_is(&formats, mkv("h264", "aac"), Some(4_000_000)));
+        assert!(reads_as_is(&formats, mkv("h264", "aac"), None));
+        assert!(!reads_as_is(&[], mkv("h264", "aac"), None));
+        let unweighed = FileFormat {
+            bitrate: None,
+            ..mkv("h264", "aac")
+        };
+        assert!(reads_as_is(&formats, unweighed, Some(1)));
+    }
 }

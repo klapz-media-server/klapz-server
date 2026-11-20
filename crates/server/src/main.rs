@@ -135,6 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sweep = expire_playback(sessions.clone(), play_queues, Arc::clone(&transcoder));
     tokio::spawn(sweep);
     let app = open_plex_api_plex::router(plex_state)
+        .merge(jellyfin_surface(&schema, &sign_in))
         .merge(graphql::router(schema, sign_in))
         .merge(admin::router())
         .merge(streams::router(sessions.clone()))
@@ -393,6 +394,33 @@ fn with_web_client(app: axum::Router) -> axum::Router {
     } else {
         tracing::info!(directory = %web_dir.display(), "no web client found, /web is not served");
         app
+    }
+}
+
+/// The Jellyfin surface, with Jellyfin Web when there is one to serve.
+fn jellyfin_surface(
+    schema: &open_plex_api::ApiSchema,
+    sign_in: &Arc<open_plex_api::Sessions>,
+) -> axum::Router {
+    let mut state = open_plex_api_jellyfin::JellyfinState::new(
+        schema.clone(),
+        Arc::clone(sign_in),
+        &identity(),
+    );
+    state.web_dir = jellyfin_web_dir();
+    open_plex_api_jellyfin::router(state)
+}
+
+/// Jellyfin Web, served below the Jellyfin surface when `OPENPLEX_JELLYFIN_WEB_DIR` names a
+/// directory holding it. Not versioned here: it is Jellyfin's code.
+fn jellyfin_web_dir() -> Option<PathBuf> {
+    let directory = PathBuf::from(std::env::var_os("OPENPLEX_JELLYFIN_WEB_DIR")?);
+    if directory.join("index.html").is_file() {
+        tracing::info!(directory = %directory.display(), "serving Jellyfin Web at /jellyfin/web");
+        Some(directory)
+    } else {
+        tracing::warn!(directory = %directory.display(), "no Jellyfin Web found there");
+        None
     }
 }
 

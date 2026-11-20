@@ -41,6 +41,31 @@ pub enum LibraryRole {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Extension {
     Plex,
+    Jellyfin,
+}
+
+impl Extension {
+    /// Whether the protocol's clients sign in with a user's password, each device keeping a
+    /// token of its own. Plex's are handed the connection's token instead.
+    #[must_use]
+    pub const fn signs_in_with_password(self) -> bool {
+        matches!(self, Self::Jellyfin)
+    }
+}
+
+/// A client a user signed in from through an extension, with a password: Jellyfin's clients
+/// do, where Plex's are handed the connection's token. Each keeps a token of its own, so that
+/// signing one out leaves the others signed in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionDevice {
+    /// What the client calls itself, stable across its sign-ins: a device signing in again
+    /// replaces its token.
+    pub id: String,
+    /// The device's name, for a person: `Chrome`, `Living room TV`.
+    pub name: String,
+    /// The application: `Jellyfin Web`, `Infuse`.
+    pub client: String,
+    pub client_version: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -414,7 +439,7 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
         now: i64,
     ) -> Result<UserExtension, AccessError>;
 
-    /// Switches a connection off. Whether there was one still on.
+    /// Switches a connection off and forgets its devices. Whether there was one still on.
     async fn disable_extension(
         &self,
         user: UserId,
@@ -424,7 +449,31 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
 
     async fn extensions(&self, user: UserId) -> Result<Vec<UserExtension>, AccessError>;
 
-    /// What a token opens, if it is one of an extension's and its user is active.
+    /// Gives a device its own token on a user's connection, replacing the one it had.
+    ///
+    /// # Errors
+    ///
+    /// [`AccessError::NotConnected`] when the connection is missing or switched off, or a
+    /// storage failure.
+    async fn issue_device_token(
+        &self,
+        user: UserId,
+        extension: Extension,
+        device: &ExtensionDevice,
+        token_digest: &str,
+        now: i64,
+    ) -> Result<(), AccessError>;
+
+    /// Forgets the device a token was issued to, when it is this user's. Whether there was one.
+    async fn revoke_device_token(
+        &self,
+        user: UserId,
+        extension: Extension,
+        token_digest: &str,
+    ) -> Result<bool, AccessError>;
+
+    /// What a token opens, if it is one of an extension's — the connection's own or one of its
+    /// devices' — and its user is active.
     async fn grant(
         &self,
         extension: Extension,
@@ -561,6 +610,12 @@ mod tests {
         assert_eq!(principal.libraries.role(SectionId::new(5)), None);
         assert!(!principal.is_owner());
         assert_eq!(principal.server_identifier.as_deref(), Some("server"));
+    }
+
+    #[test]
+    fn only_jellyfin_clients_sign_in_with_a_password() {
+        assert!(Extension::Jellyfin.signs_in_with_password());
+        assert!(!Extension::Plex.signs_in_with_password());
     }
 
     #[test]

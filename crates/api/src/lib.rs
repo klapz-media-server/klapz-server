@@ -21,6 +21,7 @@ pub mod edit;
 pub mod extra;
 pub mod filter;
 pub mod history;
+pub mod in_process;
 pub mod item;
 pub mod library;
 pub mod loader;

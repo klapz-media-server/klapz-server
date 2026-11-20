@@ -1,0 +1,239 @@
+{
+  "Name": "Saison 1",
+  "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+  "Id": "d7cd792800f0b24c3b4f0bc3ccfd510a",
+  "Etag": "a44c5bda59cfd3a5f5f613fa4d80e2c1",
+  "DateCreated": "2026-11-20T08:33:14.1945775Z",
+  "DateLastMediaAdded": "0001-01-01T00:00:00.0000000Z",
+  "CanDelete": false,
+  "CanDownload": false,
+  "SortName": "0001",
+  "PremiereDate": "2008-09-01T22:00:00.0000000Z",
+  "ExternalUrls": [
+    {
+      "Name": "IMDb",
+      "Url": "https://www.imdb.com/title/tt1225901/episodes/?season=1"
+    },
+    {
+      "Name": "TMDB",
+      "Url": "https://www.themoviedb.org/tv/5917/season/1"
+    }
+  ],
+  "EnableMediaSourceDisplay": true,
+  "ChannelId": null,
+  "Overview": "The first season of the new 90210 looks at life through the eyes of Annie Wilson and her brother Dixon, whose first day at West Beverly Hills High School leaves no doubt they’re not in Kansas anymore. ",
+  "Taglines": [],
+  "Genres": [],
+  "PlayAccess": "Full",
+  "ProductionYear": 2008,
+  "IndexNumber": 1,
+  "RemoteTrailers": [],
+  "ProviderIds": {
+    "Tmdb": "15963",
+    "Tvdb": "34304"
+  },
+  "IsFolder": true,
+  "ParentId": "b0090a8c4dfbb2490dab2caf36536d9f",
+  "Type": "Season",
+  "People": [
+    {
+      "Name": "Shenae Grimes-Beech",
+      "Id": "b792737be3e45fe63df5d184137c04b3",
+      "Role": "Annie Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "878f0253cdc43aaf3808b15d9370a9c6",
+      "ImageBlurHashes": {
+        "Primary": {
+          "878f0253cdc43aaf3808b15d9370a9c6": "dTHnEL-p0zNGx^xa?HW;K6NG%2xaozWC%1a|X9ofoeWV"
+        }
+      }
+    },
+    {
+      "Name": "Tristan Mack Wilds",
+      "Id": "b88ef3d04f568a0420271b23eaba688c",
+      "Role": "Dixon Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "79cff41903d81a9ecba5e74c1123d736",
+      "ImageBlurHashes": {
+        "Primary": {
+          "79cff41903d81a9ecba5e74c1123d736": "dSFXem=|0$S6D*WCxaj]AbNbw_oLM|oMxut7X9kDt6t6"
+        }
+      }
+    },
+    {
+      "Name": "AnnaLynne McCord",
+      "Id": "1d34cbd4666c694389fa39e66a18f4ba",
+      "Role": "Naomi Clark",
+      "Type": "Actor",
+      "PrimaryImageTag": "35b27c4070068df3df906311957887e3",
+      "ImageBlurHashes": {
+        "Primary": {
+          "35b27c4070068df3df906311957887e3": "dTMsJ]%hyX^+?w-;?c%MOtWC%3R+o}nh-oWAW@X9t7t7"
+        }
+      }
+    },
+    {
+      "Name": "Jessica Stroup",
+      "Id": "aa7fc263107d85ce69e79726f890c061",
+      "Role": "Erin Silver",
+      "Type": "Actor",
+      "PrimaryImageTag": "aa929494235585462d7896636ea86081",
+      "ImageBlurHashes": {
+        "Primary": {
+          "aa929494235585462d7896636ea86081": "dYFr9XxZlAXT~Wt7-;tRTeNG^*xubwR*xuxa%2oeoft7"
+        }
+      }
+    },
+    {
+      "Name": "Michael Steger",
+      "Id": "fb3c63fa9c20f29a05800d66b778841b",
+      "Role": "Navid Shirazi",
+      "Type": "Actor",
+      "PrimaryImageTag": "195ed2fd9303c123dcc964b64c485a4f",
+      "ImageBlurHashes": {
+        "Primary": {
+          "195ed2fd9303c123dcc964b64c485a4f": "daJHgt%L*0%h%NM{%MWATKWBVrxa?vt8-;xu%MWBV@kC"
+        }
+      }
+    },
+    {
+      "Name": "Jessica Lowndes",
+      "Id": "16a57ac1e77da29fb4460be73f944da1",
+      "Role": "Adrianna Tate-Duncan",
+      "Type": "Actor",
+      "PrimaryImageTag": "477f51cf0543fcb1584ae7ffe117b121",
+      "ImageBlurHashes": {
+        "Primary": {
+          "477f51cf0543fcb1584ae7ffe117b121": "drKKE2-pyXx]?wS4-;xu%gRkV@s:%MoejFbHx]W=ofs:"
+        }
+      }
+    },
+    {
+      "Name": "Ryan Eggold",
+      "Id": "eec3f8c529a5eb538e6767992fa46a33",
+      "Role": "Ryan Matthews",
+      "Type": "Actor",
+      "PrimaryImageTag": "963d51a4af550f0c982722d46032ff99",
+      "ImageBlurHashes": {
+        "Primary": {
+          "963d51a4af550f0c982722d46032ff99": "dqN,rX%2*0.8W?aytRbIo#fkaKjsx]j[ogt7OYa|xas:"
+        }
+      }
+    },
+    {
+      "Name": "Lori Loughlin",
+      "Id": "46434bae3cc8c00b68d40d1585ee3a4f",
+      "Role": "Debbie Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "7ab26e70ccd382251ac3989b8642ee84",
+      "ImageBlurHashes": {
+        "Primary": {
+          "7ab26e70ccd382251ac3989b8642ee84": "dQGaIP-B0|Sg1GJ6Vts:R7V@$%s.JQbbxuS2Ioofxas:"
+        }
+      }
+    },
+    {
+      "Name": "Rob Estes",
+      "Id": "f6e8719eda180512172a2b706bd59af9",
+      "Role": "Harry Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "269cf217e365432218a775fd6656694b",
+      "ImageBlurHashes": {
+        "Primary": {
+          "269cf217e365432218a775fd6656694b": "dOLWR.?b5@?aYQnhW;E19$IU-UMy~qo}?b%MO@RP%1tR"
+        }
+      }
+    },
+    {
+      "Name": "Jessica Walter",
+      "Id": "cbadb1d8c326d3f984eadf4870b1b8ce",
+      "Role": "Tabitha Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "5c271fa9c81d8aa975781adb061d5898",
+      "ImageBlurHashes": {
+        "Primary": {
+          "5c271fa9c81d8aa975781adb061d5898": "dWID?X%1TL%2~VWB-:bbo}WBslxZxuoyxaxtxuj[%1xa"
+        }
+      }
+    },
+    {
+      "Name": "Dustin Milligan",
+      "Id": "9622a730bc9e63fb51ead9548c7367ec",
+      "Role": "Ethan Ward",
+      "Type": "Actor",
+      "PrimaryImageTag": "1f500f64889601ca63e9b0a48bd0b69c",
+      "ImageBlurHashes": {
+        "Primary": {
+          "1f500f64889601ca63e9b0a48bd0b69c": "ddGR@--p0LNdMwoex^WXI=R*s9s.XTWqnhofIoWB%2t8"
+        }
+      }
+    },
+    {
+      "Name": "Wendey Stanzler",
+      "Id": "61d98a1588a5b1553ced4e58acf106d6",
+      "Role": "Producer",
+      "Type": "Producer",
+      "PrimaryImageTag": "ca2611c7eac71584afdda21c8b5038b4",
+      "ImageBlurHashes": {
+        "Primary": {
+          "ca2611c7eac71584afdda21c8b5038b4": "dWHJw3=d0fw{tQJ79[ba9ank=ya#9uba%2n%RkafX8W;"
+        }
+      }
+    }
+  ],
+  "Studios": [],
+  "GenreItems": [],
+  "ParentLogoItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+  "ParentBackdropItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+  "ParentBackdropImageTags": [
+    "bc43018dc61e72a1e85f51b25ac344df"
+  ],
+  "LocalTrailerCount": 0,
+  "UserData": {
+    "PlayedPercentage": 0,
+    "UnplayedItemCount": 1,
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false,
+    "Key": "82716001",
+    "ItemId": "d7cd792800f0b24c3b4f0bc3ccfd510a"
+  },
+  "RecursiveItemCount": 1,
+  "ChildCount": 1,
+  "SeriesName": "90210",
+  "SeriesId": "b0090a8c4dfbb2490dab2caf36536d9f",
+  "SpecialFeatureCount": 0,
+  "DisplayPreferencesId": "dfd065f5787fb957a750d76dcf835aad",
+  "Tags": [],
+  "PrimaryImageAspectRatio": 0.706,
+  "SeriesPrimaryImageTag": "50ce5c92fe72d9e7d70979f35b041a3d",
+  "ImageTags": {
+    "Primary": "71d37e5c30f3e92a41b55cfb7299bc68"
+  },
+  "BackdropImageTags": [],
+  "ParentLogoImageTag": "200c89c832e477571e7a1ce4df91fdb8",
+  "ImageBlurHashes": {
+    "Primary": {
+      "71d37e5c30f3e92a41b55cfb7299bc68": "dZJulr-;kW%hPXogWrbvThbcslsnNzofnhRkIWn$bvNH",
+      "50ce5c92fe72d9e7d70979f35b041a3d": "d]L;?CxuWAxuPXbbkBW=ESbIWrWVNHkCoLWXE2WBj[WW"
+    },
+    "Logo": {
+      "200c89c832e477571e7a1ce4df91fdb8": "PNLEN8Rk9H?at7IUt6D%xuofxuxuWBay%Lt6_2IVD*D*WB?aRj~p"
+    },
+    "Thumb": {
+      "cc3f7975d486039dde8b7b927eb8ed4f": "WYKUl:yEPV.TxC-;-gFzoyVXaJV@PTEnM_IpRiMx?^NLS5t8xCr="
+    },
+    "Backdrop": {
+      "bc43018dc61e72a1e85f51b25ac344df": "WaK0{Mozo|ofj[-p_4WqW=R*M{%2.8S4ofofIVxa?bWXocs.t6s:"
+    }
+  },
+  "SeriesStudio": "The CW",
+  "ParentThumbItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+  "ParentThumbImageTag": "cc3f7975d486039dde8b7b927eb8ed4f",
+  "Chapters": [],
+  "LocationType": "Virtual",
+  "MediaType": "Unknown",
+  "LockedFields": [],
+  "LockData": false
+}

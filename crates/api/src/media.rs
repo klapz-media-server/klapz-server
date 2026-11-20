@@ -13,6 +13,8 @@ use open_plex_core::metadata::{
 use open_plex_core::tracks::{selected_tracks, SelectedTracks};
 use open_plex_core::StreamId;
 
+use open_plex_core::stream::{reads_as_is, FileFormat, PlayerFormat};
+
 use crate::loader::{FilesLoader, StreamsLoader};
 use crate::node::GlobalId;
 
@@ -273,6 +275,61 @@ impl File {
     /// The tracks inside this file, plus any sidecar subtitle files.
     async fn streams(&self, context: &Context<'_>) -> Result<Vec<Track>> {
         Ok(self.tracks(context).await?.into_iter().map(Track).collect())
+    }
+
+    /// Whether a player reads this file as it is, so that `startStream` can send it untouched
+    /// with `directPlay`: one of the formats the player declares holds the file's container,
+    /// its video codec and the codec of the audio track it would play — `audioTrack`, or the
+    /// caller's — and the version weighs no more than `maxBitrate`. An empty list in a format
+    /// admits anything; names are compared without regard to case.
+    async fn readable_as_is(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "What the player reads as it is, each format on its own.")] formats: Vec<
+            PlayerFormatInput,
+        >,
+        #[graphql(desc = "The most the player takes, in bits per second.")] max_bitrate: Option<
+            i64,
+        >,
+        #[graphql(desc = "The audio track it would play, as returned in `MediaStream.id`.")]
+        audio_track: Option<ID>,
+    ) -> Result<bool> {
+        let Some(version) = crate::schema::readable_version(context, self.0.version_id).await?
+        else {
+            return Ok(false);
+        };
+        let (tracks, selected) = self.selection(context).await?;
+        let audio = match &audio_track {
+            Some(id) => {
+                let wanted = GlobalId::decode(id)?.key;
+                tracks
+                    .iter()
+                    .find(|track| track.id.get() == wanted && track.kind == StreamKind::Audio)
+                    .ok_or_else(|| async_graphql::Error::new("no such audio track in this file"))?
+                    .codec
+                    .as_deref()
+            }
+            None => selected
+                .audio
+                .and_then(|id| tracks.iter().find(|track| track.id == id))
+                .and_then(|track| track.codec.as_deref()),
+        };
+        let video = tracks
+            .iter()
+            .find(|track| track.kind == StreamKind::Video)
+            .and_then(|track| track.codec.as_deref())
+            .or(version.video_codec.as_deref());
+        let formats: Vec<PlayerFormat> = formats.into_iter().map(Into::into).collect();
+        Ok(reads_as_is(
+            &formats,
+            FileFormat {
+                container: version.container.as_deref(),
+                video_codec: video,
+                audio_codec: audio,
+                bitrate: version.bitrate.map(i64::from),
+            },
+            max_bitrate,
+        ))
     }
 
     /// The audio track the caller plays this file with: the one it chose with `chooseTracks`,
@@ -785,5 +842,29 @@ mod tests {
         assert_eq!(filename_of(""), "");
         // A trailing separator names no file; reporting empty beats reporting the directory.
         assert_eq!(filename_of("/mnt/movies/"), "");
+    }
+}
+
+/// A format a player reads as it is.
+#[derive(Debug, async_graphql::InputObject)]
+pub struct PlayerFormatInput {
+    /// Containers, as ffmpeg names them: `mkv`, `mp4`, `webm`. Empty for any.
+    #[graphql(default)]
+    pub containers: Vec<String>,
+    /// Video codecs it reads in them: `h264`, `hevc`. Empty for any.
+    #[graphql(default)]
+    pub video_codecs: Vec<String>,
+    /// Audio codecs it reads in them: `aac`, `opus`. Empty for any.
+    #[graphql(default)]
+    pub audio_codecs: Vec<String>,
+}
+
+impl From<PlayerFormatInput> for PlayerFormat {
+    fn from(input: PlayerFormatInput) -> Self {
+        Self {
+            containers: input.containers,
+            video_codecs: input.video_codecs,
+            audio_codecs: input.audio_codecs,
+        }
     }
 }

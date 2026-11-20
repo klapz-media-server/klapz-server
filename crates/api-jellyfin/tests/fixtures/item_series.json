@@ -1,0 +1,365 @@
+{
+  "Name": "90210",
+  "OriginalTitle": "90210",
+  "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+  "Id": "b0090a8c4dfbb2490dab2caf36536d9f",
+  "Etag": "fb23aeaad4761a9c757f6720a1e4a359",
+  "DateCreated": "2026-11-20T08:33:10.7112164Z",
+  "DateLastMediaAdded": "2019-01-22T23:39:11.0000000Z",
+  "CanDelete": true,
+  "CanDownload": false,
+  "SortName": "0000090210",
+  "PremiereDate": "2008-09-02T00:00:00.0000000Z",
+  "ExternalUrls": [
+    {
+      "Name": "IMDb",
+      "Url": "https://www.imdb.com/title/tt1225901"
+    },
+    {
+      "Name": "TMDB",
+      "Url": "https://www.themoviedb.org/tv/5917"
+    }
+  ],
+  "Path": "/media/TVShows/VF/90210 BEVERLY HILLS NOUVELLE GeneRATION",
+  "EnableMediaSourceDisplay": true,
+  "OfficialRating": "TV-14",
+  "ChannelId": null,
+  "Overview": "90210 revolves around several students at the fictional West Beverly Hills High School, including new Beverly Hills residents Annie Wilson and Dixon Wilson. Their father, Harry Wilson, has returned from Kansas to his Beverly Hills childhood home with his family to care for his mother, former television and theater actress Tabitha Wilson, who has a drinking problem and clashes with his wife Debbie Wilson. Annie and Dixon struggle to adjust to their new lives while making friends and yet adhering to their parents' wishes.",
+  "Taglines": [],
+  "Genres": [
+    "Drama"
+  ],
+  "CommunityRating": 5.8,
+  "CumulativeRunTimeTicks": 24000000000,
+  "RunTimeTicks": 24000000000,
+  "PlayAccess": "Full",
+  "ProductionYear": 2008,
+  "RemoteTrailers": [
+    {
+      "Url": "https://www.youtube.com/watch?v=UC74twDMh-g",
+      "Name": "90210- Official promo (trailer) season 4"
+    }
+  ],
+  "ProviderIds": {
+    "Tmdb": "5917",
+    "Imdb": "tt1225901",
+    "TvRage": "18813",
+    "Tvdb": "82716"
+  },
+  "IsFolder": true,
+  "ParentId": "d0484564e31916a6961e6c05b9fff631",
+  "Type": "Series",
+  "People": [
+    {
+      "Name": "Shenae Grimes-Beech",
+      "Id": "b792737be3e45fe63df5d184137c04b3",
+      "Role": "Annie Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "878f0253cdc43aaf3808b15d9370a9c6",
+      "ImageBlurHashes": {
+        "Primary": {
+          "878f0253cdc43aaf3808b15d9370a9c6": "dTHnEL-p0zNGx^xa?HW;K6NG%2xaozWC%1a|X9ofoeWV"
+        }
+      }
+    },
+    {
+      "Name": "Tristan Mack Wilds",
+      "Id": "b88ef3d04f568a0420271b23eaba688c",
+      "Role": "Dixon Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "79cff41903d81a9ecba5e74c1123d736",
+      "ImageBlurHashes": {
+        "Primary": {
+          "79cff41903d81a9ecba5e74c1123d736": "dSFXem=|0$S6D*WCxaj]AbNbw_oLM|oMxut7X9kDt6t6"
+        }
+      }
+    },
+    {
+      "Name": "AnnaLynne McCord",
+      "Id": "1d34cbd4666c694389fa39e66a18f4ba",
+      "Role": "Naomi Clark",
+      "Type": "Actor",
+      "PrimaryImageTag": "35b27c4070068df3df906311957887e3",
+      "ImageBlurHashes": {
+        "Primary": {
+          "35b27c4070068df3df906311957887e3": "dTMsJ]%hyX^+?w-;?c%MOtWC%3R+o}nh-oWAW@X9t7t7"
+        }
+      }
+    },
+    {
+      "Name": "Jessica Stroup",
+      "Id": "aa7fc263107d85ce69e79726f890c061",
+      "Role": "Erin Silver",
+      "Type": "Actor",
+      "PrimaryImageTag": "aa929494235585462d7896636ea86081",
+      "ImageBlurHashes": {
+        "Primary": {
+          "aa929494235585462d7896636ea86081": "dYFr9XxZlAXT~Wt7-;tRTeNG^*xubwR*xuxa%2oeoft7"
+        }
+      }
+    },
+    {
+      "Name": "Michael Steger",
+      "Id": "fb3c63fa9c20f29a05800d66b778841b",
+      "Role": "Navid Shirazi",
+      "Type": "Actor",
+      "PrimaryImageTag": "195ed2fd9303c123dcc964b64c485a4f",
+      "ImageBlurHashes": {
+        "Primary": {
+          "195ed2fd9303c123dcc964b64c485a4f": "daJHgt%L*0%h%NM{%MWATKWBVrxa?vt8-;xu%MWBV@kC"
+        }
+      }
+    },
+    {
+      "Name": "Jessica Lowndes",
+      "Id": "16a57ac1e77da29fb4460be73f944da1",
+      "Role": "Adrianna Tate-Duncan",
+      "Type": "Actor",
+      "PrimaryImageTag": "477f51cf0543fcb1584ae7ffe117b121",
+      "ImageBlurHashes": {
+        "Primary": {
+          "477f51cf0543fcb1584ae7ffe117b121": "drKKE2-pyXx]?wS4-;xu%gRkV@s:%MoejFbHx]W=ofs:"
+        }
+      }
+    },
+    {
+      "Name": "Ryan Eggold",
+      "Id": "eec3f8c529a5eb538e6767992fa46a33",
+      "Role": "Ryan Matthews",
+      "Type": "Actor",
+      "PrimaryImageTag": "963d51a4af550f0c982722d46032ff99",
+      "ImageBlurHashes": {
+        "Primary": {
+          "963d51a4af550f0c982722d46032ff99": "dqN,rX%2*0.8W?aytRbIo#fkaKjsx]j[ogt7OYa|xas:"
+        }
+      }
+    },
+    {
+      "Name": "Lori Loughlin",
+      "Id": "46434bae3cc8c00b68d40d1585ee3a4f",
+      "Role": "Debbie Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "7ab26e70ccd382251ac3989b8642ee84",
+      "ImageBlurHashes": {
+        "Primary": {
+          "7ab26e70ccd382251ac3989b8642ee84": "dQGaIP-B0|Sg1GJ6Vts:R7V@$%s.JQbbxuS2Ioofxas:"
+        }
+      }
+    },
+    {
+      "Name": "Rob Estes",
+      "Id": "f6e8719eda180512172a2b706bd59af9",
+      "Role": "Harry Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "269cf217e365432218a775fd6656694b",
+      "ImageBlurHashes": {
+        "Primary": {
+          "269cf217e365432218a775fd6656694b": "dOLWR.?b5@?aYQnhW;E19$IU-UMy~qo}?b%MO@RP%1tR"
+        }
+      }
+    },
+    {
+      "Name": "Jessica Walter",
+      "Id": "cbadb1d8c326d3f984eadf4870b1b8ce",
+      "Role": "Tabitha Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "5c271fa9c81d8aa975781adb061d5898",
+      "ImageBlurHashes": {
+        "Primary": {
+          "5c271fa9c81d8aa975781adb061d5898": "dWID?X%1TL%2~VWB-:bbo}WBslxZxuoyxaxtxuj[%1xa"
+        }
+      }
+    },
+    {
+      "Name": "Dustin Milligan",
+      "Id": "9622a730bc9e63fb51ead9548c7367ec",
+      "Role": "Ethan Ward",
+      "Type": "Actor",
+      "PrimaryImageTag": "1f500f64889601ca63e9b0a48bd0b69c",
+      "ImageBlurHashes": {
+        "Primary": {
+          "1f500f64889601ca63e9b0a48bd0b69c": "ddGR@--p0LNdMwoex^WXI=R*s9s.XTWqnhofIoWB%2t8"
+        }
+      }
+    },
+    {
+      "Name": "Matt Lanter",
+      "Id": "71cc441fa2253db168d1d3869c76b873",
+      "Role": "Liam Court",
+      "Type": "Actor",
+      "PrimaryImageTag": "04233d3b37eac0a58b778b8daf23d484",
+      "ImageBlurHashes": {
+        "Primary": {
+          "04233d3b37eac0a58b778b8daf23d484": "dEFFHZt7BD%M_2oftSR+0goK,.WVN{WV-VoKx]oft6t6"
+        }
+      }
+    },
+    {
+      "Name": "Trevor Donovan",
+      "Id": "45a399a0ab16eae1c2c0c6c9b83efd4c",
+      "Role": "Teddy Montgomery",
+      "Type": "Actor",
+      "PrimaryImageTag": "d6da3b84f5e1948dc28e37da211e3856",
+      "ImageBlurHashes": {
+        "Primary": {
+          "d6da3b84f5e1948dc28e37da211e3856": "daG@un$*0~t7-ps.t7of9ujYxCR*N_fksoofX8bIt6s:"
+        }
+      }
+    },
+    {
+      "Name": "Gillian Zinser",
+      "Id": "03c2b917f5cc763675e5bcf2bf773afb",
+      "Role": "Ivy Sullivan",
+      "Type": "Actor",
+      "PrimaryImageTag": "b919b3bc128a57383169e02e206db3fa",
+      "ImageBlurHashes": {
+        "Primary": {
+          "b919b3bc128a57383169e02e206db3fa": "dOLzHi^+.R?a~Xj]b{SiAuSO?H%M?vo#-oxuj^ofx]tR"
+        }
+      }
+    },
+    {
+      "Name": "Cassandra Church",
+      "Id": "e0e3335411ee26a71cfce15e87cdfcf6",
+      "Role": "",
+      "Type": "Actor",
+      "PrimaryImageTag": "03c1dc683ef6bf41e701fcc5ed1b37e4",
+      "ImageBlurHashes": {
+        "Primary": {
+          "03c1dc683ef6bf41e701fcc5ed1b37e4": "dqI;L=-p0LIU-;-oM{E1E2WWxuaLWBfkR*NGxus:RjWB"
+        }
+      }
+    },
+    {
+      "Name": "Scott Weinger",
+      "Id": "226d754e33d919967ba410f2fe72f8f8",
+      "Role": "Producer",
+      "Type": "Producer",
+      "PrimaryImageTag": "dd2c0e89b0dadd94c5c805b8c443d435",
+      "ImageBlurHashes": {
+        "Primary": {
+          "dd2c0e89b0dadd94c5c805b8c443d435": "dVCZbXe@7PK8.AV[T1SiEfWB,.n$JWkWoMs:E-t7s;t7"
+        }
+      }
+    },
+    {
+      "Name": "Robert M. Rolsky",
+      "Id": "48f64a677a1ee3462bad4bd3241aee9e",
+      "Role": "Producer",
+      "Type": "Producer",
+      "ImageBlurHashes": {
+        "Primary": {}
+      }
+    },
+    {
+      "Name": "Rob Thomas",
+      "Id": "5818340d8fbc853a3df6f612612ec074",
+      "Role": "",
+      "Type": "Creator",
+      "PrimaryImageTag": "6d5ecfa3107a93667593a63ac6b9c86f",
+      "ImageBlurHashes": {
+        "Primary": {
+          "6d5ecfa3107a93667593a63ac6b9c86f": "dWMZ:t~WyY-=-3xa-;t7GHM{a1M{?axv-;tRIos:%2xt"
+        }
+      }
+    },
+    {
+      "Name": "Gabe Sachs",
+      "Id": "238a8ff9bdc213c921907e47eb582ce5",
+      "Role": "",
+      "Type": "Creator",
+      "PrimaryImageTag": "418aaa6d6110d1fe33e87c21d08201de",
+      "ImageBlurHashes": {
+        "Primary": {
+          "418aaa6d6110d1fe33e87c21d08201de": "dWH-[X?I%$%N~Wt7?c%MtmkCnNoe?bxu%Mxv-=ayxaoJ"
+        }
+      }
+    },
+    {
+      "Name": "Jeff Judah",
+      "Id": "e343a4f239d5da251947da3b055b0d97",
+      "Role": "",
+      "Type": "Creator",
+      "PrimaryImageTag": "e1770c7aea2a06a0208549ffc48a543b",
+      "ImageBlurHashes": {
+        "Primary": {
+          "e1770c7aea2a06a0208549ffc48a543b": "dkMQ3J?H%$-;~VsAx]ozM|IUIUae-;xGogofjIensmof"
+        }
+      }
+    }
+  ],
+  "Studios": [
+    {
+      "Name": "The CW",
+      "Id": "c6a7b9b98037a5ce989ad1d90a2ebb46"
+    },
+    {
+      "Name": "CBS Studios",
+      "Id": "bcafc74d7c3f5d6c57a902f23b81fdde"
+    }
+  ],
+  "GenreItems": [
+    {
+      "Name": "Drama",
+      "Id": "090eac6e9de4fe1fbc194e5b96691277"
+    }
+  ],
+  "LocalTrailerCount": 0,
+  "UserData": {
+    "PlayedPercentage": 0,
+    "UnplayedItemCount": 1,
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false,
+    "Key": "82716",
+    "ItemId": "b0090a8c4dfbb2490dab2caf36536d9f"
+  },
+  "RecursiveItemCount": 1,
+  "ChildCount": 1,
+  "SpecialFeatureCount": 0,
+  "DisplayPreferencesId": "f63033ff6886ecc7083a696cbeced1b0",
+  "Status": "Ended",
+  "AirDays": [],
+  "Tags": [
+    "california",
+    "friendship",
+    "high school",
+    "love",
+    "family relationships",
+    "los angeles, california",
+    "beverly hills",
+    "teenage romance",
+    "teen drama"
+  ],
+  "PrimaryImageAspectRatio": 0.6665188470066519,
+  "ImageTags": {
+    "Primary": "50ce5c92fe72d9e7d70979f35b041a3d",
+    "Logo": "200c89c832e477571e7a1ce4df91fdb8",
+    "Thumb": "cc3f7975d486039dde8b7b927eb8ed4f"
+  },
+  "BackdropImageTags": [
+    "bc43018dc61e72a1e85f51b25ac344df"
+  ],
+  "ImageBlurHashes": {
+    "Backdrop": {
+      "bc43018dc61e72a1e85f51b25ac344df": "WaK0{Mozo|ofj[-p_4WqW=R*M{%2.8S4ofofIVxa?bWXocs.t6s:"
+    },
+    "Primary": {
+      "50ce5c92fe72d9e7d70979f35b041a3d": "d]L;?CxuWAxuPXbbkBW=ESbIWrWVNHkCoLWXE2WBj[WW"
+    },
+    "Logo": {
+      "200c89c832e477571e7a1ce4df91fdb8": "PNLEN8Rk9H?at7IUt6D%xuofxuxuWBay%Lt6_2IVD*D*WB?aRj~p"
+    },
+    "Thumb": {
+      "cc3f7975d486039dde8b7b927eb8ed4f": "WYKUl:yEPV.TxC-;-gFzoyVXaJV@PTEnM_IpRiMx?^NLS5t8xCr="
+    }
+  },
+  "Chapters": [],
+  "LocationType": "FileSystem",
+  "MediaType": "Unknown",
+  "EndDate": "2013-05-13T00:00:00.0000000Z",
+  "LockedFields": [],
+  "LockData": false,
+  "OriginalLanguage": "en"
+}

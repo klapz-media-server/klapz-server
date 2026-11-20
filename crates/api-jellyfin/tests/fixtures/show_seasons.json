@@ -1,0 +1,60 @@
+{
+  "Items": [
+    {
+      "Name": "Saison 1",
+      "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+      "Id": "d7cd792800f0b24c3b4f0bc3ccfd510a",
+      "PremiereDate": "2008-09-01T22:00:00.0000000Z",
+      "ChannelId": null,
+      "ProductionYear": 2008,
+      "IndexNumber": 1,
+      "IsFolder": true,
+      "Type": "Season",
+      "ParentLogoItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+      "ParentBackdropItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+      "ParentBackdropImageTags": [
+        "bc43018dc61e72a1e85f51b25ac344df"
+      ],
+      "UserData": {
+        "PlayedPercentage": 0,
+        "UnplayedItemCount": 1,
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "82716001",
+        "ItemId": "d7cd792800f0b24c3b4f0bc3ccfd510a"
+      },
+      "SeriesName": "90210",
+      "SeriesId": "b0090a8c4dfbb2490dab2caf36536d9f",
+      "PrimaryImageAspectRatio": 0.706,
+      "SeriesPrimaryImageTag": "50ce5c92fe72d9e7d70979f35b041a3d",
+      "ImageTags": {
+        "Primary": "71d37e5c30f3e92a41b55cfb7299bc68"
+      },
+      "BackdropImageTags": [],
+      "ParentLogoImageTag": "200c89c832e477571e7a1ce4df91fdb8",
+      "ImageBlurHashes": {
+        "Primary": {
+          "71d37e5c30f3e92a41b55cfb7299bc68": "dZJulr-;kW%hPXogWrbvThbcslsnNzofnhRkIWn$bvNH",
+          "50ce5c92fe72d9e7d70979f35b041a3d": "d]L;?CxuWAxuPXbbkBW=ESbIWrWVNHkCoLWXE2WBj[WW"
+        },
+        "Logo": {
+          "200c89c832e477571e7a1ce4df91fdb8": "PNLEN8Rk9H?at7IUt6D%xuofxuxuWBay%Lt6_2IVD*D*WB?aRj~p"
+        },
+        "Thumb": {
+          "cc3f7975d486039dde8b7b927eb8ed4f": "WYKUl:yEPV.TxC-;-gFzoyVXaJV@PTEnM_IpRiMx?^NLS5t8xCr="
+        },
+        "Backdrop": {
+          "bc43018dc61e72a1e85f51b25ac344df": "WaK0{Mozo|ofj[-p_4WqW=R*M{%2.8S4ofofIVxa?bWXocs.t6s:"
+        }
+      },
+      "ParentThumbItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+      "ParentThumbImageTag": "cc3f7975d486039dde8b7b927eb8ed4f",
+      "LocationType": "Virtual",
+      "MediaType": "Unknown"
+    }
+  ],
+  "TotalRecordCount": 1,
+  "StartIndex": 0
+}

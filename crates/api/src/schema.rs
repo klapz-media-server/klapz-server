@@ -794,7 +794,7 @@ pub(crate) async fn readable_item(
         .filter(|item| crate::access::can_read(context, item.section_id)))
 }
 
-async fn readable_version(
+pub(crate) async fn readable_version(
     context: &Context<'_>,
     id: MediaId,
 ) -> Result<Option<open_plex_core::MediaVersion>> {

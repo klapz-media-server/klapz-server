@@ -185,6 +185,8 @@ const SET_PERMISSION = `mutation($input: SetLibraryPermissionInput!) { setLibrar
 const REMOVE_PERMISSION = `mutation($userId: ID!, $libraryId: ID!) { removeLibraryPermission(userId: $userId, libraryId: $libraryId) }`;
 const CONNECT_PLEX = `mutation($userId: ID!) { connectExtension(userId: $userId, extension: PLEX) { token userExtension { externalId } } }`;
 const DISABLE_PLEX = `mutation($userId: ID!) { disableExtension(userId: $userId, extension: PLEX) }`;
+const CONNECT_JELLYFIN = `mutation($userId: ID!) { connectExtension(userId: $userId, extension: JELLYFIN) { userExtension { enabled } } }`;
+const DISABLE_JELLYFIN = `mutation($userId: ID!) { disableExtension(userId: $userId, extension: JELLYFIN) }`;
 
 const PAIR_PLEX = `mutation($input: PairExtensionInput!) { pairExtension(input: $input) { publishedAt } }`;
 const UNPAIR_PLEX = `mutation($userId: ID!) { unpairExtension(userId: $userId, extension: PLEX) }`;
@@ -314,9 +316,30 @@ function pairingRow(user, plex) {
   );
 }
 
-function plexOf(user) {
-  const edge = user.extensions.edges.find((candidate) => candidate.node.extension === "PLEX");
+function extensionOf(user, extension) {
+  const edge = user.extensions.edges.find((candidate) => candidate.node.extension === extension);
   return edge ? edge.node : null;
+}
+
+function plexOf(user) {
+  return extensionOf(user, "PLEX");
+}
+
+// Jellyfin's clients sign in with the user's password: switching it on is all it takes.
+function jellyfinSwitch(user) {
+  const jellyfin = extensionOf(user, "JELLYFIN");
+  const toggle = el("input", {
+    type: "checkbox",
+    checked: Boolean(jellyfin && jellyfin.enabled),
+    on: { change: () => act(async () => {
+      if (toggle.checked) {
+        await graphql(CONNECT_JELLYFIN, { userId: user.id });
+      } else if (confirm(`Disable Jellyfin for ${user.username}? Every Jellyfin device it signed in from is signed out.`)) {
+        await graphql(DISABLE_JELLYFIN, { userId: user.id });
+      }
+    }) },
+  });
+  return el("label", { className: "switch" }, toggle, el("span", { textContent: "Jellyfin" }));
 }
 
 function libraryRow(user, library, role) {
@@ -413,6 +436,7 @@ function userCard(user) {
         el("div", { className: "note", textContent: `${user.email ? `${user.email} · ` : ""}Added ${added}` }),
       ),
       el("label", { className: "switch" }, toggle, el("span", { textContent: "Plex" })),
+      jellyfinSwitch(user),
       standing(user),
     ),
     enabled ? el("div", { className: "plex" },

@@ -44,6 +44,15 @@ enum AccountErrorCode {
 	or deleted.
 	"""
 	BUILT_IN_ACCOUNT
+	"""
+	The password is right, but the user is not connected through this extension, or its
+	connection is off.
+	"""
+	NOT_CONNECTED
+	"""
+	The extension's clients do not sign in with a password: Plex's are handed a token.
+	"""
+	NO_PASSWORD_SIGN_IN
 }
 
 type AccountLink {
@@ -1873,6 +1882,68 @@ type ExtensionCredentials {
 }
 
 """
+A client signing a user in through an extension whose clients sign in with a password.
+"""
+input ExtensionSignInInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The protocol the client speaks. The user must be connected through it.
+	"""
+	extension: ExtensionType!
+	"""
+	The account's username, or its e-mail address.
+	"""
+	login: String!
+	"""
+	Its password.
+	"""
+	password: String!
+	"""
+	What the client calls the device, stable across its sign-ins: signing in again from it
+	replaces its token.
+	"""
+	deviceId: String!
+	"""
+	The device's name, for a person.
+	"""
+	deviceName: String!
+	"""
+	The application signing in.
+	"""
+	client: String!
+	"""
+	The application's version.
+	"""
+	clientVersion: String!
+}
+
+"""
+What `signInThroughExtension` did.
+"""
+type ExtensionSignInPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	Who signed in. Null when nobody did.
+	"""
+	user: User
+	"""
+	The token the device presents from now on, shown only here: the server keeps a digest
+	of it. Null when nobody signed in.
+	"""
+	token: String
+	"""
+	Why nobody did. Empty when someone did.
+	"""
+	userErrors: [AccountUserError!]!
+}
+
+"""
 A protocol a user can connect through.
 """
 enum ExtensionType {
@@ -1880,6 +1951,10 @@ enum ExtensionType {
 	The Plex Media Server API.
 	"""
 	PLEX
+	"""
+	The Jellyfin server API.
+	"""
+	JELLYFIN
 }
 
 type ExternalId {
@@ -3865,6 +3940,27 @@ type MediaFile implements Node {
 	"""
 	streams: [MediaStream!]!
 	"""
+	Whether a player reads this file as it is, so that `startStream` can send it untouched
+	with `directPlay`: one of the formats the player declares holds the file's container,
+	its video codec and the codec of the audio track it would play — `audioTrack`, or the
+	caller's — and the version weighs no more than `maxBitrate`. An empty list in a format
+	admits anything; names are compared without regard to case.
+	"""
+	readableAsIs(
+		"""
+		What the player reads as it is, each format on its own.
+		"""
+		formats: [PlayerFormatInput!]!,
+		"""
+		The most the player takes, in bits per second.
+		"""
+		maxBitrate: Int,
+		"""
+		The audio track it would play, as returned in `MediaStream.id`.
+		"""
+		audioTrack: ID
+	): Boolean!
+	"""
 	The audio track the caller plays this file with: the one it chose with `chooseTracks`,
 	else the file's default, else its first.
 	"""
@@ -4900,6 +4996,32 @@ type Mutation {
 	"""
 	signOut: Boolean!
 	"""
+	Checks a username or an address and its password, as `signIn` does, for a client of an
+	extension whose clients sign in with a password — Jellyfin's — and gives the client's
+	device a token of its own. The user must be connected through the extension, and its
+	connection on. Open to anyone; failed attempts count with `signIn`'s.
+	"""
+	signInThroughExtension(
+		"""
+		The extension, the credentials and the device signing in.
+		"""
+		input: ExtensionSignInInput!
+	): ExtensionSignInPayload!
+	"""
+	Signs a device out of an extension: its token opens nothing more. Only the caller's own
+	devices; whether the token was one.
+	"""
+	signOutOfExtension(
+		"""
+		The protocol the token was issued for.
+		"""
+		extension: ExtensionType!,
+		"""
+		The token the device was given.
+		"""
+		token: String!
+	): Boolean!
+	"""
 	Lets in a user who signed up, or one that was shut out. For the server's owners only.
 	"""
 	activateUser(
@@ -5652,6 +5774,24 @@ enum PlaybackStateType {
 	The player is waiting for data.
 	"""
 	BUFFERING
+}
+
+"""
+A format a player reads as it is.
+"""
+input PlayerFormatInput {
+	"""
+	Containers, as ffmpeg names them: `mkv`, `mp4`, `webm`. Empty for any.
+	"""
+	containers: [String!]! = []
+	"""
+	Video codecs it reads in them: `h264`, `hevc`. Empty for any.
+	"""
+	videoCodecs: [String!]! = []
+	"""
+	Audio codecs it reads in them: `aac`, `opus`. Empty for any.
+	"""
+	audioCodecs: [String!]! = []
 }
 
 type Playlist implements Node {
@@ -9234,6 +9374,8 @@ type UserExtension {
 	extension: ExtensionType!
 	"""
 	What the protocol calls this user's side of the server: for Plex, a machine identifier.
+	A Jellyfin connection has one too, unused while every Jellyfin user shares the
+	server's identifier.
 	"""
 	externalId: String!
 	"""

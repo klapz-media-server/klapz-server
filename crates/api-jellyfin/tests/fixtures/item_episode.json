@@ -1,0 +1,586 @@
+{
+  "Name": "The Dionysian Debacle",
+  "ServerId": "5e1f0a0e5e1f0a0e5e1f0a0e5e1f0a0e",
+  "Id": "0e4c88a9e803249425b656dfd2cdb3de",
+  "Etag": "7cf74a1ce991806a3a66e63e95158257",
+  "DateCreated": "2019-01-22T23:39:11.0000000Z",
+  "CanDelete": true,
+  "CanDownload": true,
+  "Container": "mov,mp4,m4a,3gp,3g2,mj2",
+  "SortName": "001 - 0021 - The Dionysian Debacle",
+  "PremiereDate": "2009-04-27T22:00:00.0000000Z",
+  "ExternalUrls": [
+    {
+      "Name": "IMDb",
+      "Url": "https://www.imdb.com/title/tt1372384"
+    },
+    {
+      "Name": "TMDB",
+      "Url": "https://www.themoviedb.org/tv/5917/season/1/episode/21"
+    }
+  ],
+  "MediaSources": [
+    {
+      "Protocol": "File",
+      "Id": "0e4c88a9e803249425b656dfd2cdb3de",
+      "Path": "/media/TVShows/VF/90210 BEVERLY HILLS NOUVELLE GeneRATION/90210 BEVERLY HILLS NG S01E21.VF.SD.TVHDRIP.MP4.AVC.AAC.mp4",
+      "Type": "Default",
+      "Container": "mp4",
+      "Size": 71468407,
+      "Name": "90210 BEVERLY HILLS NG S01E21.VF.SD.TVHDRIP.MP4.AVC.AAC",
+      "IsRemote": false,
+      "ETag": "9551a4097663c3815aa28b250876e78a",
+      "RunTimeTicks": 2877541340,
+      "ReadAtNativeFramerate": false,
+      "IgnoreDts": false,
+      "IgnoreIndex": false,
+      "GenPtsInput": false,
+      "SupportsTranscoding": true,
+      "SupportsDirectStream": true,
+      "SupportsDirectPlay": true,
+      "IsInfiniteStream": false,
+      "UseMostCompatibleTranscodingProfile": false,
+      "RequiresOpening": false,
+      "RequiresClosing": false,
+      "RequiresLooping": false,
+      "SupportsProbing": true,
+      "VideoType": "VideoFile",
+      "MediaStreams": [
+        {
+          "Codec": "h264",
+          "CodecTag": "avc1",
+          "Language": "und",
+          "ColorSpace": "smpte170m",
+          "ColorTransfer": "bt709",
+          "ColorPrimaries": "smpte170m",
+          "TimeBase": "1/30000",
+          "VideoRange": "SDR",
+          "VideoRangeType": "SDR",
+          "AudioSpatialFormat": "None",
+          "DisplayTitle": "404p H264 SDR",
+          "NalLengthSize": "4",
+          "IsInterlaced": false,
+          "IsAVC": true,
+          "BitRate": 1510916,
+          "BitDepth": 8,
+          "RefFrames": 1,
+          "IsDefault": true,
+          "IsForced": false,
+          "IsHearingImpaired": false,
+          "IsOriginal": false,
+          "Height": 404,
+          "Width": 720,
+          "AverageFrameRate": 29.97003,
+          "RealFrameRate": 29.97003,
+          "ReferenceFrameRate": 29.97003,
+          "Profile": "Main",
+          "Type": "Video",
+          "AspectRatio": "16:9",
+          "Index": 0,
+          "IsExternal": false,
+          "IsTextSubtitleStream": false,
+          "SupportsExternalStream": false,
+          "PixelFormat": "yuv420p",
+          "Level": 30,
+          "IsAnamorphic": false
+        },
+        {
+          "Codec": "aac",
+          "CodecTag": "mp4a",
+          "Language": "und",
+          "TimeBase": "1/48000",
+          "Title": "aac 5.1",
+          "VideoRange": "Unknown",
+          "VideoRangeType": "Unknown",
+          "AudioSpatialFormat": "None",
+          "LocalizedDefault": "Default",
+          "LocalizedExternal": "External",
+          "LocalizedLanguage": "Undetermined",
+          "LocalizedOriginal": "Original",
+          "DisplayTitle": "aac 5.1 - Default",
+          "IsInterlaced": false,
+          "ChannelLayout": "5.1",
+          "BitRate": 448006,
+          "Channels": 6,
+          "SampleRate": 48000,
+          "IsDefault": true,
+          "IsForced": false,
+          "IsHearingImpaired": false,
+          "IsOriginal": false,
+          "Profile": "LC",
+          "Type": "Audio",
+          "Index": 1,
+          "IsExternal": false,
+          "IsTextSubtitleStream": false,
+          "SupportsExternalStream": false
+        },
+        {
+          "Codec": "bmp",
+          "TimeBase": "1/90000",
+          "VideoRange": "Unknown",
+          "VideoRangeType": "Unknown",
+          "AudioSpatialFormat": "None",
+          "IsInterlaced": false,
+          "RefFrames": 1,
+          "IsDefault": false,
+          "IsForced": false,
+          "IsHearingImpaired": false,
+          "IsOriginal": false,
+          "Height": 360,
+          "Width": 640,
+          "RealFrameRate": 90000,
+          "ReferenceFrameRate": 90000,
+          "Type": "EmbeddedImage",
+          "AspectRatio": "16:9",
+          "Index": 2,
+          "IsExternal": false,
+          "IsTextSubtitleStream": false,
+          "SupportsExternalStream": false,
+          "PixelFormat": "bgra",
+          "Level": -99,
+          "IsAnamorphic": false
+        }
+      ],
+      "MediaAttachments": [
+        {
+          "Codec": "bmp",
+          "CodecTag": "[0][0][0][0]",
+          "Index": 2
+        }
+      ],
+      "Formats": [],
+      "Bitrate": 1986929,
+      "RequiredHttpHeaders": {},
+      "TranscodingSubProtocol": "http",
+      "DefaultAudioStreamIndex": 1,
+      "HasSegments": false
+    }
+  ],
+  "Path": "/media/TVShows/VF/90210 BEVERLY HILLS NOUVELLE GeneRATION/90210 BEVERLY HILLS NG S01E21.VF.SD.TVHDRIP.MP4.AVC.AAC.mp4",
+  "EnableMediaSourceDisplay": true,
+  "OfficialRating": "TV-14",
+  "ChannelId": null,
+  "Overview": "Naomi's older sister, Jen, unexpectedly returns to Beverly Hills. Meanwhile, Naomi persuades Annie to go on a double date, and Adrianna and Navid reveal their decision to his parents.",
+  "Taglines": [],
+  "Genres": [
+    "Comedy",
+    "Drama",
+    "Romance"
+  ],
+  "CommunityRating": 8,
+  "RunTimeTicks": 2877541340,
+  "PlayAccess": "Full",
+  "ProductionYear": 2009,
+  "IndexNumber": 21,
+  "ParentIndexNumber": 1,
+  "RemoteTrailers": [],
+  "ProviderIds": {
+    "Tmdb": "367503",
+    "Tvdb": "537951",
+    "Imdb": "tt1372384",
+    "TvRage": "778124"
+  },
+  "IsFolder": false,
+  "ParentId": "d7cd792800f0b24c3b4f0bc3ccfd510a",
+  "Type": "Episode",
+  "People": [
+    {
+      "Name": "Shenae Grimes-Beech",
+      "Id": "b792737be3e45fe63df5d184137c04b3",
+      "Role": "Annie Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "878f0253cdc43aaf3808b15d9370a9c6",
+      "ImageBlurHashes": {
+        "Primary": {
+          "878f0253cdc43aaf3808b15d9370a9c6": "dTHnEL-p0zNGx^xa?HW;K6NG%2xaozWC%1a|X9ofoeWV"
+        }
+      }
+    },
+    {
+      "Name": "Tristan Mack Wilds",
+      "Id": "b88ef3d04f568a0420271b23eaba688c",
+      "Role": "Dixon Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "79cff41903d81a9ecba5e74c1123d736",
+      "ImageBlurHashes": {
+        "Primary": {
+          "79cff41903d81a9ecba5e74c1123d736": "dSFXem=|0$S6D*WCxaj]AbNbw_oLM|oMxut7X9kDt6t6"
+        }
+      }
+    },
+    {
+      "Name": "AnnaLynne McCord",
+      "Id": "1d34cbd4666c694389fa39e66a18f4ba",
+      "Role": "Naomi Clark",
+      "Type": "Actor",
+      "PrimaryImageTag": "35b27c4070068df3df906311957887e3",
+      "ImageBlurHashes": {
+        "Primary": {
+          "35b27c4070068df3df906311957887e3": "dTMsJ]%hyX^+?w-;?c%MOtWC%3R+o}nh-oWAW@X9t7t7"
+        }
+      }
+    },
+    {
+      "Name": "Jessica Stroup",
+      "Id": "aa7fc263107d85ce69e79726f890c061",
+      "Role": "Erin Silver",
+      "Type": "Actor",
+      "PrimaryImageTag": "aa929494235585462d7896636ea86081",
+      "ImageBlurHashes": {
+        "Primary": {
+          "aa929494235585462d7896636ea86081": "dYFr9XxZlAXT~Wt7-;tRTeNG^*xubwR*xuxa%2oeoft7"
+        }
+      }
+    },
+    {
+      "Name": "Michael Steger",
+      "Id": "fb3c63fa9c20f29a05800d66b778841b",
+      "Role": "Navid Shirazi",
+      "Type": "Actor",
+      "PrimaryImageTag": "195ed2fd9303c123dcc964b64c485a4f",
+      "ImageBlurHashes": {
+        "Primary": {
+          "195ed2fd9303c123dcc964b64c485a4f": "daJHgt%L*0%h%NM{%MWATKWBVrxa?vt8-;xu%MWBV@kC"
+        }
+      }
+    },
+    {
+      "Name": "Jessica Lowndes",
+      "Id": "16a57ac1e77da29fb4460be73f944da1",
+      "Role": "Adrianna Tate-Duncan",
+      "Type": "Actor",
+      "PrimaryImageTag": "477f51cf0543fcb1584ae7ffe117b121",
+      "ImageBlurHashes": {
+        "Primary": {
+          "477f51cf0543fcb1584ae7ffe117b121": "drKKE2-pyXx]?wS4-;xu%gRkV@s:%MoejFbHx]W=ofs:"
+        }
+      }
+    },
+    {
+      "Name": "Ryan Eggold",
+      "Id": "eec3f8c529a5eb538e6767992fa46a33",
+      "Role": "Ryan Matthews",
+      "Type": "Actor",
+      "PrimaryImageTag": "963d51a4af550f0c982722d46032ff99",
+      "ImageBlurHashes": {
+        "Primary": {
+          "963d51a4af550f0c982722d46032ff99": "dqN,rX%2*0.8W?aytRbIo#fkaKjsx]j[ogt7OYa|xas:"
+        }
+      }
+    },
+    {
+      "Name": "Lori Loughlin",
+      "Id": "46434bae3cc8c00b68d40d1585ee3a4f",
+      "Role": "Debbie Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "7ab26e70ccd382251ac3989b8642ee84",
+      "ImageBlurHashes": {
+        "Primary": {
+          "7ab26e70ccd382251ac3989b8642ee84": "dQGaIP-B0|Sg1GJ6Vts:R7V@$%s.JQbbxuS2Ioofxas:"
+        }
+      }
+    },
+    {
+      "Name": "Rob Estes",
+      "Id": "f6e8719eda180512172a2b706bd59af9",
+      "Role": "Harry Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "269cf217e365432218a775fd6656694b",
+      "ImageBlurHashes": {
+        "Primary": {
+          "269cf217e365432218a775fd6656694b": "dOLWR.?b5@?aYQnhW;E19$IU-UMy~qo}?b%MO@RP%1tR"
+        }
+      }
+    },
+    {
+      "Name": "Jessica Walter",
+      "Id": "cbadb1d8c326d3f984eadf4870b1b8ce",
+      "Role": "Tabitha Wilson",
+      "Type": "Actor",
+      "PrimaryImageTag": "5c271fa9c81d8aa975781adb061d5898",
+      "ImageBlurHashes": {
+        "Primary": {
+          "5c271fa9c81d8aa975781adb061d5898": "dWID?X%1TL%2~VWB-:bbo}WBslxZxuoyxaxtxuj[%1xa"
+        }
+      }
+    },
+    {
+      "Name": "Dustin Milligan",
+      "Id": "9622a730bc9e63fb51ead9548c7367ec",
+      "Role": "Ethan Ward",
+      "Type": "Actor",
+      "PrimaryImageTag": "1f500f64889601ca63e9b0a48bd0b69c",
+      "ImageBlurHashes": {
+        "Primary": {
+          "1f500f64889601ca63e9b0a48bd0b69c": "ddGR@--p0LNdMwoex^WXI=R*s9s.XTWqnhofIoWB%2t8"
+        }
+      }
+    },
+    {
+      "Name": "Matt Lanter",
+      "Id": "71cc441fa2253db168d1d3869c76b873",
+      "Role": "Liam Court",
+      "Type": "GuestStar",
+      "PrimaryImageTag": "04233d3b37eac0a58b778b8daf23d484",
+      "ImageBlurHashes": {
+        "Primary": {
+          "04233d3b37eac0a58b778b8daf23d484": "dEFFHZt7BD%M_2oftSR+0goK,.WVN{WV-VoKx]oft6t6"
+        }
+      }
+    },
+    {
+      "Name": "Sara Foster",
+      "Id": "e62fded6cecdbc76e72be9af377b0c2d",
+      "Role": "Jennifer \"Jen\" Clark",
+      "Type": "GuestStar",
+      "PrimaryImageTag": "ac77a5778dcfd5a19b22ed682b857142",
+      "ImageBlurHashes": {
+        "Primary": {
+          "ac77a5778dcfd5a19b22ed682b857142": "dNE-~$^j57WnjcNHIpM|0zNH%1s:Rkoet6t6NHjbxabH"
+        }
+      }
+    },
+    {
+      "Name": "Fabiana Udenio",
+      "Id": "1c41c2bdd8fd71e49d739ffcccdb8a1c",
+      "Role": "Atoosa Shirazi",
+      "Type": "GuestStar",
+      "PrimaryImageTag": "b19bccdd2c93d62e6954b0ef80220d37",
+      "ImageBlurHashes": {
+        "Primary": {
+          "b19bccdd2c93d62e6954b0ef80220d37": "dCBMc2Ip0ejsMxxtIpIU9]NG-oxaS$t6xaofD*R*WUWA"
+        }
+      }
+    },
+    {
+      "Name": "Maeve Quinlan",
+      "Id": "b99884bf52495157ba4faea78e4f5770",
+      "Role": "Constance Tate-Duncan",
+      "Type": "GuestStar",
+      "PrimaryImageTag": "f0b06f175ee596579f396dcdbb60e938",
+      "ImageBlurHashes": {
+        "Primary": {
+          "f0b06f175ee596579f396dcdbb60e938": "dcI|5c%2M{n%~Bt6EMWV9vays:bHNGa}%1s:oeayR,j["
+        }
+      }
+    },
+    {
+      "Name": "Shaun Duke",
+      "Id": "616548d5b8c3768a6f8f6e80a4599f2a",
+      "Role": "Omar Shirazi",
+      "Type": "GuestStar",
+      "PrimaryImageTag": "73e1fcbef6a7cf5430dd7841398ddec4",
+      "ImageBlurHashes": {
+        "Primary": {
+          "73e1fcbef6a7cf5430dd7841398ddec4": "dTFN}1s.0ykD=^ofI@NG9uj@-Uj[9vWB$%ofNHfRofj@"
+        }
+      }
+    },
+    {
+      "Name": "Trent Garrett",
+      "Id": "a49454afa4c044c5ecbdc4238ce0466f",
+      "Role": "bru dog",
+      "Type": "GuestStar",
+      "PrimaryImageTag": "f96a2e1403767b84d9d33b63dd90a5eb",
+      "ImageBlurHashes": {
+        "Primary": {
+          "f96a2e1403767b84d9d33b63dd90a5eb": "dMC~VVxC0#EL={V@X9NGElRj=|s:OER*%LxaIqR*-oxa"
+        }
+      }
+    },
+    {
+      "Name": "Jamie Babbit",
+      "Id": "432c113b04f3e1d2ac4acc9f34326aff",
+      "Role": "Director",
+      "Type": "Director",
+      "PrimaryImageTag": "6904578b29140d30e94005543faf6dd5",
+      "ImageBlurHashes": {
+        "Primary": {
+          "6904578b29140d30e94005543faf6dd5": "dNI4|ltRY6$%4ptR%Ma#_N%MwHoe9ZV@niIUx]aeRPIV"
+        }
+      }
+    },
+    {
+      "Name": "Jennie Snyder Urman",
+      "Id": "24a398ec3ad48a88feec1e45948002aa",
+      "Role": "Writer",
+      "Type": "Writer",
+      "PrimaryImageTag": "97bc82f379c863ae3c2fb93fcdd04087",
+      "ImageBlurHashes": {
+        "Primary": {
+          "97bc82f379c863ae3c2fb93fcdd04087": "dUI|RIS%0#xuW;Ip%1o0EgoLxuNHbwWBWY%1X9xZspoL"
+        }
+      }
+    }
+  ],
+  "Studios": [],
+  "GenreItems": [
+    {
+      "Name": "Comedy",
+      "Id": "08d31605d366d63a7a924f944b4417f1"
+    },
+    {
+      "Name": "Drama",
+      "Id": "090eac6e9de4fe1fbc194e5b96691277"
+    },
+    {
+      "Name": "Romance",
+      "Id": "1ffc72e19987e5fa4047c6a6870646cf"
+    }
+  ],
+  "ParentLogoItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+  "ParentBackdropItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+  "ParentBackdropImageTags": [
+    "bc43018dc61e72a1e85f51b25ac344df"
+  ],
+  "LocalTrailerCount": 0,
+  "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false,
+    "Key": "82716001021",
+    "ItemId": "0e4c88a9e803249425b656dfd2cdb3de"
+  },
+  "SeriesName": "90210",
+  "SeriesId": "b0090a8c4dfbb2490dab2caf36536d9f",
+  "SeasonId": "d7cd792800f0b24c3b4f0bc3ccfd510a",
+  "SpecialFeatureCount": 0,
+  "DisplayPreferencesId": "26dd4a82b00c839c498471cdba80a99c",
+  "Tags": [],
+  "PrimaryImageAspectRatio": 1.7777777777777777,
+  "SeriesPrimaryImageTag": "50ce5c92fe72d9e7d70979f35b041a3d",
+  "SeasonName": "Saison 1",
+  "MediaStreams": [
+    {
+      "Codec": "h264",
+      "CodecTag": "avc1",
+      "Language": "und",
+      "ColorSpace": "smpte170m",
+      "ColorTransfer": "bt709",
+      "ColorPrimaries": "smpte170m",
+      "TimeBase": "1/30000",
+      "VideoRange": "SDR",
+      "VideoRangeType": "SDR",
+      "AudioSpatialFormat": "None",
+      "DisplayTitle": "404p H264 SDR",
+      "NalLengthSize": "4",
+      "IsInterlaced": false,
+      "IsAVC": true,
+      "BitRate": 1510916,
+      "BitDepth": 8,
+      "RefFrames": 1,
+      "IsDefault": true,
+      "IsForced": false,
+      "IsHearingImpaired": false,
+      "IsOriginal": false,
+      "Height": 404,
+      "Width": 720,
+      "AverageFrameRate": 29.97003,
+      "RealFrameRate": 29.97003,
+      "ReferenceFrameRate": 29.97003,
+      "Profile": "Main",
+      "Type": "Video",
+      "AspectRatio": "16:9",
+      "Index": 0,
+      "IsExternal": false,
+      "IsTextSubtitleStream": false,
+      "SupportsExternalStream": false,
+      "PixelFormat": "yuv420p",
+      "Level": 30,
+      "IsAnamorphic": false
+    },
+    {
+      "Codec": "aac",
+      "CodecTag": "mp4a",
+      "Language": "und",
+      "TimeBase": "1/48000",
+      "Title": "aac 5.1",
+      "VideoRange": "Unknown",
+      "VideoRangeType": "Unknown",
+      "AudioSpatialFormat": "None",
+      "LocalizedDefault": "Default",
+      "LocalizedExternal": "External",
+      "LocalizedLanguage": "Undetermined",
+      "LocalizedOriginal": "Original",
+      "DisplayTitle": "aac 5.1 - Default",
+      "IsInterlaced": false,
+      "ChannelLayout": "5.1",
+      "BitRate": 448006,
+      "Channels": 6,
+      "SampleRate": 48000,
+      "IsDefault": true,
+      "IsForced": false,
+      "IsHearingImpaired": false,
+      "IsOriginal": false,
+      "Profile": "LC",
+      "Type": "Audio",
+      "Index": 1,
+      "IsExternal": false,
+      "IsTextSubtitleStream": false,
+      "SupportsExternalStream": false
+    },
+    {
+      "Codec": "bmp",
+      "TimeBase": "1/90000",
+      "VideoRange": "Unknown",
+      "VideoRangeType": "Unknown",
+      "AudioSpatialFormat": "None",
+      "IsInterlaced": false,
+      "RefFrames": 1,
+      "IsDefault": false,
+      "IsForced": false,
+      "IsHearingImpaired": false,
+      "IsOriginal": false,
+      "Height": 360,
+      "Width": 640,
+      "RealFrameRate": 90000,
+      "ReferenceFrameRate": 90000,
+      "Type": "EmbeddedImage",
+      "AspectRatio": "16:9",
+      "Index": 2,
+      "IsExternal": false,
+      "IsTextSubtitleStream": false,
+      "SupportsExternalStream": false,
+      "PixelFormat": "bgra",
+      "Level": -99,
+      "IsAnamorphic": false
+    }
+  ],
+  "VideoType": "VideoFile",
+  "ImageTags": {
+    "Primary": "0e2f9c6b1e46317d96fc5a13f8db978e"
+  },
+  "BackdropImageTags": [],
+  "ParentLogoImageTag": "200c89c832e477571e7a1ce4df91fdb8",
+  "ImageBlurHashes": {
+    "Primary": {
+      "0e2f9c6b1e46317d96fc5a13f8db978e": "WSIhNu-..T^+$*%g~q-oNLx]ocoMbrIURQIoWBaLIAIVIUInNGRj",
+      "50ce5c92fe72d9e7d70979f35b041a3d": "d]L;?CxuWAxuPXbbkBW=ESbIWrWVNHkCoLWXE2WBj[WW",
+      "71d37e5c30f3e92a41b55cfb7299bc68": "dZJulr-;kW%hPXogWrbvThbcslsnNzofnhRkIWn$bvNH"
+    },
+    "Logo": {
+      "200c89c832e477571e7a1ce4df91fdb8": "PNLEN8Rk9H?at7IUt6D%xuofxuxuWBay%Lt6_2IVD*D*WB?aRj~p"
+    },
+    "Thumb": {
+      "cc3f7975d486039dde8b7b927eb8ed4f": "WYKUl:yEPV.TxC-;-gFzoyVXaJV@PTEnM_IpRiMx?^NLS5t8xCr="
+    },
+    "Backdrop": {
+      "bc43018dc61e72a1e85f51b25ac344df": "WaK0{Mozo|ofj[-p_4WqW=R*M{%2.8S4ofofIVxa?bWXocs.t6s:"
+    }
+  },
+  "SeriesStudio": "The CW",
+  "ParentThumbItemId": "b0090a8c4dfbb2490dab2caf36536d9f",
+  "ParentThumbImageTag": "cc3f7975d486039dde8b7b927eb8ed4f",
+  "ParentPrimaryImageItemId": "d7cd792800f0b24c3b4f0bc3ccfd510a",
+  "ParentPrimaryImageTag": "71d37e5c30f3e92a41b55cfb7299bc68",
+  "Chapters": [],
+  "Trickplay": {},
+  "LocationType": "FileSystem",
+  "MediaType": "Video",
+  "LockedFields": [],
+  "LockData": false,
+  "Width": 720,
+  "Height": 404,
+  "OriginalLanguage": "en"
+}

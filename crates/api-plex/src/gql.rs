@@ -11,24 +11,12 @@
 use async_graphql::{Request, Variables};
 use axum::middleware::Next;
 use axum::response::Response;
+use open_plex_api::in_process::{self, RequestOrigin};
 use open_plex_api::ApiSchema;
 use open_plex_core::{Principal, PublishedServer};
 use serde::de::DeserializeOwned;
 
 use crate::error::ApiError;
-
-/// Who a request is from, and for a request from nobody, which server its address shows.
-#[derive(Debug, Clone, Default)]
-struct RequestOrigin {
-    caller: Option<Principal>,
-    published: Option<PublishedServer>,
-}
-
-tokio::task_local! {
-    /// Who the request being handled is from. Task-local rather than passed along so that no
-    /// query can be written that forgets it: the schema shows nothing to a request without one.
-    static ORIGIN: RequestOrigin;
-}
 
 /// Makes the authenticated caller, if any, the one every query of this request runs as.
 pub async fn run_as_caller(request: axum::extract::Request, next: Next) -> Response {
@@ -36,35 +24,21 @@ pub async fn run_as_caller(request: axum::extract::Request, next: Next) -> Respo
         caller: request.extensions().get::<Principal>().cloned(),
         published: request.extensions().get::<PublishedServer>().cloned(),
     };
-    ORIGIN.scope(origin, next.run(request)).await
-}
-
-fn caller() -> Option<Principal> {
-    ORIGIN
-        .try_with(|origin| origin.caller.clone())
-        .ok()
-        .flatten()
+    in_process::scope(origin, next.run(request)).await
 }
 
 /// The machine identifier this request knows the server by: each user has its own, and a
 /// request from nobody sees the one published at the address it used.
 pub fn machine_identifier(server: &str) -> String {
-    ORIGIN
-        .try_with(|origin| {
-            origin
-                .caller
-                .as_ref()
-                .and_then(|caller| caller.server_identifier.clone())
-                .or_else(|| origin.published.clone().map(|PublishedServer(id)| id))
-        })
-        .ok()
-        .flatten()
+    in_process::caller()
+        .and_then(|caller| caller.server_identifier)
+        .or_else(|| in_process::published().map(|PublishedServer(id)| id))
         .unwrap_or_else(|| server.to_owned())
 }
 
 /// The name a session is kept under by the transcoder, which is shared by every user.
 pub fn session_key(client_key: &str) -> String {
-    caller().map_or_else(
+    in_process::caller().map_or_else(
         || client_key.to_owned(),
         |caller| caller.session_key(client_key),
     )
@@ -72,7 +46,7 @@ pub fn session_key(client_key: &str) -> String {
 
 /// The name a client knows a stored session by.
 pub fn client_key(stored: &str) -> String {
-    caller().map_or_else(
+    in_process::caller().map_or_else(
         || stored.to_owned(),
         |caller| caller.client_key(stored).to_owned(),
     )
@@ -94,28 +68,10 @@ pub async fn execute<T: DeserializeOwned>(
     query: &str,
     variables: Variables,
 ) -> Result<T, ApiError> {
-    let mut request = Request::new(query).variables(variables);
-    if let Some(caller) = caller() {
-        request = request.data(caller);
-    }
-    let response = schema.execute(request).await;
-
-    if !response.errors.is_empty() {
-        let joined = response
-            .errors
-            .iter()
-            .map(|error| error.message.as_str())
-            .collect::<Vec<_>>()
-            .join("; ");
-        return Err(ApiError::Internal(Box::new(GraphQlFailure(joined))));
-    }
-
-    async_graphql::from_value(response.data).map_err(|error| ApiError::Internal(Box::new(error)))
+    in_process::execute(schema, Request::new(query).variables(variables))
+        .await
+        .map_err(|error| ApiError::Internal(Box::new(error)))
 }
-
-#[derive(Debug, thiserror::Error)]
-#[error("the official API rejected an adapter query: {0}")]
-pub struct GraphQlFailure(String);
 
 /// The official API's `DateTime`, read back into the Unix seconds Plex publishes; for
 /// `#[serde(deserialize_with)]`.
