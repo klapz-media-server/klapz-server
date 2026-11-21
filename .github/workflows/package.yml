@@ -1,29 +1,83 @@
 # Builds the server and the scanner for each platform. Every push and pull request gets the
-# binaries as workflow artifacts; a `v*` tag also publishes them as a GitHub release. ffmpeg is
-# not part of it: the desktop package takes it from its own release.
+# binaries as workflow artifacts; each push to the default branch also publishes them as a
+# GitHub release. ffmpeg is not part of it: the desktop package takes it from its own release.
+#
+# Versions are git tags `vX.Y.Z`. Each push to the default branch releases the last one with
+# its patch number raised (the first release takes the server crate's version). Run the
+# workflow by hand to raise the minor or the major instead.
 
 name: Package
 
 on:
   push:
     branches: [main, master]
-    tags: ["v*"]
+    tags-ignore: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      bump:
+        description: Part of the version to raise (on the default branch)
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
   contents: read
 
+# One run at a time per branch: two pushes in a row must not compute the same version.
+# Elsewhere than the default branch, a newer push cancels the older run.
 concurrency:
   group: package-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the tags, to find the last version
+
+      - name: Next version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump || 'patch' }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          last=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
+          if [ -z "$last" ]; then
+            next=$(sed -n 's/^version = "\(.*\)"$//p' crates/server/Cargo.toml | head -n1)
+          else
+            IFS=. read -r major minor patch <<< "${last#v}"
+            case "$BUMP" in
+              major) next="$((major + 1)).0.0" ;;
+              minor) next="$major.$((minor + 1)).0" ;;
+              *)     next="$major.$minor.$((patch + 1))" ;;
+            esac
+          fi
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] && [ "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH" ]; then
+            release=true
+            version="$next"
+          else
+            release=false
+            # `g` keeps the identifier valid semver when the hash starts with a 0.
+            version="$next-dev.g$(git rev-parse --short HEAD)"
+          fi
+          echo "Last release: ${last:-none} — this build: $version (release: $release)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+
   package:
     name: ${{ matrix.platform }}
+    needs: version
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -55,14 +109,28 @@ jobs:
           persist-credentials: false
 
       - name: Name the package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          if [[ "$GITHUB_REF_TYPE" == tag ]]; then version="$GITHUB_REF_NAME"; else version="${GITHUB_SHA::7}"; fi
           exe=""
           if [[ "$RUNNER_OS" == Windows ]]; then exe=".exe"; fi
           {
-            echo "SUFFIX=$version-${{ matrix.platform }}"
+            echo "SUFFIX=v$VERSION-${{ matrix.platform }}"
             echo "EXE=$exe"
           } >> "$GITHUB_ENV"
+
+      # The server reports CARGO_PKG_VERSION to its clients: stamp it in both crates and in the
+      # lock file, which --locked would otherwise find out of date.
+      - name: Stamp the version
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          for crate in server scanner; do
+            perl -0pi -e 's/^version = "[^"]*"/version = "$ENV{VERSION}"/m' "crates/$crate/Cargo.toml"
+            perl -0pi -e 's/(name = "klapz-'"$crate"'"
+version = )"[^"]*"/$1"$ENV{VERSION}"/' Cargo.lock
+          done
+          git diff --stat
 
       - name: Install Rust
         run: |
@@ -109,8 +177,8 @@ jobs:
           compression-level: 6
 
   release:
-    if: github.ref_type == 'tag'
-    needs: package
+    if: needs.version.outputs.release == 'true'
+    needs: [version, package]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
