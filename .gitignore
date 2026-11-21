@@ -2,6 +2,8 @@
 target/
 klapz.db
 klapz.db-*
+# Local settings, the admin password among them.
+.env
 
 # Reference material too large or too personal to version. Anchored to the root: an
 # unanchored `db/` also matches `crates/db/`, and silently kept the storage crate out of git.

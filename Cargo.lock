@@ -1992,6 +1992,7 @@ dependencies = [
  "async-graphql-axum",
  "async-trait",
  "axum",
+ "dotenvy",
  "form_urlencoded",
  "futures-util",
  "http-body-util",

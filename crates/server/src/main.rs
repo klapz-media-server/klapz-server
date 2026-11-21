@@ -55,17 +55,96 @@ const DEFAULT_BIND: &str = "127.0.0.1:32500";
 /// repeat is ours, and is what retries an announcement that failed.
 const PUBLISH_INTERVAL: Duration = Duration::from_secs(3600);
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// The database URL as it may be logged: an `SQLite` file by its absolute path, since a relative
+/// one depends on the directory the server was started from, and any other URL without the
+/// password it may carry.
+fn database_shown(url: &str) -> String {
+    if let Some(file) = url.strip_prefix("sqlite:") {
+        let file = file.trim_start_matches("//");
+        let file = file.split_once('?').map_or(file, |(path, _)| path);
+        return std::path::absolute(file).map_or_else(
+            |_| format!("sqlite:{file}"),
+            |path| format!("sqlite:{}", path.display()),
+        );
+    }
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_owned();
+    };
+    let authority_end = rest.find('/').unwrap_or(rest.len());
+    match rest[..authority_end].rfind('@') {
+        Some(at) => {
+            let user = rest[..at].split(':').next().unwrap_or_default();
+            format!("{scheme}://{user}:***{}", &rest[at..])
+        }
+        None => url.to_owned(),
+    }
+}
+
+/// The `.env` file read at startup.
+struct EnvFile {
+    path: PathBuf,
+    /// Its variables the environment already set, whose values in the file were ignored.
+    shadowed: Vec<String>,
+}
+
+/// Reads the `.env` beside the executable or, under `cargo run`, the nearest one above the
+/// crate, for what the environment does not already set.
+fn load_env_file() -> Result<Option<EnvFile>, dotenvy::Error> {
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(".env")));
+    // Cargo sets it for the program it runs, never for an installed binary.
+    let above = || {
+        std::env::var_os("CARGO_MANIFEST_DIR").and_then(|dir| {
+            PathBuf::from(dir)
+                .ancestors()
+                .map(|dir| dir.join(".env"))
+                .find(|file| file.is_file())
+        })
+    };
+    let Some(file) = beside.filter(|file| file.is_file()).or_else(above) else {
+        return Ok(None);
+    };
+    let mut shadowed = Vec::new();
+    for variable in dotenvy::from_path_iter(&file)? {
+        let (name, _) = variable?;
+        if std::env::var_os(&name).is_some() {
+            shadowed.push(name);
+        }
+    }
+    dotenvy::from_path(&file)?;
+    Ok(Some(EnvFile {
+        path: file,
+        shadowed,
+    }))
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Before the runtime starts: changing the environment is only sound with one thread.
+    let env_file = load_env_file()?;
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "klapz_server=info,klapz_api_plex=info,klapz_db=info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                "klapz_server=info,klapz_api=info,klapz_api_plex=info,klapz_db=info".into()
+            }),
         )
         .init();
+    if let Some(file) = env_file {
+        tracing::info!(file = %file.path.display(), "read settings from a .env file");
+        for variable in file.shadowed {
+            tracing::warn!(%variable, "set in the environment, which wins over the .env file");
+        }
+    }
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(start())
+}
 
+async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let database_url =
         std::env::var("KLAPZ_DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_owned());
+    tracing::info!(database = %database_shown(&database_url), "opening the database");
     let connection = klapz_db::connect(&database_url).await?;
 
     // `import`, `library` and `scan` do their job and exit; anything else starts the server.
@@ -617,4 +696,36 @@ fn identity() -> ServerIdentity {
     let machine_identifier = std::env::var("KLAPZ_MACHINE_ID")
         .unwrap_or_else(|_| "0000000000000000000000000000000000000000".to_owned());
     ServerIdentity::new(machine_identifier, env!("CARGO_PKG_VERSION"))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::database_shown;
+
+    #[test]
+    fn shows_a_relative_sqlite_file_by_its_absolute_path() {
+        let expected = std::env::current_dir().unwrap().join("klapz.db");
+        assert_eq!(
+            database_shown("sqlite://klapz.db?mode=rwc"),
+            format!("sqlite:{}", expected.display())
+        );
+    }
+
+    #[test]
+    fn hides_the_password_of_a_server_database() {
+        assert_eq!(
+            database_shown("postgres://klapz:secret@db.local:5432/klapz"),
+            "postgres://klapz:***@db.local:5432/klapz"
+        );
+    }
+
+    #[test]
+    fn leaves_a_url_without_credentials_as_it_is() {
+        assert_eq!(
+            database_shown("postgres://db.local/klapz"),
+            "postgres://db.local/klapz"
+        );
+    }
 }

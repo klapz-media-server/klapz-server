@@ -284,7 +284,7 @@ impl<'a> Selection<'a> {
         })
     }
 
-    fn plan(&self, params: &PlaybackParams) -> Result<StreamPlan, ApiError> {
+    fn plan(&self, params: &PlaybackParams, protocol: Protocol) -> Result<StreamPlan, ApiError> {
         let source = StreamSource {
             video_codec: self.video.codec.as_deref().unwrap_or_default(),
             audio_codec: self.audio.codec.as_deref().unwrap_or_default(),
@@ -303,7 +303,7 @@ impl<'a> Selection<'a> {
             },
             burn_subtitle: self.delivery == Some(Delivery::Burn),
         };
-        Ok(plan_stream(&source, limits)?)
+        Ok(plan_stream(&source, protocol, limits)?)
     }
 }
 
@@ -347,7 +347,7 @@ async fn decision(
     let action = if direct_play {
         None
     } else {
-        Some((selection.plan(&params)?, protocol))
+        Some((selection.plan(&params, protocol)?, protocol))
     };
 
     tracing::info!(

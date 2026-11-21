@@ -3,8 +3,9 @@
 //!
 //! The rules are the reference's, measured with `/decision` for Plex Web. Over HLS or DASH,
 //! H.264 video is copied unless the client caps the bitrate below the file's, and AAC or MP3 audio
-//! is copied unless the client refuses that. Other audio is converted to AAC. Other video needs
-//! a conversion this server does not do yet.
+//! is copied unless the client refuses that. Other audio is converted to AAC, and other video is
+//! re-encoded to H.264 — except VP9 and AV1 over DASH, copied as H.264 is: the reference never
+//! sees them there, its DASH being Plex Web's.
 //!
 //! An adaptive stream has several rungs, best first: [`plan_ladder`].
 
@@ -313,23 +314,26 @@ fn fits(limit_kbps: u32, source: &StreamSource<'_>) -> bool {
 /// As [`plan_ladder`].
 pub fn plan_stream(
     source: &StreamSource<'_>,
+    protocol: Protocol,
     limits: Limits,
 ) -> Result<StreamPlan, TranscodeError> {
-    Ok(*plan_ladder(source, limits)?.top())
+    Ok(*plan_ladder(source, protocol, limits)?.top())
 }
 
 /// # Errors
 ///
-/// [`TranscodeError::VideoNeedsTranscoding`] when the video cannot be copied and this server
-/// cannot convert it.
-pub fn plan_ladder(source: &StreamSource<'_>, limits: Limits) -> Result<Ladder, TranscodeError> {
-    if source.video_codec != "h264" {
-        return Err(TranscodeError::VideoNeedsTranscoding);
-    }
+/// [`TranscodeError::VideoNeedsTranscoding`] when the video has to be encoded and its picture
+/// size is unknown.
+pub fn plan_ladder(
+    source: &StreamSource<'_>,
+    protocol: Protocol,
+    limits: Limits,
+) -> Result<Ladder, TranscodeError> {
+    let copyable = copyable(source, protocol);
     let videos = match limits.adaptation {
-        Adaptation::Fixed => vec![fixed_video(source, limits)?],
+        Adaptation::Fixed => vec![fixed_video(source, limits, copyable)?],
         Adaptation::Server => server_rungs(source, limits.max_video_kbps.unwrap_or(u32::MAX))?,
-        Adaptation::Client => client_rungs(source, limits)?,
+        Adaptation::Client => client_rungs(source, limits, copyable)?,
     };
     let top = videos[0];
     let audio = if matches!(source.audio_codec, "aac" | "mp3")
@@ -360,13 +364,27 @@ pub fn plan_ladder(source: &StreamSource<'_>, limits: Limits) -> Result<Ladder, 
     })
 }
 
-fn fixed_video(source: &StreamSource<'_>, limits: Limits) -> Result<VideoAction, TranscodeError> {
+/// Whether the protocol carries the video as it is: HLS's MPEG-TS segments only H.264 here,
+/// DASH's fragmented MP4 VP9 and AV1 too. A player that cannot decode those asks for encodes
+/// beside the copy, and drops the copy.
+fn copyable(source: &StreamSource<'_>, protocol: Protocol) -> bool {
+    match protocol {
+        Protocol::Hls => source.video_codec == "h264",
+        Protocol::Dash => matches!(source.video_codec, "h264" | "vp9" | "av1"),
+    }
+}
+
+fn fixed_video(
+    source: &StreamSource<'_>,
+    limits: Limits,
+    copyable: bool,
+) -> Result<VideoAction, TranscodeError> {
     Ok(match limits.max_video_kbps {
         Some(limit) if !fits(limit, source) => {
             VideoAction::Encode(encode_within(limit, source, None)?)
         }
         // Measured: 1920 wide, 20 Mbps, CRF 16 for Soul burned at no limit — the top rung.
-        limit if limits.burn_subtitle => {
+        limit if limits.burn_subtitle || !copyable => {
             VideoAction::Encode(encode_within(limit.unwrap_or(u32::MAX), source, None)?)
         }
         _ => VideoAction::Copy,
@@ -402,9 +420,11 @@ fn server_rungs(source: &StreamSource<'_>, limit: u32) -> Result<Vec<VideoAction
 fn client_rungs(
     source: &StreamSource<'_>,
     limits: Limits,
+    copyable: bool,
 ) -> Result<Vec<VideoAction>, TranscodeError> {
     let limit = limits.max_video_kbps.unwrap_or(u32::MAX);
-    let copies = !limits.burn_subtitle
+    let copies = copyable
+        && !limits.burn_subtitle
         && limits
             .max_video_kbps
             .is_none_or(|limit| fits(limit, source));
@@ -452,13 +472,55 @@ fn lowest_kbps(rungs: &[VideoAction]) -> u32 {
         .unwrap_or(u32::MAX)
 }
 
-/// The transcoder's name for the decoder of a codec, where it differs from the codec's. Plex's
-/// build decodes E-AC-3 through Media Foundation on Windows.
-pub(crate) fn audio_decoder(codec: &str) -> &str {
-    match codec {
+/// The transcoder's decoder for a video codec, as the reference names it on the command line.
+/// None for a codec it has no decoder of that name for, which the transcoder then picks from
+/// the file itself. Its native AV1 decoder only drives hardware.
+pub(crate) fn video_decoder(codec: &str) -> Option<&'static str> {
+    Some(match codec {
+        "av1" => "libdav1d",
+        "msmpeg4v3" => "msmpeg4",
+        "flv1" => "flv",
+        "h264" => "h264",
+        "hevc" => "hevc",
+        "mpeg1video" => "mpeg1video",
+        "mpeg2video" => "mpeg2video",
+        "mpeg4" => "mpeg4",
+        "msmpeg4v1" => "msmpeg4v1",
+        "msmpeg4v2" => "msmpeg4v2",
+        "vc1" => "vc1",
+        "wmv3" => "wmv3",
+        "vp8" => "vp8",
+        "vp9" => "vp9",
+        "rv30" => "rv30",
+        "theora" => "theora",
+        "prores" => "prores",
+        "mjpeg" => "mjpeg",
+        "png" => "png",
+        _ => return None,
+    })
+}
+
+/// The transcoder's decoder for an audio codec, as [`video_decoder`]. Plex's build decodes
+/// E-AC-3 through Media Foundation on Windows. `pcm` names no decoder: the sample format that
+/// says which is only in the file.
+pub(crate) fn audio_decoder(codec: &str) -> Option<&'static str> {
+    Some(match codec {
         "eac3" => "eac3_mf",
-        other => other,
-    }
+        "aac" => "aac",
+        "ac3" => "ac3",
+        "dca" => "dca",
+        "truehd" => "truehd",
+        "mp2" => "mp2",
+        "mp3" => "mp3",
+        "flac" => "flac",
+        "vorbis" => "vorbis",
+        "opus" => "opus",
+        "cook" => "cook",
+        "pcm_bluray" => "pcm_bluray",
+        "adpcm_ms" => "adpcm_ms",
+        "adpcm_ima_wav" => "adpcm_ima_wav",
+        _ => return None,
+    })
 }
 
 /// The ISO 639-2 code the transcoder labels a track with, from the code we store.
@@ -515,7 +577,7 @@ mod tests {
             burn_subtitle: true,
             ..Limits::default()
         };
-        let encode = encode_of(plan_stream(&soul(), burn).unwrap());
+        let encode = encode_of(plan_stream(&soul(), Protocol::Hls, burn).unwrap());
         assert_eq!(
             (encode.width, encode.video_kbps, encode.crf),
             (1920, 20_000, 16)
@@ -526,13 +588,17 @@ mod tests {
             ..burn
         };
         // A limit the file fits would copy; burning encodes anyway.
-        assert_eq!(encode_of(plan_stream(&soul(), limited).unwrap()).width, 720);
+        assert_eq!(
+            encode_of(plan_stream(&soul(), Protocol::Hls, limited).unwrap()).width,
+            720
+        );
     }
 
     #[test]
     fn copies_what_hls_can_carry() {
         for codec in ["aac", "mp3"] {
-            let plan = plan_stream(&source("h264", codec), Limits::default()).unwrap();
+            let plan =
+                plan_stream(&source("h264", codec), Protocol::Hls, Limits::default()).unwrap();
             assert_eq!(plan.audio, AudioAction::Copy);
             assert_eq!(plan.video, VideoAction::Copy);
         }
@@ -542,7 +608,7 @@ mod tests {
     fn converts_the_audio_hls_cannot_carry() {
         for codec in ["eac3", "ac3", "dca", "truehd"] {
             assert_eq!(
-                plan_stream(&source("h264", codec), Limits::default())
+                plan_stream(&source("h264", codec), Protocol::Hls, Limits::default())
                     .unwrap()
                     .audio,
                 AudioAction::ConvertToAac,
@@ -558,24 +624,74 @@ mod tests {
             ..Limits::default()
         };
         assert_eq!(
-            plan_stream(&source("h264", "aac"), limits).unwrap().audio,
+            plan_stream(&source("h264", "aac"), Protocol::Hls, limits)
+                .unwrap()
+                .audio,
             AudioAction::ConvertToAac
         );
     }
 
     #[test]
-    fn refuses_video_it_would_have_to_convert() {
+    fn encodes_video_it_cannot_copy_at_the_top_rung_or_within_the_limit() {
         for codec in ["hevc", "av1", "mpeg4", "mpeg2video"] {
-            assert!(matches!(
-                plan_stream(&source(codec, "aac"), Limits::default()),
-                Err(TranscodeError::VideoNeedsTranscoding)
-            ));
+            let plan =
+                plan_stream(&source(codec, "aac"), Protocol::Hls, Limits::default()).unwrap();
+            let encode = encode_of(plan);
+            assert_eq!((encode.width, encode.video_kbps), (1920, 20_000), "{codec}");
+            assert_eq!(plan.audio, AudioAction::ConvertToAac, "{codec}");
+            // A limit the file fits would copy H.264.
+            let limited = encode_of(
+                plan_stream(&source(codec, "aac"), Protocol::Hls, limited(12_000)).unwrap(),
+            );
+            assert_eq!(limited.video_kbps, 11_205, "{codec}");
+        }
+    }
+
+    #[test]
+    fn copies_vp9_and_av1_over_dash_alone() {
+        for codec in ["vp9", "av1"] {
+            let plan = plan_stream(&source(codec, "aac"), Protocol::Dash, Limits::default());
+            assert_eq!(plan.unwrap().video, VideoAction::Copy, "{codec}");
+            let plan = plan_stream(&source(codec, "aac"), Protocol::Hls, Limits::default());
+            assert!(
+                matches!(plan.unwrap().video, VideoAction::Encode(_)),
+                "{codec}"
+            );
+        }
+        let hevc = plan_stream(&source("hevc", "aac"), Protocol::Dash, Limits::default());
+        assert!(matches!(hevc.unwrap().video, VideoAction::Encode(_)));
+    }
+
+    #[test]
+    fn a_player_chooses_between_a_vp9_copy_and_encodes_cut_where_it_is() {
+        let vp9 = StreamSource {
+            video_codec: "vp9",
+            ..soul()
+        };
+        let ladder = plan_ladder(&vp9, Protocol::Dash, chosen(Limits::default())).unwrap();
+        assert_eq!(sizes(&ladder)[0], None);
+        assert!(ladder.rungs[1..]
+            .iter()
+            .all(|rung| encode_of(*rung).key_frames == KeyFrames::AsSource));
+    }
+
+    #[test]
+    fn a_player_chooses_between_encodes_of_video_it_cannot_copy() {
+        let hevc = StreamSource {
+            video_codec: "hevc",
+            ..soul()
+        };
+        let ladder = plan_ladder(&hevc, Protocol::Hls, chosen(Limits::default())).unwrap();
+        assert!(!ladder.copies());
+        assert_eq!(sizes(&ladder)[0], Some((1920, 1080, 20_000)));
+        for rung in &ladder.rungs {
+            assert_eq!(encode_of(*rung).key_frames, KeyFrames::Every(5));
         }
     }
 
     #[test]
     fn copies_when_the_limit_covers_the_file() {
-        let plan = plan_stream(&source("h264", "eac3"), limited(12_000)).unwrap();
+        let plan = plan_stream(&source("h264", "eac3"), Protocol::Hls, limited(12_000)).unwrap();
         assert_eq!(plan.video, VideoAction::Copy);
         assert_eq!(plan.audio_kbps(), AUDIO_BITRATE_KBPS);
     }
@@ -584,7 +700,7 @@ mod tests {
     /// 388 for the height: the ladder holds typical values.
     #[test]
     fn encodes_down_to_the_rung_within_the_limit() {
-        let plan = plan_stream(&source("h264", "eac3"), limited(2000)).unwrap();
+        let plan = plan_stream(&source("h264", "eac3"), Protocol::Hls, limited(2000)).unwrap();
         let encode = encode_of(plan);
         assert_eq!((encode.width, encode.height), (720, 388));
         assert_eq!(encode.video_kbps, 1297);
@@ -595,20 +711,22 @@ mod tests {
 
     #[test]
     fn a_limit_between_rungs_takes_the_lower() {
-        let encode = encode_of(plan_stream(&source("h264", "aac"), limited(5000)).unwrap());
+        let encode =
+            encode_of(plan_stream(&source("h264", "aac"), Protocol::Hls, limited(5000)).unwrap());
         assert_eq!(encode.width, 1280);
         assert_eq!(encode.video_kbps, 3419);
     }
 
     #[test]
     fn a_limit_below_the_ladder_takes_its_lowest_rung() {
-        let encode = encode_of(plan_stream(&source("h264", "aac"), limited(1)).unwrap());
+        let encode =
+            encode_of(plan_stream(&source("h264", "aac"), Protocol::Hls, limited(1)).unwrap());
         assert_eq!(encode.width, 160);
     }
 
     #[test]
     fn converts_copyable_audio_along_with_the_video() {
-        let plan = plan_stream(&source("h264", "aac"), limited(720)).unwrap();
+        let plan = plan_stream(&source("h264", "aac"), Protocol::Hls, limited(720)).unwrap();
         assert_eq!(plan.audio, AudioAction::ConvertToAac);
         assert_eq!(plan.audio_kbps(), 125);
     }
@@ -622,14 +740,14 @@ mod tests {
             ..source("h264", "aac")
         };
         // A limit under the file's bitrate, on the rung above its width.
-        let encode = encode_of(plan_stream(&small, limited(1000)).unwrap());
+        let encode = encode_of(plan_stream(&small, Protocol::Hls, limited(1000)).unwrap());
         assert_eq!((encode.width, encode.height), (480, 260));
 
         let wide_limit = StreamSource {
             bits_per_second: Some(3_000_000),
             ..small
         };
-        let encode = encode_of(plan_stream(&wide_limit, limited(2000)).unwrap());
+        let encode = encode_of(plan_stream(&wide_limit, Protocol::Hls, limited(2000)).unwrap());
         assert_eq!((encode.width, encode.height), (560, 304));
     }
 
@@ -640,7 +758,9 @@ mod tests {
             ..source("h264", "aac")
         };
         assert!(matches!(
-            plan_stream(&unknown, limited(100_000)).unwrap().video,
+            plan_stream(&unknown, Protocol::Hls, limited(100_000))
+                .unwrap()
+                .video,
             VideoAction::Encode(_)
         ));
     }
@@ -701,7 +821,7 @@ mod tests {
         ];
         for (file, expected) in [(soul(), &wide[..]), (bull(), &narrow[..])] {
             for &(limit, width, height, video, audio, crf) in expected {
-                let plan = plan_stream(&file, adaptive(limit)).unwrap();
+                let plan = plan_stream(&file, Protocol::Hls, adaptive(limit)).unwrap();
                 let encode = encode_of(plan);
                 assert_eq!(
                     (
@@ -720,7 +840,7 @@ mod tests {
 
     #[test]
     fn automatic_quality_encodes_what_it_could_have_copied() {
-        let plan = plan_stream(&bull(), adaptive(Some(20_000))).unwrap();
+        let plan = plan_stream(&bull(), Protocol::Hls, adaptive(Some(20_000))).unwrap();
         assert!(matches!(plan.video, VideoAction::Encode(_)));
         assert_eq!(plan.audio, AudioAction::ConvertToAac);
     }
@@ -729,7 +849,8 @@ mod tests {
     fn automatic_quality_cuts_every_size_in_three_seconds() {
         for limit in [None, Some(4000), Some(720)] {
             assert_eq!(
-                encode_of(plan_stream(&soul(), adaptive(limit)).unwrap()).segment_seconds(),
+                encode_of(plan_stream(&soul(), Protocol::Hls, adaptive(limit)).unwrap())
+                    .segment_seconds(),
                 3
             );
         }
@@ -742,15 +863,16 @@ mod tests {
             ..source("h264", "aac")
         };
         assert!(matches!(
-            plan_stream(&unknown, limited(720)),
+            plan_stream(&unknown, Protocol::Hls, limited(720)),
             Err(TranscodeError::VideoNeedsTranscoding)
         ));
     }
 
     #[test]
     fn cuts_larger_pictures_finer() {
-        let encode =
-            |limit| encode_of(plan_stream(&source("h264", "aac"), limited(limit)).unwrap());
+        let encode = |limit| {
+            encode_of(plan_stream(&source("h264", "aac"), Protocol::Hls, limited(limit)).unwrap())
+        };
         assert_eq!(encode(2000).segment_seconds(), 8);
         assert_eq!(encode(4000).segment_seconds(), 5);
         assert_eq!(encode(8000).segment_seconds(), 1);
@@ -780,7 +902,7 @@ mod tests {
     #[test]
     fn a_player_chooses_between_the_copy_and_encodes_well_below_it() {
         // Soul averages 7.7 Mbps: an encode at 7.4 would be no lighter than the copy.
-        let ladder = plan_ladder(&soul(), chosen(Limits::default())).unwrap();
+        let ladder = plan_ladder(&soul(), Protocol::Hls, chosen(Limits::default())).unwrap();
         assert_eq!(
             sizes(&ladder),
             [
@@ -803,7 +925,7 @@ mod tests {
         assert_eq!(ladder.segment_seconds(Protocol::Dash), 5);
 
         // Bull's AAC is copied on every rung, since the copy keeps it.
-        let ladder = plan_ladder(&bull(), chosen(Limits::default())).unwrap();
+        let ladder = plan_ladder(&bull(), Protocol::Hls, chosen(Limits::default())).unwrap();
         assert_eq!(
             sizes(&ladder),
             [
@@ -825,7 +947,7 @@ mod tests {
             burn_subtitle: true,
             ..Limits::default()
         });
-        let ladder = plan_ladder(&soul(), burn).unwrap();
+        let ladder = plan_ladder(&soul(), Protocol::Hls, burn).unwrap();
         assert_eq!(ladder.rungs.len(), 6);
         assert_eq!(sizes(&ladder)[0], Some((1920, 1080, 20_000)));
         assert!(!ladder.copies());
@@ -833,7 +955,7 @@ mod tests {
             assert_eq!(encode_of(*rung).key_frames, KeyFrames::Every(5));
         }
         // A limit the file does not fit leaves no copy, and caps every rung.
-        let capped = plan_ladder(&soul(), chosen(limited(2000))).unwrap();
+        let capped = plan_ladder(&soul(), Protocol::Hls, chosen(limited(2000))).unwrap();
         assert_eq!(
             sizes(&capped),
             [
@@ -846,7 +968,7 @@ mod tests {
 
     #[test]
     fn the_server_lowers_the_bitrate_at_one_picture_size() {
-        let ladder = plan_ladder(&soul(), adaptive(None)).unwrap();
+        let ladder = plan_ladder(&soul(), Protocol::Hls, adaptive(None)).unwrap();
         let kbps: Vec<u32> = sizes(&ladder)
             .into_iter()
             .map(|size| {
@@ -864,7 +986,7 @@ mod tests {
             assert_eq!(rung.audio_kbps(), 256);
         }
         // Under a limit, it starts on the limit's rung and keeps its size.
-        let capped = plan_ladder(&bull(), adaptive(Some(4000))).unwrap();
+        let capped = plan_ladder(&bull(), Protocol::Hls, adaptive(Some(4000))).unwrap();
         assert_eq!(
             sizes(&capped),
             [

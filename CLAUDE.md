@@ -657,6 +657,11 @@ cargo run -p klapz-server -- import db/com.plexapp.plugins.library.db
 KLAPZ_ADMIN_PASSWORD='a long passphrase' cargo run -p klapz-server
 ```
 
+Each variable can also come from a `.env` file (gitignored): the one beside the executable,
+else, under `cargo run`, the nearest one above the server crate — the repository's. A variable set
+in the environment wins over the file, which wins over the default; the file read is logged at
+startup.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `KLAPZ_DATABASE_URL` | `sqlite://klapz.db?mode=rwc` | Any SeaORM backend; migrations run on connect. |

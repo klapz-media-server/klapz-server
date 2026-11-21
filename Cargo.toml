@@ -45,6 +45,8 @@ thiserror = "2"
 unicode-normalization = "0.1"
 # Already in the tree through axum and reqwest; declared to stream a response body.
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+# Settings from a `.env` file, which never override a variable already set.
+dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

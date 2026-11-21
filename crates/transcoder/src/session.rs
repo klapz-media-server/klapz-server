@@ -26,8 +26,8 @@ use tokio::task::JoinHandle;
 
 use crate::adapt::{self, Delivery, ServerAdaptation};
 use crate::plan::{
-    audio_decoder, language_tag, Adaptation, AudioAction, KeyFrames, Ladder, StreamPlan, Track,
-    VideoAction, VideoEncode,
+    audio_decoder, language_tag, video_decoder, Adaptation, AudioAction, KeyFrames, Ladder,
+    StreamPlan, Track, VideoAction, VideoEncode,
 };
 use crate::{TranscodeError, Transcoder};
 
@@ -818,12 +818,14 @@ fn input_arguments(request: &StreamRequest, run: &RunPlan<'_>) -> Vec<String> {
     let plan = run.plan;
     let encodes = plan.video != VideoAction::Copy;
     let client = request.client_adapted();
-    let mut args = strings(&[&format!("-codec:{}", video.index), "h264"]);
+    let mut args = Vec::new();
+    if let Some(decoder) = video_decoder(&video.codec) {
+        args.extend(strings(&[&format!("-codec:{}", video.index), decoder]));
+    }
     if plan.audio == AudioAction::ConvertToAac {
-        args.extend(strings(&[
-            &format!("-codec:{}", audio.index),
-            audio_decoder(&audio.codec),
-        ]));
+        if let Some(decoder) = audio_decoder(&audio.codec) {
+            args.extend(strings(&[&format!("-codec:{}", audio.index), decoder]));
+        }
     }
     // The reference always states it for copied DASH, otherwise only when there is one.
     let start = match protocol {
@@ -2472,6 +2474,35 @@ mod tests {
         assert!(joined.starts_with("-codec:5 h264"));
         assert!(joined.contains("-map 0:5 "));
         assert!(joined.contains("-map 0:0 "));
+    }
+
+    #[test]
+    fn decodes_the_video_with_its_own_codec() {
+        for (codec, decoder) in [
+            ("hevc", "hevc"),
+            ("mpeg2video", "mpeg2video"),
+            ("av1", "libdav1d"),
+        ] {
+            let mut asked = encoded(1920, 1080, 20_000, 256, 16);
+            asked.video = track(0, codec, "en");
+            let joined = arguments(&asked, 1, None).join(" ");
+            assert!(
+                joined.starts_with(&format!("-codec:0 {decoder} ")),
+                "{joined}"
+            );
+            assert!(joined.contains("libx264"), "{joined}");
+        }
+    }
+
+    #[test]
+    fn leaves_the_transcoder_to_pick_a_decoder_it_has_no_name_for() {
+        let mut asked = encoded(1920, 1080, 20_000, 256, 16);
+        asked.video = track(0, "encv", "en");
+        asked.audio = track(1, "pcm", "fr");
+        let joined = arguments(&asked, 1, None).join(" ");
+        assert!(!joined.contains("-codec:0 encv"), "{joined}");
+        assert!(!joined.contains("-codec:1 pcm"), "{joined}");
+        assert!(joined.contains("-codec:1 aac"), "{joined}");
     }
 
     #[test]

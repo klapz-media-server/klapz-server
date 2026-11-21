@@ -441,6 +441,31 @@ async fn prepare(
     }))
 }
 
+/// A file whose video this server would have to convert and cannot: logged so that an owner
+/// can find every such file in the logs and re-encode it.
+struct Unconvertible {
+    item: RatingKey,
+    file: PartId,
+    path: String,
+    codec: String,
+    width: Option<i32>,
+    height: Option<i32>,
+}
+
+impl Unconvertible {
+    fn log(&self) {
+        tracing::warn!(
+            item = self.item.get(),
+            file = self.file.get(),
+            path = %self.path,
+            codec = %self.codec,
+            width = self.width,
+            height = self.height,
+            "refused a stream: the video would need a conversion this server does not do"
+        );
+    }
+}
+
 pub(crate) async fn start_stream(
     context: &Context<'_>,
     input: StartStreamInput,
@@ -456,6 +481,15 @@ pub(crate) async fn start_stream(
     let Prepared { order, item, file } = match prepare(context, &input).await? {
         Ok(prepared) => prepared,
         Err(error) => return refuse(error),
+    };
+    // Kept for the log of a refusal, once the order has gone to the engine.
+    let source = Unconvertible {
+        item,
+        file,
+        path: order.source.path.clone(),
+        codec: order.source.video.codec.clone(),
+        width: order.source.width,
+        height: order.source.height,
     };
     let key = order.key.clone();
     let delivery = order.delivery;
@@ -488,7 +522,10 @@ pub(crate) async fn start_stream(
         Err(StartError::Stream(error)) => {
             let (field, code) = match error {
                 StreamError::MissingFile => ("file", StreamErrorCode::FileMissing),
-                StreamError::VideoNotConvertible => ("file", StreamErrorCode::VideoNotConvertible),
+                StreamError::VideoNotConvertible => {
+                    source.log();
+                    ("file", StreamErrorCode::VideoNotConvertible)
+                }
                 StreamError::SubtitleNotDeliverable => {
                     ("subtitles", StreamErrorCode::SubtitleNotDeliverable)
                 }

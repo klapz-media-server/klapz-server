@@ -295,6 +295,7 @@ impl Streams {
                 bits_per_second: measured.bitrate,
                 frame_rate: measured.frame_rate,
             },
+            protocol,
             Limits {
                 max_video_kbps: order.limits.max_video_bitrate.map(|bits| bits / 1000),
                 convert_audio: order.limits.convert_audio,
