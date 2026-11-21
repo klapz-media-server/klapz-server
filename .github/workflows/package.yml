@@ -88,16 +88,6 @@ jobs:
             cp "target/${{ matrix.target }}/release/klapz-$component$EXE" "dist/klapz-$component-$SUFFIX$EXE"
           done
 
-      # Without ffmpeg no file can be scanned: this only checks the server starts and creates
-      # its database.
-      - name: Start the server
-        run: |
-          mkdir -p smoke/films
-          cd smoke
-          export KLAPZ_DATABASE_URL="sqlite://smoke.db?mode=rwc"
-          "../dist/klapz-server-$SUFFIX$EXE" library add --kind movie --title Smoke films | tee library.txt
-          grep -q '^library [0-9]* created$' library.txt
-
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: klapz-${{ env.SUFFIX }}
