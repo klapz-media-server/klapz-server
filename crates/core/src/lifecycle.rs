@@ -311,6 +311,7 @@ mod tests {
             Ok(StartedStream {
                 url: String::new(),
                 subtitles_url: None,
+                subtitle_format: None,
                 video: StreamDecision::Copy,
                 audio: StreamDecision::Copy,
                 output: PlaybackOutput::default(),

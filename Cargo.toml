@@ -72,3 +72,11 @@ todo = "warn"
 must_use_candidate = "allow"
 # Crate names are prefixed `klapz_`, so types inevitably echo their module.
 module_name_repetitions = "allow"
+
+# A debug build of the workspace passed 30 GB, the disk's limit here: line tables keep
+# backtraces readable in our crates, and the dependencies carry none.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

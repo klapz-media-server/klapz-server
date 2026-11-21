@@ -13,7 +13,8 @@
 //!
 //! A stream's renditions are numbered from 0, the best: one, unless the player chooses its
 //! quality. `/streams/{id}/{rendition}/…` holds a rendition's HLS playlist and segments, or its
-//! DASH video; `/streams/{id}/audio/…` the DASH audio every rendition shares.
+//! DASH video; `/streams/{id}/audio/…` the DASH audio every rendition shares;
+//! `/streams/{id}/subtitles.{vtt,ass,srt}` the text subtitle, whole.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -31,6 +32,7 @@ use futures_util::StreamExt as _;
 use klapz_core::lifecycle::{Lifecycle, SessionLocks};
 use klapz_core::playback::{PlaybackOutput, PlaybackRepository, StreamDecision};
 use klapz_core::sidecar::{SidecarError, SidecarSource};
+use klapz_core::stream::SubtitleFormat as PlayerSubtitleFormat;
 use klapz_core::stream::{
     Delivery, FallbackRefusal, StartedStream, StreamEngine, StreamError, StreamOrder,
     StreamProtocol, StreamQuality, StreamTrack, SubtitleOutput,
@@ -41,9 +43,8 @@ use klapz_transcoder::plan::{
     plan_ladder, Adaptation, AudioAction, CopyCodecs, Ladder, Limits, StreamPlan, StreamSource,
     Track, VideoAction,
 };
-use klapz_transcoder::session::{
-    DashTrack, Output, Protocol, StreamRequest, SubtitleDelivery, SubtitleReader,
-};
+use klapz_transcoder::session::{DashTrack, Output, Protocol, StreamRequest, SubtitleDelivery};
+use klapz_transcoder::subtitle::SubtitleFormat;
 use klapz_transcoder::{TranscodeError, Transcoder};
 use serde::Deserialize;
 use subtle::ConstantTimeEq;
@@ -96,6 +97,35 @@ struct Conversion {
     audio_bandwidth: i64,
     duration_ms: i64,
     frame_rate: Option<f64>,
+    subtitle: Option<TextSubtitle>,
+}
+
+/// A text subtitle beside a conversion.
+#[derive(Debug, Clone)]
+struct TextSubtitle {
+    format: PlayerSubtitleFormat,
+    /// As stored, `fr`: what a DASH manifest's `lang` takes.
+    language: Option<String>,
+}
+
+impl TextSubtitle {
+    fn of(output: &SubtitleOutput) -> Option<Self> {
+        match output {
+            SubtitleOutput::Text { track, format } => Some(Self {
+                format: *format,
+                language: track.language.clone(),
+            }),
+            SubtitleOutput::Burn { .. } => None,
+        }
+    }
+
+    fn file_name(&self) -> String {
+        format!("subtitles.{}", subtitle_format(self.format).extension())
+    }
+
+    const fn mime_type(&self) -> &'static str {
+        subtitle_format(self.format).mime_type()
+    }
 }
 
 impl Conversion {
@@ -167,7 +197,21 @@ fn subtitle_delivery(subtitle: &SubtitleOutput) -> SubtitleDelivery {
             track: track(burned),
             scale: *scale,
         },
-        SubtitleOutput::Text { track: text } => SubtitleDelivery::Text { track: track(text) },
+        SubtitleOutput::Text {
+            track: text,
+            format,
+        } => SubtitleDelivery::Text {
+            track: track(text),
+            format: subtitle_format(*format),
+        },
+    }
+}
+
+const fn subtitle_format(format: PlayerSubtitleFormat) -> SubtitleFormat {
+    match format {
+        PlayerSubtitleFormat::Ass => SubtitleFormat::Ass,
+        PlayerSubtitleFormat::WebVtt => SubtitleFormat::WebVtt,
+        PlayerSubtitleFormat::Srt => SubtitleFormat::Srt,
     }
 }
 
@@ -294,10 +338,7 @@ impl Streams {
         protocol: StreamProtocol,
     ) -> Result<StartedStream, StreamError> {
         let protocol = protocol_of(protocol);
-        let text_subtitles = matches!(order.subtitle, Some(SubtitleOutput::Text { .. }));
-        if text_subtitles && protocol != Protocol::Dash {
-            return Err(StreamError::SubtitleNotDeliverable);
-        }
+        let text_subtitle = order.subtitle.as_ref().and_then(TextSubtitle::of);
         let measured = &order.source;
         let ladder = plan_ladder(
             &StreamSource {
@@ -365,6 +406,7 @@ impl Streams {
             audio_bandwidth,
             duration_ms,
             frame_rate: measured.frame_rate,
+            subtitle: text_subtitle.clone(),
         };
         let (id, token) = self.admit(order.key, Content::Converted(Arc::new(conversion)));
         let manifest = match protocol {
@@ -373,8 +415,10 @@ impl Streams {
         };
         Ok(StartedStream {
             url: format!("/streams/{id}/{manifest}?token={token}"),
-            subtitles_url: text_subtitles
-                .then(|| format!("/streams/{id}/subtitles.ass?token={token}")),
+            subtitles_url: text_subtitle
+                .as_ref()
+                .map(|subtitle| format!("/streams/{id}/{}?token={token}", subtitle.file_name())),
+            subtitle_format: text_subtitle.map(|subtitle| subtitle.format),
             video: match top.video {
                 VideoAction::Copy => StreamDecision::Copy,
                 VideoAction::Encode(_) => StreamDecision::Transcode,
@@ -413,6 +457,7 @@ impl StreamEngine for Streams {
                 Ok(StartedStream {
                     url: format!("/streams/{id}/file?token={token}"),
                     subtitles_url: None,
+                    subtitle_format: None,
                     video: StreamDecision::Copy,
                     audio: StreamDecision::Copy,
                     output,
@@ -568,8 +613,8 @@ pub fn router(routes: Sessions) -> Router {
     Router::new()
         .route("/streams/{id}/manifest.mpd", get(dash))
         .route("/streams/{id}/master.m3u8", get(master_playlist))
-        .route("/streams/{id}/subtitles.ass", get(subtitles))
         .route("/streams/{id}/file", get(original))
+        .route("/streams/{id}/{name}", get(subtitles))
         .route("/streams/{id}/{rendition}/{part}", get(rendition_part))
         .with_state(routes)
 }
@@ -756,6 +801,7 @@ async fn dash(
         audio_bandwidth: conversion.audio_bandwidth,
         audio_copied: conversion.ladder.top().audio == AudioAction::Copy,
         written: &written,
+        subtitle: conversion.subtitle.as_ref(),
     });
     Ok(([(header::CONTENT_TYPE, "application/dash+xml")], body).into_response())
 }
@@ -902,22 +948,40 @@ async fn served(mut files: Vec<PathBuf>, content_type: &'static str, request: Re
     }
 }
 
-/// `GET /streams/{id}/subtitles.ass`: the stream's text subtitles as one ASS script, written
-/// out as the process converts them, on a response that stays open until it ends.
+/// `GET /streams/{id}/subtitles.{vtt,ass,srt}`: the stream's text subtitle, whole, under the
+/// extension of the format it was started with. Answered at once, the body following when the
+/// extraction begun with the stream is done: over a network share it can take longer than the
+/// server lets a response wait for its head. A failed extraction ends the body empty.
 async fn subtitles(
     State(routes): State<Sessions>,
-    Path(id): Path<String>,
+    Path((id, name)): Path<(String, String)>,
     Query(secret): Query<Secret>,
 ) -> Result<Response, Refusal> {
-    let (key, _) = routes.conversion(&id, &secret).await?;
-    let reader = routes.streams.transcoder.subtitles(&key).await?;
-    let pieces = futures_util::stream::unfold(reader, |mut reader: SubtitleReader| async move {
-        let piece = reader.next_piece().await?;
-        Some((Ok::<_, std::convert::Infallible>(piece), reader))
+    let (key, conversion) = routes.conversion(&id, &secret).await?;
+    let Some(subtitle) = conversion
+        .subtitle
+        .as_ref()
+        .filter(|subtitle| subtitle.file_name() == name)
+    else {
+        return Err(Refusal::NotFound);
+    };
+    let transcoder = Arc::clone(&routes.streams.transcoder);
+    let body = futures_util::stream::once(async move {
+        let bytes = match transcoder.subtitles(&key).await {
+            Ok((bytes, _)) => Bytes::copy_from_slice(&bytes),
+            Err(error) => {
+                tracing::warn!(%error, "a stream's subtitle could not be served");
+                Bytes::new()
+            }
+        };
+        Ok::<_, std::convert::Infallible>(bytes)
     });
     Ok((
-        [(header::CONTENT_TYPE, "text/x-ssa; charset=utf-8")],
-        Body::from_stream(pieces),
+        [(
+            header::CONTENT_TYPE,
+            format!("{}; charset=utf-8", subtitle.mime_type()),
+        )],
+        Body::from_stream(body),
     )
         .into_response())
 }
@@ -932,6 +996,7 @@ struct DashManifest<'a> {
     audio_copied: bool,
     /// The manifest the process wrote, which alone states a copy's codecs.
     written: &'a str,
+    subtitle: Option<&'a TextSubtitle>,
 }
 
 /// The value of `name` on the `Representation` element with this id.
@@ -1018,11 +1083,43 @@ fn dash_manifest(manifest: &DashManifest<'_>) -> String {
          value=\"{channels}\"/>\n\
          \t\t\t</Representation>\n\
          \t\t</AdaptationSet>\n\
+         {subtitles}\
          \t</Period>\n\
          </MPD>\n",
         longest = manifest.segment_seconds * 2,
         audio = manifest.audio_bandwidth,
         audio_delivery = delivery(manifest.audio_copied),
+        subtitles = manifest.subtitle.map_or_else(String::new, |subtitle| {
+            subtitle_adaptation(subtitle, manifest.address)
+        }),
+    )
+}
+
+/// The text subtitle's adaptation set: the whole file as the one segment of its representation,
+/// which players read as a text track when it has no segment template.
+fn subtitle_adaptation(subtitle: &TextSubtitle, address: &Address<'_>) -> String {
+    let Address { base, query } = address;
+    // Written into the manifest as it is stored only when it is a tag of letters, digits and
+    // hyphens.
+    let lang = subtitle
+        .language
+        .as_deref()
+        .filter(|tag| {
+            !tag.is_empty()
+                && tag
+                    .chars()
+                    .all(|letter| letter.is_ascii_alphanumeric() || letter == '-')
+        })
+        .map_or_else(String::new, |tag| format!(" lang=\"{tag}\""));
+    format!(
+        "\t\t<AdaptationSet contentType=\"text\" mimeType=\"{mime}\"{lang}>\n\
+         \t\t\t<Role schemeIdUri=\"urn:mpeg:dash:role:2011\" value=\"subtitle\"/>\n\
+         \t\t\t<Representation id=\"subtitles\" bandwidth=\"0\">\n\
+         \t\t\t\t<BaseURL>{base}/{file}{query}</BaseURL>\n\
+         \t\t\t</Representation>\n\
+         \t\t</AdaptationSet>\n",
+        mime = subtitle.mime_type(),
+        file = subtitle.file_name(),
     )
 }
 
@@ -1140,6 +1237,7 @@ mod tests {
             audio_bandwidth: 256_000,
             audio_copied: false,
             written: WRITTEN,
+            subtitle: None,
         });
         assert!(text.contains("type=\"static\""));
         assert!(text.contains("mediaPresentationDuration=\"PT2H0M0S\""));
@@ -1173,6 +1271,7 @@ mod tests {
             audio_bandwidth: 256_000,
             audio_copied: true,
             written: WRITTEN,
+            subtitle: None,
         });
         assert_eq!(text.matches("mimeType=\"video/mp4\"").count(), 2);
         assert!(text.contains(r#"xmlns:klapz="urn:klapz:stream:delivery""#));
@@ -1186,6 +1285,41 @@ mod tests {
         ));
         // In the same adaptation set, one template for both.
         assert_eq!(text.matches("<AdaptationSet").count(), 2);
+    }
+
+    #[test]
+    fn a_text_subtitle_is_an_adaptation_set_of_one_whole_file() {
+        let subtitle = TextSubtitle {
+            format: PlayerSubtitleFormat::WebVtt,
+            language: Some("fr".to_owned()),
+        };
+        let text = dash_manifest(&DashManifest {
+            address: &address(),
+            duration_ms: 7_200_000,
+            segment_seconds: 5,
+            pictures: &[COPIED],
+            audio_bandwidth: 256_000,
+            audio_copied: true,
+            written: WRITTEN,
+            subtitle: Some(&subtitle),
+        });
+        assert_eq!(text.matches("<AdaptationSet").count(), 3);
+        assert!(
+            text.contains(r#"<AdaptationSet contentType="text" mimeType="text/vtt" lang="fr">"#)
+        );
+        assert!(text.contains("<BaseURL>/streams/s1/subtitles.vtt?token=t0</BaseURL>"));
+        // Within the period, after the audio.
+        let set = text.find("contentType=\"text\"").unwrap();
+        assert!(set > text.find("id=\"audio\"").unwrap());
+        assert!(set < text.find("</Period>").unwrap());
+        // A language that is no tag is left out of the manifest.
+        let odd = TextSubtitle {
+            format: PlayerSubtitleFormat::Ass,
+            language: Some("fr\" onload=\"x".to_owned()),
+        };
+        let text = subtitle_adaptation(&odd, &address());
+        assert!(text.contains(r#"mimeType="text/x-ssa">"#), "{text}");
+        assert!(!text.contains("lang="));
     }
 
     fn conversion_of(adaptation: Adaptation) -> Conversion {
@@ -1211,6 +1345,7 @@ mod tests {
             audio_bandwidth: 256_000,
             duration_ms: 0,
             frame_rate: Some(25.0),
+            subtitle: None,
         }
     }
 

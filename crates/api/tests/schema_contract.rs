@@ -1559,6 +1559,7 @@ async fn starting_a_stream_hands_out_its_address_and_records_its_session() {
             "file": GlobalId::encode("MediaFile", 910),
             "subtitleTrack": GlobalId::encode("MediaStream", 922),
             "subtitles": "TEXT",
+            "subtitleFormats": ["WEBVTT", "ASS"],
             "maxVideoBitrate": 20_000_000,
             "positionMs": 60_000,
             "key": "k1",
@@ -1585,8 +1586,32 @@ async fn starting_a_stream_hands_out_its_address_and_records_its_session() {
     assert_eq!(order.position_ms, 60_000);
     assert!(matches!(
         &order.subtitle,
-        Some(klapz_core::stream::SubtitleOutput::Text { track }) if track.position == 2
+        Some(klapz_core::stream::SubtitleOutput::Text { track, format })
+            if track.position == 2 && *format == klapz_core::stream::SubtitleFormat::WebVtt
     ));
+}
+
+#[tokio::test]
+async fn text_subtitles_need_a_format_the_player_reads() {
+    let engine = Arc::new(klapz_core::testing::StubStreams::default());
+    let schema = streamable(Arc::clone(&engine));
+    let refused = start(
+        &schema,
+        serde_json::json!({
+            "file": GlobalId::encode("MediaFile", 910),
+            "subtitleTrack": GlobalId::encode("MediaStream", 922),
+            "subtitles": "TEXT",
+        }),
+    )
+    .await;
+    assert_eq!(
+        refused["userErrors"],
+        serde_json::json!([{
+            "field": ["input", "subtitleFormats"],
+            "code": "SUBTITLE_NOT_DELIVERABLE"
+        }])
+    );
+    assert!(engine.started.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

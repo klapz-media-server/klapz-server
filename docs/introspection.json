@@ -24741,6 +24741,24 @@
               "defaultValue": "NONE"
             },
             {
+              "name": "subtitleFormats",
+              "description": "The text formats the player draws, in its order of preference: a text subtitle is sent in\nits own format when it is one of them, converted into the first otherwise. Required for\n`subtitles: TEXT`.",
+              "type": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "ENUM",
+                    "name": "SubtitleFormatType",
+                    "ofType": null
+                  }
+                }
+              },
+              "defaultValue": null
+            },
+            {
               "name": "subtitleScale",
               "description": "The size burned subtitles are drawn at, 1.0 being the normal size.",
               "type": {
@@ -25277,7 +25295,7 @@
             },
             {
               "name": "SUBTITLE_NOT_DELIVERABLE",
-              "description": "The subtitle cannot be delivered the way asked: an image subtitle, text over HLS, or no\nfonts to burn with.",
+              "description": "The subtitle cannot be delivered the way asked: an image subtitle as text, text for a\nplayer that names no format, or no fonts to burn with.",
               "isDeprecated": false,
               "deprecationReason": null
             },
@@ -25395,11 +25413,23 @@
             },
             {
               "name": "subtitlesUrl",
-              "description": "Where the player reads text subtitles, when they were asked for.",
+              "description": "Where the player reads text subtitles, whole, when they were asked for. A DASH manifest\nlists them too.",
               "args": [],
               "type": {
                 "kind": "SCALAR",
                 "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "subtitleFormat",
+              "description": "The format of the subtitles at `subtitlesUrl`.",
+              "args": [],
+              "type": {
+                "kind": "ENUM",
+                "name": "SubtitleFormatType",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -25673,7 +25703,7 @@
             },
             {
               "name": "TEXT",
-              "description": "As ASS text beside the stream, for the player to draw. DASH only.",
+              "description": "As text beside the stream, whole, in one of `subtitleFormats`, for the player to draw.\nListed in a DASH manifest, and at `subtitlesUrl` for any protocol.",
               "isDeprecated": false,
               "deprecationReason": null
             }
@@ -25709,6 +25739,35 @@
             {
               "name": "NOT_ALLOWED",
               "description": "The caller may read the library but not change it: only its admins and the server's\nowners delete a subtitle.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "SubtitleFormatType",
+          "description": "A text format a player draws subtitles in.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "ASS",
+              "description": "ASS, its styles and positions kept.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "WEBVTT",
+              "description": "VTT, the format browsers draw themselves.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SRT",
+              "description": "SRT, plain timed text.",
               "isDeprecated": false,
               "deprecationReason": null
             }

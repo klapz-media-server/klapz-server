@@ -9,7 +9,7 @@ use klapz_core::lifecycle::{FallbackError, StartError};
 use klapz_core::playback::{NewPlaybackSession, PlaybackOutput, StreamDecision};
 use klapz_core::stream::{
     Delivery, FallbackRefusal, StartedStream, StreamError, StreamLimits, StreamOrder,
-    StreamProtocol, StreamQuality, StreamSource, StreamTrack, SubtitleOutput,
+    StreamProtocol, StreamQuality, StreamSource, StreamTrack, SubtitleFormat, SubtitleOutput,
 };
 use klapz_core::tracks::selected_tracks;
 use klapz_core::{now_epoch, MediaStream, PartId, RatingKey, StreamKind};
@@ -77,8 +77,41 @@ pub enum SubtitleDeliveryType {
     None,
     /// Drawn into the picture, which re-encodes the video.
     Burn,
-    /// As ASS text beside the stream, for the player to draw. DASH only.
+    /// As text beside the stream, whole, in one of `subtitleFormats`, for the player to draw.
+    /// Listed in a DASH manifest, and at `subtitlesUrl` for any protocol.
     Text,
+}
+
+/// A text format a player draws subtitles in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum SubtitleFormatType {
+    /// ASS, its styles and positions kept.
+    Ass,
+    /// VTT, the format browsers draw themselves.
+    #[graphql(name = "WEBVTT")]
+    WebVtt,
+    /// SRT, plain timed text.
+    Srt,
+}
+
+impl From<SubtitleFormatType> for SubtitleFormat {
+    fn from(format: SubtitleFormatType) -> Self {
+        match format {
+            SubtitleFormatType::Ass => Self::Ass,
+            SubtitleFormatType::WebVtt => Self::WebVtt,
+            SubtitleFormatType::Srt => Self::Srt,
+        }
+    }
+}
+
+impl From<SubtitleFormat> for SubtitleFormatType {
+    fn from(format: SubtitleFormat) -> Self {
+        match format {
+            SubtitleFormat::Ass => Self::Ass,
+            SubtitleFormat::WebVtt => Self::WebVtt,
+            SubtitleFormat::Srt => Self::Srt,
+        }
+    }
 }
 
 /// A stream to start.
@@ -101,6 +134,10 @@ pub struct StartStreamInput {
     /// How the subtitle reaches the player.
     #[graphql(default_with = "SubtitleDeliveryType::None")]
     pub subtitles: SubtitleDeliveryType,
+    /// The text formats the player draws, in its order of preference: a text subtitle is sent in
+    /// its own format when it is one of them, converted into the first otherwise. Required for
+    /// `subtitles: TEXT`.
+    pub subtitle_formats: Option<Vec<SubtitleFormatType>>,
     /// The size burned subtitles are drawn at, 1.0 being the normal size.
     #[graphql(default = 1.0)]
     pub subtitle_scale: f64,
@@ -151,16 +188,34 @@ impl StartStreamInput {
         }
     }
 
-    fn subtitle_output(&self, track: &MediaStream) -> Option<SubtitleOutput> {
+    fn subtitle_output(
+        &self,
+        track: &MediaStream,
+    ) -> std::result::Result<Option<SubtitleOutput>, StreamUserError> {
         let track = StreamTrack::of(track);
-        match self.subtitles {
+        Ok(match self.subtitles {
             SubtitleDeliveryType::None => None,
             SubtitleDeliveryType::Burn => Some(SubtitleOutput::Burn {
                 track,
                 scale: self.subtitle_scale,
             }),
-            SubtitleDeliveryType::Text => Some(SubtitleOutput::Text { track }),
-        }
+            SubtitleDeliveryType::Text => {
+                let readable: Vec<SubtitleFormat> = self
+                    .subtitle_formats
+                    .iter()
+                    .flatten()
+                    .map(|&format| format.into())
+                    .collect();
+                let format =
+                    SubtitleFormat::for_track(&track.codec, &readable).ok_or_else(|| {
+                        StreamUserError::new(
+                            "subtitleFormats",
+                            StreamErrorCode::SubtitleNotDeliverable,
+                        )
+                    })?;
+                Some(SubtitleOutput::Text { track, format })
+            }
+        })
     }
 }
 
@@ -180,8 +235,11 @@ pub struct StreamObject {
     /// Where the player reads it, a path on this server: the manifest of a conversion, the file
     /// itself for direct play. It carries its own secret and needs no token.
     pub url: String,
-    /// Where the player reads text subtitles, when they were asked for.
+    /// Where the player reads text subtitles, whole, when they were asked for. A DASH manifest
+    /// lists them too.
     pub subtitles_url: Option<String>,
+    /// The format of the subtitles at `subtitlesUrl`.
+    pub subtitle_format: Option<SubtitleFormatType>,
     /// The bitrate of the video sent, in bits per second, when known: at the start, for an
     /// adaptive stream.
     pub video_bitrate: Option<i32>,
@@ -204,8 +262,8 @@ pub enum StreamErrorCode {
     TrackNotFound,
     /// The video would need a conversion this server does not do.
     VideoNotConvertible,
-    /// The subtitle cannot be delivered the way asked: an image subtitle, text over HLS, or no
-    /// fonts to burn with.
+    /// The subtitle cannot be delivered the way asked: an image subtitle as text, text for a
+    /// player that names no format, or no fonts to burn with.
     SubtitleNotDeliverable,
     /// Too many streams are running.
     TooManyStreams,
@@ -405,7 +463,11 @@ async fn prepare(
         },
         None => chosen(StreamKind::Subtitle, selected.subtitle),
     };
-    let subtitle = subtitle.and_then(|track| input.subtitle_output(track));
+    let subtitle = match subtitle.map(|track| input.subtitle_output(track)) {
+        None => None,
+        Some(Ok(output)) => output,
+        Some(Err(error)) => return Ok(Err(error)),
+    };
 
     let roots = api
         .library
@@ -580,6 +642,7 @@ fn stream_object(
         audio_decision: started.audio.into(),
         url: started.url,
         subtitles_url: started.subtitles_url,
+        subtitle_format: started.subtitle_format.map(Into::into),
         video_bitrate,
         audio_bitrate,
         width,

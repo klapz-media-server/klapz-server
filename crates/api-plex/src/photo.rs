@@ -66,6 +66,7 @@ impl From<TranscodeError> for ApiError {
             | TranscodeError::ShuttingDown(_)
             | TranscodeError::OutsideLibrary
             | TranscodeError::SidecarTooLarge
+            | TranscodeError::SubtitleExtraction
             | TranscodeError::Spawn(_)
             | TranscodeError::Io(_) => Self::Internal(Box::new(error)),
         }

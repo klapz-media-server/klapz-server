@@ -1148,10 +1148,22 @@ it, in the same process:
   body until the stream starts, and so do we, for up to 20 seconds. A start, there, needs the
   session to have asked for a decision first.
 
-Ours does the same, the command identical to the captured one. Not handled yet: `sidecar`, for
-a file played directly (`/subtitles/:/transcode/universal/start`), and soft subtitles over
-HLS. A seek that restarts the process ends the subtitle response: the new process numbers its
-pieces from 0 again.
+Ours answers the same script, but extracts it apart, by the repo owner's decision: a second
+process of its own, started with the stream, reads the whole file and writes the track as ASS
+onto its output, once per stream whatever the requests. A request is answered at once and its
+body follows when that process ends: a few seconds, and over a network share as long as the
+whole file takes to read, which outlasts the 30 seconds the server lets a response wait for its
+head. A request given up loses nothing, and a failed extraction ends the body empty. The stream's process has no subtitle output, so a seek or a change of rung leaves the
+subtitles alone, where the reference's pieces start again from 0. Not handled yet: `sidecar`,
+for a file played directly (`/subtitles/:/transcode/universal/start`).
+
+On the official API a player names the text formats it draws (`subtitleFormats`: `ASS`,
+`WEBVTT`, `SRT`, by preference): a text subtitle goes in its own format when it is one of them,
+copied, and is converted into the first otherwise; naming none refuses `TEXT`
+(`SUBTITLE_NOT_DELIVERABLE` on `subtitleFormats`). It is served whole at `subtitlesUrl`
+(`/streams/{id}/subtitles.{ass,vtt,srt}`) over DASH and HLS alike, and a DASH manifest lists it
+as a text adaptation set whose one representation is the whole file (`BaseURL`, no segments).
+The Plex binding asks for `ASS`, the one format Plex Web draws.
 
 **The process often sends a callback's head before its body, and waits for the answer.** With
 two outputs it does so for most of its announcements, which the reference answers at once.
@@ -1988,8 +2000,7 @@ or abandoning the request has cost nothing; a worse one at once. Seeks within a 
 Measured: the first change of rung costs 0.6 to 0.7 s (the encode's start and first piece), a
 change within 4 s of the last about 3.5 to 4 s.
 
-Not handled: a rung change, like a seek, ends the response of soft subtitles, the new process
-numbering its pieces from 0. And the server does not slow the process down: a low rung runs minutes
+Not handled: the server does not slow the process down: a low rung runs minutes
 ahead of the player, which is why an upgrade does not wait for what it wrote.
 
 ### Refusing a chunk

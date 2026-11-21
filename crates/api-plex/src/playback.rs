@@ -662,6 +662,8 @@ async fn start_stream(
         "audioTrack": selection.audio.id,
         "subtitleTrack": selection.subtitle.map(|subtitle| &subtitle.id),
         "subtitles": subtitles,
+        // Plex Web draws ASS, and nothing else, with its own renderer.
+        "subtitleFormats": ["ASS"],
         "subtitleScale": f64::from(params.subtitle_size.unwrap_or(100)) / 100.0,
         "maxVideoBitrate": params
             .max_video_bitrate
@@ -711,41 +713,35 @@ async fn start_dash(
     start_stream(&state, &client, &params, Protocol::Dash).await
 }
 
-/// `GET /video/:/transcode/universal/subtitles`: the soft subtitles of a running stream, as the
-/// reference sends them. The ASS script whole, written out as the process converts it, on a
-/// response that stays open until the process ends: header first, then a second at a time.
-/// Declared `text/vtt`, though it is ASS, as the reference declares it.
+/// `GET /video/:/transcode/universal/subtitles`: the soft subtitles of a running stream, as one
+/// ASS script, extracted whole from the stream's start. The reference writes it out a second at a time as its process
+/// converts it; whole, it holds the same events. Declared `text/vtt`, though it is ASS, as the
+/// reference declares it.
 async fn subtitles(
     _caller: Caller,
     State(state): State<PlexState>,
     Query(params): Query<PlaybackParams>,
 ) -> Result<Response, ApiError> {
     let session = params.session.as_deref().ok_or(ApiError::BadRequest)?;
+    let key = gql::session_key(session);
+    let transcoder = Arc::clone(&state.transcoder);
     // Answered at once, the body waiting for the stream to start, as the reference does:
     // Plex Web asks for the subtitles before it starts the stream they belong to.
-    let feed = Feed::Waiting(Arc::clone(&state.transcoder), gql::session_key(session));
-    let pieces = futures_util::stream::unfold(feed, |feed| async move {
-        let mut reader = match feed {
-            Feed::Waiting(transcoder, key) => transcoder.subtitles(&key).await.ok()?,
-            Feed::Reading(reader) => reader,
+    let script = futures_util::stream::once(async move {
+        let script = match transcoder.subtitles(&key).await {
+            Ok((bytes, _)) => bytes.to_vec(),
+            Err(error) => {
+                tracing::debug!(%error, "no subtitles for a Plex stream");
+                Vec::new()
+            }
         };
-        let piece = reader.next_piece().await?;
-        Some((
-            Ok::<_, std::convert::Infallible>(piece),
-            Feed::Reading(reader),
-        ))
+        Ok::<_, std::convert::Infallible>(script)
     });
     Ok((
         [(header::CONTENT_TYPE, "text/vtt")],
-        axum::body::Body::from_stream(pieces),
+        axum::body::Body::from_stream(script),
     )
         .into_response())
-}
-
-/// Where a subtitle response stands: waiting for its stream, then reading it.
-enum Feed {
-    Waiting(Arc<klapz_transcoder::Transcoder>, String),
-    Reading(klapz_transcoder::session::SubtitleReader),
 }
 
 /// The reference answers `200` to a session it knows and `404` otherwise, for both.

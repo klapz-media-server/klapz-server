@@ -11,6 +11,7 @@ pub mod media;
 pub mod plan;
 pub mod session;
 mod source;
+pub mod subtitle;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -23,6 +24,10 @@ pub use backdrop::{CornerColors, Rgb, MAX_PIXELS as MAX_BACKDROP_PIXELS};
 /// Images being fetched and converted at once. Each one holds a blocking thread and up to
 /// 16 MiB of source, and a client controls how many it asks for.
 const MAX_CONCURRENT: usize = 8;
+
+/// Subtitles being extracted at once. Each one reads its whole file, and a client controls how
+/// many it asks for.
+const MAX_EXTRACTIONS: usize = 2;
 
 /// Whether an image must fill its box or fit inside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,6 +104,8 @@ pub enum TranscodeError {
     /// text one with.
     #[error("this subtitle cannot be burned in")]
     SubtitleCannotBeBurned,
+    #[error("the subtitle could not be extracted")]
+    SubtitleExtraction,
     #[error("too many transcode sessions are running")]
     TooManySessions,
     #[error("no such transcode session")]
@@ -143,6 +150,7 @@ impl Default for Config {
 #[derive(Debug)]
 pub struct Transcoder {
     slots: Semaphore,
+    extractions: Arc<Semaphore>,
     client: OnceCell<reqwest::Client>,
     config: Config,
     sessions: Mutex<HashMap<String, Arc<session::Session>>>,
@@ -159,6 +167,7 @@ impl Transcoder {
     pub fn new(config: Config) -> Self {
         Self {
             slots: Semaphore::new(MAX_CONCURRENT),
+            extractions: Arc::new(Semaphore::new(MAX_EXTRACTIONS)),
             client: OnceCell::new(),
             config,
             sessions: Mutex::default(),

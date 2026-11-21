@@ -3154,6 +3154,7 @@ impl crate::stream::StreamEngine for StubStreams {
         let started = crate::stream::StartedStream {
             url: url.to_owned(),
             subtitles_url: None,
+            subtitle_format: None,
             video: crate::playback::StreamDecision::Copy,
             audio: crate::playback::StreamDecision::Copy,
             output: crate::playback::PlaybackOutput {

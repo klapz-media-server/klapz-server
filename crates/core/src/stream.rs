@@ -67,8 +67,39 @@ pub struct StreamSource {
 pub enum SubtitleOutput {
     /// Drawn into the picture. `scale` is 1.0 for the normal size.
     Burn { track: StreamTrack, scale: f64 },
-    /// As text beside the stream, for the player to draw.
-    Text { track: StreamTrack },
+    /// As text beside the stream, whole, for the player to draw.
+    Text {
+        track: StreamTrack,
+        format: SubtitleFormat,
+    },
+}
+
+/// A text format a player draws subtitles in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubtitleFormat {
+    Ass,
+    WebVtt,
+    Srt,
+}
+
+impl SubtitleFormat {
+    fn of_codec(codec: &str) -> Option<Self> {
+        match codec {
+            "ass" => Some(Self::Ass),
+            "webvtt" | "vtt" => Some(Self::WebVtt),
+            "srt" | "subrip" => Some(Self::Srt),
+            _ => None,
+        }
+    }
+
+    /// The format a text track reaches a player in: its own when the player reads it, else the
+    /// first the player names, since any text converts into any of these. `None` for a player
+    /// that reads none. Whether the track is text at all is the engine's to say.
+    pub fn for_track(codec: &str, readable: &[Self]) -> Option<Self> {
+        Self::of_codec(codec)
+            .filter(|own| readable.contains(own))
+            .or_else(|| readable.first().copied())
+    }
 }
 
 /// How a converted stream's quality follows the link.
@@ -118,6 +149,8 @@ pub struct StartedStream {
     pub url: String,
     /// Where the player reads text subtitles, when it asked for them.
     pub subtitles_url: Option<String>,
+    /// The format they are in.
+    pub subtitle_format: Option<SubtitleFormat>,
     pub video: StreamDecision,
     pub audio: StreamDecision,
     pub output: PlaybackOutput,
@@ -311,6 +344,19 @@ mod tests {
             required_bandwidths: Vec::new(),
             stated: crate::metadata::StatedTrack::default(),
         }
+    }
+
+    #[test]
+    fn a_text_subtitle_keeps_its_format_when_the_player_reads_it() {
+        use SubtitleFormat::{Ass, Srt, WebVtt};
+        assert_eq!(SubtitleFormat::for_track("ass", &[WebVtt, Ass]), Some(Ass));
+        assert_eq!(
+            SubtitleFormat::for_track("subrip", &[WebVtt, Ass]),
+            Some(WebVtt)
+        );
+        assert_eq!(SubtitleFormat::for_track("subrip", &[Ass, Srt]), Some(Srt));
+        assert_eq!(SubtitleFormat::for_track("mov_text", &[Srt]), Some(Srt));
+        assert_eq!(SubtitleFormat::for_track("ass", &[]), None);
     }
 
     #[test]
