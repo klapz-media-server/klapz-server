@@ -292,6 +292,8 @@ struct Run {
     /// HLS files, as the process announced them.
     segments: BTreeMap<u32, Announced>,
     ended: bool,
+    /// Its process exited successfully: it went as far as the media goes.
+    completed: bool,
 }
 
 impl Run {
@@ -325,6 +327,24 @@ impl Run {
             .rev()
             .find(|n| whole(*n))
             .map(path)
+    }
+
+    /// Whether it ran to the end of the media from at or before segment `number` and wrote
+    /// nothing from there on.
+    fn ended_before(&self, protocol: Protocol, stream: u32, number: u32) -> bool {
+        // A segment without a key frame is written with a later one, never further than this. An
+        // HLS file is looked for on disk too, in case its announcement never came.
+        let on_disk = (number..=number.saturating_add(SEGMENTS_WITHOUT_KEY_FRAME)).any(|n| {
+            let name = match protocol {
+                Protocol::Dash => chunk_name(stream, n + 1),
+                Protocol::Hls => hls_name(n),
+            };
+            self.directory.join(name).exists()
+        });
+        let wrote_from = on_disk
+            || (protocol == Protocol::Hls
+                && self.segments.range(number..).any(|(_, s)| s.finished));
+        self.completed && self.start_chunk <= number && !wrote_from
     }
 
     fn latest_finished(&self) -> Option<u32> {
@@ -549,6 +569,19 @@ impl Session {
                 .take(if only_newest { 1 } else { usize::MAX })
                 .find(|run| run.segments.get(&number).is_some_and(|s| s.finished))
                 .map(|run| run.directory.join(hls_name(number)))
+        })
+    }
+
+    /// Whether segment `number` lies past the end of the media: the manifests are laid from the
+    /// stated duration, and can count one more segment than the frames the process found. Every
+    /// rung cuts on the same timeline, so any run that reached the end tells.
+    fn past_the_end(&self, stream: u32, number: u32) -> bool {
+        let protocol = self.request.protocol;
+        self.with_progress(|progress| {
+            progress
+                .runs
+                .iter()
+                .any(|run| run.ended_before(protocol, stream, number))
         })
     }
 
@@ -1175,6 +1208,18 @@ fn external_libs_value(directory: &Path) -> String {
     }
 }
 
+/// What a wait for a segment finds: its file, or no file once it is known to lie past the end
+/// of the media.
+fn written_or_past_the_end(
+    written: Option<PathBuf>,
+    past_the_end: impl FnOnce() -> bool,
+) -> Option<Vec<PathBuf>> {
+    match written {
+        Some(path) => Some(vec![path]),
+        None => past_the_end().then(Vec::new),
+    }
+}
+
 /// Watches a run's process until it exits or is told to stop, then marks the run ended.
 fn supervise(session: &Arc<Session>, mut child: tokio::process::Child, generation: u64) {
     let stop = Arc::new(Notify::new());
@@ -1189,18 +1234,21 @@ fn supervise(session: &Arc<Session>, mut child: tokio::process::Child, generatio
 
     let supervised = Arc::clone(session);
     let task = tokio::spawn(async move {
-        tokio::select! {
-            result = child.wait() => {
-                if let Err(error) = result {
+        let completed = tokio::select! {
+            result = child.wait() => match result {
+                Ok(status) => status.success(),
+                Err(error) => {
                     tracing::warn!(%error, "lost track of a transcoder process");
+                    false
                 }
-            }
+            },
             () = stop.notified() => {
                 if let Err(error) = child.kill().await {
                     tracing::warn!(%error, "could not kill a transcoder process");
                 }
+                false
             }
-        }
+        };
         supervised.with_progress(|progress| {
             if let Some(run) = progress
                 .runs
@@ -1208,6 +1256,7 @@ fn supervise(session: &Arc<Session>, mut child: tokio::process::Child, generatio
                 .find(|run| run.generation == generation)
             {
                 run.ended = true;
+                run.completed = completed;
             }
         });
         supervised.changed.notify_waiters();
@@ -1498,6 +1547,7 @@ impl Transcoder {
                 directory,
                 segments: BTreeMap::new(),
                 ended: false,
+                completed: false,
             });
         });
         supervise(session, child, generation);
@@ -1824,7 +1874,8 @@ impl Transcoder {
         })
     }
 
-    /// A finished HLS segment's file, waiting for it if it is still being written.
+    /// A finished HLS segment's file, waiting for it if it is still being written. No file is a
+    /// segment past the end of the media, to be answered empty as the reference does.
     ///
     /// # Errors
     ///
@@ -1841,10 +1892,13 @@ impl Transcoder {
             return self
                 .chosen_chunk(&session, None, rendition, number)
                 .await
-                .map(|file| vec![file]);
+                .map(|file| file.into_iter().collect());
         }
         if rendition != 0 {
             return Err(TranscodeError::UnknownSegment);
+        }
+        if session.past_the_end(0, number) {
+            return Ok(Vec::new());
         }
         Self::judge_delivery(&session);
         self.follow_server_choice(&session, number).await?;
@@ -1861,12 +1915,18 @@ impl Transcoder {
             self.restart(&session, seen, rung, number, Restart::Seek)
                 .await?;
         }
-        let path = session
-            .wait_for(|| session.hls_written(number))
+        let files = session
+            .wait_for(|| {
+                written_or_past_the_end(session.hls_written(number), || {
+                    session.past_the_end(0, number)
+                })
+            })
             .await
             .ok_or(TranscodeError::UnknownSegment)?;
-        session.served(session.rung_answering(number), number);
-        Ok(vec![path])
+        if !files.is_empty() {
+            session.served(session.rung_answering(number), number);
+        }
+        Ok(files)
     }
 
     /// The manifest the process wrote for a DASH session, waiting for it: its top rung's, which
@@ -2019,7 +2079,7 @@ impl Transcoder {
 
     /// A finished DASH chunk's file. `number` counts from zero, as the manifest given to the
     /// player does. One the running process will not get to soon is a seek, and restarts it
-    /// there.
+    /// there. No file is a chunk past the end of the media, to be answered empty.
     ///
     /// # Errors
     ///
@@ -2039,12 +2099,15 @@ impl Transcoder {
             return self
                 .chosen_chunk(&session, Some(track), rendition, number)
                 .await
-                .map(|file| vec![file]);
+                .map(|file| file.into_iter().collect());
         }
         if matches!(track, DashTrack::Video(rendition) if rendition != 0) {
             return Err(TranscodeError::UnknownSegment);
         }
         let stream = track.stream();
+        if session.past_the_end(stream, number) {
+            return Ok(Vec::new());
+        }
         if stream == 0 {
             Self::judge_delivery(&session);
         }
@@ -2055,26 +2118,31 @@ impl Transcoder {
             self.restart(&session, seen, rung, number, Restart::Seek)
                 .await?;
         }
-        let path = session
-            .wait_for(|| session.written_chunk(stream, number))
+        let files = session
+            .wait_for(|| {
+                written_or_past_the_end(session.written_chunk(stream, number), || {
+                    session.past_the_end(stream, number)
+                })
+            })
             .await
             .ok_or(TranscodeError::UnknownSegment)?;
-        if stream == 0 {
+        if stream == 0 && !files.is_empty() {
             session.served(session.rung_answering(number), number);
         }
-        Ok(vec![path])
+        Ok(files)
     }
 
     /// A segment of a stream whose player chooses the rung, `track` `None` for HLS. Served from
     /// whatever run wrote it; otherwise the running process is left to reach it, moved there
-    /// if it is too far, or replaced by one at the rung asked for, once the rules allow.
+    /// if it is too far, or replaced by one at the rung asked for, once the rules allow. `None`
+    /// past the end of the media.
     async fn chosen_chunk(
         &self,
         session: &Arc<Session>,
         track: Option<DashTrack>,
         rendition: usize,
         number: u32,
-    ) -> Result<PathBuf, TranscodeError> {
+    ) -> Result<Option<PathBuf>, TranscodeError> {
         if rendition >= session.request.ladder.rungs.len() {
             return Err(TranscodeError::UnknownSegment);
         }
@@ -2089,7 +2157,10 @@ impl Transcoder {
                 if video {
                     session.served(rendition, number);
                 }
-                return Ok(file);
+                return Ok(Some(file));
+            }
+            if session.past_the_end(track.map_or(0, DashTrack::stream), number) {
+                return Ok(None);
             }
             let seen = session.current_generation();
             let Some((running, _, start)) = session.current() else {
@@ -2705,6 +2776,7 @@ mod tests {
             directory,
             segments: BTreeMap::new(),
             ended: false,
+            completed: false,
         }
     }
 
@@ -2964,6 +3036,48 @@ mod tests {
         assert!(matches!(refused, Err(TranscodeError::UnknownSegment)));
         assert!(began.elapsed() >= HOLD_BEFORE_REFUSAL);
         assert!(began.elapsed() < WAIT_FOR_OUTPUT);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_segment_past_what_a_completed_process_wrote_is_empty_at_once() {
+        let transcoder = Transcoder::default();
+        let session = session_writing_to(scratch_directory(), true);
+        session.with_progress(|progress| progress.runs[0].completed = true);
+        register(&transcoder, session);
+        let began = tokio::time::Instant::now();
+        let files = transcoder.session_segment("known", 0, 3).await.unwrap();
+        assert!(files.is_empty());
+        assert_eq!(began.elapsed(), Duration::ZERO);
+    }
+
+    #[test]
+    fn only_a_process_that_completed_tells_where_the_media_ends() {
+        let directory = scratch_directory();
+        let mut run = run_in(directory.join("run-0"), 0, 0, 0);
+        write_chunks(&run, 0, &[0, 1, 2]);
+        run.ended = true;
+        let session = session_with(chosen(Protocol::Dash), directory, vec![run]);
+        // Failed: what it did not write may still exist.
+        assert!(!session.past_the_end(0, 3));
+        session.with_progress(|progress| progress.runs[0].completed = true);
+        assert!(session.past_the_end(0, 3));
+        assert!(session.past_the_end(0, 4));
+        assert!(!session.past_the_end(0, 2));
+        assert!(!session.past_the_end(0, 0));
+    }
+
+    #[test]
+    fn seeking_back_before_a_completed_run_is_not_past_the_end() {
+        let directory = scratch_directory();
+        // A seek near the end ran to completion from segment 10.
+        let mut run = run_in(directory.join("run-0"), 0, 0, 10);
+        write_chunks(&run, 0, &[10, 11]);
+        run.ended = true;
+        run.completed = true;
+        let session = session_with(chosen(Protocol::Dash), directory, vec![run]);
+        assert!(session.past_the_end(0, 12));
+        assert!(!session.past_the_end(0, 0));
+        assert!(!session.past_the_end(0, 9));
     }
 
     #[tokio::test(start_paused = true)]

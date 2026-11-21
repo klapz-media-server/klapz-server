@@ -652,7 +652,12 @@ async fn serve_pieces(paths: Vec<PathBuf>, content_type: &'static str) -> Respon
 /// Reports how long the body took to send, from its first byte to its last, once it is whole:
 /// the wait for the process to write the segment came before and is not in it.
 fn measured(response: Response, report: impl FnOnce(adapt::Delivery) + Send + 'static) -> Response {
-    if response.status() != StatusCode::OK {
+    // An empty segment, past the end of the media, says nothing about the link.
+    let empty = response
+        .headers()
+        .get(header::CONTENT_LENGTH)
+        .is_some_and(|length| length == "0");
+    if response.status() != StatusCode::OK || empty {
         return response;
     }
     let (parts, body) = response.into_parts();
@@ -881,6 +886,8 @@ async fn rendition_part(
     }
 }
 
+/// No file is a segment past the end of the media, answered empty: the manifest, laid from the
+/// stated duration, can list one more than the process found, and a `404` there stops a player.
 async fn served(mut files: Vec<PathBuf>, content_type: &'static str, request: Request) -> Response {
     match files.len() {
         1 => serve(files.remove(0), request).await,
@@ -1075,6 +1082,8 @@ fn growing_playlist(output: &Output, base: &str, query: &str) -> String {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use axum::body::to_bytes;
     use klapz_core::playback::NewPlaybackSession;
@@ -1393,6 +1402,18 @@ mod tests {
         for entry in streams.entries().values_mut() {
             entry.touched_at = Instant::now().checked_sub(TOUCH_INTERVAL).unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn a_segment_past_the_end_of_the_media_is_answered_empty() {
+        let response = served(Vec::new(), "video/mp4", Request::new(Body::empty())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_LENGTH], "0");
+        let reported = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&reported);
+        let response = measured(response, move |_| flag.store(true, Ordering::Release));
+        assert!(to_bytes(response.into_body(), 16).await.unwrap().is_empty());
+        assert!(!reported.load(Ordering::Acquire));
     }
 
     #[tokio::test]
