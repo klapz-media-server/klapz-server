@@ -91,7 +91,7 @@ jobs:
 
       - name: Build
         env:
-          CARGO_BUILD_JOBS: ${{ matrix.platform == 'linux-arm64' && '1' || '' }}
+          CARGO_BUILD_JOBS: ${{ matrix.platform == 'linux-arm64' && '1' || 'default' }}
         run: cargo build --release --locked --target ${{ matrix.target }} -p klapz-server -p klapz-scanner
 
       - name: Lay out the binaries
