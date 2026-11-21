@@ -188,6 +188,14 @@ impl StartStreamInput {
         }
     }
 
+    fn readable_subtitle_formats(&self) -> Vec<SubtitleFormat> {
+        self.subtitle_formats
+            .iter()
+            .flatten()
+            .map(|&format| format.into())
+            .collect()
+    }
+
     fn subtitle_output(
         &self,
         track: &MediaStream,
@@ -200,19 +208,14 @@ impl StartStreamInput {
                 scale: self.subtitle_scale,
             }),
             SubtitleDeliveryType::Text => {
-                let readable: Vec<SubtitleFormat> = self
-                    .subtitle_formats
-                    .iter()
-                    .flatten()
-                    .map(|&format| format.into())
-                    .collect();
                 let format =
-                    SubtitleFormat::for_track(&track.codec, &readable).ok_or_else(|| {
-                        StreamUserError::new(
-                            "subtitleFormats",
-                            StreamErrorCode::SubtitleNotDeliverable,
-                        )
-                    })?;
+                    SubtitleFormat::for_track(&track.codec, &self.readable_subtitle_formats())
+                        .ok_or_else(|| {
+                            StreamUserError::new(
+                                "subtitleFormats",
+                                StreamErrorCode::SubtitleNotDeliverable,
+                            )
+                        })?;
                 Some(SubtitleOutput::Text { track, format })
             }
         })
@@ -269,6 +272,8 @@ pub enum StreamErrorCode {
     TooManyStreams,
     /// The key names a session an owner terminated: its player has to stop first.
     SessionTerminated,
+    /// A start of the same playback asked for after this one has replaced it.
+    Superseded,
 }
 
 /// A problem with what was asked, as opposed to a failure of the server.
@@ -294,6 +299,7 @@ impl StreamUserError {
             StreamErrorCode::SubtitleNotDeliverable => "this subtitle cannot be delivered this way",
             StreamErrorCode::TooManyStreams => "too many streams are running",
             StreamErrorCode::SessionTerminated => "this session was terminated",
+            StreamErrorCode::Superseded => "a later start of the same playback replaced this one",
         };
         Self {
             field: vec!["input".to_owned(), field.to_owned()],
@@ -417,6 +423,8 @@ async fn prepare(
     context: &Context<'_>,
     input: &StartStreamInput,
 ) -> Result<std::result::Result<Prepared, StreamUserError>> {
+    // Before the lookups below, whose time varies from one request to the next.
+    let asked_at = std::time::Instant::now();
     let caller = crate::access::require_caller(context)?;
     let refused = |field: &str, code: StreamErrorCode| Ok(Err(StreamUserError::new(field, code)));
 
@@ -497,11 +505,20 @@ async fn prepare(
                 duration_ms: version.duration_ms.or(file.duration_ms),
                 video: StreamTrack::of(video),
                 audio: StreamTrack::of(audio),
+                subtitles: streams
+                    .iter()
+                    .filter(|stream| {
+                        stream.kind == StreamKind::Subtitle && stream.external_path.is_none()
+                    })
+                    .map(StreamTrack::of)
+                    .collect(),
             },
             delivery: input.delivery(),
             limits: input.limits(),
             subtitle,
+            subtitle_formats: input.readable_subtitle_formats(),
             position_ms: input.position_ms.max(0),
+            asked_at,
         },
         item: item.id,
         file: file.id,
@@ -597,6 +614,7 @@ pub(crate) async fn start_stream(
                     ("subtitles", StreamErrorCode::SubtitleNotDeliverable)
                 }
                 StreamError::TooManyStreams => ("file", StreamErrorCode::TooManyStreams),
+                StreamError::Superseded => ("playbackId", StreamErrorCode::Superseded),
                 StreamError::Engine(_) => return Err(error.into()),
             };
             return refuse(StreamUserError::new(field, code));

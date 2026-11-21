@@ -25,8 +25,8 @@ pub use backdrop::{CornerColors, Rgb, MAX_PIXELS as MAX_BACKDROP_PIXELS};
 /// 16 MiB of source, and a client controls how many it asks for.
 const MAX_CONCURRENT: usize = 8;
 
-/// Subtitles being extracted at once. Each one reads its whole file, and a client controls how
-/// many it asks for.
+/// Passes extracting subtitles at once. Each reads its file, and a client controls how many it
+/// asks for.
 const MAX_EXTRACTIONS: usize = 2;
 
 /// Whether an image must fill its box or fit inside it.
@@ -108,6 +108,8 @@ pub enum TranscodeError {
     SubtitleExtraction,
     #[error("too many transcode sessions are running")]
     TooManySessions,
+    #[error("a later start of the same playback replaced this one")]
+    Superseded,
     #[error("no such transcode session")]
     UnknownSession,
     #[error("no such segment in this session")]
@@ -150,7 +152,7 @@ impl Default for Config {
 #[derive(Debug)]
 pub struct Transcoder {
     slots: Semaphore,
-    extractions: Arc<Semaphore>,
+    subtitles: subtitle::Subtitles,
     client: OnceCell<reqwest::Client>,
     config: Config,
     sessions: Mutex<HashMap<String, Arc<session::Session>>>,
@@ -167,7 +169,7 @@ impl Transcoder {
     pub fn new(config: Config) -> Self {
         Self {
             slots: Semaphore::new(MAX_CONCURRENT),
-            extractions: Arc::new(Semaphore::new(MAX_EXTRACTIONS)),
+            subtitles: subtitle::Subtitles::new(MAX_EXTRACTIONS, config.sessions_directory.clone()),
             client: OnceCell::new(),
             config,
             sessions: Mutex::default(),

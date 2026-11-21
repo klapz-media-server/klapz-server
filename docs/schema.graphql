@@ -8801,6 +8801,10 @@ enum StreamErrorCode {
 	The key names a session an owner terminated: its player has to stop first.
 	"""
 	SESSION_TERMINATED
+	"""
+	A start of the same playback asked for after this one has replaced it.
+	"""
+	SUPERSEDED
 }
 
 """

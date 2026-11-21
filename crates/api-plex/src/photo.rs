@@ -48,7 +48,9 @@ impl From<TranscodeError> for ApiError {
         // Matched exhaustively on purpose, so a new failure has to choose its status.
         match error {
             // The reference answers `400` too when it will not start another stream.
-            TranscodeError::InvalidSource | TranscodeError::TooManySessions => Self::BadRequest,
+            TranscodeError::InvalidSource
+            | TranscodeError::TooManySessions
+            | TranscodeError::Superseded => Self::BadRequest,
             TranscodeError::ForbiddenSource => Self::Forbidden,
             TranscodeError::UnavailableSource
             | TranscodeError::MissingFile

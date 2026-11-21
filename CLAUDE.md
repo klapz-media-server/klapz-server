@@ -329,7 +329,10 @@ without them saying so.
   and the address, which is republished at startup and hourly. plex.tv is reached through the
   `AccountDirectory` port, implemented in `api-plex::plex_tv`. `/identity` with no token shows
   the server published at the address the request was sent to, when only one is (the transport
-  attaches a `PublishedServer`, which opens nothing). CORS admits Plex's domains only, because a
+  attaches a `PublishedServer`, which opens nothing). CORS admits Plex's domains on the Plex
+  surface, without credentials, and klapz's own web client on every surface with them —
+  `https://app.klapz.io`, the origins of `KLAPZ_CORS_ORIGINS`, and `localhost` / `127.0.0.1`
+  on any port in a debug build, the repo owner's decision — and nothing else, because a
   browser here carries its user's session and Plex Web its token in every URL: a page allowed to
   read the answers could read whatever that user can. A client that found the server
   through plex.tv presents a plex.tv token, which only plex.tv can attribute: the answer is
@@ -668,6 +671,7 @@ startup.
 | `KLAPZ_ADMIN_PASSWORD` | *(none)* | The password of the built-in `admin` owner, set at every start. Unset, a new `admin` gets a generated one, printed once on standard output, and an existing one keeps its own. Outside the password policy (8 to 256 characters), the server refuses to start. The tools sign in with it. |
 | `KLAPZ_SESSION_SECRET` | *(drawn per process)* | The HS256 key sessions are signed with, 32 bytes at least. Without it, sessions end when the server stops. |
 | `KLAPZ_INSECURE_COOKIES` | *(off)* | `1` drops `Secure` from the session cookie, for plain HTTP on a local network. |
+| `KLAPZ_CORS_ORIGINS` | *(none)* | Origins of the web client besides `https://app.klapz.io` (and `localhost` / `127.0.0.1` on any port in a debug build), separated by commas: `https://klapz.example,http://192.168.1.2:5173`. They read every surface with the user's session, cookie included. A value that is not an origin stops the server. |
 | `KLAPZ_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `KLAPZ_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `KLAPZ_JELLYFIN_WEB_DIR` | *(none)* | Jellyfin Web, served without a token at `/jellyfin/web`: a Jellyfin install's `jellyfin-web` directory. Not versioned: it is Jellyfin's code. |

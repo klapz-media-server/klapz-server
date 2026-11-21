@@ -1148,12 +1148,20 @@ it, in the same process:
   body until the stream starts, and so do we, for up to 20 seconds. A start, there, needs the
   session to have asked for a decision first.
 
-Ours answers the same script, but extracts it apart, by the repo owner's decision: a second
-process of its own, started with the stream, reads the whole file and writes the track as ASS
-onto its output, once per stream whatever the requests. A request is answered at once and its
-body follows when that process ends: a few seconds, and over a network share as long as the
-whole file takes to read, which outlasts the 30 seconds the server lets a response wait for its
-head. A request given up loses nothing, and a failed extraction ends the body empty. The stream's process has no subtitle output, so a seek or a change of rung leaves the
+Ours answers the same script, but extracts it apart, by the repo owner's decision. A stream's
+start runs one process of its own over the file that writes every text track, each in the
+format the player reads (ASS for Plex Web), into a file per track. They are kept on disk below
+the transcoder's directory, in a `subtitle-` directory per file named after a digest of its
+path, each named by track, size and modification time of the file and format; sessions write
+in `transcode-` directories of their own. A player switching track, which starts a new stream,
+finds the one it switches to there, a change of quality finds the same file, and two streams of
+a file, whoever plays them, wait for the same pass rather than start a second. They outlive the
+server; the least recently read go once they weigh 1 GiB together. A request is answered at once
+and its body follows when the pass ends. ffmpeg-plex v8.1.3-18 reads a Matroska file's
+subtitle blocks where its cues point instead of the whole file: 0.1 to 8 seconds over a network
+share, where an older build reads the whole file and outlasts the 30 seconds the server lets a
+response wait for its head. A request given up loses nothing, and a failed extraction ends the
+body empty. The stream's process has no subtitle output, so a seek or a change of rung leaves the
 subtitles alone, where the reference's pieces start again from 0. Not handled yet: `sidecar`,
 for a file played directly (`/subtitles/:/transcode/universal/start`).
 

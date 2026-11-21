@@ -729,7 +729,7 @@ async fn subtitles(
     // Plex Web asks for the subtitles before it starts the stream they belong to.
     let script = futures_util::stream::once(async move {
         let script = match transcoder.subtitles(&key).await {
-            Ok((bytes, _)) => bytes.to_vec(),
+            Ok((bytes, _)) => bytes,
             Err(error) => {
                 tracing::debug!(%error, "no subtitles for a Plex stream");
                 Vec::new()

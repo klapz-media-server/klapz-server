@@ -60,6 +60,9 @@ pub struct StreamSource {
     pub duration_ms: Option<i64>,
     pub video: StreamTrack,
     pub audio: StreamTrack,
+    /// The subtitle tracks inside the file, sidecars aside: the engine may prepare those it
+    /// delivers as text before the player asks, since it changes track by starting anew.
+    pub subtitles: Vec<StreamTrack>,
 }
 
 /// How a subtitle reaches the player of a conversion.
@@ -139,7 +142,12 @@ pub struct StreamOrder {
     pub delivery: Delivery,
     pub limits: StreamLimits,
     pub subtitle: Option<SubtitleOutput>,
+    /// The text formats the player draws subtitles in, by preference; empty when it named none.
+    pub subtitle_formats: Vec<SubtitleFormat>,
     pub position_ms: i64,
+    /// When the player asked for it. Two starts of one playback can reach the engine in either
+    /// order, so the later one asked for is the one kept, not the later one to arrive.
+    pub asked_at: std::time::Instant,
 }
 
 #[derive(Debug, Clone)]
@@ -251,6 +259,8 @@ pub enum StreamError {
     SubtitleNotDeliverable,
     #[error("too many streams are running")]
     TooManyStreams,
+    #[error("a later start of the same playback replaced this one")]
+    Superseded,
     #[error("the stream could not be started")]
     Engine(#[source] Box<dyn std::error::Error + Send + Sync>),
 }

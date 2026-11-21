@@ -142,6 +142,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn start() -> Result<(), Box<dyn std::error::Error>> {
+    let client_origins =
+        cors::ClientOrigins::from_setting(std::env::var("KLAPZ_CORS_ORIGINS").ok().as_deref())?;
     let database_url =
         std::env::var("KLAPZ_DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_owned());
     tracing::info!(database = %database_shown(&database_url), "opening the database");
@@ -232,7 +234,10 @@ async fn start() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         app
     };
-    let app = app.layer(cors::layer()).layer((
+    if !client_origins.configured().is_empty() {
+        tracing::info!(origins = ?client_origins.configured(), "web client origins allowed");
+    }
+    let app = app.layer(cors::layer(client_origins)).layer((
         TraceLayer::new_for_http().make_span_with(request_span),
         TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, Duration::from_secs(30)),
         // A real server sends both of these on every response, errors included, so they

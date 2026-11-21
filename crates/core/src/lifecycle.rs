@@ -387,11 +387,14 @@ mod tests {
                 duration_ms: None,
                 video: track.clone(),
                 audio: track,
+                subtitles: Vec::new(),
             },
             delivery: Delivery::Original,
             limits: StreamLimits::default(),
             subtitle: None,
+            subtitle_formats: Vec::new(),
             position_ms: 0,
+            asked_at: std::time::Instant::now(),
         }
     }
 

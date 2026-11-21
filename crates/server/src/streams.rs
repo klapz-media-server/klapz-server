@@ -207,6 +207,20 @@ fn subtitle_delivery(subtitle: &SubtitleOutput) -> SubtitleDelivery {
     }
 }
 
+/// Each subtitle track of the file and the format it would reach this player in as text, for
+/// the transcoder to extract those that are text before the player switches to one.
+fn text_subtitles(order: &StreamOrder) -> Vec<(Track, SubtitleFormat)> {
+    order
+        .source
+        .subtitles
+        .iter()
+        .filter_map(|subtitle| {
+            PlayerSubtitleFormat::for_track(&subtitle.codec, &order.subtitle_formats)
+                .map(|format| (track(subtitle), subtitle_format(format)))
+        })
+        .collect()
+}
+
 const fn subtitle_format(format: PlayerSubtitleFormat) -> SubtitleFormat {
     match format {
         PlayerSubtitleFormat::Ass => SubtitleFormat::Ass,
@@ -230,12 +244,29 @@ const fn adaptation_of(quality: StreamQuality) -> Adaptation {
     }
 }
 
+fn ladder_limits(order: &StreamOrder) -> Limits {
+    Limits {
+        max_video_kbps: order.limits.max_video_bitrate.map(|bits| bits / 1000),
+        convert_audio: order.limits.convert_audio,
+        adaptation: adaptation_of(order.limits.quality),
+        burn_subtitle: matches!(order.subtitle, Some(SubtitleOutput::Burn { .. })),
+        copy_codecs: order
+            .limits
+            .video_codecs
+            .as_deref()
+            .map_or(CopyCodecs::ANY, |names| {
+                CopyCodecs::named(names.iter().map(String::as_str))
+            }),
+    }
+}
+
 fn stream_error(error: TranscodeError) -> StreamError {
     match error {
         TranscodeError::MissingFile => StreamError::MissingFile,
         TranscodeError::VideoNeedsTranscoding => StreamError::VideoNotConvertible,
         TranscodeError::SubtitleCannotBeBurned => StreamError::SubtitleNotDeliverable,
         TranscodeError::TooManySessions => StreamError::TooManyStreams,
+        TranscodeError::Superseded => StreamError::Superseded,
         other => StreamError::Engine(Box::new(other)),
     }
 }
@@ -350,19 +381,7 @@ impl Streams {
                 frame_rate: measured.frame_rate,
             },
             protocol,
-            Limits {
-                max_video_kbps: order.limits.max_video_bitrate.map(|bits| bits / 1000),
-                convert_audio: order.limits.convert_audio,
-                adaptation: adaptation_of(order.limits.quality),
-                burn_subtitle: matches!(order.subtitle, Some(SubtitleOutput::Burn { .. })),
-                copy_codecs: order
-                    .limits
-                    .video_codecs
-                    .as_deref()
-                    .map_or(CopyCodecs::ANY, |names| {
-                        CopyCodecs::named(names.iter().map(String::as_str))
-                    }),
-            },
+            ladder_limits(&order),
         )
         .map_err(stream_error)?;
         let top = *ladder.top();
@@ -382,6 +401,7 @@ impl Streams {
             .start_stream(StreamRequest {
                 session: order.key.clone(),
                 playback: order.playback.clone(),
+                asked_at: order.asked_at,
                 source,
                 video: track(&measured.video),
                 audio: track(&measured.audio),
@@ -390,6 +410,7 @@ impl Streams {
                 protocol,
                 total_ms: u64::try_from(duration_ms).unwrap_or(0),
                 subtitle: order.subtitle.as_ref().map(subtitle_delivery),
+                text_subtitles: text_subtitles(&order),
             })
             .await
             .map_err(stream_error)?;
@@ -968,7 +989,7 @@ async fn subtitles(
     let transcoder = Arc::clone(&routes.streams.transcoder);
     let body = futures_util::stream::once(async move {
         let bytes = match transcoder.subtitles(&key).await {
-            Ok((bytes, _)) => Bytes::copy_from_slice(&bytes),
+            Ok((bytes, _)) => Bytes::from(bytes),
             Err(error) => {
                 tracing::warn!(%error, "a stream's subtitle could not be served");
                 Bytes::new()
@@ -1492,11 +1513,14 @@ mod tests {
                 duration_ms: Some(1000),
                 video: track("h264"),
                 audio: track("aac"),
+                subtitles: Vec::new(),
             },
             delivery: Delivery::Original,
             limits: klapz_core::stream::StreamLimits::default(),
             subtitle: None,
+            subtitle_formats: Vec::new(),
             position_ms: 0,
+            asked_at: Instant::now(),
         }
     }
 

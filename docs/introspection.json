@@ -25310,6 +25310,12 @@
               "description": "The key names a session an owner terminated: its player has to stop first.",
               "isDeprecated": false,
               "deprecationReason": null
+            },
+            {
+              "name": "SUPERSEDED",
+              "description": "A start of the same playback asked for after this one has replaced it.",
+              "isDeprecated": false,
+              "deprecationReason": null
             }
           ],
           "possibleTypes": null

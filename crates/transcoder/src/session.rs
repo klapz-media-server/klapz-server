@@ -29,7 +29,7 @@ use crate::plan::{
     audio_decoder, language_tag, video_decoder, Adaptation, AudioAction, KeyFrames, Ladder,
     StreamPlan, Track, VideoAction, VideoEncode,
 };
-use crate::subtitle::{Extraction, SubtitleFormat};
+use crate::subtitle::{self, Extraction, SubtitleFormat};
 use crate::{TranscodeError, Transcoder};
 
 /// Each session is a process and a directory of segments, and a client controls how many.
@@ -41,6 +41,9 @@ const IDLE_LIFETIME: Duration = Duration::from_secs(300);
 /// How old a directory no session owns must be to be removed: a session creates its directory
 /// a moment before it is registered.
 const ORPHAN_AGE: Duration = Duration::from_secs(60);
+
+/// How a session's directory begins, below the transcoder's.
+const SESSION_DIRECTORY: &str = "transcode-";
 
 /// How long a request for a playlist or a segment waits for the process to reach it.
 const WAIT_FOR_OUTPUT: Duration = Duration::from_secs(20);
@@ -96,6 +99,9 @@ pub struct StreamRequest {
     /// What is being watched, across changes of quality: a new stream under the same name
     /// replaces the one before it.
     pub playback: Option<String>,
+    /// When the player asked for it, which decides which of two starts of a playback replaces
+    /// the other.
+    pub asked_at: Instant,
     /// The file, already checked to lie within a library.
     pub source: PathBuf,
     pub video: Track,
@@ -110,6 +116,9 @@ pub struct StreamRequest {
     pub total_ms: u64,
     /// The subtitle the player gets, if any. Drawing it in needs the plan to encode the video.
     pub subtitle: Option<SubtitleDelivery>,
+    /// The file's subtitle tracks and the format each would reach the player in as text: those
+    /// that are text are extracted from the start, for the player to switch to.
+    pub text_subtitles: Vec<(Track, SubtitleFormat)>,
 }
 
 /// How a subtitle reaches the player.
@@ -133,10 +142,7 @@ impl SubtitleDelivery {
 
     /// Text the process can draw with libass or convert to another text format.
     fn is_text(&self) -> bool {
-        matches!(
-            self.track().codec.as_str(),
-            "srt" | "subrip" | "ass" | "ssa" | "mov_text" | "webvtt" | "vtt" | "text"
-        )
+        subtitle::is_text(&self.track().codec)
     }
 
     /// Pictures, from a Blu-ray, a DVD or a broadcast: laid over the video rather than drawn.
@@ -412,7 +418,7 @@ pub(crate) struct Session {
     last_used: Mutex<Instant>,
     switching: Mutex<Switching>,
     /// The text subtitle, extracted apart from the start.
-    subtitle: Option<Extraction>,
+    subtitle: Option<Arc<Extraction>>,
 }
 
 /// Removed with the last reference, which the process's supervising task holds until it exits.
@@ -1246,7 +1252,8 @@ fn remove_unowned(root: &Path, owned: &std::collections::HashSet<String>, settle
     };
     for entry in entries.flatten() {
         let name = entry.file_name();
-        if owned.contains(name.to_string_lossy().as_ref()) {
+        let name = name.to_string_lossy();
+        if owned.contains(name.as_ref()) || subtitle::is_subtitle_directory(&name) {
             continue;
         }
         let settled = entry
@@ -1270,6 +1277,31 @@ fn close(session: &Session) {
     if let Some(stop) = stop {
         stop.notify_one();
     }
+}
+
+/// The other sessions of the request's playback, which it replaces, unless one of them was
+/// asked for after it: a player that started twice in a row keeps its second stream, whichever
+/// reached here first.
+fn others_of_playback(
+    sessions: &HashMap<String, Arc<Session>>,
+    request: &StreamRequest,
+) -> Result<Vec<String>, TranscodeError> {
+    let Some(playback) = request.playback.as_deref() else {
+        return Ok(Vec::new());
+    };
+    let others: Vec<(&String, &Arc<Session>)> = sessions
+        .iter()
+        .filter(|(id, session)| {
+            **id != request.session && session.request.playback.as_deref() == Some(playback)
+        })
+        .collect();
+    if others
+        .iter()
+        .any(|(_, session)| session.request.asked_at > request.asked_at)
+    {
+        return Err(TranscodeError::Superseded);
+    }
+    Ok(others.into_iter().map(|(id, _)| id.clone()).collect())
 }
 
 impl Transcoder {
@@ -1301,14 +1333,59 @@ impl Transcoder {
             .cloned()
     }
 
-    /// Removes what a previous run left on disk. A session cleans up after itself, unless the
-    /// server is killed before it can.
+    /// Removes what a previous run's sessions left on disk, which a session cleans up itself
+    /// unless the server is killed before it can. The files' subtitles stay.
     pub fn remove_leftover_sessions(&self) {
-        match std::fs::remove_dir_all(&self.config.sessions_directory) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => tracing::warn!(%error, "could not remove old transcode sessions"),
+        let entries = match std::fs::read_dir(&self.config.sessions_directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => {
+                tracing::warn!(%error, "could not remove old transcode sessions");
+                return;
+            }
+        };
+        // The files' subtitles outlive the server; a session's directory never does.
+        for entry in entries.flatten() {
+            if subtitle::is_subtitle_directory(&entry.file_name().to_string_lossy()) {
+                continue;
+            }
+            let removed = if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                std::fs::remove_dir_all(entry.path())
+            } else {
+                std::fs::remove_file(entry.path())
+            };
+            if let Err(error) = removed {
+                tracing::warn!(%error, path = %entry.path().display(), "could not remove an old transcode session");
+            }
         }
+    }
+
+    /// Starts extracting every text subtitle of the request's file, the one it asked for first,
+    /// and returns that one's extraction.
+    async fn prepare_subtitles(&self, request: &StreamRequest) -> Option<Arc<Extraction>> {
+        let chosen = match &request.subtitle {
+            Some(SubtitleDelivery::Text { track, format }) => Some((track.clone(), *format)),
+            _ => None,
+        };
+        let wanted: Vec<(Track, SubtitleFormat)> = chosen
+            .iter()
+            .cloned()
+            .chain(
+                request
+                    .text_subtitles
+                    .iter()
+                    .filter(|(track, _)| subtitle::is_text(&track.codec))
+                    .cloned(),
+            )
+            .collect();
+        if wanted.is_empty() {
+            return None;
+        }
+        let extractions = self
+            .subtitles
+            .prepare(&self.config, &request.source, &wanted)
+            .await;
+        chosen.and(extractions.into_iter().next())
     }
 
     /// Removes the directories no session owns. A process outlives a server killed outright,
@@ -1320,7 +1397,7 @@ impl Transcoder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .values()
-            .map(|session| session.callback.clone())
+            .map(|session| format!("{SESSION_DIRECTORY}{}", session.callback))
             .collect();
         let root = self.config.sessions_directory.clone();
         let removal =
@@ -1328,6 +1405,7 @@ impl Transcoder {
         if let Err(error) = removal {
             tracing::warn!(%error, "could not look for orphaned transcode directories");
         }
+        self.subtitles.prune().await;
     }
 
     /// Starts a session, or does nothing if the client's is already running: a player asks
@@ -1347,7 +1425,7 @@ impl Transcoder {
             }
         }
         self.stop_idle_sessions();
-        let replaced = self.stop_streams_of(request.playback.as_deref(), &request.session);
+        let mut replaced = self.stop_streams_of(&request)?;
         if let Some(running) = self.session(&request.session) {
             if running.request.produces_the_same_as(&request) {
                 return Ok(replaced);
@@ -1365,7 +1443,10 @@ impl Transcoder {
         }
 
         let callback = uuid::Uuid::new_v4().simple().to_string();
-        let directory = self.config.sessions_directory.join(&callback);
+        let directory = self
+            .config
+            .sessions_directory
+            .join(format!("{SESSION_DIRECTORY}{callback}"));
         tokio::fs::create_dir_all(&directory)
             .await
             .map_err(TranscodeError::Io)?;
@@ -1385,16 +1466,7 @@ impl Transcoder {
             )
         });
         let key = request.session.clone();
-        let subtitle = match &request.subtitle {
-            Some(SubtitleDelivery::Text { track, format }) => Some(Extraction::start(
-                self.config.clone(),
-                Arc::clone(&self.extractions),
-                request.source.clone(),
-                track.clone(),
-                *format,
-            )),
-            _ => None,
-        };
+        let subtitle = self.prepare_subtitles(&request).await;
         let session = Arc::new(Session {
             callback_base: format!("{}/transcoder", self.config.callback_base),
             callback,
@@ -1416,10 +1488,22 @@ impl Transcoder {
             subtitle,
         });
         // Registered before the process exists: its first act is to read its source back.
-        self.sessions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.clone(), Arc::clone(&session));
+        // Another start of the playback may have registered while this one prepared.
+        let registered = {
+            let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+            let others = others_of_playback(&sessions, &session.request);
+            if let Ok(others) = &others {
+                sessions.insert(key.clone(), Arc::clone(&session));
+                for id in others {
+                    if let Some(other) = sessions.remove(id) {
+                        close(&other);
+                    }
+                }
+            }
+            others
+        };
+        // Refused, the session goes with its directory.
+        replaced.extend(registered?);
 
         let offset = session.request.offset;
         if let Err(error) = self.launch(&session, 0, chunk, offset).await {
@@ -1433,24 +1517,15 @@ impl Transcoder {
     }
 
     /// A player changing quality opens a new session and leaves the old one for us to close.
-    fn stop_streams_of(&self, playback: Option<&str>, keep: &str) -> Vec<String> {
-        let Some(playback) = playback else {
-            return Vec::new();
-        };
-        let replaced: Vec<String> = self
-            .sessions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .filter(|(id, session)| {
-                id.as_str() != keep && session.request.playback.as_deref() == Some(playback)
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
+    fn stop_streams_of(&self, request: &StreamRequest) -> Result<Vec<String>, TranscodeError> {
+        let replaced = others_of_playback(
+            &self.sessions.lock().unwrap_or_else(PoisonError::into_inner),
+            request,
+        )?;
         for id in &replaced {
             self.stop_session(id);
         }
-        replaced
+        Ok(replaced)
     }
 
     /// Starts a process for this session at a rung and a segment, writing into a directory of
@@ -2015,7 +2090,7 @@ impl Transcoder {
     /// [`TranscodeError::UnknownSession`] if none starts in time,
     /// [`TranscodeError::UnknownSegment`] for a session with no text subtitle, and what
     /// extracting it meets.
-    pub async fn subtitles(&self, id: &str) -> Result<(Arc<[u8]>, SubtitleFormat), TranscodeError> {
+    pub async fn subtitles(&self, id: &str) -> Result<(Vec<u8>, SubtitleFormat), TranscodeError> {
         let began = Instant::now();
         let session = loop {
             if let Some(session) = self.session(id) {
@@ -2229,6 +2304,7 @@ mod tests {
         StreamRequest {
             session: "s".to_owned(),
             playback: None,
+            asked_at: Instant::now(),
             source: PathBuf::from("x"),
             video: track(0, "h264", "en"),
             audio: track(1, "dca", "fr"),
@@ -2240,6 +2316,7 @@ mod tests {
             protocol: Protocol::Hls,
             total_ms: 0,
             subtitle: None,
+            text_subtitles: Vec::new(),
         }
     }
 
@@ -2907,7 +2984,7 @@ mod tests {
     #[test]
     fn only_a_settled_directory_no_session_owns_is_removed() {
         let root = scratch_directory();
-        for name in ["owned", "orphan"] {
+        for name in ["owned", "orphan", "subtitle-aa"] {
             std::fs::create_dir_all(root.join(name)).unwrap();
         }
         let owned = std::iter::once("owned".to_owned()).collect();
@@ -2917,6 +2994,8 @@ mod tests {
         remove_unowned(&root, &owned, Duration::ZERO);
         assert!(root.join("owned").exists());
         assert!(!root.join("orphan").exists());
+        // A file's subtitles belong to no session, and are pruning's.
+        assert!(root.join("subtitle-aa").exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -2932,33 +3011,71 @@ mod tests {
         assert!(!directory.exists());
     }
 
-    #[test]
-    fn a_new_stream_replaces_the_one_before_it_under_the_same_playback() {
+    /// Sessions under their keys, each of a playback and asked for that many seconds in.
+    fn playing(sessions: &[(&str, Option<&str>, u64)]) -> (Transcoder, Instant) {
         let transcoder = Transcoder::default();
-        let running = |playback: Option<&str>| {
+        let origin = Instant::now();
+        for &(id, playback, second) in sessions {
             let mut session = session_writing_to(scratch_directory(), false);
-            Arc::get_mut(&mut session).unwrap().request.playback = playback.map(str::to_owned);
-            session
-        };
-        for (id, playback) in [
-            ("old", Some("tab")),
-            ("new", Some("tab")),
-            ("elsewhere", Some("other")),
-            ("unnamed", None),
-        ] {
+            let request = &mut Arc::get_mut(&mut session).unwrap().request;
+            request.session = id.to_owned();
+            request.playback = playback.map(str::to_owned);
+            request.asked_at = origin + Duration::from_secs(second);
             transcoder
                 .sessions
                 .lock()
                 .unwrap()
-                .insert(id.to_owned(), running(playback));
+                .insert(id.to_owned(), session);
         }
+        (transcoder, origin)
+    }
 
-        assert_eq!(transcoder.stop_streams_of(Some("tab"), "new"), ["old"]);
+    fn asking(id: &str, playback: Option<&str>, at: Instant) -> StreamRequest {
+        StreamRequest {
+            session: id.to_owned(),
+            playback: playback.map(str::to_owned),
+            asked_at: at,
+            ..request(AudioAction::Copy)
+        }
+    }
+
+    #[test]
+    fn a_new_stream_replaces_the_one_before_it_under_the_same_playback() {
+        let (transcoder, origin) = playing(&[
+            ("old", Some("tab"), 0),
+            ("new", Some("tab"), 1),
+            ("elsewhere", Some("other"), 2),
+            ("unnamed", None, 3),
+        ]);
+        let new = origin + Duration::from_secs(1);
+
+        assert_eq!(
+            transcoder
+                .stop_streams_of(&asking("new", Some("tab"), new))
+                .unwrap(),
+            ["old"]
+        );
         assert!(transcoder.session("old").is_none());
         for id in ["new", "elsewhere", "unnamed"] {
             assert!(transcoder.session(id).is_some(), "{id}");
         }
-        assert!(transcoder.stop_streams_of(None, "new").is_empty());
+        assert!(transcoder
+            .stop_streams_of(&asking("new", None, new))
+            .unwrap()
+            .is_empty());
+    }
+
+    /// A player starting twice in a row: its second start reached here first, and its first,
+    /// arriving late, must not take it down.
+    #[test]
+    fn a_start_asked_for_before_a_running_one_of_its_playback_replaces_nothing() {
+        let (transcoder, origin) = playing(&[("second", Some("tab"), 1)]);
+
+        assert!(matches!(
+            transcoder.stop_streams_of(&asking("first", Some("tab"), origin)),
+            Err(TranscodeError::Superseded)
+        ));
+        assert!(transcoder.session("second").is_some());
     }
 
     #[tokio::test(start_paused = true)]
