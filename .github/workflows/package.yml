@@ -78,7 +78,20 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      # The ARM runner is the smallest of the lot: with fat LTO, linking both binaries at once
+      # exhausts its memory and the runner dies, so it gets swap and builds one job at a time.
+      - name: Add swap
+        if: matrix.platform == 'linux-arm64'
+        run: |
+          sudo fallocate -l 8G /klapz-swapfile
+          sudo chmod 600 /klapz-swapfile
+          sudo mkswap /klapz-swapfile
+          sudo swapon /klapz-swapfile
+          free -h
+
       - name: Build
+        env:
+          CARGO_BUILD_JOBS: ${{ matrix.platform == 'linux-arm64' && '1' || '' }}
         run: cargo build --release --locked --target ${{ matrix.target }} -p klapz-server -p klapz-scanner
 
       - name: Lay out the binaries
