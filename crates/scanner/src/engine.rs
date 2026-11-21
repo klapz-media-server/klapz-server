@@ -11,7 +11,7 @@ mod probe;
 mod sequence_header;
 mod subtitles;
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -52,6 +52,17 @@ impl Tools {
         command.arg("-probe");
         command
     }
+
+    /// Whether ffprobe runs at all, without a file: what a server checks when it starts, so
+    /// that a missing tool is told once rather than file after file.
+    ///
+    /// # Errors
+    ///
+    /// [`ScanError::Spawn`] when it cannot start, [`ScanError::ProbeUnsupported`] when the
+    /// ffmpeg has no ffprobe of its own.
+    pub fn check(&self) -> Result<(), ScanError> {
+        run("ffprobe", self.ffprobe().arg("-version")).map(drop)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -69,6 +80,13 @@ pub enum ScanError {
     /// The tool ran and refused the file: corrupt, truncated, or not media.
     #[error("{tool} could not read the media: {message}")]
     Unreadable { tool: &'static str, message: String },
+    /// The ffmpeg run as ffprobe refuses `-probe`: a stock build, or an ffmpeg-plex older than
+    /// v8.1.3-15, which carry no ffprobe of their own.
+    #[error(
+        "{program} has no ffprobe of its own (it refuses -probe): use ffmpeg-plex v8.1.3-15 or \
+         later as KLAPZ_TRANSCODER, or set KLAPZ_FFPROBE to an ffprobe"
+    )]
+    ProbeUnsupported { program: String },
     #[error("{tool} printed something unexpected: {message}")]
     Output { tool: &'static str, message: String },
     #[error("the file has no track {0} of the kind asked for")]
@@ -91,6 +109,25 @@ impl ScanError {
             Self::Unreadable { .. } | Self::NoSuchTrack(_) | Self::Unsupported(_)
         )
     }
+
+    /// Whether the tools cannot run at all, so that every file would fail the same way: the
+    /// caller fixes its setup rather than blame or retry the file.
+    pub fn is_tool_fault(&self) -> bool {
+        matches!(self, Self::Spawn { .. } | Self::ProbeUnsupported { .. })
+    }
+}
+
+/// What a tool's failure says: about the tool when ffmpeg refused to be ffprobe, about the
+/// media otherwise. ffmpeg names the option it does not know and stops before reading anything.
+fn failure(tool: &'static str, program: &OsStr, stderr: &[u8]) -> ScanError {
+    let message = last_lines(stderr);
+    if message.contains("Unrecognized option 'probe'") {
+        ScanError::ProbeUnsupported {
+            program: program.to_string_lossy().into_owned(),
+        }
+    } else {
+        ScanError::Unreadable { tool, message }
+    }
 }
 
 /// The input argument for ffmpeg and ffprobe. The `file:` protocol keeps a name such as
@@ -111,10 +148,7 @@ fn run(tool: &'static str, command: &mut Command) -> Result<Vec<u8>, ScanError> 
     if output.status.success() {
         Ok(output.stdout)
     } else {
-        Err(ScanError::Unreadable {
-            tool,
-            message: last_lines(&output.stderr),
-        })
+        Err(failure(tool, command.get_program(), &output.stderr))
     }
 }
 
@@ -122,6 +156,7 @@ fn run(tool: &'static str, command: &mut Command) -> Result<Vec<u8>, ScanError> 
 /// than left running.
 struct Streaming {
     tool: &'static str,
+    program: OsString,
     child: Child,
 }
 
@@ -133,7 +168,11 @@ impl Streaming {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|source| ScanError::Spawn { tool, source })?;
-        Ok(Self { tool, child })
+        Ok(Self {
+            tool,
+            program: command.get_program().to_owned(),
+            child,
+        })
     }
 
     fn stdout(&mut self) -> Result<std::process::ChildStdout, ScanError> {
@@ -157,10 +196,7 @@ impl Streaming {
         if status.success() {
             Ok(())
         } else {
-            Err(ScanError::Unreadable {
-                tool: self.tool,
-                message: last_lines(&stderr),
-            })
+            Err(failure(self.tool, &self.program, &stderr))
         }
     }
 }
@@ -220,4 +256,29 @@ fn produced(
 /// Seconds as ffmpeg reads them, to the millisecond.
 fn seconds(ms: u64) -> String {
     format!("{}.{:03}", ms / 1000, ms % 1000)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_ffmpeg_refusing_probe_is_the_tools_fault_not_the_media_s() {
+        let stderr = b"ffmpeg version 8.0\nUnrecognized option 'probe'.\nError splitting the argument list: Option not found\n";
+        let error = failure("ffprobe", OsStr::new("C:/bin/ffmpeg.exe"), stderr);
+        assert!(
+            matches!(&error, ScanError::ProbeUnsupported { program } if program == "C:/bin/ffmpeg.exe")
+        );
+        assert!(error.is_tool_fault());
+        assert!(!error.is_media_fault());
+        assert!(error.to_string().contains("KLAPZ_FFPROBE"));
+
+        let corrupt = failure(
+            "ffprobe",
+            OsStr::new("ffmpeg"),
+            b"file:x.mkv: Invalid data found when processing input\n",
+        );
+        assert!(corrupt.is_media_fault());
+        assert!(!corrupt.is_tool_fault());
+    }
 }

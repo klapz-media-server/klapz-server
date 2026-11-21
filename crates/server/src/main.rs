@@ -14,6 +14,8 @@ mod files;
 mod graphql;
 mod remote_tokens;
 mod streams;
+#[cfg(windows)]
+mod tray;
 mod web;
 
 use std::future::IntoFuture as _;
@@ -75,12 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let library: Arc<dyn LibraryRepository> =
         Arc::new(SqlLibraryRepository::new(connection.clone()));
     let scans = BackgroundScans::new(commands::scanner(&connection, Arc::clone(&library)));
+    tokio::spawn(check_scanner_tools());
     let play_queues: Arc<dyn PlayQueueRepository> =
         Arc::new(SqlPlayQueueRepository::new(connection.clone()));
     let playback: Arc<dyn PlaybackRepository> =
         Arc::new(SqlPlaybackRepository::new(connection.clone()));
     let users: Arc<dyn AccessRepository> = Arc::new(SqlAccessRepository::new(connection.clone()));
-    ensure_admin_account(users.as_ref()).await?;
+    let admin = ensure_admin_account(users.as_ref()).await?;
     let metadata: Arc<dyn MetadataRepository> =
         Arc::new(SqlMetadataRepository::new(connection.clone()));
     let directory: Arc<dyn AccountDirectory> = Arc::new(klapz_api_plex::plex_tv::PlexTv::new()?);
@@ -132,47 +135,109 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(sweep);
     let app = klapz_api_plex::router(plex_state)
         .merge(jellyfin_surface(&schema, &sign_in))
-        .merge(graphql::router(schema, sign_in))
+        .merge(graphql::router(schema, Arc::clone(&sign_in)))
         .merge(admin::router())
         .merge(streams::router(sessions.clone()))
         .merge(callbacks::router(Arc::clone(&transcoder)));
-    let app = with_web_client(app)
-        // One token middleware for every surface, so neither can be left unauthenticated by
-        // omission.
-        .layer(axum::middleware::from_fn_with_state(
-            access,
-            auth::require_token,
-        ))
-        .layer(cors::layer())
-        .layer((
-            TraceLayer::new_for_http().make_span_with(request_span),
-            TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, Duration::from_secs(30)),
-            // A real server sends both of these on every response, errors included, so they
-            // belong in a layer rather than in the response wrapper. Only an image says
-            // otherwise about caching, so that one yields to the handler.
-            SetResponseHeaderLayer::overriding(
-                header::HeaderName::from_static("x-plex-protocol"),
-                HeaderValue::from_static("1.0"),
-            ),
-            SetResponseHeaderLayer::if_not_present(
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("no-cache"),
-            ),
-        ));
+    let (app, web_served) = with_web_client(app);
+    // One token middleware for every surface, so neither can be left unauthenticated by
+    // omission.
+    let app = app.layer(axum::middleware::from_fn_with_state(
+        access,
+        auth::require_token,
+    ));
+    // Outside the token's middleware, which would answer a browser `401` first; and only when
+    // there is a client to be sent to.
+    let app = if web_served {
+        app.layer(axum::middleware::from_fn(web::send_navigation_to_client))
+    } else {
+        app
+    };
+    let app = app.layer(cors::layer()).layer((
+        TraceLayer::new_for_http().make_span_with(request_span),
+        TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, Duration::from_secs(30)),
+        // A real server sends both of these on every response, errors included, so they
+        // belong in a layer rather than in the response wrapper. Only an image says
+        // otherwise about caching, so that one yields to the handler.
+        SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("x-plex-protocol"),
+            HeaderValue::from_static("1.0"),
+        ),
+        SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache"),
+        ),
+    ));
 
-    let bind = std::env::var("KLAPZ_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
-    let listener = listen(&bind).await?;
-    tracing::info!(address = %bind, "klapz listening");
-    serve_until_signal(listener, app, sessions).await?;
+    serve(app, sessions, web_served, admin, sign_in).await?;
     transcoder.remove_leftover_sessions();
     Ok(())
 }
 
-/// Serves until Ctrl-C, then ends every session before giving the connections a moment.
+/// Listens on `KLAPZ_BIND` and serves until stopped, with the tray icon on Windows: its "Open
+/// web app" signs the browser in as `admin` when the web client is served.
+async fn serve(
+    app: axum::Router,
+    sessions: streams::Sessions,
+    web_served: bool,
+    admin: klapz_core::UserId,
+    sign_in: Arc<klapz_api::Sessions>,
+) -> std::io::Result<()> {
+    let bind = std::env::var("KLAPZ_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_owned());
+    let listener = listen(&bind).await?;
+    tracing::info!(address = %bind, "klapz listening");
+    let quit = Arc::new(tokio::sync::Notify::new());
+    #[cfg(windows)]
+    let tray = show_tray(web_served.then_some((admin, sign_in)), &listener, &quit);
+    #[cfg(not(windows))]
+    let _ = (web_served, admin, sign_in);
+    let served = serve_until_signal(listener, app, sessions, quit).await;
+    #[cfg(windows)]
+    if let Some(tray) = tray {
+        tray.close();
+    }
+    served
+}
+
+/// The tray icon; `web_app`, the user its "Open web app" signs in, when there is a client.
+#[cfg(windows)]
+fn show_tray(
+    web_app: Option<(klapz_core::UserId, Arc<klapz_api::Sessions>)>,
+    listener: &tokio::net::TcpListener,
+    quit: &Arc<tokio::sync::Notify>,
+) -> Option<tray::Tray> {
+    let web_app: Option<Box<dyn Fn() -> String + Send>> = match (web_app, listener.local_addr()) {
+        (Some((admin, sign_in)), Ok(address)) => {
+            let origin = tray::local_origin(address);
+            Some(Box::new(move || {
+                format!(
+                    "{origin}/web/?ticket={}",
+                    sign_in.issue_sign_in_ticket(admin)
+                )
+            }))
+        }
+        _ => None,
+    };
+    tray::Tray::show(tray::Actions {
+        web_app,
+        quit: Arc::clone(quit),
+    })
+}
+
+/// Says at startup, once, that scans cannot analyse files, rather than leaving it to the first
+/// scan to find out, by asking the scanner the scans will run.
+async fn check_scanner_tools() {
+    if let Err(error) = analyzer::ScannerProcess::from_env().check().await {
+        tracing::error!(%error, "library scans cannot analyse files until this is fixed");
+    }
+}
+
+/// Serves until Ctrl-C or `quit`, then ends every session before giving the connections a moment.
 async fn serve_until_signal(
     listener: tokio::net::TcpListener,
     app: axum::Router,
     sessions: streams::Sessions,
+    quit: Arc<tokio::sync::Notify>,
 ) -> std::io::Result<()> {
     let ended = Arc::new(tokio::sync::Notify::new());
     // With the peer's address attached, which is how the transcoder's callbacks know loopback.
@@ -180,7 +245,7 @@ async fn serve_until_signal(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .with_graceful_shutdown(end_on_signal(sessions, Arc::clone(&ended)));
+    .with_graceful_shutdown(end_on_signal(sessions, quit, Arc::clone(&ended)));
     tokio::select! {
         served = serving.into_future() => served,
         () = async {
@@ -193,12 +258,22 @@ async fn serve_until_signal(
     }
 }
 
-/// Waits for Ctrl-C, then ends every session before the server stops listening: no process,
+/// Waits for Ctrl-C or `quit` (the tray icon's), then ends every session before the server stops listening: no process,
 /// directory or row outlives the server that started it.
-async fn end_on_signal(sessions: streams::Sessions, ended: Arc<tokio::sync::Notify>) {
-    if let Err(error) = tokio::signal::ctrl_c().await {
-        tracing::warn!(%error, "cannot listen for Ctrl-C: sessions end at the next start");
-        std::future::pending::<()>().await;
+async fn end_on_signal(
+    sessions: streams::Sessions,
+    quit: Arc<tokio::sync::Notify>,
+    ended: Arc<tokio::sync::Notify>,
+) {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::warn!(%error, "cannot listen for Ctrl-C: sessions end at the next start");
+            std::future::pending::<()>().await;
+        }
+    };
+    tokio::select! {
+        () = ctrl_c => {}
+        () = quit.notified() => {}
     }
     tracing::info!("stopping: ending every playback session");
     if let Err(error) = sessions.lifecycle().end_all().await {
@@ -294,8 +369,9 @@ async fn run_import(
 /// `KLAPZ_ADMIN_PASSWORD` sets its password, at creation and on every start; without it, a
 /// new account gets a generated one and an existing one keeps its own. A password the policy
 /// refuses stops the server. A generated password goes to standard output, once, and never
-/// to the logs, which may be kept or shipped where a password must not go.
-async fn ensure_admin_account(users: &dyn AccessRepository) -> Result<(), String> {
+/// to the logs, which may be kept or shipped where a password must not go. Its id, for the
+/// tray icon to sign a browser in as it.
+async fn ensure_admin_account(users: &dyn AccessRepository) -> Result<klapz_core::UserId, String> {
     let configured = std::env::var("KLAPZ_ADMIN_PASSWORD")
         .ok()
         .filter(|password| !password.is_empty());
@@ -322,7 +398,11 @@ async fn ensure_admin_account(users: &dyn AccessRepository) -> Result<(), String
         }
         Err(error) => return Err(format!("could not set the admin account up: {error}")),
     }
-    Ok(())
+    match users.user_named(klapz_core::access::ADMIN_USERNAME).await {
+        Ok(Some(admin)) => Ok(admin.id),
+        Ok(None) => Err("the admin account vanished as it was set up".to_owned()),
+        Err(error) => Err(format!("could not read the admin account: {error}")),
+    }
 }
 
 /// The key sessions are signed with, for the transport to check them, and the sign-in
@@ -379,18 +459,18 @@ fn request_span(request: &axum::extract::Request) -> tracing::Span {
 /// separately distributed codecs are, for Plex's own build; `KLAPZ_TRANSCODER_FONTS` the
 /// fonts subtitles are burned in with, by default `Resources/Fonts` beside the binary, where a
 /// Plex install keeps them.
-/// Plex Web at `/web`, when its directory holds it.
-fn with_web_client(app: axum::Router) -> axum::Router {
+/// Plex Web at `/web`, when its directory holds it, and whether it does.
+fn with_web_client(app: axum::Router) -> (axum::Router, bool) {
     let Some(web_dir) = web::directory() else {
         tracing::info!("no web client directory, /web is not served");
-        return app;
+        return (app, false);
     };
     if let Some(client) = web::router(&web_dir) {
         tracing::info!(directory = %web_dir.display(), "serving the web client at /web");
-        app.merge(client)
+        (app.merge(client), true)
     } else {
         tracing::info!(directory = %web_dir.display(), "no web client found, /web is not served");
-        app
+        (app, false)
     }
 }
 

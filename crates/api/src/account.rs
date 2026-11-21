@@ -15,8 +15,8 @@ use klapz_core::access::{
 };
 use klapz_core::account::{
     hash_password, is_acceptable_password, login_of, normalized_email, normalized_username,
-    verify_against_nothing, verify_password, SessionKey, SignInThrottle, PASSWORD_LENGTH,
-    SESSION_LIFETIME_SECONDS, USERNAME_LENGTH,
+    verify_against_nothing, verify_password, SessionKey, SignInThrottle, SignInTickets,
+    PASSWORD_LENGTH, SESSION_LIFETIME_SECONDS, USERNAME_LENGTH,
 };
 use klapz_core::{now_epoch, UserId};
 
@@ -38,6 +38,7 @@ pub struct Sessions {
     key: Arc<SessionKey>,
     secure_cookie: bool,
     throttle: SignInThrottle,
+    tickets: SignInTickets,
     hashing: tokio::sync::Semaphore,
 }
 
@@ -50,6 +51,7 @@ impl Sessions {
             key,
             secure_cookie,
             throttle: SignInThrottle::default(),
+            tickets: SignInTickets::default(),
             hashing: tokio::sync::Semaphore::new(CONCURRENT_HASHES),
         }
     }
@@ -57,6 +59,13 @@ impl Sessions {
     #[must_use]
     pub fn key(&self) -> &SessionKey {
         &self.key
+    }
+
+    /// A one-time ticket that signs a browser in as `user` through `signInWithTicket`: what
+    /// the server hands out in an address it opens itself. Never to a client.
+    #[must_use]
+    pub fn issue_sign_in_ticket(&self, user: UserId) -> String {
+        self.tickets.issue(user, now_epoch())
     }
 
     fn cookie(&self, value: &str, max_age: i64) -> String {
@@ -113,6 +122,8 @@ pub enum AccountErrorCode {
     NotConnected,
     /// The extension's clients do not sign in with a password: Plex's are handed a token.
     NoPasswordSignIn,
+    /// The ticket was used already, expired, or never issued.
+    InvalidTicket,
 }
 
 /// A problem with what was asked, as opposed to a failure of the server.
@@ -157,6 +168,9 @@ impl AccountUserError {
             }
             AccountErrorCode::NoPasswordSignIn => {
                 "this extension's clients do not sign in with a password".to_owned()
+            }
+            AccountErrorCode::InvalidTicket => {
+                "this ticket was used already, or has expired".to_owned()
             }
         };
         Self {
@@ -342,6 +356,51 @@ pub(crate) async fn sign_in(context: &Context<'_>, input: SignInInput) -> Result
         }
     };
     let token = sessions.key.issue(user.id, now_epoch())?;
+    context.append_http_header(
+        "Set-Cookie",
+        sessions.cookie(&token, SESSION_LIFETIME_SECONDS),
+    );
+    Ok(SignInPayload {
+        client_mutation_id: input.client_mutation_id,
+        user: Some(UserObject(user)),
+        user_errors: Vec::new(),
+    })
+}
+
+/// A ticket the server handed out in an address it opened, to sign a browser in.
+#[derive(Debug, InputObject)]
+pub struct SignInWithTicketInput {
+    /// Echoed back in the payload, for the client to match the two.
+    pub client_mutation_id: Option<String>,
+    /// The ticket, as the address carried it.
+    #[graphql(secret)]
+    pub ticket: String,
+}
+
+pub(crate) async fn sign_in_with_ticket(
+    context: &Context<'_>,
+    input: SignInWithTicketInput,
+) -> Result<SignInPayload> {
+    let sessions = sessions(context)?;
+    let refuse = |field: &str, code| {
+        Ok(SignInPayload {
+            client_mutation_id: input.client_mutation_id.clone(),
+            user: None,
+            user_errors: vec![AccountUserError::new(field, code)],
+        })
+    };
+    let now = now_epoch();
+    let Some(user) = sessions.tickets.redeem(&input.ticket, now) else {
+        return refuse("ticket", AccountErrorCode::InvalidTicket);
+    };
+    let api = context.data::<ApiContext>()?;
+    let Some(user) = api.access.user(user).await? else {
+        return refuse("ticket", AccountErrorCode::InvalidTicket);
+    };
+    if !user.active {
+        return refuse("ticket", AccountErrorCode::Inactive);
+    }
+    let token = sessions.key.issue(user.id, now)?;
     context.append_http_header(
         "Set-Cookie",
         sessions.cookie(&token, SESSION_LIFETIME_SECONDS),

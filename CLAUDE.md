@@ -219,10 +219,11 @@ without them saying so.
   two processes per thumbnail cost more than the work.
 - **The scanner is a command line over one file, and keeps nothing.** `klapz-scanner
   <command> [options] -- <file>`: `probe [--deep]`, `hashes`, `loudness`, `fingerprint`,
-  `subtitles`, `bif`, `chapter-thumbs`, `artwork`. It prints one JSON report on standard output
+  `subtitles`, `bif`, `chapter-thumbs`, `artwork`, and `klapz-scanner check`, with no file, which
+  exits `0` or `4` and is what the server runs at startup. It prints one JSON report on standard output
   (`klapz_scanner::report`, the same types the server reads back, versioned), writes the
   files it makes into an `--out` directory the server created and owns, creates no directory
-  and overwrites nothing, and exits `3` when the media is at fault, `2` on bad usage. It
+  and overwrites nothing, and exits `3` when the media is at fault, `4` when its tools cannot run (no ffmpeg, or one that refuses `-probe`), `2` on bad usage. A `4` stops the server's scan before it stores the file it was on, so the next scan, once the setup is fixed, finds it new; the server also checks the tools once at startup, and `Library.scanFailure` tells a library's admins why its last scan stopped. It
   decodes nothing itself — ffprobe and ffmpeg-plex do, as its children — reaches no network
   and holds no state: what to redo, and where results go, is the server's. The file comes after
   `--` and reaches the tools as `file:…`, so no name is read as an option or a protocol.
@@ -278,6 +279,14 @@ without them saying so.
   cookie. `signOut` clears the cookie; a copied session stays valid until it expires (30 days)
   unless its user is shut out. The tools sign in as `admin` this way
   (`tools/klapz_session.py`, with `KLAPZ_ADMIN_PASSWORD`).
+- **The Windows tray icon signs a browser in with a ticket in the address.** "Open web app"
+  opens `/web/?ticket=…` in the default browser, as `admin`, the server's operator being
+  whoever sits at its desktop; "Quit klapz" stops the server as Ctrl-C does. A ticket is drawn
+  by the server alone (`Sessions::issue_sign_in_ticket`, kept as a digest), redeemed once within
+  60 seconds by `signInWithTicket`, which sets the usual session cookie and refuses an inactive
+  user, and the client takes it out of the address before anything else. An address stays in a
+  browser's history, which is why it carries a ticket rather than a session. `KLAPZ_TRAY=0` turns
+  the icon off; no desktop (a service) leaves it out with a warning.
 - **`/graphql` admits nobody**, so a browser can sign in before it is anyone. The request goes
   through with no principal, which every resolver already answers as "nothing exists";
   `nobody_reads_nothing_from_any_entry_point` keeps it that way. Every other route still
@@ -657,10 +666,11 @@ KLAPZ_ADMIN_PASSWORD='a long passphrase' cargo run -p klapz-server
 | `KLAPZ_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `KLAPZ_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `KLAPZ_JELLYFIN_WEB_DIR` | *(none)* | Jellyfin Web, served without a token at `/jellyfin/web`: a Jellyfin install's `jellyfin-web` directory. Not versioned: it is Jellyfin's code. |
-| `KLAPZ_WEB_DIR` | `web` beside the server's executable | Plex Web, served without a token at `/web` as the reference serves it, read from disk: nothing of it is compiled into the server. Not versioned: it is Plex's code. No such directory (no `index.html` in it) means `/web` is not served. `/web` redirects to `/web/`, which serves the index, and a path naming no file answers the index, so a client routing in the browser works there; the reference redirects `/web` and `/web/` to `/web/index.html` instead. A client built for this prefix uses relative asset addresses (Vite's `base: './'`) or `/web/` ones. |
+| `KLAPZ_WEB_DIR` | `web` beside the server's executable | Plex Web, served without a token at `/web` as the reference serves it, read from disk: nothing of it is compiled into the server. Not versioned: it is Plex's code. No such directory (no `index.html` in it) means `/web` is not served. `/web` redirects to `/web/`, which serves the index, and a path naming no file answers the index, so a client routing in the browser works there; the reference redirects `/web` and `/web/` to `/web/index.html` instead. A client built for this prefix uses relative asset addresses (Vite's `base: './'`) or `/web/` ones. A browser opening `/` itself (`Sec-Fetch-Mode: navigate`, `GET` or `HEAD`) is answered `307` to `/web/` before any token is asked for, where the reference answers `401`; API clients, Plex Web's own calls included, still get the root's capabilities. Without a client, `/` stays as it was. |
 | `KLAPZ_TRANSCODER` | `klapz-ffmpeg`, else `ffmpeg`, beside the executable (with `.exe` on Windows), else the `ffmpeg` on `PATH`; the server and the scanner share the rule (`klapz_scanner::transcoder`) | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `KLAPZ_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
-| `KLAPZ_FFPROBE` | `KLAPZ_TRANSCODER -probe` | The ffprobe the scanner reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. |
+| `KLAPZ_FFPROBE` | `KLAPZ_TRANSCODER -probe` | The ffprobe the scanner reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. An ffmpeg that refuses `-probe` is named as such at startup and in the scan's failure, never taken for a corrupt file. |
+| `KLAPZ_TRAY` | *(on, Windows only)* | `0` or `off` leaves the notification-area icon out. |
 | `KLAPZ_SCANNER` | `klapz-scanner` beside the server's executable, else on `PATH` | The scanner binary a library scan runs on each new or changed file. |
 | `KLAPZ_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which Plex's own binary needs. The rebuilt one has them built in and needs none. |
 

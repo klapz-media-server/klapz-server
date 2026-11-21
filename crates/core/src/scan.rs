@@ -31,6 +31,10 @@ pub enum ScanError {
     AlreadyRunning,
     #[error("the scan was cancelled")]
     Cancelled,
+    /// The analyzer cannot run at all. The scan stops before storing the file it was on, so
+    /// that the next scan, once the setup is fixed, finds it new and analyzes it.
+    #[error("the media analyzer cannot run: {0}")]
+    AnalyzerUnavailable(String),
     #[error("scan storage failed")]
     Storage(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
@@ -43,6 +47,10 @@ pub enum AnalyzeError {
     /// The analyzer itself failed — it could not start, or timed out.
     #[error("media analysis failed")]
     Failed(#[source] Box<dyn std::error::Error + Send + Sync>),
+    /// The analyzer cannot run for any file: it is missing, or its tools are. Retrying the
+    /// next file would fail the same way.
+    #[error("the media analyzer cannot run: {0}")]
+    Unavailable(String),
 }
 
 /// Reads one file's content: the separate scanner process, run by the server.

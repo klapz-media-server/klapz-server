@@ -53,6 +53,10 @@ enum AccountErrorCode {
 	The extension's clients do not sign in with a password: Plex's are handed a token.
 	"""
 	NO_PASSWORD_SIGN_IN
+	"""
+	The ticket was used already, expired, or never issued.
+	"""
+	INVALID_TICKET
 }
 
 type AccountLink {
@@ -3286,6 +3290,12 @@ type Library implements Node {
 	"""
 	scanning: Boolean!
 	"""
+	Why the last scan stopped before its end, as the server's log tells it — for one, an
+	analyzer that cannot run. Null when it ended, was cancelled, or none ran since the
+	server started; null too for a caller who does not administer the library.
+	"""
+	scanFailure: String
+	"""
 	Monotonic counter that advances whenever the library's contents change.
 	
 	It is a counter, not a timestamp: compare it for inequality to detect a change, do not
@@ -5155,6 +5165,17 @@ type Mutation {
 		"""
 		deviceId: String!
 	): Boolean!
+	"""
+	Signs a browser in with a one-time ticket, as `signIn` does with a password: the server
+	hands such a ticket out only in an address it opens itself (its tray icon on Windows).
+	A ticket works once, for a minute.
+	"""
+	signInWithTicket(
+		"""
+		The ticket the address carried.
+		"""
+		input: SignInWithTicketInput!
+	): SignInPayload!
 	"""
 	Gives the caller a new password, which also signs it in through Jellyfin's clients; its
 	current password is asked for when it has one. An owner sets or resets any user's,
@@ -8322,6 +8343,20 @@ type SignInPayload {
 	Why nobody did. Empty when someone did.
 	"""
 	userErrors: [AccountUserError!]!
+}
+
+"""
+A ticket the server handed out in an address it opened, to sign a browser in.
+"""
+input SignInWithTicketInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The ticket, as the address carried it.
+	"""
+	ticket: String!
 }
 
 """

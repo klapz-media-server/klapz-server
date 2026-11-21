@@ -88,6 +88,12 @@
               "description": "The extension's clients do not sign in with a password: Plex's are handed a token.",
               "isDeprecated": false,
               "deprecationReason": null
+            },
+            {
+              "name": "INVALID_TICKET",
+              "description": "The ticket was used already, expired, or never issued.",
+              "isDeprecated": false,
+              "deprecationReason": null
             }
           ],
           "possibleTypes": null
@@ -9433,6 +9439,18 @@
               "deprecationReason": null
             },
             {
+              "name": "scanFailure",
+              "description": "Why the last scan stopped before its end, as the server's log tells it — for one, an\nanalyzer that cannot run. Null when it ended, was cancelled, or none ran since the\nserver started; null too for a caller who does not administer the library.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "contentChangedAt",
               "description": "Monotonic counter that advances whenever the library's contents change.\n\nIt is a counter, not a timestamp: compare it for inequality to detect a change, do not\nread it as a time.",
               "args": [],
@@ -14793,6 +14811,37 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "signInWithTicket",
+              "description": "Signs a browser in with a one-time ticket, as `signIn` does with a password: the server\nhands such a ticket out only in an address it opens itself (its tray icon on Windows).\nA ticket works once, for a minute.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The ticket the address carried.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "SignInWithTicketInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "SignInPayload",
                   "ofType": null
                 }
               },
@@ -24057,6 +24106,41 @@
           ],
           "inputFields": null,
           "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "SignInWithTicketInput",
+          "description": "A ticket the server handed out in an address it opened, to sign a browser in.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "ticket",
+              "description": "The ticket, as the address carried it.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
           "enumValues": null,
           "possibleTypes": null
         },

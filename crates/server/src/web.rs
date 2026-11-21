@@ -11,11 +11,14 @@
 //! redirects to `/web/`, which serves the index, and a path naming no file answers the index:
 //! a client that routes in the browser then works at any of its paths below `/web/`. Plex Web
 //! is unaffected: it loads the same assets.
+//!
+//! A browser opening the server's root is sent to the client with a `307`, where the reference
+//! answers it `401`: see [`send_navigation_to_client`].
 
 use std::path::{Path, PathBuf};
 
 use axum::extract::Request;
-use axum::http::{header, StatusCode};
+use axum::http::{header, Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::Router;
@@ -52,6 +55,26 @@ pub fn router(dir: &Path) -> Option<Router> {
 async fn with_trailing_slash(request: Request, next: Next) -> Response {
     if request.uri().path() == PREFIX {
         return (StatusCode::FOUND, [(header::LOCATION, "/web/")]).into_response();
+    }
+    next.run(request).await
+}
+
+/// Sends a browser opening `/` to the client: a `307` to `/web/`, before any token is asked
+/// for. Only a navigation says `Sec-Fetch-Mode: navigate`, which a browser sets itself and a
+/// page's scripts cannot; Plex's apps send no such header, and Plex Web's own calls to `/` say
+/// `cors`, so every API client keeps the root's capabilities.
+pub async fn send_navigation_to_client(request: Request, next: Next) -> Response {
+    let navigates = request
+        .headers()
+        .get("sec-fetch-mode")
+        .is_some_and(|mode| mode.as_bytes().eq_ignore_ascii_case(b"navigate"));
+    let reads = matches!(*request.method(), Method::GET | Method::HEAD);
+    if navigates && reads && request.uri().path() == "/" {
+        return (
+            StatusCode::TEMPORARY_REDIRECT,
+            [(header::LOCATION, "/web/")],
+        )
+            .into_response();
     }
     next.run(request).await
 }
@@ -176,6 +199,54 @@ mod tests {
         let empty = std::env::temp_dir().join(format!("klapz-web-none-{}", std::process::id()));
         std::fs::create_dir_all(&empty).unwrap();
         assert!(router(&empty).is_none());
+    }
+
+    /// What `send_navigation_to_client` answers a request with this `Sec-Fetch-Mode`.
+    async fn root(mode: Option<&str>, method: Method, uri: &str) -> (StatusCode, Option<String>) {
+        let app = Router::new()
+            .route("/", axum::routing::any(|| async { "capabilities" }))
+            .route("/library", axum::routing::get(|| async { "library" }))
+            .layer(axum::middleware::from_fn(send_navigation_to_client));
+        let mut request = Request::builder().method(method).uri(uri);
+        if let Some(mode) = mode {
+            request = request.header("Sec-Fetch-Mode", mode);
+        }
+        let response = app
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let location = response
+            .headers()
+            .get(header::LOCATION)
+            .map(|value| value.to_str().unwrap().to_owned());
+        (response.status(), location)
+    }
+
+    #[tokio::test]
+    async fn a_browser_opening_the_root_is_sent_to_the_client() {
+        for method in [Method::GET, Method::HEAD] {
+            assert_eq!(
+                root(Some("navigate"), method, "/").await,
+                (StatusCode::TEMPORARY_REDIRECT, Some("/web/".to_owned()))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn api_clients_keep_the_root() {
+        let cases = [
+            (None, Method::GET, "/"),
+            (Some("cors"), Method::GET, "/"),
+            (Some("navigate"), Method::POST, "/"),
+            (Some("navigate"), Method::GET, "/library"),
+        ];
+        for (mode, method, uri) in cases {
+            assert_eq!(
+                root(mode, method.clone(), uri).await,
+                (StatusCode::OK, None),
+                "{method} {uri} {mode:?}"
+            );
+        }
     }
 
     #[test]

@@ -3268,3 +3268,62 @@ async fn a_file_states_its_rates_and_what_does_not_play() {
     assert_eq!(file["sideStreams"][0]["kind"], "COVER");
     assert_eq!(file["sideStreams"][0]["picture"]["width"], 350);
 }
+
+const SIGN_IN_WITH_TICKET: &str = r"mutation($input: SignInWithTicketInput!) {
+    signInWithTicket(input: $input) { user { username } userErrors { field code } }
+}";
+
+#[tokio::test]
+async fn a_ticket_the_server_hands_out_signs_its_user_in_once() {
+    let schema = schema();
+    let sessions = sessions();
+    let created = create_user(&schema, serde_json::json!({ "username": "tray" })).await;
+    let id = created["user"]["id"].as_str().unwrap().to_owned();
+    let user = klapz_core::UserId::new(GlobalId::decode(&id).unwrap().key);
+    let ticket = sessions.issue_sign_in_ticket(user);
+    let redeem = |ticket: &str| {
+        schema.execute(anonymous(
+            SIGN_IN_WITH_TICKET,
+            &sessions,
+            serde_json::json!({ "input": { "ticket": ticket } }),
+        ))
+    };
+
+    let signed_in = redeem(&ticket).await;
+    assert!(signed_in.errors.is_empty(), "{:?}", signed_in.errors);
+    let cookie = signed_in.http_headers.get("set-cookie").unwrap();
+    assert!(cookie.to_str().unwrap().starts_with("klapz_session="));
+    assert_eq!(
+        signed_in.data.into_json().unwrap()["signInWithTicket"]["user"]["username"],
+        "tray"
+    );
+
+    // Once only, and nothing for a ticket never issued.
+    for spent in [ticket.as_str(), "not a ticket"] {
+        let refused = redeem(spent).await;
+        assert!(refused.http_headers.get("set-cookie").is_none());
+        assert_eq!(
+            refused.data.into_json().unwrap()["signInWithTicket"],
+            serde_json::json!({ "user": null, "userErrors": [{ "field": ["input", "ticket"], "code": "INVALID_TICKET" }] })
+        );
+    }
+
+    // A user shut out meanwhile is not let back in by a ticket issued before.
+    let ticket = sessions.issue_sign_in_ticket(user);
+    schema
+        .execute(
+            as_owner(
+                "mutation($id: ID!) { deactivateUser(input: { userId: $id }) { user { active } } }",
+            )
+            .variables(async_graphql::Variables::from_json(
+                serde_json::json!({ "id": id }),
+            )),
+        )
+        .await;
+    let inactive = redeem(&ticket).await;
+    assert!(inactive.http_headers.get("set-cookie").is_none());
+    assert_eq!(
+        inactive.data.into_json().unwrap()["signInWithTicket"]["userErrors"][0]["code"],
+        "INACTIVE"
+    );
+}

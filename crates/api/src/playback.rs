@@ -826,6 +826,18 @@ impl Mutation {
         crate::access::forget_extension_device(context, &user_id, extension, &device_id).await
     }
 
+    /// Signs a browser in with a one-time ticket, as `signIn` does with a password: the server
+    /// hands such a ticket out only in an address it opens itself (its tray icon on Windows).
+    /// A ticket works once, for a minute.
+    async fn sign_in_with_ticket(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The ticket the address carried.")]
+        input: crate::account::SignInWithTicketInput,
+    ) -> Result<crate::account::SignInPayload> {
+        crate::account::sign_in_with_ticket(context, input).await
+    }
+
     /// Gives the caller a new password, which also signs it in through Jellyfin's clients; its
     /// current password is asked for when it has one. An owner sets or resets any user's,
     /// with none asked. The built-in `admin` account takes `KLAPZ_ADMIN_PASSWORD` again at the

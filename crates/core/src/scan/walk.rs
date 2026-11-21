@@ -347,6 +347,9 @@ impl Run<'_> {
                     tracing::warn!(%path, %reason, "file is not readable as media");
                     None
                 }
+                Err(AnalyzeError::Unavailable(reason)) => {
+                    return Err(ScanError::AnalyzerUnavailable(reason));
+                }
                 Err(error) => {
                     tracing::error!(%path, %error, "media analysis failed");
                     None
@@ -951,5 +954,47 @@ mod tests {
         let parts = store.parts.lock().unwrap();
         assert_eq!(parts.len(), 1);
         assert!(parts[0].path.starts_with("/media/"));
+    }
+
+    /// An analyzer whose tools cannot run, as the scanner reports a missing ffprobe.
+    #[derive(Debug)]
+    struct Unavailable;
+
+    #[async_trait::async_trait]
+    impl MediaAnalyzer for Unavailable {
+        async fn analyze(&self, _file: &FileLocation) -> Result<Analysis, AnalyzeError> {
+            Err(AnalyzeError::Unavailable(
+                "ffmpeg has no ffprobe of its own".to_owned(),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn an_analyzer_that_cannot_run_stops_the_scan_before_storing_anything() {
+        let store = Arc::new(Store::default());
+        let mut broken = scanner(
+            SectionKind::Movie,
+            Arc::new(Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])),
+            Arc::clone(&store),
+            Arc::new(Analyzer::default()),
+        );
+        broken.analyzer = Arc::new(Unavailable);
+        let stopped = scan_section(&broken, &whole_library(), &AtomicBool::new(false)).await;
+        assert!(
+            matches!(&stopped, Err(ScanError::AnalyzerUnavailable(reason)) if reason.contains("ffprobe")),
+            "{stopped:?}"
+        );
+        assert!(store.added.lock().unwrap().is_empty());
+        assert!(store.parts.lock().unwrap().is_empty());
+        assert!(store.finished.lock().unwrap().is_empty());
+
+        // Fixed, the next scan finds the file new.
+        let fixed = scanner(
+            SectionKind::Movie,
+            Arc::new(Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])),
+            Arc::clone(&store),
+            Arc::new(Analyzer::default()),
+        );
+        assert_eq!(scan(&fixed, &whole_library()).await.added, 1);
     }
 }

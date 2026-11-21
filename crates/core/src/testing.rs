@@ -3947,6 +3947,8 @@ pub struct RecordedScans {
     pub directories: KnownDirectories,
     /// The libraries a test says are being scanned. Starting a scan adds none.
     pub running: std::sync::Mutex<Vec<SectionId>>,
+    /// Why a test says a library's last scan stopped.
+    pub failures: std::sync::Mutex<std::collections::HashMap<SectionId, String>>,
 }
 
 #[async_trait::async_trait]
@@ -3968,6 +3970,14 @@ impl crate::scan::ScanControl for RecordedScans {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .contains(&section)
+    }
+
+    fn last_failure(&self, section: SectionId) -> Option<String> {
+        self.failures
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&section)
+            .cloned()
     }
 
     fn files(&self) -> &dyn crate::files::LibraryFiles {
