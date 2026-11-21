@@ -112,8 +112,11 @@ pub async fn scan_section(
         now: now_epoch(),
         outcome: ScanOutcome::default(),
     };
-    for (root, start) in targets {
-        run.scan_root(&root, &start).await?;
+    for (root, start) in &targets {
+        run.scan_root(root, start).await?;
+    }
+    if request.below.is_none() {
+        run.remove_outside(&targets).await?;
     }
     let outcome = run.outcome;
     scanner
@@ -218,6 +221,33 @@ impl Run<'_> {
         Ok(())
     }
 
+    /// Removes the files the library holds below none of its roots: those of a root it no
+    /// longer has. A library left without roots keeps its files, as an unreachable root does.
+    async fn remove_outside(&mut self, roots: &[(String, RelativePath)]) -> Result<(), ScanError> {
+        if roots.is_empty() {
+            return Ok(());
+        }
+        let files = &self.scanner.files;
+        let outside: Vec<PartId> = self
+            .scanner
+            .store
+            .known_parts(self.section, "")
+            .await?
+            .into_iter()
+            .filter(|part| {
+                roots
+                    .iter()
+                    .all(|(root, _)| files.relative_path(root, &part.path).is_none())
+            })
+            .map(|part| part.part)
+            .collect();
+        if !outside.is_empty() {
+            self.scanner.store.remove_parts(&outside).await?;
+            self.outcome.removed += outside.len();
+        }
+        Ok(())
+    }
+
     async fn ignore_rules(&self, root: &str, directory: &RelativePath) -> Option<IgnoreRules> {
         let file = directory.join(".plexignore").ok()?;
         match self.scanner.files.read(root, &file, MAX_IGNORE_FILE).await {
@@ -316,6 +346,9 @@ impl Run<'_> {
                 Err(AnalyzeError::Unreadable(reason)) => {
                     tracing::warn!(%path, %reason, "file is not readable as media");
                     None
+                }
+                Err(AnalyzeError::Unavailable(reason)) => {
+                    return Err(ScanError::AnalyzerUnavailable(reason));
                 }
                 Err(error) => {
                     tracing::error!(%path, %error, "media analysis failed");
@@ -569,6 +602,10 @@ mod tests {
             file: &RelativePath,
         ) -> Result<FileLocation, FilesError> {
             Ok(FileLocation::Local(format!("{root}/{file}").into()))
+        }
+
+        async fn resolve_root(&self, path: &str) -> Result<String, FilesError> {
+            Ok(path.to_owned())
         }
     }
 
@@ -881,5 +918,83 @@ mod tests {
         );
         let cancelled = scan_section(&scanner, &whole_library(), &AtomicBool::new(true)).await;
         assert!(matches!(cancelled, Err(ScanError::Cancelled)));
+    }
+
+    #[tokio::test]
+    async fn a_whole_scan_removes_the_files_of_a_root_the_library_lost() {
+        let store = Arc::new(Store::default());
+        store.parts.lock().unwrap().push(KnownPart {
+            part: PartId::new(90),
+            media: MediaId::new(90),
+            item: RatingKey::new(90),
+            path: "/old/Up (2009)/Up (2009).mkv".to_owned(),
+            size: 200,
+            modified_at: 20,
+        });
+        let scanner = scanner(
+            SectionKind::Movie,
+            Arc::new(Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])),
+            Arc::clone(&store),
+            Arc::new(Analyzer::default()),
+        );
+
+        let below = ScanRequest {
+            below: Some(("/media".to_owned(), RelativePath::root())),
+            ..whole_library()
+        };
+        scan(&scanner, &below).await;
+        assert_eq!(
+            store.parts.lock().unwrap().len(),
+            2,
+            "a partial scan keeps it"
+        );
+
+        let outcome = scan(&scanner, &whole_library()).await;
+        assert_eq!(outcome.removed, 1);
+        let parts = store.parts.lock().unwrap();
+        assert_eq!(parts.len(), 1);
+        assert!(parts[0].path.starts_with("/media/"));
+    }
+
+    /// An analyzer whose tools cannot run, as the scanner reports a missing ffprobe.
+    #[derive(Debug)]
+    struct Unavailable;
+
+    #[async_trait::async_trait]
+    impl MediaAnalyzer for Unavailable {
+        async fn analyze(&self, _file: &FileLocation) -> Result<Analysis, AnalyzeError> {
+            Err(AnalyzeError::Unavailable(
+                "ffmpeg has no ffprobe of its own".to_owned(),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn an_analyzer_that_cannot_run_stops_the_scan_before_storing_anything() {
+        let store = Arc::new(Store::default());
+        let mut broken = scanner(
+            SectionKind::Movie,
+            Arc::new(Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])),
+            Arc::clone(&store),
+            Arc::new(Analyzer::default()),
+        );
+        broken.analyzer = Arc::new(Unavailable);
+        let stopped = scan_section(&broken, &whole_library(), &AtomicBool::new(false)).await;
+        assert!(
+            matches!(&stopped, Err(ScanError::AnalyzerUnavailable(reason)) if reason.contains("ffprobe")),
+            "{stopped:?}"
+        );
+        assert!(store.added.lock().unwrap().is_empty());
+        assert!(store.parts.lock().unwrap().is_empty());
+        assert!(store.finished.lock().unwrap().is_empty());
+
+        // Fixed, the next scan finds the file new.
+        let fixed = scanner(
+            SectionKind::Movie,
+            Arc::new(Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])),
+            Arc::clone(&store),
+            Arc::new(Analyzer::default()),
+        );
+        assert_eq!(scan(&fixed, &whole_library()).await.added, 1);
     }
 }

@@ -302,6 +302,23 @@ impl Library {
             .is_running(self.section.id))
     }
 
+    /// Why the last scan stopped before its end, as the server's log tells it — for one, an
+    /// analyzer that cannot run. Null when it ended, was cancelled, or none ran since the
+    /// server started; null too for a caller who does not administer the library.
+    #[allow(
+        clippy::unused_async,
+        reason = "async-graphql requires resolvers taking a context to be async"
+    )]
+    async fn scan_failure(&self, context: &Context<'_>) -> Result<Option<String>> {
+        if !crate::access::can_edit(context, self.section.id) {
+            return Ok(None);
+        }
+        Ok(context
+            .data::<ApiContext>()?
+            .scans
+            .last_failure(self.section.id))
+    }
+
     /// Monotonic counter that advances whenever the library's contents change.
     ///
     /// It is a counter, not a timestamp: compare it for inequality to detect a change, do not

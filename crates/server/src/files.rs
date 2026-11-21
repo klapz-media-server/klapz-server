@@ -132,6 +132,37 @@ impl LibraryFiles for LocalFiles {
     async fn locate(&self, root: &str, file: &RelativePath) -> Result<FileLocation, FilesError> {
         Ok(FileLocation::Local(Self::path(root, file)?))
     }
+
+    /// Canonical, as the scan and the media engine compare paths with it, and absolute: a
+    /// relative path would name a directory below wherever the server was started.
+    async fn resolve_root(&self, path: &str) -> Result<String, FilesError> {
+        if path.is_empty() || !Path::new(path).is_absolute() {
+            return Err(FilesError::Refused);
+        }
+        let canonical = tokio::fs::canonicalize(path).await.map_err(io_error)?;
+        if !tokio::fs::metadata(&canonical)
+            .await
+            .map_err(io_error)?
+            .is_dir()
+        {
+            return Err(FilesError::Refused);
+        }
+        Ok(displayed(&canonical))
+    }
+}
+
+/// A canonical path as a person writes it. Windows canonicalizes `C:\Films` to the verbatim
+/// `\\?\C:\Films`, and a mapped drive to its share, `\\?\UNC\nas\films`, which every API would
+/// then publish as the files' location.
+fn displayed(path: &std::path::Path) -> String {
+    let text = path.to_string_lossy();
+    if let Some(share) = text.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{share}");
+    }
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => rest.to_owned(),
+        _ => text.into_owned(),
+    }
 }
 
 #[cfg(test)]
@@ -228,6 +259,53 @@ mod tests {
         assert!(matches!(
             LocalFiles::path("D:\\media", &file),
             Err(FilesError::Refused)
+        ));
+    }
+
+    #[test]
+    fn drops_the_verbatim_prefix_of_a_drive_or_a_share() {
+        assert_eq!(
+            displayed(std::path::Path::new(r"\\?\C:\Films")),
+            r"C:\Films"
+        );
+        assert_eq!(
+            displayed(std::path::Path::new(r"\\?\UNC\nas\films")),
+            r"\\nas\films"
+        );
+        assert_eq!(
+            displayed(std::path::Path::new(r"\\?\GLOBALROOT\Device\Films")),
+            r"\\?\GLOBALROOT\Device\Films"
+        );
+        assert_eq!(displayed(std::path::Path::new("/srv/films")), "/srv/films");
+    }
+
+    #[tokio::test]
+    async fn a_root_is_an_absolute_directory_in_its_canonical_form() {
+        let scratch = Scratch::new("roots");
+        let local = LocalFiles;
+        let films = scratch.0.join("Films");
+        let spelled = films.join("Soul (2020)").join("..");
+        assert_eq!(
+            local
+                .resolve_root(&spelled.to_string_lossy())
+                .await
+                .unwrap(),
+            displayed(&std::fs::canonicalize(&films).unwrap())
+        );
+        let file = films.join("Soul (2020)").join("Soul.mkv");
+        assert!(matches!(
+            local.resolve_root(&file.to_string_lossy()).await,
+            Err(FilesError::Refused)
+        ));
+        assert!(matches!(
+            local.resolve_root("Films").await,
+            Err(FilesError::Refused)
+        ));
+        assert!(matches!(
+            local
+                .resolve_root(&scratch.0.join("gone").to_string_lossy())
+                .await,
+            Err(FilesError::NotFound)
         ));
     }
 }

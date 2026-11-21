@@ -786,8 +786,9 @@ impl Mutation {
         crate::access::remove_library_permission(context, &user_id, &library_id).await
     }
 
-    /// Switches a user's connection off: its token stops working and its identifier is kept.
-    /// Whether it was on. For the server's owners only.
+    /// Switches a user's connection off: its token stops working, its devices are forgotten
+    /// and its identifier is kept. Whether it was on. For the server's owners; through Jellyfin,
+    /// for the user itself too.
     async fn disable_extension(
         &self,
         context: &Context<'_>,
@@ -798,7 +799,8 @@ impl Mutation {
     }
 
     /// Connects a user through an extension, returning a new token. Called again, it replaces
-    /// the token and keeps the identifier clients recognize. For the server's owners only.
+    /// the token and keeps the identifier clients recognize. For the server's owners; through
+    /// Jellyfin, whose clients then sign in with the user's password, for the user itself too.
     async fn connect_extension(
         &self,
         context: &Context<'_>,
@@ -807,6 +809,46 @@ impl Mutation {
         extension: crate::access::ExtensionType,
     ) -> Result<crate::access::ExtensionCredentials> {
         crate::access::connect_extension(context, &user_id, extension).await
+    }
+
+    /// Signs one device out of a user's connection: its token opens nothing more, and the
+    /// device signs in again with the password. Whether there was such a device. For the
+    /// server's owners, and for the user itself.
+    async fn forget_extension_device(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The user, as returned in `User.id`.")] user_id: ID,
+        #[graphql(desc = "The protocol the device signed in through.")]
+        extension: crate::access::ExtensionType,
+        #[graphql(desc = "The device, as returned in `ExtensionDevice.deviceId`.")]
+        device_id: String,
+    ) -> Result<bool> {
+        crate::access::forget_extension_device(context, &user_id, extension, &device_id).await
+    }
+
+    /// Signs a browser in with a one-time ticket, as `signIn` does with a password: the server
+    /// hands such a ticket out only in an address it opens itself (its tray icon on Windows).
+    /// A ticket works once, for a minute.
+    async fn sign_in_with_ticket(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The ticket the address carried.")]
+        input: crate::account::SignInWithTicketInput,
+    ) -> Result<crate::account::SignInPayload> {
+        crate::account::sign_in_with_ticket(context, input).await
+    }
+
+    /// Gives the caller a new password, which also signs it in through Jellyfin's clients; its
+    /// current password is asked for when it has one. An owner sets or resets any user's,
+    /// with none asked. The built-in `admin` account takes `KLAPZ_ADMIN_PASSWORD` again at the
+    /// next start when that is set.
+    async fn set_password(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The current password, and the new one.")]
+        input: crate::account::SetPasswordInput,
+    ) -> Result<crate::account::SetPasswordPayload> {
+        crate::account::set_password(context, input).await
     }
 
     /// Ties a user's connection to its account on the extension's own service, and tells that
@@ -1037,6 +1079,39 @@ impl Mutation {
         #[graphql(desc = "The playlist to empty.")] input: crate::playlist::ClearPlaylistInput,
     ) -> Result<crate::playlist::PlaylistPayload> {
         crate::playlist::clear(context, input).await
+    }
+
+    /// Creates a library over directories of the server, then scans it. For the server's
+    /// owners only.
+    async fn create_library(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The library to create.")]
+        input: crate::library_management::CreateLibraryInput,
+    ) -> Result<crate::library_management::LibraryPayload> {
+        crate::library_management::create(context, input).await
+    }
+
+    /// Renames a library or changes its language, for its admins and the server's owners;
+    /// changes the directories it scans, for the owners only.
+    async fn update_library(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The changes.")] input: crate::library_management::UpdateLibraryInput,
+    ) -> Result<crate::library_management::LibraryPayload> {
+        crate::library_management::update(context, input).await
+    }
+
+    /// Deletes a library with its items, collections and the permissions given on it, ending
+    /// every playback of its items; its files stay on disk, and watch state and ratings stay
+    /// with the works. For the server's owners only.
+    async fn delete_library(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The library to delete.")]
+        input: crate::library_management::DeleteLibraryInput,
+    ) -> Result<crate::library_management::DeleteLibraryPayload> {
+        crate::library_management::delete(context, input).await
     }
 
     /// Creates a collection in a library: of chosen items, or smart with a rule. For the

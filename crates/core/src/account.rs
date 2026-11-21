@@ -375,10 +375,62 @@ impl SignInThrottle {
     }
 }
 
+/// How long a sign-in ticket can be redeemed: what a browser opening takes, not more.
+pub const TICKET_LIFETIME_SECONDS: i64 = 60;
+
+/// One-time tickets that sign a browser in, handed out by the server itself — its tray icon on
+/// Windows — in the address it opens.
+///
+/// An address is kept in a browser's history, which is why it carries a ticket rather than a
+/// session: a ticket opens one session, once, within a minute, and nothing afterwards. Only
+/// their digests are kept, as for every other token.
+#[derive(Debug, Default)]
+pub struct SignInTickets {
+    issued: Mutex<HashMap<String, (UserId, i64)>>,
+}
+
+impl SignInTickets {
+    /// A new ticket for `user`, valid from `now` for [`TICKET_LIFETIME_SECONDS`].
+    #[must_use]
+    pub fn issue(&self, user: UserId, now: i64) -> String {
+        let ticket = crate::access::new_token();
+        let mut issued = self.issued.lock().unwrap_or_else(PoisonError::into_inner);
+        issued.retain(|_, &mut (_, expires)| expires > now);
+        issued.insert(
+            crate::access::token_digest(&ticket),
+            (user, now + TICKET_LIFETIME_SECONDS),
+        );
+        ticket
+    }
+
+    /// The user a ticket was issued to, if it is one not used yet nor expired by `now`. Used
+    /// either way: a ticket is tried once.
+    pub fn redeem(&self, ticket: &str, now: i64) -> Option<UserId> {
+        self.issued
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&crate::access::token_digest(ticket))
+            .and_then(|(user, expires)| (expires > now).then_some(user))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // A panicking test is a failing test, which is the intended reporting mechanism.
     #![allow(clippy::unwrap_used, clippy::panic)]
+
+    #[test]
+    fn a_ticket_signs_its_user_in_once_within_a_minute() {
+        let tickets = SignInTickets::default();
+        let user = UserId::new(3);
+        let ticket = tickets.issue(user, 100);
+        assert_eq!(ticket.len(), 64);
+        assert_eq!(tickets.redeem(&ticket, 159), Some(user));
+        assert_eq!(tickets.redeem(&ticket, 159), None, "used");
+        let late = tickets.issue(user, 100);
+        assert_eq!(tickets.redeem(&late, 160), None, "expired");
+        assert_eq!(tickets.redeem("not a ticket", 100), None);
+    }
 
     use super::*;
 

@@ -30,6 +30,11 @@ tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+# The notification-area icon (`tray`): its menu and the event loop that receives it.
+[target.'cfg(windows)'.dependencies]
+tao = { version = "0.37", default-features = false }
+tray-icon = { version = "0.26", default-features = false }
+
 [dev-dependencies]
 http-body-util = "0.1"
 klapz-core = { workspace = true, features = ["testing"] }

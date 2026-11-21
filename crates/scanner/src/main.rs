@@ -9,6 +9,7 @@ use klapz_scanner::{ScanError, Tools};
 
 const USAGE: &str = "\
 usage: klapz-scanner <command> [options] -- <file>
+       klapz-scanner check
 
 commands:
   probe [--deep]                       container, tracks and chapters; --deep measures every packet
@@ -19,17 +20,24 @@ commands:
   bif [--interval S] --out DIR         preview thumbnails every S seconds, 2 by default
   chapter-thumbs --out DIR             a frame per chapter
   artwork --out DIR                    frames for a poster and a backdrop, and embedded covers
+  check                                whether its tools run, with no file and no report
 
 The report is JSON on standard output. Exit status: 0 done, 2 bad usage, 3 the media is
-unreadable or lacks what was asked, 1 anything else.";
+unreadable or lacks what was asked, 4 the tools cannot run (ffmpeg missing, or without an
+ffprobe of its own), 1 anything else.";
 
 /// The media is at fault: corrupt, or without the track asked for. The caller records it
 /// against the file rather than retrying.
 const EXIT_MEDIA: u8 = 3;
 const EXIT_USAGE: u8 = 2;
+/// The tools cannot run at all: every file would fail the same way, until the setup is fixed.
+const EXIT_TOOLS: u8 = 4;
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments == ["check"] {
+        return check(&Tools::from_env());
+    }
     let invocation = match Invocation::parse(&arguments) {
         Ok(invocation) => invocation,
         Err(message) => {
@@ -58,9 +66,22 @@ fn main() -> ExitCode {
             eprintln!("{error}");
             if error.is_media_fault() {
                 ExitCode::from(EXIT_MEDIA)
+            } else if error.is_tool_fault() {
+                ExitCode::from(EXIT_TOOLS)
             } else {
                 ExitCode::FAILURE
             }
+        }
+    }
+}
+
+/// What a server asks once when it starts: whether a scan could read any file at all.
+fn check(tools: &Tools) -> ExitCode {
+    match tools.check() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(if error.is_tool_fault() { EXIT_TOOLS } else { 1 })
         }
     }
 }

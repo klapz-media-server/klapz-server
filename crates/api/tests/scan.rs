@@ -185,3 +185,23 @@ async fn cancelling_with_no_scan_running_cancels_nothing() {
         json!({ "cancelled": false, "userErrors": [] })
     );
 }
+
+#[tokio::test]
+async fn a_library_s_admins_read_why_its_last_scan_stopped_and_its_viewers_do_not() {
+    let scans = Arc::new(RecordedScans::default());
+    for id in [27, 28] {
+        scans.failures.lock().unwrap().insert(
+            SectionId::new(id),
+            "the media analyzer cannot run: no ffprobe".to_owned(),
+        );
+    }
+    let schema = schema(Arc::clone(&scans));
+    let query = "query($id: ID!) { node(id: $id) { ... on Library { scanFailure } } }";
+    let admin = run(&schema, user(), query, json!({ "id": library(28) })).await;
+    assert_eq!(
+        admin["node"]["scanFailure"],
+        "the media analyzer cannot run: no ffprobe"
+    );
+    let viewer = run(&schema, user(), query, json!({ "id": library(27) })).await;
+    assert_eq!(viewer["node"]["scanFailure"], Value::Null);
+}

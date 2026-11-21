@@ -109,7 +109,12 @@ without them saying so.
   that inserted items directly and then matched nothing.
 - **A path the server publishes is not a path the server accepts.** `MediaFile.path` is
   exposed; every endpoint that touches the filesystem still resolves a file from its id. There
-  is no route that takes a path, and there must not be — see `security.md`.
+  is no route that takes a path, and there must not be — see `security.md` — with **one
+  exception, the repo owner's decision**: the directories a library scans, which an owner
+  names in `createLibrary` and `updateLibrary` (`roots`). Only owners may, each path is resolved
+  by the files backend (`LibraryFiles::resolve_root`: absolute, canonical, a directory) before
+  anything compares it, and a root is only ever walked by the scan, never served by its name.
+  Nothing else takes a path, and this exception is no precedent for another.
 - **The official API publishes measurements; the adapter publishes display forms.** Bitrates in
   bits per second, frame rates as measured (23.976), aspect ratios unsnapped, ratings at full
   precision. Plex's kilobits, `24p`, `2.35` and one-decimal ratings are derived in `api-plex`.
@@ -158,8 +163,18 @@ without them saying so.
   items go through `db::write` like every other. What is gone is removed, unless its whole root
   cannot be reached: an unmounted disk is not an empty library. `BackgroundScans` keeps one scan
   per library and cancels between files.
-- **A library's roots are set on the command line only** (`klapz-server library add`),
-  because no endpoint accepts a path: creating a library is not on the API yet.
+- **A library is created, changed and deleted on the official API.** `createLibrary` and
+  `deleteLibrary` are the owners'; `updateLibrary` renames a library or changes its language for
+  its admins too, while its `roots` stay the owners' (`OWNER_ONLY`). The rules are in
+  `core::library` (`checked_roots`: 1 to 32 roots, resolved, a repeat kept once, none inside
+  another; `create_library`, `edit_library`, `delete_library`), and `klapz-server library add`
+  applies the same ones. A new library, and one given new roots, is scanned at once, as the
+  reference does; a whole scan removes the files of a root the library no longer has. Roots are
+  not changed, and a library is not deleted, while it is being scanned (`SCANNING`). Deleting
+  ends every playback of its items through `core::lifecycle`, then removes in one transaction
+  its roots, items, collections and permissions, and what refers to its items without a foreign
+  key (markers, playlist and play-queue entries, viewings, sessions); watch state and ratings,
+  keyed by the work, stay. Files on disk are never touched.
 - **HTTP authentication lives in `server`**, because both surfaces share it. It attaches a
   `Principal`, which is always a user; each surface then enforces roles in its own idiom
   (`Caller`/`AdminCaller` extractors on the Plex side, request data on the GraphQL side).
@@ -204,10 +219,11 @@ without them saying so.
   two processes per thumbnail cost more than the work.
 - **The scanner is a command line over one file, and keeps nothing.** `klapz-scanner
   <command> [options] -- <file>`: `probe [--deep]`, `hashes`, `loudness`, `fingerprint`,
-  `subtitles`, `bif`, `chapter-thumbs`, `artwork`. It prints one JSON report on standard output
+  `subtitles`, `bif`, `chapter-thumbs`, `artwork`, and `klapz-scanner check`, with no file, which
+  exits `0` or `4` and is what the server runs at startup. It prints one JSON report on standard output
   (`klapz_scanner::report`, the same types the server reads back, versioned), writes the
   files it makes into an `--out` directory the server created and owns, creates no directory
-  and overwrites nothing, and exits `3` when the media is at fault, `2` on bad usage. It
+  and overwrites nothing, and exits `3` when the media is at fault, `4` when its tools cannot run (no ffmpeg, or one that refuses `-probe`), `2` on bad usage. A `4` stops the server's scan before it stores the file it was on, so the next scan, once the setup is fixed, finds it new; the server also checks the tools once at startup, and `Library.scanFailure` tells a library's admins why its last scan stopped. It
   decodes nothing itself — ffprobe and ffmpeg-plex do, as its children — reaches no network
   and holds no state: what to redo, and where results go, is the server's. The file comes after
   `--` and reaches the tools as `file:…`, so no name is read as an option or a protocol.
@@ -263,22 +279,36 @@ without them saying so.
   cookie. `signOut` clears the cookie; a copied session stays valid until it expires (30 days)
   unless its user is shut out. The tools sign in as `admin` this way
   (`tools/klapz_session.py`, with `KLAPZ_ADMIN_PASSWORD`).
+- **The Windows tray icon signs a browser in with a ticket in the address.** "Open web app"
+  opens `/web/?ticket=…` in the default browser, as `admin`, the server's operator being
+  whoever sits at its desktop; "Quit klapz" stops the server as Ctrl-C does. A ticket is drawn
+  by the server alone (`Sessions::issue_sign_in_ticket`, kept as a digest), redeemed once within
+  60 seconds by `signInWithTicket`, which sets the usual session cookie and refuses an inactive
+  user, and the client takes it out of the address before anything else. An address stays in a
+  browser's history, which is why it carries a ticket rather than a session. `KLAPZ_TRAY=0` turns
+  the icon off; no desktop (a service) leaves it out with a warning.
 - **`/graphql` admits nobody**, so a browser can sign in before it is anyone. The request goes
   through with no principal, which every resolver already answers as "nothing exists";
   `nobody_reads_nothing_from_any_entry_point` keeps it that way. Every other route still
   answers `401`.
 - **Jellyfin is an extension too.** `user_extension` holds a `jellyfin` connection beside a
-  `plex` one, switched on by an owner (`connectExtension(JELLYFIN)`, or `/admin`). Jellyfin's
-  clients sign in with the user's own password (`signInThroughExtension`, checked and throttled
-  as `signIn`), each device keeping a token of its own in `extension_device`; `signOutOfExtension`
-  forgets the caller's device, and switching the connection off or deleting the user forgets
-  them all. Plex's clients do not sign in with a password (`NO_PASSWORD_SIGN_IN`). Every Jellyfin
+  `plex` one. **A user switches its own Jellyfin connection on and off**, the repo owner's
+  decision, as an owner can for anyone (`connectExtension(JELLYFIN)`, `disableExtension`;
+  `Extension::connected_by_its_user`): its clients sign in with the user's own password, so
+  switching it on opens the user's libraries to the user alone. Plex's stays the owners'. Jellyfin's
+  clients sign in through `signInThroughExtension`, checked and throttled as `signIn`, each device
+  keeping a token of its own in `extension_device`; `UserExtension.devices` lists them, and
+  `forgetExtensionDevice` (the user or an owner) and `signOutOfExtension` (the device's own
+  token) forget one; switching the connection off or deleting the user forgets them all. A user
+  an owner created has no password: an owner sets one for it with `setPassword(userId:)`, which
+  asks an owner for no current password, and a user changes its own there, giving its current
+  one, whose failures count with `signIn`'s. Plex's clients do not sign in with a password (`NO_PASSWORD_SIGN_IN`). Every Jellyfin
   user sees one server id, derived from the machine identifier, and none is an administrator to
   Jellyfin's clients.
 - **A user pairs its own server.** `pairExtension`, `moveExtension` and `unpairExtension` are
   open to owners and to the user they name, so a client can offer pairing in the user's own
-  settings; issuing and revoking the token (`connectExtension`, `disableExtension`) stays the
-  owners'. `viewer` says who is asking (its `role`, and the `User`), which is how a client
+  settings; issuing and revoking a Plex token (`connectExtension`, `disableExtension`) stays
+  the owners'. `viewer` says who is asking (its `role`, and the `User`), which is how a client
   decides what to offer.
 - **`/admin` is the owners' page.** Users, their roles, their libraries, their Plex connection;
   served without a token, holding no data, signing in through `signIn` and driven entirely by
@@ -435,8 +465,8 @@ Places where we knowingly answer differently, each decided rather than overlooke
 - **File paths are published**, on both surfaces, as Plex does: `MediaFile.path` with a derived
   `MediaFile.filename` in GraphQL, `Part.file` in the Plex layer. This is reference data — it
   makes the library auditable from outside. It changes nothing about input: playback addresses
-  a file by `id`, and **no endpoint accepts a path from a client**. A path we hand out and a
-  path handed back to us are different things.
+  a file by `id`, and **no endpoint accepts a path from a client** but an owner's library
+  roots (above). A path we hand out and a path handed back to us are different things.
 - **A listing always windows.** Plex returns a whole library unpaged when the client sends no
   container parameters; `page::MAX_ITEMS` forbids that. The response states `totalSize` and
   `offset` and sends the paging headers, so `size` never claims more than the body holds.
@@ -636,10 +666,11 @@ KLAPZ_ADMIN_PASSWORD='a long passphrase' cargo run -p klapz-server
 | `KLAPZ_MACHINE_ID` | placeholder | Must be stable across restarts or clients stop recognizing the server. |
 | `KLAPZ_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `KLAPZ_JELLYFIN_WEB_DIR` | *(none)* | Jellyfin Web, served without a token at `/jellyfin/web`: a Jellyfin install's `jellyfin-web` directory. Not versioned: it is Jellyfin's code. |
-| `KLAPZ_WEB_DIR` | `web` beside the server's executable | Plex Web, served without a token at `/web` as the reference serves it, read from disk: nothing of it is compiled into the server. Not versioned: it is Plex's code. No such directory (no `index.html` in it) means `/web` is not served. `/web` redirects to `/web/`, which serves the index, and a path naming no file answers the index, so a client routing in the browser works there; the reference redirects `/web` and `/web/` to `/web/index.html` instead. A client built for this prefix uses relative asset addresses (Vite's `base: './'`) or `/web/` ones. |
+| `KLAPZ_WEB_DIR` | `web` beside the server's executable | Plex Web, served without a token at `/web` as the reference serves it, read from disk: nothing of it is compiled into the server. Not versioned: it is Plex's code. No such directory (no `index.html` in it) means `/web` is not served. `/web` redirects to `/web/`, which serves the index, and a path naming no file answers the index, so a client routing in the browser works there; the reference redirects `/web` and `/web/` to `/web/index.html` instead. A client built for this prefix uses relative asset addresses (Vite's `base: './'`) or `/web/` ones. A browser opening `/` itself (`Sec-Fetch-Mode: navigate`, `GET` or `HEAD`) is answered `307` to `/web/` before any token is asked for, where the reference answers `401`; API clients, Plex Web's own calls included, still get the root's capabilities. Without a client, `/` stays as it was. |
 | `KLAPZ_TRANSCODER` | `klapz-ffmpeg`, else `ffmpeg`, beside the executable (with `.exe` on Windows), else the `ffmpeg` on `PATH`; the server and the scanner share the rule (`klapz_scanner::transcoder`) | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `KLAPZ_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
-| `KLAPZ_FFPROBE` | `KLAPZ_TRANSCODER -probe` | The ffprobe the scanner reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. |
+| `KLAPZ_FFPROBE` | `KLAPZ_TRANSCODER -probe` | The ffprobe the scanner reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. An ffmpeg that refuses `-probe` is named as such at startup and in the scan's failure, never taken for a corrupt file. |
+| `KLAPZ_TRAY` | *(on, Windows only)* | `0` or `off` leaves the notification-area icon out. |
 | `KLAPZ_SCANNER` | `klapz-scanner` beside the server's executable, else on `PATH` | The scanner binary a library scan runs on each new or changed file. |
 | `KLAPZ_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which Plex's own binary needs. The rebuilt one has them built in and needs none. |
 
@@ -966,6 +997,10 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   (migration `m0037`) are on the official API: `Item.refreshedAt`, `MediaFile.contentHash` and
   `openSubtitlesHash`, `MediaStream.requiredBandwidths`, and `MediaStream.externalUrl` for a
   sidecar. Both `nearest` routes answer as the reference does without music (`docs/spec-gaps.md`).
+- ✅ **library management**: `createLibrary`, `updateLibrary` and `deleteLibrary` on the official
+  API (`userErrors` with `LibraryErrorCode`), owners choosing roots and deleting, a library's
+  admins renaming; roots checked and resolved through `LibraryFiles::resolve_root`, a scan after
+  a change, a deletion ending its playbacks first (`PlaybackRepository::keys_in_library`).
 - 🚧 **the scanner's file half**, `klapz-scanner`, measured against the reference on the
   test files: the analysis (every track field ffprobe gives, chapters with generic titles
   cleared, MP4 layout, MPEG-TS packet length; `--deep` measures each track's rate over every
@@ -1062,8 +1097,11 @@ absent.
 - **Plex Web without plex.tv lost its way in with the trusted network.** A browser signed in at
   `/admin` sends its session cookie on the same-origin calls of `/web`, which the transport
   accepts; whether Plex Web goes on without an `X-Plex-Token` of its own is untested.
-- A library's `admin` role has little to open yet: changing a library's settings is the only
-  route it gates, and that route still answers `501`.
+- A library's `admin` role renames the library and changes its language on the official API
+  (`updateLibrary`); Plex's own route for a library's settings still answers `501`.
+- **Library management is on the official API only.** Plex's `POST /library/sections/all`,
+  `PUT /library/sections/{id}` and `DELETE /library/sections/{id}` are not bound yet: binding
+  them means mapping Plex's `location`, `agent` and `scanner` parameters, which nothing here uses.
 - **A paired server shows `presence=false` on plex.tv.** The reference becomes present through a
   push connection (`/services/pubsub/servers`) we do not open, and what clients do about the
   absence is not settled.

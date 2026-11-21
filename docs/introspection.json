@@ -88,6 +88,12 @@
               "description": "The extension's clients do not sign in with a password: Plex's are handed a token.",
               "isDeprecated": false,
               "deprecationReason": null
+            },
+            {
+              "name": "INVALID_TICKET",
+              "description": "The ticket was used already, expired, or never issued.",
+              "isDeprecated": false,
+              "deprecationReason": null
             }
           ],
           "possibleTypes": null
@@ -3371,6 +3377,91 @@
         },
         {
           "kind": "INPUT_OBJECT",
+          "name": "CreateLibraryInput",
+          "description": "A library to create.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "title",
+              "description": "Its name: 1 to 255 characters, trimmed.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "kind",
+              "description": "What it holds: films or series.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "LibraryKind",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "language",
+              "description": "The language its metadata is in, as a BCP 47 tag such as `fr-FR`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "roots",
+              "description": "The directories it scans: absolute paths on the server, 1 to 32 of them, none inside\nanother. Each is stored resolved, links followed; a repeat is kept once.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
           "name": "CreatePlayQueueInput",
           "description": "A play queue to create.",
           "fields": null,
@@ -4080,6 +4171,100 @@
                     "ofType": {
                       "kind": "OBJECT",
                       "name": "HistoryUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "DeleteLibraryInput",
+          "description": "A library to delete.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "id",
+              "description": "The library, as returned in `Library.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "DeleteLibraryPayload",
+          "description": "What a deletion removed.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "As given in the input.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "deletedLibraryId",
+              "description": "The library deleted, as it was returned in `Library.id`. Null when refused.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why the request was refused. Empty on success.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "LibraryUserError",
                       "ofType": null
                     }
                   }
@@ -5510,6 +5695,97 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ExtensionDevice",
+          "description": null,
+          "fields": [
+            {
+              "name": "deviceId",
+              "description": "What the client calls the device, stable across its sign-ins: what\n`forgetExtensionDevice` takes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "deviceName",
+              "description": "The device's name, for a person.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "client",
+              "description": "The application that signed in.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "clientVersion",
+              "description": "The application's version.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "signedInAt",
+              "description": "Its last sign-in.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "DateTime",
                   "ofType": null
                 }
               },
@@ -9163,6 +9439,18 @@
               "deprecationReason": null
             },
             {
+              "name": "scanFailure",
+              "description": "Why the last scan stopped before its end, as the server's log tells it — for one, an\nanalyzer that cannot run. Null when it ended, was cancelled, or none ran since the\nserver started; null too for a caller who does not administer the library.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "contentChangedAt",
               "description": "Monotonic counter that advances whenever the library's contents change.\n\nIt is a counter, not a timestamp: compare it for inequality to detect a change, do not\nread it as a time.",
               "args": [],
@@ -10061,6 +10349,77 @@
         },
         {
           "kind": "ENUM",
+          "name": "LibraryErrorCode",
+          "description": "Why a library mutation did nothing.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "LIBRARY_NOT_FOUND",
+              "description": "No library the caller may change carries this id.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "INVALID_TITLE",
+              "description": "A title is 1 to 255 characters once trimmed, with no control character.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "INVALID_LANGUAGE",
+              "description": "Not shaped as a BCP 47 language tag, such as `fr-FR`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "UNSUPPORTED_KIND",
+              "description": "Music and photo libraries are not held by this server.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NO_ROOT",
+              "description": "A library needs a directory to scan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TOO_MANY_ROOTS",
+              "description": "A library scans at most 32 directories.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ROOT_NOT_FOUND",
+              "description": "Not an absolute path to a directory the server reaches.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "OVERLAPPING_ROOTS",
+              "description": "Lies inside another of the roots given, or holds one: its files would be found twice.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "OWNER_ONLY",
+              "description": "Only the server's owners choose the directories a library scans.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SCANNING",
+              "description": "The library is being scanned: its roots stay as they are and it stays until the scan\nends or is cancelled.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
           "name": "LibraryKind",
           "description": "The kind of media a library holds.\n\nDeclared here rather than deriving GraphQL traits on the domain enum, so `core` stays free\nof framework dependencies.",
           "fields": null,
@@ -10092,6 +10451,65 @@
               "deprecationReason": null
             }
           ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "LibraryPayload",
+          "description": "A library after a change.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "As given in the input.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "library",
+              "description": "The library as it now stands. Null when the request was refused.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "Library",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why the request was refused. Empty on success.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "LibraryUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
           "possibleTypes": null
         },
         {
@@ -10550,6 +10968,73 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "LibraryUserError",
+          "description": "A request a library mutation refused, and where in the input the reason lies.",
+          "fields": [
+            {
+              "name": "field",
+              "description": "The path to the input field at fault; for a root, its position in `roots` too.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "message",
+              "description": "What went wrong, for a person to read.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "code",
+              "description": "What went wrong, for a program to branch on.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "LibraryErrorCode",
                   "ofType": null
                 }
               },
@@ -14185,7 +14670,7 @@
             },
             {
               "name": "disableExtension",
-              "description": "Switches a user's connection off: its token stops working and its identifier is kept.\nWhether it was on. For the server's owners only.",
+              "description": "Switches a user's connection off: its token stops working, its devices are forgotten\nand its identifier is kept. Whether it was on. For the server's owners; through Jellyfin,\nfor the user itself too.",
               "args": [
                 {
                   "name": "userId",
@@ -14230,7 +14715,7 @@
             },
             {
               "name": "connectExtension",
-              "description": "Connects a user through an extension, returning a new token. Called again, it replaces\nthe token and keeps the identifier clients recognize. For the server's owners only.",
+              "description": "Connects a user through an extension, returning a new token. Called again, it replaces\nthe token and keeps the identifier clients recognize. For the server's owners; through\nJellyfin, whose clients then sign in with the user's password, for the user itself too.",
               "args": [
                 {
                   "name": "userId",
@@ -14267,6 +14752,127 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "ExtensionCredentials",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "forgetExtensionDevice",
+              "description": "Signs one device out of a user's connection: its token opens nothing more, and the\ndevice signs in again with the password. Whether there was such a device. For the\nserver's owners, and for the user itself.",
+              "args": [
+                {
+                  "name": "userId",
+                  "description": "The user, as returned in `User.id`.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "ID",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "extension",
+                  "description": "The protocol the device signed in through.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "ExtensionType",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "deviceId",
+                  "description": "The device, as returned in `ExtensionDevice.deviceId`.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "signInWithTicket",
+              "description": "Signs a browser in with a one-time ticket, as `signIn` does with a password: the server\nhands such a ticket out only in an address it opens itself (its tray icon on Windows).\nA ticket works once, for a minute.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The ticket the address carried.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "SignInWithTicketInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "SignInPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "setPassword",
+              "description": "Gives the caller a new password, which also signs it in through Jellyfin's clients; its\ncurrent password is asked for when it has one. An owner sets or resets any user's,\nwith none asked. The built-in `admin` account takes `KLAPZ_ADMIN_PASSWORD` again at the\nnext start when that is set.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The current password, and the new one.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "SetPasswordInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "SetPasswordPayload",
                   "ofType": null
                 }
               },
@@ -14993,6 +15599,99 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "PlaylistPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "createLibrary",
+              "description": "Creates a library over directories of the server, then scans it. For the server's\nowners only.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The library to create.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "CreateLibraryInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "LibraryPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "updateLibrary",
+              "description": "Renames a library or changes its language, for its admins and the server's owners;\nchanges the directories it scans, for the owners only.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The changes.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "UpdateLibraryInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "LibraryPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "deleteLibrary",
+              "description": "Deletes a library with its items, collections and the permissions given on it, ending\nevery playback of its items; its files stay on disk, and watch state and ratings stay\nwith the works. For the server's owners only.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The library to delete.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "DeleteLibraryInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "DeleteLibraryPayload",
                   "ofType": null
                 }
               },
@@ -21677,6 +22376,120 @@
         },
         {
           "kind": "INPUT_OBJECT",
+          "name": "SetPasswordInput",
+          "description": "A password for the caller, or for a user an owner names.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "userId",
+              "description": "Whose password, as returned in `User.id`: another user's for an owner only, who needs\nno current password to set or reset one. Left out, the caller's own.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "currentPassword",
+              "description": "The password the caller has now, to change its own. Required when it has one.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "newPassword",
+              "description": "The new password: between 8 and 256 characters.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "SetPasswordPayload",
+          "description": "What `setPassword` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "The value the input carried.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "user",
+              "description": "The caller, with its new password. Null when it was refused.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "User",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why it was refused. Empty when it was not.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "AccountUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
           "name": "SetSubtitleOffsetInput",
           "description": "An offset to shift a subtitle by.",
           "fields": null,
@@ -23293,6 +24106,41 @@
           ],
           "inputFields": null,
           "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "SignInWithTicketInput",
+          "description": "A ticket the server handed out in an address it opened, to sign a browser in.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "ticket",
+              "description": "The ticket, as the address carried it.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
           "enumValues": null,
           "possibleTypes": null
         },
@@ -26653,6 +27501,79 @@
         },
         {
           "kind": "INPUT_OBJECT",
+          "name": "UpdateLibraryInput",
+          "description": "Changes to a library. An absent field is left as it is.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "id",
+              "description": "The library, as returned in `Library.id`. The caller must be its admin or an owner.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "title",
+              "description": "Its new name: 1 to 255 characters, trimmed. Clears `titleSort`.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "language",
+              "description": "The language its metadata is in, as a BCP 47 tag such as `fr-FR`.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "roots",
+              "description": "Replaces the directories it scans, as `createLibrary` takes them; for owners only. A\nroot kept keeps its id, and a scan starts: the files of a root taken away leave the\nlibrary with it. Refused while the library is being scanned.",
+              "type": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
           "name": "UpdateMarkerInput",
           "description": "Changes to a marker. An absent field is left as it is; `null` clears what can be cleared.",
           "fields": null,
@@ -27748,6 +28669,30 @@
                 "kind": "OBJECT",
                 "name": "AccountLink",
                 "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "devices",
+              "description": "The devices signed in through this connection with the user's password, each holding a\ntoken of its own: Jellyfin's clients. The latest sign-in first; empty for Plex.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ExtensionDevice",
+                      "ofType": null
+                    }
+                  }
+                }
               },
               "isDeprecated": false,
               "deprecationReason": null

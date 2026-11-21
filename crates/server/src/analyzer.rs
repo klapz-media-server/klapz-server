@@ -19,6 +19,8 @@ const TIMEOUT: Duration = Duration::from_secs(600);
 
 /// The scanner's exit status when the media is at fault.
 const EXIT_MEDIA: i32 = 3;
+/// The scanner's exit status when its tools cannot run: ffmpeg missing, or without ffprobe.
+const EXIT_TOOLS: i32 = 4;
 
 #[derive(Debug)]
 pub struct ScannerProcess {
@@ -34,6 +36,26 @@ impl ScannerProcess {
         Self {
             binary,
             permits: Semaphore::new(CONCURRENT),
+        }
+    }
+}
+
+impl ScannerProcess {
+    /// Whether a scan could analyse anything: the scanner starts and its tools run
+    /// (`klapz-scanner check`). What is wrong otherwise, as the scanner says it.
+    pub async fn check(&self) -> Result<(), String> {
+        let ran = Command::new(&self.binary)
+            .arg("check")
+            .kill_on_drop(true)
+            .output();
+        match tokio::time::timeout(Duration::from_secs(30), ran).await {
+            Ok(Ok(output)) if output.status.success() => Ok(()),
+            Ok(Ok(output)) => Err(String::from_utf8_lossy(&output.stderr).trim().to_owned()),
+            Ok(Err(error)) => Err(format!(
+                "cannot start the scanner {}: {error}",
+                self.binary.display()
+            )),
+            Err(_) => Err("the scanner's check did not end".to_owned()),
         }
     }
 }
@@ -68,6 +90,8 @@ impl MediaAnalyzer for ScannerProcess {
             .map_err(|_| failed(ScannerFailure::Status("the analyzer is closed".to_owned())))?;
         match self.probe(&["probe", "--deep", "--"], path).await {
             Ok(analysis) => Ok(analysis),
+            // The headers alone would fail the same way.
+            Err(error @ AnalyzeError::Unavailable(_)) => Err(error),
             Err(error) => {
                 tracing::warn!(%error, "deep analysis failed, reading the headers alone");
                 self.probe(&["probe", "--"], path).await
@@ -87,10 +111,9 @@ impl ScannerProcess {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| {
-                failed(ScannerFailure::Spawn(
-                    self.binary.display().to_string(),
-                    error,
-                ))
+                AnalyzeError::Unavailable(
+                    ScannerFailure::Spawn(self.binary.display().to_string(), error).to_string(),
+                )
             })?;
         let output = tokio::time::timeout(TIMEOUT, child.wait_with_output())
             .await
@@ -100,6 +123,7 @@ impl ScannerProcess {
         match output.status.code() {
             Some(0) => {}
             Some(EXIT_MEDIA) => return Err(AnalyzeError::Unreadable(stderr)),
+            Some(EXIT_TOOLS) => return Err(AnalyzeError::Unavailable(stderr)),
             _ => return Err(failed(ScannerFailure::Status(stderr))),
         }
         let report: Report = serde_json::from_slice(&output.stdout)

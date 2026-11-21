@@ -3,17 +3,23 @@
 //! This is the only place that knows both vocabularies. Mapping here rather than returning
 //! entities is what lets `core` and the bindings stay unaware of the schema.
 
+pub use klapz_core::library::NewLibrary;
 use klapz_core::library::{
-    LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot,
+    LibraryEdit, LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot,
 };
 use klapz_core::page::{Page, Window};
 use klapz_core::SectionId;
+use sea_orm::sea_query::{Query, SelectStatement};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr,
+    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
+    TransactionTrait,
 };
 
-use crate::entity::{library_section, section_root};
+use crate::entity::{
+    collection_entry, item_marker, library_permission, library_section, metadata_item,
+    play_queue_entry, play_queue_source, playback_session, playlist_entry, section_root, viewing,
+};
 
 #[derive(Debug, Clone)]
 pub struct SqlLibraryRepository {
@@ -96,6 +102,141 @@ impl LibraryRepository for SqlLibraryRepository {
 
         Ok(roots.into_iter().map(root_to_domain).collect())
     }
+
+    async fn create(&self, library: NewLibrary, now: i64) -> Result<LibrarySection, LibraryError> {
+        let id = create_library_at(&self.connection, library, now)
+            .await
+            .map_err(storage)?;
+        self.section(id).await
+    }
+
+    async fn edit(
+        &self,
+        id: SectionId,
+        edit: &LibraryEdit,
+        now: i64,
+    ) -> Result<LibrarySection, LibraryError> {
+        let transaction = self.connection.begin().await.map_err(storage)?;
+        let section = library_section::Entity::find_by_id(id.get())
+            .one(&transaction)
+            .await
+            .map_err(storage)?
+            .ok_or(LibraryError::SectionNotFound(id))?;
+        let mut changed = section.into_active_model();
+        if let Some(title) = &edit.title {
+            changed.title = ActiveValue::Set(title.clone());
+            changed.title_sort = ActiveValue::Set(None);
+        }
+        if let Some(language) = &edit.language {
+            changed.language = ActiveValue::Set(language.clone());
+        }
+        changed.updated_at = ActiveValue::Set(now);
+        let section = changed.update(&transaction).await.map_err(storage)?;
+        if let Some(roots) = &edit.roots {
+            replace_roots(&transaction, id, roots, now)
+                .await
+                .map_err(storage)?;
+        }
+        transaction.commit().await.map_err(storage)?;
+        Ok(to_domain(section))
+    }
+
+    /// The section's foreign keys cascade to its roots, items and collections, and the items'
+    /// to their files, tracks, tags, indexes, history and extras. What refers to an item or a
+    /// library without one goes by hand first, as when a scan removes an item: a deleted
+    /// number could otherwise come back on the next item added.
+    async fn delete(&self, id: SectionId) -> Result<bool, LibraryError> {
+        let transaction = self.connection.begin().await.map_err(storage)?;
+        let backend = transaction.get_database_backend();
+        let items = || -> SelectStatement {
+            Query::select()
+                .column(metadata_item::Column::Id)
+                .from(metadata_item::Entity)
+                .and_where(metadata_item::Column::LibrarySectionId.eq(id.get()))
+                .to_owned()
+        };
+        let by_hand = [
+            item_marker::Entity::delete_many()
+                .filter(item_marker::Column::ItemId.in_subquery(items()))
+                .build(backend),
+            collection_entry::Entity::delete_many()
+                .filter(collection_entry::Column::ItemId.in_subquery(items()))
+                .build(backend),
+            playlist_entry::Entity::delete_many()
+                .filter(playlist_entry::Column::ItemId.in_subquery(items()))
+                .build(backend),
+            play_queue_entry::Entity::delete_many()
+                .filter(play_queue_entry::Column::ItemId.in_subquery(items()))
+                .build(backend),
+            play_queue_source::Entity::delete_many()
+                .filter(play_queue_source::Column::ItemId.in_subquery(items()))
+                .build(backend),
+            viewing::Entity::delete_many()
+                .filter(viewing::Column::ItemId.in_subquery(items()))
+                .build(backend),
+            playback_session::Entity::delete_many()
+                .filter(playback_session::Column::ItemId.in_subquery(items()))
+                .build(backend),
+            library_permission::Entity::delete_many()
+                .filter(library_permission::Column::SectionId.eq(id.get()))
+                .build(backend),
+        ];
+        for statement in by_hand {
+            transaction.execute(statement).await.map_err(storage)?;
+        }
+        let deleted = library_section::Entity::delete_by_id(id.get())
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
+        transaction.commit().await.map_err(storage)?;
+        Ok(deleted.rows_affected > 0)
+    }
+}
+
+/// Gives a section these roots, keeping the id and date of each it already had.
+async fn replace_roots<C: ConnectionTrait>(
+    connection: &C,
+    section: SectionId,
+    paths: &[String],
+    now: i64,
+) -> Result<(), DbErr> {
+    section_root::Entity::delete_many()
+        .filter(section_root::Column::SectionId.eq(section.get()))
+        .filter(section_root::Column::Path.is_not_in(paths.iter().cloned()))
+        .exec(connection)
+        .await?;
+    let kept: Vec<String> = section_root::Entity::find()
+        .select_only()
+        .column(section_root::Column::Path)
+        .filter(section_root::Column::SectionId.eq(section.get()))
+        .into_tuple()
+        .all(connection)
+        .await?;
+    let mut next = next_root_id(connection).await?;
+    for path in paths.iter().filter(|path| !kept.contains(path)) {
+        section_root::ActiveModel {
+            id: ActiveValue::Set(next),
+            section_id: ActiveValue::Set(section.get()),
+            path: ActiveValue::Set(path.clone()),
+            created_at: ActiveValue::Set(now),
+        }
+        .insert(connection)
+        .await?;
+        next += 1;
+    }
+    Ok(())
+}
+
+async fn next_root_id<C: ConnectionTrait>(connection: &C) -> Result<i64, DbErr> {
+    Ok(section_root::Entity::find()
+        .select_only()
+        .column_as(section_root::Column::Id.max(), "id")
+        .into_tuple::<Option<i64>>()
+        .one(connection)
+        .await?
+        .flatten()
+        .unwrap_or(0)
+        + 1)
 }
 
 fn to_domain(section: library_section::Model) -> LibrarySection {
@@ -148,19 +289,8 @@ fn storage(error: sea_orm::DbErr) -> LibraryError {
     LibraryError::Storage(Box::new(error))
 }
 
-/// A library to create, with the directories it scans.
-#[derive(Debug, Clone)]
-pub struct NewLibrary {
-    pub kind: SectionKind,
-    pub title: String,
-    /// BCP 47, such as `fr-FR`.
-    pub language: String,
-    pub roots: Vec<String>,
-}
-
 /// Creates a library and its roots, numbered past the highest ids, as an import would have
-/// left them. Roots are paths of the server's own choosing — the command line, never a client
-/// (`CLAUDE.md`: no endpoint accepts a path).
+/// left them.
 ///
 /// # Errors
 ///
@@ -169,20 +299,18 @@ pub async fn create_library(
     connection: &DatabaseConnection,
     library: NewLibrary,
 ) -> Result<SectionId, DbErr> {
+    create_library_at(connection, library, klapz_core::now_epoch()).await
+}
+
+async fn create_library_at(
+    connection: &DatabaseConnection,
+    library: NewLibrary,
+    now: i64,
+) -> Result<SectionId, DbErr> {
     let transaction = connection.begin().await?;
-    let now = klapz_core::now_epoch();
     let next_section = library_section::Entity::find()
         .select_only()
         .column_as(library_section::Column::Id.max(), "id")
-        .into_tuple::<Option<i64>>()
-        .one(&transaction)
-        .await?
-        .flatten()
-        .unwrap_or(0)
-        + 1;
-    let next_root = section_root::Entity::find()
-        .select_only()
-        .column_as(section_root::Column::Id.max(), "id")
         .into_tuple::<Option<i64>>()
         .one(&transaction)
         .await?
@@ -212,16 +340,13 @@ pub async fn create_library(
     }
     .insert(&transaction)
     .await?;
-    for (id, path) in (next_root..).zip(library.roots) {
-        section_root::ActiveModel {
-            id: ActiveValue::Set(id),
-            section_id: ActiveValue::Set(next_section),
-            path: ActiveValue::Set(path),
-            created_at: ActiveValue::Set(now),
-        }
-        .insert(&transaction)
-        .await?;
-    }
+    replace_roots(
+        &transaction,
+        SectionId::new(next_section),
+        &library.roots,
+        now,
+    )
+    .await?;
     transaction.commit().await?;
     Ok(SectionId::new(next_section))
 }

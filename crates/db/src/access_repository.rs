@@ -2,7 +2,8 @@
 
 use klapz_core::access::{
     AccessError, AccessRepository, AccountLink, Extension, ExtensionDevice, Grant,
-    LibraryPermission, LibraryRole, Login, NewUser, RemoteAccount, ServerRole, User, UserExtension,
+    LibraryPermission, LibraryRole, Login, NewUser, RemoteAccount, ServerRole, SignedInDevice,
+    User, UserExtension,
 };
 use klapz_core::page::{Page, Window};
 use klapz_core::{SectionId, UserId};
@@ -650,6 +651,49 @@ impl AccessRepository for SqlAccessRepository {
             .filter(extension_device::Column::UserId.eq(user.get()))
             .filter(extension_device::Column::Extension.eq(extension_name(extension)))
             .filter(extension_device::Column::TokenDigest.eq(token_digest))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(result.rows_affected > 0)
+    }
+
+    async fn devices(
+        &self,
+        user: UserId,
+        extension: Extension,
+    ) -> Result<Vec<SignedInDevice>, AccessError> {
+        let rows = extension_device::Entity::find()
+            .filter(extension_device::Column::UserId.eq(user.get()))
+            .filter(extension_device::Column::Extension.eq(extension_name(extension)))
+            .order_by_desc(extension_device::Column::UpdatedAt)
+            .order_by_asc(extension_device::Column::Id)
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| SignedInDevice {
+                device: ExtensionDevice {
+                    id: row.device_id,
+                    name: row.device_name,
+                    client: row.client,
+                    client_version: row.client_version,
+                },
+                signed_in_at: row.updated_at,
+            })
+            .collect())
+    }
+
+    async fn forget_device(
+        &self,
+        user: UserId,
+        extension: Extension,
+        device_id: &str,
+    ) -> Result<bool, AccessError> {
+        let result = extension_device::Entity::delete_many()
+            .filter(extension_device::Column::UserId.eq(user.get()))
+            .filter(extension_device::Column::Extension.eq(extension_name(extension)))
+            .filter(extension_device::Column::DeviceId.eq(device_id))
             .exec(&self.connection)
             .await
             .map_err(storage)?;

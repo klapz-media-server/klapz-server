@@ -23,7 +23,9 @@ use crate::ids::{
     ChapterId, CollectionId, ExtraId, MarkerId, MediaId, PartId, PersonId, PlaylistEntryId,
     PlaylistId, RatingKey, SectionId, StreamId, TagId,
 };
-use crate::library::{LibraryError, LibraryRepository, LibrarySection, SectionRoot};
+use crate::library::{
+    LibraryEdit, LibraryError, LibraryRepository, LibrarySection, NewLibrary, SectionRoot,
+};
 use crate::marker::{Marker, NewMarker};
 use crate::metadata::{
     self, CreditRef, EpisodeCredit, ExternalId, FieldValue, FirstCharacter, ItemKind, ItemQuery,
@@ -37,23 +39,23 @@ use crate::playlist::{
     PlaylistRepository, PlaylistSort, PlaylistTotals, SmartRule,
 };
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct InMemoryLibrary {
-    sections: Vec<LibrarySection>,
-    roots: Vec<SectionRoot>,
+    sections: std::sync::Mutex<Vec<LibrarySection>>,
+    roots: std::sync::Mutex<Vec<SectionRoot>>,
 }
 
 impl InMemoryLibrary {
     pub const fn new(sections: Vec<LibrarySection>) -> Self {
         Self {
-            sections,
-            roots: Vec::new(),
+            sections: std::sync::Mutex::new(sections),
+            roots: std::sync::Mutex::new(Vec::new()),
         }
     }
 
     #[must_use]
-    pub fn with_roots(mut self, roots: Vec<SectionRoot>) -> Self {
-        self.roots = roots;
+    pub fn with_roots(self, roots: Vec<SectionRoot>) -> Self {
+        *locked(&self.roots) = roots;
         self
     }
 }
@@ -72,8 +74,7 @@ impl LibraryRepository for InMemoryLibrary {
         let after = window.after.as_ref().map(|cursor| cursor.id);
         let before = window.before.as_ref().map(|cursor| cursor.id);
 
-        let mut rows: Vec<LibrarySection> = self
-            .sections
+        let mut rows: Vec<LibrarySection> = locked(&self.sections)
             .iter()
             .filter(|section| only.is_none_or(|only| only.contains(&section.id)))
             .filter(|section| after.is_none_or(|id| section.id.get() > id))
@@ -95,7 +96,7 @@ impl LibraryRepository for InMemoryLibrary {
     }
 
     async fn section(&self, id: SectionId) -> Result<LibrarySection, LibraryError> {
-        self.sections
+        locked(&self.sections)
             .iter()
             .find(|section| section.id == id)
             .cloned()
@@ -103,12 +104,92 @@ impl LibraryRepository for InMemoryLibrary {
     }
 
     async fn roots_for(&self, sections: &[SectionId]) -> Result<Vec<SectionRoot>, LibraryError> {
-        Ok(self
-            .roots
+        Ok(locked(&self.roots)
             .iter()
             .filter(|root| sections.contains(&root.section_id))
             .cloned()
             .collect())
+    }
+
+    async fn create(&self, library: NewLibrary, now: i64) -> Result<LibrarySection, LibraryError> {
+        let mut sections = locked(&self.sections);
+        let id = SectionId::new(
+            sections
+                .iter()
+                .map(|section| section.id.get())
+                .max()
+                .unwrap_or(0)
+                + 1,
+        );
+        let section = LibrarySection {
+            id,
+            kind: library.kind,
+            title: library.title,
+            title_sort: None,
+            language: library.language,
+            uuid: format!("uuid-{id}"),
+            created_at: now,
+            updated_at: now,
+            scanned_at: None,
+            content_changed_at: 0,
+            hidden: false,
+        };
+        sections.push(section.clone());
+        replace_roots(&mut locked(&self.roots), id, library.roots, now);
+        Ok(section)
+    }
+
+    async fn edit(
+        &self,
+        id: SectionId,
+        edit: &LibraryEdit,
+        now: i64,
+    ) -> Result<LibrarySection, LibraryError> {
+        let mut sections = locked(&self.sections);
+        let section = sections
+            .iter_mut()
+            .find(|section| section.id == id)
+            .ok_or(LibraryError::SectionNotFound(id))?;
+        if let Some(title) = &edit.title {
+            section.title.clone_from(title);
+            section.title_sort = None;
+        }
+        if let Some(language) = &edit.language {
+            section.language.clone_from(language);
+        }
+        if let Some(roots) = &edit.roots {
+            replace_roots(&mut locked(&self.roots), id, roots.clone(), now);
+        }
+        section.updated_at = now;
+        Ok(section.clone())
+    }
+
+    async fn delete(&self, id: SectionId) -> Result<bool, LibraryError> {
+        let mut sections = locked(&self.sections);
+        let before = sections.len();
+        sections.retain(|section| section.id != id);
+        locked(&self.roots).retain(|root| root.section_id != id);
+        Ok(sections.len() < before)
+    }
+}
+
+/// Gives a section these roots, keeping the id of each it already had.
+fn replace_roots(roots: &mut Vec<SectionRoot>, section: SectionId, paths: Vec<String>, now: i64) {
+    let mut next = roots.iter().map(|root| root.id).max().unwrap_or(0) + 1;
+    roots.retain(|root| root.section_id != section || paths.contains(&root.path));
+    for path in paths {
+        if !roots
+            .iter()
+            .any(|root| root.section_id == section && root.path == path)
+        {
+            roots.push(SectionRoot {
+                id: next,
+                section_id: section,
+                path,
+                created_at: now,
+            });
+            next += 1;
+        }
     }
 }
 
@@ -1640,6 +1721,8 @@ fn page_limit(window: &Window) -> usize {
 #[derive(Debug, Default)]
 pub struct InMemoryPlayback {
     sessions: std::sync::Mutex<Vec<crate::playback::PlaybackSession>>,
+    /// The library of each item a test plays, which sessions do not record.
+    pub libraries: std::sync::Mutex<std::collections::HashMap<RatingKey, SectionId>>,
 }
 
 impl InMemoryPlayback {
@@ -1735,6 +1818,22 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
             .collect())
     }
 
+    async fn keys_in_library(
+        &self,
+        section: SectionId,
+    ) -> Result<Vec<String>, crate::playback::PlaybackError> {
+        let libraries = self
+            .libraries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Ok(self
+            .rows()
+            .iter()
+            .filter(|row| libraries.get(&row.item) == Some(&section))
+            .map(|row| row.key.clone())
+            .collect())
+    }
+
     async fn end(&self, key: &str) -> Result<bool, crate::playback::PlaybackError> {
         let mut rows = self.rows();
         let before = rows.len();
@@ -1824,21 +1923,23 @@ impl crate::playback::PlaybackRepository for InMemoryPlayback {
     }
 }
 
+/// A device as [`InMemoryAccess`] keeps it: its user, its extension, the device, its token's
+/// digest and its last sign-in.
+type StoredDevice = (
+    crate::ids::UserId,
+    crate::access::Extension,
+    crate::access::ExtensionDevice,
+    String,
+    i64,
+);
+
 /// Users held in memory, for tests that exercise the schema's access rules.
 #[derive(Debug, Default)]
 pub struct InMemoryAccess {
     users: std::sync::Mutex<Vec<crate::access::User>>,
     permissions: std::sync::Mutex<Vec<crate::access::LibraryPermission>>,
     extensions: std::sync::Mutex<Vec<(crate::access::UserExtension, String)>>,
-    /// Each with its user, its extension and its token's digest.
-    devices: std::sync::Mutex<
-        Vec<(
-            crate::ids::UserId,
-            crate::access::Extension,
-            crate::access::ExtensionDevice,
-            String,
-        )>,
-    >,
+    devices: std::sync::Mutex<Vec<StoredDevice>>,
     accounts: std::sync::Mutex<Vec<crate::access::AccountLink>>,
     passwords: std::sync::Mutex<Vec<(crate::ids::UserId, String)>>,
 }
@@ -2195,7 +2296,7 @@ impl crate::access::AccessRepository for InMemoryAccess {
         extension: crate::access::Extension,
         device: &crate::access::ExtensionDevice,
         token_digest: &str,
-        _now: i64,
+        now: i64,
     ) -> Result<(), crate::access::AccessError> {
         let connected = locked(&self.extensions)
             .iter()
@@ -2204,10 +2305,16 @@ impl crate::access::AccessRepository for InMemoryAccess {
             return Err(crate::access::AccessError::NotConnected);
         }
         let mut devices = locked(&self.devices);
-        devices.retain(|(owner, of, held, _)| {
+        devices.retain(|(owner, of, held, ..)| {
             (*owner, *of) != (user, extension) || held.id != device.id
         });
-        devices.push((user, extension, device.clone(), token_digest.to_owned()));
+        devices.push((
+            user,
+            extension,
+            device.clone(),
+            token_digest.to_owned(),
+            now,
+        ));
         Ok(())
     }
 
@@ -2219,8 +2326,39 @@ impl crate::access::AccessRepository for InMemoryAccess {
     ) -> Result<bool, crate::access::AccessError> {
         let mut devices = locked(&self.devices);
         let before = devices.len();
-        devices.retain(|(owner, of, _, digest)| {
+        devices.retain(|(owner, of, _, digest, _)| {
             (*owner, *of) != (user, extension) || digest != token_digest
+        });
+        Ok(devices.len() < before)
+    }
+
+    async fn devices(
+        &self,
+        user: crate::ids::UserId,
+        extension: crate::access::Extension,
+    ) -> Result<Vec<crate::access::SignedInDevice>, crate::access::AccessError> {
+        let mut found: Vec<crate::access::SignedInDevice> = locked(&self.devices)
+            .iter()
+            .filter(|(owner, of, ..)| (*owner, *of) == (user, extension))
+            .map(|(_, _, device, _, at)| crate::access::SignedInDevice {
+                device: device.clone(),
+                signed_in_at: *at,
+            })
+            .collect();
+        found.sort_by_key(|device| std::cmp::Reverse(device.signed_in_at));
+        Ok(found)
+    }
+
+    async fn forget_device(
+        &self,
+        user: crate::ids::UserId,
+        extension: crate::access::Extension,
+        device_id: &str,
+    ) -> Result<bool, crate::access::AccessError> {
+        let mut devices = locked(&self.devices);
+        let before = devices.len();
+        devices.retain(|(owner, of, held, ..)| {
+            (*owner, *of) != (user, extension) || held.id != device_id
         });
         Ok(devices.len() < before)
     }
@@ -2243,7 +2381,7 @@ impl crate::access::AccessRepository for InMemoryAccess {
     ) -> Result<Option<crate::access::Grant>, crate::access::AccessError> {
         let device_user = locked(&self.devices)
             .iter()
-            .find(|(_, of, _, digest)| *of == extension && digest == token_digest)
+            .find(|(_, of, _, digest, _)| *of == extension && digest == token_digest)
             .map(|(owner, ..)| *owner);
         let found = locked(&self.extensions)
             .iter()
@@ -3805,6 +3943,12 @@ pub fn owner() -> crate::Principal {
 #[derive(Debug, Default)]
 pub struct RecordedScans {
     pub started: std::sync::Mutex<Vec<crate::scan::ScanRequest>>,
+    /// The directories a root may name.
+    pub directories: KnownDirectories,
+    /// The libraries a test says are being scanned. Starting a scan adds none.
+    pub running: std::sync::Mutex<Vec<SectionId>>,
+    /// Why a test says a library's last scan stopped.
+    pub failures: std::sync::Mutex<std::collections::HashMap<SectionId, String>>,
 }
 
 #[async_trait::async_trait]
@@ -3821,7 +3965,80 @@ impl crate::scan::ScanControl for RecordedScans {
         false
     }
 
-    fn is_running(&self, _section: SectionId) -> bool {
-        false
+    fn is_running(&self, section: SectionId) -> bool {
+        self.running
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(&section)
+    }
+
+    fn last_failure(&self, section: SectionId) -> Option<String> {
+        self.failures
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&section)
+            .cloned()
+    }
+
+    fn files(&self) -> &dyn crate::files::LibraryFiles {
+        &self.directories
+    }
+}
+
+/// Directories that exist, `/`-separated, holding nothing: what a root may name in a test.
+#[derive(Debug, Default)]
+pub struct KnownDirectories(pub Vec<String>);
+
+#[async_trait::async_trait]
+impl crate::files::LibraryFiles for KnownDirectories {
+    async fn list(
+        &self,
+        _root: &str,
+        _directory: &crate::files::RelativePath,
+    ) -> Result<Vec<crate::files::Entry>, crate::files::FilesError> {
+        Ok(Vec::new())
+    }
+
+    async fn read(
+        &self,
+        _root: &str,
+        _file: &crate::files::RelativePath,
+        _limit: u64,
+    ) -> Result<Vec<u8>, crate::files::FilesError> {
+        Err(crate::files::FilesError::NotFound)
+    }
+
+    fn stored_path(&self, root: &str, file: &crate::files::RelativePath) -> String {
+        if file.is_root() {
+            root.to_owned()
+        } else {
+            format!("{root}/{file}")
+        }
+    }
+
+    fn relative_path(&self, root: &str, stored: &str) -> Option<crate::files::RelativePath> {
+        if stored == root {
+            return Some(crate::files::RelativePath::root());
+        }
+        crate::files::RelativePath::parse(stored.strip_prefix(root)?.strip_prefix('/')?).ok()
+    }
+
+    async fn locate(
+        &self,
+        root: &str,
+        file: &crate::files::RelativePath,
+    ) -> Result<crate::files::FileLocation, crate::files::FilesError> {
+        Ok(crate::files::FileLocation::Local(
+            self.stored_path(root, file).into(),
+        ))
+    }
+
+    async fn resolve_root(&self, path: &str) -> Result<String, crate::files::FilesError> {
+        let path = path.trim_end_matches('/');
+        if self.0.iter().any(|directory| directory == path) {
+            Ok(path.to_owned())
+        } else {
+            Err(crate::files::FilesError::NotFound)
+        }
     }
 }

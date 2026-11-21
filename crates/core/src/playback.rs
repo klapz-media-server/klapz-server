@@ -5,7 +5,7 @@
 //! no longer read, and is deleted by the next sweep. Ending one is `crate::lifecycle`'s: the
 //! row and the stream behind it go together.
 
-use crate::ids::{PartId, RatingKey, UserId};
+use crate::ids::{PartId, RatingKey, SectionId, UserId};
 use crate::page::{Page, Window};
 
 /// How long a session lives without a sign of life. The same as the transcoder's idle limit,
@@ -128,6 +128,10 @@ pub trait PlaybackRepository: Send + Sync + std::fmt::Debug {
     /// The keys of a playback's sessions, terminated and expired ones included, at most
     /// `page::MAX_ITEMS`.
     async fn keys_of_playback(&self, playback_id: &str) -> Result<Vec<String>, PlaybackError>;
+
+    /// The keys of the sessions playing an item of this library, terminated and expired ones
+    /// included.
+    async fn keys_in_library(&self, section: SectionId) -> Result<Vec<String>, PlaybackError>;
 
     /// Closes a session. Whether it existed.
     async fn end(&self, key: &str) -> Result<bool, PlaybackError>;

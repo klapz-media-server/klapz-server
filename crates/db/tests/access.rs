@@ -986,3 +986,51 @@ async fn an_inactive_user_opens_nothing_through_a_device() {
     repository.set_active(user, false, NOW).await.unwrap();
     assert_eq!(opener(&repository, Extension::Jellyfin, "t").await, None);
 }
+
+#[tokio::test]
+async fn devices_are_listed_latest_sign_in_first_and_forgotten_one_by_one() {
+    let repository = repository().await;
+    let user = on_jellyfin(&repository, "d@example.org").await;
+    for (id, at) in [("d1", NOW), ("d2", NOW + 10)] {
+        repository
+            .issue_device_token(
+                user,
+                Extension::Jellyfin,
+                &device(id),
+                &token_digest(id),
+                at,
+            )
+            .await
+            .unwrap();
+    }
+    let listed = repository.devices(user, Extension::Jellyfin).await.unwrap();
+    let order: Vec<(&str, i64)> = listed
+        .iter()
+        .map(|signed_in| (signed_in.device.id.as_str(), signed_in.signed_in_at))
+        .collect();
+    assert_eq!(order, [("d2", NOW + 10), ("d1", NOW)]);
+    assert!(repository
+        .devices(user, Extension::Plex)
+        .await
+        .unwrap()
+        .is_empty());
+
+    assert!(repository
+        .forget_device(user, Extension::Jellyfin, "d1")
+        .await
+        .unwrap());
+    assert!(!repository
+        .forget_device(user, Extension::Jellyfin, "d1")
+        .await
+        .unwrap());
+    assert!(repository
+        .grant(Extension::Jellyfin, &token_digest("d1"))
+        .await
+        .unwrap()
+        .is_none());
+    assert!(repository
+        .grant(Extension::Jellyfin, &token_digest("d2"))
+        .await
+        .unwrap()
+        .is_some());
+}

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use crate::files::LibraryFiles;
 use crate::ids::SectionId;
 use crate::scan::{scan_section, ScanError, ScanRequest, Scanner};
 
@@ -21,6 +22,14 @@ pub trait ScanControl: Send + Sync + std::fmt::Debug {
     fn cancel(&self, section: SectionId) -> bool;
 
     fn is_running(&self, section: SectionId) -> bool;
+
+    /// Why the library's last scan stopped before its end, cancelled aside. `None` when it
+    /// ended, or when none ran since the server started.
+    fn last_failure(&self, section: SectionId) -> Option<String>;
+
+    /// What the scans read libraries through, and so where a root an owner names is looked
+    /// up before a library is given it.
+    fn files(&self) -> &dyn LibraryFiles;
 }
 
 /// Runs each scan as a task of the current Tokio runtime.
@@ -28,6 +37,7 @@ pub trait ScanControl: Send + Sync + std::fmt::Debug {
 pub struct BackgroundScans {
     scanner: Scanner,
     running: Arc<Mutex<HashMap<SectionId, Arc<AtomicBool>>>>,
+    failures: Arc<Mutex<HashMap<SectionId, String>>>,
 }
 
 impl BackgroundScans {
@@ -35,6 +45,7 @@ impl BackgroundScans {
         Self {
             scanner,
             running: Arc::default(),
+            failures: Arc::default(),
         }
     }
 }
@@ -53,11 +64,25 @@ impl ScanControl for BackgroundScans {
         }
         let scanner = self.scanner.clone();
         let running = Arc::clone(&self.running);
+        let failures = Arc::clone(&self.failures);
         tokio::spawn(async move {
             // Dropped however the task ends, a panic included, so a library is never left
             // marked as being scanned.
             let _finished = Finished { running, section };
-            match scan_section(&scanner, &request, &cancelled).await {
+            let result = scan_section(&scanner, &request, &cancelled).await;
+            {
+                let mut failures = failures.lock().unwrap_or_else(PoisonError::into_inner);
+                match &result {
+                    Ok(_) => {
+                        failures.remove(&section);
+                    }
+                    Err(ScanError::Cancelled) => {}
+                    Err(error) => {
+                        failures.insert(section, error.to_string());
+                    }
+                }
+            }
+            match result {
                 Ok(outcome) => tracing::info!(
                     section = section.get(),
                     added = outcome.added,
@@ -93,6 +118,18 @@ impl ScanControl for BackgroundScans {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .contains_key(&section)
+    }
+
+    fn last_failure(&self, section: SectionId) -> Option<String> {
+        self.failures
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&section)
+            .cloned()
+    }
+
+    fn files(&self) -> &dyn LibraryFiles {
+        self.scanner.files.as_ref()
     }
 }
 

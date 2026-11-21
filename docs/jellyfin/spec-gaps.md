@@ -37,8 +37,10 @@ served are tracked in `ENDPOINTS.md`.
 
 ## Users and devices
 
-- **A Jellyfin extension, per user.** An owner switches it on (`connectExtension(JELLYFIN)`, or
-  the switch at `/admin`). Jellyfin's clients sign in with the user's own password
+- **A Jellyfin extension, per user.** The user switches it on and off itself, or an owner does
+  (`connectExtension(JELLYFIN)`, `disableExtension`). A user without a password, as an owner
+  creates one, is given one first (`setPassword`, by an owner or by the user itself). The devices signed in are listed on
+  `UserExtension.devices` and forgotten one by one with `forgetExtensionDevice`. Jellyfin's clients sign in with the user's own password
   (`signInThroughExtension`), and each device keeps a token of its own (`extension_device`):
   signing in again from a device replaces its token; signing out forgets it; switching the
   extension off or deleting the user forgets every device. The connection's own token, which
