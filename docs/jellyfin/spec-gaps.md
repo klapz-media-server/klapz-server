@@ -34,6 +34,11 @@ served are tracked in `ENDPOINTS.md`.
   `/Users/Public`, `/Branding/*`, `/QuickConnect/Enabled`, and Jellyfin Web under `/web`. The
   reference also answers `/Users/Public` without a token; it lists no user (they are hidden by
   default), nor do we.
+- **The base redirects to Jellyfin Web.** `/jellyfin` and `/jellyfin/` answer `302` to
+  `/jellyfin/web/` without a token, as a reference with a base URL does
+  (`BaseUrlRedirectionMiddleware`; the measured reference, without one, answers `302` to `web/`
+  at `/`). Some clients open the address they were given first and give up on a `401`. Paths
+  outside the base are not redirected, as the reference would: they are the Plex surface's.
 
 ## Users and devices
 

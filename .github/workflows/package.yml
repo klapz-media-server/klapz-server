@@ -54,7 +54,7 @@ jobs:
         run: |
           last=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
           if [ -z "$last" ]; then
-            next=$(sed -n 's/^version = "\(.*\)"$//p' crates/server/Cargo.toml | head -n1)
+            next=$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/server/Cargo.toml | head -n1)
           else
             IFS=. read -r major minor patch <<< "${last#v}"
             case "$BUMP" in
@@ -127,8 +127,7 @@ jobs:
         run: |
           for crate in server scanner; do
             perl -0pi -e 's/^version = "[^"]*"/version = "$ENV{VERSION}"/m' "crates/$crate/Cargo.toml"
-            perl -0pi -e 's/(name = "klapz-'"$crate"'"
-version = )"[^"]*"/$1"$ENV{VERSION}"/' Cargo.lock
+            perl -0pi -e 's/(name = "klapz-'"$crate"'"\r?\nversion = )"[^"]*"/$1"$ENV{VERSION}"/' Cargo.lock
           done
           git diff --stat
 
@@ -192,7 +191,8 @@ version = )"[^"]*"/$1"$ENV{VERSION}"/' Cargo.lock
         working-directory: packages
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           sha256sum klapz-* > SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
-            --generate-notes klapz-* SHA256SUMS
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Klapz Server $VERSION" --generate-notes klapz-* SHA256SUMS

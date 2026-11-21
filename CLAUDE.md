@@ -686,7 +686,9 @@ startup.
 `.github/workflows/package.yml` builds the server and the scanner for Linux (x86_64, arm64),
 Windows and macOS (arm64, x86_64), packages each with the ffmpeg-plex release it pins by
 version and checksum and `packaging/README.txt`, scans a generated file with the package as a
-test, and publishes the archives as a release on a `v*` tag. Laid side by side, the three
+test, and publishes the archives as a release on every push to the default branch: the last
+`vX.Y.Z` tag with its patch raised (minor or major by running the workflow by hand), stamped
+into the crates so the official API reports it. Laid side by side, the three
 programs find each other with no variable set.
 
 Imported items point at the paths of the server they were imported from: they play only where

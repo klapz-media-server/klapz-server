@@ -35,6 +35,16 @@ async fn the_public_info_has_the_reference_shape_and_names_a_jellyfin_server() {
 }
 
 #[tokio::test]
+async fn the_base_redirects_to_the_web_client_without_a_token() {
+    let harness = Harness::new().await;
+    for path in ["/jellyfin", "/jellyfin/"] {
+        let answer = harness.send(Method::GET, path, &[], None).await;
+        assert_eq!(answer.status, StatusCode::FOUND, "{path}");
+        assert_eq!(answer.headers["location"], "/jellyfin/web/", "{path}");
+    }
+}
+
+#[tokio::test]
 async fn the_answers_before_sign_in_are_the_references() {
     let harness = Harness::new().await;
     for (path, name) in [

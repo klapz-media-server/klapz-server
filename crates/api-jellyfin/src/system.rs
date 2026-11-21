@@ -1,7 +1,7 @@
 //! What a client reads to recognize a Jellyfin server, before and after signing in.
 
 use axum::extract::State;
-use axum::http::{header, HeaderMap, HeaderValue};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -13,6 +13,7 @@ use crate::{JellyfinState, ServerInfo, BASE_PATH, JELLYFIN_VERSION};
 
 pub fn router() -> Router<JellyfinState> {
     Router::new()
+        .route("/", get(to_web))
         .route("/system/info/public", get(public_info))
         .route("/system/info", get(info))
         .route("/system/ping", get(ping).post(ping))
@@ -23,6 +24,14 @@ pub fn router() -> Router<JellyfinState> {
         .route("/system/endpoint", get(endpoint))
         .route("/playback/bitratetest", get(bitrate_test))
         .route("/syncplay/list", get(sync_play_groups))
+}
+
+/// The base itself sends to Jellyfin Web with a `302`, as the reference's base URL does
+/// (`BaseUrlRedirectionMiddleware`). Some clients open the address they were given before
+/// anything else, and give up on a `401` there.
+async fn to_web() -> Response {
+    let web = format!("{BASE_PATH}/web/");
+    (StatusCode::FOUND, [(header::LOCATION, web)]).into_response()
 }
 
 #[derive(Debug, Serialize)]

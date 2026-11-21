@@ -128,7 +128,7 @@ pub fn has_client_header(headers: &HeaderMap) -> bool {
 }
 
 /// Paths of the Jellyfin surface, below its base, that answer without a token: what a client
-/// reads before it signs in, and the sign-in itself. Compared without regard to case, as the
+/// reads before it signs in, the sign-in itself, and the base, which redirects to Jellyfin Web. Compared without regard to case, as the
 /// reference routes.
 pub fn is_public(path: &str) -> bool {
     let path = path.to_ascii_lowercase();
@@ -143,7 +143,8 @@ pub fn is_public(path: &str) -> bool {
             | "/branding/css"
             | "/branding/css.css"
             | "/quickconnect/enabled"
-    ) || path == "/web"
+    ) || path.is_empty()
+        || path == "/web"
         || path.starts_with("/web/")
 }
 
@@ -294,6 +295,8 @@ mod tests {
             "/QuickConnect/Enabled",
             "/web/index.html",
             "/web",
+            "",
+            "/",
         ] {
             assert!(is_public(path), "{path}");
         }
