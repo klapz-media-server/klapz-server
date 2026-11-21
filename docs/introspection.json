@@ -24779,6 +24779,24 @@
               "defaultValue": "false"
             },
             {
+              "name": "videoCodecs",
+              "description": "The video codecs the player decodes, as `MediaStream.codec` names them (`h264`, `hevc`,\n`vp9`, `av1`): video in another is re-encoded. Left out, any the protocol carries is sent\nas it is, for a player that asks for a copy only of what it decodes.",
+              "type": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              },
+              "defaultValue": null
+            },
+            {
               "name": "quality",
               "description": "How the quality follows the link.",
               "type": {

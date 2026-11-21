@@ -38,8 +38,8 @@ use klapz_core::stream::{
 use klapz_transcoder::adapt;
 use klapz_transcoder::media::{read_sidecar, resolve_sidecar, resolve_within};
 use klapz_transcoder::plan::{
-    plan_ladder, Adaptation, AudioAction, Ladder, Limits, StreamPlan, StreamSource, Track,
-    VideoAction,
+    plan_ladder, Adaptation, AudioAction, CopyCodecs, Ladder, Limits, StreamPlan, StreamSource,
+    Track, VideoAction,
 };
 use klapz_transcoder::session::{
     DashTrack, Output, Protocol, StreamRequest, SubtitleDelivery, SubtitleReader,
@@ -314,6 +314,13 @@ impl Streams {
                 convert_audio: order.limits.convert_audio,
                 adaptation: adaptation_of(order.limits.quality),
                 burn_subtitle: matches!(order.subtitle, Some(SubtitleOutput::Burn { .. })),
+                copy_codecs: order
+                    .limits
+                    .video_codecs
+                    .as_deref()
+                    .map_or(CopyCodecs::ANY, |names| {
+                        CopyCodecs::named(names.iter().map(String::as_str))
+                    }),
             },
         )
         .map_err(stream_error)?;

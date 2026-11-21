@@ -4,8 +4,8 @@
 //! The rules are the reference's, measured with `/decision` for Plex Web. Over HLS or DASH,
 //! H.264 video is copied unless the client caps the bitrate below the file's, and AAC or MP3 audio
 //! is copied unless the client refuses that. Other audio is converted to AAC, and other video is
-//! re-encoded to H.264 — except VP9 and AV1 over DASH, copied as H.264 is: the reference never
-//! sees them there, its DASH being Plex Web's.
+//! re-encoded to H.264 — except HEVC, VP9 and AV1 over DASH, copied as H.264 is for a player
+//! that says it decodes them: the reference never sees them there, its DASH being Plex Web's.
 //!
 //! An adaptive stream has several rungs, best first: [`plan_ladder`].
 
@@ -160,6 +160,69 @@ pub struct Limits {
     pub adaptation: Adaptation,
     /// A subtitle drawn into the picture, which only an encode can do.
     pub burn_subtitle: bool,
+    /// The video the player takes as it is, where the protocol carries it.
+    pub copy_codecs: CopyCodecs,
+}
+
+/// The video codecs a player decodes, so that a copy of them reaches it: H.264 always, every
+/// player of an encode decoding it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CopyCodecs {
+    hevc: bool,
+    vp9: bool,
+    av1: bool,
+}
+
+impl CopyCodecs {
+    /// Whatever the protocol carries: a player that chooses for itself.
+    pub const ANY: Self = Self {
+        hevc: true,
+        vp9: true,
+        av1: true,
+    };
+
+    pub const H264: Self = Self {
+        hevc: false,
+        vp9: false,
+        av1: false,
+    };
+
+    /// From codec names as tracks state them; a name it does not know is ignored.
+    pub fn named<'a>(names: impl IntoIterator<Item = &'a str>) -> Self {
+        names
+            .into_iter()
+            .fold(Self::H264, |codecs, name| match name {
+                "hevc" => Self {
+                    hevc: true,
+                    ..codecs
+                },
+                "vp9" => Self {
+                    vp9: true,
+                    ..codecs
+                },
+                "av1" => Self {
+                    av1: true,
+                    ..codecs
+                },
+                _ => codecs,
+            })
+    }
+
+    fn copies(self, codec: &str) -> bool {
+        match codec {
+            "h264" => true,
+            "hevc" => self.hevc,
+            "vp9" => self.vp9,
+            "av1" => self.av1,
+            _ => false,
+        }
+    }
+}
+
+impl Default for CopyCodecs {
+    fn default() -> Self {
+        Self::ANY
+    }
 }
 
 /// The rungs a stream may be sent at, best first: one for a fixed quality.
@@ -251,6 +314,11 @@ const NARROW_SOURCE_RUNGS: [Rung; 3] = [
     rung(10_000, 1280, 9000, 256, 16),
 ];
 
+/// Above every measured rung, for a source wider than 1080p's when the player chooses its rung:
+/// the reference's ladder stops at 1920 wide, so a re-encoded 4K film would offer nothing at its
+/// own size. Not measured: twice the bitrate of the 1080p rung, at its quality.
+const UHD_RUNG: Rung = rung(40_000, 3840, 40_000, 256, 16);
+
 /// The highest measured rung within the limit, or the lowest there is.
 fn rung_for(limit_kbps: u32, source_width: u32) -> &'static Rung {
     let upper: &[Rung] = if source_width > 1280 {
@@ -273,6 +341,15 @@ fn encode_within(
     source: &StreamSource<'_>,
     key_frames: Option<KeyFrames>,
 ) -> Result<VideoEncode, TranscodeError> {
+    let width = source.width.and_then(|width| u32::try_from(width).ok());
+    encode_at(rung_for(limit_kbps, width.unwrap_or(0)), source, key_frames)
+}
+
+fn encode_at(
+    rung: &Rung,
+    source: &StreamSource<'_>,
+    key_frames: Option<KeyFrames>,
+) -> Result<VideoEncode, TranscodeError> {
     let side = |value: Option<i32>| value.and_then(|value| u32::try_from(value).ok());
     let (Some(source_width), Some(source_height)) = (side(source.width), side(source.height))
     else {
@@ -281,7 +358,6 @@ fn encode_within(
     if source_width == 0 || source_height == 0 {
         return Err(TranscodeError::VideoNeedsTranscoding);
     }
-    let rung = rung_for(limit_kbps, source_width);
     let divisible = |value: u32| (value - value % 4).max(4);
     let width = divisible(rung.width.min(source_width));
     let height = u64::from(source_height) * u64::from(width) / u64::from(source_width);
@@ -329,7 +405,7 @@ pub fn plan_ladder(
     protocol: Protocol,
     limits: Limits,
 ) -> Result<Ladder, TranscodeError> {
-    let copyable = copyable(source, protocol);
+    let copyable = copyable(source, protocol, limits);
     let videos = match limits.adaptation {
         Adaptation::Fixed => vec![fixed_video(source, limits, copyable)?],
         Adaptation::Server => server_rungs(source, limits.max_video_kbps.unwrap_or(u32::MAX))?,
@@ -364,14 +440,15 @@ pub fn plan_ladder(
     })
 }
 
-/// Whether the protocol carries the video as it is: HLS's MPEG-TS segments only H.264 here,
-/// DASH's fragmented MP4 VP9 and AV1 too. A player that cannot decode those asks for encodes
+/// Whether the video goes as it is: HLS's MPEG-TS segments carry only H.264 here, DASH's
+/// fragmented MP4 HEVC, VP9 and AV1 too. A player that cannot decode those asks for encodes
 /// beside the copy, and drops the copy.
-fn copyable(source: &StreamSource<'_>, protocol: Protocol) -> bool {
-    match protocol {
+fn copyable(source: &StreamSource<'_>, protocol: Protocol, limits: Limits) -> bool {
+    let carried = match protocol {
         Protocol::Hls => source.video_codec == "h264",
-        Protocol::Dash => matches!(source.video_codec, "h264" | "vp9" | "av1"),
-    }
+        Protocol::Dash => matches!(source.video_codec, "h264" | "hevc" | "vp9" | "av1"),
+    };
+    carried && limits.copy_codecs.copies(source.video_codec)
 }
 
 fn fixed_video(
@@ -436,11 +513,21 @@ fn client_rungs(
     let mut rungs = if copies {
         vec![VideoAction::Copy]
     } else {
-        vec![VideoAction::Encode(encode_within(
+        let wider_than_1080p = source.width.is_some_and(|width| width > 1920);
+        let mut encodes = Vec::new();
+        if wider_than_1080p && limit >= UHD_RUNG.limit_kbps {
+            encodes.push(VideoAction::Encode(encode_at(
+                &UHD_RUNG,
+                source,
+                Some(key_frames),
+            )?));
+        }
+        encodes.push(VideoAction::Encode(encode_within(
             limit,
             source,
             Some(key_frames),
-        )?)]
+        )?));
+        encodes
     };
     // An encode close to the copy's bitrate would cost a process and give the player nothing.
     let source_kbps = source
@@ -648,8 +735,12 @@ mod tests {
     }
 
     #[test]
-    fn copies_vp9_and_av1_over_dash_alone() {
-        for codec in ["vp9", "av1"] {
+    fn copies_hevc_vp9_and_av1_over_dash_alone() {
+        let plex = Limits {
+            copy_codecs: CopyCodecs::H264,
+            ..Limits::default()
+        };
+        for codec in ["hevc", "vp9", "av1"] {
             let plan = plan_stream(&source(codec, "aac"), Protocol::Dash, Limits::default());
             assert_eq!(plan.unwrap().video, VideoAction::Copy, "{codec}");
             let plan = plan_stream(&source(codec, "aac"), Protocol::Hls, Limits::default());
@@ -657,9 +748,24 @@ mod tests {
                 matches!(plan.unwrap().video, VideoAction::Encode(_)),
                 "{codec}"
             );
+            // A Plex client, which does not say what it decodes.
+            let plan = plan_stream(&source(codec, "aac"), Protocol::Dash, plex);
+            assert!(
+                matches!(plan.unwrap().video, VideoAction::Encode(_)),
+                "{codec}"
+            );
         }
-        let hevc = plan_stream(&source("hevc", "aac"), Protocol::Dash, Limits::default());
-        assert!(matches!(hevc.unwrap().video, VideoAction::Encode(_)));
+        let plan = plan_stream(&source("h264", "aac"), Protocol::Dash, plex);
+        assert_eq!(plan.unwrap().video, VideoAction::Copy);
+        // A player naming what it decodes gets the copy of that alone.
+        let hevc_only = Limits {
+            copy_codecs: CopyCodecs::named(["hevc", "mpeg2video"]),
+            ..Limits::default()
+        };
+        for (codec, copied) in [("hevc", true), ("vp9", false), ("h264", true)] {
+            let plan = plan_stream(&source(codec, "aac"), Protocol::Dash, hevc_only).unwrap();
+            assert_eq!(plan.video == VideoAction::Copy, copied, "{codec}");
+        }
     }
 
     #[test]
@@ -673,6 +779,43 @@ mod tests {
         assert!(ladder.rungs[1..]
             .iter()
             .all(|rung| encode_of(*rung).key_frames == KeyFrames::AsSource));
+    }
+
+    #[test]
+    fn a_player_of_a_4k_film_it_cannot_copy_can_choose_4k() {
+        let chernobyl = StreamSource {
+            width: Some(3840),
+            height: Some(2160),
+            bits_per_second: Some(52_000_000),
+            ..source("hevc", "dca")
+        };
+        let burn = chosen(Limits {
+            burn_subtitle: true,
+            ..Limits::default()
+        });
+        let ladder = plan_ladder(&chernobyl, Protocol::Dash, burn).unwrap();
+        let top = sizes(&ladder);
+        assert_eq!(top[0], Some((3840, 2160, 40_000)));
+        assert_eq!(top[1], Some((1920, 1080, 20_000)));
+        // Under a limit below it, or for a fixed quality, the measured ladder alone.
+        let limited = chosen(Limits {
+            max_video_kbps: Some(20_000),
+            ..burn
+        });
+        let ladder = plan_ladder(&chernobyl, Protocol::Dash, limited).unwrap();
+        assert_eq!(sizes(&ladder)[0], Some((1920, 1080, 18_303)));
+        let fixed = Limits {
+            burn_subtitle: true,
+            ..Limits::default()
+        };
+        let plan = plan_stream(&chernobyl, Protocol::Dash, fixed).unwrap();
+        assert_eq!(encode_of(plan).width, 1920);
+        // A copy the player decodes is the 4K already.
+        let ladder = plan_ladder(&chernobyl, Protocol::Dash, chosen(Limits::default())).unwrap();
+        assert_eq!(sizes(&ladder)[0], None);
+        assert!(ladder.rungs[1..]
+            .iter()
+            .all(|rung| encode_of(*rung).width <= 1920));
     }
 
     #[test]

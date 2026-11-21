@@ -110,6 +110,10 @@ pub struct StartStreamInput {
     /// Convert the audio even when the player could take it as it is.
     #[graphql(default)]
     pub convert_audio: bool,
+    /// The video codecs the player decodes, as `MediaStream.codec` names them (`h264`, `hevc`,
+    /// `vp9`, `av1`): video in another is re-encoded. Left out, any the protocol carries is sent
+    /// as it is, for a player that asks for a copy only of what it decodes.
+    pub video_codecs: Option<Vec<String>>,
     /// How the quality follows the link.
     #[graphql(default_with = "StreamQualityType::Fixed")]
     pub quality: StreamQualityType,
@@ -143,6 +147,7 @@ impl StartStreamInput {
                 .and_then(|bits| u32::try_from(bits).ok()),
             convert_audio: self.convert_audio,
             quality: self.quality.into(),
+            video_codecs: self.video_codecs.clone(),
         }
     }
 

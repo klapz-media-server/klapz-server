@@ -22,8 +22,8 @@ use klapz_api::media::FILE_TYPE;
 use klapz_api::GlobalId;
 use klapz_transcoder::media::resolve_within;
 use klapz_transcoder::plan::{
-    plan_stream, Adaptation, AudioAction, Limits, StreamPlan, StreamSource, VideoAction,
-    VideoEncode,
+    plan_stream, Adaptation, AudioAction, CopyCodecs, Limits, StreamPlan, StreamSource,
+    VideoAction, VideoEncode,
 };
 use klapz_transcoder::session::Protocol;
 use serde::Deserialize;
@@ -302,6 +302,7 @@ impl<'a> Selection<'a> {
                 Adaptation::Fixed
             },
             burn_subtitle: self.delivery == Some(Delivery::Burn),
+            copy_codecs: CopyCodecs::H264,
         };
         Ok(plan_stream(&source, protocol, limits)?)
     }
@@ -447,6 +448,10 @@ fn mark_decision(metadata: &mut Json, selection: &Selection<'_>, action: Option<
 }
 
 /// The conversion always ends in stereo: `ochl='stereo'` in its filter.
+/// What a Plex client is sent as it is: H.264 alone, the reference converting the rest for Plex
+/// Web by profiles this server does not read.
+const PLEX_CLIENT_VIDEO: [&str; 1] = ["h264"];
+
 const CONVERTED_CHANNELS: i32 = 2;
 
 /// As the reference labels what it produces, unlike the labels of a library's files.
@@ -662,6 +667,7 @@ async fn start_stream(
             .max_video_bitrate
             .map(|kbps| i32::try_from(u64::from(kbps) * 1000).unwrap_or(i32::MAX)),
         "convertAudio": params.direct_stream_audio.as_deref() == Some("0"),
+        "videoCodecs": PLEX_CLIENT_VIDEO,
         "quality": if params.adaptive() { "SERVER_ADAPTIVE" } else { "FIXED" },
         "positionMs": position_ms(params.offset),
         "key": session,

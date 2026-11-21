@@ -85,13 +85,16 @@ pub enum StreamQuality {
 }
 
 /// What the player asks for beyond being able to read the result.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StreamLimits {
     /// Bits per second: for an adaptive stream, a ceiling on every quality.
     pub max_video_bitrate: Option<u32>,
     /// Convert audio even when it could be copied.
     pub convert_audio: bool,
     pub quality: StreamQuality,
+    /// The video codecs the player decodes, as tracks name them: only those are sent as they
+    /// are. `None`, any the protocol carries.
+    pub video_codecs: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]

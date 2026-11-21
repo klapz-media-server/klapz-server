@@ -8585,6 +8585,12 @@ input StartStreamInput {
 	"""
 	convertAudio: Boolean! = false
 	"""
+	The video codecs the player decodes, as `MediaStream.codec` names them (`h264`, `hevc`,
+	`vp9`, `av1`): video in another is re-encoded. Left out, any the protocol carries is sent
+	as it is, for a player that asks for a copy only of what it decodes.
+	"""
+	videoCodecs: [String!]
+	"""
 	How the quality follows the link.
 	"""
 	quality: StreamQualityType! = FIXED
