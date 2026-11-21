@@ -118,6 +118,19 @@ struct Picture {
     copied: bool,
 }
 
+/// The namespace of the attribute that tells, on each DASH representation, whether its track is
+/// the file's or re-encoded: the schema admits foreign attributes, which players ignore.
+const DELIVERY_NAMESPACE: &str = "urn:klapz:stream:delivery";
+
+/// How a track reaches the player, as the manifests tell it for a client to show.
+const fn delivery(copied: bool) -> &'static str {
+    if copied {
+        "remux"
+    } else {
+        "transcode"
+    }
+}
+
 impl Picture {
     fn of(source: &klapz_core::stream::StreamSource, plan: &StreamPlan) -> Self {
         match plan.video {
@@ -729,6 +742,7 @@ async fn dash(
         segment_seconds: conversion.ladder.segment_seconds(Protocol::Dash),
         pictures: conversion.renditions(),
         audio_bandwidth: conversion.audio_bandwidth,
+        audio_copied: conversion.ladder.top().audio == AudioAction::Copy,
         written: &written,
     });
     Ok(([(header::CONTENT_TYPE, "application/dash+xml")], body).into_response())
@@ -780,12 +794,14 @@ fn master_variants(conversion: &Conversion, address: &Address<'_>) -> String {
         } else {
             String::new()
         };
-        // Writing to a `String` cannot fail.
+        // Writing to a `String` cannot fail. A client ignores an attribute it does not know.
         let _ = write!(
             text,
-            "#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH={}{resolution}{frame_rate}\n\
+            "#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH={}{resolution}{frame_rate},\
+             X-KLAPZ-DELIVERY={}\n\
              {base}/{rendition}/index.m3u8{query}\n",
-            picture.video_bandwidth + audio_bits
+            picture.video_bandwidth + audio_bits,
+            delivery(picture.copied).to_ascii_uppercase(),
         );
     }
     text
@@ -899,6 +915,7 @@ struct DashManifest<'a> {
     /// The video representations, best first.
     pictures: &'a [Picture],
     audio_bandwidth: i64,
+    audio_copied: bool,
     /// The manifest the process wrote, which alone states a copy's codecs.
     written: &'a str,
 }
@@ -953,8 +970,12 @@ fn dash_manifest(manifest: &DashManifest<'_>) -> String {
         let _ = write!(
             videos,
             "\t\t\t<Representation id=\"{rendition}\" mimeType=\"video/mp4\" codecs=\"{codecs}\" \
-             bandwidth=\"{}\" width=\"{}\" height=\"{}\">\n\t\t\t</Representation>\n",
-            picture.video_bandwidth, picture.width, picture.height
+             bandwidth=\"{}\" width=\"{}\" height=\"{}\" klapz:delivery=\"{}\">\n\
+             \t\t\t</Representation>\n",
+            picture.video_bandwidth,
+            picture.width,
+            picture.height,
+            delivery(picture.copied),
         );
     }
     format!(
@@ -962,6 +983,7 @@ fn dash_manifest(manifest: &DashManifest<'_>) -> String {
          <MPD xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n\
          \txmlns=\"urn:mpeg:dash:schema:mpd:2011\"\n\
          \txmlns:xlink=\"http://www.w3.org/1999/xlink\"\n\
+         \txmlns:klapz=\"{DELIVERY_NAMESPACE}\"\n\
          \txsi:schemaLocation=\"urn:mpeg:dash:schema:mpd:2011 http://standards.iso.org/ittf/PubliclyAvailableStandards/MPEG-DASH_schema_files/DASH-MPD.xsd\"\n\
          \tprofiles=\"urn:mpeg:dash:profile:isoff-live:2011\"\n\
          \ttype=\"static\"\n\
@@ -976,7 +998,7 @@ fn dash_manifest(manifest: &DashManifest<'_>) -> String {
          \t\t<AdaptationSet segmentAlignment=\"true\">\n\
          \t\t\t{template}\n\
          \t\t\t<Representation id=\"audio\" mimeType=\"audio/mp4\" codecs=\"{audio_codecs}\" \
-         bandwidth=\"{audio}\" audioSamplingRate=\"{sampling}\">\n\
+         bandwidth=\"{audio}\" audioSamplingRate=\"{sampling}\" klapz:delivery=\"{audio_delivery}\">\n\
          \t\t\t\t<AudioChannelConfiguration \
          schemeIdUri=\"urn:mpeg:dash:23003:3:audio_channel_configuration:2011\" \
          value=\"{channels}\"/>\n\
@@ -986,6 +1008,7 @@ fn dash_manifest(manifest: &DashManifest<'_>) -> String {
          </MPD>\n",
         longest = manifest.segment_seconds * 2,
         audio = manifest.audio_bandwidth,
+        audio_delivery = delivery(manifest.audio_copied),
     )
 }
 
@@ -1099,6 +1122,7 @@ mod tests {
             segment_seconds: 5,
             pictures: &[COPIED],
             audio_bandwidth: 256_000,
+            audio_copied: false,
             written: WRITTEN,
         });
         assert!(text.contains("type=\"static\""));
@@ -1131,9 +1155,14 @@ mod tests {
             segment_seconds: 5,
             pictures: &[COPIED, encoded],
             audio_bandwidth: 256_000,
+            audio_copied: true,
             written: WRITTEN,
         });
         assert_eq!(text.matches("mimeType=\"video/mp4\"").count(), 2);
+        assert!(text.contains(r#"xmlns:klapz="urn:klapz:stream:delivery""#));
+        assert!(text.contains(r#"height="1080" klapz:delivery="remux">"#));
+        assert!(text.contains(r#"height="720" klapz:delivery="transcode">"#));
+        assert!(text.contains(r#"audioSamplingRate="48000" klapz:delivery="remux">"#));
         // The copy's codecs are the process's; an encode's are known before it writes.
         assert!(text.contains(r#"id="0" mimeType="video/mp4" codecs="avc1.64001f""#));
         assert!(text.contains(
@@ -1175,9 +1204,9 @@ mod tests {
         assert_eq!(
             text,
             "#EXTM3U\n#EXT-X-INDEPENDENT-SEGMENTS\n\
-             #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=4529000,RESOLUTION=1920x1080,FRAME-RATE=25.000000\n\
+             #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=4529000,RESOLUTION=1920x1080,FRAME-RATE=25.000000,X-KLAPZ-DELIVERY=REMUX\n\
              /streams/s1/0/index.m3u8?token=t0\n\
-             #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1553000,RESOLUTION=720x404,FRAME-RATE=25.000000\n\
+             #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1553000,RESOLUTION=720x404,FRAME-RATE=25.000000,X-KLAPZ-DELIVERY=TRANSCODE\n\
              /streams/s1/1/index.m3u8?token=t0\n"
         );
         // Moved between by the server, the rungs are one variant.
