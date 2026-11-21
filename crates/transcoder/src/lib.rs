@@ -95,8 +95,8 @@ pub enum TranscodeError {
     SidecarTooLarge,
     #[error("the video would have to be converted")]
     VideoNeedsTranscoding,
-    /// An image subtitle, which the process overlays rather than draws, or no fonts to draw
-    /// a text one with.
+    /// A subtitle the process can neither draw nor lay over the picture, or no fonts to draw a
+    /// text one with.
     #[error("this subtitle cannot be burned in")]
     SubtitleCannotBeBurned,
     #[error("too many transcode sessions are running")]

@@ -1117,9 +1117,15 @@ ladder — and draws the subtitle in. The decision marks it `decision="burn"`,
 
 Ours writes the same filter, character for character on the reference's own paths, from the
 fonts of the Plex install (`Resources/Fonts` beside its binary, or
-`KLAPZ_TRANSCODER_FONTS`). Checked on a frame: the subtitle is drawn. Not handled, and
-answering `501`: image subtitles (PGS, VobSub), which the process overlays by a command not
-captured, and sidecar files.
+`KLAPZ_TRANSCODER_FONTS`). Checked on a frame: the subtitle is drawn.
+
+Image subtitles (PGS, VobSub, DVB) are laid over the picture, fonts or not: the track's canvas
+scaled to the encode's size, then `overlay` onto the scaled picture,
+`[0:{subtitle}]scale={w}:{h}[2];[1][2]overlay[3]`. The shape is the software path of the
+reference's binary (`[%s]scale=%d:%d[%i];` and `[%i]overlay`); its command itself was not
+captured, the reference server being down at the time. Checked on 40 seconds of a 4K HEVC
+episode with a PGS track, seeked to 600 s: every line in place, at 2.5× real time. Sidecar
+files still answer `501`.
 
 **`burn` is not what Plex Web usually sends.** Its code asks for soft subtitles, which it draws
 itself, whenever the server supports them — by version, which ours passes — and the user's

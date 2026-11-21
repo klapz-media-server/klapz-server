@@ -128,13 +128,63 @@ impl SubtitleDelivery {
         }
     }
 
-    /// Text the process can draw with libass or convert to ASS. Image subtitles it overlays
-    /// instead, by a command not captured yet.
+    /// Text the process can draw with libass or convert to ASS.
     fn is_text(&self) -> bool {
         matches!(
             self.track().codec.as_str(),
             "srt" | "subrip" | "ass" | "ssa" | "mov_text" | "webvtt" | "vtt" | "text"
         )
+    }
+
+    /// Pictures, from a Blu-ray, a DVD or a broadcast: laid over the video rather than drawn.
+    fn is_image(&self) -> bool {
+        matches!(
+            self.track().codec.as_str(),
+            "pgs"
+                | "hdmv_pgs_subtitle"
+                | "vobsub"
+                | "dvd_subtitle"
+                | "dvdsub"
+                | "dvb_subtitle"
+                | "dvbsub"
+                | "xsub"
+        )
+    }
+
+    /// Whether this delivery can be made: text converted or drawn, the latter with fonts, and
+    /// pictures laid over the video.
+    fn deliverable(&self, fonts: bool) -> bool {
+        match self {
+            Self::Burn { .. } => (self.is_text() && fonts) || self.is_image(),
+            Self::Text { .. } => self.is_text(),
+        }
+    }
+}
+
+/// What an encode draws into its picture.
+#[derive(Debug, Clone, Copy)]
+enum Burn<'a> {
+    /// A text subtitle, drawn by libass at the client's scale.
+    Text {
+        track: &'a Track,
+        scale: f64,
+        fonts: &'a Path,
+    },
+    /// An image subtitle, its canvas stretched to the picture and laid over it, as the
+    /// reference's software path does (`[%s]scale=%d:%d[%i];` then `[%i]overlay` in its binary;
+    /// the command itself was not captured).
+    Image { track: &'a Track },
+}
+
+impl Burn<'_> {
+    /// How many filter outputs the video's chain names, which the audio's numbering follows:
+    /// two to scale, then one to draw text or two to overlay a picture.
+    const fn video_labels(burn: Option<Self>) -> u32 {
+        match burn {
+            None => 2,
+            Some(Self::Text { .. }) => 3,
+            Some(Self::Image { .. }) => 4,
+        }
     }
 }
 
@@ -987,11 +1037,7 @@ outline=2.6:shadow=1.7:font_size=54[2]",
     )
 }
 
-fn video_arguments(
-    video: &Track,
-    action: VideoAction,
-    burn: Option<(&Track, f64, &Path)>,
-) -> Vec<String> {
+fn video_arguments(video: &Track, action: VideoAction, burn: Option<Burn<'_>>) -> Vec<String> {
     let mut args = match action {
         VideoAction::Copy => strings(&["-map", &format!("0:{}", video.index)]),
         VideoAction::Encode(encode) => {
@@ -1000,13 +1046,26 @@ fn video_arguments(
                 video.index, encode.width, encode.height
             );
             match burn {
-                Some((subtitle, size, fonts)) => strings(&[
+                Some(Burn::Text {
+                    track,
+                    scale: size,
+                    fonts,
+                }) => strings(&[
                     "-map_inlineass",
-                    &format!("0:{}", subtitle.index),
+                    &format!("0:{}", track.index),
                     "-filter_complex",
-                    &format!("{scale};{}", burn_filter(subtitle, size, fonts)),
+                    &format!("{scale};{}", burn_filter(track, size, fonts)),
                     "-map",
                     "[2]",
+                ]),
+                Some(Burn::Image { track }) => strings(&[
+                    "-filter_complex",
+                    &format!(
+                        "{scale};[0:{}]scale={}:{}[2];[1][2]overlay[3]",
+                        track.index, encode.width, encode.height
+                    ),
+                    "-map",
+                    "[3]",
                 ]),
                 None => strings(&["-filter_complex", &scale, "-map", "[1]"]),
             }
@@ -1028,19 +1087,14 @@ fn video_arguments(
 fn audio_arguments(
     audio: &Track,
     plan: &StreamPlan,
-    burns: bool,
+    burn: Option<Burn<'_>>,
     native_encoder: bool,
 ) -> Vec<String> {
     let converts = plan.audio == AudioAction::ConvertToAac;
     let encodes = plan.video != VideoAction::Copy;
     let mut args = if converts {
-        // Filter outputs are numbered across the command, after the video's: two to scale,
-        // a third to draw a subtitle.
-        let label = match (encodes, burns) {
-            (false, _) => 0,
-            (true, false) => 2,
-            (true, true) => 3,
-        };
+        // Filter outputs are numbered across the command, after the video's.
+        let label = if encodes { Burn::video_labels(burn) } else { 0 };
         strings(&[
             "-filter_complex",
             &format!(
@@ -1081,24 +1135,27 @@ fn stream_arguments(
     let seconds = request.segment_seconds();
     let client = request.client_adapted();
     let burn = match (&request.subtitle, fonts) {
-        (Some(SubtitleDelivery::Burn { track, scale }), Some(fonts)) => {
-            Some((track, *scale, fonts))
+        (Some(subtitle @ SubtitleDelivery::Burn { track, .. }), _) if subtitle.is_image() => {
+            Some(Burn::Image { track })
         }
+        (Some(SubtitleDelivery::Burn { track, scale }), Some(fonts)) => Some(Burn::Text {
+            track,
+            scale: *scale,
+            fonts,
+        }),
         _ => None,
     };
     let mut args = input_arguments(request, run);
     args.extend(video_arguments(&request.video, run.plan.video, burn));
-    args.extend(audio_arguments(
-        &request.audio,
-        run.plan,
-        burn.is_some(),
-        client,
-    ));
+    args.extend(audio_arguments(&request.audio, run.plan, burn, client));
     args.extend(match request.protocol {
         Protocol::Hls => hls_output(run.callback, seconds, run.first_file, client),
         Protocol::Dash => dash_output(run.callback, seconds, run.first_file, client),
     });
-    if let Some((subtitle, _, _)) = burn {
+    if let Some(Burn::Text {
+        track: subtitle, ..
+    }) = burn
+    {
         // The filter draws only what this output decodes alongside: without it, nothing.
         args.extend(strings(&[
             "-map",
@@ -1384,8 +1441,7 @@ impl Transcoder {
         mut request: StreamRequest,
     ) -> Result<Vec<String>, TranscodeError> {
         if let Some(subtitle) = &request.subtitle {
-            let burns = matches!(subtitle, SubtitleDelivery::Burn { .. });
-            if !subtitle.is_text() || (burns && self.config.fonts.is_none()) {
+            if !subtitle.deliverable(self.config.fonts.is_some()) {
                 return Err(TranscodeError::SubtitleCannotBeBurned);
             }
         }
@@ -2413,6 +2469,46 @@ mod tests {
             joined.ends_with("dash -map 0:3 -f null -codec ass nullfile"),
             "{joined}"
         );
+    }
+
+    #[test]
+    fn lays_an_image_subtitle_over_the_picture_without_fonts() {
+        let mut asked = burned(1.0);
+        asked.subtitle = Some(SubtitleDelivery::Burn {
+            track: track(3, "pgs", "fr"),
+            scale: 1.0,
+        });
+        let args = arguments(&asked, 1, None);
+        let at = |flag: &str| args.iter().position(|arg| arg == flag).unwrap();
+        assert_eq!(
+            args[at("-filter_complex") + 1],
+            "[0:5]scale=w=1920:h=1080:force_divisible_by=4[0];[0]format=pix_fmts=yuv420p|nv12[1];\
+             [0:3]scale=1920:1080[2];[1][2]overlay[3]"
+        );
+        assert_eq!(args[at("-filter_complex") + 3], "[3]");
+        let joined = args.join(" ");
+        assert!(joined.contains("osr=48000[4] -map [4]"), "{joined}");
+        // The filter reads the track itself: no libass, no output decoding it alongside.
+        assert!(!joined.contains("inlineass"), "{joined}");
+        assert!(!joined.contains("nullfile"), "{joined}");
+    }
+
+    #[test]
+    fn which_subtitles_can_be_delivered() {
+        let burn = |codec| SubtitleDelivery::Burn {
+            track: track(3, codec, "fr"),
+            scale: 1.0,
+        };
+        let text = |codec| SubtitleDelivery::Text {
+            track: track(3, codec, "fr"),
+        };
+        assert!(burn("pgs").deliverable(false));
+        assert!(burn("dvb_subtitle").deliverable(false));
+        assert!(burn("srt").deliverable(true));
+        assert!(!burn("srt").deliverable(false));
+        assert!(!burn("dvb_teletext").deliverable(true));
+        assert!(text("ass").deliverable(false));
+        assert!(!text("pgs").deliverable(true));
     }
 
     #[test]
