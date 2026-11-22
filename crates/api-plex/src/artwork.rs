@@ -76,21 +76,34 @@ fn kinds_for(element: &str, typename: &str) -> &'static [&'static str] {
 }
 
 /// The bytes and type of an item's element, as the caller may read it.
-pub(crate) async fn element_bytes(
+async fn element_bytes(
     state: &PlexState,
     item: i64,
     element: &str,
 ) -> Result<(Vec<u8>, &'static str), ApiError> {
     let store = state.artwork.as_ref().ok_or(ApiError::NotFound)?;
+    let file = element_file(state, item, element).await?;
+    store.read(&file).await.map_err(|_| ApiError::NotFound)
+}
+
+/// The artwork store's file for an item's element, as the caller may read it.
+pub(crate) async fn element_file(
+    state: &PlexState,
+    item: i64,
+    element: &str,
+) -> Result<String, ApiError> {
+    if state.artwork.is_none() {
+        return Err(ApiError::NotFound);
+    }
     let variables = Variables::from_json(json!({ "id": GlobalId::encode(ITEM_TYPE, item) }));
     let data: ImagesData = gql::execute(&state.schema, IMAGES, variables).await?;
     let node = data.node.ok_or(ApiError::NotFound)?;
-    let file = kinds_for(element, &node.typename)
+    kinds_for(element, &node.typename)
         .iter()
         .find_map(|kind| node.images.iter().find(|image| image.kind == *kind))
         .and_then(|image| image.url.strip_prefix(ARTWORK_PREFIX))
-        .ok_or(ApiError::NotFound)?;
-    store.read(file).await.map_err(|_| ApiError::NotFound)
+        .map(str::to_owned)
+        .ok_or(ApiError::NotFound)
 }
 
 /// An address of the shape items publish, `/library/metadata/{id}/{element}/{timestamp}`: the

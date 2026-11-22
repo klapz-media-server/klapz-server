@@ -33,6 +33,22 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(60);
 /// What Plex scales an image to before hashing it: 100 pixels on its longer side.
 const BLUR_HASH_SIDE: u32 = 100;
 
+/// The sides a scaled copy is made at, a box's each side snapped up to the next. Clients ask
+/// for any size; snapping keeps the copies kept on disk to a few per image, whatever is asked,
+/// and the client draws the slightly larger image down to its card.
+const SIZE_LADDER: &[u32] = &[
+    64, 96, 128, 160, 240, 320, 400, 480, 640, 800, 960, 1280, 1600, 1920, 2560, 3840,
+];
+
+/// `side` snapped up to the size ladder; past its top, its top.
+pub fn snapped(side: u32) -> u32 {
+    SIZE_LADDER
+        .iter()
+        .copied()
+        .find(|step| *step >= side)
+        .unwrap_or(SIZE_LADDER[SIZE_LADDER.len() - 1])
+}
+
 /// An image stored on disk, with what was worked out from it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredArtwork {
@@ -99,6 +115,92 @@ impl ArtworkStore {
             .await
             .map_err(|_| TranscodeError::MissingFile)?;
         Ok((bytes, content_type))
+    }
+
+    /// A scaled copy of `file` kept earlier, and its type; a name of another shape finds
+    /// nothing.
+    async fn read_scaled(
+        &self,
+        file: &str,
+        key: (u32, u32, &str),
+    ) -> Option<(Vec<u8>, &'static str)> {
+        let base = scaled_base(file, key)?;
+        for (extension, content_type) in [("jpg", "image/jpeg"), ("png", "image/png")] {
+            if let Ok(bytes) = tokio::fs::read(self.root.join(format!("{base}.{extension}"))).await
+            {
+                return Some((bytes, content_type));
+            }
+        }
+        None
+    }
+
+    /// Keeps a scaled copy of `file` for the next request of that size; one that cannot be
+    /// written is made again next time.
+    async fn keep_scaled(
+        &self,
+        file: &str,
+        key: (u32, u32, &str),
+        bytes: &[u8],
+        content_type: &str,
+    ) -> Result<(), TranscodeError> {
+        let base = scaled_base(file, key).ok_or(TranscodeError::InvalidSource)?;
+        let extension = match content_type {
+            "image/jpeg" => "jpg",
+            "image/png" => "png",
+            _ => return Err(TranscodeError::InvalidSource),
+        };
+        let name = format!("{base}.{extension}");
+        let hash = tag(&name);
+        self.write(&name, &hash, bytes).await
+    }
+
+    /// `file` scaled down into `width` × `height`, each side snapped up to the size ladder:
+    /// read from the copy kept by an earlier request of that size, else made by `transcoder`
+    /// and kept for the next. `cover` fills the box rather than fitting inside it.
+    ///
+    /// # Errors
+    ///
+    /// [`TranscodeError::MissingFile`] for a name the store did not give out or a file gone,
+    /// and what scaling the image can fail with.
+    pub async fn scaled(
+        &self,
+        transcoder: &crate::Transcoder,
+        file: &str,
+        (width, height): (u32, u32),
+        cover: bool,
+    ) -> Result<(Vec<u8>, &'static str), TranscodeError> {
+        let (width, height) = (snapped(width), snapped(height));
+        let fit = if cover { "cover" } else { "contain" };
+        let key = (width, height, fit);
+        if let Some(kept) = self.read_scaled(file, key).await {
+            return Ok(kept);
+        }
+        let (original, _) = self.read(file).await?;
+        let request = crate::ImageRequest {
+            source: String::new(),
+            width: i32::try_from(width).unwrap_or(i32::MAX),
+            height: i32::try_from(height).unwrap_or(i32::MAX),
+            fit: if cover {
+                crate::Fit::Cover
+            } else {
+                crate::Fit::Contain
+            },
+            upscale: false,
+            format: None,
+            quality: None,
+        };
+        let image = transcoder.convert_image_bytes(original, request).await?;
+        let content_type = match image.format {
+            crate::OutputFormat::Png => "image/png",
+            crate::OutputFormat::Jpeg | crate::OutputFormat::Ppm => "image/jpeg",
+        };
+        if let Err(error) = self
+            .keep_scaled(file, key, &image.bytes, content_type)
+            .await
+        {
+            tracing::warn!(%error, "a scaled image could not be kept");
+        }
+        Ok((image.bytes, content_type))
     }
 
     async fn existing(&self, hash: &str) -> Option<String> {
@@ -239,6 +341,22 @@ fn stored_name_type(file: &str) -> Option<&'static str> {
         "webp" => Some("image/webp"),
         _ => None,
     }
+}
+
+/// `scaled/ab/{hash}-{width}x{height}-{fit}`, for a name this store gave out.
+fn scaled_base(file: &str, (width, height, fit): (u32, u32, &str)) -> Option<String> {
+    stored_name_type(file)?;
+    let name = file.rsplit('/').next()?;
+    let hash = name.split('.').next()?;
+    Some(format!(
+        "scaled/{}/{hash}-{width}x{height}-{fit}",
+        &hash[..2]
+    ))
+}
+
+/// A temporary name for a scaled copy being written: its own, flattened.
+fn tag(name: &str) -> String {
+    name.replace('/', "_")
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {
@@ -411,6 +529,38 @@ mod tests {
         ] {
             assert_eq!(stored_name_type(&bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn sizes_snap_up_to_the_ladder() {
+        assert_eq!(snapped(264), 320);
+        assert_eq!(snapped(396), 400);
+        assert_eq!(snapped(1), 64);
+        assert_eq!(snapped(9000), 3840);
+    }
+
+    #[tokio::test]
+    async fn a_scaled_copy_is_kept_beside_its_original() {
+        let root = std::env::temp_dir().join(format!("klapz-scaled-{}", std::process::id()));
+        let store = ArtworkStore::new(root.clone());
+        let hash = hex_sha256(b"https://image.tmdb.org/t/p/original/s.jpg");
+        let file = format!("provider/{}/{hash}.jpg", &hash[..2]);
+
+        let card = (320, 400, "contain");
+        assert_eq!(store.read_scaled(&file, card).await, None);
+        store
+            .keep_scaled(&file, card, b"scaled bytes", "image/jpeg")
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store.read_scaled(&file, card).await,
+            Some((b"scaled bytes".to_vec(), "image/jpeg"))
+        );
+        assert_eq!(store.read_scaled(&file, (320, 400, "cover")).await, None);
+        assert_eq!(store.read_scaled(&file, (640, 800, "contain")).await, None);
+        assert_eq!(store.read_scaled("provider/../x.jpg", card).await, None);
+        tokio::fs::remove_dir_all(root).await.unwrap();
     }
 
     #[tokio::test]

@@ -81,3 +81,23 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# Decoding and scaling images unoptimized takes seconds per poster (3 s for a 2000×3000 JPEG
+# scaled to a card), which a debug server pays on every image it has not scaled yet. The
+# decoders are dependencies nobody steps through; optimized, they cost a little build time once.
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package.zune-jpeg]
+opt-level = 3
+[profile.dev.package.zune-core]
+opt-level = 3
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.image-webp]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.simd-adler32]
+opt-level = 3

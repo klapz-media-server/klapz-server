@@ -296,7 +296,7 @@ async fn start() -> Result<(), Box<dyn std::error::Error>> {
         .merge(admin::router())
         .merge(streams::router(sessions.clone()))
         .merge(callbacks::router(Arc::clone(&transcoder)))
-        .merge(artwork::router(reader));
+        .merge(artwork::router(Arc::clone(&reader.store)));
     let (app, web_served) = with_web_client(app);
     // One token middleware for every surface, so neither can be left unauthenticated by
     // omission.

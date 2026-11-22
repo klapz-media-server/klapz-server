@@ -14,6 +14,7 @@ use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
+use klapz_api::artwork::ARTWORK_PREFIX;
 use klapz_transcoder::{Fit, ImageRequest, OutputFormat, TranscodeError};
 
 use crate::auth::Caller;
@@ -149,15 +150,35 @@ async fn transcode(
     RawQuery(query): RawQuery,
 ) -> Result<Response, ApiError> {
     let request = parse(query.as_deref().unwrap_or_default())?;
-    let content_type = content_type(request.format);
-    let image = if request.source.starts_with('/') {
-        // An item's own artwork, at the address its `thumb` or `art` publishes.
+    // This server's own images — an item's at the address its `thumb` or `art` publishes, or a
+    // stored file at its `/artwork/` address — are scaled once per size and kept, in the format
+    // they are stored in. Anything else is fetched from Plex's hosts.
+    let local = if let Some(file) = request.source.strip_prefix(ARTWORK_PREFIX) {
+        Some(file.to_owned())
+    } else if request.source.starts_with('/') {
         let (item, element) =
             crate::artwork::parse_element_path(&request.source).ok_or(ApiError::NotImplemented)?;
-        let (bytes, _) = crate::artwork::element_bytes(&state, item, element).await?;
-        state.transcoder.convert_image_bytes(bytes, request).await?
+        Some(crate::artwork::element_file(&state, item, element).await?)
     } else {
-        state.transcoder.convert_image(request).await?
+        None
+    };
+    let (bytes, content_type) = if let Some(file) = local {
+        let store = state.artwork.as_ref().ok_or(ApiError::NotFound)?;
+        let side = |value: i32| u32::try_from(value.max(1)).unwrap_or(1);
+        store
+            .scaled(
+                &state.transcoder,
+                &file,
+                (side(request.width), side(request.height)),
+                request.fit == Fit::Cover,
+            )
+            .await?
+    } else {
+        let content_type = content_type(request.format);
+        (
+            state.transcoder.convert_image(request).await?.bytes,
+            content_type,
+        )
     };
 
     Ok((
@@ -165,7 +186,7 @@ async fn transcode(
             (header::CONTENT_TYPE, content_type),
             (header::CACHE_CONTROL, CACHE_CONTROL),
         ],
-        image.bytes,
+        bytes,
     )
         .into_response())
 }

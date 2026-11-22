@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -13,8 +13,7 @@ use klapz_core::source_metadata::artwork::{
     ArtworkError, ArtworkFetcher, ArtworkReader, StoredImage,
 };
 use klapz_transcoder::artwork::ArtworkStore;
-use klapz_transcoder::{Fit, ImageRequest, Transcoder};
-use serde::Deserialize;
+use klapz_transcoder::Transcoder;
 
 /// A stored image never changes under its name, which is the hash of its source.
 const CACHE_CONTROL: &str = "private, max-age=31536000, immutable";
@@ -37,83 +36,47 @@ impl ArtworkReader for StoreReader {
         file: &str,
         scale: Option<(u32, u32)>,
     ) -> Result<(Vec<u8>, String), ArtworkError> {
-        let (bytes, content_type) = self
-            .store
-            .read(file)
-            .await
-            .map_err(|error| ArtworkError(Box::new(error)))?;
-        let Some((width, height)) = scale else {
-            return Ok((bytes, content_type.to_owned()));
+        let read = match scale {
+            None => self.store.read(file).await,
+            Some(scale) => {
+                self.store
+                    .scaled(
+                        &self.transcoder,
+                        file,
+                        (scale.0.min(MAX_SIDE), scale.1.min(MAX_SIDE)),
+                        false,
+                    )
+                    .await
+            }
         };
-        let request = ImageRequest {
-            source: String::new(),
-            width: i32::try_from(width.min(MAX_SIDE)).unwrap_or(i32::MAX),
-            height: i32::try_from(height.min(MAX_SIDE)).unwrap_or(i32::MAX),
-            fit: Fit::Contain,
-            upscale: false,
-            format: None,
-            quality: None,
-        };
-        let image = self
-            .transcoder
-            .convert_image_bytes(bytes, request)
-            .await
-            .map_err(|error| ArtworkError(Box::new(error)))?;
-        Ok((image.bytes, image_type(image.format).to_owned()))
+        let (bytes, content_type) = read.map_err(|error| ArtworkError(Box::new(error)))?;
+        Ok((bytes, content_type.to_owned()))
     }
 }
 
-/// `/artwork/provider/{shard}/{name}`: a stored file, to any caller, whole or scaled down
-/// into `width` × `height` (both given, or neither) — a grid of posters need not fetch
-/// originals of a few megabytes each. The token middleware applies, and the store reads only
-/// names of its own shape.
-pub fn router(reader: StoreReader) -> Router {
+/// `/artwork/provider/{shard}/{name}`: a stored file as it is, to any caller. Scaled copies are
+/// `/photo/:/transcode`'s, with the file's address as its `url`. The token middleware applies,
+/// and the store reads only names of its own shape.
+pub fn router(store: Arc<ArtworkStore>) -> Router {
     Router::new()
         .route("/artwork/provider/{shard}/{name}", get(serve))
-        .with_state(reader)
-}
-
-#[derive(Debug, Deserialize)]
-struct Scale {
-    width: Option<u32>,
-    height: Option<u32>,
+        .with_state(store)
 }
 
 async fn serve(
-    State(reader): State<StoreReader>,
+    State(store): State<Arc<ArtworkStore>>,
     Path((shard, name)): Path<(String, String)>,
-    Query(scale): Query<Scale>,
 ) -> Response {
-    let scale = match (scale.width, scale.height) {
-        (None, None) => None,
-        (Some(width), Some(height))
-            if (1..=MAX_SIDE).contains(&width) && (1..=MAX_SIDE).contains(&height) =>
-        {
-            Some((width, height))
-        }
-        _ => return StatusCode::BAD_REQUEST.into_response(),
-    };
-    match reader
-        .read(&format!("provider/{shard}/{name}"), scale)
-        .await
-    {
+    match store.read(&format!("provider/{shard}/{name}")).await {
         Ok((body, content_type)) => (
             [
                 (header::CONTENT_TYPE, content_type),
-                (header::CACHE_CONTROL, CACHE_CONTROL.to_owned()),
+                (header::CACHE_CONTROL, CACHE_CONTROL),
             ],
             body,
         )
             .into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-fn image_type(format: klapz_transcoder::OutputFormat) -> &'static str {
-    match format {
-        klapz_transcoder::OutputFormat::Png => "image/png",
-        klapz_transcoder::OutputFormat::Ppm => "image/x-portable-pixmap",
-        klapz_transcoder::OutputFormat::Jpeg => "image/jpeg",
     }
 }
 
