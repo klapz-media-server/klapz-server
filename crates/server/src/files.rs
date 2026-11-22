@@ -1,9 +1,12 @@
 //! Library files on a local disk: the one [`LibraryFiles`] backend so far.
 
 use std::path::{Component, Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, UNIX_EPOCH};
 
-use klapz_core::files::{Entry, EntryKind, FileLocation, FilesError, LibraryFiles, RelativePath};
+use klapz_core::files::{
+    Directory, DirectoryListing, Entry, EntryKind, FileLocation, FilesError, LibraryFiles,
+    RelativePath,
+};
 use tokio::io::AsyncReadExt;
 
 /// Roots are directories of this machine, as `section_root.path` holds them.
@@ -29,6 +32,7 @@ impl LocalFiles {
 fn io_error(error: std::io::Error) -> FilesError {
     match error.kind() {
         std::io::ErrorKind::NotFound => FilesError::NotFound,
+        std::io::ErrorKind::PermissionDenied => FilesError::Unreadable,
         _ => FilesError::Io(Box::new(error)),
     }
 }
@@ -133,22 +137,132 @@ impl LibraryFiles for LocalFiles {
         Ok(FileLocation::Local(Self::path(root, file)?))
     }
 
-    /// Canonical, as the scan and the media engine compare paths with it, and absolute: a
-    /// relative path would name a directory below wherever the server was started.
     async fn resolve_root(&self, path: &str) -> Result<String, FilesError> {
-        if path.is_empty() || !Path::new(path).is_absolute() {
-            return Err(FilesError::Refused);
-        }
-        let canonical = tokio::fs::canonicalize(path).await.map_err(io_error)?;
-        if !tokio::fs::metadata(&canonical)
-            .await
-            .map_err(io_error)?
-            .is_dir()
-        {
-            return Err(FilesError::Refused);
-        }
-        Ok(displayed(&canonical))
+        Ok(displayed(&canonical_directory(path).await?))
     }
+
+    async fn starting_points(&self) -> Result<Vec<Directory>, FilesError> {
+        if cfg!(windows) {
+            Ok(drives().await)
+        } else {
+            Ok(vec![Directory {
+                name: "/".to_owned(),
+                path: "/".to_owned(),
+            }])
+        }
+    }
+
+    async fn list_directories(
+        &self,
+        path: &str,
+        limit: usize,
+    ) -> Result<DirectoryListing, FilesError> {
+        let directory = canonical_directory(path).await?;
+        let mut reading = tokio::fs::read_dir(&directory).await.map_err(io_error)?;
+        let mut directories = Vec::new();
+        let mut truncated = false;
+        while let Some(entry) = reading.next_entry().await.map_err(io_error)? {
+            // Told by the directory itself, so the files, however many, cost no system call.
+            let Ok(kind) = entry.file_type().await else {
+                continue;
+            };
+            if kind.is_file() {
+                continue;
+            }
+            // The entry's own attributes, a link's included: a hidden junction such as
+            // `Documents and Settings` leads to a directory that is not hidden.
+            let (Ok(own), Ok(name)) = (entry.metadata().await, entry.file_name().into_string())
+            else {
+                continue;
+            };
+            if is_hidden(&name, &own) {
+                continue;
+            }
+            // A link to a directory is followed: a share often appears that way
+            // (`/media/nas` → `/mnt/nas`), and entering it resolves it as any root.
+            let is_directory = if kind.is_symlink() {
+                tokio::fs::metadata(entry.path())
+                    .await
+                    .is_ok_and(|target| target.is_dir())
+            } else {
+                own.is_dir()
+            };
+            if !is_directory {
+                continue;
+            }
+            if directories.len() == limit {
+                truncated = true;
+                break;
+            }
+            directories.push(Directory {
+                path: displayed(&directory.join(&name)),
+                name,
+            });
+        }
+        Ok(DirectoryListing {
+            path: displayed(&directory),
+            parent: directory.parent().map(displayed),
+            directories,
+            truncated,
+        })
+    }
+}
+
+/// `path` as a root is stored: canonical, as the scan and the media engine compare paths with
+/// it, and absolute, as a relative path would name a directory below wherever the server was
+/// started.
+async fn canonical_directory(path: &str) -> Result<PathBuf, FilesError> {
+    if path.is_empty() || !Path::new(path).is_absolute() {
+        return Err(FilesError::Refused);
+    }
+    let canonical = tokio::fs::canonicalize(path).await.map_err(io_error)?;
+    if !tokio::fs::metadata(&canonical)
+        .await
+        .map_err(io_error)?
+        .is_dir()
+    {
+        return Err(FilesError::Refused);
+    }
+    Ok(canonical)
+}
+
+/// What a file manager would not show: a dot name anywhere, and on Windows what is marked
+/// hidden or system, such as `$RECYCLE.BIN` and `System Volume Information`.
+#[cfg(windows)]
+fn is_hidden(name: &str, metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const HIDDEN: u32 = 0x2;
+    const SYSTEM: u32 = 0x4;
+    name.starts_with('.') || metadata.file_attributes() & (HIDDEN | SYSTEM) != 0
+}
+
+#[cfg(not(windows))]
+fn is_hidden(name: &str, _metadata: &std::fs::Metadata) -> bool {
+    name.starts_with('.')
+}
+
+/// The drive letters that answer. A network drive whose server is gone can take a long time
+/// to say so, hence the deadline; a reader with no card in it does not answer at all.
+async fn drives() -> Vec<Directory> {
+    const DEADLINE: Duration = Duration::from_secs(2);
+    let mut probes = tokio::task::JoinSet::new();
+    for letter in 'A'..='Z' {
+        probes.spawn(async move {
+            let path = format!("{letter}:\\");
+            let answer = tokio::time::timeout(DEADLINE, tokio::fs::metadata(&path)).await;
+            matches!(answer, Ok(Ok(metadata)) if metadata.is_dir()).then(|| Directory {
+                name: format!("{letter}:"),
+                path,
+            })
+        });
+    }
+    let mut drives = Vec::new();
+    while let Some(probe) = probes.join_next().await {
+        if let Ok(Some(drive)) = probe {
+            drives.push(drive);
+        }
+    }
+    drives
 }
 
 /// A canonical path as a person writes it. Windows canonicalizes `C:\Films` to the verbatim
@@ -307,5 +421,208 @@ mod tests {
                 .await,
             Err(FilesError::NotFound)
         ));
+    }
+
+    fn names(listing: &DirectoryListing) -> Vec<&str> {
+        let mut names: Vec<&str> = listing
+            .directories
+            .iter()
+            .map(|directory| directory.name.as_str())
+            .collect();
+        names.sort_unstable();
+        names
+    }
+
+    #[tokio::test]
+    async fn lists_the_visible_directories_of_a_directory_and_no_file() {
+        let scratch = Scratch::new("browse");
+        std::fs::create_dir(scratch.0.join("Series")).unwrap();
+        std::fs::create_dir(scratch.0.join(".cache")).unwrap();
+        std::fs::write(scratch.0.join("notes.txt"), b"").unwrap();
+        let local = LocalFiles;
+        let listing = local.list_directories(&scratch.root(), 100).await.unwrap();
+        assert_eq!(names(&listing), ["Films", "Series"]);
+        assert!(!listing.truncated);
+        let canonical = std::fs::canonicalize(&scratch.0).unwrap();
+        assert_eq!(listing.path, displayed(&canonical));
+        assert_eq!(listing.parent, canonical.parent().map(displayed));
+        let films = listing
+            .directories
+            .iter()
+            .find(|directory| directory.name == "Films")
+            .unwrap();
+        assert_eq!(films.path, displayed(&canonical.join("Films")));
+        assert_eq!(
+            local.resolve_root(&films.path).await.unwrap(),
+            films.path,
+            "a listed path is already a root's form"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_listing_is_resolved_as_a_root_is() {
+        let scratch = Scratch::new("browse-resolved");
+        let local = LocalFiles;
+        let spelled = scratch.0.join("Films").join("Soul (2020)").join("..");
+        let listing = local
+            .list_directories(&spelled.to_string_lossy(), 100)
+            .await
+            .unwrap();
+        assert_eq!(
+            listing.path,
+            displayed(&std::fs::canonicalize(scratch.0.join("Films")).unwrap())
+        );
+        assert_eq!(names(&listing), ["Soul (2020)"]);
+        let file = scratch.0.join("Films/Soul (2020)/Soul.mkv");
+        for refused in [file.to_string_lossy().into_owned(), "Films".to_owned()] {
+            assert!(matches!(
+                local.list_directories(&refused, 100).await,
+                Err(FilesError::Refused)
+            ));
+        }
+        assert!(matches!(
+            local
+                .list_directories(&scratch.0.join("gone").to_string_lossy(), 100)
+                .await,
+            Err(FilesError::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_listing_stops_at_its_limit_and_says_so() {
+        let scratch = Scratch::new("browse-limit");
+        std::fs::create_dir(scratch.0.join("Series")).unwrap();
+        let local = LocalFiles;
+        let cut = local.list_directories(&scratch.root(), 1).await.unwrap();
+        assert_eq!((cut.directories.len(), cut.truncated), (1, true));
+        let whole = local.list_directories(&scratch.root(), 2).await.unwrap();
+        assert_eq!((whole.directories.len(), whole.truncated), (2, false));
+    }
+
+    #[tokio::test]
+    async fn browsing_starts_at_the_top_of_each_drive_or_of_the_filesystem() {
+        let local = LocalFiles;
+        let starts = local.starting_points().await.unwrap();
+        let expected = if cfg!(windows) {
+            format!("{}\\", std::env::var("SystemDrive").unwrap())
+        } else {
+            "/".to_owned()
+        };
+        let start = starts
+            .iter()
+            .find(|start| start.path.eq_ignore_ascii_case(&expected))
+            .unwrap();
+        let listing = local.list_directories(&start.path, 10).await.unwrap();
+        assert_eq!(listing.parent, None);
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_directory_marked_hidden_is_not_listed() {
+        let scratch = Scratch::new("browse-hidden");
+        let hidden = scratch.0.join("Hidden");
+        std::fs::create_dir(&hidden).unwrap();
+        let marked = std::process::Command::new("attrib")
+            .arg("+h")
+            .arg(&hidden)
+            .status()
+            .unwrap();
+        assert!(marked.success());
+        let listing = LocalFiles
+            .list_directories(&scratch.root(), 100)
+            .await
+            .unwrap();
+        assert_eq!(names(&listing), ["Films"]);
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_hidden_junction_is_not_listed_and_a_denied_directory_is_unreadable() {
+        let scratch = Scratch::new("browse-junction");
+        let run = |program: &str, args: &[&std::ffi::OsStr]| {
+            let status = std::process::Command::new(program)
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(status.success(), "{program} {args:?}");
+        };
+        let target = scratch.0.join("Films");
+        let junction = scratch.0.join("Old Films");
+        run(
+            "cmd",
+            &[
+                "/c".as_ref(),
+                "mklink".as_ref(),
+                "/J".as_ref(),
+                junction.as_os_str(),
+                target.as_os_str(),
+            ],
+        );
+        let local = LocalFiles;
+        let listing = local.list_directories(&scratch.root(), 100).await.unwrap();
+        assert_eq!(
+            names(&listing),
+            ["Films", "Old Films"],
+            "a junction is followed"
+        );
+        // Marked on the junction itself, as Windows marks `Documents and Settings`.
+        run(
+            "attrib",
+            &[
+                "+h".as_ref(),
+                "+s".as_ref(),
+                "/L".as_ref(),
+                junction.as_os_str(),
+            ],
+        );
+        let listing = local.list_directories(&scratch.root(), 100).await.unwrap();
+        assert_eq!(names(&listing), ["Films"]);
+
+        let denied = scratch.0.join("Denied");
+        std::fs::create_dir(&denied).unwrap();
+        let user = std::env::var("USERNAME").unwrap();
+        run(
+            "icacls",
+            &[
+                denied.as_os_str(),
+                "/deny".as_ref(),
+                format!("{user}:(RX)").as_ref(),
+            ],
+        );
+        let answer = local.list_directories(&denied.to_string_lossy(), 100).await;
+        run(
+            "icacls",
+            &[denied.as_os_str(), "/remove:d".as_ref(), user.as_ref()],
+        );
+        assert!(matches!(answer, Err(FilesError::Unreadable)), "{answer:?}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_link_to_a_directory_is_listed_and_an_unreadable_directory_reported() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let scratch = Scratch::new("browse-unix");
+        std::os::unix::fs::symlink(scratch.0.join("Films"), scratch.0.join("Linked")).unwrap();
+        std::os::unix::fs::symlink(
+            scratch.0.join("Films/Soul (2020)/Soul.mkv"),
+            scratch.0.join("Soul.mkv"),
+        )
+        .unwrap();
+        let local = LocalFiles;
+        let listing = local.list_directories(&scratch.root(), 100).await.unwrap();
+        assert_eq!(names(&listing), ["Films", "Linked"]);
+
+        let locked = scratch.0.join("Locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        // Whoever runs as root reads it anyway: there is nothing to see then.
+        if std::fs::read_dir(&locked).is_err() {
+            assert!(matches!(
+                local.list_directories(&locked.to_string_lossy(), 100).await,
+                Err(FilesError::Unreadable)
+            ));
+        }
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 }

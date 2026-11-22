@@ -115,6 +115,31 @@ pub struct Entry {
     pub modified_at: i64,
 }
 
+/// A directory an owner may pick as a library root, its path in the form
+/// [`LibraryFiles::resolve_root`] gives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Directory {
+    pub name: String,
+    pub path: String,
+}
+
+/// The directories inside one, for an owner looking for a library root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectoryListing {
+    /// The directory listed, resolved as a root is.
+    pub path: String,
+    /// The directory holding it; `None` at the top of a drive or of the filesystem.
+    pub parent: Option<String>,
+    /// In no particular order.
+    pub directories: Vec<Directory>,
+    /// The directory held more than the limit asked for, and the rest were not read.
+    pub truncated: bool,
+}
+
+/// How many directories one listing holds at most: a directory of a million names must not
+/// become a million strings in memory because an owner opened it.
+pub const MAX_LISTED_DIRECTORIES: usize = 10_000;
+
 /// What a media tool is handed to read a file. Only local paths exist today; a backend that is
 /// not a filesystem will hand out an address the server serves instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,6 +159,9 @@ pub enum FilesError {
     /// directory.
     #[error("the path is not one a library may reach")]
     Refused,
+    /// It exists, and the server is not allowed to read it.
+    #[error("the server is not allowed to read it")]
+    Unreadable,
     #[error("the file is larger than the {0} bytes read")]
     TooLarge(u64),
     #[error("reading library files failed")]
@@ -177,6 +205,27 @@ pub trait LibraryFiles: Send + Sync + std::fmt::Debug {
     /// [`FilesError::NotFound`] when nothing is there, [`FilesError::Refused`] when `path` is
     /// not one a root can be: relative, or not a directory.
     async fn resolve_root(&self, path: &str) -> Result<String, FilesError>;
+
+    /// Where an owner looking for a root starts: the drives of a Windows machine, `/`
+    /// elsewhere. In no particular order.
+    async fn starting_points(&self) -> Result<Vec<Directory>, FilesError>;
+
+    /// The directories inside `path`, which is resolved exactly as [`Self::resolve_root`]
+    /// resolves a root before anything is read. Files and hidden directories are left out, and
+    /// at most `limit` directories are read.
+    ///
+    /// This and [`Self::starting_points`] are how an owner finds a root without typing it:
+    /// they name directories and never read a file.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::resolve_root`], and [`FilesError::Unreadable`] when the directory may not be
+    /// read.
+    async fn list_directories(
+        &self,
+        path: &str,
+        limit: usize,
+    ) -> Result<DirectoryListing, FilesError>;
 }
 
 #[cfg(test)]
