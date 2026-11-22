@@ -92,6 +92,7 @@ fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
     router(PlexState::new(identity, schema))
 }
@@ -824,6 +825,7 @@ fn items_app() -> axum::Router {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
     authenticated(router(PlexState::new(identity, schema)))
 }
@@ -1816,6 +1818,7 @@ fn app_as_user(user: i64, role: LibraryRole) -> axum::Router {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
     router(PlexState::new(identity, schema)).layer(axum::Extension(user_principal(user, role)))
 }
@@ -1869,6 +1872,7 @@ async fn app_as_paired_user() -> axum::Router {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
     router(PlexState::new(identity, schema))
         .layer(axum::Extension(user_principal(1, LibraryRole::Viewer)))
@@ -2209,6 +2213,7 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
     let app = authenticated(router(PlexState::new(identity, schema)));
 
@@ -2600,8 +2605,15 @@ async fn a_photo_is_only_fetched_from_plex_hosts() {
 }
 
 #[tokio::test]
-async fn library_artwork_is_refused_rather_than_reported_missing() {
+async fn an_item_without_artwork_has_none_to_transcode() {
     let uri = "/photo/:/transcode?width=60&height=60&url=%2Flibrary%2Fmetadata%2F1%2Fthumb%2F2";
+    let (status, _, _) = get(uri, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn other_local_sources_are_refused_rather_than_reported_missing() {
+    let uri = "/photo/:/transcode?width=60&height=60&url=%2F%3A%2Fresources%2Fmovie-fanart.jpg";
     let (status, _, _) = get(uri, None).await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
 }
@@ -3323,6 +3335,7 @@ fn editing_app(principal: Principal) -> axum::Router {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
     router(PlexState::new(identity, schema)).layer(axum::Extension(principal))
 }
@@ -4637,6 +4650,7 @@ async fn playing(
         collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
     playback
         .start(
@@ -4941,6 +4955,7 @@ fn markers_app_over(store: std::sync::Arc<InMemoryMetadata>, principal: Principa
         collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
     router(PlexState::new(identity, schema)).layer(axum::Extension(principal))
 }

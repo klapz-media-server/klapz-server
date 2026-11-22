@@ -221,6 +221,7 @@ impl Server {
             streams: Arc::clone(&disk) as Arc<dyn klapz_core::stream::StreamEngine>,
             session_locks: Arc::default(),
             scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+            matching: None,
         });
         Self { schema, disk }
     }

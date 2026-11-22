@@ -5049,6 +5049,30 @@
               "deprecationReason": null
             },
             {
+              "name": "images",
+              "description": "The images it shows, one per kind, kept on this server. Empty until its metadata is\nmatched.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ItemImage",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "markers",
               "description": "Where its intro, credits and commercials are, and the places the caller bookmarked in\nit, in the order they were added.",
               "args": [
@@ -7738,6 +7762,47 @@
           "possibleTypes": null
         },
         {
+          "kind": "ENUM",
+          "name": "ImageKind",
+          "description": "What an image is to the item it belongs to.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "POSTER",
+              "description": "The cover, portrait, in the library's language where the provider has one.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BACKGROUND",
+              "description": "The art drawn behind the item, without text where the provider has such.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CLEAR_LOGO",
+              "description": "The title drawn on a transparent ground.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BANNER",
+              "description": "A wide strip, for series.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "THUMB",
+              "description": "An episode's still.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
           "kind": "SCALAR",
           "name": "Int",
           "description": "The `Int` scalar type represents non-fractional whole numeric values.",
@@ -7974,6 +8039,30 @@
                 "kind": "OBJECT",
                 "name": "CornerColors",
                 "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "images",
+              "description": "The images it shows, one per kind, kept on this server. Empty until its metadata is matched.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ItemImage",
+                      "ofType": null
+                    }
+                  }
+                }
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -8665,6 +8754,223 @@
             }
           ],
           "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ItemImage",
+          "description": "An image an item shows, kept on this server: it stays served when its provider is not.",
+          "fields": [
+            {
+              "name": "kind",
+              "description": "What it is to the item: its poster, its background…",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "ImageKind",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "url",
+              "description": "Where this server serves it, below `/artwork/`. A new image has a new address, so a\nclient may cache one for good.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "contentType",
+              "description": "Its media type: `image/jpeg`, `image/png` or `image/webp`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "width",
+              "description": "In pixels, as the provider has it: images are kept at their original size.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "height",
+              "description": "In pixels.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "blurHash",
+              "description": "A `BlurHash` of it, to draw while it loads: three by four components for a portrait\nimage, four by three for a landscape one.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "changedAt",
+              "description": "When the item took it.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "DateTime",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "ItemMetadataInput",
+          "description": "Which film or series.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "itemId",
+              "description": "The film or series, as returned in its `id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ItemMetadataPayload",
+          "description": "What a matching mutation did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "The value the input carried.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "item",
+              "description": "The item as it is now: before the work a mutation started in the background is done.",
+              "args": [],
+              "type": {
+                "kind": "INTERFACE",
+                "name": "Item",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why nothing was done. Empty when it was.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "MetadataUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
           "enumValues": null,
           "possibleTypes": null
         },
@@ -11617,6 +11923,51 @@
           "possibleTypes": null
         },
         {
+          "kind": "INPUT_OBJECT",
+          "name": "MatchItemInput",
+          "description": "Which film or series, and which provider record to match it to.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "itemId",
+              "description": "The film or series, as returned in its `id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "providerId",
+              "description": "The record at its library's provider, as `metadataMatches` names it. Without it, the\nbest search result is taken if it scores high enough.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "OBJECT",
           "name": "MediaFile",
           "description": null,
@@ -12559,6 +12910,183 @@
           "possibleTypes": null
         },
         {
+          "kind": "ENUM",
+          "name": "MetadataErrorCode",
+          "description": null,
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "ITEM_NOT_FOUND",
+              "description": "No film or series the caller may edit has this id.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NO_PROVIDER",
+              "description": "No provider has a key for this kind of library.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "MetadataMatch",
+          "description": "A result a provider has for an item, as a search finds it.",
+          "fields": [
+            {
+              "name": "agent",
+              "description": "The provider: `tmdb` for films, `tvdb` for series.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "providerId",
+              "description": "The result's id at the provider, which `matchItem` takes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "name",
+              "description": "Its title, in the library's language where the provider has it.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "year",
+              "description": "Its release or first air year, when the provider has one.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "score",
+              "description": "How well it answers the search, out of about 100. From 85, matching takes it unasked.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "MetadataUserError",
+          "description": "A problem with what was asked, as opposed to a failure of the server.",
+          "fields": [
+            {
+              "name": "field",
+              "description": "The input field at fault, as a path from the input's root.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "message",
+              "description": "What went wrong, for a person.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "code",
+              "description": "What went wrong, for a program.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "MetadataErrorCode",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "INPUT_OBJECT",
           "name": "MoveCollectionItemInput",
           "description": "An item to move within a collection's custom order.",
@@ -13073,6 +13601,30 @@
                 "kind": "OBJECT",
                 "name": "CornerColors",
                 "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "images",
+              "description": "The images it shows, one per kind, kept on this server. Empty until its metadata is\nmatched.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ItemImage",
+                      "ofType": null
+                    }
+                  }
+                }
               },
               "isDeprecated": false,
               "deprecationReason": null
@@ -15285,6 +15837,99 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "UserPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "matchItem",
+              "description": "Matches a film or a series to a record of its library's provider — the one named, else\nthe one it shows already, else the best search result — and fetches its metadata and\nimages in the background. For a library's admins and the server's owners.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The item and the record.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "MatchItemInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "ItemMetadataPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "refreshItemMetadata",
+              "description": "Fetches a film's or a series' metadata and images again from the record it shows, in\nthe background; one never matched is searched for. For a library's admins and the\nserver's owners.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The item.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "ItemMetadataInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "ItemMetadataPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "unmatchItem",
+              "description": "Forgets the record a film or a series and its seasons and episodes show: they take back\nthe identity a scan gives, and keep their texts until matched again. For a library's\nadmins and the server's owners.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The item.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "ItemMetadataInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "ItemMetadataPayload",
                   "ofType": null
                 }
               },
@@ -18866,8 +19511,67 @@
           "description": null,
           "fields": [
             {
+              "name": "metadataMatches",
+              "description": "Refetches any object by its global identifier.\n\nWhat a film's or a series' provider finds for it, best first with its score: searched\nby the item's own name and year, or by those given. For a library's admins and the\nserver's owners; empty for anyone else, and for an item that is no film or series.",
+              "args": [
+                {
+                  "name": "itemId",
+                  "description": "The film or series.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "ID",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "title",
+                  "description": "A name to search instead of the item's.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "year",
+                  "description": "A year to search instead of the item's.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "MetadataMatch",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "node",
-              "description": "Refetches any object by its global identifier.\n\nThe single entry point Relay clients use to refresh cached objects. Returns null when\nnothing carries that identifier; a malformed identifier is an error rather than null,\nbecause it signals a client bug rather than a deleted object.",
+              "description": "The single entry point Relay clients use to refresh cached objects. Returns null when\nnothing carries that identifier; a malformed identifier is an error rather than null,\nbecause it signals a client bug rather than a deleted object.",
               "args": [
                 {
                   "name": "id",
@@ -21698,6 +22402,30 @@
               "deprecationReason": null
             },
             {
+              "name": "images",
+              "description": "The images it shows, one per kind, kept on this server. Empty until its metadata is\nmatched.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ItemImage",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "updatedAt",
               "description": "When the item's metadata last changed.",
               "args": [],
@@ -23281,6 +24009,30 @@
                 "kind": "OBJECT",
                 "name": "CornerColors",
                 "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "images",
+              "description": "The images it shows, one per kind, kept on this server. Empty until its metadata is\nmatched.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ItemImage",
+                      "ofType": null
+                    }
+                  }
+                }
               },
               "isDeprecated": false,
               "deprecationReason": null

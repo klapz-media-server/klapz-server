@@ -23,6 +23,7 @@ mod error;
 mod filters;
 mod gql;
 pub mod id;
+pub mod images;
 mod items;
 mod language;
 mod listing;
@@ -72,6 +73,8 @@ pub struct JellyfinState {
     pub server: Arc<ServerInfo>,
     /// Jellyfin Web, served at `/web` below the base when set.
     pub web_dir: Option<PathBuf>,
+    /// Where items' images are read from; `None` serves none.
+    pub artwork: Option<images::JellyfinArtwork>,
 }
 
 impl std::fmt::Debug for JellyfinState {
@@ -120,6 +123,7 @@ impl JellyfinState {
             sessions,
             server: Arc::new(ServerInfo::of(identity)),
             web_dir: None,
+            artwork: None,
         }
     }
 }
@@ -135,6 +139,7 @@ pub fn router(state: JellyfinState) -> Router {
         .merge(users::router())
         .merge(views::router())
         .merge(items::router())
+        .merge(images::router())
         .merge(filters::router())
         .merge(playlists::router())
         .merge(collections::router())

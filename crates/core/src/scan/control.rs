@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use crate::files::LibraryFiles;
 use crate::ids::SectionId;
 use crate::scan::{scan_section, ScanError, ScanRequest, Scanner};
+use crate::source_metadata::{Matching, SourceMetadataError};
 
 /// Starts and stops scans; what the API drives.
 #[async_trait::async_trait]
@@ -36,6 +37,8 @@ pub trait ScanControl: Send + Sync + std::fmt::Debug {
 #[derive(Debug)]
 pub struct BackgroundScans {
     scanner: Scanner,
+    /// What a finished scan matches its new items with; `None` when no provider is set up.
+    matching: Option<Matching>,
     running: Arc<Mutex<HashMap<SectionId, Arc<AtomicBool>>>>,
     failures: Arc<Mutex<HashMap<SectionId, String>>>,
 }
@@ -44,9 +47,19 @@ impl BackgroundScans {
     pub fn new(scanner: Scanner) -> Self {
         Self {
             scanner,
+            matching: None,
             running: Arc::default(),
             failures: Arc::default(),
         }
+    }
+
+    /// Matches what each scan finds once it ends, as the reference runs its agent after the
+    /// scanner: in the same task, so that the library counts as being scanned until its new
+    /// items have their metadata, and no second scan starts in between.
+    #[must_use]
+    pub fn with_matching(mut self, matching: Matching) -> Self {
+        self.matching = Some(matching);
+        self
     }
 }
 
@@ -63,6 +76,7 @@ impl ScanControl for BackgroundScans {
             running.insert(section, Arc::clone(&cancelled));
         }
         let scanner = self.scanner.clone();
+        let matching = self.matching.clone();
         let running = Arc::clone(&self.running);
         let failures = Arc::clone(&self.failures);
         tokio::spawn(async move {
@@ -83,14 +97,34 @@ impl ScanControl for BackgroundScans {
                 }
             }
             match result {
-                Ok(outcome) => tracing::info!(
-                    section = section.get(),
-                    added = outcome.added,
-                    updated = outcome.updated,
-                    removed = outcome.removed,
-                    unavailable_roots = outcome.unavailable_roots,
-                    "library scanned"
-                ),
+                Ok(outcome) => {
+                    tracing::info!(
+                        section = section.get(),
+                        added = outcome.added,
+                        updated = outcome.updated,
+                        removed = outcome.removed,
+                        unavailable_roots = outcome.unavailable_roots,
+                        "library scanned"
+                    );
+                    if let Some(matching) = matching {
+                        match matching.library(section, false, crate::now_epoch()).await {
+                            Ok(report) => tracing::info!(
+                                section = section.get(),
+                                matched = report.matched.len(),
+                                unmatched = report.unmatched.len(),
+                                failed = report.failed.len(),
+                                "library matched"
+                            ),
+                            Err(
+                                SourceMetadataError::UnsupportedKind
+                                | SourceMetadataError::NoSource,
+                            ) => {}
+                            Err(error) => {
+                                tracing::warn!(section = section.get(), %error, "matching failed");
+                            }
+                        }
+                    }
+                }
                 Err(ScanError::Cancelled) => {
                     tracing::info!(section = section.get(), "library scan cancelled");
                 }

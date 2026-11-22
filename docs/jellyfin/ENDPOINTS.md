@@ -189,11 +189,11 @@ Tracker for the 364 operations of the reference Jellyfin's OpenAPI document (`do
 | GET | `/Genres/{name}/Images/{imageType}/{imageIndex}` | `todo` |  |
 | HEAD | `/Genres/{name}/Images/{imageType}/{imageIndex}` | `todo` |  |
 | GET | `/Items/{itemId}/Images` | `served` | Empty: no artwork. |
-| GET | `/Items/{itemId}/Images/{imageType}` | `served` | No artwork is served: 404. |
+| GET | `/Items/{itemId}/Images/{imageType}` | `served` | The image of `Item.images` an item shows (`Primary` an episode's still else the poster, `Backdrop`, `Logo`, `Banner`, `Thumb`), scaled into `fillWidth`/`fillHeight`, `maxWidth`/`maxHeight` or `width`/`height`; without a token only with the `tag` a lookup published for that item. |
 | POST | `/Items/{itemId}/Images/{imageType}` | `todo` |  |
 | DELETE | `/Items/{itemId}/Images/{imageType}` | `todo` |  |
 | HEAD | `/Items/{itemId}/Images/{imageType}` | `served` |  |
-| GET | `/Items/{itemId}/Images/{imageType}/{imageIndex}` | `served` | No artwork is served: 404. |
+| GET | `/Items/{itemId}/Images/{imageType}/{imageIndex}` | `served` | As without an index; one image of each kind, so any index past `0` is a `404`. |
 | POST | `/Items/{itemId}/Images/{imageType}/{imageIndex}` | `todo` |  |
 | DELETE | `/Items/{itemId}/Images/{imageType}/{imageIndex}` | `todo` |  |
 | HEAD | `/Items/{itemId}/Images/{imageType}/{imageIndex}` | `served` |  |

@@ -40,8 +40,6 @@ pub fn router() -> Router<JellyfinState> {
         .route("/items/{id}/localtrailers", get(no_items_list))
         .route("/users/{user}/items/{id}/localtrailers", get(no_items_list))
         .route("/items/{id}/images", get(no_items_list))
-        .route("/items/{id}/images/{kind}", get(no_image))
-        .route("/items/{id}/images/{kind}/{index}", get(no_image))
 }
 
 /// What the request's `Fields` names, and the official API's variables that follow from it.
@@ -1011,11 +1009,6 @@ async fn no_intros(State(state): State<JellyfinState>) -> Result<Response, Jelly
 async fn no_items_list(State(state): State<JellyfinState>) -> Result<Response, JellyfinError> {
     gql::viewer(&state.schema).await?;
     Ok(json(&[(); 0]))
-}
-
-/// No artwork is served: every image answers as a missing one does on the reference.
-async fn no_image() -> JellyfinError {
-    JellyfinError::NotFound
 }
 
 #[cfg(test)]

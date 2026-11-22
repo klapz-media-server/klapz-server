@@ -112,6 +112,7 @@ async fn main() {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
 
     let response = schema.execute(INTROSPECTION_QUERY).await;

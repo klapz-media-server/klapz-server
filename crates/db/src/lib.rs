@@ -21,6 +21,7 @@ pub mod playback_repository;
 pub mod playlist_repository;
 pub mod repository;
 pub mod scan_repository;
+pub mod source_metadata_repository;
 mod tracks;
 pub mod watch_repository;
 pub mod write;
@@ -37,6 +38,7 @@ pub use playback_repository::SqlPlaybackRepository;
 pub use playlist_repository::SqlPlaylistRepository;
 pub use repository::SqlLibraryRepository;
 pub use scan_repository::SqlScanRepository;
+pub use source_metadata_repository::SqlSourceMetadataRepository;
 pub use watch_repository::SqlWatchRepository;
 
 /// Opens a connection pool and brings the schema up to date.

@@ -39,8 +39,15 @@ NOTES = {
     "GET /Videos/{itemId}/stream.{container}": "static=true only.",
     "HEAD /Videos/{itemId}/stream": "static=true only.",
     "HEAD /Videos/{itemId}/stream.{container}": "static=true only.",
-    "GET /Items/{itemId}/Images/{imageType}": "No artwork is served: 404.",
-    "GET /Items/{itemId}/Images/{imageType}/{imageIndex}": "No artwork is served: 404.",
+    "GET /Items/{itemId}/Images/{imageType}": (
+        "The image of `Item.images` an item shows (`Primary` an episode's still else the poster, "
+        "`Backdrop`, `Logo`, `Banner`, `Thumb`), scaled into `fillWidth`/`fillHeight`, "
+        "`maxWidth`/`maxHeight` or `width`/`height`; without a token only with the `tag` a "
+        "lookup published for that item."
+    ),
+    "GET /Items/{itemId}/Images/{imageType}/{imageIndex}": (
+        "As without an index; one image of each kind, so any index past `0` is a `404`."
+    ),
     "GET /Items/{itemId}/Images": "Empty: no artwork.",
     "POST /UserFavoriteItems/{itemId}": "Refused 501: favorites are not kept.",
     "DELETE /UserFavoriteItems/{itemId}": "Refused 501: favorites are not kept.",

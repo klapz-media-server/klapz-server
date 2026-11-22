@@ -132,6 +132,7 @@ fn app() -> axum::Router {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
 
     // A principal is attached directly: authentication lives in the `server` crate, and this

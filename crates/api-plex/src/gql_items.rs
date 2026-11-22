@@ -72,6 +72,7 @@ fragment Shared on Item {
   ... on Show { primaryExtra { id } }
   ... on Episode { chapterSource }
   cornerColors { topLeft topRight bottomRight bottomLeft }
+  images { kind changedAt }
 }
 
 fragment VersionFields on MediaVersion {
@@ -163,7 +164,7 @@ fragment TrackFields on MediaStream {
 fragment SeasonFields on Season {
   number
   year
-  show { id title guid studio number year }
+  show { id title guid studio number year images { kind changedAt } }
   seasonStats: stats { episodeCount watchedEpisodeCount }
 }
 
@@ -175,8 +176,8 @@ fragment EpisodeFields on Episode {
   contentRating
   audienceRating
   durationMs
-  season { id number title year guid }
-  show { id title guid }
+  season { id number title year guid images { kind changedAt } }
+  show { id title guid images { kind changedAt } }
 }
 
 fragment ListedItem on Item {
@@ -906,6 +907,7 @@ pub struct GqlItem {
     /// Asked for on a lookup with `includeChapters=1` only.
     pub chapters: GqlConnection<GqlChapter>,
     pub corner_colors: Option<GqlCornerColors>,
+    pub images: Vec<GqlImage>,
     /// A film's or a series' first trailer.
     pub primary_extra: Option<GqlTrackRef>,
     /// Asked for on `includeExtras=1` only, and then present even when empty.
@@ -939,6 +941,15 @@ impl GqlExtra {
     pub fn database_id(&self) -> i64 {
         database_id(&self.id)
     }
+}
+
+/// An image an item shows: its kind and when it took it, which its address carries.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlImage {
+    pub kind: String,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
+    pub changed_at: i64,
 }
 
 /// A backdrop's colors, each `#rrggbb`.
@@ -1103,6 +1114,7 @@ pub struct GqlParentRef {
     pub studio: Option<String>,
     pub year: Option<i32>,
     pub content_rating: Option<String>,
+    pub images: Vec<GqlImage>,
 }
 
 impl GqlParentRef {

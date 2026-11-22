@@ -149,11 +149,16 @@ async fn transcode(
     RawQuery(query): RawQuery,
 ) -> Result<Response, ApiError> {
     let request = parse(query.as_deref().unwrap_or_default())?;
-    if request.source.starts_with('/') {
-        return Err(ApiError::NotImplemented);
-    }
     let content_type = content_type(request.format);
-    let image = state.transcoder.convert_image(request).await?;
+    let image = if request.source.starts_with('/') {
+        // An item's own artwork, at the address its `thumb` or `art` publishes.
+        let (item, element) =
+            crate::artwork::parse_element_path(&request.source).ok_or(ApiError::NotImplemented)?;
+        let (bytes, _) = crate::artwork::element_bytes(&state, item, element).await?;
+        state.transcoder.convert_image_bytes(bytes, request).await?
+    } else {
+        state.transcoder.convert_image(request).await?
+    };
 
     Ok((
         [

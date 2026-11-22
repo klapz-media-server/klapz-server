@@ -183,6 +183,7 @@ async fn jellyfin_app(connection: &klapz_db::DatabaseConnection) -> axum::Router
         streams: Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: Arc::default(),
         scans: Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
     let sessions = Arc::new(klapz_api::Sessions::new(
         Arc::new(klapz_core::account::SessionKey::generate()),

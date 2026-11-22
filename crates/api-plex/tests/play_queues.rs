@@ -98,6 +98,7 @@ fn schema() -> ApiSchema {
         collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     })
 }
 

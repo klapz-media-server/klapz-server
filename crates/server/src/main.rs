@@ -6,6 +6,7 @@
 
 mod admin;
 mod analyzer;
+mod artwork;
 mod auth;
 mod callbacks;
 mod commands;
@@ -80,6 +81,62 @@ fn database_shown(url: &str) -> String {
     }
 }
 
+/// Source metadata as the scans and the API use it: TMDB and TVDB where they have a key, and
+/// the images kept in `images`.
+fn source_metadata(
+    connection: &klapz_db::DatabaseConnection,
+    images: &std::path::Path,
+) -> Result<
+    (
+        Arc<klapz_transcoder::artwork::ArtworkStore>,
+        klapz_core::source_metadata::Matching,
+    ),
+    klapz_core::source_metadata::AgentError,
+> {
+    let credentials = klapz_agents::ProviderCredentials::from_env();
+    log_metadata_providers(&credentials);
+    tracing::info!(directory = %images.display(), "images kept");
+    let store = Arc::new(klapz_transcoder::artwork::ArtworkStore::new(
+        images.to_path_buf(),
+    ));
+    let matching = klapz_core::source_metadata::Matching {
+        repository: Arc::new(klapz_db::SqlSourceMetadataRepository::new(
+            connection.clone(),
+        )),
+        sources: commands::metadata_sources(credentials)?,
+        artwork: Some(Arc::new(artwork::StoreFetcher(Arc::clone(&store)))),
+    };
+    Ok((store, matching))
+}
+
+/// Which metadata providers have a key, and whose: never the key itself.
+fn log_metadata_providers(credentials: &klapz_agents::ProviderCredentials) {
+    let shown = |source: Option<klapz_agents::KeySource>| match source {
+        Some(klapz_agents::KeySource::BuiltIn) => "built-in key",
+        Some(klapz_agents::KeySource::Environment) => "key from the environment",
+        None => "no key, not consulted",
+    };
+    tracing::info!(
+        tmdb = shown(
+            credentials
+                .tmdb
+                .as_ref()
+                .map(klapz_agents::TmdbCredentials::source)
+        ),
+        tvdb = shown(
+            credentials
+                .tvdb
+                .as_ref()
+                .map(klapz_agents::TvdbCredentials::source)
+        ),
+        tvdb_pin = credentials
+            .tvdb
+            .as_ref()
+            .is_some_and(|tvdb| tvdb.pin().is_some()),
+        "metadata providers"
+    );
+}
+
 /// The `.env` file read at startup.
 struct EnvFile {
     path: PathBuf,
@@ -125,7 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                "klapz_server=info,klapz_api=info,klapz_api_plex=info,klapz_db=info".into()
+                "klapz_server=info,klapz_core=info,klapz_api=info,klapz_api_plex=info,klapz_db=info".into()
             }),
         )
         .init();
@@ -141,6 +198,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .block_on(start())
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the composition root: every component is built and wired here, once"
+)]
 async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let client_origins =
         cors::ClientOrigins::from_setting(std::env::var("KLAPZ_CORS_ORIGINS").ok().as_deref())?;
@@ -149,15 +210,19 @@ async fn start() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(database = %database_shown(&database_url), "opening the database");
     let connection = klapz_db::connect(&database_url).await?;
 
-    // `import`, `library` and `scan` do their job and exit; anything else starts the server.
+    // `import`, `library`, `scan` and `match` do their job and exit; anything else starts the
+    // server.
+    let images = artwork::images_directory(&database_url);
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    if let Some(done) = run_command(&connection, &arguments).await {
+    if let Some(done) = run_command(&connection, &arguments, &images).await {
         return done;
     }
 
     let library: Arc<dyn LibraryRepository> =
         Arc::new(SqlLibraryRepository::new(connection.clone()));
-    let scans = BackgroundScans::new(commands::scanner(&connection, Arc::clone(&library)));
+    let (artwork_store, matching) = source_metadata(&connection, &images)?;
+    let scans = BackgroundScans::new(commands::scanner(&connection, Arc::clone(&library)))
+        .with_matching(matching.clone());
     tokio::spawn(check_scanner_tools());
     let play_queues: Arc<dyn PlayQueueRepository> =
         Arc::new(SqlPlayQueueRepository::new(connection.clone()));
@@ -178,6 +243,7 @@ async fn start() -> Result<(), Box<dyn std::error::Error>> {
         locks: Arc::clone(&locks),
     };
     clear_stale_sessions(&sessions).await?;
+    let images_of_items = Arc::clone(&matching.repository);
     let schema = build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity(), klapz_core::now_epoch()),
         library,
@@ -192,6 +258,7 @@ async fn start() -> Result<(), Box<dyn std::error::Error>> {
         streams: Arc::clone(&streams) as Arc<dyn klapz_core::stream::StreamEngine>,
         session_locks: locks,
         scans: Arc::new(scans),
+        matching: Some(matching),
     });
     tokio::spawn(publish_paired_servers(
         Arc::clone(&users),
@@ -212,14 +279,24 @@ async fn start() -> Result<(), Box<dyn std::error::Error>> {
     // merged in. GraphQL has no such paths and merges cleanly either way.
     let mut plex_state = PlexState::new(identity(), schema.clone());
     plex_state.transcoder = Arc::clone(&transcoder);
+    plex_state.artwork = Some(Arc::clone(&artwork_store));
+    let reader = artwork::StoreReader {
+        store: artwork_store,
+        transcoder: Arc::clone(&transcoder),
+    };
+    let jellyfin_artwork = klapz_api_jellyfin::images::JellyfinArtwork {
+        reader: Arc::new(reader.clone()),
+        repository: images_of_items,
+    };
     let sweep = expire_playback(sessions.clone(), play_queues, Arc::clone(&transcoder));
     tokio::spawn(sweep);
     let app = klapz_api_plex::router(plex_state)
-        .merge(jellyfin_surface(&schema, &sign_in))
+        .merge(jellyfin_surface(&schema, &sign_in, jellyfin_artwork))
         .merge(graphql::router(schema, Arc::clone(&sign_in)))
         .merge(admin::router())
         .merge(streams::router(sessions.clone()))
-        .merge(callbacks::router(Arc::clone(&transcoder)));
+        .merge(callbacks::router(Arc::clone(&transcoder)))
+        .merge(artwork::router(reader));
     let (app, web_served) = with_web_client(app);
     // One token middleware for every surface, so neither can be left unauthenticated by
     // omission.
@@ -408,6 +485,7 @@ async fn clear_stale_sessions(
 async fn run_command(
     connection: &klapz_db::DatabaseConnection,
     arguments: &[String],
+    images: &std::path::Path,
 ) -> Option<Result<(), Box<dyn std::error::Error>>> {
     let (command, rest) = arguments.split_first()?;
     Some(match command.as_str() {
@@ -416,7 +494,8 @@ async fn run_command(
             None => Err("usage: klapz-server import <plex.db>".into()),
         },
         "library" => commands::library(connection, rest).await,
-        "scan" => commands::scan(connection, rest).await,
+        "scan" => commands::scan(connection, rest, images).await,
+        "match" => commands::match_command(connection, rest, images).await,
         _ => return None,
     })
 }
@@ -562,10 +641,12 @@ fn with_web_client(app: axum::Router) -> (axum::Router, bool) {
 fn jellyfin_surface(
     schema: &klapz_api::ApiSchema,
     sign_in: &Arc<klapz_api::Sessions>,
+    artwork: klapz_api_jellyfin::images::JellyfinArtwork,
 ) -> axum::Router {
     let mut state =
         klapz_api_jellyfin::JellyfinState::new(schema.clone(), Arc::clone(sign_in), &identity());
     state.web_dir = jellyfin_web_dir();
+    state.artwork = Some(artwork);
     klapz_api_jellyfin::router(state)
 }
 

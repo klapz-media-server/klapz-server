@@ -5,6 +5,7 @@
 //! keeps what is only Plex's: parameter names, status codes, and a PNG labelled `image/jpeg`.
 
 pub mod adapt;
+pub mod artwork;
 mod backdrop;
 mod convert;
 pub mod media;
@@ -198,6 +199,27 @@ impl Transcoder {
             .await?;
         let bytes = source::fetch(client, url).await?;
 
+        tokio::task::spawn_blocking(move || convert::convert(&bytes, &request))
+            .await
+            .map_err(TranscodeError::Worker)?
+    }
+
+    /// Converts an image already in hand, as [`Transcoder::convert_image`] converts a fetched
+    /// one: the server's own artwork.
+    ///
+    /// # Errors
+    ///
+    /// As [`Transcoder::convert_image`], the source aside.
+    pub async fn convert_image_bytes(
+        &self,
+        bytes: Vec<u8>,
+        request: ImageRequest,
+    ) -> Result<ConvertedImage, TranscodeError> {
+        let _slot = self
+            .slots
+            .acquire()
+            .await
+            .map_err(TranscodeError::ShuttingDown)?;
         tokio::task::spawn_blocking(move || convert::convert(&bytes, &request))
             .await
             .map_err(TranscodeError::Worker)?

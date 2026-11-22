@@ -43,6 +43,8 @@ mod m0038_chapter;
 mod m0039_extension_device;
 mod m0040_stated_probe;
 mod m0041_user_favorite;
+mod m0042_source_metadata;
+mod m0043_artwork;
 
 use sea_orm_migration::prelude::*;
 
@@ -93,6 +95,8 @@ impl MigratorTrait for Migrator {
             Box::new(m0039_extension_device::Migration),
             Box::new(m0040_stated_probe::Migration),
             Box::new(m0041_user_favorite::Migration),
+            Box::new(m0042_source_metadata::Migration),
+            Box::new(m0043_artwork::Migration),
         ]
     }
 }

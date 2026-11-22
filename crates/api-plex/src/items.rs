@@ -16,9 +16,9 @@ use serde::Serialize;
 use crate::language::Language;
 
 use crate::gql_items::{
-    GqlChapter, GqlCollectionTag, GqlConnection, GqlCornerColors, GqlEdge, GqlExternalId, GqlItem,
-    GqlLibraryRef, GqlMarker, GqlPart, GqlProfiled, GqlRating, GqlStream, GqlTag, GqlVersion,
-    GqlWatchState,
+    GqlChapter, GqlCollectionTag, GqlConnection, GqlCornerColors, GqlEdge, GqlExternalId, GqlImage,
+    GqlItem, GqlLibraryRef, GqlMarker, GqlParentRef, GqlPart, GqlProfiled, GqlRating, GqlStream,
+    GqlTag, GqlVersion, GqlWatchState,
 };
 use crate::stream_labels;
 
@@ -199,6 +199,21 @@ pub struct MetadataEntry {
     pub parent_year: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tagline: Option<String>,
+    /// `/library/metadata/{id}/thumb/{changed at}`: the poster, an episode's still.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thumb: Option<String>,
+    /// `/library/metadata/{id}/art/{changed at}`: the background.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub art: Option<String>,
+    /// A season's series' poster; an episode's season's, else its series'.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_thumb: Option<String>,
+    /// An episode's series' poster.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grandparent_thumb: Option<String>,
+    /// An episode's series' background.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grandparent_art: Option<String>,
     /// Runtime in milliseconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<i64>,
@@ -225,6 +240,9 @@ pub struct MetadataEntry {
     pub primary_extra_key: Option<String>,
     #[serde(rename = "Media", skip_serializing_if = "Vec::is_empty")]
     pub media: Vec<MediaEntry>,
+    /// The item's images by role, at the addresses of `thumb`, `art` and the logo's.
+    #[serde(rename = "Image", skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ImageEntry>,
     /// Right after the media, where the reference puts it after its `Image` elements. An
     /// object in JSON, an element in XML.
     #[serde(rename = "UltraBlurColors", skip_serializing_if = "Option::is_none")]
@@ -262,6 +280,102 @@ pub struct MetadataEntry {
     /// On a lookup with `includeExtras=1` only, last of all, and then even when empty.
     #[serde(rename = "Extras", skip_serializing_if = "Option::is_none")]
     pub extras: Option<crate::extras::ExtrasEntry>,
+}
+
+/// One of an item's images, as the reference lists them.
+#[derive(Debug, Clone, Serialize)]
+pub struct ImageEntry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
+    #[serde(rename = "type")]
+    pub role: &'static str,
+    pub url: String,
+}
+
+/// What an item publishes of its own images and of its season's and series', each at the
+/// address of the item that shows it, which the element route serves.
+#[derive(Debug, Default)]
+struct PublishedArtwork {
+    thumb: Option<String>,
+    art: Option<String>,
+    parent_thumb: Option<String>,
+    grandparent_thumb: Option<String>,
+    grandparent_art: Option<String>,
+    images: Vec<ImageEntry>,
+}
+
+const POSTER: &[&str] = &["POSTER"];
+const BACKGROUND: &[&str] = &["BACKGROUND"];
+const CLEAR_LOGO: &[&str] = &["CLEAR_LOGO"];
+
+/// `/library/metadata/{id}/{element}/{changed at}` for the first of `kinds` among `images`.
+fn element_path(images: &[GqlImage], id: i64, element: &str, kinds: &[&str]) -> Option<String> {
+    let image = kinds
+        .iter()
+        .find_map(|kind| images.iter().find(|image| image.kind == *kind))?;
+    Some(format!(
+        "/library/metadata/{id}/{element}/{}",
+        image.changed_at
+    ))
+}
+
+impl PublishedArtwork {
+    /// An episode's `thumb` is its still, else its poster; a season without a poster shows its
+    /// series', and a season or an episode without art or a logo shows its series', as the
+    /// reference does.
+    fn of(item: &GqlItem, rating_key: i64) -> Self {
+        let own = |element, kinds| element_path(&item.images, rating_key, element, kinds);
+        let of = |parent: Option<&GqlParentRef>, element, kinds| {
+            parent.and_then(|parent| {
+                element_path(&parent.images, parent.database_id(), element, kinds)
+            })
+        };
+        let episode = item.typename == "Episode";
+        let (season, show) = match item.typename.as_str() {
+            "Season" => (None, item.show.as_ref()),
+            "Episode" => (item.season.as_ref(), item.show.as_ref()),
+            _ => (None, None),
+        };
+        let show_poster = of(show, "thumb", POSTER);
+        let thumb = if episode {
+            own("thumb", &["THUMB", "POSTER"])
+        } else {
+            own("thumb", POSTER).or_else(|| show_poster.clone())
+        };
+        let art = own("art", BACKGROUND).or_else(|| of(show, "art", BACKGROUND));
+        let clear_logo = own("clearLogo", CLEAR_LOGO).or_else(|| of(show, "clearLogo", CLEAR_LOGO));
+        let images = [
+            ("coverPoster", thumb.clone()),
+            ("background", art.clone()),
+            ("clearLogo", clear_logo),
+        ]
+        .into_iter()
+        .filter_map(|(role, url)| {
+            Some(ImageEntry {
+                alt: item.title.clone(),
+                role,
+                url: url?,
+            })
+        })
+        .collect();
+        let (parent_thumb, grandparent_thumb, grandparent_art) = match item.typename.as_str() {
+            "Season" => (show_poster, None, None),
+            "Episode" => (
+                of(season, "thumb", POSTER).or_else(|| show_poster.clone()),
+                show_poster,
+                of(show, "art", BACKGROUND),
+            ),
+            _ => (None, None, None),
+        };
+        Self {
+            thumb,
+            art,
+            parent_thumb,
+            grandparent_thumb,
+            grandparent_art,
+            images,
+        }
+    }
 }
 
 /// A chapter, as measured on the reference:
@@ -996,11 +1110,16 @@ impl MetadataEntry {
     /// `with_library` distinguishes the two endpoints: a listing states the library once on
     /// the container, a lookup repeats it on each item. Matching that is not cosmetic — a
     /// client reading `librarySectionID` off the item would find nothing in a listing.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one attribute after another of the wire format: splitting it would only move the list"
+    )]
     pub fn from_graphql(item: &GqlItem, with_library: bool, language: Language) -> Option<Self> {
         let (view_count, view_offset, last_viewed_at) = watched(item.watch_state);
         let rating_key = item.database_id()?;
         let kind = item.plex_type();
         let library = item.library.as_ref().filter(|_| with_library);
+        let artwork = PublishedArtwork::of(item, rating_key);
 
         Some(Self {
             rating_key: rating_key.to_string(),
@@ -1067,6 +1186,12 @@ impl MetadataEntry {
                 .then(|| item.parent().and_then(|parent| parent.year))
                 .flatten(),
             tagline: item.tagline.clone(),
+            thumb: artwork.thumb,
+            art: artwork.art,
+            parent_thumb: artwork.parent_thumb,
+            grandparent_thumb: artwork.grandparent_thumb,
+            grandparent_art: artwork.grandparent_art,
+            images: artwork.images,
             duration: runtime(item),
             originally_available_at: item.released_on.clone(),
             leaf_count: item.leaf_count(),

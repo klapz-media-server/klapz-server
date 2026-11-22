@@ -586,6 +586,7 @@ impl Harness {
             streams: Arc::clone(&streams) as Arc<dyn klapz_core::stream::StreamEngine>,
             session_locks: Arc::default(),
             scans: Arc::new(klapz_core::testing::RecordedScans::default()),
+            matching: None,
         });
         let sessions = Arc::new(klapz_api::Sessions::new(
             Arc::new(klapz_core::account::SessionKey::generate()),

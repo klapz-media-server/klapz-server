@@ -19,17 +19,17 @@ Implementation tracker for the 260 operations in `docs/openapi.json` (Plex Media
 | Status | Operations | Share |
 | --- | --: | --: |
 | `todo` | 3 | 1.2 % |
-| `stub` | 57 | 21.9 % |
+| `stub` | 56 | 21.5 % |
 | `partial` | 36 | 13.8 % |
-| `done` | 129 | 49.6 % |
-| `deferred` | 35 | 13.5 % |
+| `done` | 134 | 51.5 % |
+| `deferred` | 31 | 11.9 % |
 | **Total** | **260** | |
 
 ## By domain
 
 | Domain | Operations | `done` | `partial` | `stub` | `todo` | `deferred` |
 | --- | --: | --: | --: | --: | --: | --: |
-| [Library](#library) | 85 | 23 | 18 | 20 | 2 | 22 |
+| [Library](#library) | 85 | 28 | 18 | 19 | 2 | 18 |
 | [Hubs](#hubs) | 15 | 5 | 3 | 7 | 0 | 0 |
 | [Content](#content) | 13 | 5 | 3 | 5 | 0 | 0 |
 | [Devices](#devices) | 13 | 13 | 0 | 0 | 0 | 0 |
@@ -111,25 +111,25 @@ Served, but absent from `docs/openapi.json` and therefore from the counts above.
 | `partial` | `POST` | `/library/metadata/{ids}/marker` | user | Create a marker | The caller's bookmark, through `addMarker`, with the rules measured on the reference's test libraries: `type=bookmark` by name, a required `startTimeOffset`, an optional end after it, `attributes[title]` and `[color]` kept; an identical span answers the bookmark already there. Gaps: any other `type` is a `400` (the work's intro and credits are written on the official API by the library's editors; the reference was not measured there), and a series or a season is a `400` where the reference keeps a bookmark. See spec-gaps.md. |
 | `done` | `DELETE` | `/library/metadata/{ids}/marker/{marker}` | user | Delete a marker | The caller's bookmark, through `deleteMarker`: an empty `200`, `400` for another item's marker or one that is not a bookmark, `404` for one that does not exist, as measured. |
 | `done` | `PUT` | `/library/metadata/{ids}/marker/{marker}` | user | Edit a marker | The caller's bookmark, through `updateMarker`: `type` ignored, the end and the title kept when not given, `400` for another item's marker or a span ending before it starts, `404` for one that does not exist, as measured. |
-| `deferred` | `PUT` | `/library/metadata/{ids}/match` | admin | Match a metadata item | scanner/analysis, separate binary |
-| `deferred` | `PUT` | `/library/metadata/{ids}/matches` | admin | Get metadata matches for an item | scanner/analysis, separate binary |
+| `done` | `PUT` | `/library/metadata/{ids}/match` | admin | Match a metadata item | `matchItem`, in the background: `guid` names this server's record as `{agent}://{id}` (`tmdb://603`), as `/matches` lists it; without it the best result is taken. Another provider's guid is a `400`. |
+| `done` | `PUT` | `/library/metadata/{ids}/matches` | admin | Get metadata matches for an item | `metadataMatches`: `SearchResult` elements with `guid` `{agent}://{id}`, `name`, `year`, `score`, `type`; `title` and `year` replace the item's own. |
 | `stub` | `DELETE` | `/library/metadata/{ids}/media/{mediaItem}` | admin | Delete a media item |  |
 | `deferred` | `PUT` | `/library/metadata/{ids}/merge` | admin | Merge a metadata item | scanner/analysis, separate binary |
 | `done` | `GET` | `/library/metadata/{ids}/nearest` | user | Get nearest tracks to metadata item | Nothing is a track here: `403` once a number names something, `404` when none does, `400` for an unreadable `limit`, `maxDistance` or exclusion, as measured on the reference's film and series libraries (`docs/spec-gaps.md`). |
 | `partial` | `PUT` | `/library/metadata/{ids}/prefs` | admin | Set metadata preferences | A collection's `collectionMode` (`-1`–`2`) and `collectionSort` (`0`–`2`), any other name or value `400`; an item's preferences `501`. |
-| `deferred` | `PUT` | `/library/metadata/{ids}/refresh` | admin | Refresh a metadata item | scanner/analysis, separate binary |
+| `done` | `PUT` | `/library/metadata/{ids}/refresh` | admin | Refresh a metadata item | `refreshItemMetadata`, in the background: the record the item shows fetched again, metadata and images. |
 | `partial` | `GET` | `/library/metadata/{ids}/related` | user | Get related items | A film: similar films (approximate ranking), its director and two first-billed actors, the last two matching the reference on 59 of 60 films. A series: similar series only. Not served: collection and `external.*` shelves, a series' network and cast shelves. |
 | `partial` | `GET` | `/library/metadata/{ids}/similar` | user | Get similar items | Same container as the reference; the ranking is an approximation. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/split` | admin | Split a metadata item | scanner/analysis, separate binary |
 | `partial` | `GET` | `/library/metadata/{ids}/subtitles` | admin | Add subtitles | The search of online subtitles. No provider here: the empty container the reference answers when OpenSubtitles finds nothing, after its checks — `language` required, two letters and an optional region (`400`; the reference fails a three-letter code `500`), one film or episode (`404`), `mediaItemID` one of its versions (`404`). Library admins and owners. The `PUT` that downloads a result has no route. See spec-gaps.md. |
 | `partial` | `GET` | `/library/metadata/{ids}/tree` | user | Get metadata items as a tree | Films, series, seasons, episodes and collections: byte for byte on the test libraries, 196 of 225 real items identical, the rest snapshot drift. Times unshifted where the reference subtracts its UTC offset. Not served: a trailer's tree (`404`, no trailer is looked up by number) and the keys an OpenSubtitles download adds to its track (`docs/spec-gaps.md`). |
-| `deferred` | `PUT` | `/library/metadata/{ids}/unmatch` | admin | Unmatch a metadata item | scanner/analysis, separate binary |
+| `done` | `PUT` | `/library/metadata/{ids}/unmatch` | admin | Unmatch a metadata item | `unmatchItem`: links, identifiers and images forgotten, `local://{id}` back, texts kept. |
 | `done` | `GET` | `/library/metadata/{ids}/users/top` | admin | Get metadata top users | The reference answers `404` on every video item; ours answers the spec's shape for the caller's own viewings of the work as `accountID` 1 (`viewers` on the official API). A deliberate divergence. See spec-gaps.md. |
 | `deferred` | `PUT` | `/library/metadata/{ids}/voiceActivity` | admin | Detect voice activity | scanner/analysis, separate binary |
 | `stub` | `DELETE` | `/library/metadata/{ids}/{element}` | user | Delete an item's artwork, theme, etc |  |
 | `stub` | `POST` | `/library/metadata/{ids}/{element}` | user | Set an item's artwork, theme, etc |  |
 | `stub` | `PUT` | `/library/metadata/{ids}/{element}` | user | Set an item's artwork, theme, etc |  |
-| `stub` | `GET` | `/library/metadata/{ids}/{element}/{timestamp}` | user | Get an item's artwork, theme, etc |  |
+| `done` | `GET` | `/library/metadata/{ids}/{element}/{timestamp}` | user | Get an item's artwork, theme, etc | `Item.images`: `thumb` (an episode's still, else the poster), `art`, `clearLogo`, `banner`, `poster`, read from the artwork store; any timestamp serves the current image. Also a source of `/photo/:/transcode`. |
 | `deferred` | `PUT` | `/library/optimize` | admin | Optimize the Database | scanner/analysis, separate binary |
 | `done` | `PUT` | `/library/parts/{partId}` | user | Set stream selection | The caller's audio or subtitle per file, `subtitleStreamID=0` for none; `400` for a track not of the part or kind. Burned in on `subtitles=burn`. See spec-gaps.md. |
 | `deferred` | `GET` | `/library/parts/{partId}/indexes/{index}` | user | Get BIF index for a part | scanner/analysis, separate binary |

@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 klapz-core.workspace = true
+klapz-agents.workspace = true
 klapz-api.workspace = true
 klapz-api-plex.workspace = true
 klapz-api-jellyfin.workspace = true

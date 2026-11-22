@@ -33,6 +33,7 @@ fn main() {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
     // `@specifiedBy` is left out by default, and `DateTime` names the specification it follows.
     let options = async_graphql::SDLExportOptions::new().include_specified_by();

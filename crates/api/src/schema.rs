@@ -47,6 +47,9 @@ pub struct ApiContext {
     /// Shared with whatever else ends sessions outside a request: the sweep, the stream routes.
     pub session_locks: Arc<klapz_core::lifecycle::SessionLocks>,
     pub scans: Arc<dyn klapz_core::scan::ScanControl>,
+    /// Source metadata: the images items show, and matching on demand. `None` on a server
+    /// without it, whose items show no image.
+    pub matching: Option<klapz_core::source_metadata::Matching>,
 }
 
 impl ApiContext {
@@ -137,6 +140,19 @@ pub struct Query;
 impl Query {
     /// Refetches any object by its global identifier.
     ///
+    /// What a film's or a series' provider finds for it, best first with its score: searched
+    /// by the item's own name and year, or by those given. For a library's admins and the
+    /// server's owners; empty for anyone else, and for an item that is no film or series.
+    async fn metadata_matches(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The film or series.")] item_id: ID,
+        #[graphql(desc = "A name to search instead of the item's.")] title: Option<String>,
+        #[graphql(desc = "A year to search instead of the item's.")] year: Option<i32>,
+    ) -> Result<Vec<crate::source_metadata::MetadataMatch>> {
+        crate::source_metadata::metadata_matches(context, item_id, title, year).await
+    }
+
     /// The single entry point Relay clients use to refresh cached objects. Returns null when
     /// nothing carries that identifier; a malformed identifier is an error rather than null,
     /// because it signals a client bug rather than a deleted object.
@@ -874,7 +890,17 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
     let playlists = Arc::clone(&context.playlists);
     let collections = Arc::clone(&context.collections);
 
-    Schema::build(Query, crate::playback::Mutation, EmptySubscription)
+    let images = context.matching.as_ref().map(|matching| {
+        loader(crate::artwork::ImagesLoader::new(Arc::clone(
+            &matching.repository,
+        )))
+    });
+    let builder = Schema::build(Query, crate::playback::Mutation, EmptySubscription);
+    let builder = match images {
+        Some(images) => builder.data(images),
+        None => builder,
+    };
+    builder
         .data(context)
         .data(loader(RootsLoader::new(Arc::clone(&library))))
         .data(loader(LibraryLoader::new(library)))

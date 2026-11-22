@@ -179,6 +179,7 @@ fn app() -> axum::Router {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     });
     router(PlexState::new(identity, schema)).layer(axum::Extension(klapz_core::testing::owner()))
 }

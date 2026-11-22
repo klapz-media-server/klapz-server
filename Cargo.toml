@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/db", "crates/api", "crates/transcoder", "crates/api-plex", "crates/api-jellyfin", "crates/server", "crates/scanner"]
+members = ["crates/core", "crates/db", "crates/api", "crates/transcoder", "crates/api-plex", "crates/api-jellyfin", "crates/server", "crates/scanner", "crates/agents"]
 resolver = "2"
 
 [workspace.package]
@@ -14,6 +14,7 @@ klapz-api = { path = "crates/api" }
 klapz-api-plex = { path = "crates/api-plex" }
 klapz-api-jellyfin = { path = "crates/api-jellyfin" }
 klapz-transcoder = { path = "crates/transcoder" }
+klapz-agents = { path = "crates/agents" }
 klapz-scanner = { path = "crates/scanner", default-features = false }
 
 async-graphql = { version = "7", features = ["dataloader"] }

@@ -585,6 +585,16 @@ Places where we knowingly answer differently, each decided rather than overlooke
   the declared ones (33 of 38 samples), its deep analysis overwritten by a later normal one.
   The headers' rates stand only when the deep analysis cannot finish
   (`docs/scanner/analysis.md`, §2).
+- **Matching is ours, and so are its addresses.** `/matches` lists results whose `guid` is
+  `{agent}://{id}` at this server's provider (`tmdb://603`, `tvdb://82066`), which `/match`
+  takes back; the reference lists its own provider's `plex://` guids, which name nothing here.
+  `/match` and `/refresh` answer once the work is started, the way the reference's do; a series
+  is fetched in every language, which can outlast a request. `/unmatch` gives back
+  `local://{id}` and drops links, identifiers and images but keeps the texts, where the reference
+  rewrites the title from the file's name.
+- **An item's images follow its library's language, not the client's.** The reference picks a
+  localized poster or logo by `X-Plex-Language`; here one item shows one image per kind, chosen
+  when it is matched, the repo owner's decision.
 - **A category's tile shows no item's art.** The reference draws each genre's tile from the
   background art of its best-rated item not already shown; this server keeps no artwork, so
   every tile names the image the reference uses for a genre without art,
@@ -681,6 +691,10 @@ startup.
 | `KLAPZ_FFPROBE` | `KLAPZ_TRANSCODER -probe` | The ffprobe the scanner reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. An ffmpeg that refuses `-probe` is named as such at startup and in the scan's failure, never taken for a corrupt file. |
 | `KLAPZ_TRAY` | *(on, Windows only)* | `0` or `off` leaves the notification-area icon out. |
 | `KLAPZ_SCANNER` | `klapz-scanner` beside the server's executable, else on `PATH` | The scanner binary a library scan runs on each new or changed file. |
+| `KLAPZ_TMDB_TOKEN` | the project's, built in | TMDB's v4 read access token, sent as a bearer header. Built into `klapz-agents::credentials`, the repo owner's decision (`security.md`); a blank value keeps the built-in one. |
+| `KLAPZ_TVDB_API_KEY` | the project's, built in | TVDB's v4 key, built in likewise. |
+| `KLAPZ_IMAGES_DIR` | `images` beside an SQLite database's file, else beside the executable | Where provider images are kept, originals, `provider/ab/{sha256(url)}.{ext}`; served from there when the provider no longer is. |
+| `KLAPZ_TVDB_PIN` | *(none)* | A TVDB subscriber's PIN, which a user-supported key requires. Never built in. Startup logs which providers have a key and from where, never the key. |
 | `KLAPZ_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which Plex's own binary needs. The rebuilt one has them built in and needs none. |
 
 `.github/workflows/package.yml` builds the server and the scanner for Linux (x86_64, arm64),
@@ -1033,6 +1047,21 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `chapterSource`, `Chapter` as a node) and on the Plex surface (`chapterSource`, and `Chapter`
   on a lookup with `includeChapters=1`, as measured; `docs/spec-gaps.md`). Not yet:
   `requiredBandwidths`, credits detection, chapter images stored.
+- ✅ **source metadata** (`core::source_metadata`, `klapz-agents`, migrations `m0042`, `m0043`):
+  films matched on TMDB and series on TVDB, each work kept once as a source record in every
+  language, its items showing it in their library's language under their field locks; titles,
+  summaries, dates, age ratings, genres, countries, cast and crew on the people they name,
+  ratings, identifiers, and the images of each kind kept on disk with their `BlurHash` and
+  backdrop colors. Matched after every scan and by `klapz-server match`; on the official API
+  `Item.images`, `metadataMatches`, `matchItem`, `refreshItemMetadata`, `unmatchItem`, and
+  `/artwork/…`; on the Plex surface `thumb`, `art`, `Image`, the element route,
+  `/photo/:/transcode` over them, `/matches`, `/match`, `/unmatch` and `/refresh`. Copies of a
+  work keep one identity: an imported item's `plex://` guid, else `klapz://{kind}/{agent}-{id}`,
+  viewers' state following an item whose identity changes. On the Jellyfin surface `ImageTags`,
+  `BackdropImageTags`, `ImageBlurHashes` and the series' images through `Parent…` fields, and
+  `/Items/{id}/Images/{type}` scaled by its size parameters, served without a token only for a
+  right `tag` (`security.md`). On the Plex surface `parentThumb`, `grandparentThumb` and
+  `grandparentArt` too. Not yet: season names and posters, TVDB's age ratings, collections, extras from providers.
 - 🚧 **library scans in the server**: libraries walked through `LibraryFiles` (local disks for
   now), files grouped into films, series, seasons and episodes by the reference's measured
   naming rules (`CleanName`, stacking, versions, the 18 episode patterns, dates, sidecars,
@@ -1050,7 +1079,7 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `MediaFile.readableAsIs`, direct play and HLS started through `startStream`, progress
   reports, played marks, favorites (`setFavorite`, per user and work, `user_favorite`,
   migration `m0041`). Jellyfin Web signs in, browses, searches and plays directly and through a
-  conversion. Not yet: artwork, subtitles delivered to the client, remuxing,
+  conversion, with item images and their `BlurHash`. Not yet: subtitles delivered to the client, remuxing,
   people and genre pages, search hints, the other clients tried (`docs/jellyfin/`).
   On the 35 test files, every field a file determines is the reference's — tracks, media sources,
   chapters, containers, durations, rates, filters — from what ffprobe states as printed, which the

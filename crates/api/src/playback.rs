@@ -971,6 +971,39 @@ impl Mutation {
         crate::access::set_active(context, input, false).await
     }
 
+    /// Matches a film or a series to a record of its library's provider — the one named, else
+    /// the one it shows already, else the best search result — and fetches its metadata and
+    /// images in the background. For a library's admins and the server's owners.
+    async fn match_item(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The item and the record.")] input: crate::source_metadata::MatchItemInput,
+    ) -> Result<crate::source_metadata::ItemMetadataPayload> {
+        crate::source_metadata::match_item(context, input).await
+    }
+
+    /// Fetches a film's or a series' metadata and images again from the record it shows, in
+    /// the background; one never matched is searched for. For a library's admins and the
+    /// server's owners.
+    async fn refresh_item_metadata(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The item.")] input: crate::source_metadata::ItemMetadataInput,
+    ) -> Result<crate::source_metadata::ItemMetadataPayload> {
+        crate::source_metadata::refresh_item_metadata(context, input).await
+    }
+
+    /// Forgets the record a film or a series and its seasons and episodes show: they take back
+    /// the identity a scan gives, and keep their texts until matched again. For a library's
+    /// admins and the server's owners.
+    async fn unmatch_item(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The item.")] input: crate::source_metadata::ItemMetadataInput,
+    ) -> Result<crate::source_metadata::ItemMetadataPayload> {
+        crate::source_metadata::unmatch_item(context, input).await
+    }
+
     /// Changes a film's metadata and locks. For a library's admins and the server's owners.
     async fn update_movie(
         &self,

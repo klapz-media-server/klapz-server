@@ -146,6 +146,9 @@ pub fn is_public(path: &str) -> bool {
     ) || path.is_empty()
         || path == "/web"
         || path.starts_with("/web/")
+        // Images, as on the reference; the handler decides what a request without a token may
+        // have (`images`).
+        || crate::images::is_image_path(path)
 }
 
 /// Whether the `Authorization` header is Jellyfin's own, and so not a session's bearer.

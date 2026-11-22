@@ -1723,6 +1723,11 @@ type Episode implements Item & Node {
 	"""
 	cornerColors: CornerColors
 	"""
+	The images it shows, one per kind, kept on this server. Empty until its metadata is
+	matched.
+	"""
+	images: [ItemImage!]!
+	"""
 	Where its intro, credits and commercials are, and the places the caller bookmarked in
 	it, in the order they were added.
 	"""
@@ -2595,6 +2600,32 @@ type HistoryUserError {
 }
 
 """
+What an image is to the item it belongs to.
+"""
+enum ImageKind {
+	"""
+	The cover, portrait, in the library's language where the provider has one.
+	"""
+	POSTER
+	"""
+	The art drawn behind the item, without text where the provider has such.
+	"""
+	BACKGROUND
+	"""
+	The title drawn on a transparent ground.
+	"""
+	CLEAR_LOGO
+	"""
+	A wide strip, for series.
+	"""
+	BANNER
+	"""
+	An episode's still.
+	"""
+	THUMB
+}
+
+"""
 A signed 64-bit integer, written as a decimal string: GraphQL's `Int` stops at 32 bits, and
 a JSON number loses precision past 2^53 in most clients. Read from such a string or from an
 integer literal.
@@ -2665,6 +2696,10 @@ interface Item {
 	The four colors of the blurred backdrop a client draws behind it, drawn from its background art. Null when its art was never analysed.
 	"""
 	cornerColors: CornerColors
+	"""
+	The images it shows, one per kind, kept on this server. Empty until its metadata is matched.
+	"""
+	images: [ItemImage!]!
 }
 
 type ItemConnection {
@@ -2979,6 +3014,74 @@ input ItemFilterInput {
 	Keep only the caller's favorites (`true`), or what it did not make one (`false`).
 	"""
 	favorite: Boolean
+}
+
+"""
+An image an item shows, kept on this server: it stays served when its provider is not.
+"""
+type ItemImage {
+	"""
+	What it is to the item: its poster, its background…
+	"""
+	kind: ImageKind!
+	"""
+	Where this server serves it, below `/artwork/`. A new image has a new address, so a
+	client may cache one for good.
+	"""
+	url: String!
+	"""
+	Its media type: `image/jpeg`, `image/png` or `image/webp`.
+	"""
+	contentType: String!
+	"""
+	In pixels, as the provider has it: images are kept at their original size.
+	"""
+	width: Int!
+	"""
+	In pixels.
+	"""
+	height: Int!
+	"""
+	A `BlurHash` of it, to draw while it loads: three by four components for a portrait
+	image, four by three for a landscape one.
+	"""
+	blurHash: String!
+	"""
+	When the item took it.
+	"""
+	changedAt: DateTime!
+}
+
+"""
+Which film or series.
+"""
+input ItemMetadataInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The film or series, as returned in its `id`.
+	"""
+	itemId: ID!
+}
+
+"""
+What a matching mutation did.
+"""
+type ItemMetadataPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The item as it is now: before the work a mutation started in the background is done.
+	"""
+	item: Item
+	"""
+	Why nothing was done. Empty when it was.
+	"""
+	userErrors: [MetadataUserError!]!
 }
 
 """
@@ -4063,6 +4166,25 @@ type MarkerUserError {
 	code: MarkerErrorCode!
 }
 
+"""
+Which film or series, and which provider record to match it to.
+"""
+input MatchItemInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The film or series, as returned in its `id`.
+	"""
+	itemId: ID!
+	"""
+	The record at its library's provider, as `metadataMatches` names it. Without it, the
+	best search result is taken if it scores high enough.
+	"""
+	providerId: String
+}
+
 type MediaFile implements Node {
 	"""
 	Globally unique, opaque identifier. Playback and download endpoints take it too.
@@ -4384,6 +4506,61 @@ type MediaVersion implements Node {
 	primaryAudio: MediaStream
 }
 
+enum MetadataErrorCode {
+	"""
+	No film or series the caller may edit has this id.
+	"""
+	ITEM_NOT_FOUND
+	"""
+	No provider has a key for this kind of library.
+	"""
+	NO_PROVIDER
+}
+
+"""
+A result a provider has for an item, as a search finds it.
+"""
+type MetadataMatch {
+	"""
+	The provider: `tmdb` for films, `tvdb` for series.
+	"""
+	agent: String!
+	"""
+	The result's id at the provider, which `matchItem` takes.
+	"""
+	providerId: String!
+	"""
+	Its title, in the library's language where the provider has it.
+	"""
+	name: String!
+	"""
+	Its release or first air year, when the provider has one.
+	"""
+	year: Int
+	"""
+	How well it answers the search, out of about 100. From 85, matching takes it unasked.
+	"""
+	score: Int!
+}
+
+"""
+A problem with what was asked, as opposed to a failure of the server.
+"""
+type MetadataUserError {
+	"""
+	The input field at fault, as a path from the input's root.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program.
+	"""
+	code: MetadataErrorCode!
+}
+
 """
 An item to move within a collection's custom order.
 """
@@ -4575,6 +4752,11 @@ type Movie implements Item & Node {
 	background art. Null when its art was never analysed.
 	"""
 	cornerColors: CornerColors
+	"""
+	The images it shows, one per kind, kept on this server. Empty until its metadata is
+	matched.
+	"""
+	images: [ItemImage!]!
 	"""
 	Where its intro, credits and commercials are, and the places the caller bookmarked in
 	it, in the order they were added.
@@ -5324,6 +5506,39 @@ type Mutation {
 		"""
 		input: UserInput!
 	): UserPayload!
+	"""
+	Matches a film or a series to a record of its library's provider — the one named, else
+	the one it shows already, else the best search result — and fetches its metadata and
+	images in the background. For a library's admins and the server's owners.
+	"""
+	matchItem(
+		"""
+		The item and the record.
+		"""
+		input: MatchItemInput!
+	): ItemMetadataPayload!
+	"""
+	Fetches a film's or a series' metadata and images again from the record it shows, in
+	the background; one never matched is searched for. For a library's admins and the
+	server's owners.
+	"""
+	refreshItemMetadata(
+		"""
+		The item.
+		"""
+		input: ItemMetadataInput!
+	): ItemMetadataPayload!
+	"""
+	Forgets the record a film or a series and its seasons and episodes show: they take back
+	the identity a scan gives, and keep their texts until matched again. For a library's
+	admins and the server's owners.
+	"""
+	unmatchItem(
+		"""
+		The item.
+		"""
+		input: ItemMetadataInput!
+	): ItemMetadataPayload!
 	"""
 	Changes a film's metadata and locks. For a library's admins and the server's owners.
 	"""
@@ -6445,6 +6660,25 @@ type Query {
 	"""
 	Refetches any object by its global identifier.
 	
+	What a film's or a series' provider finds for it, best first with its score: searched
+	by the item's own name and year, or by those given. For a library's admins and the
+	server's owners; empty for anyone else, and for an item that is no film or series.
+	"""
+	metadataMatches(
+		"""
+		The film or series.
+		"""
+		itemId: ID!,
+		"""
+		A name to search instead of the item's.
+		"""
+		title: String,
+		"""
+		A year to search instead of the item's.
+		"""
+		year: Int
+	): [MetadataMatch!]!
+	"""
 	The single entry point Relay clients use to refresh cached objects. Returns null when
 	nothing carries that identifier; a malformed identifier is an error rather than null,
 	because it signals a client bug rather than a deleted object.
@@ -7515,6 +7749,11 @@ type Season implements Item & Node {
 	"""
 	cornerColors: CornerColors
 	"""
+	The images it shows, one per kind, kept on this server. Empty until its metadata is
+	matched.
+	"""
+	images: [ItemImage!]!
+	"""
 	When the item's metadata last changed.
 	"""
 	updatedAt: DateTime!
@@ -8048,6 +8287,11 @@ type Show implements Item & Node {
 	background art. Null when its art was never analysed.
 	"""
 	cornerColors: CornerColors
+	"""
+	The images it shows, one per kind, kept on this server. Empty until its metadata is
+	matched.
+	"""
+	images: [ItemImage!]!
 	"""
 	When the item's metadata last changed.
 	"""

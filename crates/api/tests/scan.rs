@@ -50,6 +50,7 @@ fn schema(scans: Arc<RecordedScans>) -> ApiSchema {
         streams: Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: Arc::default(),
         scans,
+        matching: None,
     })
 }
 

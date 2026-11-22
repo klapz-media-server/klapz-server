@@ -7,6 +7,7 @@
 //! it binds, onto `klapz-transcoder`: bytes in and out, which is not a data source.
 
 pub mod activities;
+mod artwork;
 pub mod auth;
 mod autocomplete;
 pub mod capabilities;
@@ -28,6 +29,7 @@ mod hub_search;
 pub mod hubs;
 pub mod items;
 pub mod language;
+mod matching;
 // Generated tables, kept one per line: formatted, they would be 30,000 lines.
 #[rustfmt::skip]
 mod language_names;
@@ -89,6 +91,8 @@ pub struct PlexState {
     pub identity: Arc<ServerIdentity>,
     pub schema: ApiSchema,
     pub transcoder: Arc<Transcoder>,
+    /// Where items' images are kept; `None` serves none.
+    pub artwork: Option<Arc<klapz_transcoder::artwork::ArtworkStore>>,
 }
 
 /// Written by hand because `async_graphql::Schema` has no `Debug`, and the workspace lints
@@ -99,6 +103,7 @@ impl std::fmt::Debug for PlexState {
             .field("identity", &self.identity)
             .field("schema", &"<graphql schema>")
             .field("transcoder", &self.transcoder)
+            .field("artwork", &self.artwork)
             .finish()
     }
 }
@@ -109,6 +114,7 @@ impl PlexState {
             identity: Arc::new(identity),
             schema,
             transcoder: Arc::default(),
+            artwork: None,
         }
     }
 }
@@ -121,6 +127,8 @@ impl PlexState {
 pub fn router(state: PlexState) -> Router {
     let routes = Router::new()
         .merge(general::router())
+        .merge(artwork::router())
+        .merge(matching::router())
         .merge(library::router())
         .merge(providers::router())
         .merge(sessions::router())

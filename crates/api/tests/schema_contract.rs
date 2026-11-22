@@ -55,6 +55,7 @@ fn schema() -> ApiSchema {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     })
 }
 
@@ -92,6 +93,7 @@ fn searchable() -> ApiSchema {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     })
 }
 
@@ -561,6 +563,7 @@ fn series_with_episodes() -> ApiSchema {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     })
 }
 
@@ -1208,6 +1211,7 @@ fn watchable() -> ApiSchema {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     })
 }
 
@@ -1526,6 +1530,7 @@ fn serving(engine: Arc<klapz_core::testing::StubStreams>, metadata: InMemoryMeta
         streams: engine,
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     })
 }
 
@@ -1892,6 +1897,7 @@ fn editable() -> ApiSchema {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     })
 }
 
@@ -2598,6 +2604,7 @@ fn filmography() -> ApiSchema {
         collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     })
 }
 
@@ -2735,6 +2742,7 @@ fn markable() -> ApiSchema {
         collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        matching: None,
     })
 }
 

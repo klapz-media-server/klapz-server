@@ -16,6 +16,7 @@ use klapz_core::metadata::{ItemKind, MetadataItem};
 use klapz_core::page::{Cursor, MAX_ITEMS};
 use klapz_core::RatingKey;
 
+use crate::artwork::ItemImageObject;
 use crate::backdrop::CornerColorsObject;
 use crate::chapter::{ChapterConnection, ChapterSourceType};
 use crate::collection::MembershipConnection;
@@ -121,6 +122,11 @@ const DEFAULT_PAGE_SIZE: u32 = 50;
         name = "corner_colors",
         ty = "Option<CornerColorsObject>",
         desc = "The four colors of the blurred backdrop a client draws behind it, drawn from its background art. Null when its art was never analysed."
+    ),
+    field(
+        name = "images",
+        ty = "Vec<ItemImageObject>",
+        desc = "The images it shows, one per kind, kept on this server. Empty until its metadata is matched."
     )
 )]
 pub enum Item {
@@ -279,6 +285,12 @@ impl Movie {
     /// background art. Null when its art was never analysed.
     pub async fn corner_colors(&self, context: &Context<'_>) -> Result<Option<CornerColorsObject>> {
         crate::backdrop::corner_colors_of(context, self.0.id).await
+    }
+
+    /// The images it shows, one per kind, kept on this server. Empty until its metadata is
+    /// matched.
+    pub async fn images(&self, context: &Context<'_>) -> Result<Vec<ItemImageObject>> {
+        crate::artwork::images_of(context, self.0.id).await
     }
 
     /// Where its intro, credits and commercials are, and the places the caller bookmarked in
@@ -591,6 +603,12 @@ impl Show {
     /// background art. Null when its art was never analysed.
     pub async fn corner_colors(&self, context: &Context<'_>) -> Result<Option<CornerColorsObject>> {
         crate::backdrop::corner_colors_of(context, self.0.id).await
+    }
+
+    /// The images it shows, one per kind, kept on this server. Empty until its metadata is
+    /// matched.
+    pub async fn images(&self, context: &Context<'_>) -> Result<Vec<ItemImageObject>> {
+        crate::artwork::images_of(context, self.0.id).await
     }
 
     /// When the item's metadata last changed.
@@ -936,6 +954,12 @@ impl Season {
         crate::backdrop::corner_colors_of(context, self.0.id).await
     }
 
+    /// The images it shows, one per kind, kept on this server. Empty until its metadata is
+    /// matched.
+    pub async fn images(&self, context: &Context<'_>) -> Result<Vec<ItemImageObject>> {
+        crate::artwork::images_of(context, self.0.id).await
+    }
+
     /// When the item's metadata last changed.
     pub async fn updated_at(&self, _context: &Context<'_>) -> Result<DateTime> {
         Ok(self.0.updated_at.into())
@@ -1199,6 +1223,12 @@ impl Episode {
     /// background art. Null when its art was never analysed.
     pub async fn corner_colors(&self, context: &Context<'_>) -> Result<Option<CornerColorsObject>> {
         crate::backdrop::corner_colors_of(context, self.0.id).await
+    }
+
+    /// The images it shows, one per kind, kept on this server. Empty until its metadata is
+    /// matched.
+    pub async fn images(&self, context: &Context<'_>) -> Result<Vec<ItemImageObject>> {
+        crate::artwork::images_of(context, self.0.id).await
     }
 
     /// Where its intro, credits and commercials are, and the places the caller bookmarked in

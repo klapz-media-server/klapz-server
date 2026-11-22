@@ -260,6 +260,21 @@ real token in the repository — including in test fixtures: fixtures captured f
 must be scrubbed before being committed. The same applies to the reference SQLite database and to
 traffic captures.
 
+**One exception, the repo owner's decision: the project's own keys for metadata providers.**
+TMDB's read access token and TVDB's project key are issued to klapz as an application and shared
+by every installation, as Jellyfin ships its own; they live in `klapz-agents::credentials`,
+replaced by `KLAPZ_TMDB_TOKEN` and `KLAPZ_TVDB_API_KEY`. They are public once committed, and
+nothing else is: a TVDB subscriber PIN is personal and comes from `KLAPZ_TVDB_PIN` only, a
+user's or an account's token never appears in the source, and the credential types print no key
+through `Debug`. The exception is no precedent for another kind of secret.
+
+**Jellyfin's item images answer without a token when their `tag` is right**
+(`api-jellyfin::images`). Jellyfin's clients write plain `<img>` addresses and the reference
+serves images anonymously; here a request without a token gets an image only when its `tag` is
+the name of the file that item shows for that type, which a caller learns by reading the item.
+Without a `tag`, the item is looked up as the caller. Nothing else on any surface is served
+without a token on the strength of a name.
+
 ## Dependencies
 
 `unsafe_code = "forbid"` at the workspace level. If a dependency forces `unsafe` into our code,

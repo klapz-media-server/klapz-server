@@ -2504,7 +2504,7 @@ pub(crate) fn parse_stream_kind(stored: &str) -> StreamKind {
     }
 }
 
-fn to_domain(row: metadata_item::Model) -> MetadataItem {
+pub(crate) fn to_domain(row: metadata_item::Model) -> MetadataItem {
     MetadataItem {
         id: RatingKey::new(row.id),
         section_id: SectionId::new(row.library_section_id),

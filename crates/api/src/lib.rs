@@ -10,6 +10,7 @@
 
 pub mod access;
 pub mod account;
+pub mod artwork;
 pub mod backdrop;
 pub mod chapter;
 pub mod closest;
@@ -39,6 +40,7 @@ pub mod schema;
 pub mod search;
 pub mod server;
 pub mod sidecar;
+mod source_metadata;
 pub mod stated;
 pub mod stream;
 pub mod tag;

@@ -37,6 +37,7 @@ fragment JellyfinItem on Item {
     library { id language }
     watchState { viewCount isWatched offsetMs lastViewedAt }
     isFavorite
+    images { kind url blurHash width height }
     ... on Movie {
         originalTitle year releasedOn contentRating audienceRating rating tagline studio
         durationMs
@@ -65,13 +66,13 @@ fragment JellyfinItem on Item {
     }
     ... on Season {
         number year
-        show { id title }
+        show { id title images { kind url blurHash width height } }
         stats { episodeCount watchedEpisodeCount }
     }
     ... on Episode {
         number year releasedOn contentRating audienceRating durationMs originalTitle
-        season { id number title }
-        show { id title }
+        season { id number title images { kind url blurHash width height } }
+        show { id title images { kind url blurHash width height } }
         versions { ...JellyfinVersion }
         chapters(first: 500) @include(if: $chapters) {
             nodes { startMs title stated { title startUs } }
@@ -114,6 +115,19 @@ pub struct Item {
     pub show: Option<Reference>,
     pub season: Option<SeasonReference>,
     pub chapters: Option<Nodes<Chapter>>,
+    #[serde(default)]
+    pub images: Vec<Image>,
+}
+
+/// An image an item shows: its kind, where this server serves it, and its `BlurHash`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Image {
+    pub kind: String,
+    pub url: String,
+    pub blur_hash: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -206,6 +220,9 @@ pub struct Reference {
     /// A library's, as a BCP 47 tag.
     #[serde(default)]
     pub language: Option<String>,
+    /// A series' images, when asked for.
+    #[serde(default)]
+    pub images: Vec<Image>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -213,6 +230,8 @@ pub struct SeasonReference {
     pub id: String,
     pub number: Option<i32>,
     pub title: Option<String>,
+    #[serde(default)]
+    pub images: Vec<Image>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -439,6 +458,109 @@ pub struct Shaping<'a> {
 
 fn jellyfin(global: &str) -> String {
     id::of_global(global).unwrap_or_default()
+}
+
+/// The first of `kinds` among `images`.
+fn first_of<'a>(images: &'a [Image], kinds: &[&str]) -> Option<&'a Image> {
+    kinds
+        .iter()
+        .find_map(|kind| images.iter().find(|image| image.kind == *kind))
+}
+
+/// Width over height of the image a client shows as the item's primary one: an episode's still,
+/// else a poster, a season's falling back on its series', as the reference measures it.
+fn primary_aspect_ratio(item: &Item) -> Option<f64> {
+    let kinds: &[&str] = if item.type_name == "Episode" {
+        &["THUMB", "POSTER"]
+    } else {
+        &["POSTER"]
+    };
+    let image = first_of(&item.images, kinds).or_else(|| {
+        (item.type_name == "Season")
+            .then(|| {
+                item.show
+                    .as_ref()
+                    .and_then(|show| first_of(&show.images, &["POSTER"]))
+            })
+            .flatten()
+    })?;
+    (image.height > 0).then(|| f64::from(image.width) / f64::from(image.height))
+}
+
+/// What an item says of its images and of its series', as Jellyfin's clients read them: each
+/// type's tag — the name of the file it shows, which fetches it — and every tag's `BlurHash`.
+/// An episode's primary image is its still; a season's or an episode's backdrop and logo are
+/// its series', named through the `Parent…` fields as the reference does.
+fn image_fields(item: &Item) -> Vec<(&'static str, Value)> {
+    use crate::images::tag_of;
+    let episode = item.type_name == "Episode";
+    let primary_kinds: &[&str] = if episode {
+        &["THUMB", "POSTER"]
+    } else {
+        &["POSTER"]
+    };
+    let mut tags = serde_json::Map::new();
+    let mut hashes: serde_json::Map<String, Value> = serde_json::Map::new();
+    let mut hash = |kind: &str, image: &Image| {
+        let entry = hashes.entry(kind.to_owned()).or_insert_with(|| json!({}));
+        if let Some(entry) = entry.as_object_mut() {
+            entry.insert(tag_of(&image.url).to_owned(), json!(image.blur_hash));
+        }
+    };
+    for (kind, kinds) in [
+        ("Primary", primary_kinds),
+        ("Logo", &["CLEAR_LOGO"][..]),
+        ("Banner", &["BANNER"][..]),
+    ] {
+        if let Some(image) = first_of(&item.images, kinds) {
+            tags.insert(kind.to_owned(), json!(tag_of(&image.url)));
+            hash(kind, image);
+        }
+    }
+    let backdrop = first_of(&item.images, &["BACKGROUND"]);
+    if let Some(image) = backdrop {
+        hash("Backdrop", image);
+    }
+    let mut fields = vec![
+        ("ImageTags", Value::Object(tags)),
+        (
+            "BackdropImageTags",
+            json!(backdrop
+                .map(|image| tag_of(&image.url))
+                .into_iter()
+                .collect::<Vec<_>>()),
+        ),
+    ];
+    if let Some(show) = &item.show {
+        let show_id = jellyfin(&show.id);
+        if let Some(poster) = first_of(&show.images, &["POSTER"]) {
+            fields.push(("SeriesPrimaryImageTag", json!(tag_of(&poster.url))));
+            hash("Primary", poster);
+        }
+        if backdrop.is_none() {
+            if let Some(image) = first_of(&show.images, &["BACKGROUND"]) {
+                fields.push(("ParentBackdropItemId", json!(show_id)));
+                fields.push(("ParentBackdropImageTags", json!([tag_of(&image.url)])));
+                hash("Backdrop", image);
+            }
+        }
+        if first_of(&item.images, &["CLEAR_LOGO"]).is_none() {
+            if let Some(image) = first_of(&show.images, &["CLEAR_LOGO"]) {
+                fields.push(("ParentLogoItemId", json!(show_id)));
+                fields.push(("ParentLogoImageTag", json!(tag_of(&image.url))));
+                hash("Logo", image);
+            }
+        }
+    }
+    if let Some(season) = &item.season {
+        if let Some(poster) = first_of(&season.images, &["POSTER"]) {
+            fields.push(("ParentPrimaryImageItemId", json!(jellyfin(&season.id))));
+            fields.push(("ParentPrimaryImageTag", json!(tag_of(&poster.url))));
+            hash("Primary", poster);
+        }
+    }
+    fields.push(("ImageBlurHashes", Value::Object(hashes)));
+    fields
 }
 
 /// Jellyfin's item type for one of ours.
@@ -804,12 +926,19 @@ pub fn item_dto(item: &Item, shaping: &Shaping<'_>) -> Value {
         let streams: Vec<Value> = file.map(File::media_streams).unwrap_or_default();
         put("MediaStreams", Value::Array(streams));
     }
+    // Clients shape their cards by it: a poster's 2:3 makes a portrait card, and none at all
+    // a square one.
+    if fields.has("PrimaryImageAspectRatio") {
+        if let Some(ratio) = primary_aspect_ratio(item) {
+            put("PrimaryImageAspectRatio", json!(ratio));
+        }
+    }
     if playable {
         put("VideoType", json!("VideoFile"));
     }
-    put("ImageTags", json!({}));
-    put("BackdropImageTags", json!([]));
-    put("ImageBlurHashes", json!({}));
+    for (name, value) in image_fields(item) {
+        put(name, value);
+    }
     if fields.has("Chapters") {
         put("Chapters", json!(chapters(item)));
     }
@@ -1035,6 +1164,7 @@ mod tests {
                 id: klapz_api::GlobalId::encode("Library", 1),
                 title: None,
                 language: Some("fr-FR".to_owned()),
+                images: Vec::new(),
             }),
             watch_state: Some(WatchState {
                 view_count: 1,
@@ -1060,6 +1190,7 @@ mod tests {
             show: None,
             season: None,
             chapters: None,
+            images: Vec::new(),
         }
     }
 
@@ -1195,11 +1326,13 @@ mod tests {
             id: klapz_api::GlobalId::encode("Item", 201),
             title: Some("90210".to_owned()),
             language: None,
+            images: Vec::new(),
         });
         episode.season = Some(SeasonReference {
             id: klapz_api::GlobalId::encode("Item", 202),
             number: Some(1),
             title: None,
+            images: Vec::new(),
         });
         let fields = Fields::all();
         let dto = item_dto(
@@ -1313,6 +1446,7 @@ mod tests {
             id: klapz_api::GlobalId::encode("Item", 202),
             number: Some(0),
             title: None,
+            images: Vec::new(),
         });
         episode.versions = vec![Version {
             width: None,
