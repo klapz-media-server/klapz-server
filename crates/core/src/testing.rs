@@ -4112,19 +4112,18 @@ impl crate::files::LibraryFiles for KnownDirectories {
         } else {
             format!("{path}/")
         };
-        let mut directories: Vec<crate::files::Directory> = self
-            .directories
-            .iter()
-            .filter_map(|directory| {
-                let name = directory.strip_prefix(&prefix)?;
-                (!name.contains('/')).then(|| crate::files::Directory {
-                    name: name.to_owned(),
-                    path: directory.clone(),
-                })
-            })
-            .collect();
-        let truncated = directories.len() > limit;
-        directories.truncate(limit);
+        let mut first = crate::files::FirstDirectories::new(limit);
+        for directory in &self.directories {
+            if let Some(name) = directory.strip_prefix(&prefix) {
+                if !name.contains('/') {
+                    first.offer(crate::files::Directory {
+                        name: name.to_owned(),
+                        path: directory.clone(),
+                    });
+                }
+            }
+        }
+        let (directories, truncated) = first.finish();
         let parent = (path != "/").then(|| match path.rsplit_once('/') {
             Some(("", _)) | None => "/".to_owned(),
             Some((parent, _)) => parent.to_owned(),

@@ -48,25 +48,6 @@ pub struct DirectoryListing {
     truncated: bool,
 }
 
-impl DirectoryListing {
-    fn new(
-        path: Option<String>,
-        parent: Option<String>,
-        mut directories: Vec<Directory>,
-        truncated: bool,
-    ) -> Self {
-        directories.sort_by_cached_key(|directory| {
-            (directory.name.to_lowercase(), directory.name.clone())
-        });
-        Self {
-            path,
-            parent,
-            directories,
-            truncated,
-        }
-    }
-}
-
 /// The directories inside one, or where browsing starts.
 #[Object]
 impl DirectoryListing {
@@ -156,7 +137,12 @@ pub(crate) async fn server_directories(
     let Some(path) = path else {
         let starts = files.starting_points().await?;
         return Ok(ServerDirectories {
-            listing: Some(DirectoryListing::new(None, None, starts, false)),
+            listing: Some(DirectoryListing {
+                path: None,
+                parent: None,
+                directories: starts,
+                truncated: false,
+            }),
             error: None,
         });
     };
@@ -166,12 +152,12 @@ pub(crate) async fn server_directories(
     {
         Ok(listing) => {
             return Ok(ServerDirectories {
-                listing: Some(DirectoryListing::new(
-                    Some(listing.path),
-                    listing.parent,
-                    listing.directories,
-                    listing.truncated,
-                )),
+                listing: Some(DirectoryListing {
+                    path: Some(listing.path),
+                    parent: listing.parent,
+                    directories: listing.directories,
+                    truncated: listing.truncated,
+                }),
                 error: None,
             })
         }

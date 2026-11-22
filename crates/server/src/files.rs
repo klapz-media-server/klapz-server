@@ -4,8 +4,8 @@ use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 
 use klapz_core::files::{
-    Directory, DirectoryListing, Entry, EntryKind, FileLocation, FilesError, LibraryFiles,
-    RelativePath,
+    sort_directories, Directory, DirectoryListing, Entry, EntryKind, FileLocation, FilesError,
+    FirstDirectories, LibraryFiles, RelativePath,
 };
 use tokio::io::AsyncReadExt;
 
@@ -157,48 +157,25 @@ impl LibraryFiles for LocalFiles {
         path: &str,
         limit: usize,
     ) -> Result<DirectoryListing, FilesError> {
-        let directory = canonical_directory(path).await?;
-        let mut reading = tokio::fs::read_dir(&directory).await.map_err(io_error)?;
-        let mut directories = Vec::new();
-        let mut truncated = false;
-        while let Some(entry) = reading.next_entry().await.map_err(io_error)? {
-            // Told by the directory itself, so the files, however many, cost no system call.
-            let Ok(kind) = entry.file_type().await else {
-                continue;
-            };
-            if kind.is_file() {
-                continue;
+        let directory = within(BROWSING_DEADLINE, canonical_directory(path)).await??;
+        let mut reading = within(BROWSING_DEADLINE, tokio::fs::read_dir(&directory))
+            .await?
+            .map_err(io_error)?;
+        let mut first = FirstDirectories::new(limit);
+        while let Some(entry) = within(BROWSING_DEADLINE, reading.next_entry())
+            .await?
+            .map_err(io_error)?
+        {
+            // A mount point whose server is gone answers no one: it is left out rather than
+            // hold the whole listing.
+            if let Ok(Some(name)) = within(BROWSING_DEADLINE, listed_directory(&entry)).await {
+                first.offer(Directory {
+                    path: displayed(&directory.join(&name)),
+                    name,
+                });
             }
-            // The entry's own attributes, a link's included: a hidden junction such as
-            // `Documents and Settings` leads to a directory that is not hidden.
-            let (Ok(own), Ok(name)) = (entry.metadata().await, entry.file_name().into_string())
-            else {
-                continue;
-            };
-            if is_hidden(&name, &own) {
-                continue;
-            }
-            // A link to a directory is followed: a share often appears that way
-            // (`/media/nas` → `/mnt/nas`), and entering it resolves it as any root.
-            let is_directory = if kind.is_symlink() {
-                tokio::fs::metadata(entry.path())
-                    .await
-                    .is_ok_and(|target| target.is_dir())
-            } else {
-                own.is_dir()
-            };
-            if !is_directory {
-                continue;
-            }
-            if directories.len() == limit {
-                truncated = true;
-                break;
-            }
-            directories.push(Directory {
-                path: displayed(&directory.join(&name)),
-                name,
-            });
         }
+        let (directories, truncated) = first.finish();
         Ok(DirectoryListing {
             path: displayed(&directory),
             parent: directory.parent().map(displayed),
@@ -206,6 +183,47 @@ impl LibraryFiles for LocalFiles {
             truncated,
         })
     }
+}
+
+/// How long one step of a listing may take. A share whose server is gone can hold a call to
+/// the filesystem for minutes; a disk waking up takes a few seconds.
+const BROWSING_DEADLINE: Duration = Duration::from_secs(5);
+
+/// `step`, given up on after `deadline` as [`FilesError::Unavailable`]. The thread it blocks
+/// is left to finish on its own.
+async fn within<T>(
+    deadline: Duration,
+    step: impl std::future::Future<Output = T>,
+) -> Result<T, FilesError> {
+    tokio::time::timeout(deadline, step)
+        .await
+        .map_err(|_| FilesError::Unavailable)
+}
+
+/// The name of `entry` when an owner may pick it: a visible directory, or a link to one.
+async fn listed_directory(entry: &tokio::fs::DirEntry) -> Option<String> {
+    // Told by the directory itself, so the files, however many, cost no system call.
+    let kind = entry.file_type().await.ok()?;
+    if kind.is_file() {
+        return None;
+    }
+    // The entry's own attributes, a link's included: a hidden junction such as
+    // `Documents and Settings` leads to a directory that is not hidden.
+    let own = entry.metadata().await.ok()?;
+    let name = entry.file_name().into_string().ok()?;
+    if is_hidden(&name, &own) {
+        return None;
+    }
+    // A link to a directory is followed: a share often appears that way
+    // (`/media/nas` → `/mnt/nas`), and entering it resolves it as any root.
+    let is_directory = if kind.is_symlink() {
+        tokio::fs::metadata(entry.path())
+            .await
+            .is_ok_and(|target| target.is_dir())
+    } else {
+        own.is_dir()
+    };
+    is_directory.then_some(name)
 }
 
 /// `path` as a root is stored: canonical, as the scan and the media engine compare paths with
@@ -249,7 +267,7 @@ async fn drives() -> Vec<Directory> {
     for letter in 'A'..='Z' {
         probes.spawn(async move {
             let path = format!("{letter}:\\");
-            let answer = tokio::time::timeout(DEADLINE, tokio::fs::metadata(&path)).await;
+            let answer = within(DEADLINE, tokio::fs::metadata(&path)).await;
             matches!(answer, Ok(Ok(metadata)) if metadata.is_dir()).then(|| Directory {
                 name: format!("{letter}:"),
                 path,
@@ -262,6 +280,7 @@ async fn drives() -> Vec<Directory> {
             drives.push(drive);
         }
     }
+    sort_directories(&mut drives);
     drives
 }
 
@@ -491,12 +510,30 @@ mod tests {
     #[tokio::test]
     async fn a_listing_stops_at_its_limit_and_says_so() {
         let scratch = Scratch::new("browse-limit");
-        std::fs::create_dir(scratch.0.join("Series")).unwrap();
+        for name in ["Series", "anime", "Music"] {
+            std::fs::create_dir(scratch.0.join(name)).unwrap();
+        }
         let local = LocalFiles;
-        let cut = local.list_directories(&scratch.root(), 1).await.unwrap();
-        assert_eq!((cut.directories.len(), cut.truncated), (1, true));
-        let whole = local.list_directories(&scratch.root(), 2).await.unwrap();
-        assert_eq!((whole.directories.len(), whole.truncated), (2, false));
+        let cut = local.list_directories(&scratch.root(), 2).await.unwrap();
+        let first: Vec<&str> = cut.directories.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(
+            first,
+            ["anime", "Films"],
+            "the first by name, whatever the disk's order"
+        );
+        assert!(cut.truncated);
+        let whole = local.list_directories(&scratch.root(), 4).await.unwrap();
+        assert_eq!((whole.directories.len(), whole.truncated), (4, false));
+    }
+
+    #[tokio::test]
+    async fn a_step_that_does_not_answer_is_given_up_as_unavailable() {
+        let stuck = within(Duration::from_millis(10), std::future::pending::<()>()).await;
+        assert!(matches!(stuck, Err(FilesError::Unavailable)));
+        assert!(matches!(
+            within(Duration::from_millis(10), async { 1 }).await,
+            Ok(1)
+        ));
     }
 
     #[tokio::test]

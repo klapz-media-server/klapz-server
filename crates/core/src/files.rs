@@ -130,15 +130,64 @@ pub struct DirectoryListing {
     pub path: String,
     /// The directory holding it; `None` at the top of a drive or of the filesystem.
     pub parent: Option<String>,
-    /// In no particular order.
+    /// In [`sort_directories`] order.
     pub directories: Vec<Directory>,
-    /// The directory held more than the limit asked for, and the rest were not read.
+    /// The directory held more than the limit asked for: `directories` is the first of them,
+    /// in order, and the others were left out.
     pub truncated: bool,
 }
 
 /// How many directories one listing holds at most: a directory of a million names must not
 /// become a million strings in memory because an owner opened it.
 pub const MAX_LISTED_DIRECTORIES: usize = 10_000;
+
+/// The order an owner reads directories in: by name ignoring case, then as written.
+pub fn sort_directories(directories: &mut [Directory]) {
+    directories
+        .sort_by_cached_key(|directory| (directory.name.to_lowercase(), directory.name.clone()));
+}
+
+/// The first `limit` of the directories offered, in [`sort_directories`] order, holding at
+/// most twice `limit` of them at a time however many are offered. Keeping the first ones
+/// rather than the first read makes a cut listing a prefix of the whole one: what is missing
+/// sorts after the last name shown.
+#[derive(Debug)]
+pub struct FirstDirectories {
+    limit: usize,
+    kept: Vec<Directory>,
+    truncated: bool,
+}
+
+impl FirstDirectories {
+    pub fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            kept: Vec::new(),
+            truncated: false,
+        }
+    }
+
+    pub fn offer(&mut self, directory: Directory) {
+        self.kept.push(directory);
+        if self.kept.len() > self.limit.saturating_mul(2) {
+            self.cut();
+        }
+    }
+
+    /// The directories kept, and whether any was left out.
+    pub fn finish(mut self) -> (Vec<Directory>, bool) {
+        self.cut();
+        (self.kept, self.truncated)
+    }
+
+    fn cut(&mut self) {
+        sort_directories(&mut self.kept);
+        if self.kept.len() > self.limit {
+            self.kept.truncate(self.limit);
+            self.truncated = true;
+        }
+    }
+}
 
 /// What a media tool is handed to read a file. Only local paths exist today; a backend that is
 /// not a filesystem will hand out an address the server serves instead.
@@ -207,12 +256,12 @@ pub trait LibraryFiles: Send + Sync + std::fmt::Debug {
     async fn resolve_root(&self, path: &str) -> Result<String, FilesError>;
 
     /// Where an owner looking for a root starts: the drives of a Windows machine, `/`
-    /// elsewhere. In no particular order.
+    /// elsewhere. In [`sort_directories`] order.
     async fn starting_points(&self) -> Result<Vec<Directory>, FilesError>;
 
     /// The directories inside `path`, which is resolved exactly as [`Self::resolve_root`]
     /// resolves a root before anything is read. Files and hidden directories are left out, and
-    /// at most `limit` directories are read.
+    /// at most the first `limit` directories are kept, as [`FirstDirectories`] keeps them.
     ///
     /// This and [`Self::starting_points`] are how an owner finds a root without typing it:
     /// they name directories and never read a file.
@@ -260,5 +309,29 @@ mod tests {
         assert!(!file.starts_with(&RelativePath::parse("Series/Bu").unwrap()));
         assert!(file.starts_with(&RelativePath::root()));
         assert_eq!(file.name(), Some("e01.mkv"));
+    }
+
+    fn directory(name: &str) -> Directory {
+        Directory {
+            name: name.to_owned(),
+            path: format!("/{name}"),
+        }
+    }
+
+    #[test]
+    fn a_cut_listing_keeps_the_first_names_whatever_order_they_come_in() {
+        let mut first = FirstDirectories::new(3);
+        for name in ["zoo", "Movies", "b", "Anime", "music", "a", "Zed"] {
+            first.offer(directory(name));
+        }
+        let (kept, truncated) = first.finish();
+        let names: Vec<&str> = kept.iter().map(|kept| kept.name.as_str()).collect();
+        assert_eq!(names, ["a", "Anime", "b"]);
+        assert!(truncated);
+
+        let mut whole = FirstDirectories::new(3);
+        whole.offer(directory("b"));
+        whole.offer(directory("A"));
+        assert!(!whole.finish().1);
     }
 }
