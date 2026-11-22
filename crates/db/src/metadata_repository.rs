@@ -47,7 +47,7 @@ use crate::entity::{
     collection, collection_entry, item_corner_colors, item_external_id, item_field_lock,
     item_rating, item_tag, item_title_key, item_title_word, media, media_part, media_stream,
     metadata_item, part_side_stream, person, stream_dolby_vision, stream_loudness, tag, tag_word,
-    user_rating, watch_state,
+    user_favorite, user_rating, watch_state,
 };
 use crate::extra_store;
 use crate::item_order::{ItemOrder, SearchRanking};
@@ -159,6 +159,9 @@ impl SqlMetadataRepository {
         select = select.filter(watch_conditions(filter));
         if let Some(condition) = &filter.user_rating {
             select = select.filter(rating_condition(filter.viewer, condition));
+        }
+        if let Some(favorite) = filter.favorite {
+            select = select.filter(favorite_condition(filter.viewer, favorite));
         }
         if let Some(from) = filter.released_from {
             select = select.filter(metadata_item::Column::ReleasedOn.gte(from));
@@ -816,6 +819,33 @@ pub(crate) fn viewer_rating(viewer: Option<UserId>) -> SimpleExpr {
                 .into_sub_query_statement(),
         ),
     )
+}
+
+/// Whether the item in the row is one of the viewer's favorites, as `favorite` asks. A caller
+/// with no watch state has none.
+fn favorite_condition(viewer: Option<UserId>, favorite: bool) -> SimpleExpr {
+    let held = match viewer {
+        None => Expr::value(1).eq(0),
+        Some(viewer) => Expr::exists(
+            Query::select()
+                .expr(Expr::val(1))
+                .from(user_favorite::Entity)
+                .and_where(
+                    Expr::col((user_favorite::Entity, user_favorite::Column::Viewer))
+                        .eq(viewer.get()),
+                )
+                .and_where(
+                    Expr::col((user_favorite::Entity, user_favorite::Column::Guid))
+                        .equals((metadata_item::Entity, metadata_item::Column::Guid)),
+                )
+                .to_owned(),
+        ),
+    };
+    if favorite {
+        held
+    } else {
+        held.not()
+    }
 }
 
 /// [`RatingCondition::holds`], in SQL. A comparison with NULL is never true, which is what

@@ -50,11 +50,11 @@ pub fn router() -> Router<JellyfinState> {
         )
         .route(
             "/userfavoriteitems/{id}",
-            post(no_favorites).delete(no_favorites),
+            post(add_favorite).delete(remove_favorite),
         )
         .route(
             "/users/{user}/favoriteitems/{id}",
-            post(no_favorites).delete(no_favorites),
+            post(legacy_add_favorite).delete(legacy_remove_favorite),
         )
 }
 
@@ -700,12 +700,30 @@ struct Marked {
     mark_unwatched: Option<crate::dto::WatchState>,
 }
 
+const FAVORITE: &str = "query($id: ID!) { node(id: $id) { ... on Item { isFavorite } } }";
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Favorite {
+    is_favorite: bool,
+}
+
+/// Whether the caller made an item a favorite.
+async fn is_favorite(state: &JellyfinState, global: &str) -> Result<bool, JellyfinError> {
+    #[derive(Deserialize)]
+    struct NodeData {
+        node: Option<Favorite>,
+    }
+    let data: NodeData = gql::query(&state.schema, FAVORITE, json!({ "id": global })).await?;
+    Ok(data.node.ok_or(JellyfinError::NotFound)?.is_favorite)
+}
+
 /// Jellyfin's `UserItemDataDto` for an item's state.
-fn user_item_data(state: &crate::dto::WatchState, jellyfin_id: &str) -> Value {
+fn user_item_data(state: &crate::dto::WatchState, favorite: bool, jellyfin_id: &str) -> Value {
     let mut data = json!({
         "PlaybackPositionTicks": time::ticks(state.offset_ms.unwrap_or(0)),
         "PlayCount": state.view_count,
-        "IsFavorite": false,
+        "IsFavorite": favorite,
         "Played": state.is_watched,
         "Key": id::dashed(jellyfin_id),
         "ItemId": jellyfin_id,
@@ -736,8 +754,10 @@ async fn mark(
         .mark_watched
         .or(marked.mark_unwatched)
         .ok_or(JellyfinError::NotFound)?;
+    let favorite = is_favorite(state, &global).await?;
     Ok(json(&user_item_data(
         &watch_state,
+        favorite,
         &id::of_global(&global).unwrap_or_default(),
     )))
 }
@@ -774,9 +794,93 @@ async fn legacy_mark_unplayed(
     mark(&state, Some(&user), &item, false).await
 }
 
-/// Favorites are not kept here: refused visibly rather than accepted and forgotten.
-async fn no_favorites() -> JellyfinError {
-    JellyfinError::NotImplemented("favorites")
+const SET_FAVORITE: &str = r"mutation($id: ID!, $favorite: Boolean!) {
+    setFavorite(input: { itemId: $id, favorite: $favorite }) {
+        item { watchState { viewCount isWatched offsetMs lastViewedAt } }
+        favorite
+        userErrors { code }
+    }
+}";
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FavoriteSet {
+    set_favorite: FavoritePayload,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FavoritePayload {
+    item: Option<FavoriteItem>,
+    favorite: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FavoriteItem {
+    watch_state: Option<crate::dto::WatchState>,
+}
+
+/// Makes an item a favorite of the caller's, or takes it back. Only a library's items are
+/// made favorites: a person, a genre, a collection or a playlist is refused.
+async fn favorite(
+    state: &JellyfinState,
+    user: Option<&str>,
+    item: &str,
+    favorite: bool,
+) -> Result<Response, JellyfinError> {
+    gql::viewer(&state.schema).await?.require_self(user)?;
+    let decoded = id::decode(item)?;
+    if decoded.type_name != klapz_api::item::ITEM_TYPE {
+        return Err(JellyfinError::NotImplemented(
+            "favorites other than a library's items",
+        ));
+    }
+    let global = klapz_api::GlobalId::encode(&decoded.type_name, decoded.key);
+    let set: FavoriteSet = gql::query(
+        &state.schema,
+        SET_FAVORITE,
+        json!({ "id": global, "favorite": favorite }),
+    )
+    .await?;
+    let item = set.set_favorite.item.ok_or(JellyfinError::NotFound)?;
+    Ok(json(&user_item_data(
+        &item.watch_state.unwrap_or_default(),
+        set.set_favorite.favorite,
+        &id::of_global(&global).unwrap_or_default(),
+    )))
+}
+
+async fn add_favorite(
+    State(state): State<JellyfinState>,
+    Path(item): Path<String>,
+    RawQuery(query): RawQuery,
+) -> Result<Response, JellyfinError> {
+    let query = Query::parse(query.as_deref());
+    favorite(&state, query.get("userId"), &item, true).await
+}
+
+async fn remove_favorite(
+    State(state): State<JellyfinState>,
+    Path(item): Path<String>,
+    RawQuery(query): RawQuery,
+) -> Result<Response, JellyfinError> {
+    let query = Query::parse(query.as_deref());
+    favorite(&state, query.get("userId"), &item, false).await
+}
+
+async fn legacy_add_favorite(
+    State(state): State<JellyfinState>,
+    Path((user, item)): Path<(String, String)>,
+) -> Result<Response, JellyfinError> {
+    favorite(&state, Some(&user), &item, true).await
+}
+
+async fn legacy_remove_favorite(
+    State(state): State<JellyfinState>,
+    Path((user, item)): Path<(String, String)>,
+) -> Result<Response, JellyfinError> {
+    favorite(&state, Some(&user), &item, false).await
 }
 
 #[cfg(test)]
@@ -921,10 +1025,12 @@ mod tests {
                 offset_ms: None,
                 last_viewed_at: Some("2026-11-20T08:00:00Z".to_owned()),
             },
+            true,
             "0000000400000000000000000000006f",
         );
         assert_eq!(data["PlayCount"], 2);
         assert_eq!(data["Played"], true);
+        assert_eq!(data["IsFavorite"], true);
         assert_eq!(data["PlaybackPositionTicks"], 0);
         assert_eq!(data["LastPlayedDate"], "2026-11-20T08:00:00.0000000Z");
     }

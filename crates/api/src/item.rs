@@ -108,6 +108,11 @@ const DEFAULT_PAGE_SIZE: u32 = 50;
         desc = "The caller's rating of the work, shared by every copy of it. Null when it has not rated it, and without a caller."
     ),
     field(
+        name = "is_favorite",
+        ty = "bool",
+        desc = "Whether the caller made the work a favorite, which makes every copy of it one. False without a caller."
+    ),
+    field(
         name = "locked_fields",
         ty = "Vec<ItemFieldType>",
         desc = "The fields an editor locked, which a metadata refresh leaves as they are."
@@ -219,6 +224,12 @@ impl Movie {
     /// rated it, and without a caller.
     pub async fn user_rating(&self, context: &Context<'_>) -> Result<Option<UserRatingObject>> {
         crate::user_rating::rating_of(context, &self.0.guid).await
+    }
+
+    /// Whether the caller made the work a favorite, which makes every copy of it one. False
+    /// without a caller.
+    pub async fn is_favorite(&self, context: &Context<'_>) -> Result<bool> {
+        crate::favorite::is_favorite(context, &self.0.guid).await
     }
 
     /// Who watched the work, most viewings first, then by user: an owner sees every user,
@@ -525,6 +536,12 @@ impl Show {
     /// rated it, and without a caller.
     pub async fn user_rating(&self, context: &Context<'_>) -> Result<Option<UserRatingObject>> {
         crate::user_rating::rating_of(context, &self.0.guid).await
+    }
+
+    /// Whether the caller made the work a favorite, which makes every copy of it one. False
+    /// without a caller.
+    pub async fn is_favorite(&self, context: &Context<'_>) -> Result<bool> {
+        crate::favorite::is_favorite(context, &self.0.guid).await
     }
 
     /// Who watched the work, most viewings first, then by user: an owner sees every user,
@@ -870,6 +887,12 @@ impl Season {
         crate::user_rating::rating_of(context, &self.0.guid).await
     }
 
+    /// Whether the caller made the work a favorite, which makes every copy of it one. False
+    /// without a caller.
+    pub async fn is_favorite(&self, context: &Context<'_>) -> Result<bool> {
+        crate::favorite::is_favorite(context, &self.0.guid).await
+    }
+
     /// Who watched the work, most viewings first, then by user: an owner sees every user,
     /// a user only itself. Counts every copy the caller can read and, for a series or a
     /// season, the episodes below them.
@@ -1127,6 +1150,12 @@ impl Episode {
     /// rated it, and without a caller.
     pub async fn user_rating(&self, context: &Context<'_>) -> Result<Option<UserRatingObject>> {
         crate::user_rating::rating_of(context, &self.0.guid).await
+    }
+
+    /// Whether the caller made the work a favorite, which makes every copy of it one. False
+    /// without a caller.
+    pub async fn is_favorite(&self, context: &Context<'_>) -> Result<bool> {
+        crate::favorite::is_favorite(context, &self.0.guid).await
     }
 
     /// Who watched the work, most viewings first, then by user: an owner sees every user,

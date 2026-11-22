@@ -471,11 +471,13 @@ impl InMemoryMetadata {
                     .is_none_or(|from| item.audience_rating.is_some_and(|rating| rating >= from))
             })
             // This fake holds no watch state, so it answers as storage does a caller with
-            // none: nothing watched, nothing in progress, no episode begun, nothing rated.
+            // none: nothing watched, nothing in progress, no episode begun, nothing rated, no
+            // favorite.
             .filter(|_| {
                 filter.watched != Some(true)
                     && filter.in_progress != Some(true)
                     && filter.episodes_started != Some(true)
+                    && filter.favorite != Some(true)
                     && filter
                         .user_rating
                         .as_ref()
@@ -589,20 +591,10 @@ fn title_matches(item: &MetadataItem, term: &str) -> bool {
         item.title_sort.as_deref(),
         item.original_title.as_deref(),
     );
-    words_match(&words, term)
+    crate::search::words_match(&words, term)
 }
 
 /// Whether every word of the term begins one of the words, as storage matches a search.
-fn words_match(words: &[String], term: &str) -> bool {
-    crate::search::words(term).all(|prefix| {
-        crate::search::prefix_range(&prefix).is_some_and(|(lower, upper)| {
-            words
-                .iter()
-                .any(|word| word >= &lower && upper.as_ref().is_none_or(|bound| word < bound))
-        })
-    })
-}
-
 #[async_trait::async_trait]
 impl MetadataRepository for InMemoryMetadata {
     async fn items(
@@ -722,7 +714,10 @@ impl MetadataRepository for InMemoryMetadata {
         for attachment in &self.tags {
             let tag = &attachment.tag;
             if !(query.kinds.is_empty() || query.kinds.contains(&tag.kind))
-                || !words_match(&crate::search::name_words(&tag.name), &query.word_prefix)
+                || !crate::search::words_match(
+                    &crate::search::name_words(&tag.name),
+                    &query.word_prefix,
+                )
             {
                 continue;
             }
@@ -2768,6 +2763,7 @@ pub struct InMemoryWatch {
     history: std::sync::Mutex<Vec<crate::history::HistoryEntry>>,
     ratings: std::sync::Mutex<Vec<(crate::ids::UserId, String, crate::user_rating::RatingRecord)>>,
     offsets: std::sync::Mutex<Vec<(crate::ids::UserId, crate::ids::StreamId, i32)>>,
+    favorites: std::sync::Mutex<Vec<(crate::ids::UserId, String)>>,
 }
 
 impl InMemoryWatch {
@@ -2780,6 +2776,7 @@ impl InMemoryWatch {
             history: std::sync::Mutex::new(Vec::new()),
             ratings: std::sync::Mutex::new(Vec::new()),
             offsets: std::sync::Mutex::new(Vec::new()),
+            favorites: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -3115,6 +3112,33 @@ impl crate::watch::WatchRepository for InMemoryWatch {
         ratings.push((viewer, guid.to_owned(), record));
         Ok(())
     }
+
+    async fn favorites(
+        &self,
+        viewer: crate::ids::UserId,
+        guids: &[String],
+    ) -> Result<Vec<String>, crate::watch::WatchError> {
+        Ok(Self::lock(&self.favorites)
+            .iter()
+            .filter(|(who, guid)| *who == viewer && guids.contains(guid))
+            .map(|(_, guid)| guid.clone())
+            .collect())
+    }
+
+    async fn set_favorite(
+        &self,
+        viewer: crate::ids::UserId,
+        guid: &str,
+        favorite: bool,
+        _at: i64,
+    ) -> Result<(), crate::watch::WatchError> {
+        let mut favorites = Self::lock(&self.favorites);
+        favorites.retain(|(who, held)| !(*who == viewer && held == guid));
+        if favorite {
+            favorites.push((viewer, guid.to_owned()));
+        }
+        Ok(())
+    }
 }
 
 /// A stream engine that runs nothing: it records what it was asked and answers as an engine
@@ -3322,6 +3346,9 @@ fn playlist_matches(playlist: &Playlist, query: &PlaylistQuery) -> bool {
                 .rule
                 .as_ref()
                 .is_none_or(|rule| rule.section == library)
+        })
+        && filter.matching.as_deref().is_none_or(|term| {
+            crate::search::words_match(&crate::search::name_words(&playlist.title), term)
         })
 }
 
@@ -3684,7 +3711,7 @@ fn collection_matches(
                 collection.title_sort.as_deref(),
                 None,
             );
-            words_match(&words, term)
+            crate::search::words_match(&words, term)
         })
 }
 

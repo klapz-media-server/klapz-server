@@ -72,8 +72,14 @@ first file's id.
 
 - **What the server does not hold is not invented.** No artwork (empty `ImageTags`, image routes
   `404`), no metadata from online providers (no overview, rating, premiere date… beyond what the
-  scan or the import gave), no favorites (the list is empty; adding one is refused `501` rather
-  than accepted and lost), no external links, no trailers, theme media or intros.
+  scan or the import gave), no external links, no trailers, theme media or intros.
+- **Favorites are the official API's** (`setFavorite`, `Item.isFavorite`,
+  `ItemFilterInput.favorite`), kept per user and per work as a rating is: every copy of a film is
+  one at once. `POST` and `DELETE /UserFavoriteItems/{id}` (and `/Users/{userId}/FavoriteItems/{id}`)
+  answer the item's `UserItemDataDto`; `Filters=IsFavorite` or `IsFavorite=true` narrows a listing.
+  Only a library's items are made favorites: a person, a genre, a collection or a playlist is
+  refused `501`, and their favorites list nothing. A favorites filter over items asked by id,
+  below an item or found by a search, none of which the official API filters, answers `501`.
 - **Fields.** The reference writes a base set on a listed item and the rest when `Fields` names
   them; a lookup has them all. Same here, field for field on the fixtures but for the above.
 - **Listings.** `/Items` under a library, a series or a season, by `Ids`, by `SearchTerm`, or
@@ -180,9 +186,10 @@ RFC 3339, without an offset (read as UTC) or a day alone.
 caller's: genres (with their ids), release years, content ratings, and the audio and subtitle
 languages tracks state, named as the reference names them (`French (fre)`, `qaa`), each language
 once as written (`fre` and `fra` apart, through `TrackField.AUDIO_LANGUAGE` on the official API).
-Tags are keywords a provider gives: none. Narrowing below a library, to a kind of item other than
-its own, or by the Live TV flags of `Filters2`, answers `501`; music and photos, held nowhere,
-list nothing.
+Tags are keywords a provider gives: none. A kind of item below the library's own (`IncludeItemTypes=Episode` in a series library)
+narrows the values to those items, through the official API's `filter`; below a library, several
+such kinds at once, or the Live TV flags of `Filters2`, answer `501`; music, photos and box sets,
+held nowhere as items, list nothing.
 
 ## Playlists
 
@@ -227,12 +234,18 @@ studios and years; their artwork is not held.
   of the name, as the official API completes one. `/Genres/{name}` finds one by name.
 - `/Persons` lists the people a term finds, or the people of one role (`personTypes`) by name;
   every role at once with no term answers `501`, more people than a page of credits lists.
+  Favorite people (`Filters=IsFavorite`, as Jellyfin Web's favorites page asks) list nothing:
+  only items are made favorites.
   `/Items?PersonIds=` lists one person's films and series through `Person.items`, a series for
   a credit on its episodes, with the request's other filters; several people at once, or another
   order than by name, answer `501`.
 - A studio and a year are no entity of the official API: their ids carry the value, a year its
   number and a studio a hash of its name, found again among the studios listed. `StudioIds`
   on `/Items` answers `501`.
+- `/Items?SearchTerm=` takes several types at once, as Jellyfin Web's search page asks for
+  every one in a single request: the items the official API's search ranks, then the collections
+  (`collections(matching:)`) and the caller's playlists (`playlists(matching:)`) whose title the
+  term finds, by the same word-prefix rule. Below a parent, several types at once answer `501`.
 - `/Search/Hints` hints the items the official API's search ranks, then the people a term finds
   (`includePeople`); a page past the first, and the Live TV and media filters, answer `501`.
 

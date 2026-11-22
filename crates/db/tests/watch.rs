@@ -451,3 +451,38 @@ async fn a_rating_is_the_viewers_and_a_clearing_keeps_its_time() {
         )]
     );
 }
+
+#[tokio::test]
+async fn a_favorite_is_made_and_taken_back_per_viewer() {
+    let repository = repository().await;
+    let viewer = UserId::new(1);
+    let guids = ["g".to_owned(), "h".to_owned()];
+    repository
+        .set_favorite(viewer, "g", true, 100)
+        .await
+        .unwrap();
+    // Making it a favorite again changes nothing, and fails nothing.
+    repository
+        .set_favorite(viewer, "g", true, 200)
+        .await
+        .unwrap();
+    assert_eq!(repository.favorites(viewer, &guids).await.unwrap(), ["g"]);
+    assert!(repository
+        .favorites(UserId::new(7), &guids)
+        .await
+        .unwrap()
+        .is_empty());
+    repository
+        .set_favorite(viewer, "g", false, 300)
+        .await
+        .unwrap();
+    repository
+        .set_favorite(viewer, "h", false, 300)
+        .await
+        .unwrap();
+    assert!(repository
+        .favorites(viewer, &guids)
+        .await
+        .unwrap()
+        .is_empty());
+}

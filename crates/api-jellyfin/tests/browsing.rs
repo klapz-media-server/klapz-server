@@ -621,7 +621,7 @@ async fn filters_that_cannot_be_narrowed_as_asked_are_refused() {
     let films = jellyfin_id("Library", FILMS);
     for path in [
         format!("/jellyfin/Items/Filters2?ParentId={films}&IsAiring=true"),
-        format!("/jellyfin/Items/Filters?ParentId={films}&IncludeItemTypes=Episode"),
+        format!("/jellyfin/Items/Filters?ParentId={films}&IncludeItemTypes=Season,Episode"),
         format!(
             "/jellyfin/Items/Filters?ParentId={}",
             jellyfin_id("Item", DOODLEBUG)
@@ -630,6 +630,16 @@ async fn filters_that_cannot_be_narrowed_as_asked_are_refused() {
         let answer = harness.get(&path, &token).await;
         assert_eq!(answer.status, StatusCode::NOT_IMPLEMENTED, "{path}");
     }
+    // A kind below the library's own narrows the values: a film library holds no episode.
+    let episodes = harness
+        .get(
+            &format!("/jellyfin/Items/Filters?ParentId={films}&IncludeItemTypes=Episode"),
+            &token,
+        )
+        .await;
+    assert_eq!(episodes.status, StatusCode::OK);
+    assert_eq!(episodes.json()["Genres"], serde_json::json!([]));
+    assert_eq!(episodes.json()["Years"], serde_json::json!([]));
     // Music is held nowhere: there is nothing to filter it by.
     let music = harness
         .get(

@@ -145,14 +145,14 @@ async fn views(state: &JellyfinState, user: Option<&str>) -> Result<Response, Je
         .collect();
     // The reference lists a view of the user's playlists once there is one, among the
     // libraries by name.
-    let playlists = crate::playlists::playlists(state).await?;
+    let playlists = crate::playlists::playlists(state, None).await?;
     if !playlists.is_empty() {
         items.push(crate::playlists::view_dto(
             &state.server.id,
             playlists.len(),
         ));
     }
-    let collections = crate::collections::collections(state).await?;
+    let collections = crate::collections::collections(state, None).await?;
     if !collections.is_empty() {
         items.push(crate::collections::view_dto(
             &state.server.id,

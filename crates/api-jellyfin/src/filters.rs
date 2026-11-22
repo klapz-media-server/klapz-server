@@ -19,6 +19,7 @@ use crate::error::JellyfinError;
 use crate::gql;
 use crate::id;
 use crate::language;
+use crate::listing::kind_of;
 use crate::query::Query;
 use crate::response::json;
 use crate::views::libraries;
@@ -30,14 +31,13 @@ pub fn router() -> Router<JellyfinState> {
         .route("/items/filters2", get(filters))
 }
 
-const FILTER_VALUES: &str = r"query($id: ID!) {
+const FILTER_VALUES: &str = r"query($id: ID!, $filter: ItemFilterInput) {
     node(id: $id) { ... on Library {
-        kind
-        genres: tags(kind: GENRE, first: 500) { nodes { id name } }
-        years(first: 500) { nodes }
-        ratings: fieldValues(field: CONTENT_RATING, first: 500) { nodes }
-        audio: trackValues(field: AUDIO_LANGUAGE, first: 500) { nodes }
-        subtitles: trackValues(field: SUBTITLE_LANGUAGE, first: 500) { nodes }
+        genres: tags(kind: GENRE, filter: $filter, first: 500) { nodes { id name } }
+        years(filter: $filter, first: 500) { nodes }
+        ratings: fieldValues(field: CONTENT_RATING, filter: $filter, first: 500) { nodes }
+        audio: trackValues(field: AUDIO_LANGUAGE, filter: $filter, first: 500) { nodes }
+        subtitles: trackValues(field: SUBTITLE_LANGUAGE, filter: $filter, first: 500) { nodes }
     } }
 }";
 
@@ -103,9 +103,10 @@ impl Values {
     }
 }
 
-/// The libraries a request covers: the one `parentId` names, else every one of the caller's.
-/// What the official API cannot narrow to — below a library, to some types of its items, to
-/// what is on the air — is refused rather than answered for the whole library.
+/// The libraries a request covers: the one `parentId` names, else every one of the caller's,
+/// narrowed to the kind of item `includeItemTypes` names. What the official API cannot narrow
+/// to — below a library, to several kinds at once, to what is on the air — is refused rather
+/// than answered for the whole library.
 async fn values(state: &JellyfinState, query: &Query) -> Result<Values, JellyfinError> {
     gql::viewer(&state.schema)
         .await?
@@ -128,41 +129,58 @@ async fn values(state: &JellyfinState, query: &Query) -> Result<Values, Jellyfin
         // Music and photos are held nowhere.
         return Ok(Values::default());
     }
-    let mut libraries_named = match query.get("parentId") {
+    let libraries_named = match query.get("parentId") {
         Some(parent) => {
             let global = id::global_of_type(parent, klapz_api::library::LIBRARY_TYPE)
                 .map_err(|_| JellyfinError::NotImplemented("filters below a library"))?;
-            vec![(global, None)]
+            vec![global]
         }
         None => libraries(state)
             .await?
             .into_iter()
-            .map(|library| (library.id, Some(library.kind)))
+            .map(|library| library.id)
             .collect(),
     };
-    let types = query.list("includeItemTypes");
+    let filter = kind_filter(&query.list("includeItemTypes"))?;
+    let Some(filter) = filter else {
+        // Box sets, music and the other types held nowhere.
+        return Ok(Values::default());
+    };
     let mut values = Values::default();
-    for (library, kind) in libraries_named.drain(..) {
-        let data: NodeData =
-            gql::query(&state.schema, FILTER_VALUES, json!({ "id": library })).await?;
+    for library in libraries_named {
+        let data: NodeData = gql::query(
+            &state.schema,
+            FILTER_VALUES,
+            json!({ "id": library, "filter": filter }),
+        )
+        .await?;
         let Some(found) = data.node else {
             return Err(JellyfinError::NotFound);
         };
-        let kind = kind.unwrap_or_default();
-        let top_level = |wanted: &str| {
-            matches!(
-                (kind.as_str(), wanted.to_ascii_lowercase().as_str()),
-                (_, "") | ("MOVIE" | "", "movie") | ("SHOW" | "", "series")
-            )
-        };
-        if !types.is_empty() && !types.iter().all(|wanted| top_level(wanted)) {
-            return Err(JellyfinError::NotImplemented(
-                "filters of a kind of item below a library's own",
-            ));
-        }
         values.add(found);
     }
     Ok(values)
+}
+
+/// The official API's filter for the types a request includes: `Value::Null` for a library's
+/// own items, which no type or a film and a series name, and `None` for types held nowhere.
+fn kind_filter(types: &[&str]) -> Result<Option<Value>, JellyfinError> {
+    let top_level = |wanted: &&str| {
+        wanted.eq_ignore_ascii_case("movie") || wanted.eq_ignore_ascii_case("series")
+    };
+    if types.iter().all(top_level) {
+        return Ok(Some(Value::Null));
+    }
+    let mut kinds: Vec<&str> = types.iter().filter_map(|wanted| kind_of(wanted)).collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    match kinds[..] {
+        [] => Ok(None),
+        [kind] => Ok(Some(json!({ "kind": kind }))),
+        _ => Err(JellyfinError::NotImplemented(
+            "filters of several kinds of item at once",
+        )),
+    }
 }
 
 /// `/Items/Filters`: names only, as the clients before 10.6 read them.
@@ -226,6 +244,8 @@ async fn filters(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
 
     #[test]
@@ -236,6 +256,24 @@ mod tests {
         assert_eq!(language_choice("qaa")["Name"], "qaa");
         assert_eq!(language_choice("fra,fra")["Name"], "fra,fra");
         assert_eq!(language_choice("fre")["Value"], "fre");
+    }
+
+    #[test]
+    fn filters_narrow_to_the_one_kind_asked() {
+        assert_eq!(kind_filter(&[]).unwrap(), Some(Value::Null));
+        assert_eq!(
+            kind_filter(&["Movie", "Series"]).unwrap(),
+            Some(Value::Null)
+        );
+        assert_eq!(
+            kind_filter(&["Episode"]).unwrap(),
+            Some(json!({ "kind": "EPISODE" }))
+        );
+        assert_eq!(kind_filter(&["BoxSet"]).unwrap(), None);
+        assert!(matches!(
+            kind_filter(&["Season", "Episode"]),
+            Err(JellyfinError::NotImplemented(_))
+        ));
     }
 
     #[test]

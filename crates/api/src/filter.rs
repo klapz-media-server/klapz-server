@@ -242,6 +242,8 @@ pub struct ItemFilterInput {
     pub last_viewed_to: Option<DateTime>,
     /// Keep only items by the caller's rating of them.
     pub user_rating: Option<UserRatingFilterInput>,
+    /// Keep only the caller's favorites (`true`), or what it did not make one (`false`).
+    pub favorite: Option<bool>,
 }
 
 /// Keeps items by the caller's rating, out of ten. Every field given must hold. Each
@@ -532,6 +534,7 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
                 .user_rating
                 .map(RatingCondition::try_from)
                 .transpose()?,
+            favorite: input.favorite,
             // The caller's, which only the resolver knows.
             viewer: None,
         })
@@ -628,6 +631,7 @@ mod tests {
                 below: Some(9.5),
                 ..UserRatingFilterInput::default()
             }),
+            favorite: Some(true),
         };
         let filter = ItemFilter::try_from(input).unwrap();
         assert_eq!(filter.kind, Some(ItemKind::Show));
@@ -657,6 +661,7 @@ mod tests {
         assert_eq!(filter.episodes_started, Some(false));
         assert_eq!(filter.last_viewed_from, Some(1_700_000_000));
         assert_eq!(filter.ids, vec![RatingKey::new(46_616)]);
+        assert_eq!(filter.favorite, Some(true));
         assert_eq!(
             filter.user_rating,
             Some(RatingCondition {

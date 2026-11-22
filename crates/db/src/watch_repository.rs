@@ -20,8 +20,8 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    metadata_item, subtitle_offset, track_choice, user_rating, viewing, viewing_history,
-    watch_state,
+    metadata_item, subtitle_offset, track_choice, user_favorite, user_rating, viewing,
+    viewing_history, watch_state,
 };
 
 #[derive(Debug, Clone)]
@@ -563,6 +563,54 @@ impl WatchRepository for SqlWatchRepository {
         .exec(&self.connection)
         .await
         .map_err(storage)?;
+        Ok(())
+    }
+
+    async fn favorites(&self, viewer: UserId, guids: &[String]) -> Result<Vec<String>, WatchError> {
+        if guids.is_empty() {
+            return Ok(Vec::new());
+        }
+        user_favorite::Entity::find()
+            .select_only()
+            .column(user_favorite::Column::Guid)
+            .filter(user_favorite::Column::Viewer.eq(viewer.get()))
+            .filter(user_favorite::Column::Guid.is_in(guids.iter().cloned()))
+            .into_tuple()
+            .all(&self.connection)
+            .await
+            .map_err(storage)
+    }
+
+    async fn set_favorite(
+        &self,
+        viewer: UserId,
+        guid: &str,
+        favorite: bool,
+        at: i64,
+    ) -> Result<(), WatchError> {
+        if favorite {
+            user_favorite::Entity::insert(user_favorite::ActiveModel {
+                viewer: ActiveValue::Set(viewer.get()),
+                guid: ActiveValue::Set(guid.to_owned()),
+                added_at: ActiveValue::Set(at),
+            })
+            .on_conflict(
+                OnConflict::columns([user_favorite::Column::Viewer, user_favorite::Column::Guid])
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .do_nothing()
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        } else {
+            user_favorite::Entity::delete_many()
+                .filter(user_favorite::Column::Viewer.eq(viewer.get()))
+                .filter(user_favorite::Column::Guid.eq(guid))
+                .exec(&self.connection)
+                .await
+                .map_err(storage)?;
+        }
         Ok(())
     }
 }

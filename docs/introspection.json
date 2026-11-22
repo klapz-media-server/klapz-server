@@ -4873,6 +4873,22 @@
               "deprecationReason": null
             },
             {
+              "name": "isFavorite",
+              "description": "Whether the caller made the work a favorite, which makes every copy of it one. False\nwithout a caller.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "viewers",
               "description": "Who watched the work, most viewings first, then by user: an owner sees every user,\na user only itself. Counts every copy the caller can read and, for a series or a\nseason, the episodes below them.",
               "args": [
@@ -7911,6 +7927,22 @@
               "deprecationReason": null
             },
             {
+              "name": "isFavorite",
+              "description": "Whether the caller made the work a favorite, which makes every copy of it one. False without a caller.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "lockedFields",
               "description": "The fields an editor locked, which a metadata refresh leaves as they are.",
               "args": [],
@@ -8617,6 +8649,16 @@
               "type": {
                 "kind": "INPUT_OBJECT",
                 "name": "UserRatingFilterInput",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "favorite",
+              "description": "Keep only the caller's favorites (`true`), or what it did not make one (`false`).",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean",
                 "ofType": null
               },
               "defaultValue": null
@@ -12848,6 +12890,22 @@
               "deprecationReason": null
             },
             {
+              "name": "isFavorite",
+              "description": "Whether the caller made the work a favorite, which makes every copy of it one. False\nwithout a caller.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "viewers",
               "description": "Who watched the work, most viewings first, then by user: an owner sees every user,\na user only itself. Counts every copy the caller can read and, for a series or a\nseason, the episodes below them.",
               "args": [
@@ -14059,6 +14117,37 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "RateItemPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "setFavorite",
+              "description": "Makes a film, a series, a season or an episode a favorite of the caller's, or takes it\nback. The favorite is the work's: every copy of it is one.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The item and whether it is a favorite.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "SetFavoriteInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "SetFavoritePayload",
                   "ofType": null
                 }
               },
@@ -19547,6 +19636,16 @@
                   "defaultValue": null
                 },
                 {
+                  "name": "matching",
+                  "description": "Only playlists having a word that starts with each word of this text in their title, accents folded.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
                   "name": "orderBy",
                   "description": "How to order them.",
                   "type": {
@@ -21423,6 +21522,22 @@
               "deprecationReason": null
             },
             {
+              "name": "isFavorite",
+              "description": "Whether the caller made the work a favorite, which makes every copy of it one. False\nwithout a caller.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "viewers",
               "description": "Who watched the work, most viewings first, then by user: an owner sees every user,\na user only itself. Counts every copy the caller can read and, for a series or a\nseason, the episodes below them.",
               "args": [
@@ -22322,6 +22437,214 @@
           "possibleTypes": null
         },
         {
+          "kind": "ENUM",
+          "name": "SetFavoriteErrorCode",
+          "description": "Why `setFavorite` refused.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "ITEM_NOT_FOUND",
+              "description": "No item the caller may read has this id.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "SetFavoriteInput",
+          "description": "A film, a series, a season or an episode to make a favorite of the caller's, or to take\nback.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "itemId",
+              "description": "The item, as returned in its `id`. The favorite is the work's: every copy of it is\none.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "favorite",
+              "description": "True makes it a favorite, false takes it back. Either is accepted when it already\nholds, and changes nothing.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "SetFavoritePayload",
+          "description": "What `setFavorite` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "As given in the input.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "item",
+              "description": "The item, unless the request was refused.",
+              "args": [],
+              "type": {
+                "kind": "INTERFACE",
+                "name": "Item",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "favorite",
+              "description": "Whether the item is now one of the caller's favorites. False when the request was\nrefused.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why the request was refused. Empty on success.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "SetFavoriteUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "SetFavoriteUserError",
+          "description": "A request `setFavorite` refused, and where in the input the reason lies.",
+          "fields": [
+            {
+              "name": "field",
+              "description": "The path to the input field at fault.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "message",
+              "description": "What went wrong, for a person to read.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "code",
+              "description": "What went wrong, for a program to branch on.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "SetFavoriteErrorCode",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "INPUT_OBJECT",
           "name": "SetLibraryPermissionInput",
           "description": "A role to give a user on a library.",
@@ -22770,6 +23093,22 @@
                 "kind": "OBJECT",
                 "name": "UserRating",
                 "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "isFavorite",
+              "description": "Whether the caller made the work a favorite, which makes every copy of it one. False\nwithout a caller.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
               },
               "isDeprecated": false,
               "deprecationReason": null

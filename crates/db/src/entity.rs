@@ -47,6 +47,7 @@ pub mod tag;
 pub mod tag_word;
 pub mod track_choice;
 pub mod user_extension;
+pub mod user_favorite;
 pub mod user_password;
 pub mod user_rating;
 pub mod users;

@@ -95,8 +95,8 @@ async fn covered(state: &JellyfinState, query: &Query) -> Result<Vec<Library>, J
     gql::viewer(&state.schema)
         .await?
         .require_self(query.get("userId"))?;
-    if query.flag("isFavorite")? == Some(true) {
-        // Favorites are not kept: none is favorite.
+    if crate::listing::favorites_only(query)? {
+        // Only items are made favorites here, never a genre, a studio or a year.
         return Ok(Vec::new());
     }
     for refused in [
@@ -378,7 +378,9 @@ async fn persons(
     RawQuery(raw): RawQuery,
 ) -> Result<Response, JellyfinError> {
     let query = Query::parse(raw.as_deref());
-    if query.flag("isFavorite")? == Some(true) {
+    // A person cannot be made a favorite here, only an item. Jellyfin Web's favorites page
+    // asks with `Filters=IsFavorite` and no role.
+    if crate::listing::favorites_only(&query)? {
         return window(&query, Vec::new());
     }
     let items = person_list(&state, &query)

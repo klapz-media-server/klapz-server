@@ -139,6 +139,9 @@ pub struct PlaylistFilter {
     /// The playlists a library's page shows: those of the kind it plays, a smart one only if
     /// its rule lists that library. The kind is the caller's to set.
     pub library: Option<SectionId>,
+    /// Only playlists having a word of their title that each word of this text begins, as
+    /// [`crate::search::words_match`] reads them.
+    pub matching: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -591,6 +591,17 @@ impl Mutation {
         crate::user_rating::rate_item(context, input).await
     }
 
+    /// Makes a film, a series, a season or an episode a favorite of the caller's, or takes it
+    /// back. The favorite is the work's: every copy of it is one.
+    async fn set_favorite(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The item and whether it is a favorite.")]
+        input: crate::favorite::SetFavoriteInput,
+    ) -> Result<crate::favorite::SetFavoritePayload> {
+        crate::favorite::set_favorite(context, input).await
+    }
+
     /// Sets the offset the caller's player shifts a subtitle by, inside its media or a file
     /// of its own. The offset is the caller's, on this one track.
     async fn set_subtitle_offset(

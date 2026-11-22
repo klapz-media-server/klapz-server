@@ -247,7 +247,6 @@ async fn upcoming(
         offset: 0,
         first: start.saturating_add(limit).min(MAX_PAGE),
         kinds: vec!["EPISODE"],
-        favorites_only: false,
     };
     let mut episodes = Vec::new();
     for library in &wanted {

@@ -234,6 +234,19 @@ pub trait WatchRepository: Send + Sync + std::fmt::Debug {
         guid: &str,
         record: RatingRecord,
     ) -> Result<(), WatchError>;
+
+    /// Which of these works the viewer made a favorite.
+    async fn favorites(&self, viewer: UserId, guids: &[String]) -> Result<Vec<String>, WatchError>;
+
+    /// Makes a work a favorite of the viewer's, as of `at`, or takes it back. Making a
+    /// favorite again keeps the time it first became one.
+    async fn set_favorite(
+        &self,
+        viewer: UserId,
+        guid: &str,
+        favorite: bool,
+        at: i64,
+    ) -> Result<(), WatchError>;
 }
 
 /// Whether a position is past the share of the runtime that counts a viewing.

@@ -36,6 +36,7 @@ fragment JellyfinItem on Item {
     __typename id title titleSort summary addedAt
     library { id language }
     watchState { viewCount isWatched offsetMs lastViewedAt }
+    isFavorite
     ... on Movie {
         originalTitle year releasedOn contentRating audienceRating rating tagline studio
         durationMs
@@ -93,6 +94,8 @@ pub struct Item {
     pub added_at: String,
     pub library: Option<Reference>,
     pub watch_state: Option<WatchState>,
+    #[serde(default)]
+    pub is_favorite: bool,
     pub original_title: Option<String>,
     pub year: Option<i32>,
     pub released_on: Option<String>,
@@ -581,7 +584,7 @@ fn user_data(item: &Item, jellyfin_id: &str) -> Value {
         json!(time::ticks(state.offset_ms.unwrap_or(0))),
     );
     data.insert("PlayCount".to_owned(), json!(state.view_count));
-    data.insert("IsFavorite".to_owned(), json!(false));
+    data.insert("IsFavorite".to_owned(), json!(item.is_favorite));
     if let Some(last) = &state.last_viewed_at {
         data.insert("LastPlayedDate".to_owned(), json!(time::date(last)));
     }
@@ -1039,6 +1042,7 @@ mod tests {
                 offset_ms: Some(60_000),
                 last_viewed_at: Some("2026-11-01T10:00:00Z".to_owned()),
             }),
+            is_favorite: true,
             original_title: None,
             year: Some(1997),
             released_on: Some("1997-06-01T00:00:00Z".to_owned()),
@@ -1133,7 +1137,7 @@ mod tests {
         assert_eq!(data["PlaybackPositionTicks"], 600_000_000);
         assert_eq!(data["PlayCount"], 1);
         assert_eq!(data["Played"], false);
-        assert_eq!(data["IsFavorite"], false);
+        assert_eq!(data["IsFavorite"], true);
         assert_eq!(data["LastPlayedDate"], "2026-11-01T10:00:00.0000000Z");
         assert_eq!(data["Key"], id::dashed(&id::of("Item", 101).unwrap()));
         assert!(data.get("UnplayedItemCount").is_none());

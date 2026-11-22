@@ -1661,6 +1661,11 @@ type Episode implements Item & Node {
 	"""
 	userRating: UserRating
 	"""
+	Whether the caller made the work a favorite, which makes every copy of it one. False
+	without a caller.
+	"""
+	isFavorite: Boolean!
+	"""
 	Who watched the work, most viewings first, then by user: an owner sees every user,
 	a user only itself. Counts every copy the caller can read and, for a series or a
 	season, the episodes below them.
@@ -2649,6 +2654,10 @@ interface Item {
 	"""
 	userRating: UserRating
 	"""
+	Whether the caller made the work a favorite, which makes every copy of it one. False without a caller.
+	"""
+	isFavorite: Boolean!
+	"""
 	The fields an editor locked, which a metadata refresh leaves as they are.
 	"""
 	lockedFields: [ItemField!]!
@@ -2966,6 +2975,10 @@ input ItemFilterInput {
 	Keep only items by the caller's rating of them.
 	"""
 	userRating: UserRatingFilterInput
+	"""
+	Keep only the caller's favorites (`true`), or what it did not make one (`false`).
+	"""
+	favorite: Boolean
 }
 
 """
@@ -4496,6 +4509,11 @@ type Movie implements Item & Node {
 	"""
 	userRating: UserRating
 	"""
+	Whether the caller made the work a favorite, which makes every copy of it one. False
+	without a caller.
+	"""
+	isFavorite: Boolean!
+	"""
 	Who watched the work, most viewings first, then by user: an owner sees every user,
 	a user only itself. Counts every copy the caller can read and, for a series or a
 	season, the episodes below them.
@@ -4925,6 +4943,16 @@ type Mutation {
 		"""
 		input: RateItemInput!
 	): RateItemPayload!
+	"""
+	Makes a film, a series, a season or an episode a favorite of the caller's, or takes it
+	back. The favorite is the work's: every copy of it is one.
+	"""
+	setFavorite(
+		"""
+		The item and whether it is a favorite.
+		"""
+		input: SetFavoriteInput!
+	): SetFavoritePayload!
 	"""
 	Sets the offset the caller's player shifts a subtitle by, inside its media or a file
 	of its own. The offset is the caller's, on this one track.
@@ -6744,6 +6772,10 @@ type Query {
 		"""
 		library: ID,
 		"""
+		Only playlists having a word that starts with each word of this text in their title, accents folded.
+		"""
+		matching: String,
+		"""
 		How to order them.
 		"""
 		orderBy: PlaylistOrder,
@@ -7421,6 +7453,11 @@ type Season implements Item & Node {
 	"""
 	userRating: UserRating
 	"""
+	Whether the caller made the work a favorite, which makes every copy of it one. False
+	without a caller.
+	"""
+	isFavorite: Boolean!
+	"""
 	Who watched the work, most viewings first, then by user: an owner sees every user,
 	a user only itself. Counts every copy the caller can read and, for a series or a
 	season, the episodes below them.
@@ -7712,6 +7749,78 @@ enum ServerRoleType {
 }
 
 """
+Why `setFavorite` refused.
+"""
+enum SetFavoriteErrorCode {
+	"""
+	No item the caller may read has this id.
+	"""
+	ITEM_NOT_FOUND
+}
+
+"""
+A film, a series, a season or an episode to make a favorite of the caller's, or to take
+back.
+"""
+input SetFavoriteInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The item, as returned in its `id`. The favorite is the work's: every copy of it is
+	one.
+	"""
+	itemId: ID!
+	"""
+	True makes it a favorite, false takes it back. Either is accepted when it already
+	holds, and changes nothing.
+	"""
+	favorite: Boolean!
+}
+
+"""
+What `setFavorite` did.
+"""
+type SetFavoritePayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The item, unless the request was refused.
+	"""
+	item: Item
+	"""
+	Whether the item is now one of the caller's favorites. False when the request was
+	refused.
+	"""
+	favorite: Boolean!
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [SetFavoriteUserError!]!
+}
+
+"""
+A request `setFavorite` refused, and where in the input the reason lies.
+"""
+type SetFavoriteUserError {
+	"""
+	The path to the input field at fault.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person to read.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program to branch on.
+	"""
+	code: SetFavoriteErrorCode!
+}
+
+"""
 A role to give a user on a library.
 """
 input SetLibraryPermissionInput {
@@ -7872,6 +7981,11 @@ type Show implements Item & Node {
 	rated it, and without a caller.
 	"""
 	userRating: UserRating
+	"""
+	Whether the caller made the work a favorite, which makes every copy of it one. False
+	without a caller.
+	"""
+	isFavorite: Boolean!
 	"""
 	Who watched the work, most viewings first, then by user: an owner sees every user,
 	a user only itself. Counts every copy the caller can read and, for a series or a

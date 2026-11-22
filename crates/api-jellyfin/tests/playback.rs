@@ -7,7 +7,7 @@ mod common;
 use axum::http::{Method, StatusCode};
 use common::{
     client_header, fixture, jellyfin_id, shape_differences, Harness, DOODLEBUG, DOODLEBUG_AUDIO,
-    EPISODE, HIDDEN_FILM,
+    EPISODE, FILMS, HIDDEN_FILM,
 };
 use klapz_core::stream::Delivery;
 use serde_json::{json, Value};
@@ -318,20 +318,56 @@ async fn an_item_is_marked_played_and_unplayed() {
 }
 
 #[tokio::test]
-async fn favorites_are_refused_rather_than_forgotten() {
+async fn an_item_is_made_a_favorite_and_taken_back() {
     let harness = Harness::new().await;
     let token = harness.token().await;
-    let answer = harness
+    let film = jellyfin_id("Item", DOODLEBUG);
+    let favorite = harness
+        .post(
+            &format!("/jellyfin/UserFavoriteItems/{film}"),
+            &token,
+            json!({}),
+        )
+        .await;
+    assert_eq!(favorite.status, StatusCode::OK);
+    assert_eq!(favorite.json()["IsFavorite"], true);
+    assert_eq!(favorite.json()["ItemId"], film);
+    let lookup = harness
+        .get(&format!("/jellyfin/Items/{film}"), &token)
+        .await;
+    assert_eq!(lookup.json()["UserData"]["IsFavorite"], true);
+    // Jellyfin Web's favorites page, one type at a time, is honored rather than refused.
+    // This harness's storage keeps no watch state to filter by; storage's own tests
+    // (`db/tests/watch_filters.rs`) show what the filter keeps.
+    let listed = harness
+        .get(
+            "/jellyfin/Items?Filters=IsFavorite&Recursive=true&IncludeItemTypes=Movie",
+            &token,
+        )
+        .await;
+    assert_eq!(listed.status, StatusCode::OK);
+    let taken_back = harness
+        .send(
+            Method::DELETE,
+            &format!("/jellyfin/UserFavoriteItems/{film}"),
+            &[("authorization", client_header("device-1", Some(&token)))],
+            None,
+        )
+        .await;
+    assert_eq!(taken_back.status, StatusCode::OK);
+    assert_eq!(taken_back.json()["IsFavorite"], false);
+    // Only a library's items are made favorites.
+    let library = harness
         .post(
             &format!(
                 "/jellyfin/UserFavoriteItems/{}",
-                jellyfin_id("Item", DOODLEBUG)
+                jellyfin_id("Library", FILMS)
             ),
             &token,
             json!({}),
         )
         .await;
-    assert_eq!(answer.status, StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(library.status, StatusCode::NOT_IMPLEMENTED);
 }
 
 #[tokio::test]

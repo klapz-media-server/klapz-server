@@ -73,6 +73,19 @@ const REFUSED: &[&str] = &[
     "artistIds",
 ];
 
+/// Whether a request asks for favorites alone, by either of the two ways Jellyfin says it.
+///
+/// # Errors
+///
+/// [`JellyfinError::BadRequest`] for an `isFavorite` that is no boolean.
+pub fn favorites_only(query: &Query) -> Result<bool, JellyfinError> {
+    Ok(query
+        .list("filters")
+        .iter()
+        .any(|name| name.eq_ignore_ascii_case("isfavorite"))
+        || query.flag("isFavorite")? == Some(true))
+}
+
 /// A listing, in the official API's terms.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Listing {
@@ -84,8 +97,6 @@ pub struct Listing {
     pub first: u32,
     /// The kinds the request leaves possible. Empty: it can match nothing held here.
     pub kinds: Vec<&'static str>,
-    /// Asked for favorites, of which there are none here.
-    pub favorites_only: bool,
 }
 
 impl Listing {
@@ -109,6 +120,9 @@ impl Listing {
                     filter.insert("kind".to_owned(), json!(kind));
                 }
                 [] => {}
+                // The official API's search takes several kinds; a filter takes one.
+                [_, _, ..]
+                    if query.get("searchTerm").is_some() && query.get("parentId").is_none() => {}
                 [_, _, ..] => {
                     return Err(JellyfinError::NotImplemented("several item types at once"));
                 }
@@ -132,8 +146,9 @@ impl Listing {
         if filters.iter().any(|name| name == "isresumable") {
             filter.insert("inProgress".to_owned(), json!(true));
         }
-        let favorites_only = filters.iter().any(|name| name == "isfavorite")
-            || query.flag("isFavorite")? == Some(true);
+        if favorites_only(query)? {
+            filter.insert("favorite".to_owned(), json!(true));
+        }
         if filters
             .iter()
             .any(|name| matches!(name.as_str(), "likes" | "dislikes"))
@@ -188,7 +203,6 @@ impl Listing {
             offset: query.count("startIndex")?.unwrap_or(0),
             first: query.count("limit")?.unwrap_or(MAX_PAGE).min(MAX_PAGE),
             kinds,
-            favorites_only,
         })
     }
 
@@ -299,9 +313,17 @@ mod tests {
     }
 
     #[test]
-    fn several_of_our_types_at_once_are_refused() {
+    fn several_of_our_types_at_once_are_refused_but_by_a_search() {
         assert!(matches!(
             listing("IncludeItemTypes=Movie,Series"),
+            Err(JellyfinError::NotImplemented(_))
+        ));
+        let search =
+            listing("IncludeItemTypes=Movie,Series,Episode,Playlist&searchTerm=dune").unwrap();
+        assert_eq!(search.kinds, ["MOVIE", "SHOW", "EPISODE"]);
+        assert!(search.filter.get("kind").is_none());
+        assert!(matches!(
+            listing("IncludeItemTypes=Series,Episode&searchTerm=dune&parentId=0"),
             Err(JellyfinError::NotImplemented(_))
         ));
     }
@@ -359,8 +381,13 @@ mod tests {
             listing("Filters=IsResumable").unwrap().filter_json(),
             json!({ "inProgress": true })
         );
-        assert!(listing("Filters=IsFavorite").unwrap().favorites_only);
-        assert!(listing("isFavorite=true").unwrap().favorites_only);
+        for favorites in ["Filters=IsFavorite", "isFavorite=true"] {
+            assert_eq!(
+                listing(favorites).unwrap().filter_json(),
+                json!({ "favorite": true }),
+                "{favorites}"
+            );
+        }
     }
 
     #[test]

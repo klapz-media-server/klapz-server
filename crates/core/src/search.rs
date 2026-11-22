@@ -93,6 +93,18 @@ pub fn name_words(name: &str) -> Vec<String> {
     collected
 }
 
+/// Whether every word of `term` begins one of `words`: the word-prefix match, for what has
+/// too few rows to keep an index of words, as the index's query reads it.
+pub fn words_match(words: &[String], term: &str) -> bool {
+    self::words(term).all(|prefix| {
+        prefix_range(&prefix).is_some_and(|(lower, upper)| {
+            words
+                .iter()
+                .any(|word| word >= &lower && upper.as_ref().is_none_or(|bound| word < bound))
+        })
+    })
+}
+
 /// What separates the first word of a title from the rest, for ranking: a space or an
 /// apostrophe, so that *Amelie's Miracle* begins with the word `amelie`. The index splits on
 /// spaces alone, which is why `amelie` and `amelie's` are one word to match and two to rank.

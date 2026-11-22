@@ -594,6 +594,7 @@ pub(crate) struct ListRequest {
     pub kind: Option<PlaylistKindType>,
     pub smart: Option<bool>,
     pub library: Option<ID>,
+    pub matching: Option<String>,
     pub order_by: Option<PlaylistOrder>,
     pub direction: Option<SortDirection>,
 }
@@ -609,6 +610,7 @@ pub(crate) async fn list(
         kind,
         smart,
         library,
+        matching,
         order_by,
         direction,
     } = request;
@@ -616,6 +618,7 @@ pub(crate) async fn list(
         kind: kind.map(Into::into),
         smart,
         library: None,
+        matching,
     };
     let mut empty = viewer(context).is_none();
     if let Some(id) = library {

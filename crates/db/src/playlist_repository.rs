@@ -9,6 +9,7 @@ use klapz_core::playlist::{
     PlaylistEdit, PlaylistEntry, PlaylistError, PlaylistField, PlaylistKind, PlaylistQuery,
     PlaylistRepository, PlaylistSort, PlaylistTotals, SmartRule, POSITION_GAP,
 };
+use klapz_core::search;
 use klapz_core::{PlaylistEntryId, PlaylistId, RatingKey, SectionId, UserId};
 use sea_orm::sea_query::{Alias, Expr, Func, Query, SimpleExpr};
 use sea_orm::{
@@ -230,6 +231,34 @@ impl PlaylistOrder {
     }
 }
 
+impl SqlPlaylistRepository {
+    /// [`filtered`], and the titles `matching` names. A viewer's playlists are few enough to
+    /// match in memory, by the rule the word indexes of items and collections apply in SQL.
+    async fn filtered(
+        &self,
+        query: &PlaylistQuery,
+    ) -> Result<Select<playlist::Entity>, PlaylistError> {
+        let select = filtered(query);
+        let Some(term) = query.filter.matching.as_deref() else {
+            return Ok(select);
+        };
+        let titles: Vec<(i64, String)> = select
+            .clone()
+            .select_only()
+            .column(playlist::Column::Id)
+            .column(playlist::Column::Title)
+            .into_tuple()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        let matched = titles
+            .into_iter()
+            .filter(|(_, title)| search::words_match(&search::name_words(title), term))
+            .map(|(id, _)| id);
+        Ok(select.filter(playlist::Column::Id.is_in(matched)))
+    }
+}
+
 fn filtered(query: &PlaylistQuery) -> Select<playlist::Entity> {
     let mut select = playlist::Entity::find().filter(playlist::Column::Owner.eq(query.owner.get()));
     let filter = &query.filter;
@@ -421,7 +450,7 @@ impl PlaylistRepository for SqlPlaylistRepository {
             sort: query.sort,
             descending: query.direction.is_descending(),
         };
-        let mut select = filtered(query);
+        let mut select = self.filtered(query).await?;
         if let Some(after) = &window.after {
             select = select.filter(past(&order.terms(after), true));
         }
@@ -451,7 +480,8 @@ impl PlaylistRepository for SqlPlaylistRepository {
     }
 
     async fn count(&self, query: &PlaylistQuery) -> Result<u64, PlaylistError> {
-        filtered(query)
+        self.filtered(query)
+            .await?
             .count(&self.connection)
             .await
             .map_err(storage)

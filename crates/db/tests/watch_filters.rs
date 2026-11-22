@@ -6,7 +6,7 @@ use klapz_core::metadata::{ItemFilter, ItemKind, ItemQuery, MetadataRepository};
 use klapz_core::page::Window;
 use klapz_core::user_rating::RatingCondition;
 use klapz_core::{SectionId, UserId};
-use klapz_db::entity::{library_section, metadata_item, user_rating, watch_state};
+use klapz_db::entity::{library_section, metadata_item, user_favorite, user_rating, watch_state};
 use klapz_db::write;
 use klapz_db::SqlMetadataRepository;
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
@@ -134,6 +134,17 @@ async fn seed(connection: &DatabaseConnection) {
     .exec(connection)
     .await
     .expect("ratings");
+
+    // Coco is a favorite; another viewer's Soul is not user 1's.
+    let favorite = |viewer: i64, item: i64| user_favorite::ActiveModel {
+        viewer: ActiveValue::Set(viewer),
+        guid: ActiveValue::Set(format!("plex://movie/{item}")),
+        added_at: ActiveValue::Set(1),
+    };
+    user_favorite::Entity::insert_many([favorite(1, 2), favorite(7, 1)])
+        .exec(connection)
+        .await
+        .expect("favorites");
 }
 
 async fn titles(filter: ItemFilter) -> Vec<String> {
@@ -354,4 +365,20 @@ async fn a_caller_with_no_watch_state_has_rated_nothing() {
         ..films(None)
     };
     assert!(titles(at_least).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_favorite_is_the_viewers_alone() {
+    let favorites = |favorite, viewer| ItemFilter {
+        favorite: Some(favorite),
+        ..films(viewer)
+    };
+    assert_eq!(titles(favorites(true, VIEWER)).await, ["Coco"]);
+    assert_eq!(
+        titles(favorites(false, VIEWER)).await,
+        ["Luca", "Onward", "Soul"]
+    );
+    // A caller with no watch state has no favorite.
+    assert!(titles(favorites(true, None)).await.is_empty());
+    assert_eq!(titles(favorites(false, None)).await.len(), 4);
 }

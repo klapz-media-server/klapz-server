@@ -889,6 +889,9 @@ pub struct ItemFilter {
     pub last_viewed_to: Option<i64>,
     /// Keeps only items the viewer rated, or did not rate, as the condition says.
     pub user_rating: Option<crate::user_rating::RatingCondition>,
+    /// Keeps only the viewer's favorites (`true`), or what it did not make one (`false`).
+    /// Like a rating, a favorite is the work's: every copy of it is one.
+    pub favorite: Option<bool>,
     /// Whose watch state the filters above read. `None`, a caller with no watch state, has
     /// watched nothing and has nothing in progress.
     pub viewer: Option<UserId>,

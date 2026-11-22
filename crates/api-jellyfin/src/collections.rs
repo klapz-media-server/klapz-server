@@ -195,15 +195,23 @@ struct CollectionsData {
     collections: Nodes<Collection>,
 }
 
-/// The collections of every library the caller reads, by title.
-pub async fn collections(state: &JellyfinState) -> Result<Vec<Collection>, JellyfinError> {
+/// The collections of every library the caller reads, by title; with `matching`, those whose
+/// title a search term finds.
+pub async fn collections(
+    state: &JellyfinState,
+    matching: Option<&str>,
+) -> Result<Vec<Collection>, JellyfinError> {
     let data: CollectionsData = gql::query(
         &state.schema,
         &format!(
-            "{{ collections(orderBy: TITLE, first: 500) {{ nodes {{ ...JellyfinCollection }} }} }}
+            "query($matching: String) {{
+                collections(matching: $matching, orderBy: TITLE, first: 500) {{
+                    nodes {{ ...JellyfinCollection }}
+                }}
+            }}
             {COLLECTION_FIELDS}"
         ),
-        Value::Null,
+        json!({ "matching": matching }),
     )
     .await?;
     Ok(data.collections.nodes)

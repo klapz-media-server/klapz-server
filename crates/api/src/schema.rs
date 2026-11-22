@@ -525,6 +525,10 @@ impl Query {
             desc = "Only the playlists a library's page shows, as returned in `Library.id`: those of the kind it plays, a smart one only if its rule lists that library."
         )]
         library: Option<ID>,
+        #[graphql(
+            desc = "Only playlists having a word that starts with each word of this text in their title, accents folded."
+        )]
+        matching: Option<String>,
         #[graphql(desc = "How to order them.")] order_by: Option<crate::playlist::PlaylistOrder>,
         #[graphql(desc = "Which direction to order in.")] direction: Option<
             crate::filter::SortDirection,
@@ -541,6 +545,7 @@ impl Query {
             kind,
             smart,
             library,
+            matching,
             order_by,
             direction,
         };
@@ -919,6 +924,9 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
         .data(loader(crate::user_rating::UserRatingLoader::new(
             Arc::clone(&watch),
         )))
+        .data(loader(crate::favorite::FavoriteLoader::new(Arc::clone(
+            &watch,
+        ))))
         .data(loader(crate::sidecar::SubtitleOffsetLoader::new(
             Arc::clone(&watch),
         )))

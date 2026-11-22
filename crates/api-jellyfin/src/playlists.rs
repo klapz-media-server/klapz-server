@@ -191,15 +191,23 @@ struct PlaylistsData {
     playlists: Nodes<Playlist>,
 }
 
-/// The caller's playlists, newest last as the reference lists them by name.
-pub async fn playlists(state: &JellyfinState) -> Result<Vec<Playlist>, JellyfinError> {
+/// The caller's playlists, newest last as the reference lists them by name; with `matching`,
+/// those whose title a search term finds.
+pub async fn playlists(
+    state: &JellyfinState,
+    matching: Option<&str>,
+) -> Result<Vec<Playlist>, JellyfinError> {
     let data: PlaylistsData = gql::query(
         &state.schema,
         &format!(
-            "{{ playlists(orderBy: TITLE, first: 500) {{ nodes {{ ...JellyfinPlaylist }} }} }}
+            "query($matching: String) {{
+                playlists(matching: $matching, orderBy: TITLE, first: 500) {{
+                    nodes {{ ...JellyfinPlaylist }}
+                }}
+            }}
             {PLAYLIST_FIELDS}"
         ),
-        Value::Null,
+        json!({ "matching": matching }),
     )
     .await?;
     Ok(data.playlists.nodes)

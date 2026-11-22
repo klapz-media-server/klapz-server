@@ -1048,8 +1048,9 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   sign-in and out, views, listings and lookups with the reference's shapes and track labels,
   latest, resume, next up, seasons and episodes, `PlaybackInfo` deciding through
   `MediaFile.readableAsIs`, direct play and HLS started through `startStream`, progress
-  reports, played marks. Jellyfin Web signs in, browses and plays directly and through a
-  conversion. Not yet: artwork, favorites, subtitles delivered to the client, remuxing,
+  reports, played marks, favorites (`setFavorite`, per user and work, `user_favorite`,
+  migration `m0041`). Jellyfin Web signs in, browses, searches and plays directly and through a
+  conversion. Not yet: artwork, subtitles delivered to the client, remuxing,
   people and genre pages, search hints, the other clients tried (`docs/jellyfin/`).
   On the 35 test files, every field a file determines is the reference's — tracks, media sources,
   chapters, containers, durations, rates, filters — from what ffprobe states as printed, which the

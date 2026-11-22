@@ -294,11 +294,21 @@ async fn list(
     let listing = Listing::parse(query)?;
     let fields = fields(query);
     let start = listing.offset;
-    if listing.favorites_only || listing.kinds.is_empty() {
+    if listing.kinds.is_empty() {
         return Ok(page(Vec::new(), 0, start));
     }
+    // What is listed by id, below an item or by a search takes no filter of the official
+    // API's, a favorite's included.
+    let unfiltered_favorites = |what| {
+        if listing.filter.contains_key("favorite") {
+            Err(JellyfinError::NotImplemented(what))
+        } else {
+            Ok(())
+        }
+    };
     let ids = query.list("ids");
     if !ids.is_empty() {
+        unfiltered_favorites("favorites among items asked by id")?;
         let globals = ids
             .iter()
             .map(|jellyfin| {
@@ -323,6 +333,7 @@ async fn list(
                 Ok(page(shaped(&items, state, &fields), total, start))
             }
             klapz_api::item::ITEM_TYPE => {
+                unfiltered_favorites("favorites below an item")?;
                 let all = children(state, &global, &fields).await?;
                 let items: Vec<Item> = all
                     .into_iter()
@@ -348,6 +359,7 @@ async fn list(
         };
     }
     if let Some(term) = query.get("searchTerm") {
+        unfiltered_favorites("favorites among a search's results")?;
         let items = shaped(
             &search(state, term, &listing, &fields).await?,
             state,
@@ -407,7 +419,7 @@ async fn lookup(
             Ok(json(&library_dto(&library, &state.server.id)))
         }
         klapz_api::server::SERVER_TYPE if global.key == 2 => {
-            let count = crate::collections::collections(state).await?.len();
+            let count = crate::collections::collections(state, None).await?.len();
             Ok(json(&crate::collections::view_dto(&state.server.id, count)))
         }
         klapz_api::collection::COLLECTION_TYPE => {
@@ -419,7 +431,7 @@ async fn lookup(
             )))
         }
         klapz_api::server::SERVER_TYPE if global.key == 1 => {
-            let count = crate::playlists::playlists(state).await?.len();
+            let count = crate::playlists::playlists(state, None).await?.len();
             Ok(json(&crate::playlists::view_dto(&state.server.id, count)))
         }
         klapz_api::server::SERVER_TYPE => Ok(json(&user_root(state))),
@@ -505,8 +517,8 @@ async fn credited(state: &JellyfinState, query: &Query) -> Result<Response, Jell
 }
 
 /// Listings of what is not a library's item: the caller's playlists and collections, as a type
-/// or as their view, and what a playlist or a collection holds. `None` for every other
-/// listing.
+/// or as their view, among the items a search finds, and what a playlist or a collection holds.
+/// `None` for every other listing.
 async fn containers(
     state: &JellyfinState,
     query: &Query,
@@ -525,18 +537,23 @@ async fn containers(
         .as_ref()
         .filter(|parent| parent.type_name == klapz_api::library::LIBRARY_TYPE)
         .map(|library| klapz_api::GlobalId::encode(&library.type_name, library.key));
+    let term = query.get("searchTerm");
     if view(1) || (only("playlist") && parent.is_none()) {
-        return Ok(Some(playlists_page(state, query).await?));
+        return Ok(Some(playlists_page(state, query, term).await?));
     }
     if view(2) || (only("boxset") && (parent.is_none() || under_library.is_some())) {
         return Ok(Some(
-            collections_page(state, query, under_library.as_deref()).await?,
+            collections_page(state, query, under_library.as_deref(), term).await?,
         ));
     }
     if names("playlist") || names("boxset") {
-        return Err(JellyfinError::NotImplemented(
-            "playlists or collections among other types, or below an item",
-        ));
+        return match (term, &parent) {
+            // Jellyfin Web's search asks for every type at once and sorts the answer by type.
+            (Some(term), None) => Ok(Some(search_everything(state, query, term).await?)),
+            _ => Err(JellyfinError::NotImplemented(
+                "playlists or collections among other types, without a search term or below an item",
+            )),
+        };
     }
     let Some(parent) = parent else {
         return Ok(None);
@@ -553,30 +570,100 @@ async fn containers(
     }
 }
 
-async fn playlists_page(state: &JellyfinState, query: &Query) -> Result<Response, JellyfinError> {
+/// The caller's playlists, those a search term finds when there is one. None is a favorite:
+/// only a library's items are made favorites.
+async fn playlists_page(
+    state: &JellyfinState,
+    query: &Query,
+    term: Option<&str>,
+) -> Result<Response, JellyfinError> {
     let fields = fields(query);
-    let items: Vec<Value> = crate::playlists::playlists(state)
-        .await?
-        .iter()
-        .map(|playlist| crate::playlists::playlist_dto(playlist, &state.server.id, &fields))
-        .collect();
+    let items = if crate::listing::favorites_only(query)? {
+        Vec::new()
+    } else {
+        playlist_dtos(state, term, &fields).await?
+    };
     let total = count(&items);
     Ok(page(items, total, 0))
 }
 
-/// The caller's collections, or one library's.
+async fn playlist_dtos(
+    state: &JellyfinState,
+    term: Option<&str>,
+    fields: &Fields,
+) -> Result<Vec<Value>, JellyfinError> {
+    Ok(crate::playlists::playlists(state, term)
+        .await?
+        .iter()
+        .map(|playlist| crate::playlists::playlist_dto(playlist, &state.server.id, fields))
+        .collect())
+}
+
+/// The caller's collections, or one library's, those a search term finds when there is one.
+/// None is a favorite, as no playlist is.
 async fn collections_page(
     state: &JellyfinState,
     query: &Query,
     library: Option<&str>,
+    term: Option<&str>,
 ) -> Result<Response, JellyfinError> {
     let fields = fields(query);
-    let items: Vec<Value> = crate::collections::collections(state)
+    let items = if crate::listing::favorites_only(query)? {
+        Vec::new()
+    } else {
+        collection_dtos(state, library, term, &fields).await?
+    };
+    let total = count(&items);
+    Ok(page(items, total, 0))
+}
+
+async fn collection_dtos(
+    state: &JellyfinState,
+    library: Option<&str>,
+    term: Option<&str>,
+    fields: &Fields,
+) -> Result<Vec<Value>, JellyfinError> {
+    Ok(crate::collections::collections(state, term)
         .await?
         .iter()
         .filter(|collection| library.is_none_or(|library| collection.library_id() == Some(library)))
-        .map(|collection| crate::collections::collection_dto(collection, &state.server.id, &fields))
-        .collect();
+        .map(|collection| crate::collections::collection_dto(collection, &state.server.id, fields))
+        .collect())
+}
+
+/// What a term finds among every type a request names: the items the official API's search
+/// ranks, then the collections and the playlists whose title it finds, each list in its own
+/// order. One page, as a search's always is here.
+async fn search_everything(
+    state: &JellyfinState,
+    query: &Query,
+    term: &str,
+) -> Result<Response, JellyfinError> {
+    let listing = Listing::parse(query)?;
+    if listing.filter.contains_key("favorite") {
+        return Err(JellyfinError::NotImplemented(
+            "favorites among a search's results",
+        ));
+    }
+    let fields = fields(query);
+    let types = query.list("includeItemTypes");
+    let names = |name: &str| types.iter().any(|kind| kind.eq_ignore_ascii_case(name));
+    let mut items = if listing.kinds.is_empty() {
+        Vec::new()
+    } else {
+        shaped(
+            &search(state, term, &listing, &fields).await?,
+            state,
+            &fields,
+        )
+    };
+    if names("boxset") {
+        items.extend(collection_dtos(state, None, Some(term), &fields).await?);
+    }
+    if names("playlist") {
+        items.extend(playlist_dtos(state, Some(term), &fields).await?);
+    }
+    items.truncate(usize::try_from(listing.first).unwrap_or(usize::MAX));
     let total = count(&items);
     Ok(page(items, total, 0))
 }
