@@ -14,7 +14,7 @@
 //! A stream's renditions are numbered from 0, the best: one, unless the player chooses its
 //! quality. `/streams/{id}/{rendition}/…` holds a rendition's HLS playlist and segments, or its
 //! DASH video; `/streams/{id}/audio/…` the DASH audio every rendition shares;
-//! `/streams/{id}/subtitles.{vtt,ass,srt}` the text subtitle, whole.
+//! `/streams/{id}/subtitles.{vtt,ass,srt,ttml}` the subtitle, whole.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -100,7 +100,7 @@ struct Conversion {
     subtitle: Option<TextSubtitle>,
 }
 
-/// A text subtitle beside a conversion.
+/// A subtitle beside a conversion, text or pictures as TTML.
 #[derive(Debug, Clone)]
 struct TextSubtitle {
     format: PlayerSubtitleFormat,
@@ -207,8 +207,8 @@ fn subtitle_delivery(subtitle: &SubtitleOutput) -> SubtitleDelivery {
     }
 }
 
-/// Each subtitle track of the file and the format it would reach this player in as text, for
-/// the transcoder to extract those that are text before the player switches to one.
+/// Each subtitle track of the file and the format it would reach this player in, for the
+/// transcoder to extract those it can before the player switches to one.
 fn text_subtitles(order: &StreamOrder) -> Vec<(Track, SubtitleFormat)> {
     order
         .source
@@ -226,6 +226,7 @@ const fn subtitle_format(format: PlayerSubtitleFormat) -> SubtitleFormat {
         PlayerSubtitleFormat::Ass => SubtitleFormat::Ass,
         PlayerSubtitleFormat::WebVtt => SubtitleFormat::WebVtt,
         PlayerSubtitleFormat::Srt => SubtitleFormat::Srt,
+        PlayerSubtitleFormat::Ttml => SubtitleFormat::Ttml,
     }
 }
 
@@ -969,7 +970,7 @@ async fn served(mut files: Vec<PathBuf>, content_type: &'static str, request: Re
     }
 }
 
-/// `GET /streams/{id}/subtitles.{vtt,ass,srt}`: the stream's text subtitle, whole, under the
+/// `GET /streams/{id}/subtitles.{vtt,ass,srt,ttml}`: the stream's subtitle, whole, under the
 /// extension of the format it was started with. Answered at once, the body following when the
 /// extraction begun with the stream is done: over a network share it can take longer than the
 /// server lets a response wait for its head. A failed extraction ends the body empty.
@@ -1116,7 +1117,7 @@ fn dash_manifest(manifest: &DashManifest<'_>) -> String {
     )
 }
 
-/// The text subtitle's adaptation set: the whole file as the one segment of its representation,
+/// The subtitle's adaptation set: the whole file as the one segment of its representation,
 /// which players read as a text track when it has no segment template.
 fn subtitle_adaptation(subtitle: &TextSubtitle, address: &Address<'_>) -> String {
     let Address { base, query } = address;
@@ -1341,6 +1342,13 @@ mod tests {
         let text = subtitle_adaptation(&odd, &address());
         assert!(text.contains(r#"mimeType="text/x-ssa">"#), "{text}");
         assert!(!text.contains("lang="));
+        let pictures = TextSubtitle {
+            format: PlayerSubtitleFormat::Ttml,
+            language: Some("fr".to_owned()),
+        };
+        let text = subtitle_adaptation(&pictures, &address());
+        assert!(text.contains(r#"mimeType="application/ttml+xml" lang="fr">"#));
+        assert!(text.contains("<BaseURL>/streams/s1/subtitles.ttml?token=t0</BaseURL>"));
     }
 
     fn conversion_of(adaptation: Adaptation) -> Conversion {

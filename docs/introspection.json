@@ -26173,7 +26173,7 @@
             },
             {
               "name": "subtitleFormats",
-              "description": "The text formats the player draws, in its order of preference: a text subtitle is sent in\nits own format when it is one of them, converted into the first otherwise. Required for\n`subtitles: TEXT`.",
+              "description": "The formats the player draws, in its order of preference: a text subtitle is sent in its\nown format when it is one of them, converted into the first text format otherwise; a\npicture subtitle only as `TTML`. Required for `subtitles: TEXT`.",
               "type": {
                 "kind": "LIST",
                 "name": null,
@@ -26726,7 +26726,7 @@
             },
             {
               "name": "SUBTITLE_NOT_DELIVERABLE",
-              "description": "The subtitle cannot be delivered the way asked: an image subtitle as text, text for a\nplayer that names no format, or no fonts to burn with.",
+              "description": "The subtitle cannot be delivered the way asked: a picture subtitle for a player that\ndoes not name `TTML`, text for one that names no text format, or no fonts to burn with.",
               "isDeprecated": false,
               "deprecationReason": null
             },
@@ -26850,7 +26850,7 @@
             },
             {
               "name": "subtitlesUrl",
-              "description": "Where the player reads text subtitles, whole, when they were asked for. A DASH manifest\nlists them too.",
+              "description": "Where the player reads the subtitle, whole, when one was asked for. A DASH manifest\nlists it too.",
               "args": [],
               "type": {
                 "kind": "SCALAR",
@@ -27140,7 +27140,7 @@
             },
             {
               "name": "TEXT",
-              "description": "As text beside the stream, whole, in one of `subtitleFormats`, for the player to draw.\nListed in a DASH manifest, and at `subtitlesUrl` for any protocol.",
+              "description": "Beside the stream, whole, in one of `subtitleFormats`, for the player to draw: text in a\ntext format, pictures (a Blu-ray's, a DVD's) as `TTML`. Listed in a DASH manifest, and at\n`subtitlesUrl` for any protocol.",
               "isDeprecated": false,
               "deprecationReason": null
             }
@@ -27185,7 +27185,7 @@
         {
           "kind": "ENUM",
           "name": "SubtitleFormatType",
-          "description": "A text format a player draws subtitles in.",
+          "description": "A format a player draws subtitles in.",
           "fields": null,
           "inputFields": null,
           "interfaces": null,
@@ -27205,6 +27205,12 @@
             {
               "name": "SRT",
               "description": "SRT, plain timed text.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TTML",
+              "description": "TTML whose subtitles are pictures, each in Base64 in the document (SMPTE-TT's\n`smpte:image`, placed as IMSC1 Image places them): the format of picture subtitles, and\nof nothing else.",
               "isDeprecated": false,
               "deprecationReason": null
             }

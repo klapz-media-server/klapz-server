@@ -116,8 +116,8 @@ pub struct StreamRequest {
     pub total_ms: u64,
     /// The subtitle the player gets, if any. Drawing it in needs the plan to encode the video.
     pub subtitle: Option<SubtitleDelivery>,
-    /// The file's subtitle tracks and the format each would reach the player in as text: those
-    /// that are text are extracted from the start, for the player to switch to.
+    /// The file's subtitle tracks and the format each would reach the player in: those that
+    /// convert into it are extracted from the start, for the player to switch to.
     pub text_subtitles: Vec<(Track, SubtitleFormat)>,
 }
 
@@ -126,7 +126,8 @@ pub struct StreamRequest {
 pub enum SubtitleDelivery {
     /// Drawn into the picture. `scale` is the client's size, 1.0 for its 100%.
     Burn { track: Track, scale: f64 },
-    /// Beside the stream, extracted whole in a format the player reads, for it to draw.
+    /// Beside the stream, extracted whole in a format the player reads, for it to draw: text,
+    /// or pictures as TTML.
     Text {
         track: Track,
         format: SubtitleFormat,
@@ -145,27 +146,17 @@ impl SubtitleDelivery {
         subtitle::is_text(&self.track().codec)
     }
 
-    /// Pictures, from a Blu-ray, a DVD or a broadcast: laid over the video rather than drawn.
+    /// Pictures, laid over the video rather than drawn.
     fn is_image(&self) -> bool {
-        matches!(
-            self.track().codec.as_str(),
-            "pgs"
-                | "hdmv_pgs_subtitle"
-                | "vobsub"
-                | "dvd_subtitle"
-                | "dvdsub"
-                | "dvb_subtitle"
-                | "dvbsub"
-                | "xsub"
-        )
+        subtitle::is_image(&self.track().codec)
     }
 
-    /// Whether this delivery can be made: text converted or drawn, the latter with fonts, and
-    /// pictures laid over the video.
+    /// Whether this delivery can be made: text drawn with fonts and pictures laid over the
+    /// video, or either converted into a format that holds it.
     fn deliverable(&self, fonts: bool) -> bool {
         match self {
             Self::Burn { .. } => (self.is_text() && fonts) || self.is_image(),
-            Self::Text { .. } => self.is_text(),
+            Self::Text { track, format } => format.holds(&track.codec),
         }
     }
 }
@@ -1360,8 +1351,8 @@ impl Transcoder {
         }
     }
 
-    /// Starts extracting every text subtitle of the request's file, the one it asked for first,
-    /// and returns that one's extraction.
+    /// Starts extracting every subtitle of the request's file that converts into the format
+    /// named for it, the one it asked for first, and returns that one's extraction.
     async fn prepare_subtitles(&self, request: &StreamRequest) -> Option<Arc<Extraction>> {
         let chosen = match &request.subtitle {
             Some(SubtitleDelivery::Text { track, format }) => Some((track.clone(), *format)),
@@ -1374,7 +1365,7 @@ impl Transcoder {
                 request
                     .text_subtitles
                     .iter()
-                    .filter(|(track, _)| subtitle::is_text(&track.codec))
+                    .filter(|(track, format)| format.holds(&track.codec))
                     .cloned(),
             )
             .collect();

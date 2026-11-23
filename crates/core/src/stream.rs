@@ -61,7 +61,7 @@ pub struct StreamSource {
     pub video: StreamTrack,
     pub audio: StreamTrack,
     /// The subtitle tracks inside the file, sidecars aside: the engine may prepare those it
-    /// delivers as text before the player asks, since it changes track by starting anew.
+    /// delivers beside the stream before the player asks, since it changes track by starting anew.
     pub subtitles: Vec<StreamTrack>,
 }
 
@@ -70,19 +70,37 @@ pub struct StreamSource {
 pub enum SubtitleOutput {
     /// Drawn into the picture. `scale` is 1.0 for the normal size.
     Burn { track: StreamTrack, scale: f64 },
-    /// As text beside the stream, whole, for the player to draw.
+    /// Beside the stream, whole, for the player to draw.
     Text {
         track: StreamTrack,
         format: SubtitleFormat,
     },
 }
 
-/// A text format a player draws subtitles in.
+/// A format a player draws subtitles in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubtitleFormat {
     Ass,
     WebVtt,
     Srt,
+    /// TTML holding pictures, the one format a Blu-ray's, a DVD's or a broadcast's subtitles
+    /// reach a player in without being burned in.
+    Ttml,
+}
+
+/// Whether a subtitle of this codec is pictures rather than text.
+fn is_image(codec: &str) -> bool {
+    matches!(
+        codec,
+        "pgs"
+            | "hdmv_pgs_subtitle"
+            | "vobsub"
+            | "dvd_subtitle"
+            | "dvdsub"
+            | "dvb_subtitle"
+            | "dvbsub"
+            | "xsub"
+    )
 }
 
 impl SubtitleFormat {
@@ -95,13 +113,23 @@ impl SubtitleFormat {
         }
     }
 
-    /// The format a text track reaches a player in: its own when the player reads it, else the
-    /// first the player names, since any text converts into any of these. `None` for a player
-    /// that reads none. Whether the track is text at all is the engine's to say.
+    /// The format a track reaches a player in. Pictures go as TTML, when the player reads it;
+    /// text in its own format when the player reads it, else the first text format the player
+    /// names, since any text converts into any of these. `None` for a player that reads no
+    /// format for the track. Whether a track that is not pictures is text is the engine's to
+    /// say.
     pub fn for_track(codec: &str, readable: &[Self]) -> Option<Self> {
+        if is_image(codec) {
+            return readable.contains(&Self::Ttml).then_some(Self::Ttml);
+        }
         Self::of_codec(codec)
             .filter(|own| readable.contains(own))
-            .or_else(|| readable.first().copied())
+            .or_else(|| {
+                readable
+                    .iter()
+                    .copied()
+                    .find(|format| *format != Self::Ttml)
+            })
     }
 }
 
@@ -155,7 +183,7 @@ pub struct StartedStream {
     /// Where the player reads it: a path on this server, its secret included. A manifest for a
     /// conversion, the file itself otherwise.
     pub url: String,
-    /// Where the player reads text subtitles, when it asked for them.
+    /// Where the player reads the subtitle beside the stream, when it asked for it.
     pub subtitles_url: Option<String>,
     /// The format they are in.
     pub subtitle_format: Option<SubtitleFormat>,
@@ -367,6 +395,21 @@ mod tests {
         assert_eq!(SubtitleFormat::for_track("subrip", &[Ass, Srt]), Some(Srt));
         assert_eq!(SubtitleFormat::for_track("mov_text", &[Srt]), Some(Srt));
         assert_eq!(SubtitleFormat::for_track("ass", &[]), None);
+    }
+
+    #[test]
+    fn pictures_go_as_ttml_and_text_never_does() {
+        use SubtitleFormat::{Ass, Ttml, WebVtt};
+        assert_eq!(
+            SubtitleFormat::for_track("hdmv_pgs_subtitle", &[WebVtt, Ttml]),
+            Some(Ttml)
+        );
+        assert_eq!(SubtitleFormat::for_track("pgs", &[WebVtt, Ass]), None);
+        assert_eq!(
+            SubtitleFormat::for_track("subrip", &[Ttml, WebVtt]),
+            Some(WebVtt)
+        );
+        assert_eq!(SubtitleFormat::for_track("subrip", &[Ttml]), None);
     }
 
     #[test]

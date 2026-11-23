@@ -1,4 +1,5 @@
-//! Text subtitles extracted whole, every text track of a file in one pass of the transcoder.
+//! Subtitles extracted whole, every track of a file a player can be given in one pass of the
+//! transcoder: text in a text format, pictures as TTML.
 //!
 //! A player gets a whole track at once, on the media's timeline, whatever the stream it goes
 //! with is doing: a seek or a change of quality restarts the stream's process but not this.
@@ -21,9 +22,13 @@ use tokio::task::AbortHandle;
 use crate::plan::Track;
 use crate::TranscodeError;
 
-/// The most an extracted subtitle may weigh. A film's run to some hundred kilobytes; ASS
+/// The most an extracted text subtitle may weigh. A film's run to some hundred kilobytes; ASS
 /// karaoke a few megabytes.
-const MAX_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_TEXT_BYTES: u64 = 32 * 1024 * 1024;
+
+/// The most a TTML document of pictures may weigh: Daria's 74 subtitles in Base64 weigh 820
+/// kilobytes, so a film's two thousand some 25 megabytes.
+const MAX_TTML_BYTES: u64 = 128 * 1024 * 1024;
 
 /// What every file's subtitles may weigh together: a film's tracks weigh some hundred
 /// kilobytes each.
@@ -40,15 +45,18 @@ const SUBTITLE_DIRECTORY: &str = "subtitle-";
 const PARTIAL: &str = ".partial-";
 const ABANDONED_AFTER: Duration = Duration::from_secs(6 * 60 * 60);
 
-/// A text format a player reads subtitles in.
+/// A format a player reads subtitles in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SubtitleFormat {
     Ass,
     WebVtt,
     Srt,
+    /// TTML holding pictures: IMSC1 Image's regions, each image in Base64 in the document, as
+    /// ffmpeg-plex's `imsc_image` muxer writes them from v8.1.3-69.
+    Ttml,
 }
 
-/// Whether a track of this codec is text the transcoder converts into any of the formats.
+/// Whether a track of this codec is text the transcoder converts into any of the text formats.
 #[must_use]
 pub fn is_text(codec: &str) -> bool {
     matches!(
@@ -57,7 +65,33 @@ pub fn is_text(codec: &str) -> bool {
     )
 }
 
+/// Whether a track of this codec is pictures, from a Blu-ray, a DVD or a broadcast.
+#[must_use]
+pub fn is_image(codec: &str) -> bool {
+    matches!(
+        codec,
+        "pgs"
+            | "hdmv_pgs_subtitle"
+            | "vobsub"
+            | "dvd_subtitle"
+            | "dvdsub"
+            | "dvb_subtitle"
+            | "dvbsub"
+            | "xsub"
+    )
+}
+
 impl SubtitleFormat {
+    /// Whether a track of this codec converts into this format: text into text, pictures into
+    /// TTML.
+    #[must_use]
+    pub fn holds(self, codec: &str) -> bool {
+        match self {
+            Self::Ttml => is_image(codec),
+            Self::Ass | Self::WebVtt | Self::Srt => is_text(codec),
+        }
+    }
+
     /// The format a track already is, for those whose packets go into a file of it untouched.
     fn of_codec(codec: &str) -> Option<Self> {
         match codec {
@@ -74,6 +108,7 @@ impl SubtitleFormat {
             Self::Ass => "ass",
             Self::WebVtt => "webvtt",
             Self::Srt => "subrip",
+            Self::Ttml => "imsc_image",
         }
     }
 
@@ -83,6 +118,7 @@ impl SubtitleFormat {
             Self::Ass => "ass",
             Self::WebVtt => "webvtt",
             Self::Srt => "srt",
+            Self::Ttml => "imsc_image",
         }
     }
 
@@ -92,6 +128,7 @@ impl SubtitleFormat {
             Self::Ass => "ass",
             Self::WebVtt => "vtt",
             Self::Srt => "srt",
+            Self::Ttml => "ttml",
         }
     }
 
@@ -102,6 +139,14 @@ impl SubtitleFormat {
             Self::Ass => "text/x-ssa",
             Self::WebVtt => "text/vtt",
             Self::Srt => "application/x-subrip",
+            Self::Ttml => "application/ttml+xml",
+        }
+    }
+
+    const fn max_bytes(self) -> u64 {
+        match self {
+            Self::Ttml => MAX_TTML_BYTES,
+            Self::Ass | Self::WebVtt | Self::Srt => MAX_TEXT_BYTES,
         }
     }
 }
@@ -145,8 +190,12 @@ fn extraction_arguments(source: &Path, outputs: &[Output]) -> Vec<String> {
             codec.to_owned(),
             "-f".to_owned(),
             output.format.muxer().to_owned(),
-            format!("file:{}", output.path.display()),
         ]);
+        if output.format == SubtitleFormat::Ttml {
+            // One file, as every other format is kept and served, rather than one per picture.
+            arguments.extend(["-embed_images".to_owned(), "1".to_owned()]);
+        }
+        arguments.push(format!("file:{}", output.path.display()));
     }
     arguments
 }
@@ -457,12 +506,12 @@ async fn run_pass(
 }
 
 /// Moves what a pass wrote to `path`, cleaned, unless it is missing or weighs more than a
-/// subtitle does. A rename, so that nobody reads half a file.
+/// subtitle of its format does. A rename, so that nobody reads half a file.
 async fn keep(output: &Output, path: &Path) -> bool {
     let Ok(metadata) = tokio::fs::metadata(&output.path).await else {
         return false;
     };
-    if metadata.len() > MAX_BYTES {
+    if metadata.len() > output.format.max_bytes() {
         return false;
     }
     if output.format == SubtitleFormat::WebVtt {
@@ -587,6 +636,16 @@ mod tests {
             .unwrap()
             .set_modified(SystemTime::now() - Duration::from_secs(seconds))
             .unwrap();
+    }
+
+    #[test]
+    fn pictures_convert_into_ttml_alone_and_text_into_the_text_formats() {
+        assert!(SubtitleFormat::Ttml.holds("hdmv_pgs_subtitle"));
+        assert!(SubtitleFormat::Ttml.holds("dvd_subtitle"));
+        assert!(!SubtitleFormat::Ttml.holds("subrip"));
+        assert!(!SubtitleFormat::WebVtt.holds("pgs"));
+        assert!(SubtitleFormat::Ass.holds("mov_text"));
+        assert!(!SubtitleFormat::WebVtt.holds("dvb_teletext"));
     }
 
     #[tokio::test]
@@ -768,6 +827,19 @@ mod tests {
                 "-i file:f -map 0:3 -codec:0 webvtt -f webvtt file:a -map 0:4 -codec:0 ass -f ass file:b"
             ),
             "{joined}"
+        );
+        let pgs = extraction_arguments(
+            Path::new("f"),
+            &[output(
+                track("hdmv_pgs_subtitle"),
+                SubtitleFormat::Ttml,
+                "d",
+            )],
+        )
+        .join(" ");
+        assert!(
+            pgs.ends_with("-map 0:3 -codec:0 imsc_image -f imsc_image -embed_images 1 file:d"),
+            "{pgs}"
         );
         let mov = extraction_arguments(
             Path::new("f"),

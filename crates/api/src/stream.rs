@@ -77,12 +77,13 @@ pub enum SubtitleDeliveryType {
     None,
     /// Drawn into the picture, which re-encodes the video.
     Burn,
-    /// As text beside the stream, whole, in one of `subtitleFormats`, for the player to draw.
-    /// Listed in a DASH manifest, and at `subtitlesUrl` for any protocol.
+    /// Beside the stream, whole, in one of `subtitleFormats`, for the player to draw: text in a
+    /// text format, pictures (a Blu-ray's, a DVD's) as `TTML`. Listed in a DASH manifest, and at
+    /// `subtitlesUrl` for any protocol.
     Text,
 }
 
-/// A text format a player draws subtitles in.
+/// A format a player draws subtitles in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
 pub enum SubtitleFormatType {
     /// ASS, its styles and positions kept.
@@ -92,6 +93,10 @@ pub enum SubtitleFormatType {
     WebVtt,
     /// SRT, plain timed text.
     Srt,
+    /// TTML whose subtitles are pictures, each in Base64 in the document (SMPTE-TT's
+    /// `smpte:image`, placed as IMSC1 Image places them): the format of picture subtitles, and
+    /// of nothing else.
+    Ttml,
 }
 
 impl From<SubtitleFormatType> for SubtitleFormat {
@@ -100,6 +105,7 @@ impl From<SubtitleFormatType> for SubtitleFormat {
             SubtitleFormatType::Ass => Self::Ass,
             SubtitleFormatType::WebVtt => Self::WebVtt,
             SubtitleFormatType::Srt => Self::Srt,
+            SubtitleFormatType::Ttml => Self::Ttml,
         }
     }
 }
@@ -110,6 +116,7 @@ impl From<SubtitleFormat> for SubtitleFormatType {
             SubtitleFormat::Ass => Self::Ass,
             SubtitleFormat::WebVtt => Self::WebVtt,
             SubtitleFormat::Srt => Self::Srt,
+            SubtitleFormat::Ttml => Self::Ttml,
         }
     }
 }
@@ -134,9 +141,9 @@ pub struct StartStreamInput {
     /// How the subtitle reaches the player.
     #[graphql(default_with = "SubtitleDeliveryType::None")]
     pub subtitles: SubtitleDeliveryType,
-    /// The text formats the player draws, in its order of preference: a text subtitle is sent in
-    /// its own format when it is one of them, converted into the first otherwise. Required for
-    /// `subtitles: TEXT`.
+    /// The formats the player draws, in its order of preference: a text subtitle is sent in its
+    /// own format when it is one of them, converted into the first text format otherwise; a
+    /// picture subtitle only as `TTML`. Required for `subtitles: TEXT`.
     pub subtitle_formats: Option<Vec<SubtitleFormatType>>,
     /// The size burned subtitles are drawn at, 1.0 being the normal size.
     #[graphql(default = 1.0)]
@@ -238,8 +245,8 @@ pub struct StreamObject {
     /// Where the player reads it, a path on this server: the manifest of a conversion, the file
     /// itself for direct play. It carries its own secret and needs no token.
     pub url: String,
-    /// Where the player reads text subtitles, whole, when they were asked for. A DASH manifest
-    /// lists them too.
+    /// Where the player reads the subtitle, whole, when one was asked for. A DASH manifest
+    /// lists it too.
     pub subtitles_url: Option<String>,
     /// The format of the subtitles at `subtitlesUrl`.
     pub subtitle_format: Option<SubtitleFormatType>,
@@ -265,8 +272,8 @@ pub enum StreamErrorCode {
     TrackNotFound,
     /// The video would need a conversion this server does not do.
     VideoNotConvertible,
-    /// The subtitle cannot be delivered the way asked: an image subtitle as text, text for a
-    /// player that names no format, or no fonts to burn with.
+    /// The subtitle cannot be delivered the way asked: a picture subtitle for a player that
+    /// does not name `TTML`, text for one that names no text format, or no fonts to burn with.
     SubtitleNotDeliverable,
     /// Too many streams are running.
     TooManyStreams,

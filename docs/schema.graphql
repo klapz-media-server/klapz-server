@@ -9054,9 +9054,9 @@ input StartStreamInput {
 	"""
 	subtitles: SubtitleDeliveryType! = NONE
 	"""
-	The text formats the player draws, in its order of preference: a text subtitle is sent in
-	its own format when it is one of them, converted into the first otherwise. Required for
-	`subtitles: TEXT`.
+	The formats the player draws, in its order of preference: a text subtitle is sent in its
+	own format when it is one of them, converted into the first text format otherwise; a
+	picture subtitle only as `TTML`. Required for `subtitles: TEXT`.
 	"""
 	subtitleFormats: [SubtitleFormatType!]
 	"""
@@ -9271,8 +9271,8 @@ enum StreamErrorCode {
 	"""
 	VIDEO_NOT_CONVERTIBLE
 	"""
-	The subtitle cannot be delivered the way asked: an image subtitle as text, text for a
-	player that names no format, or no fonts to burn with.
+	The subtitle cannot be delivered the way asked: a picture subtitle for a player that
+	does not name `TTML`, text for one that names no text format, or no fonts to burn with.
 	"""
 	SUBTITLE_NOT_DELIVERABLE
 	"""
@@ -9319,8 +9319,8 @@ type StreamObject {
 	"""
 	url: String!
 	"""
-	Where the player reads text subtitles, whole, when they were asked for. A DASH manifest
-	lists them too.
+	Where the player reads the subtitle, whole, when one was asked for. A DASH manifest
+	lists it too.
 	"""
 	subtitlesUrl: String
 	"""
@@ -9432,8 +9432,9 @@ enum SubtitleDeliveryType {
 	"""
 	BURN
 	"""
-	As text beside the stream, whole, in one of `subtitleFormats`, for the player to draw.
-	Listed in a DASH manifest, and at `subtitlesUrl` for any protocol.
+	Beside the stream, whole, in one of `subtitleFormats`, for the player to draw: text in a
+	text format, pictures (a Blu-ray's, a DVD's) as `TTML`. Listed in a DASH manifest, and at
+	`subtitlesUrl` for any protocol.
 	"""
 	TEXT
 }
@@ -9462,7 +9463,7 @@ enum SubtitleErrorCode {
 }
 
 """
-A text format a player draws subtitles in.
+A format a player draws subtitles in.
 """
 enum SubtitleFormatType {
 	"""
@@ -9477,6 +9478,12 @@ enum SubtitleFormatType {
 	SRT, plain timed text.
 	"""
 	SRT
+	"""
+	TTML whose subtitles are pictures, each in Base64 in the document (SMPTE-TT's
+	`smpte:image`, placed as IMSC1 Image places them): the format of picture subtitles, and
+	of nothing else.
+	"""
+	TTML
 }
 
 """
