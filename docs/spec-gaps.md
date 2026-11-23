@@ -1001,6 +1001,22 @@ serves no artwork; any other relative address is `404`. A color the reference's 
 read (`zzzzzz`, `#3f280a`, `3f28`) draws whatever was left on its stack; here it is `400`. Our
 noise is drawn from a fixed seed, so an image is the same on every request.
 
+### A file listed before it is read
+
+A scan lists what it finds from names, sizes and times, and reads each file afterwards
+(`docs/scanner/analysis.md`, §1), every file's headers in a few minutes, its packets over hours.
+Until its headers are read, a file is published as one whose analysis failed is: `Media` without
+`duration`, `bitrate`, `container`, codecs, resolution or profiles (absent, never `0`), its `Part`
+with `file` and `size` and no `Stream` but its sidecars; on the official API
+`MediaFile.analysis` is `PENDING`. The reference reads a new file's headers within its scan, in
+milliseconds, so the state is not one a client meets there; what it publishes for one was not
+captured. A decision or a start
+of such a file reads its headers first, through `readMediaFile`; one that cannot be read yet
+(gone, its tools missing) answers as a file without tracks does, `400`. Once its headers are read
+and until its packets are measured, its rates and durations are the declared ones, which the
+deep analysis then overwrites in place: the tracks keep their ids and what viewers chose of
+them.
+
 ### Playing a file
 
 **Direct Play.** With `hasMDE=1&directPlay=1` the reference answers `decision="directplay"` for

@@ -5,11 +5,12 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use klapz_core::files::LibraryFiles;
 use klapz_core::files::RelativePath;
 use klapz_core::library::{
     checked_roots, is_language_tag, normalized_title, RootError, SectionKind,
 };
-use klapz_core::scan::{scan_section, ScanRequest, Scanner};
+use klapz_core::scan::{scan_section, BackgroundAnalysis, ScanRepository, ScanRequest, Scanner};
 use klapz_core::source_metadata::{match_library, MetadataSources, SourceMetadataError};
 use klapz_core::{LibraryRepository, SectionId};
 use klapz_db::repository::{create_library, NewLibrary};
@@ -79,13 +80,58 @@ pub async fn match_command(
 }
 
 /// What a scan reads and writes with, for the server and the command line alike.
-pub fn scanner(connection: &DatabaseConnection, library: Arc<dyn LibraryRepository>) -> Scanner {
-    Scanner {
+/// What scans and the analysis of what they find need. One store for both, so that their
+/// writes take turns.
+pub fn scanning(
+    connection: &DatabaseConnection,
+    library: Arc<dyn LibraryRepository>,
+    concurrency: usize,
+) -> (Scanner, BackgroundAnalysis) {
+    let store: Arc<dyn ScanRepository> = Arc::new(SqlScanRepository::new(connection.clone()));
+    let files: Arc<dyn LibraryFiles> = Arc::new(LocalFiles);
+    let scanner = Scanner {
+        library: Arc::clone(&library),
+        files: Arc::clone(&files),
+        store: Arc::clone(&store),
+    };
+    let analysis = BackgroundAnalysis::new(
+        store,
         library,
-        files: Arc::new(LocalFiles),
-        analyzer: Arc::new(MediaReader::from_env()),
-        store: Arc::new(SqlScanRepository::new(connection.clone())),
-    }
+        files,
+        Arc::new(MediaReader::from_env()),
+        concurrency,
+    );
+    (scanner, analysis)
+}
+
+/// How many files the analysis reads at once: `KLAPZ_ANALYSIS_CONCURRENCY`, each a process
+/// reading a file, often over a network share.
+///
+/// # Errors
+///
+/// A value that is not a number from 1 to 16.
+pub fn analysis_concurrency() -> Result<usize, String> {
+    concurrency_from(std::env::var("KLAPZ_ANALYSIS_CONCURRENCY").ok().as_deref())
+}
+
+const DEFAULT_ANALYSIS_CONCURRENCY: usize = 2;
+const MAX_ANALYSIS_CONCURRENCY: usize = 16;
+
+fn concurrency_from(setting: Option<&str>) -> Result<usize, String> {
+    let Some(value) = setting else {
+        return Ok(DEFAULT_ANALYSIS_CONCURRENCY);
+    };
+    value
+        .trim()
+        .parse::<usize>()
+        .ok()
+        .filter(|count| (1..=MAX_ANALYSIS_CONCURRENCY).contains(count))
+        .ok_or_else(|| {
+            format!(
+                "KLAPZ_ANALYSIS_CONCURRENCY must be a number from 1 to {MAX_ANALYSIS_CONCURRENCY}, \
+                 not {value:?}"
+            )
+        })
 }
 
 /// `library add`: a library over directories of this machine, without serving.
@@ -180,7 +226,7 @@ pub async fn scan(
     };
     let library: Arc<dyn LibraryRepository> =
         Arc::new(SqlLibraryRepository::new(connection.clone()));
-    let scanner = scanner(connection, library);
+    let (scanner, analysis) = scanning(connection, library, analysis_concurrency()?);
     let request = ScanRequest {
         section,
         below,
@@ -188,8 +234,16 @@ pub async fn scan(
     };
     let outcome = scan_section(&scanner, &request, &AtomicBool::new(false)).await?;
     println!(
-        "added {}, updated {}, removed {}, unavailable roots {}",
-        outcome.added, outcome.updated, outcome.removed, outcome.unavailable_roots
+        "added {}, updated {}, removed {}, unavailable roots {}, queued {}",
+        outcome.added, outcome.updated, outcome.removed, outcome.unavailable_roots, outcome.queued
+    );
+    // A server reads what a scan queued in the background; the command waits for it, so that
+    // the library it leaves is read, what an earlier run left queued included.
+    analysis.analyze_library(section).await?;
+    let read = scanner.store.analysis_progress(section).await?;
+    println!(
+        "files {}, read {}, measured {}",
+        read.files, read.read, read.complete
     );
     // As the server's scans do: what was added is matched before the command ends.
     let sources = metadata_sources(klapz_agents::ProviderCredentials::from_env())?;
@@ -247,4 +301,19 @@ fn log_report(report: &klapz_core::source_metadata::MatchReport) {
         failed = report.failed.len(),
         "matching complete"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_two_files_at_once_unless_told_a_number_it_can_keep_to() {
+        assert_eq!(concurrency_from(None), Ok(2));
+        assert_eq!(concurrency_from(Some(" 4 ")), Ok(4));
+        assert_eq!(concurrency_from(Some("16")), Ok(16));
+        for refused in ["0", "17", "-1", "two", ""] {
+            assert!(concurrency_from(Some(refused)).is_err(), "{refused}");
+        }
+    }
 }

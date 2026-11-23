@@ -202,6 +202,7 @@ impl Stored {
             content_hash: None,
             open_subtitles_hash: None,
             stated: klapz_core::metadata::StatedFile::default(),
+            analysis: klapz_core::metadata::FileAnalysis::Complete,
         });
         for track in tracks {
             self.streams.push(stream(part_id, track));

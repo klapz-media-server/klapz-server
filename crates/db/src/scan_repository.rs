@@ -1,35 +1,42 @@
-//! What a library scan writes: new items with their files and tracks, files that changed, and
-//! files that are gone.
+//! What a library scan writes: new items with their files, files that changed, files that are
+//! gone, and what the analysis reads from each file afterwards.
 //!
 //! Ids are not drawn from the engine: imported rows keep Plex's, so a new row takes the next
 //! number past the highest of its numbering, which items share with collections and extras,
 //! and versions, files and tracks with an extra's.
 //!
 //! Removal leans on the foreign keys the migrations declare `ON DELETE CASCADE` (an item's
-//! indexes, tags, locks, history and extras; a file's tracks and track choices; a track's
-//! offsets and analysis), and deletes by hand what refers to an item without one: markers and
-//! the entries of collections, playlists and play queues. Watch state and ratings are keyed by
-//! `guid` and kept, as they are for every copy of a work.
+//! indexes, tags, locks, history and extras; a file's tracks, track choices and place in the
+//! analysis queue; a track's offsets and analysis), and deletes by hand what refers to an item
+//! without one: markers and the entries of collections, playlists and play queues. Watch state
+//! and ratings are keyed by `guid` and kept, as they are for every copy of a work.
 
 mod analysis;
 mod languages;
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use klapz_core::chapter::ChapterSource;
 use klapz_core::ids::{MediaId, PartId, RatingKey, SectionId};
-use klapz_core::metadata;
-use klapz_core::scan::{KnownPart, NewItem, NewMedia, NewPart, ScanError, ScanRepository, ShowKey};
-use klapz_scanner::report::Analysis;
-use sea_orm::sea_query::Expr;
+use klapz_core::metadata::{self, FileAnalysis};
+use klapz_core::scan::{
+    AnalysisProgress, KnownPart, NewItem, NewMedia, NewPart, NewSidecar, QueueFilter, QueuedFile,
+    ScanError, ScanRepository, ShowKey, Stored,
+};
+use klapz_scanner::report::{Analysis, DeepAnalysis};
+use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection,
-    DbErr, EntityTrait, IntoActiveModel, JoinType, QueryFilter, QueryOrder, QuerySelect,
-    RelationTrait, TransactionTrait,
+    DbErr, EntityTrait, IntoActiveModel, JoinType, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect, RelationTrait, TransactionTrait,
 };
 
+use crate::entity::media_analysis::{HEADERS, PACKETS};
 use crate::entity::{
     collection, collection_entry, extra, extra_media, extra_track, item_chapter, item_marker,
-    library_section, media, media_part, media_stream, metadata_item, part_side_stream,
-    play_queue_entry, playlist_entry, stream_dolby_vision, track_choice,
+    library_section, media, media_analysis, media_part, media_stream, metadata_item,
+    part_side_stream, play_queue_entry, playlist_entry, stream_dolby_vision, track_choice,
 };
 use crate::{chapter_store, write};
 use analysis::MediaSummary;
@@ -40,12 +47,20 @@ const BATCH: usize = 200;
 #[derive(Debug, Clone)]
 pub struct SqlScanRepository {
     connection: DatabaseConnection,
+    /// A scan and the analysis write at the same time, and each transaction numbers its rows
+    /// past the highest stored (`Ids::next`): two at once would take the same numbers, and
+    /// `SQLite` refuses a transaction whose snapshot another write overtook. Theirs go one at
+    /// a time, shared by every clone.
+    writes: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl SqlScanRepository {
     #[must_use]
-    pub const fn new(connection: DatabaseConnection) -> Self {
-        Self { connection }
+    pub fn new(connection: DatabaseConnection) -> Self {
+        Self {
+            connection,
+            writes: Arc::default(),
+        }
     }
 }
 
@@ -105,6 +120,7 @@ impl ScanRepository for SqlScanRepository {
         item: NewItem,
         now: i64,
     ) -> Result<RatingKey, ScanError> {
+        let _writing = self.writes.lock().await;
         let transaction = self.connection.begin().await.map_err(storage)?;
         library_section::Entity::find_by_id(section.get())
             .one(&transaction)
@@ -113,7 +129,7 @@ impl ScanRepository for SqlScanRepository {
             .ok_or(ScanError::SectionNotFound(section))?;
         let mut ids = Ids::next(&transaction).await.map_err(storage)?;
 
-        let (mut row, versions) = match item {
+        let (row, versions) = match item {
             NewItem::Movie {
                 title,
                 year,
@@ -149,126 +165,284 @@ impl ScanRepository for SqlScanRepository {
             }
         };
 
-        row.duration_ms = versions.first().and_then(version_duration);
         let item_id = insert_item(&transaction, row).await.map_err(storage)?;
+        let mut parts = Vec::new();
         for version in &versions {
-            add_version(&transaction, &mut ids, item_id, version)
-                .await
-                .map_err(storage)?;
+            parts.extend(
+                add_version(&transaction, &mut ids, item_id, version)
+                    .await
+                    .map_err(storage)?,
+            );
         }
-        let describing = versions.first().and_then(|version| version.parts.first());
-        chapter_store::replace(
-            &transaction,
-            item_id,
-            ChapterSource::Media,
-            chapter_rows(item_id, describing),
-        )
-        .await
-        .map_err(storage)?;
+        let queued: Vec<(i64, i64)> = parts
+            .into_iter()
+            .map(|part| (part, section.get()))
+            .collect();
+        queue(&transaction, &queued, now).await.map_err(storage)?;
         transaction.commit().await.map_err(storage)?;
         Ok(RatingKey::new(item_id))
     }
 
     async fn update_part(&self, part: PartId, file: NewPart, now: i64) -> Result<(), ScanError> {
+        let _writing = self.writes.lock().await;
         let transaction = self.connection.begin().await.map_err(storage)?;
         let stored = media_part::Entity::find_by_id(part.get())
             .one(&transaction)
             .await
             .map_err(storage)?
             .ok_or_else(|| storage(DbErr::RecordNotFound(format!("media part {}", part.get()))))?;
-        let mut version = media::Entity::find_by_id(stored.media_id)
+        let item = media::Entity::find_by_id(stored.media_id)
             .one(&transaction)
             .await
             .map_err(storage)?
-            .ok_or_else(|| storage(DbErr::RecordNotFound(format!("media {}", stored.media_id))))?;
-
-        // Counted before the old tracks go, so that no new track takes the number of one a
-        // client may still hold.
-        let mut ids = Ids::next(&transaction).await.map_err(storage)?;
-        // Choices name tracks by id, and every track is about to be replaced.
-        track_choice::Entity::delete_many()
-            .filter(track_choice::Column::MediaPartId.eq(part.get()))
-            .exec(&transaction)
-            .await
-            .map_err(storage)?;
-        media_stream::Entity::delete_many()
-            .filter(media_stream::Column::MediaPartId.eq(part.get()))
-            .exec(&transaction)
-            .await
-            .map_err(storage)?;
-        part_side_stream::Entity::delete_many()
-            .filter(part_side_stream::Column::MediaPartId.eq(part.get()))
-            .exec(&transaction)
-            .await
-            .map_err(storage)?;
-
-        let mut row = part_row(&file, stored.media_id, stored.id, stored.position);
-        row.created_at = stored.created_at;
-        media_part::Entity::update(row.into_active_model().reset_all())
-            .exec(&transaction)
-            .await
-            .map_err(storage)?;
-        add_tracks(&transaction, &mut ids, stored.id, &file)
-            .await
-            .map_err(storage)?;
-
-        let parts = media_part::Entity::find()
-            .filter(media_part::Column::MediaId.eq(version.id))
-            .order_by_asc(media_part::Column::Position)
-            .order_by_asc(media_part::Column::Id)
-            .all(&transaction)
-            .await
-            .map_err(storage)?;
-        let duration = summed(parts.iter().map(|part| part.duration_ms));
-        // A version is described by its first file; another's change leaves that alone.
-        if parts.first().map(|first| first.id) == Some(stored.id) {
-            let summary = file
-                .analysis
-                .as_ref()
-                .map(|analysis| analysis::media_summary(analysis, &file.path))
-                .unwrap_or_default();
-            apply_summary(&mut version, summary);
-        }
-        version.duration_ms = duration;
-        version.updated_at = file.modified_at;
-        let item_id = version.metadata_item_id;
-        media::Entity::update(version.into_active_model().reset_all())
-            .exec(&transaction)
-            .await
-            .map_err(storage)?;
-
-        let first_version = media::Entity::find()
-            .filter(media::Column::MetadataItemId.eq(item_id))
-            .order_by_asc(media::Column::Id)
+            .ok_or_else(|| storage(DbErr::RecordNotFound(format!("media {}", stored.media_id))))?
+            .metadata_item_id;
+        let section: i64 = metadata_item::Entity::find_by_id(item)
+            .select_only()
+            .column(metadata_item::Column::LibrarySectionId)
+            .into_tuple()
             .one(&transaction)
             .await
-            .map_err(storage)?;
-        let describes_item = parts.first().map(|first| first.id) == Some(stored.id)
-            && first_version.as_ref().map(|first| first.id) == Some(stored.media_id);
-        if describes_item {
-            chapter_store::replace(
-                &transaction,
-                item_id,
-                ChapterSource::Media,
-                chapter_rows(item_id, Some(&file)),
+            .map_err(storage)?
+            .ok_or_else(|| storage(DbErr::RecordNotFound(format!("item {item}"))))?;
+
+        media_part::Entity::update_many()
+            .col_expr(
+                media_part::Column::SizeBytes,
+                Expr::value(i64::try_from(file.size).ok()),
             )
+            .col_expr(media_part::Column::UpdatedAt, Expr::value(file.modified_at))
+            .filter(media_part::Column::Id.eq(part.get()))
+            .exec(&transaction)
             .await
             .map_err(storage)?;
-        }
+        // The reference dates a version by its file.
+        media::Entity::update_many()
+            .col_expr(media::Column::UpdatedAt, Expr::value(file.modified_at))
+            .filter(media::Column::Id.eq(stored.media_id))
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
+        let mut ids = Ids::next(&transaction).await.map_err(storage)?;
+        replace_sidecars(&transaction, &mut ids, part.get(), &file.sidecars)
+            .await
+            .map_err(storage)?;
         metadata_item::Entity::update_many()
             .col_expr(metadata_item::Column::UpdatedAt, Expr::value(now))
-            .col_expr(
-                metadata_item::Column::DurationMs,
-                Expr::value(first_version.and_then(|version| version.duration_ms)),
-            )
-            .filter(metadata_item::Column::Id.eq(item_id))
+            .filter(metadata_item::Column::Id.eq(item))
             .exec(&transaction)
+            .await
+            .map_err(storage)?;
+        queue(&transaction, &[(part.get(), section)], now)
             .await
             .map_err(storage)?;
         transaction.commit().await.map_err(storage)
     }
 
+    async fn queue_again(&self, parts: &[PartId], now: i64) -> Result<(), ScanError> {
+        let _writing = self.writes.lock().await;
+        let transaction = self.connection.begin().await.map_err(storage)?;
+        for chunk in parts.chunks(BATCH) {
+            let queued: Vec<(i64, i64)> = media_part::Entity::find()
+                .select_only()
+                .column(media_part::Column::Id)
+                .column(metadata_item::Column::LibrarySectionId)
+                .join(JoinType::InnerJoin, media_part::Relation::Media.def())
+                .join(JoinType::InnerJoin, media::Relation::MetadataItem.def())
+                .filter(media_part::Column::Id.is_in(chunk.iter().map(|part| part.get())))
+                .into_tuple()
+                .all(&transaction)
+                .await
+                .map_err(storage)?;
+            queue(&transaction, &queued, now).await.map_err(storage)?;
+        }
+        transaction.commit().await.map_err(storage)
+    }
+
+    async fn queued_files(
+        &self,
+        limit: usize,
+        filter: &QueueFilter,
+    ) -> Result<Vec<QueuedFile>, ScanError> {
+        let mut query = queued_query()
+            .order_by_asc(media_analysis::Column::Stage)
+            .order_by_asc(media_analysis::Column::QueuedAt)
+            .order_by_asc(media_analysis::Column::MediaPartId)
+            .limit(u64::try_from(limit).unwrap_or(u64::MAX));
+        if let Some(section) = filter.section {
+            query = query.filter(media_analysis::Column::LibrarySectionId.eq(section.get()));
+        }
+        if !filter.busy.is_empty() {
+            query = query.filter(
+                media_analysis::Column::MediaPartId
+                    .is_not_in(filter.busy.iter().map(|part| part.get())),
+            );
+        }
+        if !filter.held.is_empty() {
+            query = query.filter(
+                media_analysis::Column::LibrarySectionId
+                    .is_not_in(filter.held.iter().map(|section| section.get())),
+            );
+        }
+        let rows: Vec<QueuedRow> = query
+            .into_tuple()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(rows.into_iter().map(queued_file).collect())
+    }
+
+    async fn queued_file(&self, part: PartId) -> Result<Option<QueuedFile>, ScanError> {
+        let row: Option<QueuedRow> = queued_query()
+            .filter(media_analysis::Column::MediaPartId.eq(part.get()))
+            .into_tuple()
+            .one(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(row.map(queued_file))
+    }
+
+    async fn store_headers(
+        &self,
+        file: &QueuedFile,
+        analysis: Option<&Analysis>,
+        now: i64,
+    ) -> Result<Stored, ScanError> {
+        let _writing = self.writes.lock().await;
+        let transaction = self.connection.begin().await.map_err(storage)?;
+        let Some(mut stored) = still_queued(&transaction, file, HEADERS)
+            .await
+            .map_err(storage)?
+        else {
+            return Ok(Stored::Stale);
+        };
+
+        // Counted before the old tracks go, so that no new track takes the number of one a
+        // client may still hold.
+        let mut ids = Ids::next(&transaction).await.map_err(storage)?;
+        // A file read again replaces what it said before; one that no longer reads as media
+        // keeps its rows and loses its description.
+        remove_embedded_tracks(&transaction, stored.id)
+            .await
+            .map_err(storage)?;
+        if let Some(analysis) = analysis {
+            add_tracks(&transaction, &mut ids, stored.id, &stored.path, analysis)
+                .await
+                .map_err(storage)?;
+        }
+        apply_headers(&mut stored, analysis);
+        media_part::Entity::update(stored.clone().into_active_model().reset_all())
+            .exec(&transaction)
+            .await
+            .map_err(storage)?;
+        let summary = analysis
+            .map(|analysis| analysis::media_summary(analysis, &stored.path))
+            .unwrap_or_default();
+        let described = describe(&transaction, &stored, now, |version| {
+            apply_summary(version, summary);
+        })
+        .await
+        .map_err(storage)?;
+        if let Some(item) = described {
+            let chapters = analysis
+                .map(|analysis| chapter_rows(item, analysis))
+                .unwrap_or_default();
+            chapter_store::replace(&transaction, item, ChapterSource::Media, chapters)
+                .await
+                .map_err(storage)?;
+        }
+        if analysis.is_some() {
+            media_analysis::Entity::update_many()
+                .col_expr(media_analysis::Column::Stage, Expr::value(PACKETS))
+                .filter(media_analysis::Column::MediaPartId.eq(stored.id))
+                .exec(&transaction)
+                .await
+                .map_err(storage)?;
+        } else {
+            dequeue(&transaction, file.part).await.map_err(storage)?;
+        }
+        transaction.commit().await.map_err(storage)?;
+        Ok(Stored::Written)
+    }
+
+    async fn store_measurement(
+        &self,
+        file: &QueuedFile,
+        measured: Option<&DeepAnalysis>,
+        now: i64,
+    ) -> Result<Stored, ScanError> {
+        let _writing = self.writes.lock().await;
+        let transaction = self.connection.begin().await.map_err(storage)?;
+        let Some(mut stored) = still_queued(&transaction, file, PACKETS)
+            .await
+            .map_err(storage)?
+        else {
+            return Ok(Stored::Stale);
+        };
+        if let Some(measured) = measured {
+            apply_measurement(&transaction, &mut stored, measured)
+                .await
+                .map_err(storage)?;
+            describe(&transaction, &stored, now, |version| {
+                version.bitrate = analysis::to_i32(measured.bitrate);
+            })
+            .await
+            .map_err(storage)?;
+        }
+        dequeue(&transaction, file.part).await.map_err(storage)?;
+        transaction.commit().await.map_err(storage)?;
+        Ok(Stored::Written)
+    }
+
+    async fn analysis_progress(&self, section: SectionId) -> Result<AnalysisProgress, ScanError> {
+        let files = media_part::Entity::find()
+            .join(JoinType::InnerJoin, media_part::Relation::Media.def())
+            .join(JoinType::InnerJoin, media::Relation::MetadataItem.def())
+            .filter(metadata_item::Column::LibrarySectionId.eq(section.get()))
+            .count(&self.connection)
+            .await
+            .map_err(storage)?;
+        let queued: Vec<(i32, i64)> = media_analysis::Entity::find()
+            .select_only()
+            .column(media_analysis::Column::Stage)
+            .column_as(media_analysis::Column::MediaPartId.count(), "files")
+            .filter(media_analysis::Column::LibrarySectionId.eq(section.get()))
+            .group_by(media_analysis::Column::Stage)
+            .into_tuple()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        let at = |stage: i32| {
+            queued
+                .iter()
+                .filter(|(queued, _)| *queued == stage)
+                .map(|(_, count)| u64::try_from(*count).unwrap_or(0))
+                .sum::<u64>()
+        };
+        let read = files.saturating_sub(at(HEADERS));
+        Ok(AnalysisProgress {
+            files,
+            read,
+            complete: read.saturating_sub(at(PACKETS)),
+        })
+    }
+
+    async fn contents_changed(&self, section: SectionId) -> Result<(), ScanError> {
+        let _writing = self.writes.lock().await;
+        library_section::Entity::update_many()
+            .col_expr(
+                library_section::Column::ContentChangedAt,
+                Expr::col(library_section::Column::ContentChangedAt).add(1),
+            )
+            .filter(library_section::Column::Id.eq(section.get()))
+            .exec(&self.connection)
+            .await
+            .map_err(storage)?;
+        Ok(())
+    }
+
     async fn remove_parts(&self, parts: &[PartId]) -> Result<(), ScanError> {
+        let _writing = self.writes.lock().await;
         let transaction = self.connection.begin().await.map_err(storage)?;
         let parts: Vec<i64> = parts.iter().map(|part| part.get()).collect();
         let mut touched_media = Vec::new();
@@ -340,6 +514,7 @@ impl ScanRepository for SqlScanRepository {
     }
 
     async fn finish(&self, section: SectionId, at: i64, changed: bool) -> Result<(), ScanError> {
+        let _writing = self.writes.lock().await;
         let transaction = self.connection.begin().await.map_err(storage)?;
         let stored = library_section::Entity::find_by_id(section.get())
             .one(&transaction)
@@ -512,26 +687,24 @@ async fn insert_item<C: ConnectionTrait>(
     Ok(id)
 }
 
+/// Writes a version as its files were found, nothing of their media known yet, and returns
+/// its files' ids.
 async fn add_version<C: ConnectionTrait>(
     connection: &C,
     ids: &mut Ids,
     item: i64,
     version: &NewMedia,
-) -> Result<(), DbErr> {
+) -> Result<Vec<i64>, DbErr> {
     let id = take(&mut ids.media);
-    let first = version.parts.first();
-    let summary = first
-        .and_then(|part| Some(analysis::media_summary(part.analysis.as_ref()?, &part.path)))
-        .unwrap_or_default();
     // The reference dates a version by its file, not by the scan.
-    let modified_at = first.map_or(0, |part| part.modified_at);
-    let mut row = media::Model {
+    let modified_at = version.parts.first().map_or(0, |part| part.modified_at);
+    let row = media::Model {
         id,
         metadata_item_id: item,
         width: None,
         height: None,
         aspect_ratio: None,
-        duration_ms: version_duration(version),
+        duration_ms: None,
         bitrate: None,
         container: None,
         video_codec: None,
@@ -543,11 +716,11 @@ async fn add_version<C: ConnectionTrait>(
         created_at: modified_at,
         updated_at: modified_at,
     };
-    apply_summary(&mut row, summary);
     media::Entity::insert(row.into_active_model().reset_all())
         .exec_without_returning(connection)
         .await?;
 
+    let mut parts = Vec::with_capacity(version.parts.len());
     for part in &version.parts {
         let part_id = take(&mut ids.part);
         // Stacked files all carry position 0, as the reference leaves their index null.
@@ -558,9 +731,10 @@ async fn add_version<C: ConnectionTrait>(
         )
         .exec_without_returning(connection)
         .await?;
-        add_tracks(connection, ids, part_id, part).await?;
+        add_sidecars(connection, ids, part_id, &part.sidecars).await?;
+        parts.push(part_id);
     }
-    Ok(())
+    Ok(parts)
 }
 
 fn apply_summary(row: &mut media::Model, summary: MediaSummary) {
@@ -577,67 +751,71 @@ fn apply_summary(row: &mut media::Model, summary: MediaSummary) {
     row.optimized_for_streaming = summary.optimized_for_streaming;
 }
 
+/// A file as found: what its headers say comes with [`apply_headers`].
 fn part_row(file: &NewPart, media: i64, id: i64, position: i32) -> media_part::Model {
-    let analysis = file.analysis.as_ref();
     media_part::Model {
         id,
         media_id: media,
         position,
         path: file.path.clone(),
         size_bytes: i64::try_from(file.size).ok(),
-        duration_ms: analysis
-            .and_then(Analysis::measured_duration_ms)
-            .and_then(|duration| i64::try_from(duration).ok()),
+        duration_ms: None,
         // The reference keeps the file's time in both.
         created_at: file.modified_at,
         updated_at: file.modified_at,
-        has_thumbnail: analysis.is_some_and(analysis::has_thumbnail),
-        has_64bit_offsets: analysis.and_then(|analysis| analysis.has_64bit_offsets),
-        optimized_for_streaming: analysis.and_then(|analysis| analysis.optimized_for_streaming),
-        packet_length: analysis
-            .and_then(|analysis| analysis.packet_length)
-            .and_then(|length| i32::try_from(length).ok()),
-        has_chapter_text_stream: analysis.is_some_and(analysis::has_chapter_text_stream),
+        has_thumbnail: false,
+        has_64bit_offsets: None,
+        optimized_for_streaming: None,
+        packet_length: None,
+        has_chapter_text_stream: false,
         // The reference's identity hash is not one the scanner can reproduce yet.
         content_hash: None,
-        open_subtitles_hash: analysis.map(|analysis| analysis.file.open_subtitles_hash.clone()),
-        format_name: analysis.map(|analysis| analysis.container.clone()),
-        declared_duration_us: analysis
-            .and_then(|analysis| analysis.duration_us)
-            .and_then(|duration| i64::try_from(duration).ok()),
-        declared_bitrate: analysis
-            .and_then(|analysis| analysis.bitrate)
-            .and_then(|rate| i64::try_from(rate).ok()),
+        open_subtitles_hash: None,
+        format_name: None,
+        declared_duration_us: None,
+        declared_bitrate: None,
     }
 }
 
+/// What a file's headers say of it, or nothing for a file that is not media.
+fn apply_headers(row: &mut media_part::Model, analysis: Option<&Analysis>) {
+    row.duration_ms = analysis
+        .and_then(Analysis::measured_duration_ms)
+        .and_then(|duration| i64::try_from(duration).ok());
+    row.has_thumbnail = analysis.is_some_and(analysis::has_thumbnail);
+    row.has_64bit_offsets = analysis.and_then(|analysis| analysis.has_64bit_offsets);
+    row.optimized_for_streaming = analysis.and_then(|analysis| analysis.optimized_for_streaming);
+    row.packet_length = analysis
+        .and_then(|analysis| analysis.packet_length)
+        .and_then(|length| i32::try_from(length).ok());
+    row.has_chapter_text_stream = analysis.is_some_and(analysis::has_chapter_text_stream);
+    row.open_subtitles_hash = analysis.map(|analysis| analysis.file.open_subtitles_hash.clone());
+    row.format_name = analysis.map(|analysis| analysis.container.clone());
+    row.declared_duration_us = analysis
+        .and_then(|analysis| analysis.duration_us)
+        .and_then(|duration| i64::try_from(duration).ok());
+    row.declared_bitrate = analysis
+        .and_then(|analysis| analysis.bitrate)
+        .and_then(|rate| i64::try_from(rate).ok());
+}
+
+/// The tracks inside a file, and what it carries besides them.
 async fn add_tracks<C: ConnectionTrait>(
     connection: &C,
     ids: &mut Ids,
     part: i64,
-    file: &NewPart,
+    path: &str,
+    analysis: &Analysis,
 ) -> Result<(), DbErr> {
-    let embedded = file
-        .analysis
-        .as_ref()
-        .map(|analysis| analysis::track_rows(analysis, &file.path, part, ids.stream))
-        .unwrap_or_default();
+    let embedded = analysis::track_rows(analysis, path, part, ids.stream);
     ids.stream += i64::try_from(embedded.len()).unwrap_or(i64::MAX);
-    let mut streams = Vec::with_capacity(embedded.len() + file.sidecars.len());
+    let mut streams = Vec::with_capacity(embedded.len());
     let mut dolby_vision = Vec::new();
     for rows in embedded {
         streams.push(rows.stream.into_active_model().reset_all());
         dolby_vision.extend(
             rows.dolby_vision
                 .map(|record| record.into_active_model().reset_all()),
-        );
-    }
-    for sidecar in &file.sidecars {
-        let id = take(&mut ids.stream);
-        streams.push(
-            analysis::sidecar_row(sidecar, part, id)
-                .into_active_model()
-                .reset_all(),
         );
     }
     // Wide rows: a small chunk keeps every engine under its bound-parameter limit.
@@ -651,11 +829,7 @@ async fn add_tracks<C: ConnectionTrait>(
             .exec_without_returning(connection)
             .await?;
     }
-    let side_streams = file
-        .analysis
-        .as_ref()
-        .map(|analysis| analysis::side_stream_rows(analysis, part))
-        .unwrap_or_default();
+    let side_streams = analysis::side_stream_rows(analysis, part);
     for chunk in side_streams.chunks(BATCH / 4) {
         part_side_stream::Entity::insert_many(chunk.to_vec())
             .exec_without_returning(connection)
@@ -664,13 +838,212 @@ async fn add_tracks<C: ConnectionTrait>(
     Ok(())
 }
 
+async fn add_sidecars<C: ConnectionTrait>(
+    connection: &C,
+    ids: &mut Ids,
+    part: i64,
+    sidecars: &[NewSidecar],
+) -> Result<(), DbErr> {
+    let rows: Vec<media_stream::ActiveModel> = sidecars
+        .iter()
+        .map(|sidecar| {
+            analysis::sidecar_row(sidecar, part, take(&mut ids.stream))
+                .into_active_model()
+                .reset_all()
+        })
+        .collect();
+    for chunk in rows.chunks(BATCH / 4) {
+        media_stream::Entity::insert_many(chunk.to_vec())
+            .exec_without_returning(connection)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Removes the tracks inside a file, about to be read again, and the viewers' choices that
+/// name one: its sidecars stay, with their ids, the choices and offsets that name them.
+async fn remove_embedded_tracks<C: ConnectionTrait>(
+    connection: &C,
+    part: i64,
+) -> Result<(), DbErr> {
+    let embedded: Vec<i64> = media_stream::Entity::find()
+        .select_only()
+        .column(media_stream::Column::Id)
+        .filter(media_stream::Column::MediaPartId.eq(part))
+        .filter(media_stream::Column::ExternalPath.is_null())
+        .into_tuple()
+        .all(connection)
+        .await?;
+    forget_tracks(connection, part, &embedded).await?;
+    part_side_stream::Entity::delete_many()
+        .filter(part_side_stream::Column::MediaPartId.eq(part))
+        .exec(connection)
+        .await?;
+    Ok(())
+}
+
+/// Gives a changed file the sidecars found beside it now: one still there keeps its id, and
+/// what viewers chose of it.
+async fn replace_sidecars<C: ConnectionTrait>(
+    connection: &C,
+    ids: &mut Ids,
+    part: i64,
+    sidecars: &[NewSidecar],
+) -> Result<(), DbErr> {
+    let stored: Vec<(i64, Option<String>)> = media_stream::Entity::find()
+        .select_only()
+        .column(media_stream::Column::Id)
+        .column(media_stream::Column::ExternalPath)
+        .filter(media_stream::Column::MediaPartId.eq(part))
+        .filter(media_stream::Column::ExternalPath.is_not_null())
+        .into_tuple()
+        .all(connection)
+        .await?;
+    let found: HashMap<String, &NewSidecar> = sidecars
+        .iter()
+        .map(|sidecar| (analysis::file_url(&sidecar.path), sidecar))
+        .collect();
+    let gone: Vec<i64> = stored
+        .iter()
+        .filter(|(_, url)| url.as_ref().is_none_or(|url| !found.contains_key(url)))
+        .map(|(id, _)| *id)
+        .collect();
+    forget_tracks(connection, part, &gone).await?;
+    let new: Vec<NewSidecar> = sidecars
+        .iter()
+        .filter(|sidecar| {
+            let url = analysis::file_url(&sidecar.path);
+            !stored.iter().any(|(_, kept)| kept.as_ref() == Some(&url))
+        })
+        .cloned()
+        .collect();
+    add_sidecars(connection, ids, part, &new).await
+}
+
+/// Deletes these tracks of a file, and every viewer's choice naming one of them: a choice
+/// whose track went is no choice. Their offsets go with them.
+async fn forget_tracks<C: ConnectionTrait>(
+    connection: &C,
+    part: i64,
+    tracks: &[i64],
+) -> Result<(), DbErr> {
+    for chunk in tracks.chunks(BATCH) {
+        track_choice::Entity::delete_many()
+            .filter(track_choice::Column::MediaPartId.eq(part))
+            .filter(
+                Condition::any()
+                    .add(track_choice::Column::AudioStreamId.is_in(chunk.iter().copied()))
+                    .add(track_choice::Column::SubtitleStreamId.is_in(chunk.iter().copied())),
+            )
+            .exec(connection)
+            .await?;
+        media_stream::Entity::delete_many()
+            .filter(media_stream::Column::Id.is_in(chunk.iter().copied()))
+            .exec(connection)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Writes what the packets measured onto the tracks the headers gave, found by their index in
+/// the file: measured or nothing, as the deep analysis has it (`analysis::track_bitrate`).
+async fn apply_measurement<C: ConnectionTrait>(
+    connection: &C,
+    part: &mut media_part::Model,
+    measured: &DeepAnalysis,
+) -> Result<(), DbErr> {
+    let embedded: Vec<(i64, i32)> = media_stream::Entity::find()
+        .select_only()
+        .column(media_stream::Column::Id)
+        .column(media_stream::Column::Position)
+        .filter(media_stream::Column::MediaPartId.eq(part.id))
+        .filter(media_stream::Column::ExternalPath.is_null())
+        .into_tuple()
+        .all(connection)
+        .await?;
+    for (id, position) in embedded {
+        let rate = measured
+            .tracks
+            .iter()
+            .find(|track| i64::from(track.index) == i64::from(position))
+            .map(|track| track.bitrate)
+            .filter(|rate| *rate > 0)
+            .and_then(analysis::to_i32);
+        media_stream::Entity::update_many()
+            .col_expr(media_stream::Column::Bitrate, Expr::value(rate))
+            .filter(media_stream::Column::Id.eq(id))
+            .exec(connection)
+            .await?;
+    }
+    if let Some(duration) = measured
+        .duration_ms
+        .and_then(|duration| i64::try_from(duration).ok())
+    {
+        part.duration_ms = Some(duration);
+        media_part::Entity::update_many()
+            .col_expr(media_part::Column::DurationMs, Expr::value(duration))
+            .filter(media_part::Column::Id.eq(part.id))
+            .exec(connection)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Carries a file's change up to its version and item: `first` changes the version when the
+/// file is its first, which describes it; the version's duration sums its files', and the
+/// item's is its first version's. Returns the item when the file is the one that describes it,
+/// whose chapters are then the file's.
+async fn describe<C: ConnectionTrait>(
+    connection: &C,
+    part: &media_part::Model,
+    now: i64,
+    first: impl FnOnce(&mut media::Model),
+) -> Result<Option<i64>, DbErr> {
+    let mut version = media::Entity::find_by_id(part.media_id)
+        .one(connection)
+        .await?
+        .ok_or_else(|| DbErr::RecordNotFound(format!("media {}", part.media_id)))?;
+    let parts = media_part::Entity::find()
+        .filter(media_part::Column::MediaId.eq(version.id))
+        .order_by_asc(media_part::Column::Position)
+        .order_by_asc(media_part::Column::Id)
+        .all(connection)
+        .await?;
+    let first_file = parts.first().map(|first| first.id) == Some(part.id);
+    if first_file {
+        first(&mut version);
+    }
+    version.duration_ms = summed(parts.iter().map(|part| part.duration_ms));
+    let item = version.metadata_item_id;
+    let version_id = version.id;
+    media::Entity::update(version.into_active_model().reset_all())
+        .exec(connection)
+        .await?;
+
+    let first_version = media::Entity::find()
+        .filter(media::Column::MetadataItemId.eq(item))
+        .order_by_asc(media::Column::Id)
+        .one(connection)
+        .await?;
+    let describes_item =
+        first_file && first_version.as_ref().map(|first| first.id) == Some(version_id);
+    metadata_item::Entity::update_many()
+        .col_expr(metadata_item::Column::UpdatedAt, Expr::value(now))
+        .col_expr(
+            metadata_item::Column::DurationMs,
+            Expr::value(first_version.and_then(|version| version.duration_ms)),
+        )
+        .filter(metadata_item::Column::Id.eq(item))
+        .exec(connection)
+        .await?;
+    Ok(describes_item.then_some(item))
+}
+
 /// The chapters of the file that describes an item: its first version's first, as for the
 /// item's duration.
-fn chapter_rows(item: i64, file: Option<&NewPart>) -> Vec<item_chapter::ActiveModel> {
-    let chapters = file
-        .and_then(|file| file.analysis.as_ref())
-        .map_or(&[][..], |analysis| analysis.chapters.as_slice());
-    chapters
+fn chapter_rows(item: i64, analysis: &Analysis) -> Vec<item_chapter::ActiveModel> {
+    analysis
+        .chapters
         .iter()
         .map(|chapter| {
             let mut row = chapter_store::row(
@@ -689,15 +1062,6 @@ fn chapter_rows(item: i64, file: Option<&NewPart>) -> Vec<item_chapter::ActiveMo
         .collect()
 }
 
-fn version_duration(version: &NewMedia) -> Option<i64> {
-    summed(version.parts.iter().map(|part| {
-        part.analysis
-            .as_ref()
-            .and_then(Analysis::measured_duration_ms)
-            .and_then(|duration| i64::try_from(duration).ok())
-    }))
-}
-
 /// The total of the durations known, none when none is.
 fn summed(durations: impl Iterator<Item = Option<i64>>) -> Option<i64> {
     durations
@@ -705,6 +1069,101 @@ fn summed(durations: impl Iterator<Item = Option<i64>>) -> Option<i64> {
         .fold(None, |total: Option<i64>, duration| {
             Some(total.unwrap_or(0).saturating_add(duration))
         })
+}
+
+/// Queues files to be read from their headers, whatever was read of them before.
+async fn queue<C: ConnectionTrait>(
+    connection: &C,
+    files: &[(i64, i64)],
+    now: i64,
+) -> Result<(), DbErr> {
+    for chunk in files.chunks(BATCH / 4) {
+        let rows = chunk
+            .iter()
+            .map(|(part, section)| media_analysis::ActiveModel {
+                media_part_id: ActiveValue::Set(*part),
+                library_section_id: ActiveValue::Set(*section),
+                stage: ActiveValue::Set(HEADERS),
+                queued_at: ActiveValue::Set(now),
+            });
+        media_analysis::Entity::insert_many(rows)
+            .on_conflict(
+                OnConflict::column(media_analysis::Column::MediaPartId)
+                    .update_columns([
+                        media_analysis::Column::LibrarySectionId,
+                        media_analysis::Column::Stage,
+                        media_analysis::Column::QueuedAt,
+                    ])
+                    .to_owned(),
+            )
+            .exec_without_returning(connection)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn dequeue<C: ConnectionTrait>(connection: &C, part: PartId) -> Result<(), DbErr> {
+    media_analysis::Entity::delete_by_id(part.get())
+        .exec(connection)
+        .await?;
+    Ok(())
+}
+
+/// The file, when it is still queued at `stage` and as it was when it was taken: a scan that
+/// found it changed has queued it again, and a read that finished first moved it on.
+async fn still_queued<C: ConnectionTrait>(
+    connection: &C,
+    file: &QueuedFile,
+    stage: i32,
+) -> Result<Option<media_part::Model>, DbErr> {
+    let queued = media_analysis::Entity::find_by_id(file.part.get())
+        .one(connection)
+        .await?
+        .is_some_and(|queued| queued.stage == stage);
+    if !queued {
+        return Ok(None);
+    }
+    Ok(media_part::Entity::find_by_id(file.part.get())
+        .one(connection)
+        .await?
+        .filter(|part| {
+            part.size_bytes == i64::try_from(file.size).ok() && part.updated_at == file.modified_at
+        }))
+}
+
+/// Part, library, stage, path, size, time and duration of a queued file.
+type QueuedRow = (i64, i64, i32, String, Option<i64>, i64, Option<i64>);
+
+fn queued_query() -> sea_orm::Select<media_analysis::Entity> {
+    media_analysis::Entity::find()
+        .select_only()
+        .column(media_analysis::Column::MediaPartId)
+        .column(media_analysis::Column::LibrarySectionId)
+        .column(media_analysis::Column::Stage)
+        .column(media_part::Column::Path)
+        .column(media_part::Column::SizeBytes)
+        .column(media_part::Column::UpdatedAt)
+        .column(media_part::Column::DurationMs)
+        .join(
+            JoinType::InnerJoin,
+            media_analysis::Relation::MediaPart.def(),
+        )
+}
+
+fn queued_file((part, section, stage, path, size, modified_at, duration): QueuedRow) -> QueuedFile {
+    QueuedFile {
+        part: PartId::new(part),
+        section: SectionId::new(section),
+        path,
+        size: size.and_then(|size| u64::try_from(size).ok()).unwrap_or(0),
+        modified_at,
+        analysis: if stage == HEADERS {
+            FileAnalysis::Pending
+        } else {
+            FileAnalysis::HeadersRead
+        },
+        duration_ms: duration.and_then(|duration| u64::try_from(duration).ok()),
+    }
 }
 
 /// Which of `parents` no row of `children` points at any longer.

@@ -164,15 +164,24 @@ without them saying so.
   not a new scan. What a tool reads is a `FileLocation` the backend hands out. The backend also
   says where an owner browsing for a root starts (`starting_points`: the drives of Windows,
   `/` elsewhere) and lists the directories inside one (`list_directories`).
-- **A scan runs in the server, one per library, in the background.** `core::scan` walks with
-  the reference's skip rule (a directory whose media files kept their names, sizes and
-  modification times is not looked at again), reuses a known path, groups new files by the
-  measured naming rules (`scan::layout`), analyzes them through `MediaAnalyzer` — ffprobe's
-  deep analysis, which reads every packet, falling back to the headers alone when it
-  cannot finish, two at a time, ten minutes at most each — and writes through `ScanRepository`, whose
-  items go through `db::write` like every other. What is gone is removed, unless its whole root
-  cannot be reached: an unmounted disk is not an empty library. `BackgroundScans` keeps one scan
-  per library and cancels between files.
+- **A scan runs in the server, one per library, in the background, and lists before it
+  reads.** `core::scan` walks with the reference's skip rule (a directory whose media files kept
+  their names, sizes and modification times is not looked at again), reuses a known path, groups
+  new files by the measured naming rules (`scan::layout`) and writes them through
+  `ScanRepository` — items through `db::write` like every other — from names, sizes and times
+  alone, opening no media file: a library is browsable once it is walked. What is
+  gone is removed, unless its whole root cannot be reached: an unmounted disk is not an empty
+  library. Each new, changed or forced file is queued in storage (`media_analysis`), and
+  `scan::BackgroundAnalysis` reads the queue through `MediaAnalyzer`: every file's headers first
+  (tracks, codecs, declared rates and durations, chapters; a minute at most), then every file's
+  packets (the deep analysis' measured rates and span, written onto the same tracks, which keep
+  their ids; ten minutes at most, the headers standing when it cannot finish),
+  `KLAPZ_ANALYSIS_CONCURRENCY` files at once. A player does not wait for the queue: `startStream`
+  and `readMediaFile` read a file's headers at once. The queue outlives the process, a result
+  read from a file that changed or went since is dropped, a library being walked is not read,
+  and a scan and the analysis write in turn. `BackgroundScans` keeps one scan per library, cancels
+  between files, and owns the analysis: `cancelLibraryScan` also stops reading the library until
+  its next scan, as a file that cannot be opened does; `Library.analysis` says how far it is.
 - **A library is created, changed and deleted on the official API.** `createLibrary` and
   `deleteLibrary` are the owners'; `updateLibrary` renames a library or changes its language for
   its admins too, while its `roots` stay the owners' (`OWNER_ONLY`). The rules are in
@@ -180,7 +189,8 @@ without them saying so.
   another; `create_library`, `edit_library`, `delete_library`), and `klapz-server library add`
   applies the same ones. A new library, and one given new roots, is scanned at once, as the
   reference does; a whole scan removes the files of a root the library no longer has. Roots are
-  not changed, and a library is not deleted, while it is being scanned (`SCANNING`). Deleting
+  not changed, and a library is not deleted, while it is being scanned (`SCANNING`); its files
+  being read hold neither back, their reads stopping first. Deleting
   ends every playback of its items through `core::lifecycle`, then removes in one transaction
   its roots, items, collections and permissions, and what refers to its items without a foreign
   key (markers, playlist and play-queue entries, viewings, sessions); watch state and ratings,
@@ -232,14 +242,16 @@ without them saying so.
   read of raw bytes, summed and never parsed), `loudness`, `fingerprint`, `extract_subtitle`,
   `preview_index` (the BIF, packed from ffmpeg's frames), `chapter_thumbs`, `artwork` — and reads
   their output into `klapz_scanner::report`. Every child is killed when the future running it is
-  dropped: `server::analyzer` bounds a file to ten minutes, two files at a time. Files it makes go
+  dropped: `server::analyzer` bounds a file's headers to a minute and its packets to ten, and
+  the analysis queue reads `KLAPZ_ANALYSIS_CONCURRENCY` files at once. Files it makes go
   into a directory the server created and owns; it creates no directory, overwrites nothing,
   reaches no network and holds no state. A failure is the media's (recorded against the file),
-  the tools' (no ffmpeg, or one that refuses `-probe`: the scan stops before it stores the file
-  it was on, so the next scan, once the setup is fixed, finds it new) or neither; the server also
-  runs `ffprobe -version` once at startup, and `Library.scanFailure` tells a library's admins why
-  its last scan stopped. The file reaches the tools as `file:…`, so no name is read as an option
-  or a protocol.
+  the tools' (no ffmpeg, or one that refuses `-probe`: the queue is held as it is until a scan
+  starts or the server restarts), the file's absence (its library's reads wait for its next
+  scan) or neither; the server also runs `ffprobe -version` once at startup, `Library.scanFailure`
+  tells a library's admins why its last scan stopped and `Library.analysis.failure` why its
+  files are not being read. The file reaches the tools as `file:…`, so no name is read as an
+  option or a protocol.
 
 ### Access rights
 
@@ -596,8 +608,8 @@ Places where we knowingly answer differently, each decided rather than overlooke
 - **A scanned track's rate is the one measured over its packets.** The repo owner's decision:
   the scan stores the deep analysis' rates and durations, where the reference mostly publishes
   the declared ones (33 of 38 samples), its deep analysis overwritten by a later normal one.
-  The headers' rates stand only when the deep analysis cannot finish
-  (`docs/scanner/analysis.md`, §2).
+  The headers' rates stand until the packets are measured, and for good when that cannot
+  finish (`docs/scanner/analysis.md`, §2).
 - **Matching is ours, and so are its addresses.** `/matches` lists results whose `guid` is
   `{agent}://{id}` at this server's provider (`tmdb://603`, `tvdb://82066`), which `/match`
   takes back; the reference lists its own provider's `plex://` guids, which name nothing here.
@@ -702,6 +714,7 @@ startup.
 | `KLAPZ_TRANSCODER` | `klapz-ffmpeg`, else `ffmpeg`, beside the executable (with `.exe` on Windows), else the `ffmpeg` on `PATH` (`klapz_scanner::transcoder`) | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. A scan needs v8.1.3-21 onward for the MP4 layout, the MPEG-TS packet length, H.264's sequence header, Matroska's undetermined languages and fingerprints; an older build leaves them out. A player given a picture subtitle (PGS, DVD, DVB) beside the stream rather than burned in, as TTML (`subtitleFormats: TTML`), needs v8.1.3-69 onward: its `imsc_image` encoder and muxer. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `KLAPZ_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
 | `KLAPZ_FFPROBE` | `KLAPZ_TRANSCODER -probe` | The ffprobe a scan reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. An ffmpeg that refuses `-probe` is named as such at startup and in the scan's failure, never taken for a corrupt file. |
+| `KLAPZ_ANALYSIS_CONCURRENCY` | `2` | Files the analysis reads at once, from 1 to 16: each a process reading a file, often over a network share. Another value stops the server. A player's own reads, which do not wait for the queue, are bounded apart, four at once. |
 | `KLAPZ_TRAY` | *(on, Windows only)* | `0` or `off` leaves the notification-area icon out. |
 | `KLAPZ_TMDB_TOKEN` | the project's, built in | TMDB's v4 read access token, sent as a bearer header. Built into `klapz-agents::credentials`, the repo owner's decision (`security.md`); a blank value keeps the built-in one. |
 | `KLAPZ_TVDB_API_KEY` | the project's, built in | TVDB's v4 key, built in likewise. |
@@ -723,8 +736,9 @@ in as `admin`, with the server running; it refuses a loopback origin, where the 
 callbacks answer without a token. A quick tunnel buffers whole responses, so a streamed body
 arrives only at its end: test streamed responses without it.
 `klapz-server library add --kind movie|show --title TITLE ROOT...` creates a library over
-directories of this machine, and `klapz-server scan ID [--force]` scans it without serving
-(a running server scans on `scanLibrary` or `/library/sections/{id}/refresh`); this supersedes
+directories of this machine, and `klapz-server scan ID [--force]` scans it without serving,
+waiting for its files to be read (a running server scans on `scanLibrary` or
+`/library/sections/{id}/refresh`, and reads in the background); this supersedes
 `python tools/seed_test_library.py DIRECTORY`, which writes a `Test` library straight to the
 tables; `python tools/capture_transcoder.py` studies the transcoder alone.
 To import again into a database the server has written to, `python tools/reimport.py`, server
@@ -1081,7 +1095,10 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   importer's own vocabulary, so a scanned film reads as an imported one on both surfaces (the
   test film's tracks, bitrates and labels as the reference's). On the official API
   `scanLibrary`, `cancelLibraryScan`, `Library.scanning`; on the Plex surface the four
-  `/refresh` operations. Not yet: matching and metadata, finding a renamed or moved file again
+  `/refresh` operations. Files listed at once and read in the background, headers first, packets
+  last, from a queue kept in storage (migration `m0044`; `Library.analysis`,
+  `MediaFile.analysis`, `readMediaFile` on the official API). Not yet: matching and metadata,
+  finding a renamed or moved file again
   by size and hash, adding a version to an item already stored, a multi-episode file on every
   episode it holds, local extras and artwork, generated images, scan activities.
 - 🚧 **a Jellyfin surface**, `api-jellyfin` below `/jellyfin`, turned on per user as a

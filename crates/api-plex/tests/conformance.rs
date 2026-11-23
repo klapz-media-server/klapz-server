@@ -505,6 +505,13 @@ fn avatar_audio() -> MediaStream {
 }
 
 fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
+    catalog_read(klapz_core::metadata::FileAnalysis::Complete)
+}
+
+/// The catalog, Avatar's file read this far.
+fn catalog_read(
+    avatar_file: klapz_core::metadata::FileAnalysis,
+) -> (InMemoryLibrary, InMemoryMetadata) {
     let films = section_with_uuid(
         4,
         SectionKind::Movie,
@@ -578,6 +585,7 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
         content_hash: None,
         open_subtitles_hash: None,
         stated: klapz_core::metadata::StatedFile::default(),
+        analysis: avatar_file,
     };
 
     let (external_ids, ratings) = references();
@@ -808,8 +816,19 @@ fn item(id: i64, section: i64, kind: ItemKind, parent: Option<i64>, title: &str)
 }
 
 fn items_app() -> axum::Router {
+    items_app_reading(
+        klapz_core::metadata::FileAnalysis::Complete,
+        std::sync::Arc::default(),
+    )
+}
+
+/// The catalog's app, Avatar's file read this far, and the scans that read files.
+fn items_app_reading(
+    avatar: klapz_core::metadata::FileAnalysis,
+    scans: std::sync::Arc<klapz_core::testing::RecordedScans>,
+) -> axum::Router {
     let identity = ServerIdentity::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "0.1.0-dev");
-    let (library, metadata) = catalog();
+    let (library, metadata) = catalog_read(avatar);
     let watch = klapz_core::testing::InMemoryWatch::over(metadata.items());
     let schema = build_schema(ApiContext {
         capabilities: ServerCapabilities::new(identity.clone(), 0),
@@ -824,10 +843,31 @@ fn items_app() -> axum::Router {
         watch: std::sync::Arc::new(watch),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        scans,
         matching: None,
     });
     authenticated(router(PlexState::new(identity, schema)))
+}
+
+#[tokio::test]
+async fn a_file_a_scan_found_is_read_before_a_playback_decision_chooses_its_tracks() {
+    let decision = "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F100\
+                    &protocol=dash&directPlay=1&hasMDE=1&session=s";
+    let scans = std::sync::Arc::new(klapz_core::testing::RecordedScans::default());
+    let app = items_app_reading(
+        klapz_core::metadata::FileAnalysis::Pending,
+        std::sync::Arc::clone(&scans),
+    );
+    send(app, "GET", decision).await;
+    assert_eq!(*scans.read_now.lock().unwrap(), [PartId::new(910)]);
+
+    let scans = std::sync::Arc::new(klapz_core::testing::RecordedScans::default());
+    let app = items_app_reading(
+        klapz_core::metadata::FileAnalysis::Complete,
+        std::sync::Arc::clone(&scans),
+    );
+    send(app, "GET", decision).await;
+    assert!(scans.read_now.lock().unwrap().is_empty(), "read already");
 }
 
 async fn get_from(app: axum::Router, uri: &str, accept: Option<&str>) -> (StatusCode, String) {

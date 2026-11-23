@@ -290,7 +290,9 @@ impl Library {
         self.section.scanned_at.map(DateTime::from)
     }
 
-    /// Whether a scan of this library is running now (`scanLibrary`).
+    /// Whether a scan of this library is running now (`scanLibrary`): its folders being
+    /// walked, or what it found being matched. Reading the files it found goes on after it,
+    /// in `analysis`.
     #[allow(
         clippy::unused_async,
         reason = "async-graphql requires resolvers taking a context to be async"
@@ -317,6 +319,25 @@ impl Library {
             .data::<ApiContext>()?
             .scans
             .last_failure(self.section.id))
+    }
+
+    /// How far the library's files are read. Null for a kind this server does not scan.
+    async fn analysis(
+        &self,
+        context: &Context<'_>,
+    ) -> Result<Option<crate::scan::LibraryAnalysisObject>> {
+        if !self.is_scannable() {
+            return Ok(None);
+        }
+        let analysis = context
+            .data::<ApiContext>()?
+            .scans
+            .analysis(self.section.id)
+            .await?;
+        Ok(Some(crate::scan::LibraryAnalysisObject::new(
+            analysis,
+            crate::access::can_edit(context, self.section.id),
+        )))
     }
 
     /// Monotonic counter that advances whenever the library's contents change.

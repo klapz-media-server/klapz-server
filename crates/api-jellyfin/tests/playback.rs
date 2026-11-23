@@ -72,6 +72,37 @@ async fn a_player_that_reads_the_file_plays_it_directly() {
 }
 
 #[tokio::test]
+async fn a_file_a_scan_found_is_read_before_its_playback_info_is_answered() {
+    let harness = Harness::with_film_unread().await;
+    let token = harness.token().await;
+    playback_info(&harness, &token, browser(120_000_000)).await;
+    assert_eq!(
+        *harness.scans.read_now.lock().unwrap(),
+        [klapz_core::PartId::new(common::DOODLEBUG_FILE)]
+    );
+
+    // Read already: nothing to ask.
+    let harness = Harness::new().await;
+    let token = harness.token().await;
+    playback_info(&harness, &token, browser(120_000_000)).await;
+    assert!(harness.scans.read_now.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_file_that_cannot_be_read_yet_is_offered_no_direct_play() {
+    let harness = Harness::with_film_unread().await;
+    harness
+        .scans
+        .unread
+        .lock()
+        .unwrap()
+        .push(klapz_core::PartId::new(common::DOODLEBUG_FILE));
+    let token = harness.token().await;
+    let info = playback_info(&harness, &token, browser(120_000_000)).await;
+    assert_eq!(info["MediaSources"][0]["SupportsDirectPlay"], false);
+}
+
+#[tokio::test]
 async fn a_player_that_cannot_read_it_is_given_a_conversion_with_the_reference_shape() {
     let harness = Harness::new().await;
     let token = harness.token().await;

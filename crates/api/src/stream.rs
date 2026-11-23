@@ -300,6 +300,9 @@ pub enum StreamErrorCode {
     SessionTerminated,
     /// A start of the same playback asked for after this one has replaced it.
     Superseded,
+    /// The file's media could not be read yet — it cannot be opened, the media tools cannot
+    /// run, or it took too long — so nothing tells how to play it. The analysis reads it later.
+    NotAnalyzed,
 }
 
 /// A problem with what was asked, as opposed to a failure of the server.
@@ -326,6 +329,9 @@ impl StreamUserError {
             StreamErrorCode::TooManyStreams => "too many streams are running",
             StreamErrorCode::SessionTerminated => "this session was terminated",
             StreamErrorCode::Superseded => "a later start of the same playback replaced this one",
+            StreamErrorCode::NotAnalyzed => {
+                "this file cannot be read yet; it will be once the server reaches it"
+            }
         };
         Self {
             field: vec!["input".to_owned(), field.to_owned()],
@@ -446,6 +452,33 @@ struct Prepared {
     subtitle_ids: Vec<(i32, klapz_core::StreamId)>,
 }
 
+/// The file an input names, as a stream needs it: one the caller can see, read first when a scan
+/// found it and did not read it yet, since its tracks are what every choice of a stream rests on.
+async fn playable_file(
+    context: &Context<'_>,
+    id: &ID,
+) -> Result<std::result::Result<klapz_core::MediaFile, StreamErrorCode>> {
+    let file = match decoded(id, crate::media::FILE_TYPE) {
+        Some(key) => crate::schema::readable_file(context, PartId::new(key)).await?,
+        None => None,
+    };
+    let Some(file) = file else {
+        return Ok(Err(StreamErrorCode::FileNotFound));
+    };
+    if file.analysis != klapz_core::metadata::FileAnalysis::Pending {
+        return Ok(Ok(file));
+    }
+    if !crate::scan::read_before_playing(context, file.id).await? {
+        return Ok(Err(StreamErrorCode::NotAnalyzed));
+    }
+    let api = context.data::<ApiContext>()?;
+    Ok(api
+        .metadata
+        .file(file.id)
+        .await?
+        .ok_or(StreamErrorCode::FileNotFound))
+}
+
 /// The order an input describes, or what is wrong with it.
 async fn prepare(
     context: &Context<'_>,
@@ -456,12 +489,9 @@ async fn prepare(
     let caller = crate::access::require_caller(context)?;
     let refused = |field: &str, code: StreamErrorCode| Ok(Err(StreamUserError::new(field, code)));
 
-    let file = match decoded(&input.file, crate::media::FILE_TYPE) {
-        Some(key) => crate::schema::readable_file(context, PartId::new(key)).await?,
-        None => None,
-    };
-    let Some(file) = file else {
-        return refused("file", StreamErrorCode::FileNotFound);
+    let file = match playable_file(context, &input.file).await? {
+        Ok(file) => file,
+        Err(code) => return refused("file", code),
     };
     let api = context.data::<ApiContext>()?;
     let Some(version) = api.metadata.version(file.version_id).await? else {

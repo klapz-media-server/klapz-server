@@ -221,8 +221,14 @@ async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let library: Arc<dyn LibraryRepository> =
         Arc::new(SqlLibraryRepository::new(connection.clone()));
     let (artwork_store, matching) = source_metadata(&connection, &images)?;
-    let scans = BackgroundScans::new(commands::scanner(&connection, Arc::clone(&library)))
-        .with_matching(matching.clone());
+    let (scanner, analysis) = commands::scanning(
+        &connection,
+        Arc::clone(&library),
+        commands::analysis_concurrency()?,
+    );
+    // What a stopped server left queued is read from the start.
+    analysis.spawn();
+    let scans = BackgroundScans::new(scanner, analysis).with_matching(matching.clone());
     tokio::spawn(check_media_tools());
     let play_queues: Arc<dyn PlayQueueRepository> =
         Arc::new(SqlPlayQueueRepository::new(connection.clone()));

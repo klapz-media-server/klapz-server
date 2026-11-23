@@ -13,21 +13,17 @@ use crate::report::{
     VideoTrack,
 };
 
-/// Reads what the file declares; with `deep`, also every packet's size, which measures each
-/// track's real bitrate (the reference's deep analysis: demuxed, not decoded).
+/// Reads what the file declares: its headers and the probe window, which the reference reads
+/// when a scan finds a file. [`measure`] is the rest of its deep analysis.
 ///
 /// # Errors
 ///
 /// [`ScanError::Unreadable`] when ffprobe cannot open the media, [`ScanError::File`] when the
 /// file cannot be read at all.
-pub async fn probe(tools: &Tools, path: &Path, deep: bool) -> Result<Analysis, ScanError> {
+pub async fn probe(tools: &Tools, path: &Path) -> Result<Analysis, ScanError> {
     let file = hashes::identify(path)?;
     let output = ffprobe(tools, path).await?;
-    let mut analysis = analysis_from_ffprobe(&output, file)?;
-    if deep {
-        analysis.deep = Some(measure_packets(tools, path, analysis.duration_ms).await?);
-    }
-    Ok(analysis)
+    analysis_from_ffprobe(&output, file)
 }
 
 /// What ffprobe's `-show_format -show_streams -show_chapters` JSON says of a file: everything
@@ -178,7 +174,14 @@ fn parse(output: &[u8]) -> Result<Probed, ScanError> {
     })
 }
 
-async fn measure_packets(
+/// Every packet's size and time, which measures each track's real bitrate: the reference's
+/// deep analysis, demuxed and not decoded, so it reads the whole file. `duration_ms`, what the
+/// headers declare, stands in for a span the packets do not give.
+///
+/// # Errors
+///
+/// As [`probe`].
+pub async fn measure(
     tools: &Tools,
     path: &Path,
     duration_ms: Option<u64>,

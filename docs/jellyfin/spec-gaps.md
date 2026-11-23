@@ -295,6 +295,11 @@ reasons excepted.
 
 ## Playing
 
+- **A file a scan found is read first.** A scan lists a file before reading it
+  (`docs/scanner/analysis.md`, §1); `PlaybackInfo` has the files it may answer with read through
+  `readMediaFile` before deciding, and a stream's start does the same through `startStream`. A
+  file that cannot be read yet is offered no direct play: `MediaFile.readableAsIs` is false for
+  it. Not measured on the reference, which probes a file within its scan.
 - **The decision is the official API's.** `PlaybackInfo` reads the device profile's video formats
   and asks `MediaFile.readableAsIs` whether the player reads the file as it is: one format holds
   its container, its video codec and the codec of the audio it would play, and the version weighs

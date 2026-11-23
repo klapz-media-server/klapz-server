@@ -301,7 +301,9 @@ type CancelLibraryScanPayload {
 	"""
 	clientMutationId: String
 	"""
-	Whether a scan was running and was asked to stop. It stops after the file it is on.
+	Whether a scan, or the reading of the library's files, was under way and was asked to
+	stop. A scan stops between two files, a read at once; the files left to read wait for
+	the library's next scan.
 	"""
 	cancelled: Boolean!
 	"""
@@ -2508,6 +2510,27 @@ type FieldValueEdge {
 }
 
 """
+How much of a file's media the server has read. A scan lists a file as soon as it finds
+it, and reads it afterwards, in the background: every file's headers first, then every
+file's packets.
+"""
+enum FileAnalysis {
+	"""
+	Nothing yet: no track, codec or duration is known. Playing it reads its headers first.
+	"""
+	PENDING
+	"""
+	Its headers: tracks, codecs, and the durations and rates they declare. The rates
+	measured over its packets are still to come.
+	"""
+	HEADERS_READ
+	"""
+	All there is to read, or all that could be read of it.
+	"""
+	COMPLETE
+}
+
+"""
 One letter of a library's A–Z jump bar.
 """
 type FirstCharacter {
@@ -3498,7 +3521,9 @@ type Library implements Node {
 	"""
 	scannedAt: DateTime
 	"""
-	Whether a scan of this library is running now (`scanLibrary`).
+	Whether a scan of this library is running now (`scanLibrary`): its folders being
+	walked, or what it found being matched. Reading the files it found goes on after it,
+	in `analysis`.
 	"""
 	scanning: Boolean!
 	"""
@@ -3507,6 +3532,10 @@ type Library implements Node {
 	server started; null too for a caller who does not administer the library.
 	"""
 	scanFailure: String
+	"""
+	How far the library's files are read. Null for a kind this server does not scan.
+	"""
+	analysis: LibraryAnalysis
 	"""
 	Monotonic counter that advances whenever the library's contents change.
 	
@@ -3812,6 +3841,37 @@ type Library implements Node {
 		"""
 		filter: ItemFilterInput
 	): LibraryStats!
+}
+
+"""
+How far a library's files are read.
+"""
+type LibraryAnalysis {
+	"""
+	The library's files.
+	"""
+	fileCount: Int!
+	"""
+	Those whose headers are read, measured or not: they show their tracks and durations,
+	and play without waiting.
+	"""
+	readFileCount: Int!
+	"""
+	Those read to the end, or as far as they could be.
+	"""
+	completeFileCount: Int!
+	"""
+	Whether some of its files are being read now. False with files left to read when the
+	analysis waits: for the library's scan, for its next one after `cancelLibraryScan`, or
+	for what `failure` tells.
+	"""
+	reading: Boolean!
+	"""
+	Why its files are not being read: the media tools cannot run, or a file could not be
+	opened, which holds the library until its next scan. Null when nothing is wrong, and
+	for a caller who does not administer the library.
+	"""
+	failure: String
 }
 
 type LibraryConnection {
@@ -4354,6 +4414,11 @@ type MediaFile implements Node {
 	"""
 	hasChapterTextStream: Boolean!
 	"""
+	How much of the file's media the server has read. Until its headers are, the file has
+	no track inside it, no duration and no description, and its version none either.
+	"""
+	analysis: FileAnalysis!
+	"""
 	What the file's container states about itself, as the prober printed it. Empty for a
 	file the scan did not read.
 	"""
@@ -4373,7 +4438,8 @@ type MediaFile implements Node {
 	Matroska file of nothing but `WebM`'s codecs is held as `webm` too), its video codec and
 	the codec of the audio track it would play — `audioTrack`, or the
 	caller's — and the version weighs no more than `maxBitrate`. An empty list in a format
-	admits anything; names are compared without regard to case.
+	admits anything; names are compared without regard to case. False for a file whose
+	headers are not read yet (`analysis`): nothing known of it says a player reads it.
 	"""
 	readableAsIs(
 		"""
@@ -5253,9 +5319,10 @@ type Mutation {
 		input: DeleteSidecarInput!
 	): DeleteSidecarPayload!
 	"""
-	Starts scanning a library in the background: new files become items, changed ones are
-	analyzed again, and what is gone is removed — unless its whole folder cannot be
-	reached, which keeps it. For the library's admins and the server's owners.
+	Starts scanning a library in the background: new files become items at once, and are
+	read afterwards, as are changed ones (`Library.analysis`); what is gone is removed —
+	unless its whole folder cannot be reached, which keeps it. For the library's admins and
+	the server's owners.
 	"""
 	scanLibrary(
 		"""
@@ -5264,7 +5331,8 @@ type Mutation {
 		input: ScanLibraryInput!
 	): ScanLibraryPayload!
 	"""
-	Asks a library's running scan to stop. What it already wrote stays.
+	Asks a library's running scan to stop, and stops reading its files until its next
+	scan. What it already wrote stays.
 	"""
 	cancelLibraryScan(
 		"""
@@ -5272,6 +5340,18 @@ type Mutation {
 		"""
 		input: CancelLibraryScanInput!
 	): CancelLibraryScanPayload!
+	"""
+	Reads a file's headers now when the server has not yet — its tracks, codecs and
+	durations, which a player needs before choosing how to play it — ahead of the files a
+	scan queued. Nothing to do for a file read already; `startStream` does it itself. For
+	whoever can see the file.
+	"""
+	readMediaFile(
+		"""
+		The file to read.
+		"""
+		input: ReadMediaFileInput!
+	): ReadMediaFilePayload!
 	"""
 	Deletes one viewing from a history: the caller's own, or anyone's for an owner.
 	What was watched stays as it is, as on the reference.
@@ -7442,6 +7522,71 @@ enum RatingType {
 	AUDIENCE
 }
 
+"""
+Why a file could not be read.
+"""
+enum ReadMediaFileErrorCode {
+	"""
+	No file the caller can see carries this id.
+	"""
+	FILE_NOT_FOUND
+	"""
+	The file could not be read now: it cannot be opened, the media tools cannot run, or it
+	took too long. The analysis reads it later.
+	"""
+	NOT_ANALYZED
+}
+
+"""
+A file whose media to read now.
+"""
+input ReadMediaFileInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The file, as returned in `MediaFile.id`.
+	"""
+	fileId: ID!
+}
+
+"""
+What `readMediaFile` did.
+"""
+type ReadMediaFilePayload {
+	"""
+	As given in the input.
+	"""
+	clientMutationId: String
+	"""
+	The file, as it reads now. Null when the request was refused.
+	"""
+	file: MediaFile
+	"""
+	Why the request was refused. Empty on success.
+	"""
+	userErrors: [ReadMediaFileUserError!]!
+}
+
+"""
+A request `readMediaFile` refused, and where in the input the reason lies.
+"""
+type ReadMediaFileUserError {
+	"""
+	The path to the input field at fault.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person to read.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program to branch on.
+	"""
+	code: ReadMediaFileErrorCode!
+}
+
 type RecentlyAddedConnection {
 	"""
 	Information to aid in pagination.
@@ -7692,8 +7837,8 @@ input ScanLibraryInput {
 	"""
 	libraryId: ID!
 	"""
-	Analyze every file again, as if none had been seen. By default a directory whose files
-	kept their names, sizes and modification times is skipped.
+	Walk every directory and read every file again, as if none had been seen. By default a
+	directory whose files kept their names, sizes and modification times is skipped.
 	"""
 	force: Boolean! = false
 }
@@ -9287,6 +9432,11 @@ enum StreamErrorCode {
 	A start of the same playback asked for after this one has replaced it.
 	"""
 	SUPERSEDED
+	"""
+	The file's media could not be read yet — it cannot be opened, the media tools cannot
+	run, or it took too long — so nothing tells how to play it. The analysis reads it later.
+	"""
+	NOT_ANALYZED
 }
 
 """

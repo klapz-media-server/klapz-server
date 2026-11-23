@@ -6,7 +6,8 @@
 
 use klapz_core::extra::{Extra, ExtraKind};
 use klapz_core::metadata::{
-    AudioAnalysis, FileLayout, StatedFile, StatedTrack, StreamKind, TrackTraits, VideoAnalysis,
+    AudioAnalysis, FileAnalysis, FileLayout, StatedFile, StatedTrack, StreamKind, TrackTraits,
+    VideoAnalysis,
 };
 use klapz_core::{
     ExtraId, MediaFile, MediaId, MediaStream, MediaVersion, PartId, RatingKey, StreamId,
@@ -130,6 +131,7 @@ fn to_file(row: extra_media::Model) -> MediaFile {
         content_hash: None,
         open_subtitles_hash: None,
         stated: StatedFile::default(),
+        analysis: FileAnalysis::Complete,
     }
 }
 

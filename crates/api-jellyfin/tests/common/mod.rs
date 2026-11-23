@@ -237,6 +237,7 @@ fn file(id: i64, version: i64, path: &str, size: i64) -> MediaFile {
         content_hash: None,
         open_subtitles_hash: None,
         stated: StatedFile::default(),
+        analysis: klapz_core::metadata::FileAnalysis::Complete,
     }
 }
 
@@ -322,7 +323,11 @@ fn doodlebug_tracks() -> Vec<MediaStream> {
     vec![video, audio]
 }
 
-fn metadata(items: Vec<MetadataItem>) -> InMemoryMetadata {
+/// The test libraries' media; `film` is how much of the film's file the server has read.
+fn metadata(
+    items: Vec<MetadataItem>,
+    film: klapz_core::metadata::FileAnalysis,
+) -> InMemoryMetadata {
     // The episode's file, as the scan stores an MP4 of the reference's library.
     let mut episode_video = track(3101, EPISODE_FILE, StreamKind::Video, 0, "h264");
     episode_video.bitrate = Some(1_376_000);
@@ -396,6 +401,7 @@ fn metadata(items: Vec<MetadataItem>) -> InMemoryMetadata {
             vec![
                 MediaFile {
                     stated: stated_file("matroska,webm", 178_301_000, 667_480),
+                    analysis: film,
                     ..file(
                         DOODLEBUG_FILE,
                         1001,
@@ -405,6 +411,7 @@ fn metadata(items: Vec<MetadataItem>) -> InMemoryMetadata {
                 },
                 MediaFile {
                     stated: stated_file("mov,mp4,m4a,3gp,3g2,mj2", 287_754_134, 1_986_929),
+                    analysis: klapz_core::metadata::FileAnalysis::Complete,
                     ..file(
                         EPISODE_FILE,
                         1003,
@@ -424,6 +431,7 @@ pub struct Harness {
     pub schema: ApiSchema,
     pub access: Arc<InMemoryAccess>,
     pub streams: Arc<StubStreams>,
+    pub scans: Arc<klapz_core::testing::RecordedScans>,
     sessions: Arc<klapz_api::Sessions>,
     pub alice: UserId,
 }
@@ -499,7 +507,12 @@ impl Harness {
     /// `bob`, given the same, connected through Plex only; `carol`, whose Jellyfin connection
     /// was switched off; `owner`, an owner connected through Jellyfin. All with one password.
     pub async fn new() -> Self {
-        Self::with_items(items()).await
+        Self::with_items(items(), klapz_core::metadata::FileAnalysis::Complete).await
+    }
+
+    /// The same, the film's file found by a scan and not read yet.
+    pub async fn with_film_unread() -> Self {
+        Self::with_items(items(), klapz_core::metadata::FileAnalysis::Pending).await
     }
 
     /// The same, with the episode released at this time.
@@ -510,10 +523,13 @@ impl Harness {
                 item.released_on = Some(at);
             }
         }
-        Self::with_items(items).await
+        Self::with_items(items, klapz_core::metadata::FileAnalysis::Complete).await
     }
 
-    async fn with_items(items: Vec<MetadataItem>) -> Self {
+    async fn with_items(
+        items: Vec<MetadataItem>,
+        film: klapz_core::metadata::FileAnalysis,
+    ) -> Self {
         let access = Arc::new(InMemoryAccess::default());
         let hash = klapz_core::account::hash_password(PASSWORD).unwrap();
         let mut ids = HashMap::new();
@@ -570,12 +586,13 @@ impl Harness {
             .await
             .unwrap();
         let streams = Arc::new(StubStreams::default());
+        let scans = Arc::new(klapz_core::testing::RecordedScans::default());
         let library = library();
         let collections = Arc::new(klapz_core::testing::InMemoryCollections::new(items.clone()));
         let schema = build_schema(ApiContext {
             capabilities: ServerCapabilities::new(ServerIdentity::new(MACHINE, "0.1.0"), 0),
             library: Arc::new(library),
-            metadata: Arc::new(metadata(items.clone()).with_collections(&collections)),
+            metadata: Arc::new(metadata(items.clone(), film).with_collections(&collections)),
             playback: Arc::new(klapz_core::testing::InMemoryPlayback::default()),
             play_queues: Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
             playlists: Arc::new(klapz_core::testing::InMemoryPlaylists::new(items)),
@@ -585,7 +602,7 @@ impl Harness {
             watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
             streams: Arc::clone(&streams) as Arc<dyn klapz_core::stream::StreamEngine>,
             session_locks: Arc::default(),
-            scans: Arc::new(klapz_core::testing::RecordedScans::default()),
+            scans: Arc::clone(&scans) as Arc<dyn klapz_core::scan::ScanControl>,
             matching: None,
         });
         let sessions = Arc::new(klapz_api::Sessions::new(
@@ -596,6 +613,7 @@ impl Harness {
             schema,
             access,
             streams,
+            scans,
             sessions,
             alice: ids["alice"],
         }

@@ -184,6 +184,44 @@ struct Readable {
     readable_as_is: bool,
 }
 
+const READ_FILE: &str = r"mutation($input: ReadMediaFileInput!) {
+    readMediaFile(input: $input) { userErrors { code } }
+}";
+
+/// The item, each file a playback may use read first when the scan that found it has not had
+/// it read yet: what `PlaybackInfo` answers rests on its tracks. A file that cannot be read yet
+/// stays as it was, and is answered as the reference answers one it could not probe.
+async fn with_files_read(
+    state: &JellyfinState,
+    item: Item,
+    item_id: &str,
+    wanted: Option<&str>,
+) -> Result<Item, JellyfinError> {
+    let pending: Vec<&str> = item
+        .versions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, version)| {
+            let file = version.files.first()?;
+            let source = source_id(&item, index)?;
+            let asked = wanted.is_none_or(|wanted| wanted.eq_ignore_ascii_case(&source));
+            (asked && file.analysis.as_deref() == Some("PENDING")).then_some(file.id.as_str())
+        })
+        .collect();
+    if pending.is_empty() {
+        return Ok(item);
+    }
+    for file in pending {
+        let _: serde_json::Value = gql::query(
+            &state.schema,
+            READ_FILE,
+            json!({ "input": { "fileId": file } }),
+        )
+        .await?;
+    }
+    playable_item(state, item_id).await
+}
+
 async fn playable_item(state: &JellyfinState, item: &str) -> Result<Item, JellyfinError> {
     let global = id::global_of_type(item, klapz_api::item::ITEM_TYPE)?;
     let data: NodeData<Item> = gql::query(
@@ -253,7 +291,8 @@ async fn playback_info(
         .require_self(query.get("userId"))?;
     let mut request = PlaybackInfoRequest::read(&body, &query)?;
 
-    let item = playable_item(&state, &item).await?;
+    let found = playable_item(&state, &item).await?;
+    let item = with_files_read(&state, found, &item, request.media_source_id.as_deref()).await?;
     let profile = request.device_profile.take().unwrap_or_default();
     let formats = player_formats(&profile);
     let max_bitrate = request

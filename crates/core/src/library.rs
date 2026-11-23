@@ -306,7 +306,9 @@ pub enum Edited {
     Scanning,
 }
 
-/// Edits a library, and scans it again when its roots changed.
+/// Edits a library, and scans it again when its roots changed. The files being read stop
+/// being read: the scan that follows removes those no longer below a root, and its files are
+/// read again once it is over.
 ///
 /// # Errors
 ///
@@ -318,8 +320,11 @@ pub async fn edit_library(
     edit: &LibraryEdit,
     now: i64,
 ) -> Result<Edited, LibraryError> {
-    if edit.roots.is_some() && scans.is_running(id) {
-        return Ok(Edited::Scanning);
+    if edit.roots.is_some() {
+        if scans.is_running(id) {
+            return Ok(Edited::Scanning);
+        }
+        scans.forget(id);
     }
     let edited = match library.edit(id, edit, now).await {
         Ok(edited) => edited,
@@ -341,7 +346,8 @@ pub enum Deletion {
     Scanning,
 }
 
-/// Deletes a library, ending first every playback of its items, stream and session together.
+/// Deletes a library, ending first every playback of its items, stream and session together,
+/// and the reading of its files, whose queue goes with them.
 ///
 /// # Errors
 ///
@@ -355,6 +361,7 @@ pub async fn delete_library(
     if scans.is_running(id) {
         return Ok(Deletion::Scanning);
     }
+    scans.forget(id);
     let playing = lifecycle
         .sessions
         .keys_in_library(id)
@@ -529,7 +536,12 @@ VF"
             edit_library(&library, &scans, id, &title, 1).await.unwrap(),
             Edited::Edited(section) if section.title == "Films"
         ));
+        assert!(
+            scans.forgotten.lock().unwrap().is_empty(),
+            "a refused change and a new title stop no read"
+        );
 
+        // Reading its files does not hold a deletion back: it stops.
         scans.running.lock().unwrap().clear();
         assert_eq!(
             delete_library(&library, &lifecycle, &scans, id)
@@ -537,6 +549,7 @@ VF"
                 .unwrap(),
             Deletion::Deleted
         );
+        assert_eq!(*scans.forgotten.lock().unwrap(), [id]);
         assert_eq!(
             delete_library(&library, &lifecycle, &scans, id)
                 .await
@@ -562,6 +575,11 @@ VF"
         };
         edit_library(&library, &scans, id, &roots, 2).await.unwrap();
         assert_eq!(scans.started.lock().unwrap().len(), 1);
+        assert_eq!(
+            *scans.forgotten.lock().unwrap(),
+            [id],
+            "the files below its old roots are not read on"
+        );
         let kept = library.roots_for(&[id]).await.unwrap();
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].path, "/media");
