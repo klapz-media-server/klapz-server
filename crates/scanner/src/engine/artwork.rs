@@ -1,7 +1,7 @@
 //! Pictures for an item without artwork: frames of its video, and covers its file carries.
 
 use std::path::Path;
-use std::process::Command;
+use tokio::process::Command;
 
 use crate::engine::{input, output_directory, probe, produced, run, seconds, ScanError, Tools};
 use crate::report::{FileRole, Produced, ProducedFile, TrackKind};
@@ -21,21 +21,24 @@ const ARTWORK_POSITIONS: [(u64, u64); 3] = [(1, 4), (1, 2), (3, 4)];
 /// # Errors
 ///
 /// [`ScanError::Unreadable`] when ffmpeg cannot decode the video.
-pub fn artwork(tools: &Tools, path: &Path, out: &Path) -> Result<Produced, ScanError> {
+pub async fn artwork(tools: &Tools, path: &Path, out: &Path) -> Result<Produced, ScanError> {
     let directory = output_directory(out)?;
     let mut files = Vec::new();
-    if let Some(duration) = probe::duration_ms(tools, path)?.filter(|duration| *duration > 0) {
+    if let Some(duration) = probe::duration_ms(tools, path)
+        .await?
+        .filter(|duration| *duration > 0)
+    {
         for (number, (numerator, denominator)) in (1..).zip(ARTWORK_POSITIONS) {
             let at_ms = duration * numerator / denominator;
             let thumb = format!("thumb{number}.jpg");
             let art = format!("art{number}.jpg");
-            frame(tools, path, at_ms, (720, 512), &directory.join(&thumb))?;
-            frame(tools, path, at_ms, (1280, 720), &directory.join(&art))?;
+            frame(tools, path, at_ms, (720, 512), &directory.join(&thumb)).await?;
+            frame(tools, path, at_ms, (1280, 720), &directory.join(&art)).await?;
             files.push(produced(&directory, thumb, FileRole::Thumb { at_ms })?);
             files.push(produced(&directory, art, FileRole::Art { at_ms })?);
         }
     }
-    files.extend(covers(tools, path, &directory)?);
+    files.extend(covers(tools, path, &directory).await?);
     Ok(Produced { files })
 }
 
@@ -46,9 +49,9 @@ pub fn artwork(tools: &Tools, path: &Path, out: &Path) -> Result<Produced, ScanE
 ///
 /// [`ScanError::Unsupported`] past [`MAX_CHAPTERS`], [`ScanError::Unreadable`] when ffmpeg
 /// cannot decode the video.
-pub fn chapter_thumbs(tools: &Tools, path: &Path, out: &Path) -> Result<Produced, ScanError> {
+pub async fn chapter_thumbs(tools: &Tools, path: &Path, out: &Path) -> Result<Produced, ScanError> {
     let directory = output_directory(out)?;
-    let chapters = probe::chapters_of(tools, path)?;
+    let chapters = probe::chapters_of(tools, path).await?;
     if chapters.len() > MAX_CHAPTERS {
         return Err(ScanError::Unsupported(format!(
             "{} chapters, past the {MAX_CHAPTERS} given thumbnails",
@@ -60,7 +63,7 @@ pub fn chapter_thumbs(tools: &Tools, path: &Path, out: &Path) -> Result<Produced
         let length = chapter.end_ms.saturating_sub(chapter.start_ms);
         let at_ms = chapter.start_ms + (length / 10).min(5_000);
         let name = format!("chapter{}.jpg", chapter.index);
-        frame(tools, path, at_ms, (720, 512), &directory.join(&name))?;
+        frame(tools, path, at_ms, (720, 512), &directory.join(&name)).await?;
         files.push(produced(
             &directory,
             name,
@@ -75,7 +78,7 @@ pub fn chapter_thumbs(tools: &Tools, path: &Path, out: &Path) -> Result<Produced
 
 /// One frame of the main video at `at_ms`, fitted inside `box_size`. The seek lands on the key
 /// frame before and decodes forward, so the frame is the exact one.
-fn frame(
+async fn frame(
     tools: &Tools,
     path: &Path,
     at_ms: u64,
@@ -110,15 +113,20 @@ fn frame(
                 "3",
             ])
             .arg(input(target)),
-    )?;
+    )
+    .await?;
     Ok(())
 }
 
 /// Attached pictures (MP4 and Matroska covers stored as a video track) and Matroska image
 /// attachments, copied as stored.
-fn covers(tools: &Tools, path: &Path, directory: &Path) -> Result<Vec<ProducedFile>, ScanError> {
+async fn covers(
+    tools: &Tools,
+    path: &Path,
+    directory: &Path,
+) -> Result<Vec<ProducedFile>, ScanError> {
     let mut files = Vec::new();
-    for track in probe::tracks(tools, path)? {
+    for track in probe::tracks(tools, path).await? {
         let extension = match track.kind {
             TrackKind::Video if track.disposition.attached_picture => {
                 match track.codec.as_deref() {
@@ -167,7 +175,7 @@ fn covers(tools: &Tools, path: &Path, directory: &Path) -> Result<Vec<ProducedFi
                 ])
                 .arg(input(&target));
         }
-        run("ffmpeg", &mut command)?;
+        run("ffmpeg", &mut command).await?;
         files.push(produced(
             directory,
             name,

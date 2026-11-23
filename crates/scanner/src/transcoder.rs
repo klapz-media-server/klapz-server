@@ -1,5 +1,5 @@
-//! Which ffmpeg the server streams with and the scanner reads files with: one rule for both
-//! binaries, since the packages lay them out side by side.
+//! Which ffmpeg the server streams with and reads files with, beside the server's executable
+//! in the packages.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};

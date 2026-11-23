@@ -22,6 +22,7 @@
    "color_transfer": "bt709",
    "color_primaries": "bt709",
    "chroma_location": "left",
+   "refs": 1,
    "view_ids_available": "",
    "view_pos_available": "",
    "r_frame_rate": "25/1",

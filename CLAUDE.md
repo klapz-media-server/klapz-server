@@ -25,7 +25,7 @@ Everything in this repository is written in English — code, comments, document
 | `docs/jellyfin/ENDPOINTS.md` | Tracker of the Jellyfin operations served below `/jellyfin`. **Generated**: `python tools/gen_jellyfin_endpoints.py`, from the routes `crates/api-jellyfin` declares. |
 | `docs/jellyfin/spec-gaps.md` | What the Jellyfin surface measured on the reference, and where it knowingly differs. Hand-verified. |
 | `tools/capture_jellyfin.py` | Captures the reference Jellyfin (`JELLYFIN_USER`, `JELLYFIN_PASSWORD`), or our own surface with `--out`; `--all-items` every file's lookups and `PlaybackInfo` and every series' seasons and episodes, `--fixtures` the scrubbed fixtures of `crates/api-jellyfin/tests`. `tools/compare_jellyfin.py` sets the two side by side file by file, field by field, every difference either explained (its reason in `docs/jellyfin/spec-gaps.md`) or reported. |
-| `tools/capture_jellyfin_samples.py` | Gives each scan sample our scanner's report and the reference Jellyfin's answer about its file: the fixtures `crates/server/tests/jellyfin_samples.rs` replays through storage, the official API and the binding. |
+| `tools/capture_jellyfin_samples.py` | Gives each scan sample the reference Jellyfin's answer about its file, beside the ffprobe output `tools/capture_scan_samples.py` captured: the fixtures `crates/server/tests/jellyfin_samples.rs` replays through storage, the official API and the binding. |
 | `.claude/skills/rust/` | The project's Rust conventions. Load before writing Rust. |
 | `.claude/skills/reference-servers/` | Measuring on a reference Plex or Jellyfin without damaging it: test libraries, the forbidden calls, where answers come from, how rules are measured and compared. Load before any capture or comparison. |
 
@@ -51,10 +51,13 @@ without them saying so.
 
 - **Server only** for now. No client, and no stand-in for `plex.tv`: pairing talks to the real
   one.
-- **Scanning is being brought in, split as Plex splits it.** Walking libraries, deciding what
-  changed, matching and storing belong to the server, as they run inside Plex Media Server;
-  reading a file's content belongs to `klapz-scanner`, a separate binary, as Plex leaves it
-  to `Plex Media Scanner`, its Fingerprinter and its Transcoder. The endpoints of matching and
+- **Scanning is being brought in, and runs in the server.** Walking libraries, deciding what
+  changed, reading files, matching and storing are all the server's. Reading a file's content is
+  ffprobe's and ffmpeg-plex's, run by the server as children, the repo owner's decision: what
+  the server once read from a file's bytes itself (the MP4 layout, the MPEG-TS packet length,
+  H.264's sequence header, Matroska's declared languages) and Chromaprint are patches and build
+  options of ffmpeg-plex, so no parser of a file's bytes runs in the server's address space.
+  `klapz-scanner` is the library that runs them and reads their output. The endpoints of matching and
   of analysis on demand stay `deferred` in `docs/ENDPOINTS.md` until they exist. How Plex does
   each part is in `docs/scanner/` (`discovery.md`, `matching.md`, `analysis.md`).
 - **No feature behind a paywall.** No Plex Pass, no Plex Ninja: everything Plex reserves for a
@@ -164,8 +167,8 @@ without them saying so.
 - **A scan runs in the server, one per library, in the background.** `core::scan` walks with
   the reference's skip rule (a directory whose media files kept their names, sizes and
   modification times is not looked at again), reuses a known path, groups new files by the
-  measured naming rules (`scan::layout`), analyzes them through `MediaAnalyzer` — the scanner
-  binary's deep analysis, which reads every packet, falling back to the headers alone when it
+  measured naming rules (`scan::layout`), analyzes them through `MediaAnalyzer` — ffprobe's
+  deep analysis, which reads every packet, falling back to the headers alone when it
   cannot finish, two at a time, ten minutes at most each — and writes through `ScanRepository`, whose
   items go through `db::write` like every other. What is gone is removed, unless its whole root
   cannot be reached: an unmounted disk is not an empty library. `BackgroundScans` keeps one scan
@@ -224,16 +227,19 @@ without them saying so.
   address space. Images are the exception, by the repo owner's decision: `/photo/:/transcode`
   converts in process with the `image` crate, memory-safe decoders on a format allowlist, because
   two processes per thumbnail cost more than the work.
-- **The scanner is a command line over one file, and keeps nothing.** `klapz-scanner
-  <command> [options] -- <file>`: `probe [--deep]`, `hashes`, `loudness`, `fingerprint`,
-  `subtitles`, `bif`, `chapter-thumbs`, `artwork`, and `klapz-scanner check`, with no file, which
-  exits `0` or `4` and is what the server runs at startup. It prints one JSON report on standard output
-  (`klapz_scanner::report`, the same types the server reads back, versioned), writes the
-  files it makes into an `--out` directory the server created and owns, creates no directory
-  and overwrites nothing, and exits `3` when the media is at fault, `4` when its tools cannot run (no ffmpeg, or one that refuses `-probe`), `2` on bad usage. A `4` stops the server's scan before it stores the file it was on, so the next scan, once the setup is fixed, finds it new; the server also checks the tools once at startup, and `Library.scanFailure` tells a library's admins why its last scan stopped. It
-  decodes nothing itself — ffprobe and ffmpeg-plex do, as its children — reaches no network
-  and holds no state: what to redo, and where results go, is the server's. The file comes after
-  `--` and reaches the tools as `file:…`, so no name is read as an option or a protocol.
+- **Reading a file is process supervision too.** `klapz-scanner` runs ffprobe and ffmpeg-plex
+  on one file — `probe` (with `deep`), `identify` (size, time and OpenSubtitles hash, the one
+  read of raw bytes, summed and never parsed), `loudness`, `fingerprint`, `extract_subtitle`,
+  `preview_index` (the BIF, packed from ffmpeg's frames), `chapter_thumbs`, `artwork` — and reads
+  their output into `klapz_scanner::report`. Every child is killed when the future running it is
+  dropped: `server::analyzer` bounds a file to ten minutes, two files at a time. Files it makes go
+  into a directory the server created and owns; it creates no directory, overwrites nothing,
+  reaches no network and holds no state. A failure is the media's (recorded against the file),
+  the tools' (no ffmpeg, or one that refuses `-probe`: the scan stops before it stores the file
+  it was on, so the next scan, once the setup is fixed, finds it new) or neither; the server also
+  runs `ffprobe -version` once at startup, and `Library.scanFailure` tells a library's admins why
+  its last scan stopped. The file reaches the tools as `file:…`, so no name is read as an option
+  or a protocol.
 
 ### Access rights
 
@@ -693,24 +699,22 @@ startup.
 | `KLAPZ_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `KLAPZ_JELLYFIN_WEB_DIR` | *(none)* | Jellyfin Web, served without a token at `/jellyfin/web`: a Jellyfin install's `jellyfin-web` directory. Not versioned: it is Jellyfin's code. |
 | `KLAPZ_WEB_DIR` | `web` beside the server's executable | Plex Web, served without a token at `/web` as the reference serves it, read from disk: nothing of it is compiled into the server. Not versioned: it is Plex's code. No such directory (no `index.html` in it) means `/web` is not served. `/web` redirects to `/web/`, which serves the index, and a path naming no file answers the index, so a client routing in the browser works there; the reference redirects `/web` and `/web/` to `/web/index.html` instead. A client built for this prefix uses relative asset addresses (Vite's `base: './'`) or `/web/` ones. A browser opening `/` itself (`Sec-Fetch-Mode: navigate`, `GET` or `HEAD`) is answered `307` to `/web/` before any token is asked for, where the reference answers `401`; API clients, Plex Web's own calls included, still get the root's capabilities. Without a client, `/` stays as it was. |
-| `KLAPZ_TRANSCODER` | `klapz-ffmpeg`, else `ffmpeg`, beside the executable (with `.exe` on Windows), else the `ffmpeg` on `PATH`; the server and the scanner share the rule (`klapz_scanner::transcoder`) | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
+| `KLAPZ_TRANSCODER` | `klapz-ffmpeg`, else `ffmpeg`, beside the executable (with `.exe` on Windows), else the `ffmpeg` on `PATH` (`klapz_scanner::transcoder`) | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. A scan needs v8.1.3-21 onward for the MP4 layout, the MPEG-TS packet length, H.264's sequence header, Matroska's undetermined languages and fingerprints; an older build leaves them out. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `KLAPZ_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
-| `KLAPZ_FFPROBE` | `KLAPZ_TRANSCODER -probe` | The ffprobe the scanner reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. An ffmpeg that refuses `-probe` is named as such at startup and in the scan's failure, never taken for a corrupt file. |
+| `KLAPZ_FFPROBE` | `KLAPZ_TRANSCODER -probe` | The ffprobe a scan reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. An ffmpeg that refuses `-probe` is named as such at startup and in the scan's failure, never taken for a corrupt file. |
 | `KLAPZ_TRAY` | *(on, Windows only)* | `0` or `off` leaves the notification-area icon out. |
-| `KLAPZ_SCANNER` | `klapz-scanner` beside the server's executable, else on `PATH` | The scanner binary a library scan runs on each new or changed file. |
 | `KLAPZ_TMDB_TOKEN` | the project's, built in | TMDB's v4 read access token, sent as a bearer header. Built into `klapz-agents::credentials`, the repo owner's decision (`security.md`); a blank value keeps the built-in one. |
 | `KLAPZ_TVDB_API_KEY` | the project's, built in | TVDB's v4 key, built in likewise. |
 | `KLAPZ_IMAGES_DIR` | `images` beside an SQLite database's file, else beside the executable | Where provider images are kept, originals, `provider/ab/{sha256(url)}.{ext}`; served from there when the provider no longer is. |
 | `KLAPZ_TVDB_PIN` | *(none)* | A TVDB subscriber's PIN, which a user-supported key requires. Never built in. Startup logs which providers have a key and from where, never the key. |
 | `KLAPZ_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which Plex's own binary needs. The rebuilt one has them built in and needs none. |
 
-`.github/workflows/package.yml` builds the server and the scanner for Linux (x86_64, arm64),
-Windows and macOS (arm64, x86_64), packages each with the ffmpeg-plex release it pins by
-version and checksum and `packaging/README.txt`, scans a generated file with the package as a
-test, and publishes the archives as a release on every push to the default branch: the last
-`vX.Y.Z` tag with its patch raised (minor or major by running the workflow by hand), stamped
-into the crates so the official API reports it. Laid side by side, the three
-programs find each other with no variable set.
+`.github/workflows/package.yml` builds the server for Linux (x86_64, arm64), Windows and macOS
+(arm64, x86_64) and publishes the binaries as a release on every push to the default branch:
+the last `vX.Y.Z` tag with its patch raised (minor or major by running the workflow by hand),
+stamped into the crate so the official API reports it. The desktop package (the `klapz`
+repository) lays it beside the latest ffmpeg-plex release and the web client, where they find
+each other with no variable set.
 
 Imported items point at the paths of the server they were imported from: they play only where
 those paths resolve. `python tools/plex_tunnel.py --origin http://LAN-IP:32500` opens a
@@ -1034,16 +1038,16 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   admins renaming; roots checked and resolved through `LibraryFiles::resolve_root`, a scan after
   a change, a deletion ending its playbacks first (`PlaybackRepository::keys_in_library`);
   owners browse the server's directories to pick roots (`serverDirectories`).
-- 🚧 **the scanner's file half**, `klapz-scanner`, measured against the reference on the
+- 🚧 **reading files**, `klapz-scanner`, measured against the reference on the
   test files: the analysis (every track field ffprobe gives, chapters with generic titles
-  cleared, MP4 layout, MPEG-TS packet length; `--deep` measures each track's rate over every
-  packet, the video's equal to Matroska's `BPS`), the OpenSubtitles hash (identical), the BIF
-  (header and index identical, frames re-encoded by a newer libavcodec, 58 dB apart), Chromaprint
-  fingerprints in process (9,841 of 9,945 values equal to Plex's Fingerprinter, 0.03 % of bits
-  apart), EBU R 128 loudness, subtitle tracks extracted, chapter frames, and poster and backdrop
+  cleared, MP4 layout, MPEG-TS packet length; the deep analysis measures each track's rate over
+  every packet, the video's equal to Matroska's `BPS`), the OpenSubtitles hash (identical), the
+  BIF (header and index identical, frames re-encoded by a newer libavcodec, 58 dB apart),
+  Chromaprint fingerprints by ffmpeg-plex (9,841 of 9,945 values equal to Plex's Fingerprinter,
+  0.03 % of bits apart, bit for bit what the earlier in-process Chromaprint computed), EBU R 128 loudness, subtitle tracks extracted, chapter frames, and poster and backdrop
   frames at a quarter, half and three quarters (720×405 and 1280×720 for 16:9, as the
   reference's) with the covers a file carries; H.264's coded size, reference frames and scaling
-  matrix from its sequence header (`trace_headers`), and the deep analysis' rates and duration
+  matrix from its sequence header (ffmpeg-plex's ffprobe), and the deep analysis' rates and duration
   over the time the packets span, as the reference measures them. A scanned file's lookup is the
   reference's field for field on `Media`, `Part` and `Stream` for the three test files and 38
   samples covering every container, codec and layout of the library, rates aside: we keep the
@@ -1073,7 +1077,7 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
 - 🚧 **library scans in the server**: libraries walked through `LibraryFiles` (local disks for
   now), files grouped into films, series, seasons and episodes by the reference's measured
   naming rules (`CleanName`, stacking, versions, the 18 episode patterns, dates, sidecars,
-  `.plexignore`), analyzed by the scanner and stored through `SqlScanRepository` in the
+  `.plexignore`), analyzed through ffprobe and stored through `SqlScanRepository` in the
   importer's own vocabulary, so a scanned film reads as an imported one on both surfaces (the
   test film's tracks, bitrates and labels as the reference's). On the official API
   `scanLibrary`, `cancelLibraryScan`, `Library.scanning`; on the Plex surface the four
@@ -1092,8 +1096,8 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   On the 35 test files, every field a file determines is the reference's — tracks, media sources,
   chapters, containers, durations, rates, filters — from what ffprobe states as printed, which the
   scan now keeps beside Plex's reading (`MediaStream.stated`, `MediaFile.stated`,
-  `MediaFile.sideStreams`, `Chapter.stated`, migration `m0040`; Matroska's languages read by the
-  scanner itself), and what remains differs for reasons measured in `docs/jellyfin/spec-gaps.md`
+  `MediaFile.sideStreams`, `Chapter.stated`, migration `m0040`; Matroska's undetermined
+  languages as ffmpeg-plex reports them), and what remains differs for reasons measured in `docs/jellyfin/spec-gaps.md`
   (*Measured on the 35 files*): metadata and artwork from a provider, the scan's grouping and
   naming rules, what the reference's prober decodes.
 

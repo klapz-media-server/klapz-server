@@ -1,23 +1,24 @@
-"""Capture what the scanner reads of sample files, and what the reference stored for them.
+"""Capture what the scan reads of sample files, and what the reference stored for them.
 
 For each media file under SAMPLES, a directory of crates/scanner/tests/fixtures/samples/:
 
-- `ffprobe.json`: the output of the scanner's own ffprobe command, the file's name kept and its
-  directory dropped;
-- `trace-N.txt`: the sequence parameter set `trace_headers` prints for H.264 track N;
-- `file.json`: the file's identity and the layout the scanner reads from its bytes (MP4 index,
-  MPEG-TS packets), from `klapz-scanner probe`;
+- `ffprobe.json`: the output of the scan's own ffprobe command (ffmpeg-plex's, which also
+  states the MP4 layout, the MPEG-TS packet length and H.264's sequence header), the file's name
+  kept and its directory dropped;
+- `file.json`: the file's identity: size, modification time and OpenSubtitles hash;
 - `reference.json`: the reference's stored rows for the same file, found at REMOTE_ROOT plus its
   path below SAMPLES: the media's and part's columns, each embedded track's with its `ma:`
   analysis, and the item's chapters with where they came from, in the reference's own
   vocabulary. Identifiers, paths, hashes and dates are left out.
 
 The fixtures are the reference's real data: `crates/db/tests/scan_samples.rs` replays ffprobe's
-output through the scanner and the scan's storage, and compares with them.
+output through the analysis and the scan's storage, and compares with them. `--no-reference`
+rewrites `ffprobe.json` and `file.json` of the samples already captured and leaves
+`reference.json` alone, for a new ffmpeg-plex.
 
 Usage:
-    python tools/capture_scan_samples.py SAMPLES --ffmpeg FFMPEG --scanner SCANNER
-        [--reference DB] [--remote-root /mnt/acd/Plex/]
+    python tools/capture_scan_samples.py SAMPLES --ffmpeg FFMPEG
+        [--reference DB | --no-reference] [--remote-root /mnt/acd/Plex/]
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import json
 import os
 import re
 import sqlite3
+import struct
 import subprocess
 import unicodedata
 from pathlib import Path
@@ -76,34 +78,25 @@ def ffprobe(ffmpeg: str, path: Path) -> dict:
     return probed
 
 
-def sequence_parameter_set(ffmpeg: str, path: Path, index: int) -> str:
-    trace = subprocess.run(
-        [ffmpeg, "-hide_banner", "-nostdin", "-v", "info", "-i", f"file:{path}", "-map", f"0:{index}",
-         "-c", "copy", "-bsf:v", "trace_headers", "-frames:v", "1", "-f", "null", "-"],
-        capture_output=True,
-    ).stderr.decode("utf-8", "replace")
-    kept, inside = [], False
-    for line in trace.splitlines():
-        if "[trace_headers @ " not in line:
-            continue
-        # The filter's address changes between runs; it says nothing.
-        line = re.sub(r"\[trace_headers @ [0-9a-fA-Fx]+\]", "[trace_headers @ 0000000000000000]", line)
-        title = line.split("] ", 1)[1]
-        if title == "Sequence Parameter Set":
-            if inside:
-                break
-            inside = True
-        elif inside and not title[:1].isdigit():
-            break
-        if inside:
-            kept.append(line)
-    return "\n".join(kept) + "\n"
-
-
-def layout(scanner: str, path: Path) -> dict:
-    report = json.loads(subprocess.run([scanner, "probe", "--", str(path)], capture_output=True, check=True).stdout)
-    keys = ("file", "optimizedForStreaming", "has64bitOffsets", "packetLength")
-    return {key: report[key] for key in keys if key in report}
+def identity(path: Path) -> dict:
+    """Size, modification time and OpenSubtitles hash: the size plus every little-endian 64-bit
+    word of the first and last 64 KiB, wrapping."""
+    size = path.stat().st_size
+    chunk = 64 * 1024
+    total = size
+    with path.open("rb") as file:
+        for start in (0, max(size - chunk, 0)):
+            file.seek(start)
+            data = file.read(chunk)
+            data += b"\0" * (-len(data) % 8)
+            total += sum(struct.unpack(f"<{len(data) // 8}Q", data))
+    return {
+        "file": {
+            "size": size,
+            "modifiedAt": int(path.stat().st_mtime),
+            "openSubtitlesHash": f"{total & 0xFFFFFFFFFFFFFFFF:016x}",
+        }
+    }
 
 
 def reference(db: sqlite3.Connection, remote: str) -> dict | None:
@@ -150,7 +143,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("samples", type=Path)
     parser.add_argument("--ffmpeg", required=True)
-    parser.add_argument("--scanner", required=True)
     parser.add_argument(
         "--reference",
         default=os.path.join(
@@ -158,31 +150,33 @@ def main() -> None:
             "Plex Media Server", "Plug-in Support", "Databases", "com.plexapp.plugins.library.db",
         ),
     )
+    parser.add_argument("--no-reference", action="store_true")
     parser.add_argument("--remote-root", default="/mnt/acd/Plex/")
     arguments = parser.parse_args()
 
-    db = sqlite3.connect(f"file:{arguments.reference}?mode=ro", uri=True)
-    db.row_factory = sqlite3.Row
+    db = None
+    if not arguments.no_reference:
+        db = sqlite3.connect(f"file:{arguments.reference}?mode=ro", uri=True)
+        db.row_factory = sqlite3.Row
     for path in sorted(arguments.samples.rglob("*")):
         if not path.is_file() or path.suffix.lower() not in MEDIA:
             continue
         relative = path.relative_to(arguments.samples).as_posix()
-        stored = reference(db, arguments.remote_root + relative)
-        if stored is None:
-            print(f"not in the reference: {relative}")
-            continue
         name = slug(path.stem)
-        stored["rates"] = "measured" if name in MEASURED else "declared"
         target = OUT / name
-        target.mkdir(parents=True, exist_ok=True)
-        probed = ffprobe(arguments.ffmpeg, path)
-        write(target / "ffprobe.json", probed)
-        for stream in probed["streams"]:
-            if stream.get("codec_name") == "h264" and not stream.get("disposition", {}).get("attached_pic"):
-                trace = sequence_parameter_set(arguments.ffmpeg, path, stream["index"])
-                (target / f"trace-{stream['index']}.txt").write_text(trace, encoding="utf-8", newline="\n")
-        write(target / "file.json", layout(arguments.scanner, path))
-        write(target / "reference.json", stored)
+        if db is None:
+            if not target.is_dir():
+                continue
+        else:
+            stored = reference(db, arguments.remote_root + relative)
+            if stored is None:
+                print(f"not in the reference: {relative}")
+                continue
+            stored["rates"] = "measured" if name in MEASURED else "declared"
+            target.mkdir(parents=True, exist_ok=True)
+            write(target / "reference.json", stored)
+        write(target / "ffprobe.json", ffprobe(arguments.ffmpeg, path))
+        write(target / "file.json", identity(path))
         print(f"{name}: {relative}")
 
 

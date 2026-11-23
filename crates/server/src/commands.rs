@@ -17,7 +17,7 @@ use klapz_db::{
     DatabaseConnection, SqlLibraryRepository, SqlScanRepository, SqlSourceMetadataRepository,
 };
 
-use crate::analyzer::ScannerProcess;
+use crate::analyzer::MediaReader;
 use crate::files::LocalFiles;
 
 const LIBRARY_USAGE: &str =
@@ -83,7 +83,7 @@ pub fn scanner(connection: &DatabaseConnection, library: Arc<dyn LibraryReposito
     Scanner {
         library,
         files: Arc::new(LocalFiles),
-        analyzer: Arc::new(ScannerProcess::from_env()),
+        analyzer: Arc::new(MediaReader::from_env()),
         store: Arc::new(SqlScanRepository::new(connection.clone())),
     }
 }

@@ -3,7 +3,7 @@
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use tokio::process::Command;
 
 use crate::engine::{input, output_directory, produced, run, ScanError, Tools};
 use crate::report::{FileRole, Produced};
@@ -21,7 +21,7 @@ const NAME: &str = "index-sd.bif";
 ///
 /// [`ScanError::Unreadable`] when ffmpeg cannot decode the video, [`ScanError::File`] when the
 /// frames cannot be read back or the index written.
-pub fn preview_index(
+pub async fn preview_index(
     tools: &Tools,
     path: &Path,
     interval_s: u32,
@@ -33,7 +33,7 @@ pub fn preview_index(
         path: frames.clone(),
         source,
     })?;
-    let result = extract_and_pack(tools, path, interval_s, &directory, &frames);
+    let result = extract_and_pack(tools, path, interval_s, &directory, &frames).await;
     // The frames are an intermediate; whatever happened, they do not stay behind.
     let _ = fs::remove_dir_all(&frames);
     let count = result?;
@@ -49,7 +49,7 @@ pub fn preview_index(
     })
 }
 
-fn extract_and_pack(
+async fn extract_and_pack(
     tools: &Tools,
     path: &Path,
     interval_s: u32,
@@ -84,7 +84,8 @@ fn extract_and_pack(
                 "[out]",
             ])
             .arg(input(&frames.join("img-%06d.jpg"))),
-    )?;
+    )
+    .await?;
     let mut images: Vec<PathBuf> = fs::read_dir(frames)
         .map_err(|source| ScanError::File {
             path: frames.to_owned(),

@@ -18,7 +18,7 @@ use klapz_db::entity::{
     subtitle_offset, track_choice,
 };
 use klapz_db::{SqlMetadataRepository, SqlScanRepository};
-use klapz_scanner::report::{Analysis, Output, Report};
+use klapz_scanner::report::Analysis;
 use sea_orm::{
     ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
 };
@@ -32,11 +32,7 @@ fn probe(name: &str) -> Analysis {
         "{}/tests/fixtures/scan/{name}.json",
         env!("CARGO_MANIFEST_DIR")
     );
-    let report: Report = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-    match report.output {
-        Output::Probe(analysis) => analysis,
-        other => panic!("not a probe report: {other:?}"),
-    }
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
 fn section(id: SectionId, kind: &str) -> library_section::ActiveModel {

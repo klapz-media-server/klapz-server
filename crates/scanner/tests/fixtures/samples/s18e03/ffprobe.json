@@ -12,7 +12,7 @@
    "width": 1920,
    "height": 1080,
    "coded_width": 1920,
-   "coded_height": 1080,
+   "coded_height": 1088,
    "has_b_frames": 3,
    "sample_aspect_ratio": "1:1",
    "display_aspect_ratio": "16:9",
@@ -24,6 +24,8 @@
    "color_primaries": "bt709",
    "chroma_location": "left",
    "field_order": "tt",
+   "refs": 4,
+   "scaling_matrix_present": 1,
    "is_avc": "true",
    "nal_length_size": "4",
    "r_frame_rate": "25/1",
@@ -55,8 +57,6 @@
     "multilayer": 0
    },
    "tags": {
-    "language": "eng",
-    "languageISO639": "eng",
     "BPS-eng": "4473470",
     "DURATION-eng": "01:30:46.720000000",
     "NUMBER_OF_FRAMES-eng": "141825",

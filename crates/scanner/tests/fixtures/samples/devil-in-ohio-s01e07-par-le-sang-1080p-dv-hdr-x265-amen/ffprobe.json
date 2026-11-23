@@ -22,6 +22,7 @@
    "color_transfer": "smpte2084",
    "color_primaries": "bt2020",
    "chroma_location": "topleft",
+   "refs": 1,
    "view_ids_available": "",
    "view_pos_available": "",
    "r_frame_rate": "24000/1001",
@@ -52,8 +53,6 @@
     "multilayer": 0
    },
    "tags": {
-    "language": "eng",
-    "languageISO639": "eng",
     "BPS": "1131856",
     "DURATION": "00:40:20.168000000",
     "NUMBER_OF_FRAMES": "58026",
@@ -356,6 +355,7 @@
    "level": -99,
    "color_range": "pc",
    "color_space": "gbr",
+   "refs": 1,
    "r_frame_rate": "90000/1",
    "avg_frame_rate": "0/0",
    "time_base": "1/90000",

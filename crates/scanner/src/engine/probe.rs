@@ -1,17 +1,16 @@
 //! The analysis: container, tracks and chapters, from ffprobe.
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use serde::Deserialize;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::engine::{
-    hashes, input, matroska, mp4, run, sequence_header, ScanError, Streaming, Tools,
-};
+use crate::engine::{hashes, input, run, ScanError, Streaming, Tools};
 use crate::report::{
     Analysis, Attachment, AudioTrack, Chapter, Cropping, DeepAnalysis, Disposition, DolbyVision,
-    FileIdentity, MeasuredTrack, Statistics, SubtitleTrack, Track, TrackKind, VideoTrack,
+    FileIdentity, MeasuredTrack, SequenceHeader, Statistics, SubtitleTrack, Track, TrackKind,
+    VideoTrack,
 };
 
 /// Reads what the file declares; with `deep`, also every packet's size, which measures each
@@ -21,49 +20,39 @@ use crate::report::{
 ///
 /// [`ScanError::Unreadable`] when ffprobe cannot open the media, [`ScanError::File`] when the
 /// file cannot be read at all.
-pub fn probe(tools: &Tools, path: &Path, deep: bool) -> Result<Analysis, ScanError> {
+pub async fn probe(tools: &Tools, path: &Path, deep: bool) -> Result<Analysis, ScanError> {
     let file = hashes::identify(path)?;
-    let output = ffprobe(tools, path)?;
+    let output = ffprobe(tools, path).await?;
     let mut analysis = analysis_from_ffprobe(&output, file)?;
-    if analysis.container.split(',').any(|name| name == "mp4") {
-        // The layout is a nicety; a file ffprobe could read but this walk cannot stays analyzed.
-        if let Ok(layout) = mp4::layout(path) {
-            analysis.optimized_for_streaming = Some(layout.optimized_for_streaming);
-            analysis.has_64bit_offsets = Some(layout.has_64bit_offsets);
-        }
-    }
-    if analysis.container == "mpegts" {
-        analysis.packet_length = transport_packet_length(path);
-    }
-    if analysis.container.split(',').any(|name| name == "matroska") {
-        if let Some(declared) = matroska::declared_tracks(path) {
-            let tagged = tagged_languages(&parse(&output)?);
-            apply_declared_languages(&mut analysis.tracks, &declared, &tagged);
-        }
-    }
-    for track in &mut analysis.tracks {
-        if track.codec.as_deref() != Some("h264") || track.disposition.attached_picture {
-            continue;
-        }
-        if let Some(video) = &mut track.video {
-            video.sequence_header = sequence_header::read(tools, path, track.index);
-        }
-    }
     if deep {
-        analysis.deep = Some(measure_packets(tools, path, analysis.duration_ms)?);
+        analysis.deep = Some(measure_packets(tools, path, analysis.duration_ms).await?);
     }
     Ok(analysis)
 }
 
 /// What ffprobe's `-show_format -show_streams -show_chapters` JSON says of a file: everything
-/// of an analysis but the layout read from the file's bytes, H.264's sequence header and the
-/// deep analysis.
+/// of an analysis but the deep analysis.
+///
+/// ffmpeg-plex states what a stock ffprobe does not: an MP4's layout (`moov_before_mdat`,
+/// `co64`) and an MPEG-TS packet's length (`ts_packetsize`) with each stream, H.264's coded
+/// size, reference frames and scaling matrix from its sequence header, and no language for a
+/// Matroska track declaring `und`. An older build leaves them out, and so does the analysis.
 ///
 /// # Errors
 ///
 /// [`ScanError::Output`] when the output is not ffprobe's JSON.
 pub fn analysis_from_ffprobe(output: &[u8], file: FileIdentity) -> Result<Analysis, ScanError> {
     let probed = parse(output)?;
+    let container = probed.format.format_name.unwrap_or_default();
+    let is = |name: &str| container.split(',').any(|format| format == name);
+    // The demuxer's own figures, which ffprobe repeats on every stream.
+    let first = probed.streams.first();
+    let exported =
+        |flag: fn(&Stream) -> Option<&str>| first.and_then(flag).map(|value| value == "true");
+    let mut tracks: Vec<Track> = probed.streams.iter().filter_map(track).collect();
+    if is("matroska") {
+        read_absent_languages_as_english(&mut tracks);
+    }
     Ok(Analysis {
         file,
         duration_ms: probed.format.duration.as_deref().and_then(milliseconds),
@@ -74,18 +63,33 @@ pub fn analysis_from_ffprobe(output: &[u8], file: FileIdentity) -> Result<Analys
             .and_then(microseconds)
             .and_then(|us| u64::try_from(us).ok()),
         bitrate: probed.format.bit_rate.as_deref().and_then(integer),
-        optimized_for_streaming: None,
-        has_64bit_offsets: None,
-        packet_length: None,
-        tracks: probed.streams.iter().filter_map(track).collect(),
+        optimized_for_streaming: if is("mp4") {
+            exported(|stream| stream.moov_before_mdat.as_deref())
+        } else {
+            None
+        },
+        has_64bit_offsets: if is("mp4") {
+            exported(|stream| stream.co64.as_deref())
+        } else {
+            None
+        },
+        packet_length: if is("mpegts") {
+            first
+                .and_then(|stream| stream.ts_packetsize.as_deref())
+                .and_then(|length| length.parse().ok())
+                .filter(|length| *length > 0)
+        } else {
+            None
+        },
+        tracks,
         chapters: chapters(probed.chapters),
         deep: None,
-        container: probed.format.format_name.unwrap_or_default(),
+        container,
     })
 }
 
 /// The duration ffprobe reads from the container, for commands sized by it.
-pub(crate) fn duration_ms(tools: &Tools, path: &Path) -> Result<Option<u64>, ScanError> {
+pub(crate) async fn duration_ms(tools: &Tools, path: &Path) -> Result<Option<u64>, ScanError> {
     let output = run(
         "ffprobe",
         tools
@@ -100,13 +104,14 @@ pub(crate) fn duration_ms(tools: &Tools, path: &Path) -> Result<Option<u64>, Sca
                 "-i",
             ])
             .arg(input(path)),
-    )?;
+    )
+    .await?;
     let probed: Probed = parse(&output)?;
     Ok(probed.format.duration.as_deref().and_then(milliseconds))
 }
 
 /// The tracks of the file, for commands that pick one.
-pub(crate) fn tracks(tools: &Tools, path: &Path) -> Result<Vec<Track>, ScanError> {
+pub(crate) async fn tracks(tools: &Tools, path: &Path) -> Result<Vec<Track>, ScanError> {
     let output = run(
         "ffprobe",
         tools
@@ -120,12 +125,13 @@ pub(crate) fn tracks(tools: &Tools, path: &Path) -> Result<Vec<Track>, ScanError
                 "-i",
             ])
             .arg(input(path)),
-    )?;
+    )
+    .await?;
     let probed: Probed = parse(&output)?;
     Ok(probed.streams.iter().filter_map(track).collect())
 }
 
-pub(crate) fn chapters_of(tools: &Tools, path: &Path) -> Result<Vec<Chapter>, ScanError> {
+pub(crate) async fn chapters_of(tools: &Tools, path: &Path) -> Result<Vec<Chapter>, ScanError> {
     let output = run(
         "ffprobe",
         tools
@@ -139,12 +145,13 @@ pub(crate) fn chapters_of(tools: &Tools, path: &Path) -> Result<Vec<Chapter>, Sc
                 "-i",
             ])
             .arg(input(path)),
-    )?;
+    )
+    .await?;
     let probed: Probed = parse(&output)?;
     Ok(chapters(probed.chapters))
 }
 
-fn ffprobe(tools: &Tools, path: &Path) -> Result<Vec<u8>, ScanError> {
+async fn ffprobe(tools: &Tools, path: &Path) -> Result<Vec<u8>, ScanError> {
     run(
         "ffprobe",
         tools
@@ -161,6 +168,7 @@ fn ffprobe(tools: &Tools, path: &Path) -> Result<Vec<u8>, ScanError> {
             ])
             .arg(input(path)),
     )
+    .await
 }
 
 fn parse(output: &[u8]) -> Result<Probed, ScanError> {
@@ -170,7 +178,7 @@ fn parse(output: &[u8]) -> Result<Probed, ScanError> {
     })
 }
 
-fn measure_packets(
+async fn measure_packets(
     tools: &Tools,
     path: &Path,
     duration_ms: Option<u64>,
@@ -192,11 +200,11 @@ fn measure_packets(
     )?;
     let mut totals: BTreeMap<u32, (u64, u64)> = BTreeMap::new();
     let mut span = Span::default();
-    for line in BufReader::new(child.stdout()?).lines() {
-        let line = line.map_err(|error| ScanError::Output {
-            tool: "ffprobe",
-            message: error.to_string(),
-        })?;
+    let mut lines = BufReader::new(child.stdout()?).lines();
+    while let Some(line) = lines.next_line().await.map_err(|error| ScanError::Output {
+        tool: "ffprobe",
+        message: error.to_string(),
+    })? {
         let Some(packet) = Packet::parse(&line) else {
             continue;
         };
@@ -207,7 +215,7 @@ fn measure_packets(
             span.cover(start, start + packet.duration_us.unwrap_or(0));
         }
     }
-    child.finish()?;
+    child.finish().await?;
     // The reference divides by the time the packets cover, not by the container's duration:
     // Soul's last video packet ends at 6031.567 s where its header says 6031.568, and every
     // rate it stored is the truncated quotient by the former.
@@ -309,56 +317,16 @@ fn microseconds(seconds: &str) -> Option<i64> {
     Some(if negative { -micros } else { micros })
 }
 
-/// 188 bytes, or 192 for the timecoded packets of Blu-ray's M2TS, told by where the sync
-/// bytes fall.
-fn transport_packet_length(path: &Path) -> Option<u32> {
-    use std::io::Read;
-    let mut head = [0; 400];
-    std::fs::File::open(path).ok()?.read_exact(&mut head).ok()?;
-    if head[0] == 0x47 && head[188] == 0x47 && head[376] == 0x47 {
-        Some(188)
-    } else if head[4] == 0x47 && head[196] == 0x47 && head[388] == 0x47 {
-        Some(192)
-    } else {
-        None
-    }
-}
-
-/// The streams whose language comes from a Matroska `LANGUAGE` tag: ffmpeg keeps the tag's own
-/// spelling of the key, where the `Language` element is written `language`.
-fn tagged_languages(probed: &Probed) -> Vec<u32> {
-    probed
-        .streams
-        .iter()
-        .filter(|stream| stream.tags.contains_key("LANGUAGE"))
-        .map(|stream| stream.index)
-        .collect()
-}
-
-/// Matroska's languages as the file declares them, over what ffprobe-plex writes: `eng` for a
-/// track that declares `und`. A `LANGUAGE` tag is the file's statement too, and stands. Track entries are numbered as ffmpeg numbers their streams, attachments coming
-/// after, images among them as cover pictures; when the counts disagree, ffprobe's languages
-/// are kept.
-fn is_track_entry(track: &Track) -> bool {
-    track.kind != TrackKind::Attachment && !track.disposition.attached_picture
-}
-
-fn apply_declared_languages(
-    tracks: &mut [Track],
-    declared: &[matroska::DeclaredTrack],
-    tagged: &[u32],
-) {
-    let entries = tracks.iter().filter(|track| is_track_entry(track)).count();
-    if entries != declared.len() {
-        return;
-    }
-    for (track, entry) in tracks
-        .iter_mut()
-        .filter(|track| is_track_entry(track))
-        .zip(declared)
-    {
-        if !tagged.contains(&track.index) {
-            track.declared_language = entry.language().map(ToOwned::to_owned);
+/// Plex's reading of a Matroska track that states no language at all, neither declaring one
+/// nor tagged with one: English, as the reference's ffmpeg-plex reported both a track without a
+/// `Language` element, English by the format's default, and one declaring `und`. What the file
+/// declares stays as it is. Attachments, cover pictures among them, are no track entries and
+/// never had one.
+fn read_absent_languages_as_english(tracks: &mut [Track]) {
+    for track in tracks {
+        let entry = track.kind != TrackKind::Attachment && !track.disposition.attached_picture;
+        if entry && track.declared_language.is_none() {
+            track.language = Some("eng".to_owned());
         }
     }
 }
@@ -487,7 +455,7 @@ fn video_track(stream: &Stream) -> VideoTrack {
         height: stream.height.unwrap_or(0),
         coded_width: stream.coded_width.filter(|width| *width > 0),
         coded_height: stream.coded_height.filter(|height| *height > 0),
-        sequence_header: None,
+        sequence_header: sequence_header(stream),
         level: stream.level.filter(|level| *level >= 0),
         pixel_format: stream.pix_fmt.clone(),
         // ffprobe states the depth of H.264 alone; for HEVC, AV1, VP9 and the rest it is the
@@ -521,6 +489,22 @@ fn video_track(stream: &Stream) -> VideoTrack {
         closed_captions: stream.closed_captions.is_some_and(|captions| captions != 0),
         dolby_vision: stream.side_data_list.iter().find_map(dolby_vision),
     }
+}
+
+/// H.264's sequence parameter set as ffmpeg-plex states it: the coded size before cropping
+/// (1088 lines for a 1080p picture), the reference frames and whether a scaling matrix is
+/// present, where a stock ffprobe gives the cropped size and no reference count. Its
+/// `scaling_matrix_present`, printed for H.264 alone, tells the two apart.
+fn sequence_header(stream: &Stream) -> Option<SequenceHeader> {
+    if stream.codec_name.as_deref() != Some("h264") {
+        return None;
+    }
+    Some(SequenceHeader {
+        coded_width: stream.coded_width.filter(|width| *width > 0)?,
+        coded_height: stream.coded_height.filter(|height| *height > 0)?,
+        ref_frames: stream.refs?,
+        has_scaling_matrix: stream.scaling_matrix_present? != 0,
+    })
 }
 
 fn cropping(side_data: &SideData) -> Option<Cropping> {
@@ -722,6 +706,8 @@ struct Stream {
     height: Option<u32>,
     coded_width: Option<u32>,
     coded_height: Option<u32>,
+    refs: Option<u32>,
+    scaling_matrix_present: Option<u8>,
     pix_fmt: Option<String>,
     bits_per_raw_sample: Option<String>,
     color_range: Option<String>,
@@ -742,6 +728,11 @@ struct Stream {
     channels: Option<u32>,
     channel_layout: Option<String>,
     bit_rate: Option<String>,
+    /// The demuxer's exported options, which ffprobe prints with every stream, as strings:
+    /// `true` or `false` for MP4's, a number of bytes for MPEG-TS's.
+    moov_before_mdat: Option<String>,
+    co64: Option<String>,
+    ts_packetsize: Option<String>,
     #[serde(default)]
     disposition: BTreeMap<String, u8>,
     #[serde(default)]
@@ -812,38 +803,79 @@ mod tests {
     }
 
     #[test]
-    fn matroska_states_only_the_languages_its_entries_declare() {
-        let declared = |language: Option<&str>| matroska::DeclaredTrack {
-            language: language.map(ToOwned::to_owned),
-            language_bcp47: None,
-        };
-        let mut cover = probed_track(3, TrackKind::Video, Some("eng"));
+    fn plex_reads_a_matroska_track_stating_no_language_as_english() {
+        let mut cover = probed_track(3, TrackKind::Video, None);
         cover.disposition.attached_picture = true;
-        // ffprobe-plex writes `eng` for the entry declaring `und`, as for the silent one.
+        let mut tagged_und = probed_track(2, TrackKind::Audio, None);
+        tagged_und.declared_language = Some("und".to_owned());
         let mut tracks = vec![
-            probed_track(0, TrackKind::Video, Some("eng")),
-            probed_track(1, TrackKind::Audio, Some("eng")),
-            probed_track(2, TrackKind::Audio, Some("und")),
+            probed_track(0, TrackKind::Video, None),
+            probed_track(1, TrackKind::Audio, Some("fre")),
+            tagged_und,
             cover,
             probed_track(4, TrackKind::Attachment, None),
         ];
-        let entries = [declared(Some("und")), declared(None), declared(Some("und"))];
-        apply_declared_languages(&mut tracks, &entries, &[2]);
-        let stated: Vec<Option<&str>> = tracks
+        read_absent_languages_as_english(&mut tracks);
+        let read: Vec<Option<&str>> = tracks
             .iter()
-            .map(|track| track.declared_language.as_deref())
+            .map(|track| track.language.as_deref())
             .collect();
-        // The third keeps the `LANGUAGE` tag its file wrote; the cover is not an entry.
-        assert_eq!(stated, [None, Some("eng"), Some("und"), Some("eng"), None]);
-        // Plex's reading stays ffprobe's.
-        assert_eq!(tracks[0].language.as_deref(), Some("eng"));
+        // A track tagged `und` states it, and neither the cover nor the attachment is an entry.
+        assert_eq!(read, [Some("eng"), Some("fre"), None, None, None]);
+        // What the file declares is untouched.
+        assert_eq!(tracks[0].declared_language, None);
+    }
+
+    fn stream(json: &str) -> Stream {
+        serde_json::from_str(json).unwrap()
     }
 
     #[test]
-    fn keeps_ffprobes_languages_when_the_entries_do_not_match_the_streams() {
-        let mut tracks = vec![probed_track(0, TrackKind::Video, Some("eng"))];
-        apply_declared_languages(&mut tracks, &[], &[]);
-        assert_eq!(tracks[0].declared_language.as_deref(), Some("eng"));
+    fn reads_h264s_sequence_header_only_where_ffmpeg_plex_states_it() {
+        let patched = stream(
+            r#"{"index": 0, "codec_name": "h264", "coded_width": 1920, "coded_height": 1088,
+                "refs": 4, "scaling_matrix_present": 0}"#,
+        );
+        assert_eq!(
+            sequence_header(&patched),
+            Some(SequenceHeader {
+                coded_width: 1920,
+                coded_height: 1088,
+                ref_frames: 4,
+                has_scaling_matrix: false,
+            })
+        );
+        // A stock ffprobe: the cropped size, and nothing to tell it from the coded one.
+        let stock = stream(
+            r#"{"index": 0, "codec_name": "h264", "coded_width": 1920, "coded_height": 1080}"#,
+        );
+        assert_eq!(sequence_header(&stock), None);
+        let hevc = stream(
+            r#"{"index": 0, "codec_name": "hevc", "coded_width": 3840, "coded_height": 2160,
+                "refs": 1}"#,
+        );
+        assert_eq!(sequence_header(&hevc), None);
+    }
+
+    #[test]
+    fn reads_the_layout_the_demuxer_exports() {
+        let identity = FileIdentity {
+            size: 1,
+            modified_at: 0,
+            open_subtitles_hash: "0000000000000001".to_owned(),
+        };
+        let mp4 = br#"{"format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2"},
+            "streams": [{"index": 0, "codec_type": "video", "moov_before_mdat": "false",
+                         "co64": "true"}]}"#;
+        let analysis = analysis_from_ffprobe(mp4, identity.clone()).unwrap();
+        assert_eq!(analysis.optimized_for_streaming, Some(false));
+        assert_eq!(analysis.has_64bit_offsets, Some(true));
+        assert_eq!(analysis.packet_length, None);
+        let ts = br#"{"format": {"format_name": "mpegts"},
+            "streams": [{"index": 0, "codec_type": "video", "ts_packetsize": "192"}]}"#;
+        let analysis = analysis_from_ffprobe(ts, identity).unwrap();
+        assert_eq!(analysis.packet_length, Some(192));
+        assert_eq!(analysis.optimized_for_streaming, None);
     }
 
     #[test]

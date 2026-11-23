@@ -9,8 +9,8 @@
 
 use std::path::{Path, PathBuf};
 
+use klapz_scanner::analysis_from_ffprobe;
 use klapz_scanner::report::{Analysis, Cropping, FileIdentity, Track, TrackKind};
-use klapz_scanner::{analysis_from_ffprobe, sequence_header_from_trace};
 
 fn sample(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -159,15 +159,44 @@ fn reads_the_dolby_vision_configuration_record() {
 }
 
 #[test]
-fn reads_an_h264_sequence_header_from_its_trace() {
-    let trace = std::fs::read_to_string(
-        sample("fleabag-s02e01-repack-1080p-hdtv-h264-plutonium").join("trace-0.txt"),
-    )
-    .unwrap();
-    let header = sequence_header_from_trace(&trace).unwrap();
+fn reads_an_h264_sequence_header_as_ffmpeg_plex_states_it() {
+    let fleabag = analysis("fleabag-s02e01-repack-1080p-hdtv-h264-plutonium");
+    let header = track(&fleabag, 0)
+        .video
+        .as_ref()
+        .unwrap()
+        .sequence_header
+        .unwrap();
     assert_eq!((header.coded_width, header.coded_height), (1920, 1088));
     assert_eq!(header.ref_frames, 4);
     assert!(header.has_scaling_matrix);
+    // HEVC has none.
+    let ohio = analysis("devil-in-ohio-s01e07-par-le-sang-1080p-dv-hdr-x265-amen");
+    assert_eq!(
+        track(&ohio, 0).video.as_ref().unwrap().sequence_header,
+        None
+    );
+}
+
+#[test]
+fn reads_the_layout_ffmpeg_plex_exports() {
+    let mp4 = analysis("90210-beverly-hills-ng-s01e21-vf-sd-tvhdrip-mp4-avc-aac");
+    assert_eq!(mp4.optimized_for_streaming, Some(false));
+    assert_eq!(mp4.has_64bit_offsets, Some(true));
+    assert_eq!(mp4.packet_length, None);
+    let m2ts = analysis("peur-primale-1996-multi-vff-1080i-hdtv-full-avc-he-aac-2-0");
+    assert_eq!(m2ts.packet_length, Some(192));
+    assert_eq!(analysis("s01e41-la-cueillette").packet_length, Some(188));
+    let mkv = analysis("fleabag-s02e01-repack-1080p-hdtv-h264-plutonium");
+    assert_eq!(mkv.optimized_for_streaming, None);
+}
+
+#[test]
+fn a_matroska_track_declaring_und_has_no_language_but_reads_english_to_plex() {
+    let anatole = analysis("anatole-latuile-s1e35-la-chasse-au-tresor");
+    let video = track(&anatole, 0);
+    assert_eq!(video.declared_language, None);
+    assert_eq!(video.language.as_deref(), Some("eng"));
 }
 
 #[test]

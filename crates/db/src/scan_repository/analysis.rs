@@ -1,6 +1,6 @@
 //! A scanned file's analysis, written in the vocabulary the importer reads out of Plex's own.
 //!
-//! The scanner reports what ffprobe says (`matroska,webm`, `subrip`, `fre`, `High`); Plex's
+//! The analysis reports what ffprobe says (`matroska,webm`, `subrip`, `fre`, `High`); Plex's
 //! analysis read the same headers with the same libav and stored them under other names
 //! (`mkv`, `srt`, `fr`, `high`). A scanned film must be indistinguishable from an imported
 //! one, so the renaming happens here, once, measured against what the reference stored for

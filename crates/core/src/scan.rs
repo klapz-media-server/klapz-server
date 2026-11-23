@@ -53,7 +53,7 @@ pub enum AnalyzeError {
     Unavailable(String),
 }
 
-/// Reads one file's content: the separate scanner process, run by the server.
+/// Reads one file's content: ffprobe, run by the server as a child process.
 #[async_trait::async_trait]
 pub trait MediaAnalyzer: Send + Sync + std::fmt::Debug {
     async fn analyze(&self, file: &FileLocation) -> Result<Analysis, AnalyzeError>;

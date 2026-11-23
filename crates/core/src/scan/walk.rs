@@ -968,7 +968,7 @@ mod tests {
         assert!(parts[0].path.starts_with("/media/"));
     }
 
-    /// An analyzer whose tools cannot run, as the scanner reports a missing ffprobe.
+    /// An analyzer whose tools cannot run, as a missing ffprobe is reported.
     #[derive(Debug)]
     struct Unavailable;
 

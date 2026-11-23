@@ -490,7 +490,7 @@ library setting `enableCreditsMarkerGeneration` is absent from the test librarie
 
 **Reproducible:** frame extraction and EAST (OpenCV `dnn`, or ONNX after conversion) are
 available, but the decision rule from the CSV features to a start time is unknown, and
-klapz keeps decoding out of process (EAST would run in the scanner binary on JPEGs, which
+klapz keeps decoding out of process (EAST would run in a child of the server on JPEGs, which
 the image rule allows only if the owner extends it). Results go to `item_marker` (`credits`,
 `is_final`, `version`).
 

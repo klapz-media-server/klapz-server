@@ -22,6 +22,7 @@
    "color_transfer": "bt709",
    "color_primaries": "bt709",
    "chroma_location": "left",
+   "refs": 1,
    "view_ids_available": "",
    "view_pos_available": "",
    "r_frame_rate": "24000/1001",
@@ -52,8 +53,6 @@
     "multilayer": 0
    },
    "tags": {
-    "language": "eng",
-    "languageISO639": "eng",
     "BPS": "2999408",
     "DURATION": "00:03:35.507000000",
     "NUMBER_OF_FRAMES": "5167",

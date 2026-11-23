@@ -1,10 +1,11 @@
 //! The whole chain behind a Jellyfin lookup, against what the reference Jellyfin published, on the
 //! 35 sample files it holds.
 //!
-//! Each sample under `crates/scanner/tests/fixtures/samples` keeps our scanner's report on the
-//! file (`scanner.json`) and the reference's answer about it (`jellyfin.json`), both from
-//! `tools/capture_jellyfin_samples.py`. The report goes through the scan's storage, the official
-//! API and the Jellyfin binding, as a scanned file does; the item's file-derived fields and its
+//! Each sample under `crates/scanner/tests/fixtures/samples` keeps ffmpeg-plex's ffprobe output
+//! for the file (`ffprobe.json`, `tools/capture_scan_samples.py`) and the reference's answer
+//! about it (`jellyfin.json`, `tools/capture_jellyfin_samples.py`). The analysis read from the
+//! former goes through the scan's storage, the official API and the Jellyfin binding, as a
+//! scanned file does; the item's file-derived fields and its
 //! media source, every track field included, must then be the reference's. What may differ is
 //! listed below, each with its reason (`docs/jellyfin/spec-gaps.md`); anything else fails.
 
@@ -25,7 +26,8 @@ use klapz_core::scan::{NewItem, NewMedia, NewPart, ScanRepository};
 use klapz_core::{SectionKind, ServerCapabilities, ServerIdentity};
 use klapz_db::repository::{create_library, NewLibrary};
 use klapz_db::{SqlLibraryRepository, SqlMetadataRepository, SqlScanRepository};
-use klapz_scanner::report::{Output, Report};
+use klapz_scanner::analysis_from_ffprobe;
+use klapz_scanner::report::FileIdentity;
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -74,12 +76,12 @@ fn json(path: &Path) -> Value {
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
-/// The sample as the scan would store it, from the scanner's report.
+/// The sample as the scan would store it: the headers' analysis, as the scan falls back to.
 fn new_item(sample: &Path) -> NewItem {
-    let report: Report = serde_json::from_value(json(&sample.join("scanner.json"))).unwrap();
-    let Output::Probe(analysis) = report.output else {
-        panic!("{}: not a probe", sample.display());
-    };
+    let identity: FileIdentity =
+        serde_json::from_value(json(&sample.join("file.json"))["file"].clone()).unwrap();
+    let ffprobe = std::fs::read(sample.join("ffprobe.json")).unwrap();
+    let analysis = analysis_from_ffprobe(&ffprobe, identity).unwrap();
     let name = json(&sample.join("ffprobe.json"))["format"]["filename"]
         .as_str()
         .unwrap()

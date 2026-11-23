@@ -19,6 +19,7 @@
    "pix_fmt": "yuv420p10le",
    "level": 8,
    "color_range": "tv",
+   "refs": 1,
    "r_frame_rate": "25/1",
    "avg_frame_rate": "25/1",
    "time_base": "1/1000",

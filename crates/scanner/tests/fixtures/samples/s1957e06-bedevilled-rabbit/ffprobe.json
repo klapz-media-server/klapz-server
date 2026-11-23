@@ -20,6 +20,8 @@
    "level": 40,
    "chroma_location": "left",
    "field_order": "progressive",
+   "refs": 12,
+   "scaling_matrix_present": 0,
    "is_avc": "true",
    "nal_length_size": "4",
    "r_frame_rate": "24000/1001",
@@ -51,8 +53,6 @@
     "multilayer": 0
    },
    "tags": {
-    "language": "eng",
-    "languageISO639": "eng",
     "BPS": "1023871",
     "BPS-eng": "1023871",
     "DURATION": "00:06:49.868000000",

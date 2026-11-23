@@ -223,7 +223,7 @@ async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let (artwork_store, matching) = source_metadata(&connection, &images)?;
     let scans = BackgroundScans::new(commands::scanner(&connection, Arc::clone(&library)))
         .with_matching(matching.clone());
-    tokio::spawn(check_scanner_tools());
+    tokio::spawn(check_media_tools());
     let play_queues: Arc<dyn PlayQueueRepository> =
         Arc::new(SqlPlayQueueRepository::new(connection.clone()));
     let playback: Arc<dyn PlaybackRepository> =
@@ -386,9 +386,9 @@ fn show_tray(
 }
 
 /// Says at startup, once, that scans cannot analyse files, rather than leaving it to the first
-/// scan to find out, by asking the scanner the scans will run.
-async fn check_scanner_tools() {
-    if let Err(error) = analyzer::ScannerProcess::from_env().check().await {
+/// scan to find out, by running the ffprobe the scans will run.
+async fn check_media_tools() {
+    if let Err(error) = analyzer::MediaReader::from_env().check().await {
         tracing::error!(%error, "library scans cannot analyse files until this is fixed");
     }
 }
@@ -667,15 +667,6 @@ fn jellyfin_web_dir() -> Option<PathBuf> {
 /// runs and serves.
 pub(crate) fn beside_executable(name: &str) -> Option<PathBuf> {
     Some(std::env::current_exe().ok()?.parent()?.join(name))
-}
-
-/// A program beside this server's executable, where Cargo and the packages put it, or else the
-/// one `PATH` finds.
-pub(crate) fn bundled(program: &str) -> PathBuf {
-    let name = format!("{program}{}", std::env::consts::EXE_SUFFIX);
-    beside_executable(&name)
-        .filter(|path| path.is_file())
-        .unwrap_or_else(|| PathBuf::from(name))
 }
 
 fn transcoder() -> klapz_transcoder::Transcoder {

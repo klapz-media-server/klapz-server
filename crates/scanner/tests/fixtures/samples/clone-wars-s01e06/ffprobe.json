@@ -22,6 +22,7 @@
    "color_primaries": "bt709",
    "chroma_location": "left",
    "field_order": "progressive",
+   "refs": 1,
    "r_frame_rate": "24000/1001",
    "avg_frame_rate": "24000/1001",
    "time_base": "1/1000",

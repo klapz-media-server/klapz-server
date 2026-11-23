@@ -20,6 +20,8 @@
    "level": 31,
    "chroma_location": "left",
    "field_order": "progressive",
+   "refs": 1,
+   "scaling_matrix_present": 0,
    "is_avc": "false",
    "nal_length_size": "0",
    "r_frame_rate": "25/1",

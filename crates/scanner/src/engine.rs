@@ -1,20 +1,22 @@
-//! The commands: each reads one file through ffprobe or ffmpeg and returns its report.
+//! Reading one file through ffprobe or ffmpeg, each run as a child of the server.
+//!
+//! Every child is killed when the future running it is dropped, so a caller bounds a read by
+//! dropping it: a timeout, a cancelled scan.
 
 mod artwork;
 mod bif;
 mod fingerprint;
 mod hashes;
 mod loudness;
-mod matroska;
-mod mp4;
 mod probe;
-mod sequence_header;
 mod subtitles;
 
 use std::ffi::{OsStr, OsString};
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Stdio;
+
+use tokio::io::AsyncReadExt;
+use tokio::process::{Child, ChildStdout, Command};
 
 pub use artwork::{artwork, chapter_thumbs};
 pub use bif::preview_index;
@@ -22,7 +24,6 @@ pub use fingerprint::fingerprint;
 pub use hashes::identify;
 pub use loudness::loudness;
 pub use probe::{analysis_from_ffprobe, probe};
-pub use sequence_header::parse as sequence_header_from_trace;
 pub use subtitles::extract_subtitle;
 
 use crate::report;
@@ -60,8 +61,10 @@ impl Tools {
     ///
     /// [`ScanError::Spawn`] when it cannot start, [`ScanError::ProbeUnsupported`] when the
     /// ffmpeg has no ffprobe of its own.
-    pub fn check(&self) -> Result<(), ScanError> {
-        run("ffprobe", self.ffprobe().arg("-version")).map(drop)
+    pub async fn check(&self) -> Result<(), ScanError> {
+        run("ffprobe", self.ffprobe().arg("-version"))
+            .await
+            .map(drop)
     }
 }
 
@@ -101,7 +104,7 @@ pub enum ScanError {
 }
 
 impl ScanError {
-    /// Whether the media is at fault rather than the scanner or its environment, which the
+    /// Whether the media is at fault rather than the tools or their environment, which the
     /// caller records against the file instead of retrying.
     pub fn is_media_fault(&self) -> bool {
         matches!(
@@ -140,20 +143,34 @@ fn input(path: &Path) -> OsString {
 }
 
 /// Runs a tool to completion, returning its standard output.
-fn run(tool: &'static str, command: &mut Command) -> Result<Vec<u8>, ScanError> {
+async fn run(tool: &'static str, command: &mut Command) -> Result<Vec<u8>, ScanError> {
+    output(tool, command).await.map(|output| output.stdout)
+}
+
+/// Runs a tool to completion, returning what it wrote on both outputs: ffmpeg's filters and
+/// progress report on standard error.
+async fn output(
+    tool: &'static str,
+    command: &mut Command,
+) -> Result<std::process::Output, ScanError> {
     let output = command
         .stdin(Stdio::null())
+        .kill_on_drop(true)
         .output()
+        .await
         .map_err(|source| ScanError::Spawn { tool, source })?;
     if output.status.success() {
-        Ok(output.stdout)
+        Ok(output)
     } else {
-        Err(failure(tool, command.get_program(), &output.stderr))
+        Err(failure(
+            tool,
+            command.as_std().get_program(),
+            &output.stderr,
+        ))
     }
 }
 
-/// A child whose standard output is read as it comes. Dropped early, it is killed rather
-/// than left running.
+/// A child whose standard output is read as it comes, for an output too large to hold.
 struct Streaming {
     tool: &'static str,
     program: OsString,
@@ -166,16 +183,17 @@ impl Streaming {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .kill_on_drop(true)
             .spawn()
             .map_err(|source| ScanError::Spawn { tool, source })?;
         Ok(Self {
             tool,
-            program: command.get_program().to_owned(),
+            program: command.as_std().get_program().to_owned(),
             child,
         })
     }
 
-    fn stdout(&mut self) -> Result<std::process::ChildStdout, ScanError> {
+    fn stdout(&mut self) -> Result<ChildStdout, ScanError> {
         self.child.stdout.take().ok_or(ScanError::Output {
             tool: self.tool,
             message: "standard output was not captured".to_owned(),
@@ -183,13 +201,13 @@ impl Streaming {
     }
 
     /// Waits for the end, after standard output was read to its end.
-    fn finish(mut self) -> Result<(), ScanError> {
+    async fn finish(mut self) -> Result<(), ScanError> {
         let mut stderr = Vec::new();
         if let Some(mut pipe) = self.child.stderr.take() {
             // What the tool said is only for the error message; a failed read loses nothing.
-            let _ = pipe.read_to_end(&mut stderr);
+            let _ = pipe.read_to_end(&mut stderr).await;
         }
-        let status = self.child.wait().map_err(|source| ScanError::Spawn {
+        let status = self.child.wait().await.map_err(|source| ScanError::Spawn {
             tool: self.tool,
             source,
         })?;
@@ -197,15 +215,6 @@ impl Streaming {
             Ok(())
         } else {
             Err(failure(self.tool, &self.program, &stderr))
-        }
-    }
-}
-
-impl Drop for Streaming {
-    fn drop(&mut self) {
-        if matches!(self.child.try_wait(), Ok(None)) {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
         }
     }
 }
@@ -220,7 +229,7 @@ fn last_lines(stderr: &[u8]) -> String {
     lines[lines.len().saturating_sub(5)..].join("\n")
 }
 
-/// A directory the caller made for this run's files. It must exist: the scanner creates no
+/// A directory the caller made for this run's files. It must exist: nothing here creates a
 /// directory of its own, so it cannot be steered into making one somewhere unexpected.
 fn output_directory(path: &Path) -> Result<PathBuf, ScanError> {
     let fail = |source| ScanError::OutputDirectory {

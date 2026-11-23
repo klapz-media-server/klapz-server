@@ -19,6 +19,7 @@
    "pix_fmt": "yuv420p",
    "level": 5,
    "chroma_location": "left",
+   "refs": 1,
    "quarter_sample": "false",
    "divx_packed": "false",
    "r_frame_rate": "2997/100",
@@ -49,8 +50,6 @@
     "multilayer": 0
    },
    "tags": {
-    "language": "eng",
-    "languageISO639": "eng",
     "BPS": "704874",
     "BPS-eng": "704874",
     "DURATION": "00:00:53.053000000",
@@ -109,8 +108,6 @@
     "multilayer": 0
    },
    "tags": {
-    "language": "eng",
-    "languageISO639": "eng",
     "BPS": "95857",
     "BPS-eng": "95857",
     "DURATION": "00:00:53.028000000",

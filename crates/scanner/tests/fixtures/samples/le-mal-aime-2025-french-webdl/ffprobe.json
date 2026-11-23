@@ -22,6 +22,7 @@
    "color_space": "bt709",
    "color_transfer": "bt709",
    "color_primaries": "bt709",
+   "refs": 1,
    "r_frame_rate": "25/1",
    "avg_frame_rate": "25/1",
    "time_base": "1/1000",
@@ -50,8 +51,6 @@
     "multilayer": 0
    },
    "tags": {
-    "language": "eng",
-    "languageISO639": "eng",
     "HANDLER_NAME": "ISO Media file produced by Google Inc.",
     "VENDOR_ID": "[0][0][0][0]",
     "DURATION": "00:02:30.000000000"

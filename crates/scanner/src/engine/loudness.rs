@@ -1,9 +1,9 @@
 //! EBU R 128 loudness, through ffmpeg's `ebur128` filter.
 
 use std::path::Path;
-use std::process::Command;
+use tokio::process::Command;
 
-use crate::engine::{input, probe, ScanError, Tools};
+use crate::engine::{input, output, probe, ScanError, Tools};
 use crate::report::{Loudness, TrackKind};
 
 /// Measures one audio track whole, decoding it: the first one when `track` is `None`.
@@ -12,48 +12,43 @@ use crate::report::{Loudness, TrackKind};
 ///
 /// [`ScanError::NoSuchTrack`] when `track` is not an audio track, [`ScanError::Unreadable`]
 /// when ffmpeg cannot decode it.
-pub fn loudness(tools: &Tools, path: &Path, track: Option<u32>) -> Result<Loudness, ScanError> {
-    let track = audio_track(tools, path, track)?;
+pub async fn loudness(
+    tools: &Tools,
+    path: &Path,
+    track: Option<u32>,
+) -> Result<Loudness, ScanError> {
+    let track = audio_track(tools, path, track).await?;
     // The filter prints its summary at the info level, on standard error, and each frame's
     // measurement at the level `framelog` names, here one that is not shown.
-    let output = Command::new(&tools.ffmpeg)
-        .args(["-hide_banner", "-nostats", "-loglevel", "info", "-i"])
-        .arg(input(path))
-        .args([
-            "-map",
-            &format!("0:{track}"),
-            "-af",
-            "ebur128=peak=true:framelog=verbose",
-            "-f",
-            "null",
-            "-",
-        ])
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(|source| ScanError::Spawn {
-            tool: "ffmpeg",
-            source,
-        })?;
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() {
-        return Err(ScanError::Unreadable {
-            tool: "ffmpeg",
-            message: crate::engine::last_lines(&output.stderr),
-        });
-    }
-    summary(&stderr, track).ok_or_else(|| ScanError::Output {
+    let output = output(
+        "ffmpeg",
+        Command::new(&tools.ffmpeg)
+            .args(["-hide_banner", "-nostats", "-loglevel", "info", "-i"])
+            .arg(input(path))
+            .args([
+                "-map",
+                &format!("0:{track}"),
+                "-af",
+                "ebur128=peak=true:framelog=verbose",
+                "-f",
+                "null",
+                "-",
+            ]),
+    )
+    .await?;
+    summary(&String::from_utf8_lossy(&output.stderr), track).ok_or_else(|| ScanError::Output {
         tool: "ffmpeg",
         message: "no ebur128 summary".to_owned(),
     })
 }
 
 /// The track asked for, provided it is audio, or the first audio track.
-pub(crate) fn audio_track(
+pub(crate) async fn audio_track(
     tools: &Tools,
     path: &Path,
     track: Option<u32>,
 ) -> Result<u32, ScanError> {
-    let tracks = probe::tracks(tools, path)?;
+    let tracks = probe::tracks(tools, path).await?;
     let mut audio = tracks
         .iter()
         .filter(|candidate| candidate.kind == TrackKind::Audio);

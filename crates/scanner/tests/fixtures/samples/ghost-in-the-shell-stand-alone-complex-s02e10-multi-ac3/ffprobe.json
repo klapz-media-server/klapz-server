@@ -19,6 +19,7 @@
    "level": 120,
    "color_range": "tv",
    "chroma_location": "left",
+   "refs": 1,
    "view_ids_available": "",
    "view_pos_available": "",
    "r_frame_rate": "24000/1001",

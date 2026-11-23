@@ -7,12 +7,10 @@ Contents
 --------
 
   klapz-server    The server. Run it with no argument to serve on 127.0.0.1:32500.
-  klapz-scanner   Reads one media file for the server's library scans.
-  ffmpeg          ffmpeg-plex, the patched ffmpeg the server streams with and the
-                  scanner reads files with (as `ffmpeg -probe`).
+  ffmpeg          ffmpeg-plex, the patched ffmpeg the server streams with and reads
+                  files with for its library scans (as `ffmpeg -probe`).
 
-The server finds the scanner and ffmpeg beside its own executable; KLAPZ_SCANNER and
-KLAPZ_TRANSCODER override them. The transcoder may also be named klapz-ffmpeg, which
+The server finds ffmpeg beside its own executable; KLAPZ_TRANSCODER overrides it. The transcoder may also be named klapz-ffmpeg, which
 wins over ffmpeg; with neither beside them, the ffmpeg on PATH is used. A web client put in a `web` directory beside it (one with
 an index.html, such as Plex Web) is served at /web; without one, /web is not served.
 KLAPZ_WEB_DIR names another directory.

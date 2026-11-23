@@ -1,24 +1,21 @@
-"""Give each scan sample what the reference Jellyfin publishes of its file, and what our scanner
-reports of it, so that `crates/server/tests/jellyfin_samples.rs` replays the chain between them.
+"""Give each scan sample what the reference Jellyfin publishes of its file, so that
+`crates/server/tests/jellyfin_samples.rs` replays the chain from the sample's ffprobe output
+(`tools/capture_scan_samples.py`) to it.
 
 For every sample under `crates/scanner/tests/fixtures/samples` the reference holds:
 
-  scanner.json   `klapz-scanner probe` on the file (no `--deep`): the report the scan stores.
   jellyfin.json  the reference's lookup of the file's item, scrubbed: the file-derived fields of the
                  item and its first media source, without ids, paths, entity tags or chapter images.
 
 Reads the reference's lookups from `captures/jellyfin/items` (`tools/capture_jellyfin.py
---all-items`), and runs the scanner on the files themselves, which must be reachable at the
-paths the reference stores; the scanner finds ffmpeg-plex as it does in the server
-(`KLAPZ_TRANSCODER`).
+--all-items`).
 
-Usage: KLAPZ_TRANSCODER=... python tools/capture_jellyfin_samples.py SCANNER
+Usage: python tools/capture_jellyfin_samples.py
 """
 
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -39,9 +36,8 @@ def file_name(path: str) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
+    if len(sys.argv) != 1:
         sys.exit(__doc__)
-    scanner = sys.argv[1]
     lookups = {}
     for path in ITEMS.glob("*.json"):
         item = json.loads(path.read_text(encoding="utf-8"))
@@ -55,7 +51,6 @@ def main() -> None:
         if item is None:
             continue
         source = dict(item["MediaSources"][0])
-        file = source["Path"]
         for key in SOURCE_SCRUBBED:
             source.pop(key, None)
         published = {key: item[key] for key in ITEM_FIELDS if key in item}
@@ -68,16 +63,8 @@ def main() -> None:
         (sample / "jellyfin.json").write_text(
             json.dumps(answer, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
         )
-        report = subprocess.run(
-            [scanner, "probe", "--", file], check=True, capture_output=True
-        ).stdout
-        (sample / "scanner.json").write_text(
-            json.dumps(json.loads(report), indent=1, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-            newline="\n",
-        )
         written += 1
-    print(f"{written} samples given the reference's answer and the scanner's report")
+    print(f"{written} samples given the reference's answer")
 
 
 if __name__ == "__main__":

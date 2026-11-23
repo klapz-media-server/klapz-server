@@ -1,36 +1,9 @@
-//! What the scanner prints: one JSON document per run, on standard output.
-//!
-//! The server deserializes these same types, so the contract has one definition. Values are
-//! measurements as the tools report them — ffprobe's codec and format names, seconds turned
-//! into milliseconds, bits per second — and mapping them onto Plex's vocabulary is ingestion's
-//! business, not the scanner's.
+//! What reading a file finds. Values are measurements as the tools report them — ffprobe's
+//! codec and format names, seconds turned into milliseconds, bits per second — and mapping
+//! them onto Plex's vocabulary is ingestion's business. Serializable, so that a test replays a
+//! captured analysis.
 
 use serde::{Deserialize, Serialize};
-
-/// Bumped whenever a field changes meaning or disappears; additions keep it.
-pub const VERSION: u32 = 1;
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Report {
-    pub version: u32,
-    #[serde(flatten)]
-    pub output: Output,
-}
-
-/// One variant per command, named as the command is.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "command", rename_all = "kebab-case")]
-pub enum Output {
-    Probe(Analysis),
-    Hashes(FileIdentity),
-    Loudness(Loudness),
-    Fingerprint(Fingerprint),
-    Subtitles(Produced),
-    Bif(Produced),
-    ChapterThumbs(Produced),
-    Artwork(Produced),
-}
 
 /// Enough to recognize a file again, cheaply: what the reference compares before analyzing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,7 +43,7 @@ pub struct Analysis {
     pub packet_length: Option<u32>,
     pub tracks: Vec<Track>,
     pub chapters: Vec<Chapter>,
-    /// Present with `--deep`: rates measured over every packet rather than declared.
+    /// Present after a deep analysis: rates measured over every packet rather than declared.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deep: Option<DeepAnalysis>,
 }
@@ -180,8 +153,8 @@ pub struct Disposition {
 pub struct VideoTrack {
     pub width: u32,
     pub height: u32,
-    /// As ffprobe reports it, which for H.264 is the cropped size: 1080 where the reference,
-    /// reading the sequence header, stores 1088.
+    /// As ffprobe reports it: for H.264, the size before cropping with ffmpeg-plex, the
+    /// cropped one with a stock ffprobe.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coded_width: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -248,7 +221,7 @@ pub struct Cropping {
     pub right: u32,
 }
 
-/// An H.264 sequence parameter set, as `trace_headers` reads it.
+/// An H.264 sequence parameter set, as ffmpeg-plex's ffprobe states it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SequenceHeader {
@@ -385,14 +358,14 @@ pub struct Fingerprint {
     pub track: u32,
     /// `fpcalc`'s numbering: 2 is Chromaprint's default, what the reference stores.
     pub algorithm: u32,
-    /// The audio actually fingerprinted, which the file may end before `--length`.
+    /// The audio actually fingerprinted, which the file may end before the length asked for.
     pub duration_ms: u64,
     /// One value every 4096 / 3 samples at 11,025 Hz, about 123.8 ms.
     pub item_duration_us: u64,
     pub values: Vec<u32>,
 }
 
-/// Files written into `--out`, each named relative to it.
+/// Files written into the directory the caller gave, each named relative to it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Produced {

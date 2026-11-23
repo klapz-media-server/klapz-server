@@ -1,10 +1,9 @@
 //! The scan's analysis against what the reference stored, on 38 sample files.
 //!
-//! Each sample under `crates/scanner/tests/fixtures/samples` holds ffprobe's output for a file
-//! of the reference's library, the sequence header of its H.264 tracks, the layout read from
-//! its bytes, and the rows the reference stored for that same file
-//! (`tools/capture_scan_samples.py`). Every sample is replayed through the scanner's parsers
-//! and the scan's storage, then read back and written in the reference's vocabulary — its
+//! Each sample under `crates/scanner/tests/fixtures/samples` holds ffmpeg-plex's ffprobe output
+//! for a file of the reference's library, the file's identity, and the rows the reference
+//! stored for that same file (`tools/capture_scan_samples.py`). Every sample is replayed
+//! through the analysis and the scan's storage, then read back and written in the reference's vocabulary — its
 //! columns and `ma:` keys, and its chapters — to be compared value for value. What may differ is listed below,
 //! each with its reason; anything else differing fails.
 
@@ -20,8 +19,8 @@ use klapz_db::entity::{
     stream_dolby_vision,
 };
 use klapz_db::SqlScanRepository;
+use klapz_scanner::analysis_from_ffprobe;
 use klapz_scanner::report::FileIdentity;
-use klapz_scanner::{analysis_from_ffprobe, sequence_header_from_trace};
 use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::Value;
 
@@ -84,8 +83,7 @@ fn json(path: &Path) -> Value {
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
-/// The sample as a scan would store it: ffprobe's output through the scanner's parser, the
-/// layout and sequence headers the scanner reads apart.
+/// The sample as a scan would store it: ffprobe's output through the analysis.
 fn new_item(sample: &Path) -> NewItem {
     let file = json(&sample.join("file.json"));
     let identity: FileIdentity = serde_json::from_value(file["file"].clone()).unwrap();
@@ -94,18 +92,7 @@ fn new_item(sample: &Path) -> NewItem {
         .as_str()
         .unwrap()
         .to_owned();
-    let mut analysis = analysis_from_ffprobe(&ffprobe, identity.clone()).unwrap();
-    analysis.optimized_for_streaming = file["optimizedForStreaming"].as_bool();
-    analysis.has_64bit_offsets = file["has64bitOffsets"].as_bool();
-    analysis.packet_length = file["packetLength"]
-        .as_u64()
-        .map(|length| u32::try_from(length).unwrap());
-    for track in &mut analysis.tracks {
-        let trace = sample.join(format!("trace-{}.txt", track.index));
-        if let (Some(video), Ok(trace)) = (&mut track.video, std::fs::read_to_string(trace)) {
-            video.sequence_header = sequence_header_from_trace(&trace);
-        }
-    }
+    let analysis = analysis_from_ffprobe(&ffprobe, identity.clone()).unwrap();
     NewItem::Movie {
         title: name.clone(),
         year: None,

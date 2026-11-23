@@ -13,7 +13,8 @@ klapz-api-plex.workspace = true
 klapz-api-jellyfin.workspace = true
 klapz-transcoder.workspace = true
 klapz-db.workspace = true
-klapz-scanner.workspace = true
+# Reading files through ffprobe and ffmpeg-plex, for library scans.
+klapz-scanner = { workspace = true, features = ["engine"] }
 async-graphql.workspace = true
 async-trait.workspace = true
 dotenvy.workspace = true

@@ -1,4 +1,4 @@
-# Builds the server and the scanner for each platform. Every push and pull request gets the
+# Builds the server for each platform. Every push and pull request gets the
 # binaries as workflow artifacts; each push to the default branch also publishes them as a
 # GitHub release. ffmpeg is not part of it: the desktop package takes it from its own release.
 #
@@ -119,16 +119,14 @@ jobs:
             echo "EXE=$exe"
           } >> "$GITHUB_ENV"
 
-      # The server reports CARGO_PKG_VERSION to its clients: stamp it in both crates and in the
+      # The server reports CARGO_PKG_VERSION to its clients: stamp it in its crate and in the
       # lock file, which --locked would otherwise find out of date.
       - name: Stamp the version
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          for crate in server scanner; do
-            perl -0pi -e 's/^version = "[^"]*"/version = "$ENV{VERSION}"/m' "crates/$crate/Cargo.toml"
-            perl -0pi -e 's/(name = "klapz-'"$crate"'"\r?\nversion = )"[^"]*"/$1"$ENV{VERSION}"/' Cargo.lock
-          done
+          perl -0pi -e 's/^version = "[^"]*"/version = "$ENV{VERSION}"/m' crates/server/Cargo.toml
+          perl -0pi -e 's/(name = "klapz-server"\r?\nversion = )"[^"]*"/$1"$ENV{VERSION}"/' Cargo.lock
           git diff --stat
 
       - name: Install Rust
@@ -145,8 +143,8 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      # The ARM runner is the smallest of the lot: with fat LTO, linking both binaries at once
-      # exhausts its memory and the runner dies, so it gets swap and builds one job at a time.
+      # The ARM runner is the smallest of the lot: with fat LTO, linking exhausts its memory and
+      # the runner dies, so it gets swap and builds one job at a time.
       - name: Add swap
         if: matrix.platform == 'linux-arm64'
         run: |
@@ -159,14 +157,12 @@ jobs:
       - name: Build
         env:
           CARGO_BUILD_JOBS: ${{ matrix.platform == 'linux-arm64' && '1' || 'default' }}
-        run: cargo build --release --locked --target ${{ matrix.target }} -p klapz-server -p klapz-scanner
+        run: cargo build --release --locked --target ${{ matrix.target }} -p klapz-server
 
-      - name: Lay out the binaries
+      - name: Lay out the binary
         run: |
           mkdir dist
-          for component in server scanner; do
-            cp "target/${{ matrix.target }}/release/klapz-$component$EXE" "dist/klapz-$component-$SUFFIX$EXE"
-          done
+          cp "target/${{ matrix.target }}/release/klapz-server$EXE" "dist/klapz-server-$SUFFIX$EXE"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

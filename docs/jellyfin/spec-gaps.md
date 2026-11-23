@@ -124,9 +124,9 @@ from Plex's analysis as before. The rules are the reference's own (`ProbeResultN
 
 - **Language**: as the file states it, in its terminological code (`fre`, `fr-FR` are `fra`), an
   unknown one as written (`qaa`, `fra,fra`), none when the file states none. A Matroska track
-  declaring `und` has none, though ffprobe-plex writes `eng` for it as Plex's analysis expects:
-  the scanner reads Matroska's `Language` elements itself (`matroska.rs`), a track without one
-  being English by the format's default.
+  declaring `und` has none, as ffmpeg-plex reports it since v8.1.3-21 (the reference's wrote
+  `eng`, which Plex's analysis still reads), a track without a `Language` element being English
+  by the format's default.
 - **Title**: the track's name, else for sound and subtitles an MP4's `name`, else its handler's
   unless it is the muxer's (`SoundHandler`); `cc` is no title.
 - **Codec, profile, tag, time base, framing**: ffprobe's names, picture subtitles as `PGSSUB`,
@@ -288,8 +288,8 @@ and 15,490 differing for the reasons below, each named in the tool:
   the first frame of `Star Trek: Discovery` (`DOVIWithHDR10Plus` there, `DOVIWithHDR10` here).
 
 `crates/server/tests/jellyfin_samples.rs` replays the same on every run of the tests, without a
-server: each sample keeps our scanner's report and the reference's answer
-(`tools/capture_jellyfin_samples.py`), and the report goes through the scan's storage, the
+server: each sample keeps ffmpeg-plex's ffprobe output and the reference's answer
+(`tools/capture_jellyfin_samples.py`), and the analysis read from it goes through the scan's storage, the
 official API and the binding to the reference's media source and file-derived fields, these
 reasons excepted.
 
