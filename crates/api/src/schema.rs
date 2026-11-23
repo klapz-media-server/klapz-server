@@ -720,6 +720,23 @@ impl Query {
     ) -> Result<crate::library::LibraryConnection> {
         crate::library::libraries(context, after, before, first, last).await
     }
+
+    /// The server's directories, for an owner choosing the ones a library scans. For owners
+    /// only.
+    ///
+    /// Without `path`, where browsing starts: the drives of a Windows server, `/` elsewhere.
+    /// With one, the directories inside it, the path resolved exactly as a library root is
+    /// before anything is read. Names directories only: no file is listed, none is read.
+    async fn server_directories(
+        &self,
+        context: &Context<'_>,
+        #[graphql(
+            desc = "An absolute path on the server, as `DirectoryEntry.path` or `DirectoryListing.parent` give one. Absent, where browsing starts."
+        )]
+        path: Option<String>,
+    ) -> Result<crate::server_directories::ServerDirectories> {
+        crate::server_directories::server_directories(context, path).await
+    }
 }
 
 /// Translates Relay's arguments into a storage window.

@@ -4013,9 +4013,23 @@ impl crate::scan::ScanControl for RecordedScans {
     }
 }
 
-/// Directories that exist, `/`-separated, holding nothing: what a root may name in a test.
+/// Directories that exist, `/`-separated, holding no file: what a root may name in a test.
+/// `/` exists too, holding the top of every one.
 #[derive(Debug, Default)]
-pub struct KnownDirectories(pub Vec<String>);
+pub struct KnownDirectories {
+    pub directories: Vec<String>,
+    /// Among `directories`, those the server may not list.
+    pub unreadable: Vec<String>,
+}
+
+impl KnownDirectories {
+    pub fn new(directories: &[&str]) -> Self {
+        Self {
+            directories: directories.iter().map(|path| (*path).to_owned()).collect(),
+            unreadable: Vec::new(),
+        }
+    }
+}
 
 #[async_trait::async_trait]
 impl crate::files::LibraryFiles for KnownDirectories {
@@ -4062,11 +4076,63 @@ impl crate::files::LibraryFiles for KnownDirectories {
     }
 
     async fn resolve_root(&self, path: &str) -> Result<String, crate::files::FilesError> {
+        if !path.starts_with('/') {
+            return Err(crate::files::FilesError::Refused);
+        }
         let path = path.trim_end_matches('/');
-        if self.0.iter().any(|directory| directory == path) {
+        if path.is_empty() {
+            Ok("/".to_owned())
+        } else if self.directories.iter().any(|directory| directory == path) {
             Ok(path.to_owned())
         } else {
             Err(crate::files::FilesError::NotFound)
         }
+    }
+
+    async fn starting_points(
+        &self,
+    ) -> Result<Vec<crate::files::Directory>, crate::files::FilesError> {
+        Ok(vec![crate::files::Directory {
+            name: "/".to_owned(),
+            path: "/".to_owned(),
+        }])
+    }
+
+    async fn list_directories(
+        &self,
+        path: &str,
+        limit: usize,
+    ) -> Result<crate::files::DirectoryListing, crate::files::FilesError> {
+        let path = self.resolve_root(path).await?;
+        if self.unreadable.contains(&path) {
+            return Err(crate::files::FilesError::Unreadable);
+        }
+        let prefix = if path == "/" {
+            "/".to_owned()
+        } else {
+            format!("{path}/")
+        };
+        let mut first = crate::files::FirstDirectories::new(limit);
+        for directory in &self.directories {
+            if let Some(name) = directory.strip_prefix(&prefix) {
+                if !name.contains('/') {
+                    first.offer(crate::files::Directory {
+                        name: name.to_owned(),
+                        path: directory.clone(),
+                    });
+                }
+            }
+        }
+        let (directories, truncated) = first.finish();
+        let parent = (path != "/").then(|| match path.rsplit_once('/') {
+            Some(("", _)) | None => "/".to_owned(),
+            Some((parent, _)) => parent.to_owned(),
+        });
+        Ok(crate::files::DirectoryListing {
+            path,
+            parent,
+            directories,
+            truncated,
+        })
     }
 }

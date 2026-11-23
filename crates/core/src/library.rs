@@ -452,10 +452,10 @@ VF"
 
     #[tokio::test]
     async fn roots_are_resolved_kept_once_and_never_nested() {
-        let files = crate::testing::KnownDirectories(vec![
-            "/media/films".to_owned(),
-            "/media/films/vf".to_owned(),
-            "/media/series".to_owned(),
+        let files = crate::testing::KnownDirectories::new(&[
+            "/media/films",
+            "/media/films/vf",
+            "/media/series",
         ]);
         let paths = |paths: &[&str]| {
             paths

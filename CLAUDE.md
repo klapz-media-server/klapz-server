@@ -109,12 +109,17 @@ without them saying so.
   that inserted items directly and then matched nothing.
 - **A path the server publishes is not a path the server accepts.** `MediaFile.path` is
   exposed; every endpoint that touches the filesystem still resolves a file from its id. There
-  is no route that takes a path, and there must not be — see `security.md` — with **one
-  exception, the repo owner's decision**: the directories a library scans, which an owner
-  names in `createLibrary` and `updateLibrary` (`roots`). Only owners may, each path is resolved
-  by the files backend (`LibraryFiles::resolve_root`: absolute, canonical, a directory) before
-  anything compares it, and a root is only ever walked by the scan, never served by its name.
-  Nothing else takes a path, and this exception is no precedent for another.
+  is no route that takes a path, and there must not be — see `security.md` — with **two
+  exceptions, each the repo owner's decision**. The first is the directories a library scans,
+  which an owner names in `createLibrary` and `updateLibrary` (`roots`). Only owners may, each
+  path is resolved by the files backend (`LibraryFiles::resolve_root`: absolute, canonical, a
+  directory) before anything compares it, and a root is only ever walked by the scan, never
+  served by its name. The second is how an owner finds those directories without typing them,
+  `serverDirectories(path:)`: owners only, read-only, the path resolved exactly as a root is
+  (`LibraryFiles::list_directories`) before anything is read, and the answer holds directory
+  names and paths alone — no file, no content, hidden directories left out, at most
+  `MAX_LISTED_DIRECTORIES` read. Nothing else takes a path, and neither exception is a
+  precedent for another.
 - **The official API publishes measurements; the adapter publishes display forms.** Bitrates in
   bits per second, frame rates as measured (23.976), aspect ratios unsnapped, ratings at full
   precision. Plex's kilobits, `24p`, `2.35` and one-decimal ratings are derived in `api-plex`.
@@ -153,7 +158,9 @@ without them saying so.
   string its backend understands and everything below it a `RelativePath`, which cannot climb
   out of its root; the scan never builds a filesystem path. `server::files::LocalFiles` is the
   one backend today, so that a library on a share or in object storage later is a new backend,
-  not a new scan. What a tool reads is a `FileLocation` the backend hands out.
+  not a new scan. What a tool reads is a `FileLocation` the backend hands out. The backend also
+  says where an owner browsing for a root starts (`starting_points`: the drives of Windows,
+  `/` elsewhere) and lists the directories inside one (`list_directories`).
 - **A scan runs in the server, one per library, in the background.** `core::scan` walks with
   the reference's skip rule (a directory whose media files kept their names, sizes and
   modification times is not looked at again), reuses a known path, groups new files by the
@@ -1025,7 +1032,8 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
 - ✅ **library management**: `createLibrary`, `updateLibrary` and `deleteLibrary` on the official
   API (`userErrors` with `LibraryErrorCode`), owners choosing roots and deleting, a library's
   admins renaming; roots checked and resolved through `LibraryFiles::resolve_root`, a scan after
-  a change, a deletion ending its playbacks first (`PlaybackRepository::keys_in_library`).
+  a change, a deletion ending its playbacks first (`PlaybackRepository::keys_in_library`);
+  owners browse the server's directories to pick roots (`serverDirectories`).
 - 🚧 **the scanner's file half**, `klapz-scanner`, measured against the reference on the
   test files: the analysis (every track field ffprobe gives, chapters with generic titles
   cleared, MP4 layout, MPEG-TS packet length; `--deep` measures each track's rate over every

@@ -77,10 +77,19 @@ directions are unrelated: outbound, a path is a fact about the library; inbound,
 attacker's free choice of filesystem location. A reviewer seeing a path in a response has no
 licence to add a route that takes one.
 
-The one inbound path is a library's roots (`createLibrary`, `updateLibrary`), by the repo
-owner's decision: owners only, resolved by `LibraryFiles::resolve_root` (absolute, canonical,
-a directory) before any comparison, checked for nesting on the resolved form, and walked by the
-scan only — no route serves a file by its root's name. It is an exception, not a precedent.
+Two inbound paths exist, each by the repo owner's decision, and neither is a precedent.
+
+- A library's roots (`createLibrary`, `updateLibrary`): owners only, resolved by
+  `LibraryFiles::resolve_root` (absolute, canonical, a directory) before any comparison,
+  checked for nesting on the resolved form, and walked by the scan only — no route serves a
+  file by its root's name.
+- Browsing for those roots (`serverDirectories(path:)`): owners only and read-only. The path is
+  resolved exactly as a root is before anything is read (`LibraryFiles::list_directories`), so
+  `..`, a link or another spelling lands where canonicalization says and nowhere else. The
+  answer names directories and their paths: files are never listed, nothing is ever read from
+  one, hidden directories are left out, and at most `MAX_LISTED_DIRECTORIES` are read from one
+  directory. Without a path it lists where browsing starts, the drives or `/`. An owner already
+  chooses any directory as a root; this tells them which exist, and nothing more.
 
 ## Executing ffmpeg
 

@@ -607,6 +607,18 @@ mod tests {
         async fn resolve_root(&self, path: &str) -> Result<String, FilesError> {
             Ok(path.to_owned())
         }
+
+        async fn starting_points(&self) -> Result<Vec<crate::files::Directory>, FilesError> {
+            Ok(Vec::new())
+        }
+
+        async fn list_directories(
+            &self,
+            _path: &str,
+            _limit: usize,
+        ) -> Result<crate::files::DirectoryListing, FilesError> {
+            Err(FilesError::NotFound)
+        }
     }
 
     #[derive(Debug, Default)]

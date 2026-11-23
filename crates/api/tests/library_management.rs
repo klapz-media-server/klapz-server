@@ -1,5 +1,6 @@
 //! Creating, changing and deleting libraries on the official API: owners choose directories
-//! and delete, a library's admins rename, and nobody else sees the library at all.
+//! and delete, a library's admins rename, and nobody else sees the library at all. Owners
+//! alone browse the server's directories to find roots.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -62,12 +63,18 @@ fn schema(scans: Arc<RecordedScans>) -> ApiSchema {
 
 fn scans() -> Arc<RecordedScans> {
     Arc::new(RecordedScans {
-        directories: KnownDirectories(vec![
-            "/media/films".to_owned(),
-            "/media/films/vf".to_owned(),
-            "/media/series".to_owned(),
-            "/media/anime".to_owned(),
-        ]),
+        directories: KnownDirectories {
+            unreadable: vec!["/media/private".to_owned()],
+            ..KnownDirectories::new(&[
+                "/media",
+                "/media/films",
+                "/media/films/vf",
+                "/media/series",
+                "/media/anime",
+                "/media/Bandes-annonces",
+                "/media/private",
+            ])
+        },
         ..RecordedScans::default()
     })
 }
@@ -359,4 +366,130 @@ async fn an_owner_deletes_a_library_unless_it_is_being_scanned() {
         again["deleteLibrary"]["userErrors"],
         json!([{ "field": ["input", "id"], "code": "LIBRARY_NOT_FOUND" }])
     );
+}
+
+const BROWSE: &str = r"
+query Browse($path: String, $first: Int, $after: String) {
+  serverDirectories(path: $path) {
+    error
+    listing {
+      path
+      parent
+      truncated
+      directories(first: $first, after: $after) {
+        edges { cursor node { name path } }
+        pageInfo { hasNextPage }
+      }
+    }
+  }
+}
+";
+
+fn names(answer: &Value) -> Vec<&str> {
+    answer["serverDirectories"]["listing"]["directories"]["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|edge| edge["node"]["name"].as_str().unwrap())
+        .collect()
+}
+
+#[tokio::test]
+async fn an_owner_browses_from_the_top_into_a_directory() {
+    let schema = schema(scans());
+    let owner = klapz_core::testing::owner;
+    let top = run(&schema, owner(), BROWSE, json!({})).await;
+    assert_eq!(
+        top["serverDirectories"]["listing"]["path"],
+        Value::Null,
+        "{top}"
+    );
+    assert_eq!(names(&top), ["/"]);
+
+    let media = run(&schema, owner(), BROWSE, json!({ "path": "/media/" })).await;
+    let listing = &media["serverDirectories"]["listing"];
+    assert_eq!(listing["path"], "/media");
+    assert_eq!(listing["parent"], "/");
+    assert_eq!(listing["truncated"], false);
+    assert_eq!(
+        names(&media),
+        ["anime", "Bandes-annonces", "films", "private", "series"],
+        "by name, ignoring case"
+    );
+    assert_eq!(
+        listing["directories"]["edges"][2]["node"]["path"],
+        "/media/films"
+    );
+}
+
+#[tokio::test]
+async fn a_directory_listing_pages_forward() {
+    let schema = schema(scans());
+    let first = run(
+        &schema,
+        klapz_core::testing::owner(),
+        BROWSE,
+        json!({ "path": "/media", "first": 2 }),
+    )
+    .await;
+    assert_eq!(names(&first), ["anime", "Bandes-annonces"]);
+    let directories = &first["serverDirectories"]["listing"]["directories"];
+    assert_eq!(directories["pageInfo"]["hasNextPage"], true);
+    let after = directories["edges"][1]["cursor"].clone();
+    let rest = run(
+        &schema,
+        klapz_core::testing::owner(),
+        BROWSE,
+        json!({ "path": "/media", "after": after }),
+    )
+    .await;
+    assert_eq!(names(&rest), ["films", "private", "series"]);
+    let refused = execute(
+        &schema,
+        klapz_core::testing::owner(),
+        BROWSE,
+        json!({ "path": "/media", "first": 501 }),
+    )
+    .await;
+    assert_eq!(refused.errors.len(), 1);
+}
+
+#[tokio::test]
+async fn a_directory_not_listed_says_why() {
+    let schema = schema(scans());
+    for (path, code) in [
+        ("/media/gone", "NOT_FOUND"),
+        ("media/films", "NOT_A_DIRECTORY"),
+        ("/media/private", "UNREADABLE"),
+    ] {
+        let answer = run(
+            &schema,
+            klapz_core::testing::owner(),
+            BROWSE,
+            json!({ "path": path }),
+        )
+        .await;
+        assert_eq!(
+            answer["serverDirectories"],
+            json!({ "error": code, "listing": null }),
+            "{path}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn only_an_owner_browses_the_server() {
+    let schema = schema(scans());
+    for path in [Value::Null, json!("/media")] {
+        let response = execute(&schema, user(), BROWSE, json!({ "path": path })).await;
+        assert_eq!(response.errors.len(), 1, "{path}");
+        assert_eq!(response.data.into_json().unwrap(), Value::Null);
+        let nobody = schema
+            .execute(
+                async_graphql::Request::new(BROWSE)
+                    .variables(async_graphql::Variables::from_json(json!({ "path": path }))),
+            )
+            .await;
+        assert_eq!(nobody.errors.len(), 1, "{path}");
+    }
 }
