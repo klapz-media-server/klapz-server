@@ -1096,6 +1096,15 @@ fn stream_arguments(
     let mut args = input_arguments(request, run);
     args.extend(video_arguments(&request.video, run.plan.video, burn));
     args.extend(audio_arguments(&request.audio, run.plan, burn, client));
+    if request.protocol == Protocol::Dash
+        && run.plan.audio == AudioAction::Copy
+        && request.audio.codec == "aac"
+    {
+        // AAC from MPEG-TS comes as ADTS, and the dash muxer does not insert this filter
+        // itself: the init segment then lacks the AudioSpecificConfig and browsers refuse it
+        // (Shaka 3014). AAC already in MP4 or Matroska passes through unchanged.
+        args.extend(strings(&["-bsf:1", "aac_adtstoasc"]));
+    }
     args.extend(match request.protocol {
         Protocol::Hls => hls_output(run.callback, seconds, run.first_file, client),
         Protocol::Dash => dash_output(run.callback, seconds, run.first_file, client),
@@ -2354,6 +2363,21 @@ mod tests {
             .join(" ")
             .replace("[0:2] aresample", "[0:2]_aresample");
         assert_eq!(joined, CAPTURED_DASH);
+    }
+
+    #[test]
+    fn copied_aac_leaves_adts_behind_only_for_mp4_segments() {
+        let filter = |protocol, audio| {
+            let mut asked = request(audio);
+            asked.protocol = protocol;
+            asked.audio = track(2, "aac", "fr");
+            let args = arguments(&asked, 1, None);
+            args.windows(2)
+                .any(|pair| pair[0] == "-bsf:1" && pair[1] == "aac_adtstoasc")
+        };
+        assert!(filter(Protocol::Dash, AudioAction::Copy));
+        assert!(!filter(Protocol::Hls, AudioAction::Copy));
+        assert!(!filter(Protocol::Dash, AudioAction::ConvertToAac));
     }
 
     /// From the reference's log: film 513702 limited to 2 Mbps, H.264 at 0 and E-AC-3 at 1.
