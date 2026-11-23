@@ -3185,6 +3185,7 @@ impl crate::stream::StreamEngine for StubStreams {
                 .subtitle
                 .as_ref()
                 .map(crate::stream::SubtitleOutput::decision),
+            subtitle_files: Vec::new(),
             output: crate::playback::PlaybackOutput {
                 video_bitrate: order.source.bitrate,
                 audio_bitrate: order.source.audio.bitrate,

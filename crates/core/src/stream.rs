@@ -207,9 +207,23 @@ pub struct StartedStream {
     pub audio: StreamDecision,
     /// What happens to the subtitle, when one was asked for.
     pub subtitle: Option<StreamDecision>,
+    /// Every subtitle track of the file the player can read beside a conversion, the one asked
+    /// for among them: it switches between them without starting anew.
+    pub subtitle_files: Vec<SubtitleFile>,
     pub output: PlaybackOutput,
     /// The keys of the streams of the same playback this one replaced.
     pub replaced: Vec<String>,
+}
+
+/// A subtitle track of the file, served whole beside a conversion.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubtitleFile {
+    /// The track's position in the file.
+    pub position: i32,
+    /// A path on this server, its secret included.
+    pub url: String,
+    pub format: SubtitleFormat,
+    pub decision: StreamDecision,
 }
 
 /// A format a player declares it reads as it is: containers, and the video and audio codecs

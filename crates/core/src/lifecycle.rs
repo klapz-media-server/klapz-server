@@ -315,6 +315,7 @@ mod tests {
                 video: StreamDecision::Copy,
                 audio: StreamDecision::Copy,
                 subtitle: None,
+                subtitle_files: Vec::new(),
                 output: PlaybackOutput::default(),
                 replaced,
             })

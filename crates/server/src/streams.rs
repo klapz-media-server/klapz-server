@@ -14,7 +14,9 @@
 //! A stream's renditions are numbered from 0, the best: one, unless the player chooses its
 //! quality. `/streams/{id}/{rendition}/…` holds a rendition's HLS playlist and segments, or its
 //! DASH video; `/streams/{id}/audio/…` the DASH audio every rendition shares;
-//! `/streams/{id}/subtitles.{vtt,ass,srt,ttml}` the subtitle, whole.
+//! `/streams/{id}/subtitles.{vtt,ass,srt,ttml}` the subtitle asked for, whole, and
+//! `/streams/{id}/subtitles/{position}.{vtt,ass,srt,ttml}` any track of the file the player can
+//! switch to.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -35,7 +37,7 @@ use klapz_core::sidecar::{SidecarError, SidecarSource};
 use klapz_core::stream::SubtitleFormat as PlayerSubtitleFormat;
 use klapz_core::stream::{
     Delivery, FallbackRefusal, StartedStream, StreamEngine, StreamError, StreamOrder,
-    StreamProtocol, StreamQuality, StreamTrack, SubtitleOutput,
+    StreamProtocol, StreamQuality, StreamTrack, SubtitleFile, SubtitleOutput,
 };
 use klapz_transcoder::adapt;
 use klapz_transcoder::media::{read_sidecar, resolve_sidecar, resolve_within};
@@ -98,6 +100,17 @@ struct Conversion {
     duration_ms: i64,
     frame_rate: Option<f64>,
     subtitle: Option<TextSubtitle>,
+    /// The tracks served beside it.
+    subtitle_files: Vec<ServedSubtitle>,
+}
+
+/// A subtitle track of the file served beside a conversion.
+#[derive(Debug, Clone, Copy)]
+struct ServedSubtitle {
+    /// Its position in the file.
+    position: i32,
+    format: PlayerSubtitleFormat,
+    decision: StreamDecision,
 }
 
 /// A subtitle beside a conversion, text or pictures as TTML.
@@ -129,6 +142,23 @@ impl TextSubtitle {
 }
 
 impl Conversion {
+    /// Its subtitle files, as the player is told of them.
+    fn subtitle_files(&self, id: &str, token: &str) -> Vec<SubtitleFile> {
+        self.subtitle_files
+            .iter()
+            .map(|served| SubtitleFile {
+                position: served.position,
+                url: format!(
+                    "/streams/{id}/subtitles/{}.{}?token={token}",
+                    served.position,
+                    subtitle_format(served.format).extension()
+                ),
+                format: served.format,
+                decision: served.decision,
+            })
+            .collect()
+    }
+
     /// What the player reads as separate representations: every rung when it chooses, the
     /// first when the server moves between them under one.
     fn renditions(&self) -> &[Picture] {
@@ -207,17 +237,36 @@ fn subtitle_delivery(subtitle: &SubtitleOutput) -> SubtitleDelivery {
     }
 }
 
-/// Each subtitle track of the file and the format it would reach this player in, for the
-/// transcoder to extract those it can before the player switches to one.
-fn text_subtitles(order: &StreamOrder) -> Vec<(Track, SubtitleFormat)> {
-    order
-        .source
-        .subtitles
-        .iter()
-        .filter_map(|subtitle| {
-            PlayerSubtitleFormat::for_track(&subtitle.codec, &order.subtitle_formats)
-                .map(|format| (track(subtitle), subtitle_format(format)))
+/// Each subtitle track of the file the player can read, in the format it would reach it in:
+/// the transcoder extracts them all as the stream starts, and serves any the player switches to.
+fn served_tracks(
+    order: &StreamOrder,
+) -> impl Iterator<Item = (&StreamTrack, PlayerSubtitleFormat)> {
+    order.source.subtitles.iter().filter_map(|subtitle| {
+        let format = PlayerSubtitleFormat::for_track(&subtitle.codec, &order.subtitle_formats)?;
+        subtitle_format(format)
+            .holds(&subtitle.codec)
+            .then_some((subtitle, format))
+    })
+}
+
+fn served_subtitles(order: &StreamOrder) -> Vec<ServedSubtitle> {
+    served_tracks(order)
+        .map(|(track, format)| ServedSubtitle {
+            position: track.position,
+            format,
+            decision: SubtitleOutput::Text {
+                track: track.clone(),
+                format,
+            }
+            .decision(),
         })
+        .collect()
+}
+
+fn text_subtitles(order: &StreamOrder) -> Vec<(Track, SubtitleFormat)> {
+    served_tracks(order)
+        .map(|(subtitle, format)| (track(subtitle), subtitle_format(format)))
         .collect()
 }
 
@@ -429,8 +478,10 @@ impl Streams {
             duration_ms,
             frame_rate: measured.frame_rate,
             subtitle: text_subtitle.clone(),
+            subtitle_files: served_subtitles(&order),
         };
-        let (id, token) = self.admit(order.key, Content::Converted(Arc::new(conversion)));
+        let conversion = Arc::new(conversion);
+        let (id, token) = self.admit(order.key, Content::Converted(Arc::clone(&conversion)));
         let manifest = match protocol {
             Protocol::Dash => "manifest.mpd",
             Protocol::Hls => "master.m3u8",
@@ -450,6 +501,7 @@ impl Streams {
                 AudioAction::ConvertToAac => StreamDecision::Transcode,
             },
             subtitle: order.subtitle.as_ref().map(SubtitleOutput::decision),
+            subtitle_files: conversion.subtitle_files(&id, &token),
             output: PlaybackOutput {
                 video_bitrate: narrow(picture.video_bandwidth),
                 audio_bitrate: narrow(audio_bandwidth),
@@ -484,6 +536,7 @@ impl StreamEngine for Streams {
                     video: StreamDecision::Copy,
                     audio: StreamDecision::Copy,
                     subtitle: None,
+                    subtitle_files: Vec::new(),
                     output,
                     replaced: Vec::new(),
                 })
@@ -639,6 +692,7 @@ pub fn router(routes: Sessions) -> Router {
         .route("/streams/{id}/master.m3u8", get(master_playlist))
         .route("/streams/{id}/file", get(original))
         .route("/streams/{id}/{name}", get(subtitles))
+        .route("/streams/{id}/subtitles/{name}", get(subtitle_file))
         .route("/streams/{id}/{rendition}/{part}", get(rendition_part))
         .with_state(routes)
 }
@@ -990,8 +1044,47 @@ async fn subtitles(
         return Err(Refusal::NotFound);
     };
     let transcoder = Arc::clone(&routes.streams.transcoder);
+    Ok(whole_subtitle(subtitle.mime_type(), async move {
+        transcoder.subtitles(&key).await
+    }))
+}
+
+/// `GET /streams/{id}/subtitles/{position}.{vtt,ass,srt,ttml}`: a track of the stream's file
+/// the player can switch to, served as [`subtitles`] serves the one asked for.
+async fn subtitle_file(
+    State(routes): State<Sessions>,
+    Path((id, name)): Path<(String, String)>,
+    Query(secret): Query<Secret>,
+) -> Result<Response, Refusal> {
+    let (key, conversion) = routes.conversion(&id, &secret).await?;
+    let (position, extension) = name.split_once('.').ok_or(Refusal::NotFound)?;
+    let position: i32 = position.parse().map_err(|_| Refusal::NotFound)?;
+    let Some(format) = conversion
+        .subtitle_files
+        .iter()
+        .find(|served| {
+            served.position == position && subtitle_format(served.format).extension() == extension
+        })
+        .map(|served| subtitle_format(served.format))
+    else {
+        return Err(Refusal::NotFound);
+    };
+    let transcoder = Arc::clone(&routes.streams.transcoder);
+    Ok(whole_subtitle(format.mime_type(), async move {
+        transcoder.subtitle_file(&key, position).await
+    }))
+}
+
+/// A subtitle answered at once, its body following when the extraction is done. A failed
+/// extraction ends the body empty.
+fn whole_subtitle(
+    mime_type: &str,
+    extraction: impl std::future::Future<Output = Result<(Vec<u8>, SubtitleFormat), TranscodeError>>
+        + Send
+        + 'static,
+) -> Response {
     let body = futures_util::stream::once(async move {
-        let bytes = match transcoder.subtitles(&key).await {
+        let bytes = match extraction.await {
             Ok((bytes, _)) => Bytes::from(bytes),
             Err(error) => {
                 tracing::warn!(%error, "a stream's subtitle could not be served");
@@ -1000,14 +1093,11 @@ async fn subtitles(
         };
         Ok::<_, std::convert::Infallible>(bytes)
     });
-    Ok((
-        [(
-            header::CONTENT_TYPE,
-            format!("{}; charset=utf-8", subtitle.mime_type()),
-        )],
+    (
+        [(header::CONTENT_TYPE, format!("{mime_type}; charset=utf-8"))],
         Body::from_stream(body),
     )
-        .into_response())
+        .into_response()
 }
 
 struct DashManifest<'a> {
@@ -1377,6 +1467,7 @@ mod tests {
             duration_ms: 0,
             frame_rate: Some(25.0),
             subtitle: None,
+            subtitle_files: Vec::new(),
         }
     }
 
@@ -1532,6 +1623,56 @@ mod tests {
             position_ms: 0,
             asked_at: Instant::now(),
         }
+    }
+
+    #[test]
+    fn every_subtitle_the_player_reads_is_served_beside_a_conversion() {
+        let scratch = Scratch::new("served-subtitles");
+        let mut asked = order(&scratch);
+        let subtitle = |position, codec: &str| StreamTrack {
+            position,
+            codec: codec.to_owned(),
+            language: None,
+            bitrate: None,
+        };
+        asked.source.subtitles = vec![
+            subtitle(3, "ass"),
+            subtitle(4, "subrip"),
+            subtitle(5, "hdmv_pgs_subtitle"),
+            subtitle(6, "dvb_teletext"),
+        ];
+        asked.subtitle_formats = vec![
+            PlayerSubtitleFormat::WebVtt,
+            PlayerSubtitleFormat::Ass,
+            PlayerSubtitleFormat::Ttml,
+        ];
+        let mut conversion = conversion_of(Adaptation::Client);
+        conversion.subtitle_files = served_subtitles(&asked);
+        let files = conversion.subtitle_files("s1", "t0");
+        let described: Vec<_> = files
+            .iter()
+            .map(|file| (file.url.as_str(), file.format, file.decision))
+            .collect();
+        assert_eq!(
+            described,
+            [
+                (
+                    "/streams/s1/subtitles/3.ass?token=t0",
+                    PlayerSubtitleFormat::Ass,
+                    StreamDecision::Copy
+                ),
+                (
+                    "/streams/s1/subtitles/4.vtt?token=t0",
+                    PlayerSubtitleFormat::WebVtt,
+                    StreamDecision::Transcode
+                ),
+                (
+                    "/streams/s1/subtitles/5.ttml?token=t0",
+                    PlayerSubtitleFormat::Ttml,
+                    StreamDecision::Transcode
+                ),
+            ]
+        );
     }
 
     async fn fetch(app: Router, uri: &str) -> (StatusCode, Vec<u8>) {

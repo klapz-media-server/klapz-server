@@ -9333,6 +9333,11 @@ type StreamObject {
 	"""
 	subtitleFormat: SubtitleFormatType
 	"""
+	Every subtitle track of the file the player can read beside this stream, the one asked
+	for among them. Switching to one of these needs no new stream. Empty for direct play.
+	"""
+	subtitleFiles: [StreamSubtitleFileObject!]!
+	"""
 	The bitrate of the video sent, in bits per second, when known: at the start, for an
 	adaptive stream.
 	"""
@@ -9383,6 +9388,28 @@ enum StreamQualityType {
 	chooses among them as it goes.
 	"""
 	CLIENT_ADAPTIVE
+}
+
+"""
+A subtitle track of the file, served whole beside a stream.
+"""
+type StreamSubtitleFileObject {
+	"""
+	The `MediaStream` it is.
+	"""
+	track: ID!
+	"""
+	Where the player reads it, a path on this server carrying the stream's secret.
+	"""
+	url: String!
+	"""
+	The format it is served in.
+	"""
+	format: SubtitleFormatType!
+	"""
+	Copied when served in its own format, `TRANSCODE` when converted.
+	"""
+	decision: StreamDecisionType!
 }
 
 """

@@ -2122,6 +2122,43 @@ impl Transcoder {
         Ok((extraction.bytes().await?, *format))
     }
 
+    /// The subtitle track at `position` of a session's file, whole, in the format it was
+    /// prepared in when the session started: what a player switches to without starting anew.
+    ///
+    /// # Errors
+    ///
+    /// [`TranscodeError::UnknownSession`] for no such session,
+    /// [`TranscodeError::UnknownSegment`] for a track it did not prepare, and what extracting it
+    /// meets.
+    pub async fn subtitle_file(
+        &self,
+        id: &str,
+        position: i32,
+    ) -> Result<(Vec<u8>, SubtitleFormat), TranscodeError> {
+        let session = self.session(id).ok_or(TranscodeError::UnknownSession)?;
+        let Some((track, format)) = session
+            .request
+            .text_subtitles
+            .iter()
+            .find(|(track, format)| track.index == position && format.holds(&track.codec))
+        else {
+            return Err(TranscodeError::UnknownSegment);
+        };
+        // Started with the session, so this finds it on disk or under way.
+        let extraction = self
+            .subtitles
+            .prepare(
+                &self.config,
+                &session.request.source,
+                &[(track.clone(), *format)],
+            )
+            .await
+            .into_iter()
+            .next()
+            .ok_or(TranscodeError::UnknownSegment)?;
+        Ok((extraction.bytes().await?, *format))
+    }
+
     /// A finished DASH chunk's file. `number` counts from zero, as the manifest given to the
     /// player does. One the running process will not get to soon is a seek, and restarts it
     /// there. No file is a chunk past the end of the media, to be answered empty.

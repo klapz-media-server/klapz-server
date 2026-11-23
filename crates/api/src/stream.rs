@@ -229,6 +229,19 @@ impl StartStreamInput {
     }
 }
 
+/// A subtitle track of the file, served whole beside a stream.
+#[derive(Debug, SimpleObject)]
+pub struct StreamSubtitleFileObject {
+    /// The `MediaStream` it is.
+    pub track: ID,
+    /// Where the player reads it, a path on this server carrying the stream's secret.
+    pub url: String,
+    /// The format it is served in.
+    pub format: SubtitleFormatType,
+    /// Copied when served in its own format, `TRANSCODE` when converted.
+    pub decision: StreamDecisionType,
+}
+
 /// A stream that was started.
 #[derive(Debug, SimpleObject)]
 pub struct StreamObject {
@@ -253,6 +266,9 @@ pub struct StreamObject {
     pub subtitles_url: Option<String>,
     /// The format of the subtitles at `subtitlesUrl`.
     pub subtitle_format: Option<SubtitleFormatType>,
+    /// Every subtitle track of the file the player can read beside this stream, the one asked
+    /// for among them. Switching to one of these needs no new stream. Empty for direct play.
+    pub subtitle_files: Vec<StreamSubtitleFileObject>,
     /// The bitrate of the video sent, in bits per second, when known: at the start, for an
     /// adaptive stream.
     pub video_bitrate: Option<i32>,
@@ -426,6 +442,8 @@ struct Prepared {
     order: StreamOrder,
     item: RatingKey,
     file: PartId,
+    /// The file's subtitle tracks, by their position in it.
+    subtitle_ids: Vec<(i32, klapz_core::StreamId)>,
 }
 
 /// The order an input describes, or what is wrong with it.
@@ -515,13 +533,7 @@ async fn prepare(
                 duration_ms: version.duration_ms.or(file.duration_ms),
                 video: StreamTrack::of(video),
                 audio: StreamTrack::of(audio),
-                subtitles: streams
-                    .iter()
-                    .filter(|stream| {
-                        stream.kind == StreamKind::Subtitle && stream.external_path.is_none()
-                    })
-                    .map(StreamTrack::of)
-                    .collect(),
+                subtitles: embedded_subtitles(&streams).map(StreamTrack::of).collect(),
             },
             delivery: input.delivery(),
             limits: input.limits(),
@@ -532,7 +544,17 @@ async fn prepare(
         },
         item: item.id,
         file: file.id,
+        subtitle_ids: embedded_subtitles(&streams)
+            .map(|stream| (stream.position, stream.id))
+            .collect(),
     }))
+}
+
+/// The subtitle tracks inside the file, sidecars aside: those a conversion extracts.
+fn embedded_subtitles(streams: &[MediaStream]) -> impl Iterator<Item = &MediaStream> {
+    streams
+        .iter()
+        .filter(|stream| stream.kind == StreamKind::Subtitle && stream.external_path.is_none())
 }
 
 /// A file whose video this server would have to convert and cannot: logged so that an owner
@@ -572,7 +594,12 @@ pub(crate) async fn start_stream(
             error,
         ))
     };
-    let Prepared { order, item, file } = match prepare(context, &input).await? {
+    let Prepared {
+        order,
+        item,
+        file,
+        subtitle_ids,
+    } = match prepare(context, &input).await? {
         Ok(prepared) => prepared,
         Err(error) => return refuse(error),
     };
@@ -632,7 +659,7 @@ pub(crate) async fn start_stream(
     };
     Ok(StartStreamPayload {
         client_mutation_id: input.client_mutation_id,
-        stream: Some(stream_object(started, delivery, quality)),
+        stream: Some(stream_object(started, delivery, quality, &subtitle_ids)),
         session: Some(PlaybackSessionObject(session)),
         user_errors: Vec::new(),
     })
@@ -642,6 +669,7 @@ fn stream_object(
     started: StartedStream,
     delivery: Delivery,
     quality: StreamQualityType,
+    subtitle_ids: &[(i32, klapz_core::StreamId)],
 ) -> StreamObject {
     let PlaybackOutput {
         video_bitrate,
@@ -672,6 +700,21 @@ fn stream_object(
         url: started.url,
         subtitles_url: started.subtitles_url,
         subtitle_format: started.subtitle_format.map(Into::into),
+        subtitle_files: started
+            .subtitle_files
+            .into_iter()
+            .filter_map(|file| {
+                let (_, id) = subtitle_ids
+                    .iter()
+                    .find(|(position, _)| *position == file.position)?;
+                Some(StreamSubtitleFileObject {
+                    track: ID(GlobalId::encode(crate::media::STREAM_TYPE, id.get())),
+                    url: file.url,
+                    format: file.format.into(),
+                    decision: file.decision.into(),
+                })
+            })
+            .collect(),
         video_bitrate,
         audio_bitrate,
         width,
