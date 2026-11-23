@@ -26833,6 +26833,18 @@
               "deprecationReason": null
             },
             {
+              "name": "subtitleDecision",
+              "description": "What happens to the subtitle: copied when it is sent in its own format, `TRANSCODE`\nwhen converted into another or burned into the picture. Null when none was asked for.",
+              "args": [],
+              "type": {
+                "kind": "ENUM",
+                "name": "StreamDecisionType",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "url",
               "description": "Where the player reads it, a path on this server: the manifest of a conversion, the file\nitself for direct play. It carries its own secret and needs no token.",
               "args": [],

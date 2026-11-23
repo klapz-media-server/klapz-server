@@ -242,6 +242,9 @@ pub struct StreamObject {
     pub video_decision: StreamDecisionType,
     /// What happens to the audio track.
     pub audio_decision: StreamDecisionType,
+    /// What happens to the subtitle: copied when it is sent in its own format, `TRANSCODE`
+    /// when converted into another or burned into the picture. Null when none was asked for.
+    pub subtitle_decision: Option<StreamDecisionType>,
     /// Where the player reads it, a path on this server: the manifest of a conversion, the file
     /// itself for direct play. It carries its own secret and needs no token.
     pub url: String,
@@ -665,6 +668,7 @@ fn stream_object(
         quality,
         video_decision: started.video.into(),
         audio_decision: started.audio.into(),
+        subtitle_decision: started.subtitle.map(Into::into),
         url: started.url,
         subtitles_url: started.subtitles_url,
         subtitle_format: started.subtitle_format.map(Into::into),

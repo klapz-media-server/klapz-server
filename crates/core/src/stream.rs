@@ -77,6 +77,22 @@ pub enum SubtitleOutput {
     },
 }
 
+impl SubtitleOutput {
+    /// Copied when the track is already in the format it is sent in; burning re-encodes it
+    /// into the picture.
+    #[must_use]
+    pub fn decision(&self) -> StreamDecision {
+        match self {
+            Self::Text { track, format }
+                if SubtitleFormat::of_codec(&track.codec) == Some(*format) =>
+            {
+                StreamDecision::Copy
+            }
+            Self::Text { .. } | Self::Burn { .. } => StreamDecision::Transcode,
+        }
+    }
+}
+
 /// A format a player draws subtitles in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubtitleFormat {
@@ -189,6 +205,8 @@ pub struct StartedStream {
     pub subtitle_format: Option<SubtitleFormat>,
     pub video: StreamDecision,
     pub audio: StreamDecision,
+    /// What happens to the subtitle, when one was asked for.
+    pub subtitle: Option<StreamDecision>,
     pub output: PlaybackOutput,
     /// The keys of the streams of the same playback this one replaced.
     pub replaced: Vec<String>,
@@ -410,6 +428,39 @@ mod tests {
             Some(WebVtt)
         );
         assert_eq!(SubtitleFormat::for_track("subrip", &[Ttml]), None);
+    }
+
+    #[test]
+    fn a_subtitle_is_copied_only_when_sent_in_its_own_format() {
+        let sent = |codec: &str, format| {
+            let track = StreamTrack {
+                position: 2,
+                codec: codec.to_owned(),
+                language: None,
+                bitrate: None,
+            };
+            SubtitleOutput::Text { track, format }.decision()
+        };
+        assert_eq!(sent("ass", SubtitleFormat::Ass), StreamDecision::Copy);
+        assert_eq!(sent("subrip", SubtitleFormat::Srt), StreamDecision::Copy);
+        assert_eq!(
+            sent("subrip", SubtitleFormat::WebVtt),
+            StreamDecision::Transcode
+        );
+        assert_eq!(
+            sent("hdmv_pgs_subtitle", SubtitleFormat::Ttml),
+            StreamDecision::Transcode
+        );
+        let burned = SubtitleOutput::Burn {
+            track: StreamTrack {
+                position: 2,
+                codec: "ass".to_owned(),
+                language: None,
+                bitrate: None,
+            },
+            scale: 1.0,
+        };
+        assert_eq!(burned.decision(), StreamDecision::Transcode);
     }
 
     #[test]

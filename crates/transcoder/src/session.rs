@@ -60,13 +60,20 @@ const HOLD_BEFORE_REFUSAL: Duration = Duration::from_secs(5);
 /// Enough for a player to start without running dry.
 const SEGMENTS_BEFORE_PLAYLIST: usize = 3;
 
-/// How far ahead of what it has written a process is left to catch up by itself. A request
-/// beyond this is a seek: a moment for a remux, a few seconds for an encode.
+/// How far ahead of what it has written a process is left to catch up by itself, at most half
+/// this long at the read rate. A request beyond this is a seek: the new run's burst answers it.
 const SEEK_MARGIN_SECONDS: u32 = 30;
 
 /// How many segments in a row the source may leave without a key frame. None of them can start
 /// a file, and each is answered with the one it is shown in, once a later one proves it.
 const SEGMENTS_WITHOUT_KEY_FRAME: u32 = 4;
+
+/// How far ahead of real time a run reads its source. Unbounded, a copy writes a film in
+/// minutes, gigabytes nobody may watch, and fills the disk. Ours: the reference has none.
+const READ_RATE: &str = "2";
+
+/// The media a run reads at full speed when it starts, to fill the player's buffer quickly.
+const READ_BURST_SECONDS: u32 = SEEK_MARGIN_SECONDS;
 
 /// How the result reaches the player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -319,7 +326,9 @@ impl Run {
         if !skipped {
             return None;
         }
-        (self.start_chunk..number)
+        // A run opens at the key frame before its start, so the file showing the segment it was
+        // started at can be numbered before it.
+        (self.start_chunk.saturating_sub(SEGMENTS_WITHOUT_KEY_FRAME)..number)
             .rev()
             .find(|n| whole(*n))
             .map(path)
@@ -878,6 +887,10 @@ fn input_arguments(request: &StreamRequest, run: &RunPlan<'_>) -> Vec<String> {
         args.push("-noaccurate_seek".to_owned());
     }
     args.extend(strings(&[
+        "-readrate",
+        READ_RATE,
+        "-readrate_initial_burst",
+        &READ_BURST_SECONDS.to_string(),
         "-analyzeduration",
         "20000000",
         "-probesize",
@@ -2320,9 +2333,10 @@ mod tests {
         }
     }
 
-    /// The command of a run of the request's top rung, from where it asks to start.
+    /// The command of a run of the request's top rung, from where it asks to start, without
+    /// the read rate the reference's commands lack.
     fn arguments(request: &StreamRequest, first_file: u32, fonts: Option<&Path>) -> Vec<String> {
-        stream_arguments(
+        without_read_rate(stream_arguments(
             request,
             &RunPlan {
                 plan: request.ladder.top(),
@@ -2331,7 +2345,30 @@ mod tests {
                 callback: "CB",
             },
             fonts,
+        ))
+    }
+
+    fn without_read_rate(mut args: Vec<String>) -> Vec<String> {
+        let at = args.iter().position(|arg| arg == "-readrate").unwrap();
+        args.drain(at..at + 4);
+        args
+    }
+
+    #[test]
+    fn reads_the_source_at_twice_real_time_after_a_burst() {
+        let args = stream_arguments(
+            &request(AudioAction::Copy),
+            &RunPlan {
+                plan: request(AudioAction::Copy).ladder.top(),
+                offset: Some(90.0),
+                first_file: 1,
+                callback: "CB",
+            },
+            None,
         )
+        .join(" ");
+        assert!(args.contains("-readrate 2 -readrate_initial_burst 30 -analyzeduration"));
+        assert!(args.find("-readrate") < args.find("-i CB/source"));
     }
 
     #[test]
@@ -2699,7 +2736,7 @@ mod tests {
     }
 
     fn run_of(request: &StreamRequest, rung: usize, offset: f64) -> String {
-        stream_arguments(
+        let args = stream_arguments(
             request,
             &RunPlan {
                 plan: &request.ladder.rungs[rung],
@@ -2708,8 +2745,8 @@ mod tests {
                 callback: "CB",
             },
             None,
-        )
-        .join(" ")
+        );
+        without_read_rate(args).join(" ")
     }
 
     #[test]
@@ -2832,6 +2869,18 @@ mod tests {
         assert!(video(1).unwrap().ends_with(chunk_name(0, 1)));
         // Not until a later file proves that segment 3 has none of its own.
         assert_eq!(video(3), None);
+    }
+
+    #[test]
+    fn a_run_started_without_a_key_frame_shows_its_start_in_the_file_before() {
+        let directory = scratch_directory();
+        // Started at 512, it opens at the key frame in 511 and has none until 513.
+        let run = run_in(directory.join("run-0"), 0, 0, 512);
+        write_chunks(&run, 0, &[511, 513]);
+        let session = session_with(chosen(Protocol::Dash), directory, vec![run]);
+        let video = |number| session.chosen_file(Some(DashTrack::Video(0)), 0, number);
+        assert!(video(512).unwrap().ends_with(chunk_name(0, 512)));
+        assert!(video(513).unwrap().ends_with(chunk_name(0, 514)));
     }
 
     #[test]

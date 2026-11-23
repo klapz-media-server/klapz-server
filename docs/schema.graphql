@@ -9314,6 +9314,11 @@ type StreamObject {
 	"""
 	audioDecision: StreamDecisionType!
 	"""
+	What happens to the subtitle: copied when it is sent in its own format, `TRANSCODE`
+	when converted into another or burned into the picture. Null when none was asked for.
+	"""
+	subtitleDecision: StreamDecisionType
+	"""
 	Where the player reads it, a path on this server: the manifest of a conversion, the file
 	itself for direct play. It carries its own secret and needs no token.
 	"""

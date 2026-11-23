@@ -3181,6 +3181,10 @@ impl crate::stream::StreamEngine for StubStreams {
             subtitle_format: None,
             video: crate::playback::StreamDecision::Copy,
             audio: crate::playback::StreamDecision::Copy,
+            subtitle: order
+                .subtitle
+                .as_ref()
+                .map(crate::stream::SubtitleOutput::decision),
             output: crate::playback::PlaybackOutput {
                 video_bitrate: order.source.bitrate,
                 audio_bitrate: order.source.audio.bitrate,

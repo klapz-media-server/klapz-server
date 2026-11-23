@@ -314,6 +314,7 @@ mod tests {
                 subtitle_format: None,
                 video: StreamDecision::Copy,
                 audio: StreamDecision::Copy,
+                subtitle: None,
                 output: PlaybackOutput::default(),
                 replaced,
             })

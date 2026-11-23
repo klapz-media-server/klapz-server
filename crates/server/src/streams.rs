@@ -449,6 +449,7 @@ impl Streams {
                 AudioAction::Copy => StreamDecision::Copy,
                 AudioAction::ConvertToAac => StreamDecision::Transcode,
             },
+            subtitle: order.subtitle.as_ref().map(SubtitleOutput::decision),
             output: PlaybackOutput {
                 video_bitrate: narrow(picture.video_bandwidth),
                 audio_bitrate: narrow(audio_bandwidth),
@@ -482,6 +483,7 @@ impl StreamEngine for Streams {
                     subtitle_format: None,
                     video: StreamDecision::Copy,
                     audio: StreamDecision::Copy,
+                    subtitle: None,
                     output,
                     replaced: Vec::new(),
                 })
