@@ -50,19 +50,23 @@ fn seconds(metadata: &std::fs::Metadata) -> i64 {
 impl LibraryFiles for LocalFiles {
     async fn list(&self, root: &str, directory: &RelativePath) -> Result<Vec<Entry>, FilesError> {
         // An absent root is an unmounted disk or a share that is down, never an empty library.
-        if !tokio::fs::metadata(root)
-            .await
-            .is_ok_and(|metadata| metadata.is_dir())
-        {
+        let found = within(SCANNING_DEADLINE, tokio::fs::metadata(root)).await;
+        if !matches!(found, Ok(Ok(metadata)) if metadata.is_dir()) {
             return Err(FilesError::Unavailable);
         }
-        let mut reading = tokio::fs::read_dir(Self::path(root, directory)?)
-            .await
+        let path = Self::path(root, directory)?;
+        let mut reading = within(SCANNING_DEADLINE, tokio::fs::read_dir(path))
+            .await?
             .map_err(io_error)?;
         let mut entries = Vec::new();
-        while let Some(entry) = reading.next_entry().await.map_err(io_error)? {
+        while let Some(entry) = within(SCANNING_DEADLINE, reading.next_entry())
+            .await?
+            .map_err(io_error)?
+        {
             // Not followed: a link could lead out of the library.
-            let Ok(metadata) = tokio::fs::symlink_metadata(entry.path()).await else {
+            let Ok(metadata) =
+                within(SCANNING_DEADLINE, tokio::fs::symlink_metadata(entry.path())).await?
+            else {
                 continue;
             };
             let kind = if metadata.is_file() {
@@ -97,22 +101,25 @@ impl LibraryFiles for LocalFiles {
         limit: u64,
     ) -> Result<Vec<u8>, FilesError> {
         let path = Self::path(root, file)?;
-        let metadata = tokio::fs::symlink_metadata(&path).await.map_err(io_error)?;
-        if !metadata.is_file() {
-            return Err(FilesError::Refused);
-        }
-        if metadata.len() > limit {
-            return Err(FilesError::TooLarge(limit));
-        }
-        let mut bytes = Vec::new();
-        tokio::fs::File::open(&path)
-            .await
-            .map_err(io_error)?
-            .take(limit)
-            .read_to_end(&mut bytes)
-            .await
-            .map_err(io_error)?;
-        Ok(bytes)
+        within(SCANNING_DEADLINE, async {
+            let metadata = tokio::fs::symlink_metadata(&path).await.map_err(io_error)?;
+            if !metadata.is_file() {
+                return Err(FilesError::Refused);
+            }
+            if metadata.len() > limit {
+                return Err(FilesError::TooLarge(limit));
+            }
+            let mut bytes = Vec::new();
+            tokio::fs::File::open(&path)
+                .await
+                .map_err(io_error)?
+                .take(limit)
+                .read_to_end(&mut bytes)
+                .await
+                .map_err(io_error)?;
+            Ok(bytes)
+        })
+        .await?
     }
 
     fn stored_path(&self, root: &str, file: &RelativePath) -> String {
@@ -188,6 +195,11 @@ impl LibraryFiles for LocalFiles {
 /// How long one step of a listing may take. A share whose server is gone can hold a call to
 /// the filesystem for minutes; a disk waking up takes a few seconds.
 const BROWSING_DEADLINE: Duration = Duration::from_secs(5);
+
+/// The same for a scan, which no one watches: a disk that takes its time to wake must not
+/// pass for an unmounted one, whose items the scan would then leave alone, but a share that
+/// stopped answering must not hold the library as being scanned until the server restarts.
+const SCANNING_DEADLINE: Duration = Duration::from_secs(30);
 
 /// `step`, given up on after `deadline` as [`FilesError::Unavailable`]. The thread it blocks
 /// is left to finish on its own.
@@ -301,6 +313,10 @@ fn displayed(path: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+
+    use std::sync::Arc;
+
+    use klapz_core::scan::{scan_section, ScanOutcome, ScanRequest, Scanner};
 
     use super::*;
 
@@ -632,6 +648,128 @@ mod tests {
             &[denied.as_os_str(), "/remove:d".as_ref(), user.as_ref()],
         );
         assert!(matches!(answer, Err(FilesError::Unreadable)), "{answer:?}");
+    }
+
+    /// Every way an owner may write the root of `scratch`'s films: on Windows `\`, `/` or
+    /// both, a separator at the end, the drive in lower case.
+    fn spellings(scratch: &Scratch) -> Vec<String> {
+        let typed = scratch.0.join("Films").to_string_lossy().into_owned();
+        if !cfg!(windows) {
+            return vec![typed.clone(), format!("{typed}/")];
+        }
+        let mut drive = typed.chars();
+        let lower_drive = drive
+            .next()
+            .map(|letter| letter.to_ascii_lowercase())
+            .into_iter()
+            .chain(drive)
+            .collect();
+        vec![
+            typed.replace('/', "\\"),
+            typed.replace('\\', "/"),
+            typed.replace('/', "\\").replacen('\\', "/", 2),
+            format!("{}\\", typed.replace('/', "\\")),
+            lower_drive,
+        ]
+    }
+
+    #[tokio::test]
+    async fn a_root_resolves_alike_whatever_its_separators() {
+        let scratch = Scratch::new("separators");
+        let canonical = displayed(&std::fs::canonicalize(scratch.0.join("Films")).unwrap());
+        for typed in spellings(&scratch) {
+            assert_eq!(
+                LocalFiles.resolve_root(&typed).await.unwrap(),
+                canonical,
+                "{typed}"
+            );
+        }
+    }
+
+    /// What the scan reads, and nothing is: the item is made all the same.
+    #[derive(Debug)]
+    struct NotMedia;
+
+    #[async_trait::async_trait]
+    impl klapz_core::scan::MediaAnalyzer for NotMedia {
+        async fn analyze(
+            &self,
+            _file: &FileLocation,
+        ) -> Result<klapz_scanner::report::Analysis, klapz_core::scan::AnalyzeError> {
+            Err(klapz_core::scan::AnalyzeError::Unreadable(
+                "not media".to_owned(),
+            ))
+        }
+    }
+
+    /// A film library over `typed`, resolved as `createLibrary` resolves it, scanned through
+    /// this backend and the real storage.
+    async fn scanned_library(typed: &str) -> (Scanner, ScanRequest) {
+        use klapz_core::library::{LibraryRepository, NewLibrary, SectionKind};
+
+        let connection = klapz_db::connect("sqlite::memory:").await.unwrap();
+        let library = Arc::new(klapz_db::SqlLibraryRepository::new(connection.clone()));
+        let section = library
+            .create(
+                NewLibrary {
+                    kind: SectionKind::Movie,
+                    title: "Films".to_owned(),
+                    language: "fr-FR".to_owned(),
+                    roots: vec![LocalFiles.resolve_root(typed).await.unwrap()],
+                },
+                0,
+            )
+            .await
+            .unwrap();
+        let scanner = Scanner {
+            library,
+            files: Arc::new(LocalFiles),
+            analyzer: Arc::new(NotMedia),
+            store: Arc::new(klapz_db::SqlScanRepository::new(connection)),
+        };
+        let request = ScanRequest {
+            section: section.id,
+            below: None,
+            force: false,
+        };
+        (scanner, request)
+    }
+
+    #[tokio::test]
+    async fn a_root_as_typed_is_scanned_and_found_unchanged_the_next_time() {
+        let scratch = Scratch::new("scan");
+        for typed in spellings(&scratch) {
+            let (scanner, request) = scanned_library(&typed).await;
+            let first = scan_section(&scanner, &request).await.unwrap();
+            assert_eq!(first.added, 1, "{typed}");
+            assert_eq!(
+                scan_section(&scanner, &request).await.unwrap(),
+                ScanOutcome::default(),
+                "{typed}: each file is found under its root again"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_directory_the_server_may_not_read_does_not_stop_a_scan() {
+        let scratch = Scratch::new("scan-denied");
+        let denied = scratch.0.join("Films").join("Denied");
+        std::fs::create_dir(&denied).unwrap();
+        let user = std::env::var("USERNAME").unwrap();
+        let icacls = |args: &[&std::ffi::OsStr]| {
+            let status = std::process::Command::new("icacls")
+                .arg(&denied)
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(status.success(), "icacls {args:?}");
+        };
+        icacls(&["/deny".as_ref(), format!("{user}:(RX)").as_ref()]);
+        let (scanner, request) = scanned_library(&scratch.root()).await;
+        let outcome = scan_section(&scanner, &request).await;
+        icacls(&["/remove:d".as_ref(), user.as_ref()]);
+        assert_eq!(outcome.unwrap().added, 1);
     }
 
     #[cfg(unix)]

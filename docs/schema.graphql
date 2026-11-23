@@ -301,7 +301,8 @@ type CancelLibraryScanPayload {
 	"""
 	clientMutationId: String
 	"""
-	Whether a scan was running and was asked to stop. It stops after the file it is on.
+	Whether a scan was running and was asked to stop. It stops at once, matching included,
+	even halfway through reading a file, which the next scan finds new.
 	"""
 	cancelled: Boolean!
 	"""

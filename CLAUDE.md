@@ -171,8 +171,14 @@ without them saying so.
   deep analysis, which reads every packet, falling back to the headers alone when it
   cannot finish, two at a time, ten minutes at most each — and writes through `ScanRepository`, whose
   items go through `db::write` like every other. What is gone is removed, unless its whole root
-  cannot be reached: an unmounted disk is not an empty library. `BackgroundScans` keeps one scan
-  per library and cancels between files.
+  cannot be reached (an unmounted disk is not an empty library) or the directory holding it
+  cannot be read (a permission is not a deletion); a directory that cannot be read, such as
+  `Recovery` at the top of a Windows drive, is passed over, and one whose listing fails stops
+  the scan with its path in `Library.scanFailure`. A step of the walk that takes 30 seconds
+  counts as a share that stopped answering. `BackgroundScans` keeps one scan per library, with
+  the matching of what it added, and a cancel drops them at once, whatever they wait on: the
+  probe's process is killed, a write in progress rolled back, and the file it was on found new
+  by the next scan. Whichever way a scan ends, its library is released.
 - **A library is created, changed and deleted on the official API.** `createLibrary` and
   `deleteLibrary` are the owners'; `updateLibrary` renames a library or changes its language for
   its admins too, while its `roots` stay the owners' (`OWNER_ONLY`). The rules are in
