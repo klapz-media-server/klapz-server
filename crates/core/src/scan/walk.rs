@@ -5,10 +5,13 @@
 //! modification time is skipped whole. Elsewhere a known path keeps its item (rewritten when
 //! the file changed), new files are grouped into items, and whatever was known below the
 //! scanned directory and not seen is removed — unless its root could not be reached at all,
-//! which is an unmounted disk, not an empty library.
+//! which is an unmounted disk, not an empty library, or the directory holding it could not be
+//! read, which is a permission, not a deletion.
+//!
+//! A scan is stopped by dropping it: every write is a transaction, and every file it reads is
+//! read by a child process that dies with it.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::files::{Entry, EntryKind, FilesError, LibraryFiles, RelativePath};
@@ -59,17 +62,16 @@ impl ScanOutcome {
     }
 }
 
-/// Runs one scan to its end, or until `cancelled` is set, checked between files.
+/// Runs one scan to its end.
 ///
 /// # Errors
 ///
 /// [`ScanError::SectionNotFound`], [`ScanError::UnsupportedKind`] for music and photos,
 /// [`ScanError::OutsideRoots`] when `below` names no root of the section,
-/// [`ScanError::Cancelled`], [`ScanError::Storage`].
+/// [`ScanError::Files`], [`ScanError::AnalyzerUnavailable`], [`ScanError::Storage`].
 pub async fn scan_section(
     scanner: &Scanner,
     request: &ScanRequest,
-    cancelled: &AtomicBool,
 ) -> Result<ScanOutcome, ScanError> {
     let section = scanner
         .library
@@ -108,7 +110,6 @@ pub async fn scan_section(
         section: request.section,
         kind: section.kind,
         force: request.force,
-        cancelled,
         now: now_epoch(),
         outcome: ScanOutcome::default(),
     };
@@ -131,7 +132,6 @@ struct Run<'a> {
     section: SectionId,
     kind: SectionKind,
     force: bool,
-    cancelled: &'a AtomicBool,
     now: i64,
     outcome: ScanOutcome,
 }
@@ -149,12 +149,17 @@ impl Run<'_> {
         // Reached at all? An unreachable root is left as it is: see the module's comment.
         match files.list(root, &RelativePath::root()).await {
             Ok(_) => {}
-            Err(FilesError::Unavailable) => {
-                tracing::warn!(root, "library root unavailable; its items are kept");
+            Err(error @ (FilesError::Unavailable | FilesError::Unreadable)) => {
+                tracing::warn!(root, %error, "library root not scanned; its items are kept");
                 self.outcome.unavailable_roots += 1;
                 return Ok(());
             }
-            Err(error) => return Err(ScanError::Storage(Box::new(error))),
+            Err(source) => {
+                return Err(ScanError::Files {
+                    path: root.to_owned(),
+                    source,
+                })
+            }
         }
 
         let prefix = files.stored_path(root, start);
@@ -184,13 +189,33 @@ impl Run<'_> {
             mut rules,
         }) = pending.pop()
         {
-            self.check_cancelled()?;
             let entries = match files.list(root, &directory).await {
                 Ok(entries) => entries,
                 // Gone since its parent was listed, or a directory the walk may not enter:
                 // what it held is not seen, and goes.
                 Err(FilesError::NotFound | FilesError::Refused) => continue,
-                Err(error) => return Err(ScanError::Storage(Box::new(error))),
+                // A directory the server may not read, such as `Recovery` at the top of a
+                // Windows drive: the rest of the library is scanned, and what was known below
+                // it stays.
+                Err(FilesError::Unreadable) => {
+                    tracing::warn!(
+                        path = %files.stored_path(root, &directory),
+                        "directory not readable; what it held is kept"
+                    );
+                    seen.extend(
+                        known
+                            .keys()
+                            .filter(|path| path.starts_with(&directory))
+                            .cloned(),
+                    );
+                    continue;
+                }
+                Err(source) => {
+                    return Err(ScanError::Files {
+                        path: files.stored_path(root, &directory),
+                        source,
+                    })
+                }
             };
             if entries.iter().any(|entry| entry.name == ".plexignore") {
                 if let Some(found) = self.ignore_rules(root, &directory).await {
@@ -275,7 +300,6 @@ impl Run<'_> {
                 Some(part) => {
                     let changed = part.size != file.size || part.modified_at != file.modified_at;
                     if changed || self.force {
-                        self.check_cancelled()?;
                         let rewritten = self.new_part(root, file, subtitles).await?;
                         self.scanner
                             .store
@@ -299,7 +323,6 @@ impl Run<'_> {
             _ => layout::group_episodes(directory, &names),
         };
         for group in groups {
-            self.check_cancelled()?;
             let files: Vec<Vec<&FoundFile>> = group
                 .versions
                 .iter()
@@ -390,14 +413,6 @@ impl Run<'_> {
             analysis,
             sidecars,
         })
-    }
-
-    fn check_cancelled(&self) -> Result<(), ScanError> {
-        if self.cancelled.load(Ordering::Relaxed) {
-            Err(ScanError::Cancelled)
-        } else {
-            Ok(())
-        }
     }
 }
 
@@ -500,8 +515,9 @@ fn extension(name: &str) -> Option<String> {
     Some(extension.to_ascii_lowercase())
 }
 
+/// The doubles a scan runs on in tests, here and in [`super::control`]'s.
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
@@ -516,13 +532,17 @@ mod tests {
 
     /// A directory tree in memory: paths below the root, with size and time.
     #[derive(Debug, Default)]
-    struct Tree {
-        files: Mutex<Vec<(String, u64, i64)>>,
-        unavailable: bool,
+    pub(crate) struct Tree {
+        pub(crate) files: Mutex<Vec<(String, u64, i64)>>,
+        pub(crate) unavailable: bool,
+        /// Directories the server may not list.
+        pub(crate) unreadable: Vec<String>,
+        /// Directories whose listing fails, as a disk failing mid-scan does.
+        pub(crate) broken: Vec<String>,
     }
 
     impl Tree {
-        fn with(files: &[(&str, u64, i64)]) -> Self {
+        pub(crate) fn with(files: &[(&str, u64, i64)]) -> Self {
             Self {
                 files: Mutex::new(
                     files
@@ -530,7 +550,7 @@ mod tests {
                         .map(|(path, size, time)| ((*path).to_owned(), *size, *time))
                         .collect(),
                 ),
-                unavailable: false,
+                ..Self::default()
             }
         }
 
@@ -551,6 +571,16 @@ mod tests {
         ) -> Result<Vec<Entry>, FilesError> {
             if self.unavailable {
                 return Err(FilesError::Unavailable);
+            }
+            if self
+                .unreadable
+                .iter()
+                .any(|path| path == directory.as_str())
+            {
+                return Err(FilesError::Unreadable);
+            }
+            if self.broken.iter().any(|path| path == directory.as_str()) {
+                return Err(FilesError::Io("the device is not ready".into()));
             }
             let mut entries: Vec<Entry> = Vec::new();
             for (path, size, time) in self.files.lock().unwrap().iter() {
@@ -622,7 +652,7 @@ mod tests {
     }
 
     #[derive(Debug, Default)]
-    struct Analyzer {
+    pub(crate) struct Analyzer {
         calls: Mutex<usize>,
     }
 
@@ -652,7 +682,7 @@ mod tests {
 
     /// Storage that keeps parts in a list and items as what was added.
     #[derive(Debug, Default)]
-    struct Store {
+    pub(crate) struct Store {
         parts: Mutex<Vec<KnownPart>>,
         added: Mutex<Vec<NewItem>>,
         updated: Mutex<Vec<PartId>>,
@@ -737,7 +767,7 @@ mod tests {
         }
     }
 
-    fn scanner(
+    pub(crate) fn scanner(
         kind: SectionKind,
         tree: Arc<Tree>,
         store: Arc<Store>,
@@ -770,7 +800,7 @@ mod tests {
         }
     }
 
-    fn whole_library() -> ScanRequest {
+    pub(crate) fn whole_library() -> ScanRequest {
         ScanRequest {
             section: SectionId::new(1),
             below: None,
@@ -779,9 +809,7 @@ mod tests {
     }
 
     async fn scan(scanner: &Scanner, request: &ScanRequest) -> ScanOutcome {
-        scan_section(scanner, request, &AtomicBool::new(false))
-            .await
-            .unwrap()
+        scan_section(scanner, request).await.unwrap()
     }
 
     #[tokio::test]
@@ -916,20 +944,77 @@ mod tests {
             below: Some(("/elsewhere".to_owned(), RelativePath::root())),
             ..whole_library()
         };
-        let refused = scan_section(&scanner, &request, &AtomicBool::new(false)).await;
+        let refused = scan_section(&scanner, &request).await;
         assert!(matches!(refused, Err(ScanError::OutsideRoots(_))));
     }
 
     #[tokio::test]
-    async fn stops_when_cancelled() {
+    async fn an_unreadable_directory_is_passed_over_and_keeps_its_items() {
+        let files = [
+            ("Soul (2020)/Soul (2020).mkv", 100, 10),
+            ("Up (2009)/Up (2009).mkv", 200, 20),
+        ];
+        let store = Arc::new(Store::default());
+        let readable = scanner(
+            SectionKind::Movie,
+            Arc::new(Tree::with(&files[1..])),
+            Arc::clone(&store),
+            Arc::new(Analyzer::default()),
+        );
+        scan(&readable, &whole_library()).await;
+
+        let locked = scanner(
+            SectionKind::Movie,
+            Arc::new(Tree {
+                unreadable: vec!["Up (2009)".to_owned()],
+                ..Tree::with(&files)
+            }),
+            Arc::clone(&store),
+            Arc::new(Analyzer::default()),
+        );
+        let outcome = scan(&locked, &whole_library()).await;
+        assert_eq!((outcome.added, outcome.removed), (1, 0));
+        assert_eq!(store.parts.lock().unwrap().len(), 2);
+        assert_eq!(*store.finished.lock().unwrap(), vec![true, true]);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_root_is_left_as_an_unreachable_one() {
         let scanner = scanner(
             SectionKind::Movie,
-            Arc::new(Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])),
+            Arc::new(Tree {
+                unreadable: vec![String::new()],
+                ..Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])
+            }),
             Arc::new(Store::default()),
             Arc::new(Analyzer::default()),
         );
-        let cancelled = scan_section(&scanner, &whole_library(), &AtomicBool::new(true)).await;
-        assert!(matches!(cancelled, Err(ScanError::Cancelled)));
+        let outcome = scan(&scanner, &whole_library()).await;
+        assert_eq!((outcome.added, outcome.unavailable_roots), (0, 1));
+    }
+
+    #[tokio::test]
+    async fn a_directory_failing_mid_scan_stops_it_and_is_named() {
+        let store = Arc::new(Store::default());
+        let scanner = scanner(
+            SectionKind::Movie,
+            Arc::new(Tree {
+                broken: vec!["Up (2009)".to_owned()],
+                ..Tree::with(&[
+                    ("Soul (2020)/Soul (2020).mkv", 100, 10),
+                    ("Up (2009)/Up (2009).mkv", 200, 20),
+                ])
+            }),
+            Arc::clone(&store),
+            Arc::new(Analyzer::default()),
+        );
+        let failed = scan_section(&scanner, &whole_library()).await;
+        assert!(
+            matches!(&failed, Err(error @ ScanError::Files { .. })
+                if error.to_string() == "cannot list /media/Up (2009): reading library files failed"),
+            "{failed:?}"
+        );
+        assert!(store.finished.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -991,7 +1076,7 @@ mod tests {
             Arc::new(Analyzer::default()),
         );
         broken.analyzer = Arc::new(Unavailable);
-        let stopped = scan_section(&broken, &whole_library(), &AtomicBool::new(false)).await;
+        let stopped = scan_section(&broken, &whole_library()).await;
         assert!(
             matches!(&stopped, Err(ScanError::AnalyzerUnavailable(reason)) if reason.contains("ffprobe")),
             "{stopped:?}"

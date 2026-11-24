@@ -46,7 +46,8 @@ pub struct CancelLibraryScanInput {
 pub struct CancelLibraryScanPayload {
     /// As given in the input.
     pub client_mutation_id: Option<String>,
-    /// Whether a scan was running and was asked to stop. It stops after the file it is on.
+    /// Whether a scan was running and was asked to stop. It stops at once, matching included,
+    /// even halfway through reading a file, which the next scan finds new.
     pub cancelled: bool,
     /// Why the request was refused. Empty on success.
     pub user_errors: Vec<ScanUserError>,

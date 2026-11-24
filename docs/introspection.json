@@ -844,7 +844,7 @@
             },
             {
               "name": "cancelled",
-              "description": "Whether a scan was running and was asked to stop. It stops after the file it is on.",
+              "description": "Whether a scan was running and was asked to stop. It stops at once, matching included,\neven halfway through reading a file, which the next scan finds new.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
