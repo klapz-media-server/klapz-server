@@ -844,7 +844,7 @@
             },
             {
               "name": "cancelled",
-              "description": "Whether a scan, or the reading of the library's files, was under way and was asked to\nstop. A scan stops between two files, a read at once; the files left to read wait for\nthe library's next scan.",
+              "description": "Whether a scan, or the reading of the library's files, was under way and was asked to\nstop. Both stop at once, a scan's matching included; the files left to read wait for\nthe library's next scan.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",

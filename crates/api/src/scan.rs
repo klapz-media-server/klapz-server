@@ -108,7 +108,7 @@ pub struct CancelLibraryScanPayload {
     /// As given in the input.
     pub client_mutation_id: Option<String>,
     /// Whether a scan, or the reading of the library's files, was under way and was asked to
-    /// stop. A scan stops between two files, a read at once; the files left to read wait for
+    /// stop. Both stop at once, a scan's matching included; the files left to read wait for
     /// the library's next scan.
     pub cancelled: bool,
     /// Why the request was refused. Empty on success.

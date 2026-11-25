@@ -1,9 +1,10 @@
-//! Scans running in the background: at most one per library, each cancellable, and the
+//! Scans running in the background: at most one per library, each cancellable at once, and the
 //! analysis of what they find, which goes on after them.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+
+use tokio::sync::Notify;
 
 use crate::files::LibraryFiles;
 use crate::ids::{PartId, SectionId};
@@ -73,7 +74,9 @@ pub struct BackgroundScans {
     analysis: BackgroundAnalysis,
     /// What a finished scan matches its new items with; `None` when no provider is set up.
     matching: Option<Matching>,
-    running: Arc<Mutex<HashMap<SectionId, Arc<AtomicBool>>>>,
+    /// Each running scan's cancel. Its one waiter is the scan's task, so a cancel sent before
+    /// the task first waits is kept, not lost.
+    running: Arc<Mutex<HashMap<SectionId, Arc<Notify>>>>,
     failures: Arc<Mutex<HashMap<SectionId, String>>>,
 }
 
@@ -103,13 +106,13 @@ impl BackgroundScans {
 impl ScanControl for BackgroundScans {
     async fn start(&self, request: ScanRequest) -> Result<(), ScanError> {
         let section = request.section;
-        let cancelled = Arc::new(AtomicBool::new(false));
+        let cancel = Arc::new(Notify::new());
         {
             let mut running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
             if running.contains_key(&section) {
                 return Err(ScanError::AlreadyRunning);
             }
-            running.insert(section, Arc::clone(&cancelled));
+            running.insert(section, Arc::clone(&cancel));
         }
         self.analysis.walking(section);
         let scanner = self.scanner.clone();
@@ -125,56 +128,21 @@ impl ScanControl for BackgroundScans {
                 analysis: Some(analysis),
                 section,
             };
-            let result = scan_section(&scanner, &request, &cancelled).await;
-            finished.walked();
-            {
-                let mut failures = failures.lock().unwrap_or_else(PoisonError::into_inner);
-                match &result {
-                    Ok(_) => {
-                        failures.remove(&section);
-                    }
-                    Err(ScanError::Cancelled) => {}
-                    Err(error) => {
-                        failures.insert(section, error.to_string());
-                    }
-                }
-            }
-            match result {
-                Ok(outcome) => {
-                    tracing::info!(
-                        section = section.get(),
-                        added = outcome.added,
-                        updated = outcome.updated,
-                        removed = outcome.removed,
-                        unavailable_roots = outcome.unavailable_roots,
-                        queued = outcome.queued,
-                        "library scanned"
-                    );
-                    if let Some(matching) = matching {
-                        match matching.library(section, false, crate::now_epoch()).await {
-                            Ok(report) => tracing::info!(
-                                section = section.get(),
-                                matched = report.matched.len(),
-                                unmatched = report.unmatched.len(),
-                                failed = report.failed.len(),
-                                "library matched"
-                            ),
-                            Err(
-                                SourceMetadataError::UnsupportedKind
-                                | SourceMetadataError::NoSource,
-                            ) => {}
-                            Err(error) => {
-                                tracing::warn!(section = section.get(), %error, "matching failed");
-                            }
-                        }
-                    }
-                }
-                Err(ScanError::Cancelled) => {
+            tokio::select! {
+                biased;
+                // Whatever the scan waits on goes with it: a write in progress is rolled back,
+                // a share that stopped answering left to answer no one, the matching dropped.
+                () = cancel.notified() => {
+                    failures.lock().unwrap_or_else(PoisonError::into_inner).remove(&section);
                     tracing::info!(section = section.get(), "library scan cancelled");
                 }
-                Err(error) => {
-                    tracing::error!(section = section.get(), %error, "library scan failed");
-                }
+                () = scan_and_match(
+                    &scanner,
+                    matching.as_ref(),
+                    &request,
+                    &failures,
+                    &mut finished,
+                ) => {}
             }
         });
         Ok(())
@@ -184,8 +152,8 @@ impl ScanControl for BackgroundScans {
         let scanning = {
             let running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
             match running.get(&section) {
-                Some(flag) => {
-                    flag.store(true, Ordering::Relaxed);
+                Some(cancel) => {
+                    cancel.notify_one();
                     true
                 }
                 None => false,
@@ -231,8 +199,60 @@ impl ScanControl for BackgroundScans {
     }
 }
 
+/// One scan to its end, then the matching of what it added, its files read meanwhile.
+async fn scan_and_match(
+    scanner: &Scanner,
+    matching: Option<&Matching>,
+    request: &ScanRequest,
+    failures: &Mutex<HashMap<SectionId, String>>,
+    finished: &mut Finished,
+) {
+    let section = request.section;
+    let result = scan_section(scanner, request).await;
+    finished.walked();
+    {
+        let mut failures = failures.lock().unwrap_or_else(PoisonError::into_inner);
+        match &result {
+            Ok(_) => failures.remove(&section),
+            Err(error) => failures.insert(section, error.to_string()),
+        };
+    }
+    let outcome = match result {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            tracing::error!(section = section.get(), %error, "library scan failed");
+            return;
+        }
+    };
+    tracing::info!(
+        section = section.get(),
+        added = outcome.added,
+        updated = outcome.updated,
+        removed = outcome.removed,
+        unavailable_roots = outcome.unavailable_roots,
+        queued = outcome.queued,
+        "library scanned"
+    );
+    let Some(matching) = matching else {
+        return;
+    };
+    match matching.library(section, false, crate::now_epoch()).await {
+        Ok(report) => tracing::info!(
+            section = section.get(),
+            matched = report.matched.len(),
+            unmatched = report.unmatched.len(),
+            failed = report.failed.len(),
+            "library matched"
+        ),
+        Err(SourceMetadataError::UnsupportedKind | SourceMetadataError::NoSource) => {}
+        Err(error) => {
+            tracing::warn!(section = section.get(), %error, "matching failed");
+        }
+    }
+}
+
 struct Finished {
-    running: Arc<Mutex<HashMap<SectionId, Arc<AtomicBool>>>>,
+    running: Arc<Mutex<HashMap<SectionId, Arc<Notify>>>>,
     /// Until the walk is over: what it found may then be read, while matching goes on.
     analysis: Option<BackgroundAnalysis>,
     section: SectionId,
@@ -253,5 +273,126 @@ impl Drop for Finished {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(&self.section);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    use klapz_scanner::report::{Analysis, DeepAnalysis};
+
+    use super::*;
+    use crate::files::FileLocation;
+    use crate::library::SectionKind;
+    use crate::scan::walk::tests::{scanner, whole_library, Store, Tree};
+    use crate::scan::{AnalyzeError, MediaAnalyzer};
+
+    const FILMS: SectionId = SectionId::new(1);
+
+    /// The analysis is not run here: these tests are about the walk.
+    #[derive(Debug)]
+    struct Unused;
+
+    #[async_trait::async_trait]
+    impl MediaAnalyzer for Unused {
+        async fn read_headers(&self, _file: &FileLocation) -> Result<Analysis, AnalyzeError> {
+            Err(AnalyzeError::Unavailable(
+                "not run in these tests".to_owned(),
+            ))
+        }
+
+        async fn measure(
+            &self,
+            _file: &FileLocation,
+            _duration_ms: Option<u64>,
+        ) -> Result<DeepAnalysis, AnalyzeError> {
+            Err(AnalyzeError::Unavailable(
+                "not run in these tests".to_owned(),
+            ))
+        }
+    }
+
+    async fn ended(scans: &BackgroundScans) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while scans.is_running(FILMS) {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("the scan ends");
+    }
+
+    fn films(tree: Arc<Tree>) -> BackgroundScans {
+        let scanner = scanner(SectionKind::Movie, tree, Arc::new(Store::default()));
+        let analysis = BackgroundAnalysis::new(
+            Arc::clone(&scanner.store),
+            Arc::clone(&scanner.library),
+            Arc::clone(&scanner.files),
+            Arc::new(Unused),
+            1,
+        );
+        BackgroundScans::new(scanner, analysis)
+    }
+
+    fn stalled() -> Arc<Tree> {
+        Arc::new(Tree {
+            stalled: vec!["Soul (2020)".to_owned()],
+            ..Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])
+        })
+    }
+
+    #[tokio::test]
+    async fn a_scan_failing_mid_way_releases_its_library_and_says_why() {
+        let scans = films(Arc::new(Tree {
+            broken: vec!["Up (2009)".to_owned()],
+            ..Tree::with(&[
+                ("Soul (2020)/Soul (2020).mkv", 100, 10),
+                ("Up (2009)/Up (2009).mkv", 200, 20),
+            ])
+        }));
+        scans.start(whole_library()).await.unwrap();
+        ended(&scans).await;
+        assert_eq!(
+            scans.last_failure(FILMS).as_deref(),
+            Some("cannot list /media/Up (2009): reading library files failed")
+        );
+        assert!(!scans.cancel(FILMS));
+        scans.start(whole_library()).await.unwrap();
+        ended(&scans).await;
+    }
+
+    #[tokio::test]
+    async fn a_cancel_ends_a_scan_at_once_whatever_it_waits_on() {
+        let tree = stalled();
+        let scans = films(Arc::clone(&tree));
+        scans.start(whole_library()).await.unwrap();
+        tree.stall.started.notified().await;
+        assert!(matches!(
+            scans.start(whole_library()).await,
+            Err(ScanError::AlreadyRunning)
+        ));
+
+        assert!(scans.cancel(FILMS));
+        ended(&scans).await;
+        assert!(
+            tree.stall.dropped.load(Ordering::SeqCst),
+            "the listing is dropped with the scan"
+        );
+        assert_eq!(scans.last_failure(FILMS), None, "a cancel is no failure");
+        scans.start(whole_library()).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_cancel_sent_before_the_scan_runs_is_not_lost() {
+        let tree = stalled();
+        let scans = films(Arc::clone(&tree));
+        scans.start(whole_library()).await.unwrap();
+        assert!(scans.cancel(FILMS));
+        ended(&scans).await;
+        assert!(!tree.stall.dropped.load(Ordering::SeqCst), "it never began");
     }
 }

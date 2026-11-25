@@ -169,19 +169,26 @@ without them saying so.
   their names, sizes and modification times is not looked at again), reuses a known path, groups
   new files by the measured naming rules (`scan::layout`) and writes them through
   `ScanRepository` — items through `db::write` like every other — from names, sizes and times
-  alone, opening no media file: a library is browsable once it is walked. What is
-  gone is removed, unless its whole root cannot be reached: an unmounted disk is not an empty
-  library. Each new, changed or forced file is queued in storage (`media_analysis`), and
-  `scan::BackgroundAnalysis` reads the queue through `MediaAnalyzer`: every file's headers first
-  (tracks, codecs, declared rates and durations, chapters; a minute at most), then every file's
-  packets (the deep analysis' measured rates and span, written onto the same tracks, which keep
-  their ids; ten minutes at most, the headers standing when it cannot finish),
-  `KLAPZ_ANALYSIS_CONCURRENCY` files at once. A player does not wait for the queue: `startStream`
-  and `readMediaFile` read a file's headers at once. The queue outlives the process, a result
-  read from a file that changed or went since is dropped, a library being walked is not read,
-  and a scan and the analysis write in turn. `BackgroundScans` keeps one scan per library, cancels
-  between files, and owns the analysis: `cancelLibraryScan` also stops reading the library until
-  its next scan, as a file that cannot be opened does; `Library.analysis` says how far it is.
+  alone, opening no media file: a library is browsable once it is walked. What is gone is
+  removed, unless its whole root cannot be reached (an unmounted disk is not an empty library)
+  or the directory holding it cannot be read (a permission is not a deletion); a directory that
+  cannot be read, such as `Recovery` at the top of a Windows drive, is passed over, and one whose
+  listing fails stops the scan with its path in `Library.scanFailure`. A step of the walk that
+  takes 30 seconds counts as a share that stopped answering. Each new, changed or forced file is
+  queued in storage (`media_analysis`), and `scan::BackgroundAnalysis` reads the queue through
+  `MediaAnalyzer`: every file's headers first (tracks, codecs, declared rates and durations,
+  chapters; a minute at most), then every file's packets (the deep analysis' measured rates and
+  span, written onto the same tracks, which keep their ids; ten minutes at most, the headers
+  standing when it cannot finish), `KLAPZ_ANALYSIS_CONCURRENCY` files at once. A player does not
+  wait for the queue: `startStream` and `readMediaFile` read a file's headers at once. The queue
+  outlives the process, a result read from a file that changed or went since is dropped, a
+  library being walked is not read, and a scan and the analysis write in turn.
+  `BackgroundScans` keeps one scan per library, with the matching of what it added, and owns the
+  analysis. A cancel drops the scan and its matching at once, whatever they wait on (a write in
+  progress rolled back, a share that stopped answering left to answer no one), and
+  `cancelLibraryScan` also stops reading the library until its next scan, as a file that cannot
+  be opened does. Whichever way a scan ends, its library is released; `Library.analysis` says how
+  far its files are read.
 - **A library is created, changed and deleted on the official API.** `createLibrary` and
   `deleteLibrary` are the owners'; `updateLibrary` renames a library or changes its language for
   its admins too, while its `roots` stay the owners' (`OWNER_ONLY`). The rules are in

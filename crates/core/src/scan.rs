@@ -18,7 +18,7 @@ mod walk;
 
 use klapz_scanner::report::{Analysis, DeepAnalysis};
 
-use crate::files::{FileLocation, RelativePath};
+use crate::files::{FileLocation, FilesError, RelativePath};
 use crate::ids::{MediaId, PartId, RatingKey, SectionId};
 use crate::metadata::FileAnalysis;
 
@@ -36,8 +36,9 @@ pub enum ScanError {
     OutsideRoots(String),
     #[error("a scan of this library is already running")]
     AlreadyRunning,
-    #[error("the scan was cancelled")]
-    Cancelled,
+    /// A directory of the library could not be listed: a disk or a share failing mid-scan.
+    #[error("cannot list {path}: {source}")]
+    Files { path: String, source: FilesError },
     /// The analyzer cannot run at all. What is queued stays queued, to be read once the setup
     /// is fixed.
     #[error("the media analyzer cannot run: {0}")]
@@ -65,7 +66,8 @@ pub enum AnalyzeError {
 }
 
 /// Reads one file's content: ffprobe, run by the server as a child process, in the two steps
-/// the reference also takes apart (`docs/scanner/analysis.md`).
+/// the reference also takes apart (`docs/scanner/analysis.md`). Dropping a read stops it, its
+/// process included.
 #[async_trait::async_trait]
 pub trait MediaAnalyzer: Send + Sync + std::fmt::Debug {
     /// Tracks, codecs, chapters, and the durations and rates the file declares: its headers
@@ -203,7 +205,8 @@ pub struct AnalysisProgress {
     pub complete: u64,
 }
 
-/// Storage port for what a scan writes.
+/// Storage port for what a scan writes. Each write is whole or absent, even dropped halfway:
+/// a cancelled scan is dropped wherever it waits.
 #[async_trait::async_trait]
 pub trait ScanRepository: Send + Sync + std::fmt::Debug {
     /// The section's parts whose recorded path starts with `path_prefix`.

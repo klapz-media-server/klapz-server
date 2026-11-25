@@ -2,7 +2,6 @@
 //! metadata provider, without serving.
 
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use klapz_core::files::LibraryFiles;
@@ -232,7 +231,7 @@ pub async fn scan(
         below,
         force,
     };
-    let outcome = scan_section(&scanner, &request, &AtomicBool::new(false)).await?;
+    let outcome = scan_section(&scanner, &request).await?;
     println!(
         "added {}, updated {}, removed {}, unavailable roots {}, queued {}",
         outcome.added, outcome.updated, outcome.removed, outcome.unavailable_roots, outcome.queued

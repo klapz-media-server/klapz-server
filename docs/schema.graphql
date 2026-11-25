@@ -302,7 +302,7 @@ type CancelLibraryScanPayload {
 	clientMutationId: String
 	"""
 	Whether a scan, or the reading of the library's files, was under way and was asked to
-	stop. A scan stops between two files, a read at once; the files left to read wait for
+	stop. Both stop at once, a scan's matching included; the files left to read wait for
 	the library's next scan.
 	"""
 	cancelled: Boolean!
