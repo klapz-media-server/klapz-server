@@ -273,6 +273,12 @@ impl File {
         self.0.layout.has_chapter_text_stream
     }
 
+    /// How much of the file's media the server has read. Until its headers are, the file has
+    /// no track inside it, no duration and no description, and its version none either.
+    async fn analysis(&self) -> crate::scan::FileAnalysisType {
+        self.0.analysis.into()
+    }
+
     /// What the file's container states about itself, as the prober printed it. Empty for a
     /// file the scan did not read.
     async fn stated(&self) -> crate::stated::StatedFileObject {
@@ -298,7 +304,8 @@ impl File {
     /// Matroska file of nothing but `WebM`'s codecs is held as `webm` too), its video codec and
     /// the codec of the audio track it would play — `audioTrack`, or the
     /// caller's — and the version weighs no more than `maxBitrate`. An empty list in a format
-    /// admits anything; names are compared without regard to case.
+    /// admits anything; names are compared without regard to case. False for a file whose
+    /// headers are not read yet (`analysis`): nothing known of it says a player reads it.
     async fn readable_as_is(
         &self,
         context: &Context<'_>,
@@ -311,6 +318,9 @@ impl File {
         #[graphql(desc = "The audio track it would play, as returned in `MediaStream.id`.")]
         audio_track: Option<ID>,
     ) -> Result<bool> {
+        if self.0.analysis == klapz_core::metadata::FileAnalysis::Pending {
+            return Ok(false);
+        }
         let Some(version) = crate::schema::readable_version(context, self.0.version_id).await?
         else {
             return Ok(false);

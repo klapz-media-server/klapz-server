@@ -54,8 +54,8 @@ pub use ids::{
 };
 pub use library::{LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot};
 pub use metadata::{
-    Credit, EpisodeCredit, ExternalId, FieldValue, ItemFilter, ItemKind, ItemQuery, ItemSort,
-    ItemTag, Listed, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
+    Credit, EpisodeCredit, ExternalId, FieldValue, FileAnalysis, ItemFilter, ItemKind, ItemQuery,
+    ItemSort, ItemTag, Listed, MediaFile, MediaStream, MediaVersion, MetadataError, MetadataItem,
     MetadataRepository, Person, Rating, RatingKind, SearchQuery, SidePicture, SideStream,
     SideStreamKind, StatedFile, StatedTrack, StreamKind, Tag, TagCondition, TagKind, TagRef,
     TagScope, TagSearch, TagUse, ValueField,

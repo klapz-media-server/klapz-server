@@ -188,6 +188,51 @@ async fn cancelling_with_no_scan_running_cancels_nothing() {
 }
 
 #[tokio::test]
+async fn a_librarys_readers_see_how_far_its_files_are_read_and_its_admins_why_not() {
+    let scans = Arc::new(RecordedScans::default());
+    for id in [27, 28] {
+        scans.analyses.lock().unwrap().insert(
+            SectionId::new(id),
+            klapz_core::scan::LibraryAnalysis {
+                progress: klapz_core::scan::AnalysisProgress {
+                    files: 300,
+                    read: 120,
+                    complete: 40,
+                },
+                reading: false,
+                failure: Some("cannot open /films/a.mkv: gone".to_owned()),
+            },
+        );
+    }
+    let schema = schema(Arc::clone(&scans));
+    let query = "query($id: ID!) { node(id: $id) { ... on Library { analysis {
+        fileCount readFileCount completeFileCount reading failure
+    } } } }";
+    let admin = run(&schema, user(), query, json!({ "id": library(28) })).await;
+    assert_eq!(
+        admin["node"]["analysis"],
+        json!({
+            "fileCount": 300,
+            "readFileCount": 120,
+            "completeFileCount": 40,
+            "reading": false,
+            "failure": "cannot open /films/a.mkv: gone",
+        })
+    );
+    let viewer = run(&schema, user(), query, json!({ "id": library(27) })).await;
+    assert_eq!(viewer["node"]["analysis"]["readFileCount"], 120);
+    assert_eq!(viewer["node"]["analysis"]["failure"], Value::Null);
+    let music = run(
+        &schema,
+        klapz_core::testing::owner(),
+        query,
+        json!({ "id": library(29) }),
+    )
+    .await;
+    assert_eq!(music["node"]["analysis"], Value::Null);
+}
+
+#[tokio::test]
 async fn a_library_s_admins_read_why_its_last_scan_stopped_and_its_viewers_do_not() {
     let scans = Arc::new(RecordedScans::default());
     for id in [27, 28] {

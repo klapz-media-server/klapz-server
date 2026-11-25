@@ -222,6 +222,40 @@ pub(crate) async fn item(state: &PlexState, key: i64) -> Result<GqlItem, ApiErro
         .ok_or(ApiError::BadRequest)
 }
 
+const READ_FILE: &str = r"
+mutation PlexReadFile($input: ReadMediaFileInput!) {
+  readMediaFile(input: $input) { userErrors { code } }
+}
+";
+
+/// The item a playback request names, its chosen file read first when the scan that found it
+/// has not had it read yet: choosing its tracks needs them.
+async fn item_to_play(state: &PlexState, params: &PlaybackParams) -> Result<GqlItem, ApiError> {
+    let key = params.rating_key()?;
+    let found = item(state, key).await?;
+    let pending = found
+        .versions
+        .get(PlaybackParams::index_of(params.media_index))
+        .and_then(|version| {
+            version
+                .files
+                .get(PlaybackParams::index_of(params.part_index))
+        })
+        .filter(|part| part.analysis.as_deref() == Some("PENDING"));
+    let Some(part) = pending else {
+        return Ok(found);
+    };
+    let mut variables = Variables::default();
+    variables.insert(
+        Name::new("input"),
+        Value::from_json(json!({ "fileId": part.id }))
+            .map_err(|error| ApiError::Internal(Box::new(error)))?,
+    );
+    // A file that cannot be read yet stays without tracks, which the selection refuses.
+    let _: Json = gql::execute(&state.schema, READ_FILE, variables).await?;
+    item(state, key).await
+}
+
 /// The file a request means, and its tracks.
 struct Selection<'a> {
     version: &'a GqlVersion,
@@ -341,7 +375,7 @@ async fn decision(
     format: ResponseFormat,
 ) -> Result<PlexResponse<Json>, ApiError> {
     let protocol = params.protocol()?;
-    let item = item(&state, params.rating_key()?).await?;
+    let item = item_to_play(&state, &params).await?;
     let selection = Selection::of(&item, &params)?;
     let library = item.library.as_ref().ok_or(ApiError::BadRequest)?;
     let direct_play = params.wants_direct_play();
@@ -646,7 +680,7 @@ async fn start_stream(
     protocol: Protocol,
 ) -> Result<Response, ApiError> {
     let session = params.session.as_deref().ok_or(ApiError::BadRequest)?;
-    let item = item(state, params.rating_key()?).await?;
+    let item = item_to_play(state, params).await?;
     let selection = Selection::of(&item, params)?;
     let subtitles = match selection.delivery {
         Some(Delivery::Burn) => "BURN",

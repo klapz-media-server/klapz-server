@@ -1481,6 +1481,7 @@ fn soul_media() -> (
         content_hash: None,
         open_subtitles_hash: None,
         stated: klapz_core::metadata::StatedFile::default(),
+        analysis: klapz_core::metadata::FileAnalysis::Complete,
     };
     let tracks = vec![
         track(920, StreamKind::Video, 0, "h264"),
@@ -1504,6 +1505,14 @@ fn streamable(engine: Arc<klapz_core::testing::StubStreams>) -> ApiSchema {
 }
 
 fn serving(engine: Arc<klapz_core::testing::StubStreams>, metadata: InMemoryMetadata) -> ApiSchema {
+    serving_with(engine, metadata, Arc::default())
+}
+
+fn serving_with(
+    engine: Arc<klapz_core::testing::StubStreams>,
+    metadata: InMemoryMetadata,
+    scans: Arc<klapz_core::testing::RecordedScans>,
+) -> ApiSchema {
     build_schema(ApiContext {
         capabilities: klapz_core::ServerCapabilities::new(
             klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
@@ -1529,9 +1538,168 @@ fn serving(engine: Arc<klapz_core::testing::StubStreams>, metadata: InMemoryMeta
         watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: engine,
         session_locks: std::sync::Arc::default(),
-        scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
+        scans,
         matching: None,
     })
+}
+
+/// Soul as a scan lists it before its headers are read, with what reading them gives.
+fn unread_soul(
+    engine: Arc<klapz_core::testing::StubStreams>,
+    scans: Arc<klapz_core::testing::RecordedScans>,
+) -> ApiSchema {
+    let (version, mut file, tracks) = soul_media();
+    file.analysis = klapz_core::metadata::FileAnalysis::Pending;
+    serving_with(
+        engine,
+        InMemoryMetadata::new(vec![item(577_986, 4, ItemKind::Movie, "Soul", None)]).with_media(
+            vec![version],
+            vec![file],
+            tracks,
+        ),
+        scans,
+    )
+}
+
+#[tokio::test]
+async fn a_file_not_read_yet_is_read_before_its_stream_starts() {
+    let engine = Arc::new(klapz_core::testing::StubStreams::default());
+    let scans = Arc::new(klapz_core::testing::RecordedScans::default());
+    let schema = unread_soul(Arc::clone(&engine), Arc::clone(&scans));
+    let started = start(
+        &schema,
+        serde_json::json!({ "file": GlobalId::encode("MediaFile", 910), "directPlay": true }),
+    )
+    .await;
+    assert_eq!(started["userErrors"], serde_json::json!([]));
+    assert_eq!(started["stream"]["delivery"], "DIRECT_PLAY");
+    assert_eq!(
+        *scans.read_now.lock().unwrap(),
+        [klapz_core::PartId::new(910)]
+    );
+
+    // A file read already waits for nothing.
+    let scans = Arc::new(klapz_core::testing::RecordedScans::default());
+    let (version, file, tracks) = soul_media();
+    let schema =
+        serving_with(
+            Arc::new(klapz_core::testing::StubStreams::default()),
+            InMemoryMetadata::new(vec![item(577_986, 4, ItemKind::Movie, "Soul", None)])
+                .with_media(vec![version], vec![file], tracks),
+            Arc::clone(&scans),
+        );
+    start(
+        &schema,
+        serde_json::json!({ "file": GlobalId::encode("MediaFile", 910), "directPlay": true }),
+    )
+    .await;
+    assert!(scans.read_now.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_file_that_cannot_be_read_yet_is_not_streamed_and_the_player_is_told_why() {
+    let engine = Arc::new(klapz_core::testing::StubStreams::default());
+    let scans = Arc::new(klapz_core::testing::RecordedScans::default());
+    scans
+        .unread
+        .lock()
+        .unwrap()
+        .push(klapz_core::PartId::new(910));
+    let schema = unread_soul(Arc::clone(&engine), scans);
+    let refused = start(
+        &schema,
+        serde_json::json!({ "file": GlobalId::encode("MediaFile", 910) }),
+    )
+    .await;
+    assert_eq!(refused["stream"], Value::Null);
+    assert_eq!(
+        refused["userErrors"],
+        serde_json::json!([{ "field": ["input", "file"], "code": "NOT_ANALYZED" }])
+    );
+    assert!(engine.started.lock().unwrap().is_empty());
+}
+
+const READ_FILE: &str = r"
+mutation Read($input: ReadMediaFileInput!) {
+  readMediaFile(input: $input) {
+    clientMutationId
+    file { id analysis }
+    userErrors { field code }
+  }
+}";
+
+async fn read_file(schema: &ApiSchema, input: serde_json::Value) -> Value {
+    let request = as_owner(READ_FILE).variables(async_graphql::Variables::from_json(
+        serde_json::json!({ "input": input }),
+    ));
+    let response = schema.execute(request).await;
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    serde_json::to_value(response.data).unwrap()["readMediaFile"].clone()
+}
+
+#[tokio::test]
+async fn a_player_has_a_file_read_ahead_of_the_queue() {
+    let scans = Arc::new(klapz_core::testing::RecordedScans::default());
+    let schema = unread_soul(Arc::default(), Arc::clone(&scans));
+    let file = GlobalId::encode("MediaFile", 910);
+    let read = read_file(
+        &schema,
+        serde_json::json!({ "clientMutationId": "r", "fileId": file }),
+    )
+    .await;
+    assert_eq!(read["clientMutationId"], "r");
+    assert_eq!(read["file"]["id"], file);
+    assert_eq!(read["userErrors"], serde_json::json!([]));
+    assert_eq!(
+        *scans.read_now.lock().unwrap(),
+        [klapz_core::PartId::new(910)]
+    );
+
+    let unknown = read_file(
+        &schema,
+        serde_json::json!({ "fileId": GlobalId::encode("MediaFile", 911) }),
+    )
+    .await;
+    assert_eq!(
+        unknown["userErrors"],
+        serde_json::json!([{ "field": ["input", "fileId"], "code": "FILE_NOT_FOUND" }])
+    );
+    assert_eq!(scans.read_now.lock().unwrap().len(), 1, "nothing to read");
+
+    scans
+        .unread
+        .lock()
+        .unwrap()
+        .push(klapz_core::PartId::new(910));
+    let not_yet = read_file(&schema, serde_json::json!({ "fileId": file })).await;
+    assert_eq!(not_yet["file"], Value::Null);
+    assert_eq!(not_yet["userErrors"][0]["code"], "NOT_ANALYZED");
+}
+
+#[tokio::test]
+async fn a_file_not_read_yet_says_so_and_no_player_reads_it_as_it_is() {
+    let schema = unread_soul(Arc::default(), Arc::default());
+    let query = format!(
+        r#"{{ node(id: "{}") {{ ... on MediaFile {{
+            analysis
+            readableAsIs(formats: [{{ containers: [] }}])
+        }} }} }}"#,
+        GlobalId::encode("MediaFile", 910)
+    );
+    let data = run_on(&schema, &query).await;
+    assert_eq!(data["node"]["analysis"], "PENDING");
+    assert_eq!(data["node"]["readableAsIs"], false);
+
+    let (version, file, tracks) = soul_media();
+    let read =
+        serving(
+            Arc::default(),
+            InMemoryMetadata::new(vec![item(577_986, 4, ItemKind::Movie, "Soul", None)])
+                .with_media(vec![version], vec![file], tracks),
+        );
+    let data = run_on(&read, &query).await;
+    assert_eq!(data["node"]["analysis"], "COMPLETE");
+    assert_eq!(data["node"]["readableAsIs"], true);
 }
 
 const START_STREAM: &str = r"

@@ -23,11 +23,12 @@ use http_body_util::BodyExt;
 use klapz_api::{build_schema, ApiContext};
 use klapz_core::access::{AccessRepository, NewUser, ServerRole};
 use klapz_core::scan::{NewItem, NewMedia, NewPart, ScanRepository};
+use klapz_core::testing::read_queued;
 use klapz_core::{SectionKind, ServerCapabilities, ServerIdentity};
 use klapz_db::repository::{create_library, NewLibrary};
 use klapz_db::{SqlLibraryRepository, SqlMetadataRepository, SqlScanRepository};
 use klapz_scanner::analysis_from_ffprobe;
-use klapz_scanner::report::FileIdentity;
+use klapz_scanner::report::{Analysis, FileIdentity};
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -76,8 +77,8 @@ fn json(path: &Path) -> Value {
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
-/// The sample as the scan would store it: the headers' analysis, as the scan falls back to.
-fn new_item(sample: &Path) -> NewItem {
+/// The sample as a scan finds it, and the headers' analysis, which the analysis reads first.
+fn new_item(sample: &Path) -> (NewItem, Analysis) {
     let identity: FileIdentity =
         serde_json::from_value(json(&sample.join("file.json"))["file"].clone()).unwrap();
     let ffprobe = std::fs::read(sample.join("ffprobe.json")).unwrap();
@@ -90,7 +91,7 @@ fn new_item(sample: &Path) -> NewItem {
         .next()
         .unwrap()
         .to_owned();
-    NewItem::Movie {
+    let item = NewItem::Movie {
         title: name.clone(),
         year: None,
         versions: vec![NewMedia {
@@ -98,11 +99,11 @@ fn new_item(sample: &Path) -> NewItem {
                 path: format!("/media/{name}"),
                 size: analysis.file.size,
                 modified_at: analysis.file.modified_at,
-                analysis: Some(analysis),
                 sidecars: Vec::new(),
             }],
         }],
-    }
+    };
+    (item, analysis)
 }
 
 /// Every scalar of an answer by its path, tracks by their index in the file.
@@ -265,8 +266,9 @@ async fn every_sample_is_published_as_the_reference_publishes_it() {
     for sample in &paths {
         let reference = json(&sample.join("jellyfin.json"));
         let section = sections[reference["Library"].as_str().unwrap()];
-        let item = scan
-            .add_item(section, new_item(sample), 1_763_400_000)
+        let (item, analysis) = new_item(sample);
+        let item = scan.add_item(section, item, 1_763_400_000).await.unwrap();
+        read_queued(&scan, section, 1_763_400_000, |_| Some(analysis.clone()))
             .await
             .unwrap();
         items.push((sample, item, reference));

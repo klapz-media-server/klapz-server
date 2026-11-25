@@ -156,6 +156,21 @@ pub struct MediaFile {
     /// last 64 KiB, what subtitle services find a file by.
     pub open_subtitles_hash: Option<String>,
     pub stated: StatedFile,
+    pub analysis: FileAnalysis,
+}
+
+/// How much of a file's media the server has read. A scan lists a file by its name at once
+/// and reads it afterwards, in the background (`core::scan::BackgroundAnalysis`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FileAnalysis {
+    /// Nothing yet: no track, codec or duration is known.
+    Pending,
+    /// Its headers: tracks, codecs, and the durations and rates they declare. The rates
+    /// measured over its packets are still to come.
+    HeadersRead,
+    /// All there is to read, or all that could be: an imported file, a measured one, and one
+    /// that could not be read as media.
+    Complete,
 }
 
 /// What a file's container states about itself, as the prober printed it. The scan alone

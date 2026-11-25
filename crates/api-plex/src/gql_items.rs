@@ -95,6 +95,7 @@ fragment VersionFields on MediaVersion {
 fragment FileFields on MediaFile {
   id
   path
+  analysis
   sizeBytes
   durationMs
   hasThumbnail
@@ -1285,6 +1286,10 @@ impl GqlVersion {
 pub struct GqlPart {
     pub id: String,
     pub path: String,
+    /// How much of the file the server has read: `PENDING` until its headers are. Absent where
+    /// a query does not ask.
+    #[serde(default)]
+    pub analysis: Option<String>,
     #[serde(deserialize_with = "klapz_api::int64::deserialize_optional")]
     pub size_bytes: Option<i64>,
     pub duration_ms: Option<i64>,

@@ -1,4 +1,4 @@
-//! One scan of a library: walk, compare, group, analyze, write.
+//! One scan of a library: walk, compare, group, write, and queue what is to be read.
 //!
 //! The order of `docs/scanner/discovery.md` §2: each directory's media files are compared with
 //! the parts storage holds for it, and a directory whose files all match by name, size and
@@ -6,10 +6,12 @@
 //! the file changed), new files are grouped into items, and whatever was known below the
 //! scanned directory and not seen is removed — unless its root could not be reached at all,
 //! which is an unmounted disk, not an empty library, or the directory holding it could not be
-//! read, which is a permission, not a deletion.
+//! read, which is a permission, not a deletion. Nothing here opens a media file: what is new or
+//! changed is queued, and read by [`BackgroundAnalysis`] once the walk is over.
 //!
-//! A scan is stopped by dropping it: every write is a transaction, and every file it reads is
-//! read by a child process that dies with it.
+//! A scan is stopped by dropping it: every write is a transaction.
+//!
+//! [`BackgroundAnalysis`]: crate::scan::BackgroundAnalysis
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -20,8 +22,7 @@ use crate::library::{LibraryRepository, SectionKind};
 use crate::now_epoch;
 use crate::scan::layout::{self, FileClass, Grouped, GroupedKind, IgnoreRules};
 use crate::scan::{
-    AnalyzeError, FoundFile, KnownPart, MediaAnalyzer, NewItem, NewMedia, NewPart, NewSidecar,
-    ScanError, ScanRepository,
+    FoundFile, KnownPart, NewItem, NewMedia, NewPart, NewSidecar, ScanError, ScanRepository,
 };
 
 /// A `.plexignore` larger than this is not one.
@@ -32,7 +33,6 @@ const MAX_IGNORE_FILE: u64 = 64 * 1024;
 pub struct Scanner {
     pub library: Arc<dyn LibraryRepository>,
     pub files: Arc<dyn LibraryFiles>,
-    pub analyzer: Arc<dyn MediaAnalyzer>,
     pub store: Arc<dyn ScanRepository>,
 }
 
@@ -42,7 +42,7 @@ pub struct ScanRequest {
     pub section: SectionId,
     /// A root of the section and a directory below it.
     pub below: Option<(String, RelativePath)>,
-    /// Analyze every file again, as if none had been seen.
+    /// Walk every directory, and read every file again, as if none had been seen.
     pub force: bool,
 }
 
@@ -54,6 +54,8 @@ pub struct ScanOutcome {
     pub removed: usize,
     /// Roots that could not be reached, whose items were left alone.
     pub unavailable_roots: usize,
+    /// Files queued to be read: new, changed, or forced.
+    pub queued: usize,
 }
 
 impl ScanOutcome {
@@ -68,7 +70,7 @@ impl ScanOutcome {
 ///
 /// [`ScanError::SectionNotFound`], [`ScanError::UnsupportedKind`] for music and photos,
 /// [`ScanError::OutsideRoots`] when `below` names no root of the section,
-/// [`ScanError::Files`], [`ScanError::AnalyzerUnavailable`], [`ScanError::Storage`].
+/// [`ScanError::Files`], [`ScanError::Storage`].
 pub async fn scan_section(
     scanner: &Scanner,
     request: &ScanRequest,
@@ -179,6 +181,7 @@ impl Run<'_> {
             by_directory.entry(path.parent()).or_default().push(path);
         }
         let mut seen: HashSet<RelativePath> = HashSet::new();
+        let mut again: Vec<PartId> = Vec::new();
 
         let mut pending = vec![Pending {
             directory: start.clone(),
@@ -229,11 +232,15 @@ impl Run<'_> {
                 seen.extend(media.into_iter().map(|file| file.path));
                 continue;
             }
-            self.scan_directory(root, &directory, &media, &subtitles, &known)
+            self.scan_directory(root, &directory, &media, &subtitles, &known, &mut again)
                 .await?;
             seen.extend(media.into_iter().map(|file| file.path));
         }
 
+        if !again.is_empty() {
+            self.scanner.store.queue_again(&again, self.now).await?;
+            self.outcome.queued += again.len();
+        }
         let gone: Vec<PartId> = known
             .iter()
             .filter(|(path, _)| !seen.contains(*path))
@@ -284,6 +291,8 @@ impl Run<'_> {
         }
     }
 
+    /// Writes what changed in one directory; files known and unchanged that a forced scan
+    /// reads again go to `again`, queued together once the root is walked.
     async fn scan_directory(
         &mut self,
         root: &str,
@@ -291,23 +300,24 @@ impl Run<'_> {
         media: &[FoundFile],
         subtitles: &[RelativePath],
         known: &HashMap<RelativePath, KnownPart>,
+        again: &mut Vec<PartId>,
     ) -> Result<(), ScanError> {
         // Known paths keep their item, rewritten only when the file changed: a path match is
         // reused, never regrouped (discovery.md §2.4).
         let mut new = Vec::new();
         for (index, file) in media.iter().enumerate() {
             match known.get(&file.path) {
-                Some(part) => {
-                    let changed = part.size != file.size || part.modified_at != file.modified_at;
-                    if changed || self.force {
-                        let rewritten = self.new_part(root, file, subtitles).await?;
-                        self.scanner
-                            .store
-                            .update_part(part.part, rewritten, self.now)
-                            .await?;
-                        self.outcome.updated += 1;
-                    }
+                Some(part) if part.size != file.size || part.modified_at != file.modified_at => {
+                    let rewritten = self.new_part(root, file, subtitles);
+                    self.scanner
+                        .store
+                        .update_part(part.part, rewritten, self.now)
+                        .await?;
+                    self.outcome.updated += 1;
+                    self.outcome.queued += 1;
                 }
+                Some(part) if self.force => again.push(part.part),
+                Some(_) => {}
                 None => new.push(index),
             }
         }
@@ -337,14 +347,19 @@ impl Run<'_> {
             if files.is_empty() {
                 continue;
             }
-            let mut versions = Vec::with_capacity(files.len());
-            for version in files {
-                let mut parts = Vec::with_capacity(version.len());
-                for file in version {
-                    parts.push(self.new_part(root, file, subtitles).await?);
-                }
-                versions.push(NewMedia { parts });
-            }
+            let versions: Vec<NewMedia> = files
+                .into_iter()
+                .map(|version| NewMedia {
+                    parts: version
+                        .into_iter()
+                        .map(|file| self.new_part(root, file, subtitles))
+                        .collect(),
+                })
+                .collect();
+            self.outcome.queued += versions
+                .iter()
+                .map(|version| version.parts.len())
+                .sum::<usize>();
             let item = new_item(group, versions);
             self.scanner
                 .store
@@ -355,34 +370,8 @@ impl Run<'_> {
         Ok(())
     }
 
-    async fn new_part(
-        &self,
-        root: &str,
-        file: &FoundFile,
-        subtitles: &[RelativePath],
-    ) -> Result<NewPart, ScanError> {
+    fn new_part(&self, root: &str, file: &FoundFile, subtitles: &[RelativePath]) -> NewPart {
         let files = &self.scanner.files;
-        let path = files.stored_path(root, &file.path);
-        let analysis = match files.locate(root, &file.path).await {
-            Ok(location) => match self.scanner.analyzer.analyze(&location).await {
-                Ok(analysis) => Some(analysis),
-                Err(AnalyzeError::Unreadable(reason)) => {
-                    tracing::warn!(%path, %reason, "file is not readable as media");
-                    None
-                }
-                Err(AnalyzeError::Unavailable(reason)) => {
-                    return Err(ScanError::AnalyzerUnavailable(reason));
-                }
-                Err(error) => {
-                    tracing::error!(%path, %error, "media analysis failed");
-                    None
-                }
-            },
-            Err(error) => {
-                tracing::warn!(%path, %error, "cannot locate the file for analysis");
-                None
-            }
-        };
         let names: Vec<&str> = subtitles
             .iter()
             .filter(|subtitle| subtitle.parent() == file.path.parent())
@@ -406,13 +395,12 @@ impl Run<'_> {
                 })
             })
             .collect();
-        Ok(NewPart {
-            path,
+        NewPart {
+            path: files.stored_path(root, &file.path),
             size: file.size,
             modified_at: file.modified_at,
-            analysis,
             sidecars,
-        })
+        }
     }
 }
 
@@ -523,11 +511,12 @@ pub(super) mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    use klapz_scanner::report::{Analysis, FileIdentity};
+    use klapz_scanner::report::{Analysis, DeepAnalysis};
 
     use crate::files::{Entry, FileLocation};
     use crate::ids::{MediaId, RatingKey};
     use crate::library::{LibrarySection, SectionRoot};
+    use crate::scan::{AnalysisProgress, QueueFilter, QueuedFile, Stored};
     use crate::testing::InMemoryLibrary;
 
     /// A directory tree in memory: paths below the root, with size and time.
@@ -539,6 +528,24 @@ pub(super) mod tests {
         pub(crate) unreadable: Vec<String>,
         /// Directories whose listing fails, as a disk failing mid-scan does.
         pub(crate) broken: Vec<String>,
+        /// Directories whose listing never answers, as a share that stopped answering.
+        pub(crate) stalled: Vec<String>,
+        pub(crate) stall: Stall,
+    }
+
+    /// What became of the listings of a stalled directory.
+    #[derive(Debug, Default)]
+    pub(crate) struct Stall {
+        pub(crate) started: tokio::sync::Notify,
+        pub(crate) dropped: std::sync::atomic::AtomicBool,
+    }
+
+    struct SetOnDrop<'a>(&'a std::sync::atomic::AtomicBool);
+
+    impl Drop for SetOnDrop<'_> {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
     }
 
     impl Tree {
@@ -581,6 +588,11 @@ pub(super) mod tests {
             }
             if self.broken.iter().any(|path| path == directory.as_str()) {
                 return Err(FilesError::Io("the device is not ready".into()));
+            }
+            if self.stalled.iter().any(|path| path == directory.as_str()) {
+                let _dropped = SetOnDrop(&self.stall.dropped);
+                self.stall.started.notify_one();
+                std::future::pending::<()>().await;
             }
             let mut entries: Vec<Entry> = Vec::new();
             for (path, size, time) in self.files.lock().unwrap().iter() {
@@ -651,41 +663,14 @@ pub(super) mod tests {
         }
     }
 
-    #[derive(Debug, Default)]
-    pub(crate) struct Analyzer {
-        calls: Mutex<usize>,
-    }
-
-    #[async_trait::async_trait]
-    impl MediaAnalyzer for Analyzer {
-        async fn analyze(&self, _file: &FileLocation) -> Result<Analysis, AnalyzeError> {
-            *self.calls.lock().unwrap() += 1;
-            Ok(Analysis {
-                file: FileIdentity {
-                    size: 0,
-                    modified_at: 0,
-                    open_subtitles_hash: "0000000000000000".to_owned(),
-                },
-                container: "matroska,webm".to_owned(),
-                duration_ms: Some(1000),
-                duration_us: Some(1_000_000),
-                bitrate: None,
-                optimized_for_streaming: None,
-                has_64bit_offsets: None,
-                packet_length: None,
-                tracks: Vec::new(),
-                chapters: Vec::new(),
-                deep: None,
-            })
-        }
-    }
-
-    /// Storage that keeps parts in a list and items as what was added.
+    /// Storage that keeps parts in a list, items as what was added, and the queue as the
+    /// parts in it.
     #[derive(Debug, Default)]
     pub(crate) struct Store {
         parts: Mutex<Vec<KnownPart>>,
         added: Mutex<Vec<NewItem>>,
         updated: Mutex<Vec<PartId>>,
+        queued: Mutex<Vec<PartId>>,
         finished: Mutex<Vec<bool>>,
     }
 
@@ -719,6 +704,7 @@ pub(super) mod tests {
             };
             for part in versions.iter().flat_map(|version| &version.parts) {
                 let id = i64::try_from(parts.len()).unwrap() + 1;
+                self.queued.lock().unwrap().push(PartId::new(id));
                 parts.push(KnownPart {
                     part: PartId::new(id),
                     media: MediaId::new(id),
@@ -745,6 +731,53 @@ pub(super) mod tests {
                 }
             }
             self.updated.lock().unwrap().push(part);
+            self.queued.lock().unwrap().push(part);
+            Ok(())
+        }
+
+        async fn queue_again(&self, parts: &[PartId], _now: i64) -> Result<(), ScanError> {
+            self.queued.lock().unwrap().extend_from_slice(parts);
+            Ok(())
+        }
+
+        async fn queued_files(
+            &self,
+            _limit: usize,
+            _filter: &QueueFilter,
+        ) -> Result<Vec<QueuedFile>, ScanError> {
+            Ok(Vec::new())
+        }
+
+        async fn queued_file(&self, _part: PartId) -> Result<Option<QueuedFile>, ScanError> {
+            Ok(None)
+        }
+
+        async fn store_headers(
+            &self,
+            _file: &QueuedFile,
+            _analysis: Option<&Analysis>,
+            _now: i64,
+        ) -> Result<Stored, ScanError> {
+            Ok(Stored::Stale)
+        }
+
+        async fn store_measurement(
+            &self,
+            _file: &QueuedFile,
+            _measured: Option<&DeepAnalysis>,
+            _now: i64,
+        ) -> Result<Stored, ScanError> {
+            Ok(Stored::Stale)
+        }
+
+        async fn analysis_progress(
+            &self,
+            _section: SectionId,
+        ) -> Result<AnalysisProgress, ScanError> {
+            Ok(AnalysisProgress::default())
+        }
+
+        async fn contents_changed(&self, _section: SectionId) -> Result<(), ScanError> {
             Ok(())
         }
 
@@ -767,12 +800,7 @@ pub(super) mod tests {
         }
     }
 
-    pub(crate) fn scanner(
-        kind: SectionKind,
-        tree: Arc<Tree>,
-        store: Arc<Store>,
-        analyzer: Arc<Analyzer>,
-    ) -> Scanner {
+    pub(crate) fn scanner(kind: SectionKind, tree: Arc<Tree>, store: Arc<Store>) -> Scanner {
         let library = InMemoryLibrary::new(vec![LibrarySection {
             id: SectionId::new(1),
             kind,
@@ -795,7 +823,6 @@ pub(super) mod tests {
         Scanner {
             library: Arc::new(library),
             files: tree,
-            analyzer,
             store,
         }
     }
@@ -819,16 +846,11 @@ pub(super) mod tests {
             ("Up (2009)/Up (2009).mkv", 200, 20),
         ]));
         let store = Arc::new(Store::default());
-        let analyzer = Arc::new(Analyzer::default());
-        let scanner = scanner(
-            SectionKind::Movie,
-            tree,
-            Arc::clone(&store),
-            Arc::clone(&analyzer),
-        );
+        let scanner = scanner(SectionKind::Movie, tree, Arc::clone(&store));
 
         let first = scan(&scanner, &whole_library()).await;
         assert_eq!(first.added, 2);
+        assert_eq!(first.queued, 2, "each new file is queued to be read");
         let titles: Vec<String> = store
             .added
             .lock()
@@ -844,11 +866,34 @@ pub(super) mod tests {
         let second = scan(&scanner, &whole_library()).await;
         assert_eq!(second, ScanOutcome::default());
         assert_eq!(
-            *analyzer.calls.lock().unwrap(),
+            store.queued.lock().unwrap().len(),
             2,
-            "skipped directories are not analyzed"
+            "what did not change is not queued again"
         );
         assert_eq!(*store.finished.lock().unwrap(), vec![true, false]);
+    }
+
+    #[tokio::test]
+    async fn a_forced_scan_queues_every_file_again_and_rewrites_none() {
+        let tree = Arc::new(Tree::with(&[
+            ("Soul (2020)/Soul (2020).mkv", 100, 10),
+            ("Up (2009)/Up (2009).mkv", 200, 20),
+        ]));
+        let store = Arc::new(Store::default());
+        let scanner = scanner(SectionKind::Movie, tree, Arc::clone(&store));
+        scan(&scanner, &whole_library()).await;
+
+        let forced = scan(
+            &scanner,
+            &ScanRequest {
+                force: true,
+                ..whole_library()
+            },
+        )
+        .await;
+        assert_eq!((forced.added, forced.updated, forced.queued), (0, 0, 2));
+        assert_eq!(store.queued.lock().unwrap().len(), 4);
+        assert!(store.updated.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -858,12 +903,7 @@ pub(super) mod tests {
             ("Up (2009)/Up (2009).mkv", 200, 20),
         ]));
         let store = Arc::new(Store::default());
-        let scanner = scanner(
-            SectionKind::Movie,
-            Arc::clone(&tree),
-            Arc::clone(&store),
-            Arc::new(Analyzer::default()),
-        );
+        let scanner = scanner(SectionKind::Movie, Arc::clone(&tree), Arc::clone(&store));
         scan(&scanner, &whole_library()).await;
 
         tree.set(&[("Soul (2020)/Soul (2020).mkv", 150, 30)]);
@@ -871,6 +911,7 @@ pub(super) mod tests {
         assert_eq!(outcome.updated, 1);
         assert_eq!(outcome.removed, 1);
         assert_eq!(outcome.added, 0, "a known path keeps its item");
+        assert_eq!(outcome.queued, 1, "a changed file is read again");
         let parts = store.parts.lock().unwrap();
         assert_eq!(parts.len(), 1);
         assert_eq!((parts[0].size, parts[0].modified_at), (150, 30));
@@ -883,7 +924,6 @@ pub(super) mod tests {
             SectionKind::Movie,
             Arc::new(Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])),
             Arc::clone(&store),
-            Arc::new(Analyzer::default()),
         );
         scan(&reachable, &whole_library()).await;
 
@@ -894,7 +934,6 @@ pub(super) mod tests {
                 ..Tree::default()
             }),
             Arc::clone(&store),
-            Arc::new(Analyzer::default()),
         );
         let outcome = scan(&unmounted, &whole_library()).await;
         assert_eq!(outcome.unavailable_roots, 1);
@@ -909,12 +948,7 @@ pub(super) mod tests {
             ("Up (2009)/Up (2009).mkv", 200, 20),
         ]));
         let store = Arc::new(Store::default());
-        let scanner = scanner(
-            SectionKind::Movie,
-            Arc::clone(&tree),
-            Arc::clone(&store),
-            Arc::new(Analyzer::default()),
-        );
+        let scanner = scanner(SectionKind::Movie, Arc::clone(&tree), Arc::clone(&store));
         scan(&scanner, &whole_library()).await;
 
         tree.set(&[]);
@@ -938,7 +972,6 @@ pub(super) mod tests {
             SectionKind::Movie,
             Arc::new(Tree::default()),
             Arc::new(Store::default()),
-            Arc::new(Analyzer::default()),
         );
         let request = ScanRequest {
             below: Some(("/elsewhere".to_owned(), RelativePath::root())),
@@ -959,7 +992,6 @@ pub(super) mod tests {
             SectionKind::Movie,
             Arc::new(Tree::with(&files[1..])),
             Arc::clone(&store),
-            Arc::new(Analyzer::default()),
         );
         scan(&readable, &whole_library()).await;
 
@@ -970,7 +1002,6 @@ pub(super) mod tests {
                 ..Tree::with(&files)
             }),
             Arc::clone(&store),
-            Arc::new(Analyzer::default()),
         );
         let outcome = scan(&locked, &whole_library()).await;
         assert_eq!((outcome.added, outcome.removed), (1, 0));
@@ -987,7 +1018,6 @@ pub(super) mod tests {
                 ..Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])
             }),
             Arc::new(Store::default()),
-            Arc::new(Analyzer::default()),
         );
         let outcome = scan(&scanner, &whole_library()).await;
         assert_eq!((outcome.added, outcome.unavailable_roots), (0, 1));
@@ -1006,7 +1036,6 @@ pub(super) mod tests {
                 ])
             }),
             Arc::clone(&store),
-            Arc::new(Analyzer::default()),
         );
         let failed = scan_section(&scanner, &whole_library()).await;
         assert!(
@@ -1032,7 +1061,6 @@ pub(super) mod tests {
             SectionKind::Movie,
             Arc::new(Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])),
             Arc::clone(&store),
-            Arc::new(Analyzer::default()),
         );
 
         let below = ScanRequest {
@@ -1053,45 +1081,35 @@ pub(super) mod tests {
         assert!(parts[0].path.starts_with("/media/"));
     }
 
-    /// An analyzer whose tools cannot run, as a missing ffprobe is reported.
-    #[derive(Debug)]
-    struct Unavailable;
-
-    #[async_trait::async_trait]
-    impl MediaAnalyzer for Unavailable {
-        async fn analyze(&self, _file: &FileLocation) -> Result<Analysis, AnalyzeError> {
-            Err(AnalyzeError::Unavailable(
-                "ffmpeg has no ffprobe of its own".to_owned(),
-            ))
-        }
-    }
-
     #[tokio::test]
-    async fn an_analyzer_that_cannot_run_stops_the_scan_before_storing_anything() {
+    async fn lists_new_files_by_their_names_alone() {
         let store = Arc::new(Store::default());
-        let mut broken = scanner(
-            SectionKind::Movie,
-            Arc::new(Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])),
+        let scanner = scanner(
+            SectionKind::Show,
+            Arc::new(Tree::with(&[
+                ("Bull/Season 05/Bull - S05E01.mkv", 100, 10),
+                ("Bull/Season 05/Bull - S05E01.fr.srt", 1, 10),
+                ("Bull/Season 05/Bull - S05E02.mkv", 100, 10),
+            ])),
             Arc::clone(&store),
-            Arc::new(Analyzer::default()),
         );
-        broken.analyzer = Arc::new(Unavailable);
-        let stopped = scan_section(&broken, &whole_library()).await;
-        assert!(
-            matches!(&stopped, Err(ScanError::AnalyzerUnavailable(reason)) if reason.contains("ffprobe")),
-            "{stopped:?}"
+        let outcome = scan(&scanner, &whole_library()).await;
+        assert_eq!((outcome.added, outcome.queued), (2, 2));
+        let added = store.added.lock().unwrap();
+        let first = added.iter().find_map(|item| match item {
+            NewItem::Episode {
+                episode: 1,
+                versions,
+                ..
+            } => Some(&versions[0].parts[0]),
+            _ => None,
+        });
+        let file = first.unwrap();
+        assert_eq!((file.size, file.modified_at), (100, 10));
+        assert_eq!(
+            file.sidecars.len(),
+            1,
+            "sidecars are known from their names"
         );
-        assert!(store.added.lock().unwrap().is_empty());
-        assert!(store.parts.lock().unwrap().is_empty());
-        assert!(store.finished.lock().unwrap().is_empty());
-
-        // Fixed, the next scan finds the file new.
-        let fixed = scanner(
-            SectionKind::Movie,
-            Arc::new(Tree::with(&[("Soul (2020)/Soul (2020).mkv", 100, 10)])),
-            Arc::clone(&store),
-            Arc::new(Analyzer::default()),
-        );
-        assert_eq!(scan(&fixed, &whole_library()).await.added, 1);
     }
 }

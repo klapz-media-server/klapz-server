@@ -45,6 +45,7 @@ mod m0040_stated_probe;
 mod m0041_user_favorite;
 mod m0042_source_metadata;
 mod m0043_artwork;
+mod m0044_media_analysis;
 
 use sea_orm_migration::prelude::*;
 
@@ -97,6 +98,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0041_user_favorite::Migration),
             Box::new(m0042_source_metadata::Migration),
             Box::new(m0043_artwork::Migration),
+            Box::new(m0044_media_analysis::Migration),
         ]
     }
 }

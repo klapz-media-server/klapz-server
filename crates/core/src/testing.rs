@@ -3982,6 +3982,14 @@ pub struct RecordedScans {
     pub running: std::sync::Mutex<Vec<SectionId>>,
     /// Why a test says a library's last scan stopped.
     pub failures: std::sync::Mutex<std::collections::HashMap<SectionId, String>>,
+    /// The libraries whose reads were stopped for good.
+    pub forgotten: std::sync::Mutex<Vec<SectionId>>,
+    /// How far a test says each library's files are read; one it says nothing of has none.
+    pub analyses:
+        std::sync::Mutex<std::collections::HashMap<SectionId, crate::scan::LibraryAnalysis>>,
+    /// The files a test says cannot be read yet, and those a player had read.
+    pub unread: std::sync::Mutex<Vec<crate::ids::PartId>>,
+    pub read_now: std::sync::Mutex<Vec<crate::ids::PartId>>,
 }
 
 #[async_trait::async_trait]
@@ -4011,6 +4019,38 @@ impl crate::scan::ScanControl for RecordedScans {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(&section)
             .cloned()
+    }
+
+    fn forget(&self, section: SectionId) {
+        self.forgotten
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(section);
+    }
+
+    async fn read_now(&self, part: crate::ids::PartId) -> Result<bool, crate::scan::ScanError> {
+        self.read_now
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(part);
+        Ok(!self
+            .unread
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(&part))
+    }
+
+    async fn analysis(
+        &self,
+        section: SectionId,
+    ) -> Result<crate::scan::LibraryAnalysis, crate::scan::ScanError> {
+        Ok(self
+            .analyses
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&section)
+            .cloned()
+            .unwrap_or_default())
     }
 
     fn files(&self) -> &dyn crate::files::LibraryFiles {
@@ -4139,5 +4179,44 @@ impl crate::files::LibraryFiles for KnownDirectories {
             directories,
             truncated,
         })
+    }
+}
+
+/// Reads the files a scan queued in a library as the background analysis does — every file's
+/// headers, then its packets — from the analysis `read` gives for each stored path: the
+/// headers it states, then its deep analysis when it has one. A path `read` gives nothing for
+/// is a file that is not media.
+///
+/// # Errors
+///
+/// Storage's failure.
+pub async fn read_queued(
+    store: &dyn crate::scan::ScanRepository,
+    section: SectionId,
+    now: i64,
+    read: impl Fn(&str) -> Option<klapz_scanner::report::Analysis>,
+) -> Result<(), crate::scan::ScanError> {
+    let filter = crate::scan::QueueFilter {
+        section: Some(section),
+        ..crate::scan::QueueFilter::default()
+    };
+    loop {
+        let files = store.queued_files(100, &filter).await?;
+        if files.is_empty() {
+            return Ok(());
+        }
+        for file in files {
+            let analysis = read(&file.path);
+            if file.analysis == crate::metadata::FileAnalysis::Pending {
+                let headers = analysis.map(|mut analysis| {
+                    analysis.deep = None;
+                    analysis
+                });
+                store.store_headers(&file, headers.as_ref(), now).await?;
+            } else {
+                let deep = analysis.and_then(|analysis| analysis.deep);
+                store.store_measurement(&file, deep.as_ref(), now).await?;
+            }
+        }
     }
 }

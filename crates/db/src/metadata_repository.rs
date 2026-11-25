@@ -17,12 +17,12 @@ use klapz_core::extra::Extra;
 use klapz_core::marker::{Marker, NewMarker};
 use klapz_core::metadata::{
     first_character_bucket, AudioAnalysis, ColorDescription, CreditRef, DolbyVision, Edited,
-    EpisodeCredit, ExternalId, FieldValue, FileLayout, FirstCharacter, FrameRange, ItemFilter,
-    ItemKind, ItemQuery, ItemTag, Listed, Loudness, MediaFile, MediaStream, MediaVersion,
-    MetadataError, MetadataItem, MetadataRepository, Person, PersonCredit, Rating, ScanType,
-    SearchQuery, SidePicture, SideStream, SideStreamKind, StatedFile, StatedTrack, StreamKind,
-    SubtitleAnalysis, Tag, TagCondition, TagKind, TagRef, TagScope, TagSearch, TagUse, TrackField,
-    TrackTraits, ValueField, VideoAnalysis,
+    EpisodeCredit, ExternalId, FieldValue, FileAnalysis, FileLayout, FirstCharacter, FrameRange,
+    ItemFilter, ItemKind, ItemQuery, ItemTag, Listed, Loudness, MediaFile, MediaStream,
+    MediaVersion, MetadataError, MetadataItem, MetadataRepository, Person, PersonCredit, Rating,
+    ScanType, SearchQuery, SidePicture, SideStream, SideStreamKind, StatedFile, StatedTrack,
+    StreamKind, SubtitleAnalysis, Tag, TagCondition, TagKind, TagRef, TagScope, TagSearch, TagUse,
+    TrackField, TrackTraits, ValueField, VideoAnalysis,
 };
 use klapz_core::page::{Cursor, CursorKey, Direction, Page, Window};
 use klapz_core::recent::EpisodeAddition;
@@ -36,18 +36,18 @@ use klapz_core::{
 use sea_orm::sea_query::{Alias, CaseStatement, Expr, Func, IntoIden, Query, SimpleExpr};
 use sea_orm::QueryTrait;
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult,
-    JoinType, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
-    TransactionTrait,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
+    FromQueryResult, JoinType, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    RelationTrait, Select, TransactionTrait,
 };
 
 use crate::chapter_store;
 use crate::closest_store;
 use crate::entity::{
     collection, collection_entry, item_corner_colors, item_external_id, item_field_lock,
-    item_rating, item_tag, item_title_key, item_title_word, media, media_part, media_stream,
-    metadata_item, part_side_stream, person, stream_dolby_vision, stream_loudness, tag, tag_word,
-    user_favorite, user_rating, watch_state,
+    item_rating, item_tag, item_title_key, item_title_word, media, media_analysis, media_part,
+    media_stream, metadata_item, part_side_stream, person, stream_dolby_vision, stream_loudness,
+    tag, tag_word, user_favorite, user_rating, watch_state,
 };
 use crate::extra_store;
 use crate::item_order::{ItemOrder, SearchRanking};
@@ -1360,7 +1360,17 @@ impl MetadataRepository for SqlMetadataRepository {
             .await
             .map_err(storage)?;
 
-        let mut files: Vec<MediaFile> = rows.into_iter().map(to_file).collect();
+        let parts: Vec<i64> = rows.iter().map(|row| row.id).collect();
+        let stages = queued_stages(&self.connection, &parts)
+            .await
+            .map_err(storage)?;
+        let mut files: Vec<MediaFile> = rows
+            .into_iter()
+            .map(|row| {
+                let stage = stages.get(&row.id).copied();
+                to_file(row, stage)
+            })
+            .collect();
         // Only versions the items' tables lack can be an extra's: a page of items costs no
         // second query.
         let unfound: Vec<MediaId> = versions
@@ -1381,9 +1391,13 @@ impl MetadataRepository for SqlMetadataRepository {
             return Ok(Vec::new());
         }
         let keys: Vec<i64> = files.iter().map(|id| id.get()).collect();
+        // A file's own tracks by index, then its sidecars, which all have index 0: a scan
+        // stores the sidecars first and the tracks once the file is read.
         let rows = media_stream::Entity::find()
             .filter(media_stream::Column::MediaPartId.is_in(keys))
+            .order_by_asc(Expr::col(media_stream::Column::ExternalPath).is_not_null())
             .order_by_asc(media_stream::Column::Position)
+            .order_by_asc(media_stream::Column::Id)
             .all(&self.connection)
             .await
             .map_err(storage)?;
@@ -1438,7 +1452,11 @@ impl MetadataRepository for SqlMetadataRepository {
             .await
             .map_err(storage)?
         {
-            return Ok(Some(to_file(row)));
+            let stages = queued_stages(&self.connection, &[row.id])
+                .await
+                .map_err(storage)?;
+            let stage = stages.get(&row.id).copied();
+            return Ok(Some(to_file(row, stage)));
         }
         extra_store::file(&self.connection, id)
             .await
@@ -2551,7 +2569,27 @@ fn to_version(row: media::Model) -> MediaVersion {
     }
 }
 
-fn to_file(row: media_part::Model) -> MediaFile {
+/// The files among `parts` still to be read, and what is left of each: no row, nothing.
+async fn queued_stages<C: ConnectionTrait>(
+    connection: &C,
+    parts: &[i64],
+) -> Result<HashMap<i64, i32>, DbErr> {
+    let mut stages = HashMap::new();
+    for chunk in parts.chunks(500) {
+        let rows: Vec<(i64, i32)> = media_analysis::Entity::find()
+            .select_only()
+            .column(media_analysis::Column::MediaPartId)
+            .column(media_analysis::Column::Stage)
+            .filter(media_analysis::Column::MediaPartId.is_in(chunk.iter().copied()))
+            .into_tuple()
+            .all(connection)
+            .await?;
+        stages.extend(rows);
+    }
+    Ok(stages)
+}
+
+fn to_file(row: media_part::Model, queued: Option<i32>) -> MediaFile {
     MediaFile {
         id: PartId::new(row.id),
         version_id: MediaId::new(row.media_id),
@@ -2573,6 +2611,11 @@ fn to_file(row: media_part::Model) -> MediaFile {
             format_name: row.format_name,
             duration_us: row.declared_duration_us,
             bitrate: row.declared_bitrate,
+        },
+        analysis: match queued {
+            None => FileAnalysis::Complete,
+            Some(media_analysis::HEADERS) => FileAnalysis::Pending,
+            Some(_) => FileAnalysis::HeadersRead,
         },
     }
 }

@@ -12,15 +12,16 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use klapz_core::ids::SectionId;
+use klapz_core::ids::{RatingKey, SectionId};
 use klapz_core::scan::{NewItem, NewMedia, NewPart, ScanRepository};
+use klapz_core::testing::read_queued;
 use klapz_db::entity::{
     item_chapter, library_section, media, media_part, media_stream, metadata_item,
     stream_dolby_vision,
 };
 use klapz_db::SqlScanRepository;
 use klapz_scanner::analysis_from_ffprobe;
-use klapz_scanner::report::FileIdentity;
+use klapz_scanner::report::{Analysis, FileIdentity};
 use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::Value;
 
@@ -83,8 +84,9 @@ fn json(path: &Path) -> Value {
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
-/// The sample as a scan would store it: ffprobe's output through the analysis.
-fn new_item(sample: &Path) -> NewItem {
+/// The sample as a scan finds it, and ffprobe's output through the analysis, which reads it
+/// afterwards.
+fn new_item(sample: &Path) -> (NewItem, Analysis) {
     let file = json(&sample.join("file.json"));
     let identity: FileIdentity = serde_json::from_value(file["file"].clone()).unwrap();
     let ffprobe = std::fs::read(sample.join("ffprobe.json")).unwrap();
@@ -93,7 +95,7 @@ fn new_item(sample: &Path) -> NewItem {
         .unwrap()
         .to_owned();
     let analysis = analysis_from_ffprobe(&ffprobe, identity.clone()).unwrap();
-    NewItem::Movie {
+    let item = NewItem::Movie {
         title: name.clone(),
         year: None,
         versions: vec![NewMedia {
@@ -101,11 +103,21 @@ fn new_item(sample: &Path) -> NewItem {
                 path: format!("D:\\Samples\\{name}"),
                 size: identity.size,
                 modified_at: identity.modified_at,
-                analysis: Some(analysis),
                 sidecars: Vec::new(),
             }],
         }],
-    }
+    };
+    (item, analysis)
+}
+
+/// Writes the sample as a scan does, then what the analysis reads of it.
+async fn scanned(scan: &SqlScanRepository, sample: &Path) -> RatingKey {
+    let (item, analysis) = new_item(sample);
+    let key = scan.add_item(FILMS, item, 1_763_400_000).await.unwrap();
+    read_queued(scan, FILMS, 1_763_400_000, |_| Some(analysis.clone()))
+        .await
+        .unwrap();
+    key
 }
 
 /// What was stored, in the reference's vocabulary: `media width`, `part ma:hasThumbnail`,
@@ -358,10 +370,7 @@ async fn a_scanned_sample_stores_what_the_reference_stored() {
     let mut differences = Vec::new();
     for sample in &samples {
         let name = sample.file_name().unwrap().to_str().unwrap();
-        let item = scan
-            .add_item(FILMS, new_item(sample), 1_763_400_000)
-            .await
-            .unwrap();
+        let item = scanned(&scan, sample).await;
         let ours = stored(&connection, item.get()).await;
         let (theirs, measured) = reference(sample);
         let keys: std::collections::BTreeSet<&String> = ours.keys().chain(theirs.keys()).collect();
@@ -411,10 +420,7 @@ async fn a_scan_keeps_what_ffprobe_states_and_what_does_not_play() {
     let scan = SqlScanRepository::new(connection.clone());
     let metadata = klapz_db::SqlMetadataRepository::new(connection.clone());
     let sample = samples().join("90210-beverly-hills-ng-s01e21-vf-sd-tvhdrip-mp4-avc-aac");
-    let item = scan
-        .add_item(FILMS, new_item(&sample), 1_763_400_000)
-        .await
-        .unwrap();
+    let item = scanned(&scan, &sample).await;
     let versions = metadata.versions_for(&[item]).await.unwrap();
     let files = metadata.files_for(&[versions[0].id]).await.unwrap();
     let file = &files[0];

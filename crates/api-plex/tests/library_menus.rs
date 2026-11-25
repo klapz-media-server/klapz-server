@@ -188,6 +188,7 @@ fn tracks(
             content_hash: None,
             open_subtitles_hash: None,
             stated: klapz_core::metadata::StatedFile::default(),
+            analysis: klapz_core::metadata::FileAnalysis::Complete,
         });
         let audio = kind == StreamKind::Audio;
         media.2.push(MediaStream {

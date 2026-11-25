@@ -686,22 +686,6 @@ mod tests {
         }
     }
 
-    /// What the scan reads, and nothing is: the item is made all the same.
-    #[derive(Debug)]
-    struct NotMedia;
-
-    #[async_trait::async_trait]
-    impl klapz_core::scan::MediaAnalyzer for NotMedia {
-        async fn analyze(
-            &self,
-            _file: &FileLocation,
-        ) -> Result<klapz_scanner::report::Analysis, klapz_core::scan::AnalyzeError> {
-            Err(klapz_core::scan::AnalyzeError::Unreadable(
-                "not media".to_owned(),
-            ))
-        }
-    }
-
     /// A film library over `typed`, resolved as `createLibrary` resolves it, scanned through
     /// this backend and the real storage.
     async fn scanned_library(typed: &str) -> (Scanner, ScanRequest) {
@@ -724,7 +708,6 @@ mod tests {
         let scanner = Scanner {
             library,
             files: Arc::new(LocalFiles),
-            analyzer: Arc::new(NotMedia),
             store: Arc::new(klapz_db::SqlScanRepository::new(connection)),
         };
         let request = ScanRequest {

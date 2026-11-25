@@ -54,6 +54,14 @@ save (**measured**).
 Analysis on an already-analyzed file whose size and mtime are unchanged rewrote nothing
 except `metadata_items.changed_at` (**measured**, item 578173).
 
+**Here**, the same order, apart from the scan: a scan lists a file from its name, size and
+time, and queues it (`media_analysis`); `core::scan::BackgroundAnalysis` then reads the headers
+of every queued file — this section's analysis — before measuring any file's packets (§2), the
+deep analysis the reference leaves to its butler. `KLAPZ_ANALYSIS_CONCURRENCY` files at once
+(2), a minute at most for the headers and ten for the packets. A player does not wait for the
+queue: `startStream` and `readMediaFile` read a file's headers at once when they are what it
+waits for. The queue is storage's, so a server that stops leaves it to the next.
+
 `thumbOffset` and `artOffset` on `PUT …/analyze` become the scanner's `--thumbOffset` and
 `--artOffset <percent>` (**binary**, help text). `--no-thumbs` skips image generation.
 
@@ -578,9 +586,11 @@ breaks between 25 and 600 s). No Live TV here, so out of scope with the DVR.
 ## Gaps in our schema
 
 - Chapters (taggings type 9 / `pv:chapters`): no table.
-- Analysis state: `media_analysis_version`, `ma:deepAnalysisVersion`, `pv:deepAnalysisDate`
-  (an mtime), BIF state (`mi:indexes`, `mi:failureBIF*`), `pv:creditsDetectionErrorCount`,
-  the detection versions per part: not stored. A scanner deciding what to redo needs them.
+- Analysis state: what the scan queued, and whether its headers are read, is `media_analysis`
+  (no row: read as far as it can be). `media_analysis_version`, `ma:deepAnalysisVersion`,
+  `pv:deepAnalysisDate` (an mtime), BIF state (`mi:indexes`, `mi:failureBIF*`),
+  `pv:creditsDetectionErrorCount` and the detection versions per part are not stored: a
+  scanner deciding what to redo after an upgrade of its tools needs them.
 - Generated images (thumbnails, art, BIF, chapter images): no storage.
 - `media.color_trc` exists on the reference media row; ours has it per track only.
 

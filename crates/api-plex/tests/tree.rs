@@ -151,6 +151,7 @@ impl Stored {
                 content_hash: part["hash"].as_str().map(ToOwned::to_owned),
                 open_subtitles_hash: part["openSubtitleHash"].as_str().map(ToOwned::to_owned),
                 stated: klapz_core::metadata::StatedFile::default(),
+                analysis: klapz_core::metadata::FileAnalysis::Complete,
             });
             for track in part["MediaStream"].as_array().unwrap() {
                 self.streams.push(track_of(file, track));

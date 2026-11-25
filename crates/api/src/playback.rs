@@ -624,9 +624,10 @@ impl Mutation {
         crate::sidecar::delete_sidecar(context, input).await
     }
 
-    /// Starts scanning a library in the background: new files become items, changed ones are
-    /// analyzed again, and what is gone is removed — unless its whole folder cannot be
-    /// reached, which keeps it. For the library's admins and the server's owners.
+    /// Starts scanning a library in the background: new files become items at once, and are
+    /// read afterwards, as are changed ones (`Library.analysis`); what is gone is removed —
+    /// unless its whole folder cannot be reached, which keeps it. For the library's admins and
+    /// the server's owners.
     async fn scan_library(
         &self,
         context: &Context<'_>,
@@ -635,7 +636,8 @@ impl Mutation {
         crate::scan::scan_library(context, input).await
     }
 
-    /// Asks a library's running scan to stop. What it already wrote stays.
+    /// Asks a library's running scan to stop, and stops reading its files until its next
+    /// scan. What it already wrote stays.
     async fn cancel_library_scan(
         &self,
         context: &Context<'_>,
@@ -643,6 +645,18 @@ impl Mutation {
         input: crate::scan::CancelLibraryScanInput,
     ) -> Result<crate::scan::CancelLibraryScanPayload> {
         crate::scan::cancel_library_scan(context, input).await
+    }
+
+    /// Reads a file's headers now when the server has not yet — its tracks, codecs and
+    /// durations, which a player needs before choosing how to play it — ahead of the files a
+    /// scan queued. Nothing to do for a file read already; `startStream` does it itself. For
+    /// whoever can see the file.
+    async fn read_media_file(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The file to read.")] input: crate::scan::ReadMediaFileInput,
+    ) -> Result<crate::scan::ReadMediaFilePayload> {
+        crate::scan::read_media_file(context, input).await
     }
 
     /// Deletes one viewing from a history: the caller's own, or anyone's for an owner.

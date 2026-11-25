@@ -26,7 +26,7 @@ pub const ITEM_FIELDS: &str = concat!(
 fragment JellyfinVersion on MediaVersion {
     width height container durationMs bitrate
     files {
-        id path filename sizeBytes durationMs packetLength
+        id path filename analysis sizeBytes durationMs packetLength
         stated { formatName durationUs bitrate }
         streams { ...JellyfinTrack }
         sideStreams { ...JellyfinSideStream }
@@ -308,6 +308,9 @@ pub struct File {
     pub id: String,
     pub path: String,
     pub filename: String,
+    /// How much of the file the server has read: `PENDING` until its headers are.
+    #[serde(default)]
+    pub analysis: Option<String>,
     #[serde(default, deserialize_with = "klapz_api::int64::deserialize_optional")]
     pub size_bytes: Option<i64>,
     pub duration_ms: Option<i64>,
@@ -1507,6 +1510,7 @@ mod tests {
                 id: klapz_api::GlobalId::encode("MediaFile", 2001),
                 path: "/media/doodlebug.1997.VO.H264.mkv".to_owned(),
                 filename: "doodlebug.1997.VO.H264.mkv".to_owned(),
+                analysis: None,
                 size_bytes: Some(14_876_546),
                 duration_ms: None,
                 packet_length: None,
