@@ -65,6 +65,14 @@ pub fn is_text(codec: &str) -> bool {
     )
 }
 
+/// Whether a track of this codec is a broadcast's teletext, whose subtitles libzvbi decodes
+/// into text from one of its pages. Not text to every command: only extraction decodes it as
+/// such, so it is neither burned in nor drawn with libass.
+#[must_use]
+pub fn is_teletext(codec: &str) -> bool {
+    matches!(codec, "dvb_teletext")
+}
+
 /// Whether a track of this codec is pictures, from a Blu-ray, a DVD or a broadcast.
 #[must_use]
 pub fn is_image(codec: &str) -> bool {
@@ -88,7 +96,7 @@ impl SubtitleFormat {
     pub fn holds(self, codec: &str) -> bool {
         match self {
             Self::Ttml => is_image(codec),
-            Self::Ass | Self::WebVtt | Self::Srt => is_text(codec),
+            Self::Ass | Self::WebVtt | Self::Srt => is_text(codec) || is_teletext(codec),
         }
     }
 
@@ -171,12 +179,31 @@ fn extraction_arguments(source: &Path, outputs: &[Output]) -> Vec<String> {
         "20000000",
         "-probesize",
         "20000000",
-        "-i",
     ]
     .iter()
     .map(ToString::to_string)
     .collect();
-    arguments.push(format!("file:{}", source.display()));
+    for output in outputs {
+        if is_teletext(&output.track.codec) {
+            // libzvbi's options, for this track's decoder alone: text rather than the pictures
+            // of the page, and the page the subtitles are on, else every subtitle page. A page
+            // shows until it changes, so its subtitles come with no end: each is ended where
+            // the next begins, the page cleared included.
+            let index = output.track.index;
+            let page = output
+                .track
+                .teletext_page
+                .map_or_else(|| "subtitle".to_owned(), |page| page.to_string());
+            arguments.extend([
+                format!("-txt_format:{index}"),
+                "text".to_owned(),
+                format!("-txt_page:{index}"),
+                page,
+                format!("-fix_sub_duration:{index}"),
+            ]);
+        }
+    }
+    arguments.extend(["-i".to_owned(), format!("file:{}", source.display())]);
     for output in outputs {
         let codec = if SubtitleFormat::of_codec(&output.track.codec) == Some(output.format) {
             "copy"
@@ -273,8 +300,9 @@ fn touch(path: &Path) -> std::io::Result<()> {
 }
 
 /// Where a track's subtitle is kept: in its file's directory, named after a digest of the
-/// file's path, under a name that tells the track, the format, and the file as it stood — size
-/// and modification time. A file changed is a new name; the old one ages out.
+/// file's path, under a name that tells the track (and the teletext page decoded), the format,
+/// and the file as it stood — size and modification time. A file changed is a new name; the
+/// old one ages out.
 fn cache_path(
     root: &Path,
     source: &Path,
@@ -293,9 +321,12 @@ fn cache_path(
             let _ = write!(hex, "{byte:02x}");
             hex
         });
+    let page = track
+        .teletext_page
+        .map_or_else(String::new, |page| format!("p{page}-"));
     root.join(format!("{SUBTITLE_DIRECTORY}{hex}"))
         .join(format!(
-            "{}-{size}-{modified}.{}",
+            "{}-{page}{size}-{modified}.{}",
             track.index,
             format.extension()
         ))
@@ -601,6 +632,7 @@ mod tests {
 
     fn track(codec: &str) -> Track {
         Track {
+            teletext_page: None,
             index: 3,
             codec: codec.to_owned(),
             language: Some("fr".to_owned()),
@@ -645,7 +677,65 @@ mod tests {
         assert!(!SubtitleFormat::Ttml.holds("subrip"));
         assert!(!SubtitleFormat::WebVtt.holds("pgs"));
         assert!(SubtitleFormat::Ass.holds("mov_text"));
-        assert!(!SubtitleFormat::WebVtt.holds("dvb_teletext"));
+        // Teletext's subtitles decode into text, never into pictures.
+        assert!(SubtitleFormat::WebVtt.holds("dvb_teletext"));
+        assert!(SubtitleFormat::Srt.holds("dvb_teletext"));
+        assert!(!SubtitleFormat::Ttml.holds("dvb_teletext"));
+        assert!(!is_text("dvb_teletext"));
+    }
+
+    #[test]
+    fn decodes_teletext_from_its_page_as_text() {
+        let mut teletext = track("dvb_teletext");
+        teletext.index = 5;
+        teletext.teletext_page = Some(888);
+        let joined = extraction_arguments(
+            Path::new("f.ts"),
+            &[
+                output(teletext.clone(), SubtitleFormat::Srt, "a"),
+                output(track("subrip"), SubtitleFormat::WebVtt, "b"),
+            ],
+        )
+        .join(" ");
+        // Decoder options, before the input they apply to, for the teletext track alone.
+        assert!(
+            joined.contains(
+                "-txt_format:5 text -txt_page:5 888 -fix_sub_duration:5 -i file:f.ts -map 0:5 -codec:0 subrip -f srt file:a"
+            ),
+            "{joined}"
+        );
+        assert!(!joined.contains("-txt_page:3"), "{joined}");
+        // A track scanned before its pages were known: every subtitle page.
+        teletext.teletext_page = None;
+        let joined = extraction_arguments(
+            Path::new("f.ts"),
+            &[output(teletext, SubtitleFormat::WebVtt, "a")],
+        )
+        .join(" ");
+        assert!(
+            joined.contains("-txt_page:5 subtitle -fix_sub_duration:5 -i"),
+            "{joined}"
+        );
+    }
+
+    #[test]
+    fn a_teletext_page_has_a_subtitle_of_its_own() {
+        let mut teletext = track("dvb_teletext");
+        let place = |track: &Track| {
+            cache_path(
+                Path::new("/t"),
+                Path::new("/m/a.ts"),
+                10,
+                None,
+                track,
+                SubtitleFormat::Srt,
+            )
+        };
+        let any = place(&teletext);
+        teletext.teletext_page = Some(888);
+        let page = place(&teletext);
+        assert_eq!(page.file_name().unwrap(), "3-p888-10-0.srt");
+        assert_ne!(page, any);
     }
 
     #[tokio::test]

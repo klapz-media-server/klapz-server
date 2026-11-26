@@ -2337,6 +2337,7 @@ mod tests {
 
     fn track(index: i32, codec: &str, language: &str) -> Track {
         Track {
+            teletext_page: None,
             index,
             codec: codec.to_owned(),
             language: Some(language.to_owned()),

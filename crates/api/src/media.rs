@@ -925,6 +925,41 @@ impl Subtitle {
     async fn canvas_height(&self) -> Option<i32> {
         self.0.canvas_height
     }
+
+    /// The page of a broadcast's teletext this track's subtitles are decoded from, among the
+    /// subtitle pages it declares. Null for any other track, and for a teletext track read
+    /// before its pages were known, whose every subtitle page is decoded.
+    async fn teletext_page(&self) -> Option<TeletextPage> {
+        self.0
+            .teletext_pages
+            .as_deref()
+            .and_then(klapz_core::teletext::subtitle_page)
+            .map(TeletextPage)
+    }
+}
+
+/// A subtitle page of a broadcast's teletext.
+#[derive(Debug, Clone)]
+pub struct TeletextPage(pub klapz_core::teletext::TeletextPage);
+
+/// A subtitle page of a broadcast's teletext.
+#[Object]
+impl TeletextPage {
+    /// Its number, from 100 to 899: `888`.
+    async fn number(&self) -> i32 {
+        i32::from(self.0.number)
+    }
+
+    /// Its language as the broadcast declares it, an ISO 639-2 code: `fra`. Null when left
+    /// blank.
+    async fn language(&self) -> Option<&str> {
+        self.0.language.as_deref()
+    }
+
+    /// Whether it is meant for the hearing impaired rather than subtitles proper.
+    async fn is_hearing_impaired(&self) -> bool {
+        self.0.hearing_impaired
+    }
 }
 
 #[cfg(test)]

@@ -462,6 +462,9 @@ pub struct SubtitleAnalysis {
     /// The frame an image subtitle is drawn for: 1920×1080 for a Blu-ray's PGS.
     pub canvas_width: Option<i32>,
     pub canvas_height: Option<i32>,
+    /// The subtitle pages a teletext track declares, as stated:
+    /// `888:fra:hearing_impaired,889:fra:subtitles`. `core::teletext` reads them.
+    pub teletext_pages: Option<String>,
 }
 
 /// What a tag classifies or credits.

@@ -39,6 +39,8 @@ pub struct Track {
     pub codec: String,
     /// As stored: `fr`, `en`.
     pub language: Option<String>,
+    /// The page a teletext track's subtitles are decoded from, when it declares one.
+    pub teletext_page: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

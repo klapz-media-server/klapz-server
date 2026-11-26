@@ -7,6 +7,7 @@
    "codec_type": "subtitle",
    "codec_tag_string": "[6][0][0][0]",
    "codec_tag": "0x0006",
+   "teletext_pages": "888:fra:hearing_impaired,889:fra:subtitles",
    "ts_id": "26941",
    "ts_packetsize": "192",
    "id": "0x31",

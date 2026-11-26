@@ -421,6 +421,7 @@ pub(super) fn track_rows(
                 canvas_height: track
                     .subtitle
                     .and_then(|canvas| i32::try_from(canvas.height).ok()),
+                teletext_pages: track.teletext_pages.clone(),
             };
             TrackRows {
                 dolby_vision: picture
@@ -692,6 +693,7 @@ pub(super) fn sidecar_row(sidecar: &NewSidecar, part: i64, id: i64) -> media_str
         nal_length_size: None,
         canvas_width: None,
         canvas_height: None,
+        teletext_pages: None,
     }
 }
 

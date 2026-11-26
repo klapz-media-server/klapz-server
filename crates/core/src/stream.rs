@@ -32,6 +32,8 @@ pub struct StreamTrack {
     pub language: Option<String>,
     /// Bits per second, when measured.
     pub bitrate: Option<i32>,
+    /// The page a teletext track's subtitles are decoded from, when it declares one.
+    pub teletext_page: Option<u16>,
 }
 
 impl StreamTrack {
@@ -41,6 +43,12 @@ impl StreamTrack {
             codec: stream.codec.clone().unwrap_or_default(),
             language: stream.language.clone(),
             bitrate: stream.bitrate,
+            teletext_page: stream
+                .subtitle
+                .as_ref()
+                .and_then(|subtitle| subtitle.teletext_pages.as_deref())
+                .and_then(crate::teletext::subtitle_page)
+                .map(|page| page.number),
         }
     }
 }
@@ -445,6 +453,43 @@ mod tests {
     }
 
     #[test]
+    fn a_teletext_track_reaches_the_engine_with_the_page_it_is_decoded_from() {
+        use crate::ids::{PartId, StreamId};
+        use crate::metadata::{StatedTrack, StreamKind, SubtitleAnalysis, TrackTraits};
+
+        let stored = |pages: Option<&str>| MediaStream {
+            id: StreamId::new(1),
+            file_id: PartId::new(1),
+            kind: StreamKind::Subtitle,
+            position: 0,
+            codec: Some("dvb_teletext".to_owned()),
+            language: None,
+            channels: None,
+            bitrate: None,
+            is_default: false,
+            is_forced: false,
+            external_path: None,
+            title: None,
+            stream_identifier: None,
+            profile: None,
+            bit_depth: None,
+            traits: TrackTraits::default(),
+            video: None,
+            audio: None,
+            subtitle: Some(SubtitleAnalysis {
+                teletext_pages: pages.map(ToOwned::to_owned),
+                ..SubtitleAnalysis::default()
+            }),
+            required_bandwidths: Vec::new(),
+            stated: StatedTrack::default(),
+        };
+        let arte = stored(Some("888:fra:hearing_impaired,889:fra:subtitles"));
+        assert_eq!(StreamTrack::of(&arte).teletext_page, Some(889));
+        // Read before its pages were known.
+        assert_eq!(StreamTrack::of(&stored(None)).teletext_page, None);
+    }
+
+    #[test]
     fn a_subtitle_is_copied_only_when_sent_in_its_own_format() {
         let sent = |codec: &str, format| {
             let track = StreamTrack {
@@ -452,6 +497,7 @@ mod tests {
                 codec: codec.to_owned(),
                 language: None,
                 bitrate: None,
+                teletext_page: None,
             };
             SubtitleOutput::Text { track, format }.decision()
         };
@@ -471,6 +517,7 @@ mod tests {
                 codec: "ass".to_owned(),
                 language: None,
                 bitrate: None,
+                teletext_page: None,
             },
             scale: 1.0,
         };

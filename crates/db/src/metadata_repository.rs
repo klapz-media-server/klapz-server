@@ -2727,6 +2727,7 @@ fn to_track(
         embedded_in_video: row.is_embedded_in_video,
         canvas_width: row.canvas_width,
         canvas_height: row.canvas_height,
+        teletext_pages: row.teletext_pages.clone(),
     });
 
     MediaStream {

@@ -36,6 +36,7 @@ pub mod similar;
 pub mod slug;
 pub mod source_metadata;
 pub mod stream;
+pub mod teletext;
 pub mod tracks;
 pub mod user_rating;
 pub mod watch;

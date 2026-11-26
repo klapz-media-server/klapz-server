@@ -27587,6 +27587,18 @@
               },
               "isDeprecated": false,
               "deprecationReason": null
+            },
+            {
+              "name": "teletextPage",
+              "description": "The page of a broadcast's teletext this track's subtitles are decoded from, among the\nsubtitle pages it declares. Null for any other track, and for a teletext track read\nbefore its pages were known, whose every subtitle page is decoded.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "TeletextPage",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
             }
           ],
           "inputFields": null,
@@ -28486,6 +28498,61 @@
                 "ofType": {
                   "kind": "SCALAR",
                   "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "TeletextPage",
+          "description": "A subtitle page of a broadcast's teletext.",
+          "fields": [
+            {
+              "name": "number",
+              "description": "Its number, from 100 to 899: `888`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "language",
+              "description": "Its language as the broadcast declares it, an ISO 639-2 code: `fra`. Null when left\nblank.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "isHearingImpaired",
+              "description": "Whether it is meant for the hearing impaired rather than subtitles proper.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
                   "ofType": null
                 }
               },

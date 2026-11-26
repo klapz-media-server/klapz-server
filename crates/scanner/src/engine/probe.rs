@@ -425,6 +425,10 @@ fn track(stream: &Stream) -> Option<Track> {
         video,
         audio,
         subtitle,
+        teletext_pages: stream
+            .teletext_pages
+            .clone()
+            .filter(|pages| !pages.is_empty()),
         attachment,
     })
 }
@@ -736,6 +740,8 @@ struct Stream {
     moov_before_mdat: Option<String>,
     co64: Option<String>,
     ts_packetsize: Option<String>,
+    /// A teletext track's subtitle pages, which ffprobe-plex prints from its descriptor.
+    teletext_pages: Option<String>,
     #[serde(default)]
     disposition: BTreeMap<String, u8>,
     #[serde(default)]
@@ -801,6 +807,7 @@ mod tests {
             video: None,
             audio: None,
             subtitle: None,
+            teletext_pages: None,
             attachment: None,
         }
     }
