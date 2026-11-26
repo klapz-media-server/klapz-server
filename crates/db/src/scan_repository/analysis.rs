@@ -269,19 +269,7 @@ pub(super) struct TrackRows {
 /// A track's language as tagged, else the dub its file's name gives for a file's one audio
 /// track. Matroska's implicit English needs nothing here: ffprobe already reports it, and a
 /// track it reports without one was written `und`, which the reference leaves without.
-///
-/// A teletext track tags a language per page, `fra,fra`, which the reference stores as `und`:
-/// it takes the language of the page its subtitles are decoded from instead, so that it is
-/// named like any other subtitle.
 fn track_language(analysis: &Analysis, track: &Track, path: &str) -> Option<String> {
-    if let Some(decoded) = track
-        .teletext_pages
-        .as_deref()
-        .and_then(klapz_core::teletext::subtitle_page)
-        .and_then(|page| language(page.language.as_deref()?))
-    {
-        return Some(decoded);
-    }
     if let Some(tagged) = track.language.as_deref().and_then(language) {
         return Some(tagged);
     }
@@ -320,7 +308,17 @@ pub(super) fn track_rows(
         .zip(first_id..)
         .map(|((track, kind), id)| {
             let bitrate = track_bitrate(analysis, track);
-            let language = track_language(analysis, track, path);
+            // A teletext track tags a language per page, `fra,fra`, which the reference stores
+            // as `und`: it is named after the page its subtitles are decoded from instead, its
+            // language and whether it is for the hearing impaired, like any other subtitle.
+            let teletext = track
+                .teletext_pages
+                .as_deref()
+                .and_then(klapz_core::teletext::subtitle_page);
+            let language = teletext
+                .as_ref()
+                .and_then(|page| language(page.language.as_deref()?))
+                .or_else(|| track_language(analysis, track, path));
             let picture = track.video.as_ref();
             let coded = picture.and_then(|picture| coding(track, picture));
             let sound = track.audio.as_ref();
@@ -401,7 +399,8 @@ pub(super) fn track_rows(
                 is_original: disposition.original,
                 is_dub: disposition.dub,
                 is_commentary: disposition.comment,
-                is_hearing_impaired: disposition.hearing_impaired,
+                is_hearing_impaired: disposition.hearing_impaired
+                    || teletext.as_ref().is_some_and(|page| page.hearing_impaired),
                 is_visual_impaired: disposition.visual_impaired,
                 has_header_compression: false,
                 required_bandwidths: None,
@@ -763,6 +762,34 @@ mod tests {
 
     use super::*;
     use klapz_scanner::report::Cropping;
+
+    #[test]
+    fn names_a_teletext_track_after_the_page_it_is_decoded_from() {
+        let sample = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../scanner/tests/fixtures/samples/",
+            "peur-primale-1996-multi-vff-1080i-hdtv-full-avc-he-aac-2-0/ffprobe.json"
+        );
+        let ffprobe = std::fs::read(sample).unwrap();
+        let identity = klapz_scanner::report::FileIdentity {
+            size: 0,
+            modified_at: 0,
+            open_subtitles_hash: "0".to_owned(),
+        };
+        let mut analysis = klapz_scanner::analysis_from_ffprobe(&ffprobe, identity).unwrap();
+        let teletext = |analysis: &Analysis| {
+            let rows = track_rows(analysis, "a.m2ts", 1, 1);
+            let stream = &rows[0].stream;
+            (stream.language.clone(), stream.is_hearing_impaired)
+        };
+        // Arte's 888 for the hearing impaired, 889 subtitles proper: 889 is decoded.
+        assert_eq!(teletext(&analysis), (Some("fr".to_owned()), false));
+        analysis.tracks[0].teletext_pages = Some("888:deu:hearing_impaired".to_owned());
+        assert_eq!(teletext(&analysis), (Some("de".to_owned()), true));
+        // Pages not known: the tag, judged as the reference judges it.
+        analysis.tracks[0].teletext_pages = None;
+        assert_eq!(teletext(&analysis), (Some("und".to_owned()), false));
+    }
 
     #[test]
     fn names_containers_as_the_reference() {

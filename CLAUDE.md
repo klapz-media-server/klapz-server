@@ -614,8 +614,9 @@ Places where we knowingly answer differently, each decided rather than overlooke
   turns it off (`db::scan_repository::analysis::dub_language`).
 - **A teletext track is named by the page it is decoded from.** It tags a language per page,
   `fra,fra`, which the reference stores as `und`; ours takes the language of the page its
-  subtitles are decoded from (`core::teletext::subtitle_page`), so that every surface names it
-  as any other subtitle. Nothing of its pages is published.
+  subtitles are decoded from (`core::teletext::subtitle_page`), and is for the hearing impaired
+  when that page is, so that every surface names it as any other subtitle. Nothing of its pages
+  is published.
 - **A scanned track's rate is the one measured over its packets.** The repo owner's decision:
   the scan stores the deep analysis' rates and durations, where the reference mostly publishes
   the declared ones (33 of 38 samples), its deep analysis overwritten by a later normal one.
