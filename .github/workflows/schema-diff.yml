@@ -1,0 +1,133 @@
+# Comments on each pull request with what it changes in the GraphQL schema, the official API.
+#
+# Both schemas are generated from the code (`cargo run -p klapz-api --example sdl`), not read
+# from `docs/schema.graphql`: the base is the target branch, the head is the pull request merged
+# into it, so the diff is exactly what merging would change. Changes are classed breaking,
+# dangerous or safe by GraphQL Inspector, and the raw SDL diff follows. The comment is edited in
+# place on each push. It also warns when `docs/schema.graphql` was not regenerated.
+#
+# Nothing here fails the check: a breaking change is reported, never refused.
+
+name: Schema diff
+
+on:
+  pull_request:
+    # What the schema is built from: the API crate and everything it depends on.
+    paths:
+      - crates/api/**
+      - crates/core/**
+      - crates/scanner/**
+      - Cargo.toml
+      - Cargo.lock
+      - docs/schema.graphql
+      - .github/workflows/schema-diff.yml
+      - .github/scripts/schema-diff.mjs
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: schema-diff-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  diff:
+    name: GraphQL schema diff
+    runs-on: ubuntu-24.04
+    steps:
+      # The merge commit and its parents: the first parent is the target branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: schema-diff
+
+      - name: Generate the schema of the pull request
+        run: cargo run --locked --quiet -p klapz-api --example sdl > "$RUNNER_TEMP/head.graphql"
+
+      # Built in a worktree sharing the same target directory, so the dependencies compile once.
+      - name: Generate the schema of the target branch
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/base" HEAD^1
+          cd "$RUNNER_TEMP/base"
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" \
+            cargo run --locked --quiet -p klapz-api --example sdl > "$RUNNER_TEMP/base.graphql"
+
+      - name: Install GraphQL Inspector
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir inspector && cd inspector
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund --silent graphql@17.1.0 @graphql-inspector/core@8.1.5
+
+      - name: Compare
+        id: compare
+        env:
+          REPORT: ${{ runner.temp }}/report.md
+        run: |
+          # Next to its node_modules: ES modules resolve from the script's directory.
+          cp .github/scripts/schema-diff.mjs "$RUNNER_TEMP/inspector/"
+          base="$RUNNER_TEMP/base.graphql"
+          head="$RUNNER_TEMP/head.graphql"
+          {
+            echo '<!-- klapz-schema-diff -->'
+            echo '### GraphQL schema diff'
+            echo
+            node "$RUNNER_TEMP/inspector/schema-diff.mjs" "$base" "$head"
+            if ! diff -q "$base" "$head" > /dev/null; then
+              raw=$(diff -u --label base --label "pull request" "$base" "$head" || true)
+              # A comment holds 65 536 characters at most; the classified list above stays whole.
+              if [ "${#raw}" -gt 40000 ]; then
+                raw="${raw:0:40000}"$'\n''… (truncated: the whole diff is in the run'"'"'s summary)'
+              fi
+              echo '<details><summary>SDL diff</summary>'
+              echo
+              echo '```diff'
+              echo "$raw"
+              echo '```'
+              echo
+              echo '</details>'
+              echo
+            fi
+            if ! diff -q --strip-trailing-cr docs/schema.graphql "$head" > /dev/null; then
+              echo '> [!WARNING]'
+              echo '> `docs/schema.graphql` does not match the schema the code generates. Regenerate it:'
+              echo '> `cargo run -p klapz-api --example sdl > docs/schema.graphql`'
+              echo '> (and `--example introspect > docs/introspection.json`).'
+              echo
+            fi
+            echo "<sub>Target branch \`$(git rev-parse --short HEAD^1)\` → pull request \`${{ github.event.pull_request.head.sha }}\`</sub>"
+          } > "$REPORT"
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+          if ! diff -q "$base" "$head" > /dev/null; then
+            { echo; echo '```diff'; diff -u "$base" "$head" || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # One comment per pull request, edited in place. A pull request from a fork gets a
+      # read-only token: the report then stays in the run's summary.
+      - name: Comment on the pull request
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPORT: ${{ runner.temp }}/report.md
+        run: |
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --jq '.[] | select(.body | startswith("<!-- klapz-schema-diff -->")) | .id' | head -n1)
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@"$REPORT" > /dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@"$REPORT" > /dev/null
+          fi
