@@ -269,7 +269,19 @@ pub(super) struct TrackRows {
 /// A track's language as tagged, else the dub its file's name gives for a file's one audio
 /// track. Matroska's implicit English needs nothing here: ffprobe already reports it, and a
 /// track it reports without one was written `und`, which the reference leaves without.
+///
+/// A teletext track tags a language per page, `fra,fra`, which the reference stores as `und`:
+/// it takes the language of the page its subtitles are decoded from instead, so that it is
+/// named like any other subtitle.
 fn track_language(analysis: &Analysis, track: &Track, path: &str) -> Option<String> {
+    if let Some(decoded) = track
+        .teletext_pages
+        .as_deref()
+        .and_then(klapz_core::teletext::subtitle_page)
+        .and_then(|page| language(page.language.as_deref()?))
+    {
+        return Some(decoded);
+    }
     if let Some(tagged) = track.language.as_deref().and_then(language) {
         return Some(tagged);
     }
