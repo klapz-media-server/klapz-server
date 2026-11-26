@@ -29,6 +29,13 @@ const FILMS: SectionId = SectionId::new(1);
 
 /// Values the reference's older libav read otherwise, by sample and field.
 const KNOWN: &[(&str, &str, &str)] = &[
+    // Teletext tags a language per page, `fra,fra`, which the reference stores as `und`: ours
+    // takes the language of the page its subtitles are decoded from, 889's.
+    (
+        "peur-primale-1996-multi-vff-1080i-hdtv-full-avc-he-aac-2-0",
+        "stream 0 language",
+        "teletext",
+    ),
     // AAC in MPEG-TS: libavformat estimates the rate from the frames it parsed, and the
     // reference's estimated more (80 kb/s where ffprobe 8.1 declares 73). The video's rate is
     // what the container's leaves once the audio's is taken out, so it moves with them.

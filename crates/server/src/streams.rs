@@ -215,6 +215,7 @@ fn track(track: &StreamTrack) -> Track {
         index: track.position,
         codec: track.codec.clone(),
         language: track.language.clone(),
+        teletext_page: track.teletext_page,
     }
 }
 
@@ -1595,6 +1596,7 @@ mod tests {
             codec: codec.to_owned(),
             language: None,
             bitrate: Some(256_000),
+            teletext_page: None,
         };
         StreamOrder {
             key: "u1~k".to_owned(),
@@ -1634,6 +1636,7 @@ mod tests {
             codec: codec.to_owned(),
             language: None,
             bitrate: None,
+            teletext_page: None,
         };
         asked.source.subtitles = vec![
             subtitle(3, "ass"),
@@ -1669,6 +1672,12 @@ mod tests {
                 (
                     "/streams/s1/subtitles/5.ttml?token=t0",
                     PlayerSubtitleFormat::Ttml,
+                    StreamDecision::Transcode
+                ),
+                // Teletext's subtitles decode into text, in the player's first text format.
+                (
+                    "/streams/s1/subtitles/6.vtt?token=t0",
+                    PlayerSubtitleFormat::WebVtt,
                     StreamDecision::Transcode
                 ),
             ]

@@ -375,6 +375,7 @@ mod tests {
             codec: "h264".to_owned(),
             language: None,
             bitrate: None,
+            teletext_page: None,
         };
         StreamOrder {
             key: key.to_owned(),

@@ -104,6 +104,9 @@ pub struct Model {
     /// The frame a picture subtitle is drawn for.
     pub canvas_width: Option<i32>,
     pub canvas_height: Option<i32>,
+    /// A teletext track's subtitle pages, as ffprobe-plex prints them:
+    /// `888:fra:hearing_impaired,889:fra:subtitles`.
+    pub teletext_pages: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

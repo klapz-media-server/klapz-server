@@ -124,6 +124,10 @@ pub struct Track {
     /// An image subtitle's canvas.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subtitle: Option<SubtitleTrack>,
+    /// The subtitle pages a DVB teletext track declares, as ffprobe-plex prints them: each
+    /// page, its language and its kind, `888:fra:hearing_impaired,889:fra:subtitles`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub teletext_pages: Option<String>,
     /// An attachment's MIME type and file name: a font, or a Matroska cover, which ffprobe
     /// lists as a picture.
     #[serde(skip_serializing_if = "Option::is_none")]
