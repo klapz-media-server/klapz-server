@@ -6,7 +6,7 @@ use std::path::Path;
 use serde::Deserialize;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::engine::{hashes, input, run, ScanError, Streaming, Tools};
+use crate::engine::{identity, input, run, ScanError, Streaming, Tools};
 use crate::report::{
     Analysis, Attachment, AudioTrack, Chapter, Cropping, DeepAnalysis, Disposition, DolbyVision,
     FileIdentity, MeasuredTrack, SequenceHeader, Statistics, SubtitleTrack, Track, TrackKind,
@@ -21,7 +21,7 @@ use crate::report::{
 /// [`ScanError::Unreadable`] when ffprobe cannot open the media, [`ScanError::File`] when the
 /// file cannot be read at all.
 pub async fn probe(tools: &Tools, path: &Path) -> Result<Analysis, ScanError> {
-    let file = hashes::identify(path)?;
+    let file = identity::identify(path)?;
     let output = ffprobe(tools, path).await?;
     analysis_from_ffprobe(&output, file)
 }
@@ -32,13 +32,18 @@ pub async fn probe(tools: &Tools, path: &Path) -> Result<Analysis, ScanError> {
 /// ffmpeg-plex states what a stock ffprobe does not: an MP4's layout (`moov_before_mdat`,
 /// `co64`) and an MPEG-TS packet's length (`ts_packetsize`) with each stream, H.264's coded
 /// size, reference frames and scaling matrix from its sequence header, and no language for a
-/// Matroska track declaring `und`. An older build leaves them out, and so does the analysis.
+/// Matroska track declaring `und`, and the file's hashes (`format.hashes`), which take the
+/// place of `file`'s. An older build leaves them out, and so does the analysis.
 ///
 /// # Errors
 ///
 /// [`ScanError::Output`] when the output is not ffprobe's JSON.
-pub fn analysis_from_ffprobe(output: &[u8], file: FileIdentity) -> Result<Analysis, ScanError> {
-    let probed = parse(output)?;
+pub fn analysis_from_ffprobe(output: &[u8], mut file: FileIdentity) -> Result<Analysis, ScanError> {
+    let mut probed = parse(output)?;
+    if let Some(hashes) = probed.format.hashes.take() {
+        file.content_hash = hashes.content.or(file.content_hash);
+        file.open_subtitles_hash = hashes.oshash.or(file.open_subtitles_hash);
+    }
     let container = probed.format.format_name.unwrap_or_default();
     let is = |name: &str| container.split(',').any(|format| format == name);
     // The demuxer's own figures, which ffprobe repeats on every stream.
@@ -697,6 +702,14 @@ struct Format {
     format_name: Option<String>,
     duration: Option<String>,
     bit_rate: Option<String>,
+    /// ffmpeg-plex's, from a seekable file.
+    hashes: Option<Hashes>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct Hashes {
+    content: Option<String>,
+    oshash: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -872,7 +885,8 @@ mod tests {
         let identity = FileIdentity {
             size: 1,
             modified_at: 0,
-            open_subtitles_hash: "0000000000000001".to_owned(),
+            content_hash: None,
+            open_subtitles_hash: None,
         };
         let mp4 = br#"{"format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2"},
             "streams": [{"index": 0, "codec_type": "video", "moov_before_mdat": "false",
@@ -886,6 +900,41 @@ mod tests {
         let analysis = analysis_from_ffprobe(ts, identity).unwrap();
         assert_eq!(analysis.packet_length, Some(192));
         assert_eq!(analysis.optimized_for_streaming, None);
+    }
+
+    #[test]
+    fn takes_the_hashes_ffprobe_prints() {
+        let identity = FileIdentity {
+            size: 928_670_754,
+            modified_at: 0,
+            content_hash: None,
+            open_subtitles_hash: Some("0000000000000001".to_owned()),
+        };
+        let hashed = br#"{"format": {"format_name": "matroska,webm",
+            "hashes": {"content": "782e3038c7290470c29320a840e5f92123912e56",
+                       "oshash": "8e245d9679d31e12"}}}"#;
+        let analysis = analysis_from_ffprobe(hashed, identity.clone()).unwrap();
+        assert_eq!(
+            analysis.file.content_hash.as_deref(),
+            Some("782e3038c7290470c29320a840e5f92123912e56")
+        );
+        assert_eq!(
+            analysis.file.open_subtitles_hash.as_deref(),
+            Some("8e245d9679d31e12")
+        );
+        // A file under 128 KiB has no OpenSubtitles hash, and an older build no hashes.
+        let small = br#"{"format": {"format_name": "wav",
+            "hashes": {"content": "8f871fbdd31d66fa7baf35e558832f69d9ef902d"}}}"#;
+        let analysis = analysis_from_ffprobe(small, identity.clone()).unwrap();
+        assert_eq!(
+            analysis.file.open_subtitles_hash.as_deref(),
+            Some("0000000000000001")
+        );
+        let older = br#"{"format": {"format_name": "wav"}}"#;
+        assert_eq!(
+            analysis_from_ffprobe(older, identity.clone()).unwrap().file,
+            identity
+        );
     }
 
     #[test]

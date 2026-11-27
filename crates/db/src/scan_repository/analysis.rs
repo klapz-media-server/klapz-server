@@ -774,7 +774,8 @@ mod tests {
         let identity = klapz_scanner::report::FileIdentity {
             size: 0,
             modified_at: 0,
-            open_subtitles_hash: "0".to_owned(),
+            content_hash: None,
+            open_subtitles_hash: None,
         };
         let mut analysis = klapz_scanner::analysis_from_ffprobe(&ffprobe, identity).unwrap();
         let teletext = |analysis: &Analysis| {

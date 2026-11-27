@@ -207,6 +207,25 @@ async fn a_scanned_film_reads_back_as_the_reference_stored_it() {
 }
 
 #[tokio::test]
+async fn a_scanned_file_keeps_both_hashes_ffprobe_printed() {
+    let (_, scan, metadata) = seeded().await;
+    let mut analysis = probe("soul");
+    analysis.file.content_hash = Some("782e3038c7290470c29320a840e5f92123912e56".to_owned());
+    let key = scanned(&scan, FILMS, soul_with(&analysis), Some(&analysis)).await;
+
+    let versions = metadata.versions_for(&[key]).await.unwrap();
+    let files = metadata.files_for(&[versions[0].id]).await.unwrap();
+    assert_eq!(
+        files[0].content_hash.as_deref(),
+        Some("782e3038c7290470c29320a840e5f92123912e56")
+    );
+    assert_eq!(
+        files[0].open_subtitles_hash.as_deref(),
+        Some("eaa2ddfe303480ac")
+    );
+}
+
+#[tokio::test]
 async fn a_scanned_films_tracks_carry_the_reference_vocabulary() {
     let (_, scan, metadata) = seeded().await;
     let key = scanned(&scan, FILMS, soul(), Some(&probe("soul"))).await;

@@ -12,9 +12,16 @@ pub struct FileIdentity {
     pub size: u64,
     /// Unix seconds.
     pub modified_at: i64,
+    /// The SHA-1 of the size in decimal followed by the hex SHA-1s of the first 64 KiB and, for
+    /// a larger file, of the last 64 KiB, in 40 hex digits: the hash the reference keeps for a
+    /// part. ffprobe's (`format.hashes.content`), absent from an older ffmpeg-plex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_hash: Option<String>,
     /// `OpenSubtitles`' hash: the size plus the 64-bit words of the first and last 64 KiB, in
-    /// 16 hex digits.
-    pub open_subtitles_hash: String,
+    /// 16 hex digits. ffprobe's (`format.hashes.oshash`), absent from an older ffmpeg-plex and
+    /// for a file under 128 KiB, as in the reference implementation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_subtitles_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

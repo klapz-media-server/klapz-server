@@ -191,7 +191,9 @@ child goes with it) → `Updating deletion state for metadata item 578724, is ha
 appended), path-independent (unchanged across a rename) and mtime-independent (unchanged by
 `touch`). It is **not** the SHA-1 of the whole file (checked on an 88 KB file), nor SHA-1/MD5 of the
 first or last 4–64 KiB, with or without the size. It also names the part's bundle under
-`Media/localhost/<h[0]>/<h[1:]>.bundle` [M]. Its exact definition is open (§9).
+`Media/localhost/<h[0]>/<h[1:]>.bundle` [M]. The repo owner gives its definition, which the scan
+stores (`docs/scanner/analysis.md`): the SHA-1 of the size in decimal and the hex SHA-1s of the
+first and last 64 KiB; it fits every property above, and is not yet compared with this library.
 `open_subtitle_hash` (16 hex) is the OpenSubtitles hash.
 
 ### 2.5 Deletion, trash and availability

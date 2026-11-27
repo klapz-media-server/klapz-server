@@ -768,7 +768,6 @@ fn part_row(file: &NewPart, media: i64, id: i64, position: i32) -> media_part::M
         optimized_for_streaming: None,
         packet_length: None,
         has_chapter_text_stream: false,
-        // The reference's identity hash is not one the scanner can reproduce yet.
         content_hash: None,
         open_subtitles_hash: None,
         format_name: None,
@@ -789,7 +788,9 @@ fn apply_headers(row: &mut media_part::Model, analysis: Option<&Analysis>) {
         .and_then(|analysis| analysis.packet_length)
         .and_then(|length| i32::try_from(length).ok());
     row.has_chapter_text_stream = analysis.is_some_and(analysis::has_chapter_text_stream);
-    row.open_subtitles_hash = analysis.map(|analysis| analysis.file.open_subtitles_hash.clone());
+    row.content_hash = analysis.and_then(|analysis| analysis.file.content_hash.clone());
+    row.open_subtitles_hash =
+        analysis.and_then(|analysis| analysis.file.open_subtitles_hash.clone());
     row.format_name = analysis.map(|analysis| analysis.container.clone());
     row.declared_duration_us = analysis
         .and_then(|analysis| analysis.duration_us)

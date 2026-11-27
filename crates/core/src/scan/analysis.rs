@@ -671,7 +671,8 @@ mod tests {
                 file: FileIdentity {
                     size: 100,
                     modified_at: 10,
-                    open_subtitles_hash: "0000000000000000".to_owned(),
+                    content_hash: None,
+                    open_subtitles_hash: None,
                 },
                 container: "matroska,webm".to_owned(),
                 duration_ms: Some(1000),
