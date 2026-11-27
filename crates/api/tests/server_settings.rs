@@ -67,7 +67,7 @@ query Settings($namespace: String) {
   server {
     settings(namespace: $namespace) {
       nodes {
-        key kind value defaultValue isDefault choices minimum maximum updatedAt
+        key kind value defaultValue isDefault choices minimum maximum optional updatedAt
         updatedBy { username }
       }
     }
@@ -100,7 +100,14 @@ async fn an_owner_reads_every_setting_with_its_default_in_force() {
         .iter()
         .map(|setting| setting["key"].as_str().unwrap())
         .collect();
-    assert_eq!(keys, ["general.public_url", "transcoder.h264.preset"]);
+    assert_eq!(
+        keys,
+        [
+            "general.public_url",
+            "transcoder.h264.crf",
+            "transcoder.h264.preset"
+        ]
+    );
 
     let data = run(
         &schema,
@@ -112,6 +119,18 @@ async fn an_owner_reads_every_setting_with_its_default_in_force() {
     assert_eq!(
         data["server"]["settings"]["nodes"],
         json!([{
+            "key": "transcoder.h264.crf",
+            "kind": "INTEGER",
+            "value": "",
+            "defaultValue": "",
+            "isDefault": true,
+            "choices": null,
+            "minimum": "0",
+            "maximum": "51",
+            "optional": true,
+            "updatedAt": null,
+            "updatedBy": null,
+        }, {
             "key": "transcoder.h264.preset",
             "kind": "CHOICE",
             "value": "veryfast",
@@ -123,6 +142,7 @@ async fn an_owner_reads_every_setting_with_its_default_in_force() {
             ],
             "minimum": null,
             "maximum": null,
+            "optional": false,
             "updatedAt": null,
             "updatedBy": null,
         }])
@@ -130,8 +150,9 @@ async fn an_owner_reads_every_setting_with_its_default_in_force() {
 
     for (namespace, count) in [
         ("general", 1),
-        ("transcoder", 1),
-        ("transcoder.h264", 1),
+        ("transcoder", 2),
+        ("transcoder.h264", 2),
+        ("transcoder.h264.crf", 1),
         ("transcode", 0),
     ] {
         let data = run(
@@ -217,7 +238,7 @@ async fn a_change_applies_whole_or_not_at_all() {
     )
     .await;
     assert_eq!(
-        unchanged["server"]["settings"]["nodes"][0]["value"],
+        unchanged["server"]["settings"]["nodes"][1]["value"],
         "veryfast"
     );
 
@@ -268,4 +289,51 @@ async fn a_change_applies_whole_or_not_at_all() {
             "updatedBy": null,
         }])
     );
+}
+
+fn crf(value: Option<&str>) -> Value {
+    json!({ "key": "transcoder.h264.crf", "value": value })
+}
+
+#[tokio::test]
+async fn an_owner_chooses_a_rate_factor_within_x264s_range_or_none() {
+    let access = InMemoryAccess::default();
+    let owner = access.add_user("owner", ServerRole::Owner).unwrap();
+    let schema = schema(access);
+    let update = |setting: Value| {
+        let schema = &schema;
+        let owner = &owner;
+        async move {
+            run(
+                schema,
+                caller(owner),
+                UPDATE,
+                json!({ "input": { "settings": [setting] } }),
+            )
+            .await["updateServerSettings"]
+                .clone()
+        }
+    };
+
+    for refused in ["52", "-1", "23.5", "auto"] {
+        assert_eq!(
+            update(crf(Some(refused))).await["userErrors"],
+            json!([{ "field": ["settings", "0", "value"], "code": "INVALID_VALUE" }]),
+            "{refused}"
+        );
+    }
+
+    let chosen = update(crf(Some(" 028 "))).await;
+    assert_eq!(chosen["userErrors"], json!([]));
+    assert_eq!(chosen["settings"][0]["value"], "28");
+    assert_eq!(chosen["settings"][0]["isDefault"], false);
+
+    // Chosen empty, every quality keeps its own factor again, and the choice is kept as made.
+    let emptied = update(crf(Some(""))).await;
+    assert_eq!(emptied["settings"][0]["value"], "");
+    assert_eq!(emptied["settings"][0]["isDefault"], false);
+
+    let reset = update(crf(None)).await;
+    assert_eq!(reset["settings"][0]["value"], "");
+    assert_eq!(reset["settings"][0]["isDefault"], true);
 }

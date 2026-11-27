@@ -25,7 +25,8 @@ use crate::{DateTime, Int64};
 pub enum ServerSettingKind {
     /// One of the words in `choices`.
     Choice,
-    /// A whole number between `minimum` and `maximum`, both included.
+    /// A whole number between `minimum` and `maximum`, both included; empty for none when
+    /// `optional`.
     Integer,
     /// `true` or `false`.
     Boolean,
@@ -99,6 +100,16 @@ impl ServerSettingObject {
         match self.0.definition.kind {
             SettingKind::Integer { maximum, .. } => Some(Int64(maximum)),
             _ => None,
+        }
+    }
+
+    /// Whether it takes the empty value, for none: an `ADDRESS` always, an `INTEGER` such as
+    /// `transcoder.h264.crf` when declared so.
+    async fn optional(&self) -> bool {
+        match self.0.definition.kind {
+            SettingKind::Integer { optional, .. } => optional,
+            SettingKind::Address => true,
+            SettingKind::Choice(_) | SettingKind::Boolean => false,
         }
     }
 

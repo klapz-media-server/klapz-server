@@ -100,6 +100,38 @@ impl H264Preset {
     }
 }
 
+/// A constant rate factor x264 takes for 8-bit video: 0 is lossless, 51 the coarsest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Crf(u32);
+
+impl Crf {
+    pub const MIN: u32 = 0;
+    pub const MAX: u32 = 51;
+
+    #[must_use]
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// How x264 encodes every rung of a stream, as an owner chose it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct H264Tuning {
+    pub preset: H264Preset,
+    /// One factor for every rung, under each rung's bitrate cap. Absent, each rung keeps the
+    /// factor measured on the reference for it.
+    pub crf: Option<Crf>,
+}
+
 /// Where an encode puts its key frames, which is where its segments can be cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyFrames {

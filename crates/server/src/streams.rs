@@ -43,8 +43,8 @@ use klapz_core::stream::{
 use klapz_transcoder::adapt;
 use klapz_transcoder::media::{read_sidecar, resolve_sidecar, resolve_within};
 use klapz_transcoder::plan::{
-    plan_ladder, Adaptation, AudioAction, CopyCodecs, H264Preset, Ladder, Limits, StreamPlan,
-    StreamSource, Track, VideoAction,
+    plan_ladder, Adaptation, AudioAction, CopyCodecs, Crf, H264Preset, H264Tuning, Ladder, Limits,
+    StreamPlan, StreamSource, Track, VideoAction,
 };
 use klapz_transcoder::session::{DashTrack, Output, Protocol, StreamRequest, SubtitleDelivery};
 use klapz_transcoder::subtitle::SubtitleFormat;
@@ -338,15 +338,32 @@ impl Streams {
         }
     }
 
-    /// The preset an owner chose. A setting that cannot be read leaves the stream to the
-    /// default rather than refusing it: the player asked for a picture, not for a preset.
-    async fn h264_preset(&self) -> H264Preset {
-        match settings::value_of(self.settings.as_ref(), &settings::H264_PRESET).await {
-            Ok(name) => H264Preset::named(&name).unwrap_or_default(),
+    /// The preset and rate factor an owner chose, read at every start. Settings that cannot be
+    /// read leave the stream to the defaults rather than refusing it: the player asked for a
+    /// picture, not for a preset.
+    async fn h264_tuning(&self) -> H264Tuning {
+        let chosen = match settings::settings(self.settings.as_ref(), Some("transcoder.h264")).await
+        {
+            Ok(chosen) => chosen,
             Err(error) => {
-                tracing::warn!(%error, "settings unreadable: the default H.264 preset applies");
-                H264Preset::default()
+                tracing::warn!(%error, "settings unreadable: the default H.264 tuning applies");
+                return H264Tuning::default();
             }
+        };
+        let value = |definition: &settings::SettingDefinition| {
+            chosen
+                .iter()
+                .find(|setting| setting.definition.key == definition.key)
+                .map(settings::Setting::value)
+        };
+        H264Tuning {
+            preset: value(&settings::H264_PRESET)
+                .and_then(|name| H264Preset::named(&name))
+                .unwrap_or_default(),
+            // Empty is the rungs' own factors.
+            crf: value(&settings::H264_CRF)
+                .and_then(|factor| factor.parse().ok())
+                .and_then(Crf::new),
         }
     }
 
@@ -478,7 +495,7 @@ impl Streams {
                 total_ms: u64::try_from(duration_ms).unwrap_or(0),
                 subtitle: order.subtitle.as_ref().map(subtitle_delivery),
                 text_subtitles: text_subtitles(&order),
-                h264_preset: self.h264_preset().await,
+                h264: self.h264_tuning().await,
             })
             .await
             .map_err(stream_error)?;
@@ -1340,20 +1357,80 @@ mod tests {
         assert_eq!(settings::H264_PRESET.default, H264Preset::default().name());
     }
 
-    #[tokio::test]
-    async fn a_stream_takes_the_preset_an_owner_chose() {
-        let repository = Arc::new(klapz_core::testing::InMemorySettings::default());
-        let streams = Streams::new(Arc::new(Transcoder::default()), repository.clone());
-        assert_eq!(streams.h264_preset().await, H264Preset::Veryfast);
+    #[test]
+    fn every_rate_factor_an_owner_can_choose_is_one_x264_takes() {
+        let klapz_core::settings::SettingKind::Integer {
+            minimum,
+            maximum,
+            optional,
+        } = settings::H264_CRF.kind
+        else {
+            panic!("the rate factor is an integer");
+        };
+        assert_eq!(
+            (minimum, maximum),
+            (i64::from(Crf::MIN), i64::from(Crf::MAX))
+        );
+        // Empty by default, so that every rung keeps the factor measured for it.
+        assert!(optional);
+        assert_eq!(settings::H264_CRF.default, "");
+    }
+
+    async fn choose(
+        repository: &klapz_core::testing::InMemorySettings,
+        key: &str,
+        value: Option<&str>,
+    ) {
         let chosen = [klapz_core::settings::SettingUpdate {
-            key: settings::H264_PRESET.key.to_owned(),
-            value: Some("medium".to_owned()),
+            key: key.to_owned(),
+            value: value.map(str::to_owned),
         }];
-        settings::update_settings(repository.as_ref(), &chosen, klapz_core::UserId::new(1), 0)
+        settings::update_settings(repository, &chosen, klapz_core::UserId::new(1), 0)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(streams.h264_preset().await, H264Preset::Medium);
+    }
+
+    #[tokio::test]
+    async fn a_stream_takes_the_tuning_an_owner_chose() {
+        let repository = Arc::new(klapz_core::testing::InMemorySettings::default());
+        let streams = Streams::new(Arc::new(Transcoder::default()), repository.clone());
+        assert_eq!(
+            streams.h264_tuning().await,
+            H264Tuning {
+                preset: H264Preset::Veryfast,
+                crf: None
+            }
+        );
+
+        choose(&repository, settings::H264_PRESET.key, Some("medium")).await;
+        choose(&repository, settings::H264_CRF.key, Some("28")).await;
+        assert_eq!(
+            streams.h264_tuning().await,
+            H264Tuning {
+                preset: H264Preset::Medium,
+                crf: Crf::new(28)
+            }
+        );
+
+        // Each applies from the next start, and one changes without the other.
+        choose(&repository, settings::H264_CRF.key, Some("")).await;
+        assert_eq!(
+            streams.h264_tuning().await,
+            H264Tuning {
+                preset: H264Preset::Medium,
+                crf: None
+            }
+        );
+        choose(&repository, settings::H264_CRF.key, Some("0")).await;
+        choose(&repository, settings::H264_PRESET.key, None).await;
+        assert_eq!(
+            streams.h264_tuning().await,
+            H264Tuning {
+                preset: H264Preset::Veryfast,
+                crf: Crf::new(0)
+            }
+        );
     }
 
     fn address() -> Address<'static> {

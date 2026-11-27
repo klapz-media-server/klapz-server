@@ -206,7 +206,7 @@ without them saying so.
   dotted lower-case words, at least two, each of `a-z`, `0-9` and `_` starting with a letter,
   96 characters at most, the machinery it drives first: `transcoder.h264.preset`. Every
   setting is declared in `settings::DEFINITIONS`, by key, with its kind (`Choice`, `Integer`
-  with bounds, `Boolean`, `Address` — checked as a pairing's address is, empty for none), its
+  with bounds, perhaps empty for none, `Boolean`, `Address` — checked as a pairing's address is, empty for none), its
   default and its description; a test holds every declared key to
   the grammar and every default to its own kind. A row holds only a value an owner chose
   (`name`, `value`, `updated_at`, `updated_by`; `key` is reserved in MySQL), in canonical
@@ -216,7 +216,8 @@ without them saying so.
   them: `Server.settings(namespace:)` is empty for anyone else, and `updateServerSettings`
   changes everything it names or nothing (at most 100 per change). A setting is read where it
   is used, at every use, so a change applies from the next one without a restart:
-  `server::streams` reads `transcoder.h264.preset` at every start. `general.*` holds what
+  `server::streams` reads `transcoder.h264.preset` and `transcoder.h264.crf` (empty: each
+  rung's measured factor) at every start. `general.*` holds what
   is the server's as a whole, such as `general.public_url`, the address it is reached at from
   outside its network. What reaches a child
   process is the engine's own value for it (`transcoder::plan::H264Preset`), never the stored

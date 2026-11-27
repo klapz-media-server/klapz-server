@@ -8323,6 +8323,11 @@ type ServerSetting {
 	"""
 	maximum: Int64
 	"""
+	Whether it takes the empty value, for none: an `ADDRESS` always, an `INTEGER` such as
+	`transcoder.h264.crf` when declared so.
+	"""
+	optional: Boolean!
+	"""
 	When an owner last chose its value. Null while the default is in force.
 	"""
 	updatedAt: DateTime
@@ -8408,7 +8413,8 @@ enum ServerSettingKind {
 	"""
 	CHOICE
 	"""
-	A whole number between `minimum` and `maximum`, both included.
+	A whole number between `minimum` and `maximum`, both included; empty for none when
+	`optional`.
 	"""
 	INTEGER
 	"""

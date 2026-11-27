@@ -22,8 +22,13 @@ pub const MAX_UPDATES: usize = 100;
 pub enum SettingKind {
     /// One of these words, written as listed.
     Choice(&'static [&'static str]),
-    /// A whole number between these bounds, both included.
-    Integer { minimum: i64, maximum: i64 },
+    /// A whole number between these bounds, both included; when `optional`, also empty for
+    /// none.
+    Integer {
+        minimum: i64,
+        maximum: i64,
+        optional: bool,
+    },
     /// `true` or `false`.
     Boolean,
     /// An address clients can be sent to, as a pairing takes one: `http` or `https`, a host,
@@ -65,6 +70,18 @@ pub const H264_PRESET: SettingDefinition = SettingDefinition {
                   next stream.",
 };
 
+pub const H264_CRF: SettingDefinition = SettingDefinition {
+    key: "transcoder.h264.crf",
+    // x264's range for 8-bit video, which is all the server encodes.
+    kind: SettingKind::Integer {
+        minimum: 0,
+        maximum: 51,
+        optional: true,
+    },
+    default: "",
+    description: "The constant rate factor x264 aims for on every video the server converts to                   H.264, from 0 (lossless) to 51: lower is sharper and costs more bits, within                   the bitrate the stream's quality allows either way. Empty, each quality keeps                   the factor measured on the reference for it, from 16 to 24. Applies from the                   next stream.",
+};
+
 pub const PUBLIC_URL: SettingDefinition = SettingDefinition {
     key: "general.public_url",
     kind: SettingKind::Address,
@@ -73,7 +90,7 @@ pub const PUBLIC_URL: SettingDefinition = SettingDefinition {
 };
 
 /// Every setting, by key.
-pub const DEFINITIONS: &[SettingDefinition] = &[PUBLIC_URL, H264_PRESET];
+pub const DEFINITIONS: &[SettingDefinition] = &[PUBLIC_URL, H264_CRF, H264_PRESET];
 
 /// The setting declared under this key.
 #[must_use]
@@ -129,7 +146,10 @@ impl SettingDefinition {
                 .iter()
                 .find(|choice| **choice == value)
                 .map(|choice| (*choice).to_owned()),
-            SettingKind::Integer { minimum, maximum } => value
+            SettingKind::Integer { optional: true, .. } if value.is_empty() => Some(String::new()),
+            SettingKind::Integer {
+                minimum, maximum, ..
+            } => value
                 .parse::<i64>()
                 .ok()
                 .filter(|number| (minimum..=maximum).contains(number))
@@ -401,6 +421,7 @@ mod tests {
             kind: SettingKind::Integer {
                 minimum: 1,
                 maximum: 16,
+                optional: false,
             },
             default: "2",
             ..H264_PRESET
@@ -410,6 +431,15 @@ mod tests {
         assert_eq!(integer.check("17"), Err(SettingError::InvalidValue));
         assert_eq!(integer.check("0"), Err(SettingError::InvalidValue));
         assert_eq!(integer.check("2.5"), Err(SettingError::InvalidValue));
+        assert_eq!(integer.check(""), Err(SettingError::InvalidValue));
+
+        let optional = H264_CRF;
+        assert_eq!(optional.check(" ").as_deref(), Ok(""));
+        assert_eq!(optional.check("0").as_deref(), Ok("0"));
+        assert_eq!(optional.check("051").as_deref(), Ok("51"));
+        assert_eq!(optional.check("52"), Err(SettingError::InvalidValue));
+        assert_eq!(optional.check("-1"), Err(SettingError::InvalidValue));
+        assert_eq!(optional.check("auto"), Err(SettingError::InvalidValue));
 
         let boolean = SettingDefinition {
             kind: SettingKind::Boolean,
@@ -553,7 +583,7 @@ mod tests {
         };
         assert_eq!(
             keys(settings(&repository, Some("transcoder")).await.unwrap()),
-            [H264_PRESET.key]
+            [H264_CRF.key, H264_PRESET.key]
         );
         assert!(settings(&repository, Some("transcode"))
             .await
