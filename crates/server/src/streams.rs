@@ -33,6 +33,7 @@ use axum::Router;
 use futures_util::StreamExt as _;
 use klapz_core::lifecycle::{Lifecycle, SessionLocks};
 use klapz_core::playback::{PlaybackOutput, PlaybackRepository, StreamDecision};
+use klapz_core::settings::{self, SettingsRepository};
 use klapz_core::sidecar::{SidecarError, SidecarSource};
 use klapz_core::stream::SubtitleFormat as PlayerSubtitleFormat;
 use klapz_core::stream::{
@@ -42,8 +43,8 @@ use klapz_core::stream::{
 use klapz_transcoder::adapt;
 use klapz_transcoder::media::{read_sidecar, resolve_sidecar, resolve_within};
 use klapz_transcoder::plan::{
-    plan_ladder, Adaptation, AudioAction, CopyCodecs, Ladder, Limits, StreamPlan, StreamSource,
-    Track, VideoAction,
+    plan_ladder, Adaptation, AudioAction, CopyCodecs, H264Preset, Ladder, Limits, StreamPlan,
+    StreamSource, Track, VideoAction,
 };
 use klapz_transcoder::session::{DashTrack, Output, Protocol, StreamRequest, SubtitleDelivery};
 use klapz_transcoder::subtitle::SubtitleFormat;
@@ -69,6 +70,8 @@ const ENCODED_VIDEO_CODECS: &str = "avc1.640028";
 #[derive(Debug)]
 pub struct Streams {
     transcoder: Arc<Transcoder>,
+    /// Read at every start, so that an owner's change applies from the next stream.
+    settings: Arc<dyn SettingsRepository>,
     entries: Mutex<HashMap<String, Entry>>,
 }
 
@@ -327,10 +330,23 @@ fn narrow(value: i64) -> Option<i32> {
 }
 
 impl Streams {
-    pub fn new(transcoder: Arc<Transcoder>) -> Self {
+    pub fn new(transcoder: Arc<Transcoder>, settings: Arc<dyn SettingsRepository>) -> Self {
         Self {
             transcoder,
+            settings,
             entries: Mutex::default(),
+        }
+    }
+
+    /// The preset an owner chose. A setting that cannot be read leaves the stream to the
+    /// default rather than refusing it: the player asked for a picture, not for a preset.
+    async fn h264_preset(&self) -> H264Preset {
+        match settings::value_of(self.settings.as_ref(), &settings::H264_PRESET).await {
+            Ok(name) => H264Preset::named(&name).unwrap_or_default(),
+            Err(error) => {
+                tracing::warn!(%error, "settings unreadable: the default H.264 preset applies");
+                H264Preset::default()
+            }
         }
     }
 
@@ -462,6 +478,7 @@ impl Streams {
                 total_ms: u64::try_from(duration_ms).unwrap_or(0),
                 subtitle: order.subtitle.as_ref().map(subtitle_delivery),
                 text_subtitles: text_subtitles(&order),
+                h264_preset: self.h264_preset().await,
             })
             .await
             .map_err(stream_error)?;
@@ -1313,6 +1330,32 @@ mod tests {
 
     const ADDRESS: &str = "?token=t0";
 
+    #[test]
+    fn every_preset_an_owner_can_choose_is_one_the_transcoder_knows() {
+        let klapz_core::settings::SettingKind::Choice(choices) = settings::H264_PRESET.kind else {
+            panic!("the preset is a choice");
+        };
+        let known: Vec<&str> = H264Preset::ALL.iter().map(|preset| preset.name()).collect();
+        assert_eq!(choices, known);
+        assert_eq!(settings::H264_PRESET.default, H264Preset::default().name());
+    }
+
+    #[tokio::test]
+    async fn a_stream_takes_the_preset_an_owner_chose() {
+        let repository = Arc::new(klapz_core::testing::InMemorySettings::default());
+        let streams = Streams::new(Arc::new(Transcoder::default()), repository.clone());
+        assert_eq!(streams.h264_preset().await, H264Preset::Veryfast);
+        let chosen = [klapz_core::settings::SettingUpdate {
+            key: settings::H264_PRESET.key.to_owned(),
+            value: Some("medium".to_owned()),
+        }];
+        settings::update_settings(repository.as_ref(), &chosen, klapz_core::UserId::new(1), 0)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(streams.h264_preset().await, H264Preset::Medium);
+    }
+
     fn address() -> Address<'static> {
         Address::new("s1", ADDRESS)
     }
@@ -1745,7 +1788,10 @@ mod tests {
     #[tokio::test]
     async fn a_file_played_as_it_is_opens_with_its_secret_only() {
         let scratch = Scratch::new("original");
-        let streams = Arc::new(Streams::new(Arc::new(Transcoder::default())));
+        let streams = Arc::new(Streams::new(
+            Arc::new(Transcoder::default()),
+            Arc::new(klapz_core::testing::InMemorySettings::default()),
+        ));
         let started = streams.start(order(&scratch)).await.unwrap();
         assert!(started.url.starts_with("/streams/"));
         assert_eq!(started.video, StreamDecision::Copy);
@@ -1767,7 +1813,10 @@ mod tests {
     #[tokio::test]
     async fn reading_a_stream_keeps_its_session_alive_at_most_every_interval() {
         let scratch = Scratch::new("keep-alive");
-        let streams = Arc::new(Streams::new(Arc::new(Transcoder::default())));
+        let streams = Arc::new(Streams::new(
+            Arc::new(Transcoder::default()),
+            Arc::new(klapz_core::testing::InMemorySettings::default()),
+        ));
         let sessions = Arc::new(InMemoryPlayback::default());
         let started = streams.start(order(&scratch)).await.unwrap();
         let first = sessions.start(recorded("u1~k"), 0).await.unwrap();
@@ -1797,7 +1846,10 @@ mod tests {
     #[tokio::test]
     async fn a_terminated_session_takes_its_stream_down_at_the_next_due_read() {
         let scratch = Scratch::new("terminated");
-        let streams = Arc::new(Streams::new(Arc::new(Transcoder::default())));
+        let streams = Arc::new(Streams::new(
+            Arc::new(Transcoder::default()),
+            Arc::new(klapz_core::testing::InMemorySettings::default()),
+        ));
         let sessions = Arc::new(InMemoryPlayback::default());
         let started = streams.start(order(&scratch)).await.unwrap();
         let now = klapz_core::now_epoch();
@@ -1813,7 +1865,10 @@ mod tests {
     #[tokio::test]
     async fn a_file_is_never_idle_by_itself() {
         let scratch = Scratch::new("never-idle");
-        let streams = Streams::new(Arc::new(Transcoder::default()));
+        let streams = Streams::new(
+            Arc::new(Transcoder::default()),
+            Arc::new(klapz_core::testing::InMemorySettings::default()),
+        );
         streams.start(order(&scratch)).await.unwrap();
         assert!(streams.idle().is_empty());
         assert!(!streams.stop_if_idle("u1~k"));
@@ -1825,7 +1880,10 @@ mod tests {
     #[tokio::test]
     async fn a_file_outside_its_library_is_not_streamed() {
         let scratch = Scratch::new("outside");
-        let streams = Streams::new(Arc::new(Transcoder::default()));
+        let streams = Streams::new(
+            Arc::new(Transcoder::default()),
+            Arc::new(klapz_core::testing::InMemorySettings::default()),
+        );
         let mut order = order(&scratch);
         order.source.roots = vec![scratch.0.join("elsewhere").display().to_string()];
         assert!(matches!(

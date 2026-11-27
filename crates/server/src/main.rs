@@ -241,7 +241,12 @@ async fn start() -> Result<(), Box<dyn std::error::Error>> {
     let directory: Arc<dyn AccountDirectory> = Arc::new(klapz_api_plex::plex_tv::PlexTv::new()?);
     let transcoder = Arc::new(transcoder());
     transcoder.remove_leftover_sessions();
-    let streams = Arc::new(streams::Streams::new(Arc::clone(&transcoder)));
+    let settings: Arc<dyn klapz_core::settings::SettingsRepository> =
+        Arc::new(klapz_db::SqlSettingsRepository::new(connection.clone()));
+    let streams = Arc::new(streams::Streams::new(
+        Arc::clone(&transcoder),
+        Arc::clone(&settings),
+    ));
     let locks = Arc::new(SessionLocks::default());
     let sessions = streams::Sessions {
         playback: Arc::clone(&playback),
@@ -264,6 +269,7 @@ async fn start() -> Result<(), Box<dyn std::error::Error>> {
         streams: Arc::clone(&streams) as Arc<dyn klapz_core::stream::StreamEngine>,
         session_locks: locks,
         scans: Arc::new(scans),
+        settings,
         matching: Some(matching),
     });
     tokio::spawn(publish_paired_servers(

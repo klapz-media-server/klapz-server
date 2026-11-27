@@ -93,8 +93,6 @@
   dialog::backdrop { background: rgb(0 0 0 / .45); }
   dialog h2 { font-size: 17px; margin: 0 0 6px; }
   dialog label { display: block; margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
-  dialog .copy { display: flex; gap: 8px; }
-  dialog .copy input { flex: 1; min-width: 0; font: 12.5px ui-monospace, Consolas, monospace; }
   dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   dialog input { width: 100%; }
   dialog .error { min-height: 20px; margin: 10px 0 0; font-size: 14px; color: var(--danger); }
@@ -129,19 +127,6 @@
     <div id="users"></div>
   </section>
 </main>
-
-<dialog id="credentials">
-  <h2>Plex token for <span id="credentials-name"></span></h2>
-  <p class="note">Copy it now: it is shown only once, and only a digest is kept.</p>
-  <label for="credentials-token">Token</label>
-  <div class="copy">
-    <input id="credentials-token" type="text" readonly>
-    <button id="credentials-copy" type="button">Copy</button>
-  </div>
-  <label>Server identifier</label>
-  <code id="credentials-server"></code>
-  <div class="actions"><button id="credentials-close" type="button" class="primary">Done</button></div>
-</dialog>
 
 <dialog id="pair">
   <form id="pair-form">
@@ -183,7 +168,7 @@ const DEACTIVATE_USER = `mutation($input: UserInput!) { deactivateUser(input: $i
 const SET_ROLE = `mutation($input: SetUserRoleInput!) { setUserRole(input: $input) { user { id } ${USER_ERRORS} } }`;
 const SET_PERMISSION = `mutation($input: SetLibraryPermissionInput!) { setLibraryPermission(input: $input) }`;
 const REMOVE_PERMISSION = `mutation($userId: ID!, $libraryId: ID!) { removeLibraryPermission(userId: $userId, libraryId: $libraryId) }`;
-const CONNECT_PLEX = `mutation($userId: ID!) { connectExtension(userId: $userId, extension: PLEX) { token userExtension { externalId } } }`;
+const CONNECT_PLEX = `mutation($userId: ID!) { connectExtension(userId: $userId, extension: PLEX) { userExtension { enabled } } }`;
 const DISABLE_PLEX = `mutation($userId: ID!) { disableExtension(userId: $userId, extension: PLEX) }`;
 const CONNECT_JELLYFIN = `mutation($userId: ID!) { connectExtension(userId: $userId, extension: JELLYFIN) { userExtension { enabled } } }`;
 const DISABLE_JELLYFIN = `mutation($userId: ID!) { disableExtension(userId: $userId, extension: JELLYFIN) }`;
@@ -253,20 +238,6 @@ function showSignIn(text) {
   byId("signin").hidden = false;
   say(text);
   byId("signin-login").focus();
-}
-
-function showCredentials(user, connected) {
-  byId("credentials-name").textContent = user.username;
-  byId("credentials-token").value = connected.token;
-  byId("credentials-server").textContent = connected.userExtension.externalId;
-  byId("credentials-copy").textContent = "Copy";
-  byId("credentials").showModal();
-  byId("credentials-token").select();
-}
-
-async function connectPlex(user) {
-  const data = await graphql(CONNECT_PLEX, { userId: user.id });
-  showCredentials(user, data.connectExtension);
 }
 
 function showPairing(user) {
@@ -407,8 +378,8 @@ function userCard(user) {
     checked: enabled,
     on: { change: () => act(async () => {
       if (toggle.checked) {
-        await connectPlex(user);
-      } else if (confirm(`Disable Plex for ${user.username}? Its token stops working, and enabling it again issues a new one.`)) {
+        await graphql(CONNECT_PLEX, { userId: user.id });
+      } else if (confirm(`Disable Plex for ${user.username}? Its Plex apps stop getting in until it is enabled again.`)) {
         await graphql(DISABLE_PLEX, { userId: user.id });
       }
     }) },
@@ -441,15 +412,6 @@ function userCard(user) {
     ),
     enabled ? el("div", { className: "plex" },
       el("span", { className: "note" }, "Server ", el("code", { textContent: plex.externalId })),
-      el("button", {
-        type: "button",
-        textContent: "New token",
-        on: { click: () => {
-          if (confirm(`Replace the Plex token of ${user.username}? The current one stops working.`)) {
-            act(() => connectPlex(user));
-          }
-        } },
-      }),
       pairingRow(user, plex),
     ) : null,
     details,
@@ -536,20 +498,6 @@ byId("pair-form").addEventListener("submit", async (event) => {
   } finally {
     submit.disabled = false;
   }
-});
-
-byId("credentials-copy").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(byId("credentials-token").value);
-    byId("credentials-copy").textContent = "Copied";
-  } catch {
-    byId("credentials-token").select();
-  }
-});
-
-byId("credentials-close").addEventListener("click", () => {
-  byId("credentials-token").value = "";
-  byId("credentials").close();
 });
 
 start();

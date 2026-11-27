@@ -202,6 +202,27 @@ without them saying so.
   its roots, items, collections and permissions, and what refers to its items without a foreign
   key (markers, playlist and play-queue entries, viewings, sessions); watch state and ratings,
   keyed by the work, stay. Files on disk are never touched.
+- **Server settings are keys in `server_setting`, declared in `core::settings`.** A key is
+  dotted lower-case words, at least two, each of `a-z`, `0-9` and `_` starting with a letter,
+  96 characters at most, the machinery it drives first: `transcoder.h264.preset`. Every
+  setting is declared in `settings::DEFINITIONS`, by key, with its kind (`Choice`, `Integer`
+  with bounds, `Boolean`, `Address` — checked as a pairing's address is, empty for none), its
+  default and its description; a test holds every declared key to
+  the grammar and every default to its own kind. A row holds only a value an owner chose
+  (`name`, `value`, `updated_at`, `updated_by`; `key` is reserved in MySQL), in canonical
+  form; forgetting it deletes the row and the default applies again. A key not declared is
+  refused (`UNKNOWN_SETTING`), never stored, and a stored value the setting no longer takes
+  gives way to the default rather than reaching the machinery. Owners alone read and change
+  them: `Server.settings(namespace:)` is empty for anyone else, and `updateServerSettings`
+  changes everything it names or nothing (at most 100 per change). A setting is read where it
+  is used, at every use, so a change applies from the next one without a restart:
+  `server::streams` reads `transcoder.h264.preset` at every start. `general.*` holds what
+  is the server's as a whole, such as `general.public_url`, the address it is reached at from
+  outside its network. What reaches a child
+  process is the engine's own value for it (`transcoder::plan::H264Preset`), never the stored
+  text, and a test keeps a setting's choices and the engine's names in step. What the process
+  needs before it can read its database — where to listen, the database, secrets,
+  directories, binaries — stays in the environment (`KLAPZ_*`).
 - **HTTP authentication lives in `server`**, because both surfaces share it. It attaches a
   `Principal`, which is always a user; each surface then enforces roles in its own idiom
   (`Caller`/`AdminCaller` extractors on the Plex side, request data on the GraphQL side).
@@ -280,13 +301,15 @@ without them saying so.
   importer copies no accounts, which also keeps the 283 real accounts (with names and e-mail
   addresses) in the reference database untouched.
 - **Every request is a user's.** There is no operator, no admin token and no trusted network:
-  a caller is a Plex token resolved through `user_extension`, or a session, and anything else
+  a caller is a plex.tv token resolved to the paired user (`extension_account`), or a session, and anything else
   is nobody. What used to be the operator's is a server role, `OWNER`, on a user row.
 - **Three tables, one per concern.** `users` (id, a unique lower-case `username`, an optional
   unique `email`, a server `role` — `owner` or `user` — and dates), `library_permission` (a
   `viewer` or `admin` role for one user on one library) and `user_extension` (one user
-  connected through one protocol, `plex` for now, with its external identifier and a digest of
-  its token).
+  connected through one protocol, `plex` or `jellyfin`, with its external identifier and
+  whether it is on). **A connection has no token of its own**: Plex clients present only what
+  plex.tv hands the account the user paired, Jellyfin's the token their device got at sign-in
+  (`extension_device`); `connectExtension` returns the connection and nothing to hand out.
 - **An owner manages the server.** It reaches every library as their admin
   (`LibraryAccess::All`, whatever permissions it holds), manages users, their roles, permissions,
   activation and extensions, reads everyone's history and sessions, terminates sessions and
@@ -352,7 +375,7 @@ without them saying so.
   Jellyfin's clients.
 - **A user pairs its own server.** `pairExtension`, `moveExtension` and `unpairExtension` are
   open to owners and to the user they name, so a client can offer pairing in the user's own
-  settings; issuing and revoking a Plex token (`connectExtension`, `disableExtension`) stays
+  settings; switching a Plex connection on and off (`connectExtension`, `disableExtension`) stays
   the owners'. `viewer` says who is asking (its `role`, and the `User`), which is how a client
   decides what to offer.
 - **`/admin` is the owners' page.** Users, their roles, their libraries, their Plex connection;
@@ -502,9 +525,9 @@ Places where we knowingly answer differently, each decided rather than overlooke
   `master.m3u8`, whose URLs all carry the stream's own secret (`?token=`, not the account's): the
   Plex binding builds no manifest. The reference serves its segments under the session's name,
   without a token.
-- **Server settings are refused.** `/:/prefs` answers `403`, the repo owner's decision, so that
-  Plex Web offers none of its server settings screens, which drive machinery this server does
-  not have; `allowChannelAccess` is `0`, which removes Plugins. Editing items is unaffected.
+- **Plex's server settings are refused.** `/:/prefs` answers `403`, the repo owner's decision,
+  so that Plex Web offers none of its server settings screens, which drive machinery this server
+  does not have — the server's own settings are on the official API, `Server.settings`; `allowChannelAccess` is `0`, which removes Plugins. Editing items is unaffected.
   Dashboard, Alerts, Conversions and Manage › Libraries stay: Plex Web shows them for any server
   plex.tv lists as the viewer's own (`docs/spec-gaps.md`).
 - **`/library/metadata/{id}/userState` exists here and not on the reference.** It belongs to

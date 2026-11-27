@@ -791,6 +791,18 @@ impl Mutation {
         crate::access::set_role(context, input).await
     }
 
+    /// Changes settings of the server, all of them or none: one refused, nothing changes. A
+    /// change applies from the next use of what it tunes, without a restart. For the server's
+    /// owners only.
+    async fn update_server_settings(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The settings to change.")]
+        input: crate::settings::UpdateServerSettingsInput,
+    ) -> Result<crate::settings::UpdateServerSettingsPayload> {
+        crate::settings::update_server_settings(context, input).await
+    }
+
     /// Gives a user a role on a library, replacing the one it had. For the server's owners
     /// only.
     async fn set_library_permission(
@@ -811,8 +823,8 @@ impl Mutation {
         crate::access::remove_library_permission(context, &user_id, &library_id).await
     }
 
-    /// Switches a user's connection off: its token stops working, its devices are forgotten
-    /// and its identifier is kept. Whether it was on. For the server's owners; through Jellyfin,
+    /// Switches a user's connection off: it opens nothing more, its devices are forgotten and
+    /// its identifier is kept. Whether it was on. For the server's owners; through Jellyfin,
     /// for the user itself too.
     async fn disable_extension(
         &self,
@@ -823,9 +835,10 @@ impl Mutation {
         crate::access::disable_extension(context, &user_id, extension).await
     }
 
-    /// Connects a user through an extension, returning a new token. Called again, it replaces
-    /// the token and keeps the identifier clients recognize. For the server's owners; through
-    /// Jellyfin, whose clients then sign in with the user's password, for the user itself too.
+    /// Connects a user through an extension, or switches its connection back on, keeping the
+    /// identifier clients recognize. No token comes of it: Plex's clients present the one
+    /// plex.tv hands them once the user paired, Jellyfin's sign in with the user's password.
+    /// For the server's owners; through Jellyfin, for the user itself too.
     async fn connect_extension(
         &self,
         context: &Context<'_>,

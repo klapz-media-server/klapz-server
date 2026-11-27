@@ -47,6 +47,8 @@ pub struct ApiContext {
     /// Shared with whatever else ends sessions outside a request: the sweep, the stream routes.
     pub session_locks: Arc<klapz_core::lifecycle::SessionLocks>,
     pub scans: Arc<dyn klapz_core::scan::ScanControl>,
+    /// What the server's owners tuned.
+    pub settings: Arc<dyn klapz_core::settings::SettingsRepository>,
     /// Source metadata: the images items show, and matching on demand. `None` on a server
     /// without it, whose items show no image.
     pub matching: Option<klapz_core::source_metadata::Matching>,

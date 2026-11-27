@@ -49,6 +49,57 @@ pub enum AudioAction {
     ConvertToAac,
 }
 
+/// How hard x264 works on a picture: x264's own presets, fastest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum H264Preset {
+    Ultrafast,
+    Superfast,
+    /// The reference's, for every conversion it was captured making.
+    #[default]
+    Veryfast,
+    Faster,
+    Fast,
+    Medium,
+    Slow,
+    Slower,
+    Veryslow,
+}
+
+impl H264Preset {
+    pub const ALL: [Self; 9] = [
+        Self::Ultrafast,
+        Self::Superfast,
+        Self::Veryfast,
+        Self::Faster,
+        Self::Fast,
+        Self::Medium,
+        Self::Slow,
+        Self::Slower,
+        Self::Veryslow,
+    ];
+
+    /// The name x264 knows it by, which is what reaches the process: never a caller's text.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Ultrafast => "ultrafast",
+            Self::Superfast => "superfast",
+            Self::Veryfast => "veryfast",
+            Self::Faster => "faster",
+            Self::Fast => "fast",
+            Self::Medium => "medium",
+            Self::Slow => "slow",
+            Self::Slower => "slower",
+            Self::Veryslow => "veryslow",
+        }
+    }
+
+    #[must_use]
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|preset| preset.name() == name)
+    }
+}
+
 /// Where an encode puts its key frames, which is where its segments can be cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyFrames {

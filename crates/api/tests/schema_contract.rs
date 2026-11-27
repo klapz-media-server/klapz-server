@@ -54,6 +54,7 @@ fn schema() -> ApiSchema {
         watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     })
@@ -92,6 +93,7 @@ fn searchable() -> ApiSchema {
         watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     })
@@ -562,6 +564,7 @@ fn series_with_episodes() -> ApiSchema {
         watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     })
@@ -932,7 +935,7 @@ async fn connected_user(schema: &ApiSchema) -> String {
     let connected = schema
         .execute(
             as_owner(
-                "mutation($id: ID!) { connectExtension(userId: $id, extension: PLEX) { token } }",
+                "mutation($id: ID!) { connectExtension(userId: $id, extension: PLEX) { userExtension { enabled } } }",
             )
             .variables(async_graphql::Variables::from_json(
                 serde_json::json!({ "id": id }),
@@ -1210,6 +1213,7 @@ fn watchable() -> ApiSchema {
         watch: Arc::new(klapz_core::testing::InMemoryWatch::over(items)),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     })
@@ -1538,6 +1542,7 @@ fn serving_with(
         watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: engine,
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans,
         matching: None,
     })
@@ -2064,6 +2069,7 @@ fn editable() -> ApiSchema {
         watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     })
@@ -2771,6 +2777,7 @@ fn filmography() -> ApiSchema {
         playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
         collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     })
@@ -2909,6 +2916,7 @@ fn markable() -> ApiSchema {
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     })

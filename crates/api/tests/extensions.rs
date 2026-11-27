@@ -54,6 +54,7 @@ async fn fixture() -> Fixture {
         watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     });
@@ -92,7 +93,7 @@ impl Fixture {
         self.as_owner(
             "mutation($user: ID!, $extension: ExtensionType!) {
                 connectExtension(userId: $user, extension: $extension) {
-                    token userExtension { extension enabled }
+                    userExtension { extension enabled }
                 }
             }",
             json!({ "user": GlobalId::encode("User", self.alice.get()), "extension": extension }),
@@ -197,17 +198,6 @@ async fn a_user_connected_through_jellyfin_signs_in_and_its_device_token_opens_i
     );
     // A Jellyfin token is no Plex token.
     assert_eq!(fixture.opens(Extension::Plex, &token).await, None);
-}
-
-#[tokio::test]
-async fn the_connection_token_is_a_jellyfin_key_as_well() {
-    let fixture = fixture().await;
-    let connected = fixture.connect("JELLYFIN").await;
-    let key = connected["connectExtension"]["token"].as_str().unwrap();
-    assert_eq!(
-        fixture.opens(Extension::Jellyfin, key).await,
-        Some(fixture.alice)
-    );
 }
 
 #[tokio::test]
@@ -328,20 +318,21 @@ async fn signing_out_needs_a_caller() {
 #[tokio::test]
 async fn a_plex_connection_keeps_working_beside_a_jellyfin_one() {
     let fixture = fixture().await;
-    let plex = fixture.connect("PLEX").await;
-    let plex_token = plex["connectExtension"]["token"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    fixture.connect("PLEX").await;
     fixture.connect("JELLYFIN").await;
     let device = token_of(&fixture.sign_in("JELLYFIN", PASSWORD, "device-1").await);
     fixture.disable("JELLYFIN").await;
-    assert_eq!(
-        fixture.opens(Extension::Plex, &plex_token).await,
-        Some(fixture.alice)
-    );
     assert_eq!(fixture.opens(Extension::Jellyfin, &device).await, None);
-    // Plex's clients are handed the connection's token: none signs in with a password.
+    let plex = fixture
+        .access
+        .extensions(fixture.alice)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|connection| connection.extension == Extension::Plex)
+        .unwrap();
+    assert!(plex.enabled);
+    // None of Plex's clients signs in with a password.
     let plex_sign_in = fixture.sign_in("PLEX", PASSWORD, "device-1").await;
     assert!(plex_sign_in["token"].is_null());
     assert_eq!(

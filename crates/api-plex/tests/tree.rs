@@ -277,6 +277,7 @@ async fn schema(played_bull: bool) -> ApiSchema {
         watch: std::sync::Arc::new(watch),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     })

@@ -44,6 +44,7 @@ pub mod playback_session;
 pub mod playlist;
 pub mod playlist_entry;
 pub mod section_root;
+pub mod server_setting;
 pub mod source_metadata;
 pub mod source_metadata_certification;
 pub mod source_metadata_external_id;

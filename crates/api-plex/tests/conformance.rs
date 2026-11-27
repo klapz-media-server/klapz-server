@@ -91,6 +91,7 @@ fn unauthenticated(library: InMemoryLibrary) -> axum::Router {
         watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     });
@@ -843,6 +844,7 @@ fn items_app_reading(
         watch: std::sync::Arc::new(watch),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans,
         matching: None,
     });
@@ -1857,6 +1859,7 @@ fn app_as_user(user: i64, role: LibraryRole) -> axum::Router {
         watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     });
@@ -1883,7 +1886,7 @@ async fn app_as_paired_user() -> axum::Router {
         .unwrap()
         .id;
     access
-        .connect_extension(user, Extension::Plex, "server-of-user-1", "digest", 0)
+        .connect_extension(user, Extension::Plex, "server-of-user-1", 0)
         .await
         .unwrap();
     let account = RemoteAccount {
@@ -1911,6 +1914,7 @@ async fn app_as_paired_user() -> axum::Router {
         watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     });
@@ -2252,6 +2256,7 @@ async fn a_timeline_updates_the_session_of_its_playback_then_closes_it() {
         watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     });
@@ -3374,6 +3379,7 @@ fn editing_app(principal: Principal) -> axum::Router {
         watch: std::sync::Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     });
@@ -4689,6 +4695,7 @@ async fn playing(
         playlists: std::sync::Arc::new(klapz_core::testing::InMemoryPlaylists::default()),
         collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     });
@@ -4994,6 +5001,7 @@ fn markers_app_over(store: std::sync::Arc<InMemoryMetadata>, principal: Principa
         streams: std::sync::Arc::new(klapz_core::testing::StubStreams::default()),
         collections: std::sync::Arc::new(klapz_core::testing::InMemoryCollections::default()),
         session_locks: std::sync::Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     });

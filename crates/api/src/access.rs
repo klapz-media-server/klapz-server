@@ -10,9 +10,9 @@
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
 use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject, ID};
 use klapz_core::access::{
-    is_connection_uri, new_external_id, new_token, publish_link, token_digest, AccessError,
-    AccessRepository, AccountLink, Extension, LibraryPermission, LibraryRole, NewUser, ServerRole,
-    SignedInDevice, User, UserExtension,
+    is_connection_uri, new_external_id, publish_link, AccessError, AccessRepository, AccountLink,
+    Extension, LibraryPermission, LibraryRole, NewUser, ServerRole, SignedInDevice, User,
+    UserExtension,
 };
 use klapz_core::account::{normalized_email, normalized_username};
 use klapz_core::page::Cursor;
@@ -301,7 +301,7 @@ impl UserExtensionObject {
         &self.0.external_id
     }
 
-    /// Whether the connection is on. Off, its token opens nothing.
+    /// Whether the connection is on. Off, it opens nothing.
     async fn enabled(&self) -> bool {
         self.0.enabled
     }
@@ -396,11 +396,10 @@ impl AccountLinkObject {
     }
 }
 
-/// What connecting through an extension yields. The token cannot be read back later.
+/// What connecting through an extension yields.
 #[derive(Debug, Clone)]
 pub struct ExtensionCredentials {
     extension: UserExtension,
-    token: String,
 }
 
 #[Object]
@@ -408,11 +407,6 @@ impl ExtensionCredentials {
     /// The connection made.
     async fn user_extension(&self) -> UserExtensionObject {
         UserExtensionObject(self.extension.clone())
-    }
-
-    /// The token to give the client. Shown only here: the server keeps a digest of it.
-    async fn token(&self) -> &str {
-        &self.token
     }
 }
 
@@ -787,17 +781,15 @@ pub(crate) async fn connect_extension(
     extension: ExtensionType,
 ) -> Result<ExtensionCredentials> {
     require_connector(context, user_id(user)?, extension)?;
-    let token = new_token();
     let extension = repository(context)?
         .connect_extension(
             user_id(user)?,
             extension.into(),
             &new_external_id(),
-            &token_digest(&token),
             now_epoch(),
         )
         .await?;
-    Ok(ExtensionCredentials { extension, token })
+    Ok(ExtensionCredentials { extension })
 }
 
 /// The address as stored: checked, and in lower case, since it is compared with `Host`

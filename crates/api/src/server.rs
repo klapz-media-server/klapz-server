@@ -4,10 +4,13 @@
 //! through the official API rather than only through the Plex surface is what lets the
 //! compatibility layer stay a translator with no data of its own.
 
-use async_graphql::{Object, SimpleObject, ID};
+use async_graphql::connection::{Connection, EmptyFields};
+use async_graphql::{Context, Object, Result, SimpleObject, ID};
 use klapz_core::identity::{ServerCapabilities, ServerFeatures, TranscoderCapabilities};
 
+use crate::cursor::OpaqueCursor;
 use crate::node::GlobalId;
+use crate::settings::ServerSettingObject;
 use crate::DateTime;
 
 pub const SERVER_TYPE: &str = "Server";
@@ -168,5 +171,21 @@ impl Server {
     /// When the server last started or its configuration changed.
     async fn updated_at(&self) -> DateTime {
         self.0.updated_at.into()
+    }
+
+    /// What the server's owners tune while it runs, by key, each with the value in force. For
+    /// the server's owners only; empty for anyone else. Pages forward only, by position.
+    async fn settings(
+        &self,
+        context: &Context<'_>,
+        #[graphql(
+            desc = "Only the settings in this namespace: `transcoder` lists `transcoder.h264.preset`, as `transcoder.h264` does. Absent, every setting."
+        )]
+        namespace: Option<String>,
+        #[graphql(desc = "Return settings after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return at most this many settings; 500 at most, and when absent.")]
+        first: Option<i32>,
+    ) -> Result<Connection<OpaqueCursor, ServerSettingObject, EmptyFields, EmptyFields>> {
+        crate::settings::server_settings(context, namespace, after, first).await
     }
 }

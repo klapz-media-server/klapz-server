@@ -2051,10 +2051,6 @@ type ExtensionCredentials {
 	The connection made.
 	"""
 	userExtension: UserExtension!
-	"""
-	The token to give the client. Shown only here: the server keeps a digest of it.
-	"""
-	token: String!
 }
 
 type ExtensionDevice {
@@ -5480,6 +5476,17 @@ type Mutation {
 		input: SetUserRoleInput!
 	): UserPayload!
 	"""
+	Changes settings of the server, all of them or none: one refused, nothing changes. A
+	change applies from the next use of what it tunes, without a restart. For the server's
+	owners only.
+	"""
+	updateServerSettings(
+		"""
+		The settings to change.
+		"""
+		input: UpdateServerSettingsInput!
+	): UpdateServerSettingsPayload!
+	"""
 	Gives a user a role on a library, replacing the one it had. For the server's owners
 	only.
 	"""
@@ -5503,8 +5510,8 @@ type Mutation {
 		libraryId: ID!
 	): Boolean!
 	"""
-	Switches a user's connection off: its token stops working, its devices are forgotten
-	and its identifier is kept. Whether it was on. For the server's owners; through Jellyfin,
+	Switches a user's connection off: it opens nothing more, its devices are forgotten and
+	its identifier is kept. Whether it was on. For the server's owners; through Jellyfin,
 	for the user itself too.
 	"""
 	disableExtension(
@@ -5518,9 +5525,10 @@ type Mutation {
 		extension: ExtensionType!
 	): Boolean!
 	"""
-	Connects a user through an extension, returning a new token. Called again, it replaces
-	the token and keeps the identifier clients recognize. For the server's owners; through
-	Jellyfin, whose clients then sign in with the user's password, for the user itself too.
+	Connects a user through an extension, or switches its connection back on, keeping the
+	identifier clients recognize. No token comes of it: Plex's clients present the one
+	plex.tv hands them once the user paired, Jellyfin's sign in with the user's password.
+	For the server's owners; through Jellyfin, for the user itself too.
 	"""
 	connectExtension(
 		"""
@@ -8225,6 +8233,24 @@ type Server implements Node {
 	When the server last started or its configuration changed.
 	"""
 	updatedAt: DateTime!
+	"""
+	What the server's owners tune while it runs, by key, each with the value in force. For
+	the server's owners only; empty for anyone else. Pages forward only, by position.
+	"""
+	settings(
+		"""
+		Only the settings in this namespace: `transcoder` lists `transcoder.h264.preset`, as `transcoder.h264` does. Absent, every setting.
+		"""
+		namespace: String,
+		"""
+		Return settings after this cursor.
+		"""
+		after: String,
+		"""
+		Return at most this many settings; 500 at most, and when absent.
+		"""
+		first: Int
+	): ServerSettingConnection!
 }
 
 """
@@ -8254,6 +8280,164 @@ enum ServerRoleType {
 	everyone's playback sessions and viewing history.
 	"""
 	OWNER
+}
+
+type ServerSetting {
+	"""
+	Dotted lower-case words naming it, the machinery it drives first, such as
+	`transcoder.h264.preset`. What `updateServerSettings` takes.
+	"""
+	key: String!
+	"""
+	What it changes, in English.
+	"""
+	description: String!
+	"""
+	What values it takes.
+	"""
+	kind: ServerSettingKind!
+	"""
+	The value in force, in its canonical form: a choice as listed, a number in decimal,
+	`true` or `false`.
+	"""
+	value: String!
+	"""
+	The value in force while no owner chose one.
+	"""
+	defaultValue: String!
+	"""
+	Whether no owner chose a value, the default being in force. A value an owner chose is
+	kept even when it equals the default.
+	"""
+	isDefault: Boolean!
+	"""
+	The words a `CHOICE` takes, in the order the server lists them. Null for another kind.
+	"""
+	choices: [String!]
+	"""
+	The least value an `INTEGER` takes. Null for another kind.
+	"""
+	minimum: Int64
+	"""
+	The greatest value an `INTEGER` takes. Null for another kind.
+	"""
+	maximum: Int64
+	"""
+	When an owner last chose its value. Null while the default is in force.
+	"""
+	updatedAt: DateTime
+	"""
+	The owner who last chose its value. Null while the default is in force, and when that
+	account is gone.
+	"""
+	updatedBy: User
+}
+
+type ServerSettingConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ServerSettingEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ServerSetting!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ServerSettingEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: ServerSetting!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+Why a setting was not changed.
+"""
+enum ServerSettingErrorCode {
+	"""
+	No setting has this key.
+	"""
+	UNKNOWN_SETTING
+	"""
+	The value is not one this setting takes.
+	"""
+	INVALID_VALUE
+	"""
+	The same key came twice in one change.
+	"""
+	REPEATED_SETTING
+	"""
+	More than 100 settings came in one change.
+	"""
+	TOO_MANY_SETTINGS
+}
+
+"""
+One setting to change.
+"""
+input ServerSettingInput {
+	"""
+	The setting, as `ServerSetting.key` names it.
+	"""
+	key: String!
+	"""
+	Its new value, of its kind; surrounding blanks are ignored. Null to forget the value
+	chosen, back to the default.
+	"""
+	value: String
+}
+
+"""
+What values a setting takes.
+"""
+enum ServerSettingKind {
+	"""
+	One of the words in `choices`.
+	"""
+	CHOICE
+	"""
+	A whole number between `minimum` and `maximum`, both included.
+	"""
+	INTEGER
+	"""
+	`true` or `false`.
+	"""
+	BOOLEAN
+	"""
+	An address clients can be sent to: `http` or `https`, a host, perhaps a port, nothing
+	after; in lower case. Empty for none.
+	"""
+	ADDRESS
+}
+
+"""
+A problem with what was asked, as opposed to a failure of the server.
+"""
+type ServerSettingUserError {
+	"""
+	The input field at fault, as a path from the input's root: `["settings", "0", "value"]`.
+	"""
+	field: [String!]!
+	"""
+	What went wrong, for a person.
+	"""
+	message: String!
+	"""
+	What went wrong, for a program.
+	"""
+	code: ServerSettingErrorCode!
 }
 
 """
@@ -10485,6 +10669,38 @@ input UpdatePlaylistInput {
 }
 
 """
+Settings to change together.
+"""
+input UpdateServerSettingsInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	Each setting at most once, 100 at most.
+	"""
+	settings: [ServerSettingInput!]!
+}
+
+"""
+What `updateServerSettings` did.
+"""
+type UpdateServerSettingsPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The settings named, as they now are, in the order asked. Empty when nothing changed.
+	"""
+	settings: [ServerSetting!]!
+	"""
+	Why nothing changed: one setting refused, none is changed. Empty when all were.
+	"""
+	userErrors: [ServerSettingUserError!]!
+}
+
+"""
 Changes to a series.
 """
 input UpdateShowInput {
@@ -10656,7 +10872,7 @@ type UserExtension {
 	"""
 	externalId: String!
 	"""
-	Whether the connection is on. Off, its token opens nothing.
+	Whether the connection is on. Off, it opens nothing.
 	"""
 	enabled: Boolean!
 	"""

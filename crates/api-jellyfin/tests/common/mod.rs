@@ -577,7 +577,7 @@ impl Harness {
             ("owner", Extension::Jellyfin),
         ] {
             access
-                .connect_extension(ids[name], extension, name, &token_digest(name), 0)
+                .connect_extension(ids[name], extension, name, 0)
                 .await
                 .unwrap();
         }
@@ -602,6 +602,7 @@ impl Harness {
             watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
             streams: Arc::clone(&streams) as Arc<dyn klapz_core::stream::StreamEngine>,
             session_locks: Arc::default(),
+            settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
             scans: Arc::clone(&scans) as Arc<dyn klapz_core::scan::ScanControl>,
             matching: None,
         });

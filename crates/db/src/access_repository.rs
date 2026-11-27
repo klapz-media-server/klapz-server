@@ -487,7 +487,6 @@ impl AccessRepository for SqlAccessRepository {
         user: UserId,
         extension: Extension,
         external_id: &str,
-        token_digest: &str,
         now: i64,
     ) -> Result<UserExtension, AccessError> {
         self.require_user(user).await?;
@@ -496,7 +495,6 @@ impl AccessRepository for SqlAccessRepository {
             user_id: ActiveValue::Set(user.get()),
             extension: ActiveValue::Set(extension_name(extension).to_owned()),
             external_id: ActiveValue::Set(external_id.to_owned()),
-            token_digest: ActiveValue::Set(token_digest.to_owned()),
             enabled: ActiveValue::Set(true),
             created_at: ActiveValue::Set(now),
             updated_at: ActiveValue::Set(now),
@@ -508,7 +506,6 @@ impl AccessRepository for SqlAccessRepository {
                     user_extension::Column::Extension,
                 ])
                 .update_columns([
-                    user_extension::Column::TokenDigest,
                     user_extension::Column::Enabled,
                     user_extension::Column::UpdatedAt,
                 ])
@@ -569,28 +566,18 @@ impl AccessRepository for SqlAccessRepository {
         extension: Extension,
         token_digest: &str,
     ) -> Result<Option<Grant>, AccessError> {
-        let connection = user_extension::Entity::find()
-            .filter(user_extension::Column::Extension.eq(extension_name(extension)))
-            .filter(user_extension::Column::TokenDigest.eq(token_digest))
+        let connection = match extension_device::Entity::find()
+            .filter(extension_device::Column::Extension.eq(extension_name(extension)))
+            .filter(extension_device::Column::TokenDigest.eq(token_digest))
             .one(&self.connection)
             .await
             .map_err(storage)?
-            .and_then(user_extension_of);
-        let connection = match connection {
-            Some(connection) => Some(connection),
-            None => match extension_device::Entity::find()
-                .filter(extension_device::Column::Extension.eq(extension_name(extension)))
-                .filter(extension_device::Column::TokenDigest.eq(token_digest))
-                .one(&self.connection)
-                .await
-                .map_err(storage)?
-            {
-                Some(device) => {
-                    self.connection(UserId::new(device.user_id), extension)
-                        .await?
-                }
-                None => None,
-            },
+        {
+            Some(device) => {
+                self.connection(UserId::new(device.user_id), extension)
+                    .await?
+            }
+            None => None,
         };
         match connection.filter(|connection| connection.enabled) {
             Some(connection) => self.grant_of(connection).await,

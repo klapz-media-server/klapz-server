@@ -7,8 +7,7 @@
 //!
 //! Three credentials, tried in this order, the first that opens something winning:
 //!
-//! - a Plex token, `X-Plex-Token`, issued here to one user's extension or by plex.tv to the
-//!   account a user paired;
+//! - a Plex token, `X-Plex-Token`, issued by plex.tv to the account a user paired;
 //! - a session as `Authorization: Bearer`, what a script or an API client sends after
 //!   `signIn`;
 //! - the same session in its cookie, what a browser sends.
@@ -46,7 +45,8 @@ const TOKEN_KEY: &str = "X-Plex-Token";
 /// carry on anonymously into refusals it can only present as "not authorized".
 const PUBLIC_PATHS: &[&str] = &["/identity", crate::admin::PATH];
 
-/// Who may use the server: the users, the tokens issued to them and the sessions they open.
+/// Who may use the server: the users, the tokens issued to them or to the accounts they paired,
+/// and the sessions they open.
 #[derive(Debug)]
 pub struct Access {
     users: Arc<dyn AccessRepository>,
@@ -101,30 +101,21 @@ impl Access {
         }
     }
 
-    /// Who a Plex token belongs to. Looked up by its digest, so no comparison runs on the token
-    /// itself. A storage failure refuses the token rather than the server.
+    /// Who a Plex token belongs to. Only plex.tv issues them: it says whose account a token is,
+    /// and the user paired with that account is the caller. A storage failure refuses the token
+    /// rather than the server.
     async fn plex_token_of(&self, token: &str) -> Option<Principal> {
-        let grant = match self
-            .users
-            .grant(Extension::Plex, &token_digest(token))
-            .await
-        {
-            Ok(None) => {
-                let Some(account) = self.remote.as_ref()?.account_of(token).await else {
-                    tracing::debug!("refused a token no account service attributes");
-                    return None;
-                };
-                let grant = self
-                    .users
-                    .grant_for_account(Extension::Plex, &account)
-                    .await;
-                if matches!(grant, Ok(None)) {
-                    tracing::debug!(%account, "refused the token of an account not paired here");
-                }
-                grant
-            }
-            found => found,
+        let Some(account) = self.remote.as_ref()?.account_of(token).await else {
+            tracing::debug!("refused a token no account service attributes");
+            return None;
         };
+        let grant = self
+            .users
+            .grant_for_account(Extension::Plex, &account)
+            .await;
+        if matches!(grant, Ok(None)) {
+            tracing::debug!(%account, "refused the token of an account not paired here");
+        }
         match grant {
             Ok(grant) => grant.map(klapz_core::access::Grant::into_principal),
             Err(error) => {
@@ -134,7 +125,7 @@ impl Access {
         }
     }
 
-    /// Who a Jellyfin token belongs to: a device's, or the connection's own.
+    /// Who a Jellyfin token belongs to: the user of the device it was given to.
     async fn jellyfin_token_of(&self, token: &str) -> Option<Principal> {
         match self
             .users
@@ -351,8 +342,8 @@ mod tests {
 
     use super::{require_token, Access, Arc, StatusCode};
 
-    /// The Plex token of `alice`, an active owner.
-    const TOKEN: &str = "alice-plex-token";
+    /// The plex.tv token of the account `alice`, an active owner, paired.
+    const TOKEN: &str = StubDirectory::ACCOUNT_TOKEN;
 
     /// Echoes the caller's username, the server a stranger sees, or `anonymous`.
     async fn whoami(
@@ -373,9 +364,9 @@ mod tests {
         bob: klapz_core::UserId,
     }
 
-    /// `alice`, an active owner with a Plex token and paired with the stub directory's account
-    /// when `paired`, its connection switched off unless `enabled`; and `bob`, who signed up
-    /// and waits.
+    /// `alice`, an active owner connected through Plex and paired with the stub directory's
+    /// account when `paired`, its connection switched off unless `enabled`; and `bob`, who
+    /// signed up and waits.
     async fn fixture(paired: bool, enabled: bool) -> Fixture {
         let users = Arc::new(InMemoryAccess::default());
         let alice = users
@@ -407,7 +398,7 @@ mod tests {
             .unwrap()
             .id;
         users
-            .connect_extension(alice, Protocol::Plex, "server", &token_digest(TOKEN), 0)
+            .connect_extension(alice, Protocol::Plex, "server", 0)
             .await
             .unwrap();
         if paired {
@@ -454,7 +445,7 @@ mod tests {
     }
 
     async fn app() -> Router {
-        fixture(false, true).await.app
+        fixture(true, true).await.app
     }
 
     async fn send(app: Router, request: axum::http::request::Builder) -> (StatusCode, String) {
@@ -565,17 +556,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_switched_off_connection_refuses_its_tokens() {
-        for token in [TOKEN, StubDirectory::ACCOUNT_TOKEN] {
-            let (status, _) = send(
-                fixture(true, false).await.app,
-                Request::builder()
-                    .uri("/library/sections")
-                    .header("X-Plex-Token", token),
-            )
-            .await;
-            assert_eq!(status, StatusCode::UNAUTHORIZED, "{token}");
-        }
+    async fn a_switched_off_connection_refuses_its_accounts_token() {
+        let (status, _) = send(
+            fixture(true, false).await.app,
+            Request::builder()
+                .uri("/library/sections")
+                .header("X-Plex-Token", TOKEN),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn the_token_of_an_account_paired_with_nobody_opens_nothing() {
+        let (status, _) = send(
+            fixture(false, true).await.app,
+            Request::builder()
+                .uri("/library/sections")
+                .header("X-Plex-Token", TOKEN),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "an account paired with nobody"
+        );
     }
 
     #[tokio::test]
@@ -710,12 +715,12 @@ mod tests {
             .unwrap()
             .id;
         users
-            .connect_extension(alice, Protocol::Plex, "server", &token_digest(TOKEN), 0)
+            .connect_extension(alice, Protocol::Plex, "server", 0)
             .await
             .unwrap();
         if jellyfin {
             users
-                .connect_extension(alice, Protocol::Jellyfin, "jf", &token_digest("key"), 0)
+                .connect_extension(alice, Protocol::Jellyfin, "jf", 0)
                 .await
                 .unwrap();
             let device = klapz_core::access::ExtensionDevice {
@@ -766,7 +771,6 @@ mod tests {
         for request in [
             Request::builder().header("Authorization", jellyfin_header(DEVICE_TOKEN)),
             Request::builder().header("X-Emby-Token", DEVICE_TOKEN),
-            Request::builder().header("Authorization", jellyfin_header("key")),
         ] {
             assert_eq!(
                 send(app.clone(), request.uri("/jellyfin/System/Info")).await,
@@ -817,17 +821,14 @@ mod tests {
 
     #[tokio::test]
     async fn a_disabled_jellyfin_extension_refuses_its_tokens() {
-        let app = jellyfin_fixture(true, false).await.app;
-        for token in [DEVICE_TOKEN, "key"] {
-            let (status, _) = send(
-                app.clone(),
-                Request::builder()
-                    .uri("/jellyfin/System/Info")
-                    .header("Authorization", jellyfin_header(token)),
-            )
-            .await;
-            assert_eq!(status, StatusCode::UNAUTHORIZED, "{token}");
-        }
+        let (status, _) = send(
+            jellyfin_fixture(true, false).await.app,
+            Request::builder()
+                .uri("/jellyfin/System/Info")
+                .header("Authorization", jellyfin_header(DEVICE_TOKEN)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
@@ -840,16 +841,5 @@ mod tests {
             let (status, _) = send(app.clone(), request.uri("/library/sections")).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED);
         }
-        // Plex's own token keeps working there.
-        assert_eq!(
-            send(
-                app,
-                Request::builder()
-                    .uri("/library/sections")
-                    .header("X-Plex-Token", TOKEN)
-            )
-            .await,
-            (StatusCode::OK, "alice".to_owned())
-        );
     }
 }

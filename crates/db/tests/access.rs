@@ -78,7 +78,7 @@ fn account(id: &str) -> RemoteAccount {
 async fn connected(repository: &SqlAccessRepository, email: &'static str) -> UserId {
     let user = repository.create_user(active(email), NOW).await.unwrap().id;
     repository
-        .connect_extension(user, Extension::Plex, email, &token_digest(email), NOW)
+        .connect_extension(user, Extension::Plex, email, NOW)
         .await
         .unwrap();
     user
@@ -468,50 +468,35 @@ async fn a_permission_needs_a_user() {
     ));
 }
 
-#[tokio::test]
-async fn a_token_opens_its_users_access_and_nothing_else() {
-    let repository = repository().await;
-    let first = repository
-        .create_user(active("a@example.org"), NOW)
-        .await
-        .unwrap()
-        .id;
-    let second = repository
-        .create_user(active("b@example.org"), NOW)
-        .await
-        .unwrap()
-        .id;
+/// A user connected through Plex and paired with the account `account_id`.
+async fn paired(repository: &SqlAccessRepository, email: &'static str, account_id: &str) -> UserId {
+    let user = connected(repository, email).await;
     repository
-        .set_permission(permission(first, 4, LibraryRole::Viewer), NOW)
+        .link_account(
+            user,
+            Extension::Plex,
+            &account(account_id),
+            "https://a.example.org:443",
+            NOW,
+        )
         .await
         .unwrap();
-    repository
-        .connect_extension(first, Extension::Plex, "server-a", &token_digest("a"), NOW)
-        .await
-        .unwrap();
-    repository
-        .connect_extension(second, Extension::Plex, "server-b", &token_digest("b"), NOW)
-        .await
-        .unwrap();
+    user
+}
 
-    let grant = repository
-        .grant(Extension::Plex, &token_digest("a"))
+async fn opens_through_account(
+    repository: &SqlAccessRepository,
+    account_id: &str,
+) -> Option<UserId> {
+    repository
+        .grant_for_account(Extension::Plex, account_id)
         .await
         .unwrap()
-        .expect("a grant");
-    assert_eq!(grant.user.id, first);
-    assert_eq!(grant.extension.external_id, "server-a");
-    assert_eq!(grant.permissions.len(), 1);
-
-    assert!(repository
-        .grant(Extension::Plex, &token_digest("wrong"))
-        .await
-        .unwrap()
-        .is_none());
+        .map(|grant| grant.user.id)
 }
 
 #[tokio::test]
-async fn reconnecting_replaces_the_token_and_keeps_the_identifier() {
+async fn reconnecting_keeps_the_identifier() {
     let repository = repository().await;
     let user = repository
         .create_user(active("a@example.org"), NOW)
@@ -519,40 +504,21 @@ async fn reconnecting_replaces_the_token_and_keeps_the_identifier() {
         .unwrap()
         .id;
     repository
-        .connect_extension(user, Extension::Plex, "first", &token_digest("old"), NOW)
+        .connect_extension(user, Extension::Plex, "first", NOW)
         .await
         .unwrap();
     let again = repository
-        .connect_extension(user, Extension::Plex, "second", &token_digest("new"), NOW)
+        .connect_extension(user, Extension::Plex, "second", NOW)
         .await
         .unwrap();
     assert_eq!(again.external_id, "first");
-    assert!(repository
-        .grant(Extension::Plex, &token_digest("old"))
-        .await
-        .unwrap()
-        .is_none());
-    assert!(repository
-        .grant(Extension::Plex, &token_digest("new"))
-        .await
-        .unwrap()
-        .is_some());
     assert_eq!(repository.extensions(user).await.unwrap().len(), 1);
 }
 
 #[tokio::test]
 async fn a_disabled_connection_opens_nothing_and_comes_back_with_its_identifier() {
     let repository = repository().await;
-    let user = repository
-        .create_user(active("a@example.org"), NOW)
-        .await
-        .unwrap()
-        .id;
-    let digest = token_digest("old");
-    repository
-        .connect_extension(user, Extension::Plex, "first", &digest, NOW)
-        .await
-        .unwrap();
+    let user = paired(&repository, "a@example.org", "7").await;
 
     assert!(repository
         .disable_extension(user, Extension::Plex, NOW)
@@ -562,55 +528,30 @@ async fn a_disabled_connection_opens_nothing_and_comes_back_with_its_identifier(
         .disable_extension(user, Extension::Plex, NOW)
         .await
         .unwrap());
-    assert!(repository
-        .grant(Extension::Plex, &digest)
-        .await
-        .unwrap()
-        .is_none());
+    assert_eq!(opens_through_account(&repository, "7").await, None);
     assert!(!repository.extensions(user).await.unwrap()[0].enabled);
 
     let back = repository
-        .connect_extension(user, Extension::Plex, "second", &token_digest("new"), NOW)
+        .connect_extension(user, Extension::Plex, "second", NOW)
         .await
         .unwrap();
-    assert_eq!(back.external_id, "first");
+    assert_eq!(back.external_id, "a@example.org");
     assert!(back.enabled);
-    assert!(repository
-        .grant(Extension::Plex, &digest)
-        .await
-        .unwrap()
-        .is_none());
-    assert!(repository
-        .grant(Extension::Plex, &token_digest("new"))
-        .await
-        .unwrap()
-        .is_some());
+    assert_eq!(opens_through_account(&repository, "7").await, Some(user));
 }
 
 #[tokio::test]
 async fn deleting_a_user_closes_its_access() {
     let repository = repository().await;
-    let user = repository
-        .create_user(active("a@example.org"), NOW)
-        .await
-        .unwrap()
-        .id;
+    let user = paired(&repository, "a@example.org", "7").await;
     repository
         .set_permission(permission(user, 4, LibraryRole::Viewer), NOW)
-        .await
-        .unwrap();
-    repository
-        .connect_extension(user, Extension::Plex, "server", &token_digest("a"), NOW)
         .await
         .unwrap();
     assert!(repository.delete_user(user).await.unwrap());
     assert!(!repository.delete_user(user).await.unwrap());
     assert!(repository.permissions(user).await.unwrap().is_empty());
-    assert!(repository
-        .grant(Extension::Plex, &token_digest("a"))
-        .await
-        .unwrap()
-        .is_none());
+    assert_eq!(opens_through_account(&repository, "7").await, None);
 }
 
 #[tokio::test]
@@ -657,7 +598,7 @@ async fn a_user_who_signs_up_waits_inactive_with_its_password() {
 #[tokio::test]
 async fn an_inactive_user_opens_nothing_until_it_is_let_in() {
     let repository = repository().await;
-    let user = connected(&repository, "a@example.org").await;
+    let user = paired(&repository, "a@example.org", "7").await;
     let deactivated = repository
         .set_active(user, false, NOW + 1)
         .await
@@ -665,19 +606,10 @@ async fn an_inactive_user_opens_nothing_until_it_is_let_in() {
         .unwrap();
     assert!(!deactivated.active);
     assert_eq!(deactivated.updated_at, NOW + 1);
-    let digest = token_digest("a@example.org");
-    assert!(repository
-        .grant(Extension::Plex, &digest)
-        .await
-        .unwrap()
-        .is_none());
+    assert_eq!(opens_through_account(&repository, "7").await, None);
 
     repository.set_active(user, true, NOW + 2).await.unwrap();
-    assert!(repository
-        .grant(Extension::Plex, &digest)
-        .await
-        .unwrap()
-        .is_some());
+    assert_eq!(opens_through_account(&repository, "7").await, Some(user));
     assert!(repository
         .set_active(UserId::new(999), true, NOW)
         .await
@@ -722,13 +654,7 @@ fn device(id: &str) -> ExtensionDevice {
 async fn on_jellyfin(repository: &SqlAccessRepository, email: &'static str) -> UserId {
     let user = repository.create_user(active(email), NOW).await.unwrap().id;
     repository
-        .connect_extension(
-            user,
-            Extension::Jellyfin,
-            email,
-            &token_digest(&format!("key of {email}")),
-            NOW,
-        )
+        .connect_extension(user, Extension::Jellyfin, email, NOW)
         .await
         .unwrap();
     user
@@ -751,13 +677,7 @@ async fn a_jellyfin_connection_is_stored_beside_a_plex_one() {
     let repository = repository().await;
     let user = connected(&repository, "a@example.org").await;
     repository
-        .connect_extension(
-            user,
-            Extension::Jellyfin,
-            "jf",
-            &token_digest("jf-key"),
-            NOW,
-        )
+        .connect_extension(user, Extension::Jellyfin, "jf", NOW)
         .await
         .unwrap();
     let mut extensions: Vec<_> = repository
@@ -776,19 +696,6 @@ async fn a_jellyfin_connection_is_stored_beside_a_plex_one() {
     assert_eq!(
         extensions,
         [(false, "a@example.org".to_owned()), (true, "jf".to_owned())]
-    );
-    assert_eq!(
-        opener(&repository, Extension::Jellyfin, "jf-key").await,
-        Some(user)
-    );
-    assert_eq!(opener(&repository, Extension::Plex, "jf-key").await, None);
-    assert_eq!(
-        opener(&repository, Extension::Plex, "a@example.org").await,
-        Some(user)
-    );
-    assert_eq!(
-        opener(&repository, Extension::Jellyfin, "a@example.org").await,
-        None
     );
 }
 
@@ -949,7 +856,7 @@ async fn switching_a_connection_off_or_deleting_its_user_forgets_its_devices() {
         .await
         .unwrap();
     repository
-        .connect_extension(alice, Extension::Jellyfin, "again", &token_digest("k"), NOW)
+        .connect_extension(alice, Extension::Jellyfin, "again", NOW)
         .await
         .unwrap();
     assert_eq!(opener(&repository, Extension::Jellyfin, "t").await, None);

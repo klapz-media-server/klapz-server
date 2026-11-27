@@ -40,6 +40,7 @@ pub mod schema;
 pub mod search;
 pub mod server;
 pub mod server_directories;
+pub mod settings;
 pub mod sidecar;
 mod source_metadata;
 pub mod stated;

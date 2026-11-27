@@ -9,7 +9,6 @@ pub struct Model {
     pub user_id: i64,
     pub extension: String,
     pub external_id: String,
-    pub token_digest: String,
     pub enabled: bool,
     pub created_at: i64,
     pub updated_at: i64,

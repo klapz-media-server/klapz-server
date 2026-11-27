@@ -31,6 +31,7 @@ pub mod playlist;
 pub mod recent;
 pub mod scan;
 pub mod search;
+pub mod settings;
 pub mod sidecar;
 pub mod similar;
 pub mod slug;

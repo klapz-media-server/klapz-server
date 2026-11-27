@@ -6002,22 +6002,6 @@
               },
               "isDeprecated": false,
               "deprecationReason": null
-            },
-            {
-              "name": "token",
-              "description": "The token to give the client. Shown only here: the server keeps a digest of it.",
-              "args": [],
-              "type": {
-                "kind": "NON_NULL",
-                "name": null,
-                "ofType": {
-                  "kind": "SCALAR",
-                  "name": "String",
-                  "ofType": null
-                }
-              },
-              "isDeprecated": false,
-              "deprecationReason": null
             }
           ],
           "inputFields": null,
@@ -15687,6 +15671,37 @@
               "deprecationReason": null
             },
             {
+              "name": "updateServerSettings",
+              "description": "Changes settings of the server, all of them or none: one refused, nothing changes. A\nchange applies from the next use of what it tunes, without a restart. For the server's\nowners only.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The settings to change.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "UpdateServerSettingsInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "UpdateServerSettingsPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "setLibraryPermission",
               "description": "Gives a user a role on a library, replacing the one it had. For the server's owners\nonly.",
               "args": [
@@ -15764,7 +15779,7 @@
             },
             {
               "name": "disableExtension",
-              "description": "Switches a user's connection off: its token stops working, its devices are forgotten\nand its identifier is kept. Whether it was on. For the server's owners; through Jellyfin,\nfor the user itself too.",
+              "description": "Switches a user's connection off: it opens nothing more, its devices are forgotten and\nits identifier is kept. Whether it was on. For the server's owners; through Jellyfin,\nfor the user itself too.",
               "args": [
                 {
                   "name": "userId",
@@ -15809,7 +15824,7 @@
             },
             {
               "name": "connectExtension",
-              "description": "Connects a user through an extension, returning a new token. Called again, it replaces\nthe token and keeps the identifier clients recognize. For the server's owners; through\nJellyfin, whose clients then sign in with the user's password, for the user itself too.",
+              "description": "Connects a user through an extension, or switches its connection back on, keeping the\nidentifier clients recognize. No token comes of it: Plex's clients present the one\nplex.tv hands them once the user paired, Jellyfin's sign in with the user's password.\nFor the server's owners; through Jellyfin, for the user itself too.",
               "args": [
                 {
                   "name": "userId",
@@ -23792,6 +23807,53 @@
               },
               "isDeprecated": false,
               "deprecationReason": null
+            },
+            {
+              "name": "settings",
+              "description": "What the server's owners tune while it runs, by key, each with the value in force. For\nthe server's owners only; empty for anyone else. Pages forward only, by position.",
+              "args": [
+                {
+                  "name": "namespace",
+                  "description": "Only the settings in this namespace: `transcoder` lists `transcoder.h264.preset`, as `transcoder.h264` does. Absent, every setting.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "after",
+                  "description": "Return settings after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many settings; 500 at most, and when absent.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "ServerSettingConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
             }
           ],
           "inputFields": null,
@@ -23861,6 +23923,471 @@
               "deprecationReason": null
             }
           ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ServerSetting",
+          "description": null,
+          "fields": [
+            {
+              "name": "key",
+              "description": "Dotted lower-case words naming it, the machinery it drives first, such as\n`transcoder.h264.preset`. What `updateServerSettings` takes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "What it changes, in English.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "kind",
+              "description": "What values it takes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "ServerSettingKind",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "value",
+              "description": "The value in force, in its canonical form: a choice as listed, a number in decimal,\n`true` or `false`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "defaultValue",
+              "description": "The value in force while no owner chose one.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "isDefault",
+              "description": "Whether no owner chose a value, the default being in force. A value an owner chose is\nkept even when it equals the default.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "choices",
+              "description": "The words a `CHOICE` takes, in the order the server lists them. Null for another kind.",
+              "args": [],
+              "type": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "minimum",
+              "description": "The least value an `INTEGER` takes. Null for another kind.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int64",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "maximum",
+              "description": "The greatest value an `INTEGER` takes. Null for another kind.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int64",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "updatedAt",
+              "description": "When an owner last chose its value. Null while the default is in force.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "DateTime",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "updatedBy",
+              "description": "The owner who last chose its value. Null while the default is in force, and when that\naccount is gone.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "User",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ServerSettingConnection",
+          "description": null,
+          "fields": [
+            {
+              "name": "pageInfo",
+              "description": "Information to aid in pagination.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PageInfo",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "edges",
+              "description": "A list of edges.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ServerSettingEdge",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nodes",
+              "description": "A list of nodes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ServerSetting",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ServerSettingEdge",
+          "description": "An edge in a connection.",
+          "fields": [
+            {
+              "name": "node",
+              "description": "The item at the end of the edge",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "ServerSetting",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cursor",
+              "description": "A cursor for use in pagination",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "ServerSettingErrorCode",
+          "description": "Why a setting was not changed.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "UNKNOWN_SETTING",
+              "description": "No setting has this key.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "INVALID_VALUE",
+              "description": "The value is not one this setting takes.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "REPEATED_SETTING",
+              "description": "The same key came twice in one change.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TOO_MANY_SETTINGS",
+              "description": "More than 100 settings came in one change.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "ServerSettingInput",
+          "description": "One setting to change.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "key",
+              "description": "The setting, as `ServerSetting.key` names it.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "value",
+              "description": "Its new value, of its kind; surrounding blanks are ignored. Null to forget the value\nchosen, back to the default.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "ServerSettingKind",
+          "description": "What values a setting takes.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "CHOICE",
+              "description": "One of the words in `choices`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "INTEGER",
+              "description": "A whole number between `minimum` and `maximum`, both included.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BOOLEAN",
+              "description": "`true` or `false`.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ADDRESS",
+              "description": "An address clients can be sent to: `http` or `https`, a host, perhaps a port, nothing\nafter; in lower case. Empty for none.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "ServerSettingUserError",
+          "description": "A problem with what was asked, as opposed to a failure of the server.",
+          "fields": [
+            {
+              "name": "field",
+              "description": "The input field at fault, as a path from the input's root: `[\"settings\", \"0\", \"value\"]`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "message",
+              "description": "What went wrong, for a person.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "code",
+              "description": "What went wrong, for a program.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "ServerSettingErrorCode",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
           "possibleTypes": null
         },
         {
@@ -30061,6 +30588,120 @@
         },
         {
           "kind": "INPUT_OBJECT",
+          "name": "UpdateServerSettingsInput",
+          "description": "Settings to change together.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "settings",
+              "description": "Each setting at most once, 100 at most.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "ServerSettingInput",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "UpdateServerSettingsPayload",
+          "description": "What `updateServerSettings` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "The value the input carried.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "settings",
+              "description": "The settings named, as they now are, in the order asked. Empty when nothing changed.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ServerSetting",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why nothing changed: one setting refused, none is changed. Empty when all were.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ServerSettingUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
           "name": "UpdateShowInput",
           "description": "Changes to a series.",
           "fields": null,
@@ -30643,7 +31284,7 @@
             },
             {
               "name": "enabled",
-              "description": "Whether the connection is on. Off, its token opens nothing.",
+              "description": "Whether the connection is on. Off, it opens nothing.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",

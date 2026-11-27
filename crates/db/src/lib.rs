@@ -21,6 +21,7 @@ pub mod playback_repository;
 pub mod playlist_repository;
 pub mod repository;
 pub mod scan_repository;
+pub mod settings_repository;
 pub mod source_metadata_repository;
 mod tracks;
 pub mod watch_repository;
@@ -38,6 +39,7 @@ pub use playback_repository::SqlPlaybackRepository;
 pub use playlist_repository::SqlPlaylistRepository;
 pub use repository::SqlLibraryRepository;
 pub use scan_repository::SqlScanRepository;
+pub use settings_repository::SqlSettingsRepository;
 pub use source_metadata_repository::SqlSourceMetadataRepository;
 pub use watch_repository::SqlWatchRepository;
 

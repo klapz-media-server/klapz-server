@@ -46,7 +46,7 @@ pub enum Extension {
 
 impl Extension {
     /// Whether the protocol's clients sign in with a user's password, each device keeping a
-    /// token of its own. Plex's are handed the connection's token instead.
+    /// token of its own. Plex's present the token plex.tv hands them instead.
     #[must_use]
     pub const fn signs_in_with_password(self) -> bool {
         matches!(self, Self::Jellyfin)
@@ -54,8 +54,8 @@ impl Extension {
 
     /// Whether a user switches the connection on and off for itself, where an owner must for
     /// the others. Jellyfin's clients sign in with the user's own password, so switching it on
-    /// opens the user's libraries to the user alone; Plex's connection is a token an owner
-    /// hands out with the server it names.
+    /// opens the user's libraries to the user alone; Plex's is an owner's to grant, the user
+    /// then pairing its plex.tv account.
     #[must_use]
     pub const fn connected_by_its_user(self) -> bool {
         matches!(self, Self::Jellyfin)
@@ -63,7 +63,7 @@ impl Extension {
 }
 
 /// A client a user signed in from through an extension, with a password: Jellyfin's clients
-/// do, where Plex's are handed the connection's token. Each keeps a token of its own, so that
+/// do, where Plex's present plex.tv's. Each keeps a token of its own, so that
 /// signing one out leaves the others signed in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionDevice {
@@ -135,7 +135,7 @@ pub struct UserExtension {
     pub extension: Extension,
     /// What the extension calls this user's side of the server: a Plex machine identifier.
     pub external_id: String,
-    /// Switched off, its token opens nothing; the identifier is kept for when it comes back.
+    /// Switched off, it opens nothing; the identifier is kept for when it comes back.
     pub enabled: bool,
 }
 
@@ -441,8 +441,8 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
 
     async fn permissions(&self, user: UserId) -> Result<Vec<LibraryPermission>, AccessError>;
 
-    /// Connects a user through an extension, or replaces its token if already connected, and
-    /// switches it on: the external identifier stays, so clients keep recognizing the server.
+    /// Connects a user through an extension, or switches its connection back on: the external
+    /// identifier stays, so clients keep recognizing the server.
     ///
     /// # Errors
     ///
@@ -452,7 +452,6 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
         user: UserId,
         extension: Extension,
         external_id: &str,
-        token_digest: &str,
         now: i64,
     ) -> Result<UserExtension, AccessError>;
 
@@ -505,8 +504,8 @@ pub trait AccessRepository: Send + Sync + std::fmt::Debug {
         device_id: &str,
     ) -> Result<bool, AccessError>;
 
-    /// What a token opens, if it is one of an extension's — the connection's own or one of its
-    /// devices' — and its user is active.
+    /// What a token opens, if it is one an extension's device was given, its connection is on
+    /// and its user active.
     async fn grant(
         &self,
         extension: Extension,

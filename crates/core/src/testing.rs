@@ -1933,7 +1933,7 @@ type StoredDevice = (
 pub struct InMemoryAccess {
     users: std::sync::Mutex<Vec<crate::access::User>>,
     permissions: std::sync::Mutex<Vec<crate::access::LibraryPermission>>,
-    extensions: std::sync::Mutex<Vec<(crate::access::UserExtension, String)>>,
+    extensions: std::sync::Mutex<Vec<crate::access::UserExtension>>,
     devices: std::sync::Mutex<Vec<StoredDevice>>,
     accounts: std::sync::Mutex<Vec<crate::access::AccountLink>>,
     passwords: std::sync::Mutex<Vec<(crate::ids::UserId, String)>>,
@@ -2194,7 +2194,7 @@ impl crate::access::AccessRepository for InMemoryAccess {
         id: crate::ids::UserId,
     ) -> Result<bool, crate::access::AccessError> {
         locked(&self.permissions).retain(|permission| permission.user != id);
-        locked(&self.extensions).retain(|(extension, _)| extension.user != id);
+        locked(&self.extensions).retain(|extension| extension.user != id);
         locked(&self.devices).retain(|(owner, ..)| *owner != id);
         locked(&self.accounts).retain(|link| link.user != id);
         locked(&self.passwords).retain(|(owner, _)| *owner != id);
@@ -2249,15 +2249,13 @@ impl crate::access::AccessRepository for InMemoryAccess {
         user: crate::ids::UserId,
         extension: crate::access::Extension,
         external_id: &str,
-        token_digest: &str,
         _now: i64,
     ) -> Result<crate::access::UserExtension, crate::access::AccessError> {
         let mut extensions = locked(&self.extensions);
-        if let Some((held, digest)) = extensions
+        if let Some(held) = extensions
             .iter_mut()
-            .find(|(held, _)| held.user == user && held.extension == extension)
+            .find(|held| held.user == user && held.extension == extension)
         {
-            token_digest.clone_into(digest);
             held.enabled = true;
             return Ok(held.clone());
         }
@@ -2267,7 +2265,7 @@ impl crate::access::AccessRepository for InMemoryAccess {
             external_id: external_id.to_owned(),
             enabled: true,
         };
-        extensions.push((connected.clone(), token_digest.to_owned()));
+        extensions.push(connected.clone());
         Ok(connected)
     }
 
@@ -2281,8 +2279,8 @@ impl crate::access::AccessRepository for InMemoryAccess {
         let mut extensions = locked(&self.extensions);
         let found = extensions
             .iter_mut()
-            .find(|(held, _)| held.user == user && held.extension == extension && held.enabled);
-        Ok(found.map(|(held, _)| held.enabled = false).is_some())
+            .find(|held| held.user == user && held.extension == extension && held.enabled);
+        Ok(found.map(|held| held.enabled = false).is_some())
     }
 
     async fn issue_device_token(
@@ -2295,7 +2293,7 @@ impl crate::access::AccessRepository for InMemoryAccess {
     ) -> Result<(), crate::access::AccessError> {
         let connected = locked(&self.extensions)
             .iter()
-            .any(|(held, _)| held.user == user && held.extension == extension && held.enabled);
+            .any(|held| held.user == user && held.extension == extension && held.enabled);
         if !connected {
             return Err(crate::access::AccessError::NotConnected);
         }
@@ -2364,8 +2362,8 @@ impl crate::access::AccessRepository for InMemoryAccess {
     ) -> Result<Vec<crate::access::UserExtension>, crate::access::AccessError> {
         Ok(locked(&self.extensions)
             .iter()
-            .filter(|(held, _)| held.user == user)
-            .map(|(held, _)| held.clone())
+            .filter(|held| held.user == user)
+            .cloned()
             .collect())
     }
 
@@ -2380,12 +2378,10 @@ impl crate::access::AccessRepository for InMemoryAccess {
             .map(|(owner, ..)| *owner);
         let found = locked(&self.extensions)
             .iter()
-            .find(|(held, digest)| {
-                held.extension == extension
-                    && held.enabled
-                    && (digest == token_digest || Some(held.user) == device_user)
+            .find(|held| {
+                held.extension == extension && held.enabled && Some(held.user) == device_user
             })
-            .map(|(held, _)| held.clone());
+            .cloned();
         let Some(extension) = found else {
             return Ok(None);
         };
@@ -2410,8 +2406,8 @@ impl crate::access::AccessRepository for InMemoryAccess {
     ) -> Result<crate::access::AccountLink, crate::access::AccessError> {
         let connection = locked(&self.extensions)
             .iter()
-            .find(|(held, _)| held.user == user && held.extension == extension)
-            .map(|(held, _)| held.clone())
+            .find(|held| held.user == user && held.extension == extension)
+            .cloned()
             .ok_or(crate::access::AccessError::NotConnected)?;
         let mut accounts = locked(&self.accounts);
         if accounts
@@ -2441,7 +2437,7 @@ impl crate::access::AccessRepository for InMemoryAccess {
     ) -> Result<Option<crate::access::AccountLink>, crate::access::AccessError> {
         let enabled = locked(&self.extensions)
             .iter()
-            .any(|(held, _)| held.user == user && held.extension == extension && held.enabled);
+            .any(|held| held.user == user && held.extension == extension && held.enabled);
         Ok(locked(&self.accounts)
             .iter()
             .find(|link| (link.user, link.extension) == (user, extension))
@@ -2462,11 +2458,11 @@ impl crate::access::AccessRepository for InMemoryAccess {
             .map(|link| link.user)
             .collect();
         let extensions = locked(&self.extensions);
-        let mut enabled = extensions.iter().filter(|(held, _)| {
+        let mut enabled = extensions.iter().filter(|held| {
             held.extension == extension && held.enabled && owners.contains(&held.user)
         });
         Ok(match (enabled.next(), enabled.next()) {
-            (Some((held, _)), None) => Some(held.clone()),
+            (Some(held), None) => Some(held.clone()),
             _ => None,
         })
     }
@@ -2528,8 +2524,8 @@ impl crate::access::AccessRepository for InMemoryAccess {
         };
         let connection = locked(&self.extensions)
             .iter()
-            .find(|(held, _)| held.user == owner && held.extension == extension && held.enabled)
-            .map(|(held, _)| held.clone());
+            .find(|held| held.user == owner && held.extension == extension && held.enabled)
+            .cloned();
         let (Some(extension), Some(user)) = (connection, self.active_user(owner)) else {
             return Ok(None);
         };
@@ -4218,5 +4214,59 @@ pub async fn read_queued(
                 store.store_measurement(&file, deep.as_ref(), now).await?;
             }
         }
+    }
+}
+
+/// Server settings held in memory.
+#[derive(Debug, Default)]
+pub struct InMemorySettings {
+    stored: std::sync::Mutex<Vec<crate::settings::StoredSetting>>,
+}
+
+impl InMemorySettings {
+    fn stored_rows(&self) -> std::sync::MutexGuard<'_, Vec<crate::settings::StoredSetting>> {
+        self.stored
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::settings::SettingsRepository for InMemorySettings {
+    async fn stored(
+        &self,
+        keys: &[&str],
+    ) -> Result<Vec<crate::settings::StoredSetting>, crate::settings::SettingsError> {
+        Ok(self
+            .stored_rows()
+            .iter()
+            .filter(|row| keys.contains(&row.key.as_str()))
+            .cloned()
+            .collect())
+    }
+
+    async fn apply(
+        &self,
+        changes: &[crate::settings::SettingChange],
+        by: crate::ids::UserId,
+        at: i64,
+    ) -> Result<(), crate::settings::SettingsError> {
+        use crate::settings::{SettingChange, StoredSetting};
+        let mut rows = self.stored_rows();
+        for change in changes {
+            let key = match change {
+                SettingChange::Set { key, .. } | SettingChange::Reset { key } => *key,
+            };
+            rows.retain(|row| row.key != key);
+            if let SettingChange::Set { value, .. } = change {
+                rows.push(StoredSetting {
+                    key: key.to_owned(),
+                    value: value.clone(),
+                    updated_at: at,
+                    updated_by: Some(by),
+                });
+            }
+        }
+        Ok(())
     }
 }

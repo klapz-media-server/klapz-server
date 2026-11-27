@@ -106,6 +106,7 @@ fn schema() -> ApiSchema {
         watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: Arc::default(),
+        settings: std::sync::Arc::new(klapz_core::testing::InMemorySettings::default()),
         scans: std::sync::Arc::new(klapz_core::testing::RecordedScans::default()),
         matching: None,
     })
