@@ -472,6 +472,54 @@ async fn a_scan_keeps_what_ffprobe_states_and_what_does_not_play() {
     assert_eq!(picture.real_frame_rate.as_deref(), Some("90000/1"));
 }
 
+#[tokio::test]
+async fn a_teletext_recording_lists_a_subtitle_track_per_page() {
+    use klapz_core::metadata::{MetadataRepository, StreamKind};
+    use klapz_core::stream::StreamTrack;
+    let connection = films_library().await;
+    let scan = SqlScanRepository::new(connection.clone());
+    let metadata = klapz_db::SqlMetadataRepository::new(connection.clone());
+    // Arte's French pages declared, its German ones sent undeclared, as ffprobe-plex states
+    // them: one track mixed them all, or showed one.
+    let sample = samples().join("peur-primale-1996-multi-vff-1080i-hdtv-full-avc-he-aac-2-0");
+    let item = scanned(&scan, &sample).await;
+    let versions = metadata.versions_for(&[item]).await.unwrap();
+    let files = metadata.files_for(&[versions[0].id]).await.unwrap();
+    let tracks = metadata.streams_for(&[files[0].id]).await.unwrap();
+
+    let subtitles: Vec<(i32, Option<&str>, bool, Option<u16>)> = tracks
+        .iter()
+        .filter(|track| track.kind == StreamKind::Subtitle)
+        .map(|track| {
+            (
+                track.position,
+                track.language.as_deref(),
+                track.traits.hearing_impaired,
+                StreamTrack::of(track).teletext_page,
+            )
+        })
+        .collect();
+    assert_eq!(
+        subtitles,
+        [
+            (0, Some("fr"), false, Some(889)),
+            (0, Some("de"), false, Some(150)),
+            (0, Some("de"), false, Some(152)),
+            (0, Some("fr"), false, Some(702)),
+            (0, Some("de"), false, Some(708)),
+            (0, Some("fr"), true, Some(888)),
+        ]
+    );
+    // Each a track of its own, the others of the file after them.
+    let ids: std::collections::BTreeSet<_> = tracks.iter().map(|track| track.id).collect();
+    assert_eq!(ids.len(), tracks.len());
+    assert_eq!(
+        tracks.len(),
+        6 + 5,
+        "six pages, a video and four audio tracks"
+    );
+}
+
 #[test]
 fn every_known_difference_names_a_sample() {
     for (sample, field, _) in KNOWN {
