@@ -4,7 +4,7 @@
 //! prefix would find nothing. The ranking is the official API's `closestTitles`; this binding
 //! cuts it to `limit` and groups it into one shelf per kind, ordered by their closest match,
 //! films before series when they tie. Measured on the reference and listed in
-//! `docs/spec-gaps.md`.
+//! `docs/plex/spec-gaps.md`.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;

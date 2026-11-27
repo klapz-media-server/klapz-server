@@ -208,7 +208,7 @@ VC-1 and MPEG-4 samples). ffprobe 8.1 no longer prints `refs` at all. A tag `BPS
 subtitle its rate (Bull: 77); `BPS-eng`, which an older mkvmerge wrote on Soul, is not read,
 and Soul's subtitles had no rate before their deep analysis (**measured**). An audio track
 without a language tag is stored without one; ours takes the French dub the file's name gives
-when it is the file's only audio track, a deliberate divergence (`CLAUDE.md`). Two `media_items`
+when it is the file's only audio track, a deliberate divergence (`.claude/rules/scan.md`). Two `media_items`
 values differ by origin: `bitrate` is the container's, and the video track's `bitrate` is
 `format.bit_rate` minus the audio tracks' declared bitrates (Soul: 7726375 − 256000 − 768000
 = 6702375, stored exactly), even beside a `BPS` tag (Terra Firma: 4533 left, 4531 tagged); a
@@ -275,7 +275,7 @@ did nothing, the part being at `ma:deepAnalysisVersion` 6):
 - `ma:deepAnalysisVersion` is `6` on all 156,677 deeply analyzed parts.
 
 The transcoder decides whether to copy the video by comparing a client's bandwidth with
-`requiredBandwidths` (`docs/spec-gaps.md`, *Quality follows a fixed ladder*; **binary**:
+`requiredBandwidths` (`docs/plex/spec-gaps.md`, *Quality follows a fixed ladder*; **binary**:
 *Cannot direct play this item. Required bandwidth is not known and only {2}kbps is available.*).
 
 **The measured rates (reproduced on the test files and the five samples in that state).** Each track's rate, and the

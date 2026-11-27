@@ -3,7 +3,7 @@
 //!
 //! After an episode, its series' next episode, else the library's Continue Watching. After a
 //! film, the next film of its collection, every collection it is in, and the films like it.
-//! A series or a season has none. Measured on the reference; see `docs/spec-gaps.md`.
+//! A series or a season has none. Measured on the reference; see `docs/plex/spec-gaps.md`.
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};

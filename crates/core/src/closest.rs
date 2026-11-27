@@ -2,7 +2,7 @@
 //! the words heard are rarely the words written.
 //!
 //! The measure is the reference's, worked out on the distances it publishes and agreeing to
-//! the unit on the 808 items both servers listed for 63 terms (`docs/spec-gaps.md`): a
+//! the unit on the 808 items both servers listed for 63 terms (`docs/plex/spec-gaps.md`): a
 //! Levenshtein distance between the term and an item's sort title, both normalized the same
 //! way.
 //!

@@ -3,7 +3,7 @@
 //! Every rule here was measured, on 4,473 tracks of the reference library in French,
 //! English and German, through a bench that compares these labels with the reference's:
 //! 100% of audio labels, 99.9% of video and 99.4% of subtitles agree. The remainder is in
-//! `docs/spec-gaps.md`.
+//! `docs/plex/spec-gaps.md`.
 //!
 //! A label has two forms. `displayTitle` is built from the analysis alone. The extended form
 //! starts from the title the file gives the track and adds, in parentheses, whatever of the

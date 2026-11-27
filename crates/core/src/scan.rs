@@ -1,6 +1,6 @@
 //! Scanning a library: finding its files, grouping them into items, and keeping storage in step.
 //!
-//! Plex's own split, measured in `docs/scanner/`: walking, deciding what changed, grouping and
+//! Plex's own split, measured in `docs/plex/scanner/`: walking, deciding what changed, grouping and
 //! storing happen in the server, here; reading a file's content happens in a separate process,
 //! behind [`MediaAnalyzer`]. Files are reached only through [`LibraryFiles`], so a library kept
 //! somewhere other than a local disk changes nothing in this module.
@@ -66,7 +66,7 @@ pub enum AnalyzeError {
 }
 
 /// Reads one file's content: ffprobe, run by the server as a child process, in the two steps
-/// the reference also takes apart (`docs/scanner/analysis.md`). Dropping a read stops it, its
+/// the reference also takes apart (`docs/plex/scanner/analysis.md`). Dropping a read stops it, its
 /// process included.
 #[async_trait::async_trait]
 pub trait MediaAnalyzer: Send + Sync + std::fmt::Debug {

@@ -592,7 +592,7 @@ where
     Ok(highest.unwrap_or(0))
 }
 
-/// A new item as the reference's scanner writes one before any agent (`docs/scanner/
+/// A new item as the reference's scanner writes one before any agent (`docs/plex/scanner/
 /// discovery.md`, §6): a `local://` guid, no title until one is given, added now.
 fn item_row(id: i64, section: SectionId, kind: &str, now: i64) -> metadata_item::Model {
     metadata_item::Model {

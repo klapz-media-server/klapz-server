@@ -1,7 +1,7 @@
 //! Reading the files scans queued, in the background, a few at a time: every file's headers
 //! before any file's packets. Headers take a fraction of a second and make a file playable and
 //! fully described; packets take as long as the whole file takes to read, and only refine its
-//! rates and duration (`docs/scanner/analysis.md`, §1 and §2).
+//! rates and duration (`docs/plex/scanner/analysis.md`, §1 and §2).
 //!
 //! The queue is storage's, so it outlives the process: what a stopped server did not read is
 //! read when it starts again.

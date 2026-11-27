@@ -14,7 +14,7 @@
 ## Router organization
 
 One router per domain, assembled with `merge`. Domains follow the spec's own tags — the same ones
-that structure `docs/ENDPOINTS.md`, which keeps an obvious correspondence between the tracker and
+that structure `docs/plex/ENDPOINTS.md`, which keeps an obvious correspondence between the tracker and
 the code.
 
 ```rust
@@ -113,7 +113,7 @@ pub fn router() -> Router<PlexState> {
 ```
 
 As an endpoint gets implemented, `not_implemented` is replaced by the real handler and the
-matching row in `docs/ENDPOINTS.md` moves from `stub` to `partial` or `done`. The diff stays
+matching row in `docs/plex/ENDPOINTS.md` moves from `stub` to `partial` or `done`. The diff stays
 readable: one line per endpoint.
 
 Do not write a macro to generate these routes. It would save a few characters and make the paths

@@ -1,4 +1,4 @@
-"""Dump the Plex library schema to docs/plex-db-schema.md.
+"""Dump the Plex library schema to docs/plex/db-schema.md.
 
 Reads the pristine template database that ships with Plex Media Server rather than a
 populated one: same schema, 318 KB instead of gigabytes, and no personal data to scrub.
@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_DB = ROOT / "files" / "Resources" / "com.plexapp.plugins.library.db"
-OUT = ROOT / "docs" / "plex-db-schema.md"
+OUT = ROOT / "docs" / "plex" / "db-schema.md"
 
 # Tables on the read path of the API we reimplement. Listed first and in this order,
 # because the rest of the schema is sync, plugin and full-text-search machinery that

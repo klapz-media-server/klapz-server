@@ -257,7 +257,7 @@ forever. Caps on the requested size are in `security.md`.
 ## Confirmed by capture
 
 A live reference server is available at `127.0.0.1:32400`; `tools/capture_plex.py` records
-responses and regenerates `docs/wire-format.md`, which holds the authoritative per-field type
+responses and regenerates `docs/plex/wire-format.md`, which holds the authoritative per-field type
 map. What the first captures settled:
 
 **JSON scalar types are per-field and not inferable.** Both of these are numeric values, and they

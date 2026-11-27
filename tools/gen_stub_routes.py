@@ -31,7 +31,7 @@ from gen_endpoints import (  # noqa: E402
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = ROOT / "docs" / "openapi.json"
+SPEC = ROOT / "docs" / "plex" / "openapi.json"
 OUT = ROOT / "crates" / "api-plex" / "src" / "stubs.rs"
 
 METHODS = ("get", "post", "put", "patch", "delete", "head")
