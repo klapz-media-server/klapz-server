@@ -16,13 +16,14 @@ use klapz_core::metadata::{
 };
 use klapz_core::page::Window;
 use klapz_core::scan::{
-    AnalysisProgress, NewItem, NewMedia, NewPart, NewSidecar, QueueFilter, ScanRepository, ShowKey,
-    Stored,
+    AnalysisProgress, MediaTask, NewItem, NewMedia, NewPart, NewSidecar, QueueFilter,
+    ScanRepository, ShowKey, Stored, TaskSwitch,
 };
+use klapz_core::settings::Switch;
 use klapz_core::testing::read_queued;
 use klapz_db::entity::{
-    item_marker, item_title_word, library_section, media, media_analysis, media_stream,
-    metadata_item, subtitle_offset, track_choice,
+    item_marker, item_title_word, library_section, media, media_stream, media_task, metadata_item,
+    subtitle_offset, track_choice,
 };
 use klapz_db::{SqlLibraryRepository, SqlMetadataRepository, SqlScanRepository};
 use klapz_scanner::report::Analysis;
@@ -637,10 +638,10 @@ async fn a_new_file_is_listed_before_it_is_read() {
     assert_eq!(queued.len(), 1);
     assert_eq!(queued[0].part, files[0].id);
     assert_eq!(queued[0].section, FILMS);
-    assert_eq!(queued[0].analysis, FileAnalysis::Pending);
+    assert_eq!(queued[0].task, MediaTask::Headers);
     assert_eq!(queued[0].size, 5_825_269_622);
     assert_eq!(
-        scan.analysis_progress(FILMS).await.unwrap(),
+        scan.analysis_progress(FILMS, &[]).await.unwrap(),
         AnalysisProgress {
             files: 1,
             read: 0,
@@ -681,7 +682,7 @@ async fn measuring_a_file_rewrites_its_rates_on_the_tracks_its_headers_gave() {
         metadata.file(file.part).await.unwrap().unwrap().analysis,
         FileAnalysis::HeadersRead
     );
-    assert_eq!(scan.analysis_progress(FILMS).await.unwrap().read, 1);
+    assert_eq!(scan.analysis_progress(FILMS, &[]).await.unwrap().read, 1);
     choose(
         &connection,
         file.part,
@@ -691,7 +692,12 @@ async fn measuring_a_file_rewrites_its_rates_on_the_tracks_its_headers_gave() {
     .await;
 
     let file = scan.queued_file(file.part).await.unwrap().unwrap();
-    assert_eq!(file.analysis, FileAnalysis::HeadersRead);
+    assert_eq!(file.task, MediaTask::Packets);
+    assert_eq!(
+        file.content_hash.as_ref().map(|hash| hash.as_str().len()),
+        headers.file.content_hash.as_ref().map(|_| 40),
+        "the hash the headers stated"
+    );
     assert_eq!(file.duration_ms, Some(6_031_568));
     scan.store_measurement(&file, soul.deep.as_ref(), NOW + 60)
         .await
@@ -722,13 +728,113 @@ async fn measuring_a_file_rewrites_its_rates_on_the_tracks_its_headers_gave() {
         FileAnalysis::Complete
     );
     assert_eq!(
-        scan.analysis_progress(FILMS).await.unwrap(),
+        scan.analysis_progress(FILMS, &[MediaTask::Packets])
+            .await
+            .unwrap(),
         AnalysisProgress {
             files: 1,
             read: 1,
             complete: 1
         }
     );
+}
+
+#[tokio::test]
+async fn a_measured_file_keeps_its_extractions_until_each_is_finished() {
+    let (_, scan, _) = seeded().await;
+    let soul = probe("soul");
+    scan.add_item(FILMS, soul_with(&soul), NOW).await.unwrap();
+    let file = scan.queued_files(1, &QueueFilter::default()).await.unwrap()[0].clone();
+    scan.store_headers(&file, Some(&soul), NOW).await.unwrap();
+    let file = scan.queued_file(file.part).await.unwrap().unwrap();
+    scan.store_measurement(&file, soul.deep.as_ref(), NOW)
+        .await
+        .unwrap();
+
+    // What its tracks call for is left: its subtitles and its thumbnails.
+    assert_eq!(
+        scan.analysis_progress(FILMS, &MediaTask::OPTIONAL)
+            .await
+            .unwrap()
+            .complete,
+        0
+    );
+    for task in [MediaTask::Subtitles, MediaTask::PreviewThumbnails] {
+        let file = scan.queued_file(file.part).await.unwrap().unwrap();
+        assert_eq!(file.task, task);
+        assert_eq!(scan.finish_task(&file).await.unwrap(), Stored::Written);
+        assert_eq!(scan.finish_task(&file).await.unwrap(), Stored::Stale);
+    }
+    assert_eq!(scan.queued_file(file.part).await.unwrap(), None);
+    assert_eq!(
+        scan.analysis_progress(FILMS, &MediaTask::OPTIONAL)
+            .await
+            .unwrap()
+            .complete,
+        1
+    );
+}
+
+#[tokio::test]
+async fn a_task_turned_off_is_left_where_it_is_off() {
+    let (_, scan, _) = seeded().await;
+    scan.add_item(FILMS, soul(), NOW).await.unwrap();
+    scan.add_item(SERIES, bull(1, None), NOW + 1).await.unwrap();
+    for file in scan
+        .queued_files(10, &QueueFilter::default())
+        .await
+        .unwrap()
+    {
+        scan.store_headers(&file, Some(&probe("soul")), NOW + 2)
+            .await
+            .unwrap();
+    }
+    let taken = |switches: Vec<TaskSwitch>| {
+        let scan = &scan;
+        async move {
+            scan.queued_files(
+                10,
+                &QueueFilter {
+                    switches,
+                    ..QueueFilter::default()
+                },
+            )
+            .await
+            .unwrap()
+            .iter()
+            .map(|file| (file.section, file.task))
+            .collect::<Vec<_>>()
+        }
+    };
+    let packets = |server, except: Vec<SectionId>| TaskSwitch {
+        task: MediaTask::Packets,
+        switch: Switch { server, except },
+    };
+    assert_eq!(
+        taken(vec![packets(true, Vec::new())]).await,
+        [(FILMS, MediaTask::Packets), (SERIES, MediaTask::Packets)]
+    );
+    assert_eq!(
+        taken(vec![packets(true, vec![SERIES])]).await,
+        [(FILMS, MediaTask::Packets), (SERIES, MediaTask::Subtitles)],
+        "off for the series alone: its next task is taken"
+    );
+    assert_eq!(
+        taken(vec![packets(false, vec![SERIES])]).await,
+        [(SERIES, MediaTask::Packets), (FILMS, MediaTask::Subtitles)],
+        "on for the series alone"
+    );
+    let everything_off = MediaTask::OPTIONAL
+        .into_iter()
+        .map(|task| TaskSwitch {
+            task,
+            switch: Switch {
+                server: false,
+                except: Vec::new(),
+            },
+        })
+        .collect();
+    assert_eq!(taken(everything_off).await, []);
 }
 
 #[tokio::test]
@@ -771,20 +877,21 @@ async fn the_queue_reads_every_files_headers_first_and_skips_what_it_is_told() {
         .await
         .unwrap();
 
-    let order: Vec<(SectionId, FileAnalysis)> = scan
+    let order: Vec<(SectionId, MediaTask)> = scan
         .queued_files(10, &QueueFilter::default())
         .await
         .unwrap()
         .iter()
-        .map(|file| (file.section, file.analysis))
+        .map(|file| (file.section, file.task))
         .collect();
     assert_eq!(
         order,
         [
-            (SERIES, FileAnalysis::Pending),
-            (SERIES, FileAnalysis::Pending),
-            (FILMS, FileAnalysis::HeadersRead)
-        ]
+            (SERIES, MediaTask::Headers),
+            (SERIES, MediaTask::Headers),
+            (FILMS, MediaTask::Packets)
+        ],
+        "one task per file, its first"
     );
     let only_films = QueueFilter {
         section: Some(FILMS),
@@ -802,7 +909,16 @@ async fn the_queue_reads_every_files_headers_first_and_skips_what_it_is_told() {
     let soul_part = scan.known_parts(FILMS, "").await.unwrap()[0].part;
     scan.queue_again(&[soul_part], NOW + 9).await.unwrap();
     let again = scan.queued_file(soul_part).await.unwrap().unwrap();
-    assert_eq!(again.analysis, FileAnalysis::Pending);
+    assert_eq!(again.task, MediaTask::Headers);
+    let only_films = QueueFilter {
+        section: Some(FILMS),
+        ..QueueFilter::default()
+    };
+    assert_eq!(
+        scan.queued_files(10, &only_films).await.unwrap(),
+        std::slice::from_ref(&again),
+        "in place of what was left on it"
+    );
     assert_eq!(soul_key, scan.known_parts(FILMS, "").await.unwrap()[0].item);
 }
 
@@ -819,20 +935,14 @@ async fn a_queued_file_leaves_the_queue_with_its_file_or_its_library() {
         .map(|known| known.part)
         .collect();
     scan.remove_parts(&films).await.unwrap();
-    let left = media_analysis::Entity::find()
-        .all(&connection)
-        .await
-        .unwrap();
+    let left = media_task::Entity::find().all(&connection).await.unwrap();
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].library_section_id, SERIES.get());
 
     let library = SqlLibraryRepository::new(connection.clone());
     assert!(library.delete(SERIES).await.unwrap());
     assert_eq!(
-        media_analysis::Entity::find()
-            .count(&connection)
-            .await
-            .unwrap(),
+        media_task::Entity::find().count(&connection).await.unwrap(),
         0
     );
 }
@@ -1038,6 +1148,27 @@ impl klapz_core::scan::MediaAnalyzer for BullReader {
     }
 }
 
+#[async_trait::async_trait]
+impl klapz_core::scan::MediaExtractor for BullReader {
+    async fn extract_subtitles(
+        &self,
+        _file: &klapz_core::files::FileLocation,
+        _hash: &klapz_core::scan::ContentHash,
+    ) -> Result<klapz_core::scan::Extraction, klapz_core::scan::AnalyzeError> {
+        self.reads.lock().unwrap().push("subtitles");
+        Ok(klapz_core::scan::Extraction::Written)
+    }
+
+    async fn generate_preview_thumbnails(
+        &self,
+        _file: &klapz_core::files::FileLocation,
+        _hash: &klapz_core::scan::ContentHash,
+    ) -> Result<klapz_core::scan::Extraction, klapz_core::scan::AnalyzeError> {
+        self.reads.lock().unwrap().push("thumbnails");
+        Ok(klapz_core::scan::Extraction::Written)
+    }
+}
+
 #[tokio::test]
 async fn the_queue_a_stopped_server_left_is_read_by_the_next_one() {
     use klapz_db::entity::section_root;
@@ -1080,19 +1211,24 @@ async fn the_queue_a_stopped_server_left_is_read_by_the_next_one() {
         Arc::new(SqlScanRepository::new(connection.clone())),
         Arc::new(SqlLibraryRepository::new(connection.clone())),
         Arc::new(klapz_core::testing::KnownDirectories::new(&["/srv/series"])),
-        Arc::clone(&reader) as Arc<dyn klapz_core::scan::MediaAnalyzer>,
-        2,
+        klapz_core::scan::AnalysisTools {
+            analyzer: Arc::clone(&reader) as Arc<dyn klapz_core::scan::MediaAnalyzer>,
+            extractor: Arc::clone(&reader) as Arc<dyn klapz_core::scan::MediaExtractor>,
+            settings: Arc::new(klapz_db::SqlSettingsRepository::new(connection.clone())),
+        },
     );
     analysis.analyze_library(SERIES).await.unwrap();
 
     assert_eq!(
         *reader.reads.lock().unwrap(),
         ["headers", "packets", "packets"],
-        "what was read before is not read again"
+        "what was read before is not read again; the captured probe states no content hash,          which leaves nothing to keep extracted files by"
     );
     let scan = SqlScanRepository::new(connection.clone());
     assert_eq!(
-        scan.analysis_progress(SERIES).await.unwrap(),
+        scan.analysis_progress(SERIES, &[MediaTask::Packets])
+            .await
+            .unwrap(),
         AnalysisProgress {
             files: 2,
             read: 2,

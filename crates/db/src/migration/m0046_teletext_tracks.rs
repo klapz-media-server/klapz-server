@@ -79,7 +79,8 @@ mod tests {
             .await
             .unwrap();
 
-        Migrator::up(&connection, None).await.unwrap();
+        // This one alone: the queue changes shape after it.
+        Migrator::up(&connection, Some(1)).await.unwrap();
 
         let rows = connection
             .query_all(Statement::from_string(

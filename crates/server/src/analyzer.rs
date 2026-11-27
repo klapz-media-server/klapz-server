@@ -45,7 +45,7 @@ impl MediaReader {
 
 #[derive(Debug, thiserror::Error)]
 #[error("the analysis ran past {0:?}")]
-struct TimedOut(Duration);
+pub(crate) struct TimedOut(pub(crate) Duration);
 
 #[async_trait::async_trait]
 impl MediaAnalyzer for MediaReader {
@@ -76,7 +76,7 @@ impl MediaAnalyzer for MediaReader {
 /// Whose fault a failed read is: the file's, recorded against it; the setup's, which holds
 /// every read; the file's absence, which holds its library's until its next scan; or neither,
 /// which fails this file alone.
-fn analyze_error(error: ScanError) -> AnalyzeError {
+pub(crate) fn analyze_error(error: ScanError) -> AnalyzeError {
     if error.is_media_fault() {
         AnalyzeError::Unreadable(error.to_string())
     } else if error.is_tool_fault() {

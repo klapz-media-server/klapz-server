@@ -321,6 +321,30 @@ impl Library {
             .last_failure(self.section.id))
     }
 
+    /// The settings the library may hold a value of its own for, such as the analysis it
+    /// gives its files, each with the value in force for it: its own, else the server's. For
+    /// the server's owners only; empty for anyone else. Pages forward only, by position.
+    async fn settings(
+        &self,
+        context: &Context<'_>,
+        #[graphql(
+            desc = "Only the settings in this namespace: `analysis` lists `analysis.deep`. Absent, every setting a library may hold."
+        )]
+        namespace: Option<String>,
+        #[graphql(desc = "Return settings after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return at most this many settings; 500 at most, and when absent.")]
+        first: Option<i32>,
+    ) -> Result<
+        async_graphql::connection::Connection<
+            crate::cursor::OpaqueCursor,
+            crate::settings::LibrarySettingObject,
+            async_graphql::connection::EmptyFields,
+            async_graphql::connection::EmptyFields,
+        >,
+    > {
+        crate::settings::library_settings(context, self.section.id, namespace, after, first).await
+    }
+
     /// How far the library's files are read. Null for a kind this server does not scan.
     async fn analysis(
         &self,
