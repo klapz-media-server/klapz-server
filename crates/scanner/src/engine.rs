@@ -6,7 +6,7 @@
 mod artwork;
 mod bif;
 mod fingerprint;
-mod hashes;
+mod identity;
 mod loudness;
 mod probe;
 mod subtitles;
@@ -21,7 +21,7 @@ use tokio::process::{Child, ChildStdout, Command};
 pub use artwork::{artwork, chapter_thumbs};
 pub use bif::preview_index;
 pub use fingerprint::fingerprint;
-pub use hashes::identify;
+pub use identity::identify;
 pub use loudness::loudness;
 pub use probe::{analysis_from_ffprobe, measure, probe};
 pub use subtitles::extract_subtitle;

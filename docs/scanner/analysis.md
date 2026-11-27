@@ -109,7 +109,12 @@ from the patched ffmpeg-plex 8.1.3 and the `trace_headers` bitstream filter.
 1620467892). `open_subtitle_hash` is the OpenSubtitles hash: file size plus the 64-bit
 little-endian words of the first and last 64 KiB, which reproduces `84af7a8426a039b5` exactly.
 `hash` matched none of SHA-1 over the first 64 KiB, the first MiB, the first and last 64 KiB,
-or the path; this is the scanner's identity hash, which `docs/scanner/matching.md` covers.
+or the path. Its definition, given by the repo owner: the SHA-1 of the size in decimal followed
+by the hex SHA-1 of the first 64 KiB and, for a larger file, of the last 64 KiB; it reproduces
+the published example (Big Buck Bunny, `782e3038c7290470c29320a840e5f92123912e56`), not yet a
+part of the reference's library. ffmpeg-plex's ffprobe prints both as `format.hashes`
+(`content`, `oshash`), and the scan stores them; `oshash` is absent under 128 KiB, as in
+OpenSubtitles' reference implementation.
 Part `extra_data`:
 
 | Key | Count | Meaning |
@@ -574,8 +579,8 @@ breaks between 25 and 600 s). No Live TV here, so out of scope with the DVR.
 | Rates and duration of deep analysis | packet sizes and times from `ffprobe -show_entries packet` | identical on the test files; the reference shows them on 5 of 38 samples, the declared ones on the rest (§2) |
 | `requiredBandwidths` | packet sizes | rule unknown |
 | GoP file | packet flags and sizes | format known, not compared |
-| OpenSubtitles hash | 128 KiB read | exact |
-| Part `hash` | — | unknown here, see `matching.md` |
+| OpenSubtitles hash | ffprobe's `format.hashes.oshash`, 128 KiB read | exact |
+| Part `hash` | ffprobe's `format.hashes.content`, 128 KiB read | the published example; not compared with the reference's library |
 | BIF | ffmpeg-plex, same command, own packer | command and format measured, file byte-identical between runs |
 | Analysis thumbnails and art | ffmpeg-plex | positions approximately known, choice rule unknown |
 | Chapter list | ffprobe `-show_chapters` | known; no chapter storage in our schema |

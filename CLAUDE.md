@@ -245,8 +245,8 @@ without them saying so.
   converts in process with the `image` crate, memory-safe decoders on a format allowlist, because
   two processes per thumbnail cost more than the work.
 - **Reading a file is process supervision too.** `klapz-scanner` runs ffprobe and ffmpeg-plex
-  on one file — `probe` (with `deep`), `identify` (size, time and OpenSubtitles hash, the one
-  read of raw bytes, summed and never parsed), `loudness`, `fingerprint`, `extract_subtitle`,
+  on one file — `probe` (with `deep`, and the file's content and OpenSubtitles hashes, which
+  ffmpeg-plex's ffprobe prints), `identify` (size and time, from the file's metadata alone), `loudness`, `fingerprint`, `extract_subtitle`,
   `preview_index` (the BIF, packed from ffmpeg's frames), `chapter_thumbs`, `artwork` — and reads
   their output into `klapz_scanner::report`. Every child is killed when the future running it is
   dropped: `server::analyzer` bounds a file's headers to a minute and its packets to ten, and
@@ -259,6 +259,19 @@ without them saying so.
   tells a library's admins why its last scan stopped and `Library.analysis.failure` why its
   files are not being read. The file reaches the tools as `file:…`, so no name is read as an
   option or a protocol.
+- **A media file's content is never analyzed or extracted in the server, only through our
+  ffmpeg.** The repo owner's rule, without exception for media. Probing, measuring, decoding,
+  extracting a track, a subtitle, an attachment, artwork or a frame: all of it goes through
+  ffmpeg-plex (or its ffprobe), run as a child by `klapz-scanner` or `transcoder`. No crate that
+  parses a container or a codec (no `mp4`, `matroska`, `symphonia`, libav bindings…) is added to
+  the server, and no hand-written parser of a media file's bytes either. Two reasons: a flaw in a
+  parser fed a hostile file then lands in a child process, not in the server's binary and
+  address space with its database, tokens and sessions; and the analysis stays a set of
+  processes that can be bounded, killed and isolated (another user, a sandbox, another machine)
+  apart from the server. A need ffmpeg-plex does not meet is a patch or a build option of
+  ffmpeg-plex, as the MP4 layout, the MPEG-TS packet length, H.264's sequence header, Matroska's
+  languages and Chromaprint already are. Images through the `image` crate (above) are the one
+  standing exception, and not a precedent.
 
 ### Access rights
 
@@ -726,7 +739,7 @@ startup.
 | `KLAPZ_BIND` | `127.0.0.1:32500` | Listen address. Deliberately not 32400, so it can run beside the reference server. |
 | `KLAPZ_JELLYFIN_WEB_DIR` | *(none)* | Jellyfin Web, served without a token at `/jellyfin/web`: a Jellyfin install's `jellyfin-web` directory. Not versioned: it is Jellyfin's code. |
 | `KLAPZ_WEB_DIR` | `web` beside the server's executable | Plex Web, served without a token at `/web` as the reference serves it, read from disk: nothing of it is compiled into the server. Not versioned: it is Plex's code. No such directory (no `index.html` in it) means `/web` is not served. `/web` redirects to `/web/`, which serves the index, and a path naming no file answers the index, so a client routing in the browser works there; the reference redirects `/web` and `/web/` to `/web/index.html` instead. A client built for this prefix uses relative asset addresses (Vite's `base: './'`) or `/web/` ones. A browser opening `/` itself (`Sec-Fetch-Mode: navigate`, `GET` or `HEAD`) is answered `307` to `/web/` before any token is asked for, where the reference answers `401`; API clients, Plex Web's own calls included, still get the root's capabilities. Without a client, `/` stays as it was. |
-| `KLAPZ_TRANSCODER` | `klapz-ffmpeg`, else `ffmpeg`, beside the executable (with `.exe` on Windows), else the `ffmpeg` on `PATH` (`klapz_scanner::transcoder`) | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. A scan needs v8.1.3-21 onward for the MP4 layout, the MPEG-TS packet length, H.264's sequence header, Matroska's undetermined languages and fingerprints; an older build leaves them out. A player given a picture subtitle (PGS, DVD, DVB) beside the stream rather than burned in, as TTML (`subtitleFormats: TTML`), needs v8.1.3-69 onward: its `imsc_image` encoder and muxer. A broadcast's teletext subtitles, given as text, need a build with libzvbi, whose ffprobe also prints the subtitle pages a scan stores (`teletext_pages`), the ones a stream carries undeclared in the releases after v9.1-84; an older one fails their extraction, and the player plays on without them. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
+| `KLAPZ_TRANSCODER` | `klapz-ffmpeg`, else `ffmpeg`, beside the executable (with `.exe` on Windows), else the `ffmpeg` on `PATH` (`klapz_scanner::transcoder`) | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. A scan needs v8.1.3-21 onward for the MP4 layout, the MPEG-TS packet length, H.264's sequence header, Matroska's undetermined languages and fingerprints; an older build leaves them out. A file's hashes (`format.hashes`: the part's `content` hash and OpenSubtitles' `oshash`) need a build after v9.1-84; an older one stores none. A player given a picture subtitle (PGS, DVD, DVB) beside the stream rather than burned in, as TTML (`subtitleFormats: TTML`), needs v8.1.3-69 onward: its `imsc_image` encoder and muxer. A broadcast's teletext subtitles, given as text, need a build with libzvbi, whose ffprobe also prints the subtitle pages a scan stores (`teletext_pages`), the ones a stream carries undeclared in the releases after v9.1-84; an older one fails their extraction, and the player plays on without them. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `KLAPZ_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
 | `KLAPZ_FFPROBE` | `KLAPZ_TRANSCODER -probe` | The ffprobe a scan reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. An ffmpeg that refuses `-probe` is named as such at startup and in the scan's failure, never taken for a corrupt file. |
 | `KLAPZ_ANALYSIS_CONCURRENCY` | `2` | Files the analysis reads at once, from 1 to 16: each a process reading a file, often over a network share. Another value stops the server. A player's own reads, which do not wait for the queue, are bounded apart, four at once. |
@@ -1070,7 +1083,8 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
 - 🚧 **reading files**, `klapz-scanner`, measured against the reference on the
   test files: the analysis (every track field ffprobe gives, chapters with generic titles
   cleared, MP4 layout, MPEG-TS packet length; the deep analysis measures each track's rate over
-  every packet, the video's equal to Matroska's `BPS`), the OpenSubtitles hash (identical), the
+  every packet, the video's equal to Matroska's `BPS`), the OpenSubtitles hash (identical) and
+  the part's content hash (the repo owner's definition, not yet compared), both ffprobe's, the
   BIF (header and index identical, frames re-encoded by a newer libavcodec, 58 dB apart),
   Chromaprint fingerprints by ffmpeg-plex (9,841 of 9,945 values equal to Plex's Fingerprinter,
   0.03 % of bits apart, bit for bit what the earlier in-process Chromaprint computed), EBU R 128 loudness, subtitle tracks extracted, chapter frames, and poster and backdrop
