@@ -516,7 +516,7 @@ pub(super) mod tests {
     use crate::files::{Entry, FileLocation};
     use crate::ids::{MediaId, RatingKey};
     use crate::library::{LibrarySection, SectionRoot};
-    use crate::scan::{AnalysisProgress, QueueFilter, QueuedFile, Stored};
+    use crate::scan::{AnalysisProgress, MediaTask, QueueFilter, QueuedFile, Stored};
     use crate::testing::InMemoryLibrary;
 
     /// A directory tree in memory: paths below the root, with size and time.
@@ -770,9 +770,14 @@ pub(super) mod tests {
             Ok(Stored::Stale)
         }
 
+        async fn finish_task(&self, _file: &QueuedFile) -> Result<Stored, ScanError> {
+            Ok(Stored::Stale)
+        }
+
         async fn analysis_progress(
             &self,
             _section: SectionId,
+            _counted: &[MediaTask],
         ) -> Result<AnalysisProgress, ScanError> {
             Ok(AnalysisProgress::default())
         }

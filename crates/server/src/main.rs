@@ -11,6 +11,7 @@ mod auth;
 mod callbacks;
 mod commands;
 mod cors;
+mod extracts;
 mod files;
 mod graphql;
 mod remote_tokens;
@@ -212,20 +213,18 @@ async fn start() -> Result<(), Box<dyn std::error::Error>> {
 
     // `import`, `library`, `scan` and `match` do their job and exit; anything else starts the
     // server.
-    let images = artwork::images_directory(&database_url);
+    let images = data_directory(&database_url, "KLAPZ_IMAGES_DIR", "images");
+    let extracts = data_directory(&database_url, "KLAPZ_EXTRACTS_DIR", "extracts");
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    if let Some(done) = run_command(&connection, &arguments, &images).await {
+    if let Some(done) = run_command(&connection, &arguments, &images, &extracts).await {
         return done;
     }
 
     let library: Arc<dyn LibraryRepository> =
         Arc::new(SqlLibraryRepository::new(connection.clone()));
     let (artwork_store, matching) = source_metadata(&connection, &images)?;
-    let (scanner, analysis) = commands::scanning(
-        &connection,
-        Arc::clone(&library),
-        commands::analysis_concurrency()?,
-    );
+    let (scanner, analysis) =
+        commands::scanning(&connection, Arc::clone(&library), &extracts).await;
     // What a stopped server left queued is read from the start.
     analysis.spawn();
     let scans = BackgroundScans::new(scanner, analysis).with_matching(matching.clone());
@@ -498,6 +497,7 @@ async fn run_command(
     connection: &klapz_db::DatabaseConnection,
     arguments: &[String],
     images: &std::path::Path,
+    extracts: &std::path::Path,
 ) -> Option<Result<(), Box<dyn std::error::Error>>> {
     let (command, rest) = arguments.split_first()?;
     Some(match command.as_str() {
@@ -506,7 +506,7 @@ async fn run_command(
             None => Err("usage: klapz-server import <plex.db>".into()),
         },
         "library" => commands::library(connection, rest).await,
-        "scan" => commands::scan(connection, rest, images).await,
+        "scan" => commands::scan(connection, rest, images, extracts).await,
         "match" => commands::match_command(connection, rest, images).await,
         _ => return None,
     })
@@ -787,11 +787,53 @@ fn identity() -> ServerIdentity {
     ServerIdentity::new(machine_identifier, env!("CARGO_PKG_VERSION"))
 }
 
+/// A directory the server keeps files in: `variable`, else `name` beside an `SQLite`
+/// database's file, else beside the executable. Beside the database rather than the binary,
+/// so that a rebuild or a `cargo clean` does not take the files with it.
+fn data_directory(database_url: &str, variable: &str, name: &str) -> PathBuf {
+    if let Some(configured) = std::env::var_os(variable).filter(|value| !value.is_empty()) {
+        return PathBuf::from(configured);
+    }
+    let database_file = database_url
+        .strip_prefix("sqlite:")
+        .map(|rest| rest.trim_start_matches("//"))
+        .map(|rest| rest.split_once('?').map_or(rest, |(path, _)| path))
+        .filter(|path| !path.is_empty() && !path.starts_with(':'));
+    if let Some(directory) =
+        database_file.and_then(|file| PathBuf::from(file).parent().map(PathBuf::from))
+    {
+        return directory.join(name);
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|directory| directory.join(name)))
+        .unwrap_or_else(|| PathBuf::from(name))
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::database_shown;
+    use std::path::PathBuf;
+
+    use super::{data_directory, database_shown};
+
+    #[test]
+    fn files_are_kept_beside_an_sqlite_database() {
+        let variable = "KLAPZ_TEST_UNSET_DIRECTORY";
+        assert_eq!(
+            data_directory("sqlite://C:/data/klapz.db?mode=rwc", variable, "images"),
+            PathBuf::from("C:/data/images")
+        );
+        assert_eq!(
+            data_directory("sqlite:///srv/klapz/klapz.db", variable, "extracts"),
+            PathBuf::from("/srv/klapz/extracts")
+        );
+        assert_ne!(
+            data_directory("sqlite::memory:", variable, "images"),
+            PathBuf::from("images/images")
+        );
+    }
 
     #[test]
     fn shows_a_relative_sqlite_file_by_its_absolute_path() {

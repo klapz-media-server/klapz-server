@@ -803,6 +803,19 @@ impl Mutation {
         crate::settings::update_server_settings(context, input).await
     }
 
+    /// Changes the values one library holds in place of the server's, all of them or none:
+    /// one refused, nothing changes. A null value makes the library follow the server again.
+    /// Only a setting whose `ServerSetting.perLibrary` is true is taken. For the server's
+    /// owners only.
+    async fn update_library_settings(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "The library and the settings to change.")]
+        input: crate::settings::UpdateLibrarySettingsInput,
+    ) -> Result<crate::settings::UpdateLibrarySettingsPayload> {
+        crate::settings::update_library_settings(context, input).await
+    }
+
     /// Gives a user a role on a library, replacing the one it had. For the server's owners
     /// only.
     async fn set_library_permission(
