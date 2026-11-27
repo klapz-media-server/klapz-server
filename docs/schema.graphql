@@ -2518,7 +2518,8 @@ enum FileAnalysis {
 	PENDING
 	"""
 	Its headers: tracks, codecs, and the durations and rates they declare. The rates
-	measured over its packets are still to come.
+	measured over its packets are still to come, or not measured at all where the
+	`analysis.deep` setting is off.
 	"""
 	HEADERS_READ
 	"""
@@ -5935,6 +5936,25 @@ type Library implements Node {
 	"""
 	scanFailure: String
 	"""
+	The settings the library may hold a value of its own for, such as the analysis it
+	gives its files, each with the value in force for it: its own, else the server's. For
+	the server's owners only; empty for anyone else. Pages forward only, by position.
+	"""
+	settings(
+		"""
+		Only the settings in this namespace: `analysis` lists `analysis.deep`. Absent, every setting a library may hold.
+		"""
+		namespace: String,
+		"""
+		Return settings after this cursor.
+		"""
+		after: String,
+		"""
+		Return at most this many settings; 500 at most, and when absent.
+		"""
+		first: Int
+	): LibrarySettingConnection!
+	"""
 	How far the library's files are read. Null for a kind this server does not scan.
 	"""
 	analysis: LibraryAnalysis
@@ -6294,7 +6314,9 @@ type LibraryAnalysis {
 	"""
 	readFileCount: Int!
 	"""
-	Those read to the end, or as far as they could be.
+	Those whose headers are read and that have nothing left of what the library's settings
+	turn on — packets measured, subtitles extracted, thumbnails made — or as far as it
+	could go.
 	"""
 	completeFileCount: Int!
 	"""
@@ -6482,6 +6504,73 @@ enum LibraryRoleType {
 	Also change the library itself.
 	"""
 	ADMIN
+}
+
+type LibrarySetting {
+	"""
+	The setting's key, as `ServerSetting.key` names it, where the values it takes are
+	described. What `updateLibrarySettings` takes.
+	"""
+	key: String!
+	"""
+	What it changes, in English.
+	"""
+	description: String!
+	"""
+	What values it takes.
+	"""
+	kind: ServerSettingKind!
+	"""
+	The value in force for the library, in its canonical form: its own, else the server's.
+	"""
+	value: String!
+	"""
+	Whether the library holds no value of its own and follows the server's, which
+	`serverValue` gives.
+	"""
+	isInherited: Boolean!
+	"""
+	The server's value, the one in force while the library holds none of its own.
+	"""
+	serverValue: String!
+	"""
+	When an owner last chose the library's own value. Null while it follows the server.
+	"""
+	updatedAt: DateTime
+	"""
+	The owner who last chose the library's own value. Null while it follows the server,
+	and when that account is gone.
+	"""
+	updatedBy: User
+}
+
+type LibrarySettingConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [LibrarySettingEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [LibrarySetting!]!
+}
+
+"""
+An edge in a connection.
+"""
+type LibrarySettingEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: LibrarySetting!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type LibraryStats {
@@ -8002,6 +8091,18 @@ type Mutation {
 		"""
 		input: UpdateServerSettingsInput!
 	): UpdateServerSettingsPayload!
+	"""
+	Changes the values one library holds in place of the server's, all of them or none:
+	one refused, nothing changes. A null value makes the library follow the server again.
+	Only a setting whose `ServerSetting.perLibrary` is true is taken. For the server's
+	owners only.
+	"""
+	updateLibrarySettings(
+		"""
+		The library and the settings to change.
+		"""
+		input: UpdateLibrarySettingsInput!
+	): UpdateLibrarySettingsPayload!
 	"""
 	Gives a user a role on a library, replacing the one it had. For the server's owners
 	only.
@@ -10813,6 +10914,11 @@ type ServerSetting {
 	"""
 	kind: ServerSettingKind!
 	"""
+	Whether a library may hold a value of its own, which it follows instead of this one:
+	see `Library.settings`.
+	"""
+	perLibrary: Boolean!
+	"""
 	The value in force, in its canonical form: a choice as listed, a number in decimal,
 	`true` or `false`.
 	"""
@@ -10898,6 +11004,15 @@ enum ServerSettingErrorCode {
 	More than 100 settings came in one change.
 	"""
 	TOO_MANY_SETTINGS
+	"""
+	A library was given a value of a setting that is the server's alone:
+	`ServerSetting.perLibrary` is false.
+	"""
+	SERVER_ONLY
+	"""
+	No library has this id.
+	"""
+	LIBRARY_NOT_FOUND
 }
 
 """
@@ -13052,6 +13167,48 @@ input UpdateLibraryInput {
 	library with it. Refused while the library is being scanned.
 	"""
 	roots: [String!]
+}
+
+"""
+A library's own values to change together.
+"""
+input UpdateLibrarySettingsInput {
+	"""
+	Echoed back in the payload, for the client to match the two.
+	"""
+	clientMutationId: String
+	"""
+	The library, as returned in `Library.id`.
+	"""
+	libraryId: ID!
+	"""
+	Each setting at most once, 100 at most, each one whose `ServerSetting.perLibrary` is
+	true. A null value makes the library follow the server's again.
+	"""
+	settings: [ServerSettingInput!]!
+}
+
+"""
+What `updateLibrarySettings` did.
+"""
+type UpdateLibrarySettingsPayload {
+	"""
+	The value the input carried.
+	"""
+	clientMutationId: String
+	"""
+	The library, as it now is. Null when nothing changed.
+	"""
+	library: Library
+	"""
+	The settings named, as the library now sees them, in the order asked. Empty when
+	nothing changed.
+	"""
+	settings: [LibrarySetting!]!
+	"""
+	Why nothing changed: one setting refused, none is changed. Empty when all were.
+	"""
+	userErrors: [ServerSettingUserError!]!
 }
 
 """

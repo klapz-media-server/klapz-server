@@ -169,7 +169,8 @@ pub enum FileAnalysis {
     /// Nothing yet: no track, codec or duration is known.
     Pending,
     /// Its headers: tracks, codecs, and the durations and rates they declare. The rates
-    /// measured over its packets are still to come.
+    /// measured over its packets are still to come, or not measured at all where the deep
+    /// analysis is turned off.
     HeadersRead,
     /// All there is to read, or all that could be: an imported file, a measured one, and one
     /// that could not be read as media.

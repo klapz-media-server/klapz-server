@@ -92,7 +92,7 @@ fn api<'c>(context: &Context<'c>) -> Result<&'c ApiContext> {
     context.data::<ApiContext>()
 }
 
-fn section_id(id: &ID) -> Option<SectionId> {
+pub(crate) fn section_id(id: &ID) -> Option<SectionId> {
     GlobalId::decode(id)
         .ok()
         .filter(|decoded| decoded.type_name == LIBRARY_TYPE)

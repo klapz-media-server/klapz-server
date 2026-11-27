@@ -1,5 +1,6 @@
-//! The server's settings on the official API: owners read and change them, all of a change or
-//! none of it, and nobody else learns that there are any.
+//! The server's settings on the official API, and the values a library holds in place of
+//! some: owners read and change them, all of a change or none of it, and nobody else learns
+//! that there are any.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -7,17 +8,27 @@ use std::sync::Arc;
 
 use klapz_api::{build_schema, ApiContext, ApiSchema};
 use klapz_core::access::LibraryAccess;
-use klapz_core::testing::{InMemoryAccess, InMemoryLibrary, InMemoryMetadata, InMemorySettings};
-use klapz_core::{Principal, ServerRole};
+use klapz_core::testing::{
+    InMemoryAccess, InMemoryLibrary, InMemoryMetadata, InMemorySettings, RecordedScans,
+};
+use klapz_core::{LibrarySection, Principal, SectionId, SectionKind, ServerRole};
 use serde_json::{json, Value};
 
 fn schema(access: InMemoryAccess) -> ApiSchema {
+    schema_with(access, Vec::new(), Arc::default())
+}
+
+fn schema_with(
+    access: InMemoryAccess,
+    libraries: Vec<LibrarySection>,
+    scans: Arc<RecordedScans>,
+) -> ApiSchema {
     build_schema(ApiContext {
         capabilities: klapz_core::ServerCapabilities::new(
             klapz_core::ServerIdentity::new("0000000000000000000000000000000000000000", "0.1.0"),
             0,
         ),
-        library: Arc::new(InMemoryLibrary::new(Vec::new())),
+        library: Arc::new(InMemoryLibrary::new(libraries)),
         metadata: Arc::new(InMemoryMetadata::new(Vec::new())),
         playback: Arc::new(klapz_core::testing::InMemoryPlayback::default()),
         play_queues: Arc::new(klapz_core::testing::InMemoryPlayQueues::default()),
@@ -28,7 +39,7 @@ fn schema(access: InMemoryAccess) -> ApiSchema {
         watch: Arc::new(klapz_core::testing::InMemoryWatch::default()),
         streams: Arc::new(klapz_core::testing::StubStreams::default()),
         session_locks: Arc::default(),
-        scans: Arc::new(klapz_core::testing::RecordedScans::default()),
+        scans,
         settings: Arc::new(InMemorySettings::default()),
         matching: None,
     })
@@ -100,7 +111,20 @@ async fn an_owner_reads_every_setting_with_its_default_in_force() {
         .iter()
         .map(|setting| setting["key"].as_str().unwrap())
         .collect();
-    assert_eq!(keys, ["general.public_url", "transcoder.h264.preset"]);
+    assert_eq!(
+        keys,
+        [
+            "analysis.concurrency.deep",
+            "analysis.concurrency.headers",
+            "analysis.concurrency.preview_thumbnails",
+            "analysis.concurrency.subtitles",
+            "analysis.deep",
+            "analysis.preview_thumbnails",
+            "analysis.subtitles",
+            "general.public_url",
+            "transcoder.h264.preset"
+        ]
+    );
 
     let data = run(
         &schema,
@@ -129,6 +153,8 @@ async fn an_owner_reads_every_setting_with_its_default_in_force() {
     );
 
     for (namespace, count) in [
+        ("analysis", 7),
+        ("analysis.concurrency", 4),
         ("general", 1),
         ("transcoder", 1),
         ("transcoder.h264", 1),
@@ -267,5 +293,174 @@ async fn a_change_applies_whole_or_not_at_all() {
             "isDefault": true,
             "updatedBy": null,
         }])
+    );
+}
+
+const LIBRARY_SETTINGS: &str = r"
+query LibrarySettings($id: ID!) {
+  node(id: $id) {
+    ... on Library {
+      settings {
+        nodes { key kind value isInherited serverValue updatedBy { username } }
+      }
+    }
+  }
+}";
+
+const UPDATE_LIBRARY: &str = r"
+mutation UpdateLibrary($input: UpdateLibrarySettingsInput!) {
+  updateLibrarySettings(input: $input) {
+    library { title }
+    settings { key value isInherited serverValue }
+    userErrors { field code }
+  }
+}";
+
+fn films() -> LibrarySection {
+    LibrarySection {
+        id: SectionId::new(1),
+        kind: SectionKind::Movie,
+        title: "Films".to_owned(),
+        title_sort: None,
+        language: klapz_core::language::LanguageTag::parse("fr-FR").unwrap(),
+        uuid: "uuid".to_owned(),
+        created_at: 0,
+        updated_at: 0,
+        scanned_at: None,
+        content_changed_at: 0,
+        hidden: false,
+    }
+}
+
+fn library_id() -> String {
+    klapz_api::GlobalId::encode("Library", 1)
+}
+
+#[tokio::test]
+async fn a_library_follows_the_servers_analysis_until_an_owner_gives_it_its_own() {
+    let access = InMemoryAccess::default();
+    let owner = access.add_user("owner", ServerRole::Owner).unwrap();
+    let viewer = access.add_user("viewer", ServerRole::User).unwrap();
+    let scans = Arc::new(RecordedScans::default());
+    let schema = schema_with(access, vec![films()], Arc::clone(&scans));
+    let deep = |value: Option<&str>| json!({ "key": "analysis.deep", "value": value });
+
+    run(
+        &schema,
+        caller(&owner),
+        UPDATE,
+        json!({ "input": { "settings": [deep(Some("false"))] } }),
+    )
+    .await;
+    let listed = run(
+        &schema,
+        caller(&owner),
+        LIBRARY_SETTINGS,
+        json!({ "id": library_id() }),
+    )
+    .await;
+    assert_eq!(
+        listed["node"]["settings"]["nodes"],
+        json!([
+            { "key": "analysis.deep", "kind": "BOOLEAN", "value": "false", "isInherited": true,
+              "serverValue": "false", "updatedBy": null },
+            { "key": "analysis.preview_thumbnails", "kind": "BOOLEAN", "value": "true",
+              "isInherited": true, "serverValue": "true", "updatedBy": null },
+            { "key": "analysis.subtitles", "kind": "BOOLEAN", "value": "true",
+              "isInherited": true, "serverValue": "true", "updatedBy": null },
+        ])
+    );
+
+    let changed = run(
+        &schema,
+        caller(&owner),
+        UPDATE_LIBRARY,
+        json!({ "input": { "libraryId": library_id(), "settings": [deep(Some("true"))] } }),
+    )
+    .await;
+    assert_eq!(
+        changed["updateLibrarySettings"],
+        json!({
+            "library": { "title": "Films" },
+            "settings": [{ "key": "analysis.deep", "value": "true", "isInherited": false,
+                           "serverValue": "false" }],
+            "userErrors": [],
+        })
+    );
+    assert_eq!(
+        scans
+            .settings_changes
+            .load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "the analysis is told of both changes"
+    );
+
+    let inherited = run(
+        &schema,
+        caller(&owner),
+        UPDATE_LIBRARY,
+        json!({ "input": { "libraryId": library_id(), "settings": [deep(None)] } }),
+    )
+    .await;
+    assert_eq!(
+        inherited["updateLibrarySettings"]["settings"][0]["isInherited"],
+        true
+    );
+
+    let hidden = run(
+        &schema,
+        caller(&viewer),
+        LIBRARY_SETTINGS,
+        json!({ "id": library_id() }),
+    )
+    .await;
+    assert!(
+        hidden["node"].is_null() || hidden["node"]["settings"]["nodes"] == json!([]),
+        "{hidden}"
+    );
+    let refused = execute(
+        &schema,
+        caller(&viewer),
+        UPDATE_LIBRARY,
+        json!({ "input": { "libraryId": library_id(), "settings": [deep(Some("true"))] } }),
+    )
+    .await;
+    assert_eq!(refused.errors.len(), 1);
+}
+
+#[tokio::test]
+async fn a_library_takes_no_value_of_the_servers_own_settings() {
+    let access = InMemoryAccess::default();
+    let owner = access.add_user("owner", ServerRole::Owner).unwrap();
+    let schema = schema_with(access, vec![films()], Arc::default());
+
+    let refused = run(
+        &schema,
+        caller(&owner),
+        UPDATE_LIBRARY,
+        json!({ "input": { "libraryId": library_id(), "settings": [preset(Some("slow"))] } }),
+    )
+    .await;
+    assert_eq!(
+        refused["updateLibrarySettings"]["userErrors"],
+        json!([{ "field": ["settings", "0", "key"], "code": "SERVER_ONLY" }])
+    );
+    let unknown = run(
+        &schema,
+        caller(&owner),
+        UPDATE_LIBRARY,
+        json!({ "input": {
+            "libraryId": klapz_api::GlobalId::encode("Library", 9),
+            "settings": [{ "key": "analysis.deep", "value": "false" }],
+        } }),
+    )
+    .await;
+    assert_eq!(
+        unknown["updateLibrarySettings"],
+        json!({
+            "library": null,
+            "settings": [],
+            "userErrors": [{ "field": ["libraryId"], "code": "LIBRARY_NOT_FOUND" }],
+        })
     );
 }

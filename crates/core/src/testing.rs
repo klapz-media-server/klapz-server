@@ -3986,6 +3986,8 @@ pub struct RecordedScans {
     /// The files a test says cannot be read yet, and those a player had read.
     pub unread: std::sync::Mutex<Vec<crate::ids::PartId>>,
     pub read_now: std::sync::Mutex<Vec<crate::ids::PartId>>,
+    /// How many times a setting of the analysis was said to change.
+    pub settings_changes: std::sync::atomic::AtomicUsize,
 }
 
 #[async_trait::async_trait]
@@ -4047,6 +4049,11 @@ impl crate::scan::ScanControl for RecordedScans {
             .get(&section)
             .cloned()
             .unwrap_or_default())
+    }
+
+    fn settings_changed(&self) {
+        self.settings_changes
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     fn files(&self) -> &dyn crate::files::LibraryFiles {
@@ -4179,7 +4186,7 @@ impl crate::files::LibraryFiles for KnownDirectories {
 }
 
 /// Reads the files a scan queued in a library as the background analysis does — every file's
-/// headers, then its packets — from the analysis `read` gives for each stored path: the
+/// headers, then its packets, its extractions ending at once — from the analysis `read` gives for each stored path: the
 /// headers it states, then its deep analysis when it has one. A path `read` gives nothing for
 /// is a file that is not media.
 ///
@@ -4203,28 +4210,47 @@ pub async fn read_queued(
         }
         for file in files {
             let analysis = read(&file.path);
-            if file.analysis == crate::metadata::FileAnalysis::Pending {
-                let headers = analysis.map(|mut analysis| {
-                    analysis.deep = None;
-                    analysis
-                });
-                store.store_headers(&file, headers.as_ref(), now).await?;
-            } else {
-                let deep = analysis.and_then(|analysis| analysis.deep);
-                store.store_measurement(&file, deep.as_ref(), now).await?;
+            match file.task {
+                crate::scan::MediaTask::Headers => {
+                    let headers = analysis.map(|mut analysis| {
+                        analysis.deep = None;
+                        analysis
+                    });
+                    store.store_headers(&file, headers.as_ref(), now).await?;
+                }
+                crate::scan::MediaTask::Packets => {
+                    let deep = analysis.and_then(|analysis| analysis.deep);
+                    store.store_measurement(&file, deep.as_ref(), now).await?;
+                }
+                crate::scan::MediaTask::Subtitles | crate::scan::MediaTask::PreviewThumbnails => {
+                    store.finish_task(&file).await?;
+                }
             }
         }
     }
 }
 
-/// Server settings held in memory.
+/// Server and library settings held in memory.
 #[derive(Debug, Default)]
 pub struct InMemorySettings {
-    stored: std::sync::Mutex<Vec<crate::settings::StoredSetting>>,
+    stored: std::sync::Mutex<
+        Vec<(
+            crate::settings::SettingScope,
+            crate::settings::StoredSetting,
+        )>,
+    >,
 }
 
 impl InMemorySettings {
-    fn stored_rows(&self) -> std::sync::MutexGuard<'_, Vec<crate::settings::StoredSetting>> {
+    fn stored_rows(
+        &self,
+    ) -> std::sync::MutexGuard<
+        '_,
+        Vec<(
+            crate::settings::SettingScope,
+            crate::settings::StoredSetting,
+        )>,
+    > {
         self.stored
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -4235,18 +4261,39 @@ impl InMemorySettings {
 impl crate::settings::SettingsRepository for InMemorySettings {
     async fn stored(
         &self,
+        scope: crate::settings::SettingScope,
         keys: &[&str],
     ) -> Result<Vec<crate::settings::StoredSetting>, crate::settings::SettingsError> {
         Ok(self
             .stored_rows()
             .iter()
-            .filter(|row| keys.contains(&row.key.as_str()))
-            .cloned()
+            .filter(|(of, row)| *of == scope && keys.contains(&row.key.as_str()))
+            .map(|(_, row)| row.clone())
+            .collect())
+    }
+
+    async fn library_values(
+        &self,
+        keys: &[&str],
+    ) -> Result<Vec<(SectionId, crate::settings::StoredSetting)>, crate::settings::SettingsError>
+    {
+        Ok(self
+            .stored_rows()
+            .iter()
+            .filter_map(|(scope, row)| match scope {
+                crate::settings::SettingScope::Library(section)
+                    if keys.contains(&row.key.as_str()) =>
+                {
+                    Some((*section, row.clone()))
+                }
+                _ => None,
+            })
             .collect())
     }
 
     async fn apply(
         &self,
+        scope: crate::settings::SettingScope,
         changes: &[crate::settings::SettingChange],
         by: crate::ids::UserId,
         at: i64,
@@ -4257,14 +4304,17 @@ impl crate::settings::SettingsRepository for InMemorySettings {
             let key = match change {
                 SettingChange::Set { key, .. } | SettingChange::Reset { key } => *key,
             };
-            rows.retain(|row| row.key != key);
+            rows.retain(|(of, row)| !(*of == scope && row.key == key));
             if let SettingChange::Set { value, .. } = change {
-                rows.push(StoredSetting {
-                    key: key.to_owned(),
-                    value: value.clone(),
-                    updated_at: at,
-                    updated_by: Some(by),
-                });
+                rows.push((
+                    scope,
+                    StoredSetting {
+                        key: key.to_owned(),
+                        value: value.clone(),
+                        updated_at: at,
+                        updated_by: Some(by),
+                    },
+                ));
             }
         }
         Ok(())

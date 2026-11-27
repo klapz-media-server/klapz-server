@@ -55,10 +55,12 @@ Analysis on an already-analyzed file whose size and mtime are unchanged rewrote 
 except `metadata_items.changed_at` (**measured**, item 578173).
 
 **Here**, the same order, apart from the scan: a scan lists a file from its name, size and
-time, and queues it (`media_analysis`); `core::scan::BackgroundAnalysis` then reads the headers
-of every queued file — this section's analysis — before measuring any file's packets (§2), the
-deep analysis the reference leaves to its butler. `KLAPZ_ANALYSIS_CONCURRENCY` files at once
-(2), a minute at most for the headers and ten for the packets. A player does not wait for the
+time, and queues it (`media_task`); `core::scan::BackgroundAnalysis` then reads its headers —
+this section's analysis — and queues what they call for: measuring its packets (§2), the deep
+analysis the reference leaves to its butler, extracting its subtitle tracks and making its
+thumbnails (§4). Each kind of task runs in a pool of its own, as many files at once as
+`analysis.concurrency.*` says (2 for the headers, 1 for each other by default), a minute at
+most for the headers and ten for the packets. A player does not wait for the
 queue: `startStream` and `readMediaFile` read a file's headers at once when they are what it
 waits for. The queue is storage's, so a server that stops leaves it to the next.
 
@@ -402,9 +404,15 @@ unreachable mount). PMS skips a part *previously failed … with the same FFMPEG
 (**measured**, log). The Plex surface publishes them as `Part` attributes `indexes="sd"`,
 `failureBIF`, `failureBIFResultCode`, `failureBIFRetryCount` (**measured**, item 28132).
 
-**Reproducible:** completely with ffmpeg-plex (same command, our own packer). Our schema has
-no place for the index state or the file; a BIF belongs in storage keyed by part, and
-`mi:indexes` / failure state on `media_part`.
+**Reproducible:** completely with ffmpeg-plex (same command, our own packer). **Done:** the
+analysis queue makes it after a file's headers wherever `analysis.preview_thumbnails` is on,
+the server's setting or its library's (`GenerateBIFBehavior` and `enableBIFGeneration` in one),
+and keeps it on disk by the file's content hash, not by part
+(`KLAPZ_EXTRACTS_DIR/{hash[..2]}/{hash}/index-sd.bif`): like the reference skipping a part whose
+`index-sd.bif` exists, a content found there is not made again, and every copy of the file
+shares it. No failure state is kept: a file whose video ffmpeg cannot decode is not tried again
+until it changes or a forced scan queues it. Serving it (`/library/parts/{part}/indexes/sd`) is
+still to come.
 
 ## 5. Chapter thumbnails
 
