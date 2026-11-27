@@ -22,7 +22,7 @@ use klapz_db::entity::{
 use klapz_db::SqlScanRepository;
 use klapz_scanner::analysis_from_ffprobe;
 use klapz_scanner::report::{Analysis, FileIdentity};
-use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use serde_json::Value;
 
 const FILMS: SectionId = SectionId::new(1);
@@ -30,7 +30,7 @@ const FILMS: SectionId = SectionId::new(1);
 /// Values the reference's older libav read otherwise, by sample and field.
 const KNOWN: &[(&str, &str, &str)] = &[
     // Teletext tags a language per page, `fra,fra`, which the reference stores as `und`: ours
-    // takes the language of the page its subtitles are decoded from, 889's.
+    // stores a track per page, the first 889's.
     (
         "peur-primale-1996-multi-vff-1080i-hdtv-full-avc-he-aac-2-0",
         "stream 0 language",
@@ -202,10 +202,17 @@ async fn stored(connection: &DatabaseConnection, item: i64) -> BTreeMap<String, 
 
     let tracks = media_stream::Entity::find()
         .filter(media_stream::Column::MediaPartId.eq(part.id))
+        .order_by_asc(media_stream::Column::Id)
         .all(connection)
         .await
         .unwrap();
+    // A stream's first row stands for it: the reference stores one track for a teletext
+    // stream, where ours stores a row per page, the others beside it.
+    let mut seen = std::collections::BTreeSet::new();
     for track in tracks {
+        if !seen.insert(track.position) {
+            continue;
+        }
         let record = stream_dolby_vision::Entity::find_by_id(track.id)
             .one(connection)
             .await

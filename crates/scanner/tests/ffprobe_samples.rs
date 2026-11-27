@@ -234,11 +234,15 @@ fn tells_annex_b_framing_from_length_prefixes() {
 }
 
 #[test]
-fn keeps_the_subtitle_pages_a_teletext_track_declares() {
+fn keeps_the_subtitle_pages_a_teletext_track_carries() {
     let peur = analysis("peur-primale-1996-multi-vff-1080i-hdtv-full-avc-he-aac-2-0");
+    // Arte's two declared French pages, then those it sends undeclared.
     assert_eq!(
         track(&peur, 0).teletext_pages.as_deref(),
-        Some("888:fra:hearing_impaired,889:fra:subtitles")
+        Some(concat!(
+            "888:fra:hearing_impaired,889:fra:subtitles,",
+            "150:deu:subtitles,152:deu:subtitles,702:fra:subtitles,708:deu:subtitles"
+        ))
     );
     assert_eq!(track(&peur, 1).teletext_pages, None);
 }
