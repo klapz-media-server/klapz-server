@@ -3,6 +3,7 @@
 
 use crate::files::{FilesError, LibraryFiles};
 use crate::ids::SectionId;
+use crate::language::LanguageTag;
 use crate::lifecycle::Lifecycle;
 use crate::page::{Page, Window};
 use crate::scan::{ScanControl, ScanRequest};
@@ -57,7 +58,8 @@ pub struct LibrarySection {
     pub kind: SectionKind,
     pub title: String,
     pub title_sort: Option<String>,
-    pub language: String,
+    /// What its metadata is matched and shown in.
+    pub language: LanguageTag,
     pub uuid: String,
     pub created_at: i64,
     pub updated_at: i64,
@@ -74,8 +76,7 @@ pub struct LibrarySection {
 pub struct NewLibrary {
     pub kind: SectionKind,
     pub title: String,
-    /// BCP 47, such as `fr-FR`.
-    pub language: String,
+    pub language: LanguageTag,
     /// As the files backend stores them: see [`checked_roots`].
     pub roots: Vec<String>,
 }
@@ -85,7 +86,7 @@ pub struct NewLibrary {
 pub struct LibraryEdit {
     /// A new title also clears the sort title, which was the old one's.
     pub title: Option<String>,
-    pub language: Option<String>,
+    pub language: Option<LanguageTag>,
     /// Replaces every root: one kept keeps its id, the others go.
     pub roots: Option<Vec<String>>,
 }
@@ -187,23 +188,6 @@ pub fn normalized_title(title: &str) -> Option<String> {
         && title.chars().count() <= MAX_TITLE
         && !title.chars().any(char::is_control);
     valid.then(|| title.to_owned())
-}
-
-/// Whether `tag` is shaped as a BCP 47 language tag: a language of two or three letters, then
-/// subtags of two to eight letters or digits (`fr-FR`, `es-419`, `zh-Hant-TW`). Whether the
-/// language exists is not checked: clients carry their own lists.
-#[must_use]
-pub fn is_language_tag(tag: &str) -> bool {
-    let mut subtags = tag.split('-');
-    let language_is_valid = subtags.next().is_some_and(|language| {
-        (2..=3).contains(&language.len()) && language.bytes().all(|byte| byte.is_ascii_alphabetic())
-    });
-    language_is_valid
-        && tag.len() <= 35
-        && subtags.all(|subtag| {
-            (2..=8).contains(&subtag.len())
-                && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
-        })
 }
 
 /// Why a list of roots was refused, with the position of the one at fault.
@@ -395,7 +379,7 @@ mod tests {
             kind: SectionKind::Movie,
             title: "VF - Films".to_owned(),
             title_sort: None,
-            language: "fr-FR".to_owned(),
+            language: LanguageTag::parse("fr-FR").expect("a tag"),
             uuid: "2cd48489-54c0-41e9-ae62-f3dcb0f3c249".to_owned(),
             created_at: 1_477_835_115,
             updated_at: 1_792_916_300,
@@ -445,16 +429,6 @@ VF"
             Some(255)
         );
         assert_eq!(normalized_title(&"é".repeat(256)), None);
-    }
-
-    #[test]
-    fn a_language_is_shaped_as_bcp_47() {
-        for tag in ["fr", "fr-FR", "es-419", "zh-Hant-TW", "yue"] {
-            assert!(is_language_tag(tag), "{tag}");
-        }
-        for tag in ["", "f", "fr_FR", "fr-", "français", "fr-F", "12-FR"] {
-            assert!(!is_language_tag(tag), "{tag}");
-        }
     }
 
     #[tokio::test]

@@ -33,7 +33,7 @@ fn section(id: i64, kind: SectionKind, title: &str) -> LibrarySection {
         kind,
         title: title.to_owned(),
         title_sort: None,
-        language: "fr-FR".to_owned(),
+        language: klapz_core::language::LanguageTag::parse("fr-FR").unwrap(),
         uuid: format!("uuid-{id}"),
         created_at: 1_477_835_115,
         updated_at: 1_792_916_300,

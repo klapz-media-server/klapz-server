@@ -32,6 +32,7 @@ use crate::entity::{
     item_corner_colors, media, media_part, media_stream, metadata_item, stream_dolby_vision,
     stream_loudness,
 };
+use crate::language::canonical;
 use crate::write;
 
 /// How many rows to write per statement.
@@ -618,7 +619,7 @@ fn stream_row(
         kind: ActiveValue::Set(kind.to_owned()),
         position: ActiveValue::Set(row.plex_opt("index").unwrap_or(0)),
         codec: ActiveValue::Set(row.plex_text("codec")),
-        language: ActiveValue::Set(row.plex_text("language")),
+        language: ActiveValue::Set(canonical(row.plex_text("language").as_deref())),
         channels: ActiveValue::Set(row.plex_opt("channels")),
         bitrate: ActiveValue::Set(row.plex_opt("bitrate")),
         is_default: ActiveValue::Set(row.plex_flag("default")),

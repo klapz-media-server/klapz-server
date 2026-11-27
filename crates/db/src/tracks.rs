@@ -20,10 +20,27 @@ pub(crate) const fn track_column(field: TrackField) -> media_stream::Column {
         TrackField::VideoCodec | TrackField::AudioCodec | TrackField::SubtitleCodec => {
             media_stream::Column::Codec
         }
-        TrackField::AudioLanguage | TrackField::SubtitleLanguage => {
+        TrackField::AudioLanguage | TrackField::SubtitleLanguage => media_stream::Column::Language,
+        TrackField::StatedAudioLanguage | TrackField::StatedSubtitleLanguage => {
             media_stream::Column::DeclaredLanguage
         }
     }
+}
+
+/// A track's value is one of the condition's: exactly, or for a language a tag within one of
+/// them (`fr-CA` within `fr`), which canonical tags make a prefix up to a hyphen.
+fn holds_value(condition: &TrackCondition, column: media_stream::Column) -> Condition {
+    let column = Expr::col((media_stream::Entity, column));
+    let exact = Condition::all().add(column.clone().is_in(condition.any_of.iter().cloned()));
+    if !condition.field.is_language() {
+        return exact;
+    }
+    condition
+        .any_of
+        .iter()
+        .fold(Condition::any().add(exact), |any, wanted| {
+            any.add(column.clone().like(format!("{wanted}-%")))
+        })
 }
 
 /// The files of the versions a subquery returns, as a subquery of file ids.
@@ -74,9 +91,7 @@ pub(crate) fn has_track(condition: &TrackCondition) -> Condition {
                 Expr::col((media_stream::Entity, media_stream::Column::Kind))
                     .eq(stream_kind_name(condition.field.kind())),
             )
-            .and_where(
-                Expr::col((media_stream::Entity, column)).is_in(condition.any_of.iter().cloned()),
-            )
+            .cond_where(holds_value(condition, column))
             .to_owned(),
     );
     let condition = if condition.negated {

@@ -104,7 +104,7 @@ on a lookup and are not imported.
 | Attribute | Rule |
 | --- | --- |
 | `language` | ICU's display name of the stored tag in the client's language: standard name, region by its short name (`Anglais (R.-U.)`, `Englisch (UK)`), region dropped when it is the language's likely one (`fr-FR` and `pt-BR` read `Français`, `Portugais`), first letter capitalised where the locale's menus capitalise (`Anglais`, but `English`, and an unknown `qad` reads `Qad` in French only). Identical on 2,516 tracks × 3 languages. `mis` and `und` are the exceptions, `Uncoded language` and `Undetermined language` in every language. With no `X-Plex-Language`, each language is named in itself, by its own locale's rules: `日本語`, `Français (Canada)`, `English (UK)`, `Español (Latinoamérica)`, `Русский` but `norsk bokmål`; one with no locale of its own in the reference's system locale, French (`zxx` `Sans contenu linguistique`, `qaa` `Qaa`). The rest of a label stays English: `Français Forced`. Identical on 38 files. |
-| `languageTag`, `languageCode` | The stored tag unchanged; its ISO 639-2/T code (`fra`, `deu`, `ron`), empty for a private-use code. |
+| `languageTag`, `languageCode` | The stored tag unchanged; its ISO 639-2/T code (`fra`, `deu`, `ron`), empty for a private-use code. Ours stores the canonical tag (`core::language::LanguageTag`), so a tag the reference kept in another spelling is published canonically: `eng` and `fra` as `en` and `fr`, `fr_FR` as `fr-FR`, `french` as `fr` (then named `Français`, where the reference shows `french`); a word naming no language (`unknown`, 9 tracks of the reference library) is no language. The reference's own scan already writes `fre` as `fr`. |
 | `Media.audioProfile`, `videoProfile` | The profile of the audio track the version's codec and channel count describe — the first matching both, else the default, else the first (243,112 of 243,159) — and of the first video track. Repeated on the part. |
 | `Media.audioCodec` | `dca-ma` for DTS-HD Master Audio; no other pair is composed, not `dca` with `hra` or `es`. |
 | Video `displayTitle` | A resolution word from both dimensions, not `videoResolution`'s ladder (960×720 is `720`, there is no `576`): `4K`, `1080`, `720`, `480` with `p` or `i`, else `SD`; then `HDR10`, `HDR10+`, `HLG`, `DoVi/` in front of the base layer's, or `DoVi` alone. |
@@ -118,6 +118,7 @@ Where ours differ, all measured:
   the provider from the `at:` keys; we import none of them and write `Externe`. A sidecar
   subtitle also carries `key` and `file` there, and no `index`; so does ours (see *Subtitle
   files*).
+- **A tag stored in another spelling**, `eng` (4,803 tracks of the reference library), `fra`, `french`, is published canonically (`en`, `fr`): see `languageTag` above.
 - **`zh-Hant`** reads `Chinois (Taïwan)`: ICU completes a script into its likely region, which
   the tables here do not carry.
 - **XML writes `frameRate="25.0"`** where the reference writes `25.000`, the stored text: the

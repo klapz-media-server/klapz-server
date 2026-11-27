@@ -185,7 +185,7 @@ RFC 3339, without an offset (read as UTC) or a day alone.
 `/Items/Filters` and `/Items/Filters2` list what a library's items hold, or every library of the
 caller's: genres (with their ids), release years, content ratings, and the audio and subtitle
 languages tracks state, named as the reference names them (`French (fre)`, `qaa`), each language
-once as written (`fre` and `fra` apart, through `TrackField.AUDIO_LANGUAGE` on the official API).
+once as written (`fre` and `fra` apart, through `TrackField.STATED_AUDIO_LANGUAGE` on the official API, beside `Library.trackLanguages`, where they are one `fr`).
 Tags are keywords a provider gives: none. A kind of item below the library's own (`IncludeItemTypes=Episode` in a series library)
 narrows the values to those items, through the official API's `filter`; below a library, several
 such kinds at once, or the Live TV flags of `Filters2`, answer `501`; music, photos and box sets,

@@ -31,6 +31,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use futures_util::StreamExt as _;
+use klapz_core::language::{Language, LanguageTag};
 use klapz_core::lifecycle::{Lifecycle, SessionLocks};
 use klapz_core::playback::{PlaybackOutput, PlaybackRepository, StreamDecision};
 use klapz_core::settings::{self, SettingsRepository};
@@ -129,7 +130,7 @@ impl TextSubtitle {
         match output {
             SubtitleOutput::Text { track, format } => Some(Self {
                 format: *format,
-                language: track.language.clone(),
+                language: track.language.map(|tag| tag.to_string()),
             }),
             SubtitleOutput::Burn { .. } => None,
         }
@@ -217,7 +218,13 @@ fn track(track: &StreamTrack) -> Track {
     Track {
         index: track.position,
         codec: track.codec.clone(),
-        language: track.language.clone(),
+        language: track.language.map(|tag| tag.to_string()),
+        language_code: track
+            .language
+            .map(LanguageTag::language)
+            .filter(|language| language.is_language())
+            .and_then(Language::terminological_code)
+            .map(ToOwned::to_owned),
         teletext_page: track.teletext_page,
     }
 }

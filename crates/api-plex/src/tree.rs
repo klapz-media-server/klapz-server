@@ -178,7 +178,7 @@ fragment TreeVersion on MediaVersion {
       kind
       position
       codec
-      language
+      language { tag }
       channels
       externalUrl
       title
@@ -366,6 +366,7 @@ struct GqlTrack {
     kind: String,
     position: i32,
     codec: Option<String>,
+    #[serde(default, deserialize_with = "crate::gql::locale::optional_tag")]
     language: Option<String>,
     channels: Option<i32>,
     external_url: Option<String>,
@@ -1009,7 +1010,7 @@ mod tests {
         // Track 11990163 of the reference, as its tree writes it.
         let official = json!({
             "id": GlobalId::encode("MediaStream", 11_990_163), "kind": "VIDEO", "position": 0,
-            "codec": "hevc", "language": "en", "channels": null, "externalUrl": null,
+            "codec": "hevc", "language": {"tag": "en"}, "channels": null, "externalUrl": null,
             "title": null, "streamIdentifier": null, "profile": "main 10", "bitDepth": 10,
             "requiredBandwidths": [76_457_000, 58_845_000, 27_378_000, 26_588_000, 25_924_000,
                 25_344_000, 25_196_000, 25_196_000],
@@ -1084,7 +1085,7 @@ mod tests {
         // Track 1668218 of the reference.
         let official = json!({
             "id": GlobalId::encode("MediaStream", 1_668_218), "kind": "AUDIO", "position": 1,
-            "codec": "ac3", "language": "en", "channels": 6, "externalUrl": null,
+            "codec": "ac3", "language": {"tag": "en"}, "channels": 6, "externalUrl": null,
             "title": "French (Canada) : Dolby Digital 5.1", "streamIdentifier": null,
             "profile": null, "bitDepth": null, "requiredBandwidths": vec![448_000; 8],
             "traits": no_traits(), "video": null,
@@ -1112,7 +1113,7 @@ mod tests {
         let url = "file:///media/The%20Walking%20Dead%20S04E03.en.srt";
         let official = json!({
             "id": GlobalId::encode("MediaStream", 11_247_877), "kind": "SUBTITLE",
-            "position": 0, "codec": "srt", "language": "en", "channels": null,
+            "position": 0, "codec": "srt", "language": {"tag": "en"}, "channels": null,
             "externalUrl": url, "title": null, "streamIdentifier": null, "profile": null,
             "bitDepth": null, "requiredBandwidths": [], "traits": no_traits(), "video": null,
             "audio": null, "subtitle": { "format": "srt", "isEmbeddedInVideo": false }
@@ -1134,7 +1135,7 @@ mod tests {
         // writes as the largest 32-bit integer.
         let official = json!({
             "id": GlobalId::encode("MediaStream", 8_975_927), "kind": "SUBTITLE", "position": 2,
-            "codec": "srt", "language": "fr", "channels": null, "externalUrl": null,
+            "codec": "srt", "language": {"tag": "fr"}, "channels": null, "externalUrl": null,
             "title": "", "streamIdentifier": null, "profile": null, "bitDepth": null,
             "requiredBandwidths": [2_147_483_647_000.0, 165_438_000.0],
             "traits": no_traits(), "video": null, "audio": null,

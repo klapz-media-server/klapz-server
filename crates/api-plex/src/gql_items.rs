@@ -112,7 +112,7 @@ fragment TrackFields on MediaStream {
   kind
   position
   codec
-  language
+  language { tag }
   channels
   bitrate
   isDefault
@@ -1330,6 +1330,7 @@ pub struct GqlStream {
     pub kind: String,
     pub position: i32,
     pub codec: Option<String>,
+    #[serde(deserialize_with = "crate::gql::locale::optional_tag")]
     pub language: Option<String>,
     pub channels: Option<i32>,
     pub bitrate: Option<i32>,

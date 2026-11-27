@@ -19,6 +19,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::edit::{derived_title_sort, ItemField};
+use crate::language::LanguageTag;
 use crate::metadata::{ItemKind, MetadataItem, RatingKind, TagKind};
 use crate::{RatingKey, SectionId};
 
@@ -29,7 +30,7 @@ pub struct MatchQuery {
     pub title: String,
     pub year: Option<i32>,
     /// The library's language, `fr-FR`: results are named in it where the provider can.
-    pub language: String,
+    pub language: LanguageTag,
 }
 
 /// One search result.
@@ -55,7 +56,7 @@ pub struct SourceRecord {
     /// A season's number within its series, an episode's within its season.
     pub position: Option<i32>,
     /// ISO 639-1, `en`.
-    pub original_language: Option<String>,
+    pub original_language: Option<LanguageTag>,
     pub original_title: Option<String>,
     pub translations: Vec<Translation>,
     pub year: Option<i32>,
@@ -82,7 +83,7 @@ pub struct SourceRecord {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Genre {
     /// `en` → `Science Fiction`, `fr` → `Science-Fiction`.
-    pub names: Vec<(String, String)>,
+    pub names: Vec<(LanguageTag, String)>,
 }
 
 /// Someone credited on a work.
@@ -122,7 +123,7 @@ pub struct AppliedTag {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Translation {
     /// `fr-FR` when the provider names a region, `fr` otherwise.
-    pub language: String,
+    pub language: LanguageTag,
     pub title: Option<String>,
     pub summary: Option<String>,
     pub tagline: Option<String>,
@@ -148,8 +149,8 @@ pub struct ExternalId {
 pub struct RemoteImage {
     pub kind: ImageKind,
     pub url: String,
-    /// ISO 639-1; `None` for an image without text, which suits every language.
-    pub language: Option<String>,
+    /// `None` for an image without text, which suits every language.
+    pub language: Option<LanguageTag>,
     pub width: Option<i32>,
     pub height: Option<i32>,
     pub vote_average: Option<f64>,
@@ -261,7 +262,7 @@ pub struct SeasonTarget {
 pub struct MatchPlan {
     /// What the library's top level holds: films or series.
     pub kind: ItemKind,
-    pub language: String,
+    pub language: LanguageTag,
     pub targets: Vec<MatchTarget>,
 }
 
@@ -327,7 +328,7 @@ pub trait SourceMetadataRepository: Send + Sync + std::fmt::Debug {
     async fn item_target(
         &self,
         item: RatingKey,
-    ) -> Result<Option<(String, MatchTarget)>, SourceMetadataError>;
+    ) -> Result<Option<(LanguageTag, MatchTarget)>, SourceMetadataError>;
 
     /// Forgets the record an item and its seasons and episodes show: their links, identifiers
     /// and images. Each takes back the identity a scan gives, `local://{id}`; its texts stay
@@ -478,7 +479,7 @@ impl Matching {
                 kind: shown.kind,
                 title,
                 year,
-                language: language.clone(),
+                language,
             };
             for candidate in source.search(&query).await.map_err(|e| with_causes(&e))? {
                 let score = matching::score(&query, &candidate);
@@ -534,7 +535,7 @@ impl Matching {
             source,
             self.artwork.as_deref(),
             &target,
-            &language,
+            language,
             now,
         )
         .await
@@ -563,7 +564,7 @@ pub async fn match_library(
     let mut report = MatchReport::default();
     for target in plan.targets {
         let key = target.target.item.id;
-        match match_one(repository, source, artwork, &target, &plan.language, now).await {
+        match match_one(repository, source, artwork, &target, plan.language, now).await {
             Ok(Outcome::Matched(matched)) => report.matched.push(matched),
             Ok(Outcome::Unmatched(unmatched)) => report.unmatched.push(unmatched),
             Err(reason) => {
@@ -587,7 +588,7 @@ async fn match_one(
     source: &dyn MetadataSource,
     artwork: Option<&dyn artwork::ArtworkFetcher>,
     target: &MatchTarget,
-    language: &str,
+    language: LanguageTag,
     now: i64,
 ) -> Result<Outcome, String> {
     let item = &target.target.item;
@@ -687,7 +688,7 @@ async fn fetch_images(
     artwork: &dyn artwork::ArtworkFetcher,
     applied: &[AppliedItem],
     records: &[&SourceRecord],
-    language: &str,
+    language: LanguageTag,
 ) -> Vec<ItemImage> {
     let mut images = Vec::new();
     for (item, record) in applied.iter().zip(records) {
@@ -724,7 +725,7 @@ async fn best_candidate(
     source: &dyn MetadataSource,
     item: &MetadataItem,
     named: &str,
-    language: &str,
+    language: LanguageTag,
 ) -> Result<Option<(Candidate, i32)>, String> {
     let mut best: Option<(Candidate, i32)> = None;
     for (title, year) in matching::queries(named, item.year) {
@@ -732,7 +733,7 @@ async fn best_candidate(
             kind: item.kind,
             title,
             year,
-            language: language.to_owned(),
+            language,
         };
         let candidates = source.search(&query).await.map_err(|e| with_causes(&e))?;
         for candidate in candidates {
@@ -776,7 +777,7 @@ async fn applied_item(
     target: &Target,
     record: &SourceRecord,
     saved: &SavedSource,
-    language: &str,
+    language: LanguageTag,
     score: Option<i32>,
 ) -> Result<AppliedItem, String> {
     let mut external_ids = record.external_ids.clone();
@@ -827,25 +828,20 @@ pub fn project(
     item: &MetadataItem,
     locked: &BTreeSet<ItemField>,
     record: &SourceRecord,
-    language: &str,
+    language: LanguageTag,
 ) -> MetadataItem {
     let mut out = item.clone();
     let open = |field| !locked.contains(&field);
-    let text = translation_for(
-        &record.translations,
-        language,
-        record.original_language.as_deref(),
-    );
+    let text = translation_for(&record.translations, language, record.original_language);
     // A season keeps no title of its own, as on the reference: clients name it by its number.
     if record.kind != ItemKind::Season {
         // In the work's own language its original title is the title, whatever translation
         // the fallback would otherwise reach: a French film TMDB only translated into English.
         let in_original_language = record
             .original_language
-            .as_deref()
-            .is_some_and(|original| primary_language(original) == primary_language(language));
+            .is_some_and(|original| original.code() == language.code());
         let translated = text
-            .filter(|text| primary_language(&text.language) == primary_language(language))
+            .filter(|text| text.language.code() == language.code())
             .and_then(|text| text.title.clone());
         let title = translated
             .or_else(|| {
@@ -906,9 +902,8 @@ pub fn project(
 pub fn tags_for(
     record: &SourceRecord,
     locked: &BTreeSet<ItemField>,
-    language: &str,
+    language: LanguageTag,
 ) -> Vec<(TagKind, Vec<AppliedTag>)> {
-    let wanted = primary_language(language);
     let plain = |name: String| AppliedTag {
         name,
         role: None,
@@ -922,9 +917,9 @@ pub fn tags_for(
                 genre
                     .names
                     .iter()
-                    .find(|(language, _)| primary_language(language) == code)
+                    .find(|(language, _)| language.code() == code)
             };
-            named(&wanted)
+            named(language.code())
                 .or_else(|| named("en"))
                 .or_else(|| genre.names.first())
                 .map(|(_, name)| plain(name.clone()))
@@ -973,49 +968,32 @@ const fn lock_of(kind: TagKind) -> ItemField {
 
 /// The texts to show in `language` (`fr-FR`): that language and region, else the language in
 /// any region, else the work's original language, else English, else whatever there is.
-pub fn translation_for<'a>(
-    translations: &'a [Translation],
-    language: &str,
-    original: Option<&str>,
-) -> Option<&'a Translation> {
-    let primary = primary_language;
-    let wanted = primary(language);
+pub fn translation_for(
+    translations: &[Translation],
+    language: LanguageTag,
+    original: Option<LanguageTag>,
+) -> Option<&Translation> {
     let usable = |t: &&Translation| t.title.is_some() || t.summary.is_some();
+    let in_language = |code: &str| {
+        translations
+            .iter()
+            .filter(usable)
+            .find(|t| t.language.code() == code)
+    };
     translations
         .iter()
         .filter(usable)
-        .find(|t| t.language.eq_ignore_ascii_case(language))
-        .or_else(|| {
-            translations
-                .iter()
-                .filter(usable)
-                .find(|t| primary(&t.language) == wanted)
-        })
-        .or_else(|| {
-            let original = original.map(primary)?;
-            translations
-                .iter()
-                .filter(usable)
-                .find(|t| primary(&t.language) == original)
-        })
-        .or_else(|| {
-            translations
-                .iter()
-                .filter(usable)
-                .find(|t| primary(&t.language) == "en")
-        })
+        .find(|t| t.language == language)
+        .or_else(|| in_language(language.code()))
+        .or_else(|| in_language(original?.code()))
+        .or_else(|| in_language("en"))
         .or_else(|| translations.iter().find(usable))
-}
-
-/// `fr` for `fr-FR`.
-fn primary_language(tag: &str) -> String {
-    tag.split('-').next().unwrap_or(tag).to_ascii_lowercase()
 }
 
 /// The age rating for the library's country, as Plex writes it: bare for the United States,
 /// prefixed by the country elsewhere (`fr/12`).
-fn content_rating(certifications: &[Certification], language: &str) -> Option<String> {
-    let country = language.split_once('-')?.1;
+fn content_rating(certifications: &[Certification], language: LanguageTag) -> Option<String> {
+    let country = language.region()?;
     let found = certifications
         .iter()
         .find(|c| c.country.eq_ignore_ascii_case(country) && !c.rating.is_empty())?;
@@ -1032,9 +1010,13 @@ mod tests {
 
     use super::*;
 
+    fn tag(text: &str) -> LanguageTag {
+        LanguageTag::parse(text).unwrap()
+    }
+
     fn translation(language: &str, title: &str) -> Translation {
         Translation {
-            language: language.to_owned(),
+            language: tag(language),
             title: Some(title.to_owned()),
             summary: None,
             tagline: None,
@@ -1075,7 +1057,7 @@ mod tests {
             agent: "tmdb".to_owned(),
             provider_id: "603".to_owned(),
             position: None,
-            original_language: Some("en".to_owned()),
+            original_language: Some(tag("en")),
             original_title: Some("The Matrix".to_owned()),
             translations: vec![
                 translation("en-US", "The Matrix"),
@@ -1100,8 +1082,8 @@ mod tests {
             images: Vec::new(),
             genres: vec![Genre {
                 names: vec![
-                    ("en".to_owned(), "Science Fiction".to_owned()),
-                    ("fr".to_owned(), "Science-Fiction".to_owned()),
+                    (tag("en"), "Science Fiction".to_owned()),
+                    (tag("fr"), "Science-Fiction".to_owned()),
                 ],
             }],
             countries: vec!["United States of America".to_owned()],
@@ -1129,12 +1111,12 @@ mod tests {
     #[test]
     fn tags_name_genres_in_the_library_language_and_skip_locked_kinds() {
         let locked = BTreeSet::from([ItemField::Directors]);
-        let tags = tags_for(&record(), &locked, "fr-FR");
+        let tags = tags_for(&record(), &locked, tag("fr-FR"));
         let kinds: Vec<TagKind> = tags.iter().map(|(kind, _)| *kind).collect();
         assert_eq!(kinds, [TagKind::Genre, TagKind::Country, TagKind::Actor]);
         assert_eq!(tags[0].1[0].name, "Science-Fiction");
         assert_eq!(tags[2].1[0].role.as_deref(), Some("Neo"));
-        let german = tags_for(&record(), &BTreeSet::new(), "de-DE");
+        let german = tags_for(&record(), &BTreeSet::new(), tag("de-DE"));
         assert_eq!(german[0].1[0].name, "Science Fiction");
     }
 
@@ -1145,14 +1127,14 @@ mod tests {
             translation("fr-CA", "La Matrice"),
         ];
         assert_eq!(
-            translation_for(&all, "fr-FR", Some("en"))
+            translation_for(&all, tag("fr-FR"), Some(tag("en")))
                 .unwrap()
                 .title
                 .as_deref(),
             Some("La Matrice")
         );
         assert_eq!(
-            translation_for(&all, "de-DE", Some("en"))
+            translation_for(&all, tag("de-DE"), Some(tag("en")))
                 .unwrap()
                 .title
                 .as_deref(),
@@ -1163,7 +1145,7 @@ mod tests {
             translation("en-US", "The Matrix"),
         ];
         assert_eq!(
-            translation_for(&japanese, "de-DE", Some("ja"))
+            translation_for(&japanese, tag("de-DE"), Some(tag("ja")))
                 .unwrap()
                 .title
                 .as_deref(),
@@ -1173,12 +1155,12 @@ mod tests {
 
     #[test]
     fn shows_the_record_in_the_library_language() {
-        let shown = project(&film(), &BTreeSet::new(), &record(), "fr-FR");
+        let shown = project(&film(), &BTreeSet::new(), &record(), tag("fr-FR"));
         assert_eq!(shown.title.as_deref(), Some("Matrix"));
         assert_eq!(shown.original_title.as_deref(), Some("The Matrix"));
         assert_eq!(shown.content_rating.as_deref(), Some("fr/12"));
         assert_eq!(shown.studio.as_deref(), Some("Warner Bros. Pictures"));
-        let american = project(&film(), &BTreeSet::new(), &record(), "en-US");
+        let american = project(&film(), &BTreeSet::new(), &record(), tag("en-US"));
         assert_eq!(american.title.as_deref(), Some("The Matrix"));
         assert_eq!(american.original_title, None);
         assert_eq!(american.content_rating.as_deref(), Some("R"));
@@ -1187,13 +1169,13 @@ mod tests {
     #[test]
     fn a_work_in_the_library_language_keeps_its_original_title() {
         let mut french = record();
-        french.original_language = Some("fr".to_owned());
+        french.original_language = Some(tag("fr"));
         french.original_title = Some("Le mal aimé".to_owned());
         french.translations = vec![translation("en-US", "Unloved")];
-        let shown = project(&film(), &BTreeSet::new(), &french, "fr-FR");
+        let shown = project(&film(), &BTreeSet::new(), &french, tag("fr-FR"));
         assert_eq!(shown.title.as_deref(), Some("Le mal aimé"));
         assert_eq!(shown.original_title, None);
-        let american = project(&film(), &BTreeSet::new(), &french, "en-US");
+        let american = project(&film(), &BTreeSet::new(), &french, tag("en-US"));
         assert_eq!(american.title.as_deref(), Some("Unloved"));
     }
 
@@ -1202,7 +1184,7 @@ mod tests {
         let mut edited = film();
         edited.title = Some("Mon Matrix".to_owned());
         let locked = BTreeSet::from([ItemField::Title, ItemField::Studio]);
-        let shown = project(&edited, &locked, &record(), "fr-FR");
+        let shown = project(&edited, &locked, &record(), tag("fr-FR"));
         assert_eq!(shown.title.as_deref(), Some("Mon Matrix"));
         assert_eq!(shown.studio, None);
         assert_eq!(shown.year, Some(1999));

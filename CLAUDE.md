@@ -15,6 +15,7 @@ Everything in this repository is written in English — code, comments, document
 | `docs/plex-db-schema.md` | The real Plex library schema, as a reference only. **Generated**: `python tools/dump_plex_schema.py`. |
 | `docs/wire-format.md` | Authoritative per-field JSON type map and element tables, from live captures. **Generated**: `PLEX_TOKEN=... python tools/capture_plex.py`. |
 | `docs/spec-gaps.md` | Where the spec and the reference server disagree: omissions, wrong paths, aliases, and every undocumented behavior we reproduce. Hand-verified. |
+| `tools/gen_languages.py` | The one language model: every language CLDR 39 names in English, with its ISO 639 codes, aliases and names. Generates `crates/core/src/language/table.rs` and the official API's `Language` enum, `crates/api/src/language/values.rs`. |
 | `tools/gen_language_names.py` | Language and region names from CLDR 39, the data of the ICU 69 the reference ships. Generates `crates/api-plex/src/language_names.rs`. |
 | `tools/capture_scan_samples.py` | ffprobe's output for sample files of the reference's library, with the rows the reference stored for them: the fixtures `crates/db/tests/scan_samples.rs` replays through the scan and compares column for column. |
 | `tools/compare_items.py` | Field-by-field diff of our listings and lookups against the reference, aligned by `ratingKey` so ordering and field fidelity stay separate questions. |
@@ -202,6 +203,22 @@ without them saying so.
   its roots, items, collections and permissions, and what refers to its items without a foreign
   key (markers, playlist and play-queue entries, viewings, sessions); watch state and ratings,
   keyed by the work, stay. Files on disk are never touched.
+- **Every language is one type, `core::language`.** A `Language` is one of the 598 languages CLDR 39
+  names, under its shortest ISO 639 code, and a `LanguageTag` a language with the script and
+  region BCP 47 adds: every spelling a file or a provider uses reads as one (`fre`, `fra`, `fr`,
+  `French`), while a region keeps two dubs apart (TRUEFRENCH `fr-FR`, VFQ `fr-CA`). A
+  well-formed code outside the list (`qaa`) is kept, its language `MIS`. Storage keeps the
+  canonical tag (`fr-CA`, migration `m0049`), the scan and the importer writing nothing else;
+  what a file wrote stays beside it as stated (`declared_language`). On the official API every
+  language is the `Language` enum, or `Locale` (`language`, `script`, `region`, `tag`, names)
+  and `LocaleInput` where a region counts — `Library.language`, `MediaStream.language`,
+  `SideStream.language`, `Library.trackLanguages`, `ItemFilterInput.trackLanguages`, where `FR`
+  stands for every region and `FR`/`CA` for Quebec alone; the stated values alone stay text
+  (`StatedTrack.language`, `SideStream.statedLanguage`, `TrackField.STATED_*_LANGUAGE`). The
+  adapters derive their wire forms from it (Jellyfin's three-letter codes and English names,
+  TVDB's codes, the transcoder's labels) and keep no language table of their own, but Plex's
+  labels: `api-plex::language_names` reproduces ICU 69's display of a tag, names in 32 locales
+  and its codes included, which is presentation.
 - **Server settings are keys in `server_setting`, declared in `core::settings`.** A key is
   dotted lower-case words, at least two, each of `a-z`, `0-9` and `_` starting with a letter,
   96 characters at most, the machinery it drives first: `transcoder.h264.preset`. Every

@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use klapz_core::edit::CalendarDate;
+use klapz_core::language::{Language, LanguageTag};
 use klapz_core::metadata::{ItemKind, RatingKind, TagKind};
 use klapz_core::source_metadata::{
     AgentError, Candidate, Certification, Credit, ExternalId, Genre, ImageKind, MatchQuery,
@@ -26,7 +27,7 @@ const MIN_VOTES: u32 = 4;
 const WRITER_JOBS: &[&str] = &["Writer", "Screenplay", "Author"];
 
 /// TMDB's genre names, by language tag and genre id.
-type GenreNames = HashMap<String, HashMap<u64, String>>;
+type GenreNames = HashMap<LanguageTag, HashMap<u64, String>>;
 
 #[derive(Debug)]
 pub struct Tmdb {
@@ -50,17 +51,17 @@ impl Tmdb {
     }
 
     /// Fills in the genre names of every one of `languages` not asked for yet.
-    async fn learn_genre_names(&self, languages: &[String]) -> Result<(), AgentError> {
+    async fn learn_genre_names(&self, languages: &[LanguageTag]) -> Result<(), AgentError> {
         let mut known = self.genre_names.lock().await;
         for language in languages {
             if known.contains_key(language) {
                 continue;
             }
             let list: GenreList = self
-                .get("/genre/movie/list", &[("language", language.clone())])
+                .get("/genre/movie/list", &[("language", language.to_string())])
                 .await?;
             known.insert(
-                language.clone(),
+                *language,
                 list.genres
                     .into_iter()
                     .filter_map(|genre| Some((genre.id, empty_to_none(&genre.name?)?)))
@@ -94,7 +95,7 @@ impl MetadataSource for Tmdb {
     async fn search(&self, query: &MatchQuery) -> Result<Vec<Candidate>, AgentError> {
         let mut parameters = vec![
             ("query", query.title.clone()),
-            ("language", query.language.clone()),
+            ("language", query.language.to_string()),
             ("include_adult", "false".to_owned()),
         ];
         if let Some(year) = query.year {
@@ -126,11 +127,11 @@ impl MetadataSource for Tmdb {
                 )],
             )
             .await?;
-        let languages: Vec<String> = movie
+        let languages: Vec<LanguageTag> = movie
             .translations
             .translations
             .iter()
-            .map(MovieTranslation::tag)
+            .filter_map(MovieTranslation::tag)
             .collect();
         self.learn_genre_names(&languages).await?;
         let names = self.genre_names.lock().await;
@@ -259,12 +260,9 @@ struct MovieTranslation {
 
 impl MovieTranslation {
     /// `fr-FR`, or `fr` when TMDB names no region.
-    fn tag(&self) -> String {
-        if self.iso_3166_1.is_empty() {
-            self.iso_639_1.clone()
-        } else {
-            format!("{}-{}", self.iso_639_1, self.iso_3166_1)
-        }
+    fn tag(&self) -> Option<LanguageTag> {
+        let region = Some(self.iso_3166_1.as_str()).filter(|region| !region.is_empty());
+        LanguageTag::parse(&self.iso_639_1)?.with_region(region)
     }
 }
 
@@ -332,8 +330,8 @@ impl Movie {
             .translations
             .translations
             .into_iter()
-            .map(|t| {
-                let language = t.tag();
+            .filter_map(|t| {
+                let language = t.tag()?;
                 // A translation leaves the title empty where it keeps the film's own: the
                 // English one in English, the original one everywhere else.
                 let title = empty_to_none(&t.data.title).or_else(|| {
@@ -343,12 +341,12 @@ impl Movie {
                         empty_to_none(&self.original_title)
                     }
                 });
-                Translation {
+                Some(Translation {
                     language,
                     title,
                     summary: empty_to_none(&t.data.overview),
                     tagline: empty_to_none(&t.data.tagline),
-                }
+                })
             })
             .collect();
         let certifications = self.release_dates.certifications();
@@ -376,7 +374,7 @@ impl Movie {
             agent: "tmdb".to_owned(),
             provider_id: self.id.to_string(),
             position: None,
-            original_language: empty_to_none(&self.original_language),
+            original_language: LanguageTag::parse(&self.original_language),
             original_title: empty_to_none(&self.original_title),
             translations,
             year: released.map(CalendarDate::year),
@@ -478,10 +476,12 @@ fn genres_in_every_language(genres: &[NamedId], genre_names: &GenreNames) -> Vec
     genres
         .iter()
         .filter_map(|genre| {
-            let mut names = vec![("en".to_owned(), genre.name.clone()?)];
-            names.extend(genre_names.iter().filter_map(|(language, named)| {
-                Some((language.clone(), named.get(&genre.id)?.clone()))
-            }));
+            let mut names = vec![(Language::En.into(), genre.name.clone()?)];
+            names.extend(
+                genre_names.iter().filter_map(|(language, named)| {
+                    Some((*language, named.get(&genre.id)?.clone()))
+                }),
+            );
             Some(Genre { names })
         })
         .collect()
@@ -494,7 +494,9 @@ fn remote_image(kind: ImageKind, image: Image) -> RemoteImage {
         // `xx` is TMDB's "no language": an image without text.
         language: image
             .iso_639_1
-            .filter(|language| language != "xx" && !language.is_empty()),
+            .filter(|language| language != "xx")
+            .as_deref()
+            .and_then(LanguageTag::parse),
         width: image.width,
         height: image.height,
         vote_average: image.vote_average,
@@ -540,7 +542,7 @@ mod tests {
         )
         .unwrap();
         let names = HashMap::from([(
-            "fr-FR".to_owned(),
+            LanguageTag::parse("fr-FR").unwrap(),
             HashMap::from([(878, "Science-Fiction".to_owned())]),
         )]);
         let record = movie.into_record(&names);
@@ -549,7 +551,7 @@ mod tests {
         assert_eq!(record.duration_ms, Some(8_160_000));
         assert_eq!(record.studio.as_deref(), Some("Village Roadshow"));
         assert_eq!(record.translations[0].title.as_deref(), Some("The Matrix"));
-        assert_eq!(record.translations[1].language, "fr-FR");
+        assert_eq!(record.translations[1].language.to_string(), "fr-FR");
         assert_eq!(record.translations[1].tagline, None);
         assert_eq!(record.certifications[0].rating, "12");
         assert_eq!(record.external_ids[0].value, "tt0133093");

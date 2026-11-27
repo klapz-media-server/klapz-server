@@ -3,6 +3,7 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
+use klapz_core::language::LanguageTag;
 use klapz_core::library::{LibraryEdit, NewLibrary};
 use klapz_core::playback::PlaybackRepository;
 use klapz_core::{LibraryError, LibraryRepository, SectionId, SectionKind};
@@ -116,7 +117,7 @@ async fn seeded() -> (
     let new = |kind, title: &str, root: &str| NewLibrary {
         kind,
         title: title.to_owned(),
-        language: "fr-FR".to_owned(),
+        language: LanguageTag::parse("fr-FR").unwrap(),
         roots: vec![root.to_owned()],
     };
     let films = library
@@ -192,7 +193,7 @@ async fn an_edit_keeps_the_roots_it_names_and_clears_the_sort_title() {
             films,
             &LibraryEdit {
                 title: Some("Films VF".to_owned()),
-                language: Some("en-US".to_owned()),
+                language: LanguageTag::parse("en-US"),
                 roots: Some(vec!["/media/films".to_owned(), "/media/vf".to_owned()]),
             },
             NOW + 1,
@@ -201,7 +202,7 @@ async fn an_edit_keeps_the_roots_it_names_and_clears_the_sort_title() {
         .unwrap();
     assert_eq!(edited.title, "Films VF");
     assert_eq!(edited.title_sort, None);
-    assert_eq!(edited.language, "en-US");
+    assert_eq!(edited.language.to_string(), "en-US");
     assert_eq!(edited.updated_at, NOW + 1);
     let roots = library.roots_for(&[films]).await.unwrap();
     assert_eq!(roots.len(), 2);

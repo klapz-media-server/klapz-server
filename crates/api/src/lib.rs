@@ -26,6 +26,7 @@ pub mod history;
 pub mod in_process;
 pub mod int64;
 pub mod item;
+pub mod language;
 pub mod library;
 pub mod library_management;
 pub mod loader;

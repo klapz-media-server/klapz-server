@@ -5,6 +5,7 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use klapz_core::extra::ExtraKind;
+use klapz_core::language::LanguageTag;
 use klapz_core::metadata::{MetadataRepository, StreamKind};
 use klapz_core::{ExtraId, MediaId, PartId, RatingKey, StreamId};
 use klapz_db::entity::{
@@ -312,15 +313,15 @@ async fn an_extras_files_and_tracks_are_found_where_an_items_are() {
         .streams_for(&[PartId::new(5_568_999)])
         .await
         .unwrap();
-    let kinds: Vec<(i64, StreamKind, Option<&str>)> = tracks
+    let kinds: Vec<_> = tracks
         .iter()
-        .map(|track| (track.id.get(), track.kind, track.language.as_deref()))
+        .map(|track| (track.id.get(), track.kind, track.language))
         .collect();
     assert_eq!(
         kinds,
         [
             (12_257_089, StreamKind::Video, None),
-            (12_257_090, StreamKind::Audio, Some("fr"))
+            (12_257_090, StreamKind::Audio, LanguageTag::parse("fr"))
         ]
     );
     let video = tracks[0].video.as_ref().unwrap();

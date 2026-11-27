@@ -12,7 +12,6 @@
 //! and ratings are keyed by `guid` and kept, as they are for every copy of a work.
 
 mod analysis;
-mod languages;
 
 use std::collections::HashMap;
 use std::sync::Arc;

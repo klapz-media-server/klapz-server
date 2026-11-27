@@ -2,6 +2,7 @@
 //! (`docs/scanner/discovery.md` §3.2).
 
 use super::{classify, split_extension, FileClass, SidecarMatch};
+use crate::language::LanguageTag;
 
 /// The legacy list less `txt`, `ass` and `ssa`, which the reference did not attach (§3.2; why
 /// is open, §9.5). A `.txt` beside a film is as likely notes as subtitles.
@@ -86,7 +87,7 @@ fn describe(index: usize, suffixes: &[&str]) -> Option<SidecarMatch> {
     sidecar.language = others
         .last()
         .filter(|code| is_language_code(code))
-        .map(|code| (*code).to_owned());
+        .and_then(|code| LanguageTag::parse(code));
     Some(sidecar)
 }
 
@@ -106,7 +107,7 @@ fn is_language_code(code: &str) -> bool {
 mod tests {
     use super::*;
 
-    fn found(siblings: &[&str]) -> Vec<(String, Option<String>, bool, bool)> {
+    fn found(siblings: &[&str]) -> Vec<(String, Option<LanguageTag>, bool, bool)> {
         sidecars("X.mkv", siblings)
             .into_iter()
             .map(|sidecar| {
@@ -125,8 +126,13 @@ mod tests {
         language: Option<&str>,
         forced: bool,
         hi: bool,
-    ) -> (String, Option<String>, bool, bool) {
-        (name.to_owned(), language.map(str::to_owned), forced, hi)
+    ) -> (String, Option<LanguageTag>, bool, bool) {
+        (
+            name.to_owned(),
+            language.and_then(LanguageTag::parse),
+            forced,
+            hi,
+        )
     }
 
     #[test]

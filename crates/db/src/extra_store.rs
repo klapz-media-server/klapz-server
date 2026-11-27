@@ -5,6 +5,7 @@
 //! because the repository's media lookups fall back to it for what the items' tables lack.
 
 use klapz_core::extra::{Extra, ExtraKind};
+use klapz_core::language::LanguageTag;
 use klapz_core::metadata::{
     AudioAnalysis, FileAnalysis, FileLayout, StatedFile, StatedTrack, StreamKind, TrackTraits,
     VideoAnalysis,
@@ -143,7 +144,7 @@ fn to_track(row: extra_track::Model, file: PartId) -> MediaStream {
         kind,
         position: row.position,
         codec: row.codec,
-        language: row.language,
+        language: row.language.as_deref().and_then(LanguageTag::parse),
         channels: row.channels,
         bitrate: row.bitrate,
         is_default: row.is_default,

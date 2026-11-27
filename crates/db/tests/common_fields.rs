@@ -16,7 +16,7 @@ use klapz_db::entity::{
     item_field_lock, item_tag, library_section, media, media_part, media_stream, metadata_item, tag,
 };
 use klapz_db::{write, SqlCollectionRepository, SqlMetadataRepository};
-use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
+use sea_orm::{ActiveValue, ConnectionTrait, DatabaseConnection, EntityTrait};
 
 const FILMS: i64 = 4;
 const SERIES: i64 = 5;
@@ -323,6 +323,46 @@ async fn a_track_filter_reads_every_version_and_negation_keeps_what_has_none() {
     assert_eq!(
         found(TrackField::SubtitleCodec, &["srt"], false).await,
         ["Avatar 2"]
+    );
+}
+
+#[tokio::test]
+async fn a_language_stands_for_its_regions_and_a_region_for_itself_alone() {
+    let connection = connection().await;
+    // Avatar dubbed in France (TRUEFRENCH) and in English, Avatar 2 in Quebec (VFQ).
+    connection
+        .execute_unprepared(
+            "UPDATE media_stream SET language = 'fr-FR' WHERE id = 301;              UPDATE media_stream SET language = 'en' WHERE id = 303;              UPDATE media_stream SET language = 'fr-CA' WHERE id = 305",
+        )
+        .await
+        .unwrap();
+    let repository = SqlMetadataRepository::new(connection);
+    let found = |values: &'static [&'static str], negated| {
+        let repository = &repository;
+        async move {
+            let filter = track_filter(TrackField::AudioLanguage, values, negated);
+            titles(repository, &films(filter)).await
+        }
+    };
+    assert_eq!(found(&["fr"], false).await, ["Avatar", "Avatar 2"]);
+    assert_eq!(found(&["fr-FR"], false).await, ["Avatar"]);
+    assert_eq!(found(&["fr-CA"], false).await, ["Avatar 2"]);
+    assert_eq!(found(&["fr-CA"], true).await, ["Avatar", "Brazil"]);
+    // `f` is no language's prefix: only a whole subtag is.
+    assert!(found(&["f"], false).await.is_empty());
+    let window = Window::new(None, None, Some(10), None).unwrap();
+    let languages: Vec<FieldValue> = repository
+        .values_in(
+            &films(ItemFilter::default()),
+            ValueField::Track(TrackField::AudioLanguage),
+            window,
+        )
+        .await
+        .unwrap()
+        .items;
+    assert_eq!(
+        languages,
+        ["en", "fr-CA", "fr-FR"].map(|tag| FieldValue::Text(tag.to_owned()))
     );
 }
 

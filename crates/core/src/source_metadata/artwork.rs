@@ -6,6 +6,7 @@
 //! best on offer.
 
 use super::{ImageKind, RemoteImage, SourceRecord};
+use crate::language::LanguageTag;
 
 /// An image kept on this server's disk.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,7 +44,7 @@ pub trait ArtworkReader: Send + Sync + std::fmt::Debug {
 }
 
 /// The image `record` offers for each kind, as an item of a library in `language` shows it.
-pub fn chosen_images<'a>(record: &'a SourceRecord, language: &str) -> Vec<&'a RemoteImage> {
+pub fn chosen_images(record: &SourceRecord, language: LanguageTag) -> Vec<&RemoteImage> {
     [
         ImageKind::Poster,
         ImageKind::Background,
@@ -56,31 +57,24 @@ pub fn chosen_images<'a>(record: &'a SourceRecord, language: &str) -> Vec<&'a Re
     .collect()
 }
 
-fn best_of<'a>(
-    record: &'a SourceRecord,
-    kind: ImageKind,
-    language: &str,
-) -> Option<&'a RemoteImage> {
+fn best_of(record: &SourceRecord, kind: ImageKind, language: LanguageTag) -> Option<&RemoteImage> {
     let offered: Vec<&RemoteImage> = record.images.iter().filter(|i| i.kind == kind).collect();
-    let wanted = super::primary_language(language);
-    let original = record
-        .original_language
-        .as_deref()
-        .map(super::primary_language);
+    let wanted = language.code();
+    let original = record.original_language.as_ref().map(LanguageTag::code);
     let tier = |image: &RemoteImage| -> u8 {
-        let language = image.language.as_deref().map(super::primary_language);
-        let is = |code: &str| language.as_deref() == Some(code);
+        let language = image.language.as_ref().map(LanguageTag::code);
+        let is = |code: &str| language == Some(code);
         match kind {
             // Behind text: one without any, then one the viewer reads.
             ImageKind::Background | ImageKind::Thumb => match language {
                 None => 0,
-                Some(_) if is(&wanted) => 1,
+                Some(_) if is(wanted) => 1,
                 Some(_) if is("en") => 2,
                 Some(_) => 3,
             },
             ImageKind::Poster | ImageKind::ClearLogo | ImageKind::Banner => match language {
-                Some(_) if is(&wanted) => 0,
-                Some(_) if original.as_deref().is_some_and(is) => 1,
+                Some(_) if is(wanted) => 0,
+                Some(_) if original.is_some_and(is) => 1,
                 None => 2,
                 Some(_) if is("en") => 2,
                 Some(_) => 3,
@@ -123,6 +117,8 @@ fn average(image: &RemoteImage) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
     use crate::metadata::ItemKind;
 
@@ -130,7 +126,7 @@ mod tests {
         RemoteImage {
             kind,
             url: url.to_owned(),
-            language: language.map(str::to_owned),
+            language: language.and_then(LanguageTag::parse),
             width: None,
             height: None,
             vote_average: Some(5.5),
@@ -144,7 +140,7 @@ mod tests {
             agent: "tmdb".to_owned(),
             provider_id: "603".to_owned(),
             position: None,
-            original_language: Some("en".to_owned()),
+            original_language: LanguageTag::parse("en"),
             original_title: None,
             translations: Vec::new(),
             year: None,
@@ -171,7 +167,7 @@ mod tests {
             image(ImageKind::Background, "fr-backdrop", Some("fr"), 30),
             image(ImageKind::Background, "plain-backdrop", None, 1),
         ]);
-        let urls: Vec<&str> = chosen_images(&offered, "fr-FR")
+        let urls: Vec<&str> = chosen_images(&offered, LanguageTag::parse("fr-FR").unwrap())
             .iter()
             .map(|image| image.url.as_str())
             .collect();
@@ -184,6 +180,9 @@ mod tests {
             image(ImageKind::Poster, "few", Some("de"), 1),
             image(ImageKind::Poster, "many", Some("de"), 50),
         ]);
-        assert_eq!(chosen_images(&offered, "fr-FR")[0].url, "many");
+        assert_eq!(
+            chosen_images(&offered, LanguageTag::parse("fr-FR").unwrap())[0].url,
+            "many"
+        );
     }
 }

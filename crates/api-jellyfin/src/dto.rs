@@ -11,6 +11,7 @@
 
 use std::collections::HashSet;
 
+use klapz_core::language::{Language, LanguageTag};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
@@ -34,7 +35,7 @@ fragment JellyfinVersion on MediaVersion {
 }
 fragment JellyfinItem on Item {
     __typename id title titleSort summary addedAt
-    library { id language }
+    library { id language { tag } }
     watchState { viewCount isWatched offsetMs lastViewedAt }
     isFavorite
     images { kind url blurHash width height }
@@ -217,9 +218,12 @@ fn reads_as_time(text: &str) -> bool {
 pub struct Reference {
     pub id: String,
     pub title: Option<String>,
-    /// A library's, as a BCP 47 tag.
-    #[serde(default)]
-    pub language: Option<String>,
+    /// A library's.
+    #[serde(
+        default,
+        deserialize_with = "klapz_api::language::deserialize_optional"
+    )]
+    pub language: Option<LanguageTag>,
     /// A series' images, when asked for.
     #[serde(default)]
     pub images: Vec<Image>,
@@ -1000,8 +1004,8 @@ fn chapters(item: &Item) -> Vec<Value> {
     let french = item
         .library
         .as_ref()
-        .and_then(|library| library.language.as_deref())
-        .is_some_and(|language| language.to_ascii_lowercase().starts_with("fr"));
+        .and_then(|library| library.language)
+        .is_some_and(|tag| tag.language() == Language::Fr);
     let word = if french { "Chapitre" } else { "Chapter" };
     item.chapters
         .iter()
@@ -1166,7 +1170,7 @@ mod tests {
             library: Some(Reference {
                 id: klapz_api::GlobalId::encode("Library", 1),
                 title: None,
-                language: Some("fr-FR".to_owned()),
+                language: klapz_core::language::LanguageTag::parse("fr-FR"),
                 images: Vec::new(),
             }),
             watch_state: Some(WatchState {
@@ -1387,7 +1391,7 @@ mod tests {
             "0001-01-01T00:00:00.0000000Z"
         );
         if let Some(library) = &mut film.library {
-            library.language = Some("en-US".to_owned());
+            library.language = klapz_core::language::LanguageTag::parse("en-US");
         }
         let dto = item_dto(
             &film,

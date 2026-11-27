@@ -26,8 +26,8 @@ use tokio::task::JoinHandle;
 
 use crate::adapt::{self, Delivery, ServerAdaptation};
 use crate::plan::{
-    audio_decoder, language_tag, video_decoder, Adaptation, AudioAction, H264Preset, KeyFrames,
-    Ladder, StreamPlan, Track, VideoAction, VideoEncode,
+    audio_decoder, video_decoder, Adaptation, AudioAction, H264Preset, KeyFrames, Ladder,
+    StreamPlan, Track, VideoAction, VideoEncode,
 };
 use crate::subtitle::{self, Extraction, SubtitleFormat};
 use crate::{TranscodeError, Transcoder};
@@ -1040,7 +1040,7 @@ fn video_arguments(
             }
         }
     };
-    if let Some(tag) = video.language.as_deref().and_then(language_tag) {
+    if let Some(tag) = &video.language_code {
         args.extend(strings(&["-metadata:s:0", &format!("language={tag}")]));
     }
     match action {
@@ -1076,7 +1076,7 @@ fn audio_arguments(
     } else {
         strings(&["-map", &format!("0:{}", audio.index)])
     };
-    if let Some(tag) = audio.language.as_deref().and_then(language_tag) {
+    if let Some(tag) = &audio.language_code {
         args.extend(strings(&["-metadata:s:1", &format!("language={tag}")]));
     }
     if converts {
@@ -2354,6 +2354,14 @@ mod tests {
             index,
             codec: codec.to_owned(),
             language: Some(language.to_owned()),
+            language_code: Some(
+                match language {
+                    "fr" => "fra",
+                    "en" => "eng",
+                    other => other,
+                }
+                .to_owned(),
+            ),
         }
     }
 

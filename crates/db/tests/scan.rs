@@ -114,7 +114,7 @@ fn soul_with(analysis: &Analysis) -> NewItem {
                 vec![NewSidecar {
                     path: "C:\\Films\\Soul (2020)\\Soul.fre.forced.srt".to_owned(),
                     codec: "srt".to_owned(),
-                    language: Some("fre".to_owned()),
+                    language: klapz_core::language::LanguageTag::parse("fre"),
                     forced: true,
                     hearing_impaired: false,
                 }],
@@ -248,7 +248,10 @@ async fn a_scanned_films_tracks_carry_the_reference_vocabulary() {
     assert_eq!(video.position, 5);
     assert_eq!(video.bitrate, Some(6_699_911));
     // A Matroska video track without a language is Matroska's default.
-    assert_eq!(video.language.as_deref(), Some("en"));
+    assert_eq!(
+        video.language.map(|tag| tag.to_string()).as_deref(),
+        Some("en")
+    );
     assert_eq!(video.profile.as_deref(), Some("high"));
     assert_eq!(video.bit_depth, Some(8));
     let analysis = video.video.as_deref().unwrap();
@@ -269,7 +272,10 @@ async fn a_scanned_films_tracks_carry_the_reference_vocabulary() {
 
     let french = &tracks[0];
     assert_eq!(french.codec.as_deref(), Some("eac3"));
-    assert_eq!(french.language.as_deref(), Some("fr"));
+    assert_eq!(
+        french.language.map(|tag| tag.to_string()).as_deref(),
+        Some("fr")
+    );
     assert_eq!(french.bitrate, Some(255_977));
     assert_eq!(french.channels, Some(6));
     assert!(french.is_default);
@@ -277,7 +283,10 @@ async fn a_scanned_films_tracks_carry_the_reference_vocabulary() {
     assert_eq!(sound.channel_layout.as_deref(), Some("5.1(side)"));
     assert_eq!(sound.sampling_rate, Some(48_000));
     let english = &tracks[1];
-    assert_eq!(english.language.as_deref(), Some("en"));
+    assert_eq!(
+        english.language.map(|tag| tag.to_string()).as_deref(),
+        Some("en")
+    );
     assert_eq!(english.bitrate, Some(767_936));
     assert_eq!(
         english.profile.as_deref(),
@@ -286,7 +295,10 @@ async fn a_scanned_films_tracks_carry_the_reference_vocabulary() {
 
     let forced = &tracks[2];
     assert_eq!(forced.codec.as_deref(), Some("srt"));
-    assert_eq!(forced.language.as_deref(), Some("fr"));
+    assert_eq!(
+        forced.language.map(|tag| tag.to_string()).as_deref(),
+        Some("fr")
+    );
     assert_eq!(forced.title.as_deref(), Some("French (Forced)"));
     assert!(forced.is_forced && forced.is_default);
     // Ten packets, 318 bytes: a measured 0, which the reference stores as no rate.
@@ -299,7 +311,10 @@ async fn a_scanned_films_tracks_carry_the_reference_vocabulary() {
         Some("file:///C:/Films/Soul%20(2020)/Soul.fre.forced.srt")
     );
     assert_eq!(sidecar.codec.as_deref(), Some("srt"));
-    assert_eq!(sidecar.language.as_deref(), Some("fr"));
+    assert_eq!(
+        sidecar.language.map(|tag| tag.to_string()).as_deref(),
+        Some("fr")
+    );
     assert!(sidecar.is_forced);
     assert_eq!(
         sidecar.subtitle.as_ref().unwrap().format.as_deref(),
@@ -431,9 +446,15 @@ async fn a_lone_untagged_audio_track_takes_the_dub_its_file_name_gives() {
     .await;
     let tracks = tracks_of(&metadata, quebec).await;
     assert_eq!(tracks[1].kind, StreamKind::Audio);
-    assert_eq!(tracks[1].language.as_deref(), Some("fr-CA"));
+    assert_eq!(
+        tracks[1].language.map(|tag| tag.to_string()).as_deref(),
+        Some("fr-CA")
+    );
     // The subtitle is not the audio, and keeps its own tag.
-    assert_eq!(tracks[2].language.as_deref(), Some("fr"));
+    assert_eq!(
+        tracks[2].language.map(|tag| tag.to_string()).as_deref(),
+        Some("fr")
+    );
 
     let france = scanned(
         &scan,
@@ -443,7 +464,10 @@ async fn a_lone_untagged_audio_track_takes_the_dub_its_file_name_gives() {
     )
     .await;
     assert_eq!(
-        tracks_of(&metadata, france).await[1].language.as_deref(),
+        tracks_of(&metadata, france).await[1]
+            .language
+            .map(|tag| tag.to_string())
+            .as_deref(),
         Some("fr-FR")
     );
 
@@ -456,7 +480,10 @@ async fn a_lone_untagged_audio_track_takes_the_dub_its_file_name_gives() {
     )
     .await;
     assert_eq!(
-        tracks_of(&metadata, tagged).await[1].language.as_deref(),
+        tracks_of(&metadata, tagged).await[1]
+            .language
+            .map(|tag| tag.to_string())
+            .as_deref(),
         Some("fr")
     );
     let two = scanned(
@@ -542,7 +569,7 @@ async fn a_changed_file_keeps_its_ids_and_its_tracks_until_it_is_read_again() {
         sidecars: vec![NewSidecar {
             path: "C:\\Films\\Soul (2020)\\Soul.fre.forced.srt".to_owned(),
             codec: "srt".to_owned(),
-            language: Some("fre".to_owned()),
+            language: klapz_core::language::LanguageTag::parse("fre"),
             forced: true,
             hearing_impaired: false,
         }],

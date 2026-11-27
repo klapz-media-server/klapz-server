@@ -3,6 +3,7 @@
 //! This is the only place that knows both vocabularies. Mapping here rather than returning
 //! entities is what lets `core` and the bindings stay unaware of the schema.
 
+use klapz_core::language::{Language, LanguageTag};
 pub use klapz_core::library::NewLibrary;
 use klapz_core::library::{
     LibraryEdit, LibraryError, LibraryRepository, LibrarySection, SectionKind, SectionRoot,
@@ -127,8 +128,8 @@ impl LibraryRepository for SqlLibraryRepository {
             changed.title = ActiveValue::Set(title.clone());
             changed.title_sort = ActiveValue::Set(None);
         }
-        if let Some(language) = &edit.language {
-            changed.language = ActiveValue::Set(language.clone());
+        if let Some(language) = edit.language {
+            changed.language = ActiveValue::Set(language.to_string());
         }
         changed.updated_at = ActiveValue::Set(now);
         let section = changed.update(&transaction).await.map_err(storage)?;
@@ -245,7 +246,7 @@ fn to_domain(section: library_section::Model) -> LibrarySection {
         kind: parse_kind(&section.kind),
         title: section.title,
         title_sort: section.title_sort,
-        language: section.language,
+        language: LanguageTag::parse(&section.language).unwrap_or(Language::Und.into()),
         uuid: section.uuid,
         created_at: section.created_at,
         updated_at: section.updated_at,
@@ -330,7 +331,7 @@ async fn create_library_at(
         ),
         title_sort: ActiveValue::Set(None),
         title: ActiveValue::Set(library.title),
-        language: ActiveValue::Set(library.language),
+        language: ActiveValue::Set(library.language.to_string()),
         uuid: ActiveValue::Set(uuid::Uuid::new_v4().to_string()),
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),

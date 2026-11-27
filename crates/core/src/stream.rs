@@ -5,6 +5,7 @@
 //! at addresses of its own, opened by a secret of its own rather than by the caller's token: a
 //! player hands those addresses to components that never see the account.
 
+use crate::language::LanguageTag;
 use crate::metadata::MediaStream;
 use crate::playback::{PlaybackOutput, StreamDecision};
 use crate::sidecar::{SidecarError, SidecarSource};
@@ -29,7 +30,7 @@ pub struct StreamTrack {
     /// The index the transcoder addresses the track by.
     pub position: i32,
     pub codec: String,
-    pub language: Option<String>,
+    pub language: Option<LanguageTag>,
     /// Bits per second, when measured.
     pub bitrate: Option<i32>,
     /// The page a teletext track's subtitles are decoded from, when it declares one.
@@ -41,7 +42,7 @@ impl StreamTrack {
         Self {
             position: stream.position,
             codec: stream.codec.clone().unwrap_or_default(),
-            language: stream.language.clone(),
+            language: stream.language,
             bitrate: stream.bitrate,
             teletext_page: stream
                 .subtitle

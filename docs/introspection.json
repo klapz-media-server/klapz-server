@@ -3421,13 +3421,13 @@
             },
             {
               "name": "language",
-              "description": "The language its metadata is in, as a BCP 47 tag such as `fr-FR`.",
+              "description": "The language its metadata is matched and shown in, with its region where it matters:\n`{language: FR, region: \"FR\"}`.",
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "SCALAR",
-                  "name": "String",
+                  "kind": "INPUT_OBJECT",
+                  "name": "LocaleInput",
                   "ofType": null
                 }
               },
@@ -8918,6 +8918,24 @@
               "defaultValue": null
             },
             {
+              "name": "trackLanguages",
+              "description": "Keep only items whose own tracks are in the languages named. Every condition must hold.",
+              "type": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "INPUT_OBJECT",
+                    "name": "TrackLanguageFilterInput",
+                    "ofType": null
+                  }
+                }
+              },
+              "defaultValue": null
+            },
+            {
               "name": "tags",
               "description": "Keep only items carrying the named tags. Every condition must hold.",
               "type": {
@@ -9905,6 +9923,3605 @@
           "possibleTypes": null
         },
         {
+          "kind": "ENUM",
+          "name": "Language",
+          "description": "A language, by its shortest ISO 639 code: ISO 639-1 where it has one (`FR`), else\nISO 639-2 or 639-3 (`FIL`, `YUE`). `UND`, `MUL`, `ZXX` and `MIS` are ISO 639-2's\nundetermined, multiple, no linguistic content and uncoded languages; `MIS` also stands\nfor a code this list does not hold, which `Locale.tag` keeps.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "AA",
+              "description": "Afar.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AB",
+              "description": "Abkhazian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ACE",
+              "description": "Achinese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ACH",
+              "description": "Acoli.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ADA",
+              "description": "Adangme.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ADY",
+              "description": "Adyghe.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AE",
+              "description": "Avestan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AEB",
+              "description": "Tunisian Arabic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AF",
+              "description": "Afrikaans.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AFH",
+              "description": "Afrihili.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AGQ",
+              "description": "Aghem.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AIN",
+              "description": "Ainu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AK",
+              "description": "Akan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AKK",
+              "description": "Akkadian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AKZ",
+              "description": "Alabama.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ALE",
+              "description": "Aleut.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ALN",
+              "description": "Gheg Albanian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ALT",
+              "description": "Southern Altai.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AM",
+              "description": "Amharic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AN",
+              "description": "Aragonese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ANG",
+              "description": "Old English.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ANP",
+              "description": "Angika.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AR",
+              "description": "Arabic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ARC",
+              "description": "Aramaic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ARN",
+              "description": "Mapuche.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ARO",
+              "description": "Araona.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ARP",
+              "description": "Arapaho.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ARQ",
+              "description": "Algerian Arabic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ARS",
+              "description": "Najdi Arabic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ARW",
+              "description": "Arawak.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ARY",
+              "description": "Moroccan Arabic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ARZ",
+              "description": "Egyptian Arabic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AS",
+              "description": "Assamese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ASA",
+              "description": "Asu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ASE",
+              "description": "American Sign Language.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AST",
+              "description": "Asturian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AV",
+              "description": "Avaric.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AVK",
+              "description": "Kotava.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AWA",
+              "description": "Awadhi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AY",
+              "description": "Aymara.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "AZ",
+              "description": "Azerbaijani.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BA",
+              "description": "Bashkir.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BAL",
+              "description": "Baluchi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BAN",
+              "description": "Balinese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BAR",
+              "description": "Bavarian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BAS",
+              "description": "Basaa.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BAX",
+              "description": "Bamun.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BBC",
+              "description": "Batak Toba.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BBJ",
+              "description": "Ghomala.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BE",
+              "description": "Belarusian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BEJ",
+              "description": "Beja.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BEM",
+              "description": "Bemba.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BEW",
+              "description": "Betawi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BEZ",
+              "description": "Bena.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BFD",
+              "description": "Bafut.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BFQ",
+              "description": "Badaga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BG",
+              "description": "Bulgarian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BGN",
+              "description": "Western Balochi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BHO",
+              "description": "Bhojpuri.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BI",
+              "description": "Bislama.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BIK",
+              "description": "Bikol.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BIN",
+              "description": "Bini.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BJN",
+              "description": "Banjar.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BKM",
+              "description": "Kom.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BLA",
+              "description": "Siksika.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BM",
+              "description": "Bambara.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BN",
+              "description": "Bangla.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BO",
+              "description": "Tibetan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BPY",
+              "description": "Bishnupriya.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BQI",
+              "description": "Bakhtiari.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BR",
+              "description": "Breton.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BRA",
+              "description": "Braj.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BRH",
+              "description": "Brahui.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BRX",
+              "description": "Bodo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BS",
+              "description": "Bosnian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BSS",
+              "description": "Akoose.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BUA",
+              "description": "Buriat.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BUG",
+              "description": "Buginese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BUM",
+              "description": "Bulu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BYN",
+              "description": "Blin.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "BYV",
+              "description": "Medumba.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CA",
+              "description": "Catalan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CAD",
+              "description": "Caddo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CAR",
+              "description": "Carib.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CAY",
+              "description": "Cayuga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CCH",
+              "description": "Atsam.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CCP",
+              "description": "Chakma.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CE",
+              "description": "Chechen.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CEB",
+              "description": "Cebuano.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CGG",
+              "description": "Chiga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CH",
+              "description": "Chamorro.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CHB",
+              "description": "Chibcha.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CHG",
+              "description": "Chagatai.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CHK",
+              "description": "Chuukese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CHM",
+              "description": "Mari.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CHN",
+              "description": "Chinook Jargon.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CHO",
+              "description": "Choctaw.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CHP",
+              "description": "Chipewyan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CHR",
+              "description": "Cherokee.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CHY",
+              "description": "Cheyenne.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CIC",
+              "description": "Chickasaw.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CKB",
+              "description": "Central Kurdish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CO",
+              "description": "Corsican.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "COP",
+              "description": "Coptic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CPS",
+              "description": "Capiznon.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CR",
+              "description": "Cree.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CRH",
+              "description": "Crimean Turkish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CRS",
+              "description": "Seselwa Creole French.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CS",
+              "description": "Czech.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CSB",
+              "description": "Kashubian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CU",
+              "description": "Church Slavic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CV",
+              "description": "Chuvash.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "CY",
+              "description": "Welsh.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DA",
+              "description": "Danish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DAK",
+              "description": "Dakota.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DAR",
+              "description": "Dargwa.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DAV",
+              "description": "Taita.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DE",
+              "description": "German.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DEL",
+              "description": "Delaware.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DEN",
+              "description": "Slave.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DGR",
+              "description": "Dogrib.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DIN",
+              "description": "Dinka.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DJE",
+              "description": "Zarma.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DOI",
+              "description": "Dogri.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DSB",
+              "description": "Lower Sorbian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DTP",
+              "description": "Central Dusun.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DUA",
+              "description": "Duala.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DUM",
+              "description": "Middle Dutch.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DV",
+              "description": "Divehi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DYO",
+              "description": "Jola-Fonyi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DYU",
+              "description": "Dyula.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DZ",
+              "description": "Dzongkha.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "DZG",
+              "description": "Dazaga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EBU",
+              "description": "Embu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EE",
+              "description": "Ewe.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EFI",
+              "description": "Efik.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EGL",
+              "description": "Emilian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EGY",
+              "description": "Ancient Egyptian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EKA",
+              "description": "Ekajuk.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EL",
+              "description": "Greek.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ELX",
+              "description": "Elamite.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EN",
+              "description": "English.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ENM",
+              "description": "Middle English.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EO",
+              "description": "Esperanto.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ES",
+              "description": "Spanish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ESU",
+              "description": "Central Yupik.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ET",
+              "description": "Estonian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EU",
+              "description": "Basque.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EWO",
+              "description": "Ewondo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "EXT",
+              "description": "Extremaduran.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FA",
+              "description": "Persian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FAN",
+              "description": "Fang.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FAT",
+              "description": "Fanti.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FF",
+              "description": "Fulah.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FI",
+              "description": "Finnish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FIL",
+              "description": "Filipino.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FIT",
+              "description": "Tornedalen Finnish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FJ",
+              "description": "Fijian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FO",
+              "description": "Faroese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FON",
+              "description": "Fon.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FR",
+              "description": "French.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FRC",
+              "description": "Cajun French.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FRM",
+              "description": "Middle French.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FRO",
+              "description": "Old French.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FRP",
+              "description": "Arpitan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FRR",
+              "description": "Northern Frisian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FRS",
+              "description": "Eastern Frisian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FUR",
+              "description": "Friulian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "FY",
+              "description": "Western Frisian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GA",
+              "description": "Irish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GAA",
+              "description": "Ga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GAG",
+              "description": "Gagauz.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GAN",
+              "description": "Gan Chinese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GAY",
+              "description": "Gayo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GBA",
+              "description": "Gbaya.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GBZ",
+              "description": "Zoroastrian Dari.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GD",
+              "description": "Scottish Gaelic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GEZ",
+              "description": "Geez.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GIL",
+              "description": "Gilbertese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GL",
+              "description": "Galician.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GLK",
+              "description": "Gilaki.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GMH",
+              "description": "Middle High German.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GN",
+              "description": "Guarani.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GOH",
+              "description": "Old High German.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GOM",
+              "description": "Goan Konkani.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GON",
+              "description": "Gondi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GOR",
+              "description": "Gorontalo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GOT",
+              "description": "Gothic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GRB",
+              "description": "Grebo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GRC",
+              "description": "Ancient Greek.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GSW",
+              "description": "Swiss German.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GU",
+              "description": "Gujarati.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GUC",
+              "description": "Wayuu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GUR",
+              "description": "Frafra.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GUZ",
+              "description": "Gusii.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GV",
+              "description": "Manx.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "GWI",
+              "description": "Gwichʼin.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HA",
+              "description": "Hausa.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HAI",
+              "description": "Haida.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HAK",
+              "description": "Hakka Chinese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HAW",
+              "description": "Hawaiian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HE",
+              "description": "Hebrew.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HI",
+              "description": "Hindi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HIF",
+              "description": "Fiji Hindi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HIL",
+              "description": "Hiligaynon.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HIT",
+              "description": "Hittite.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HMN",
+              "description": "Hmong.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HO",
+              "description": "Hiri Motu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HR",
+              "description": "Croatian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HSB",
+              "description": "Upper Sorbian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HSN",
+              "description": "Xiang Chinese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HT",
+              "description": "Haitian Creole.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HU",
+              "description": "Hungarian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HUP",
+              "description": "Hupa.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HY",
+              "description": "Armenian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "HZ",
+              "description": "Herero.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IA",
+              "description": "Interlingua.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IBA",
+              "description": "Iban.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IBB",
+              "description": "Ibibio.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ID",
+              "description": "Indonesian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IE",
+              "description": "Interlingue.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IG",
+              "description": "Igbo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "II",
+              "description": "Sichuan Yi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IK",
+              "description": "Inupiaq.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ILO",
+              "description": "Iloko.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "INH",
+              "description": "Ingush.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IO",
+              "description": "Ido.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IS",
+              "description": "Icelandic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IT",
+              "description": "Italian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IU",
+              "description": "Inuktitut.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "IZH",
+              "description": "Ingrian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "JA",
+              "description": "Japanese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "JAM",
+              "description": "Jamaican Creole English.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "JBO",
+              "description": "Lojban.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "JGO",
+              "description": "Ngomba.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "JMC",
+              "description": "Machame.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "JPR",
+              "description": "Judeo-Persian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "JRB",
+              "description": "Judeo-Arabic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "JUT",
+              "description": "Jutish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "JV",
+              "description": "Javanese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KA",
+              "description": "Georgian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KAA",
+              "description": "Kara-Kalpak.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KAB",
+              "description": "Kabyle.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KAC",
+              "description": "Kachin.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KAJ",
+              "description": "Jju.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KAM",
+              "description": "Kamba.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KAW",
+              "description": "Kawi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KBD",
+              "description": "Kabardian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KBL",
+              "description": "Kanembu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KCG",
+              "description": "Tyap.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KDE",
+              "description": "Makonde.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KEA",
+              "description": "Kabuverdianu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KEN",
+              "description": "Kenyang.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KFO",
+              "description": "Koro.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KG",
+              "description": "Kongo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KGP",
+              "description": "Kaingang.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KHA",
+              "description": "Khasi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KHO",
+              "description": "Khotanese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KHQ",
+              "description": "Koyra Chiini.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KHW",
+              "description": "Khowar.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KI",
+              "description": "Kikuyu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KIU",
+              "description": "Kirmanjki.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KJ",
+              "description": "Kuanyama.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KK",
+              "description": "Kazakh.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KKJ",
+              "description": "Kako.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KL",
+              "description": "Kalaallisut.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KLN",
+              "description": "Kalenjin.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KM",
+              "description": "Khmer.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KMB",
+              "description": "Kimbundu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KN",
+              "description": "Kannada.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KO",
+              "description": "Korean.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KOI",
+              "description": "Komi-Permyak.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KOK",
+              "description": "Konkani.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KOS",
+              "description": "Kosraean.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KPE",
+              "description": "Kpelle.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KR",
+              "description": "Kanuri.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KRC",
+              "description": "Karachay-Balkar.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KRI",
+              "description": "Krio.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KRJ",
+              "description": "Kinaray-a.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KRL",
+              "description": "Karelian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KRU",
+              "description": "Kurukh.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KS",
+              "description": "Kashmiri.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KSB",
+              "description": "Shambala.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KSF",
+              "description": "Bafia.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KSH",
+              "description": "Colognian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KU",
+              "description": "Kurdish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KUM",
+              "description": "Kumyk.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KUT",
+              "description": "Kutenai.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KV",
+              "description": "Komi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KW",
+              "description": "Cornish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "KY",
+              "description": "Kyrgyz.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LA",
+              "description": "Latin.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LAD",
+              "description": "Ladino.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LAG",
+              "description": "Langi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LAH",
+              "description": "Lahnda.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LAM",
+              "description": "Lamba.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LB",
+              "description": "Luxembourgish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LEZ",
+              "description": "Lezghian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LFN",
+              "description": "Lingua Franca Nova.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LG",
+              "description": "Ganda.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LI",
+              "description": "Limburgish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LIJ",
+              "description": "Ligurian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LIV",
+              "description": "Livonian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LKT",
+              "description": "Lakota.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LMO",
+              "description": "Lombard.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LN",
+              "description": "Lingala.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LO",
+              "description": "Lao.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LOL",
+              "description": "Mongo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LOU",
+              "description": "Louisiana Creole.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LOZ",
+              "description": "Lozi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LRC",
+              "description": "Northern Luri.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LT",
+              "description": "Lithuanian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LTG",
+              "description": "Latgalian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LU",
+              "description": "Luba-Katanga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LUA",
+              "description": "Luba-Lulua.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LUI",
+              "description": "Luiseno.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LUN",
+              "description": "Lunda.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LUO",
+              "description": "Luo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LUS",
+              "description": "Mizo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LUY",
+              "description": "Luyia.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LV",
+              "description": "Latvian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LZH",
+              "description": "Literary Chinese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LZZ",
+              "description": "Laz.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MAD",
+              "description": "Madurese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MAF",
+              "description": "Mafa.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MAG",
+              "description": "Magahi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MAI",
+              "description": "Maithili.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MAK",
+              "description": "Makasar.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MAN",
+              "description": "Mandingo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MAS",
+              "description": "Masai.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MDE",
+              "description": "Maba.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MDF",
+              "description": "Moksha.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MDR",
+              "description": "Mandar.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MEN",
+              "description": "Mende.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MER",
+              "description": "Meru.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MFE",
+              "description": "Morisyen.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MG",
+              "description": "Malagasy.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MGA",
+              "description": "Middle Irish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MGH",
+              "description": "Makhuwa-Meetto.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MGO",
+              "description": "Metaʼ.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MH",
+              "description": "Marshallese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MI",
+              "description": "Maori.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MIC",
+              "description": "Mi'kmaq.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MIN",
+              "description": "Minangkabau.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MIS",
+              "description": "Uncoded languages.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MK",
+              "description": "Macedonian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ML",
+              "description": "Malayalam.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MN",
+              "description": "Mongolian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MNC",
+              "description": "Manchu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MNI",
+              "description": "Manipuri.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MOH",
+              "description": "Mohawk.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MOS",
+              "description": "Mossi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MR",
+              "description": "Marathi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MRJ",
+              "description": "Western Mari.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MS",
+              "description": "Malay.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MT",
+              "description": "Maltese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MUA",
+              "description": "Mundang.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MUL",
+              "description": "Multiple languages.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MUS",
+              "description": "Muscogee.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MWL",
+              "description": "Mirandese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MWR",
+              "description": "Marwari.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MWV",
+              "description": "Mentawai.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MY",
+              "description": "Burmese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MYE",
+              "description": "Myene.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MYV",
+              "description": "Erzya.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "MZN",
+              "description": "Mazanderani.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NA",
+              "description": "Nauru.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NAN",
+              "description": "Min Nan Chinese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NAP",
+              "description": "Neapolitan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NAQ",
+              "description": "Nama.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NB",
+              "description": "Norwegian Bokmål.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ND",
+              "description": "North Ndebele.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NDS",
+              "description": "Low German.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NE",
+              "description": "Nepali.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NEW",
+              "description": "Newari.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NG",
+              "description": "Ndonga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NIA",
+              "description": "Nias.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NIU",
+              "description": "Niuean.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NJO",
+              "description": "Ao Naga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NL",
+              "description": "Dutch.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NMG",
+              "description": "Kwasio.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NN",
+              "description": "Norwegian Nynorsk.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NNH",
+              "description": "Ngiemboon.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NO",
+              "description": "Norwegian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NOG",
+              "description": "Nogai.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NON",
+              "description": "Old Norse.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NOV",
+              "description": "Novial.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NQO",
+              "description": "N’Ko.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NR",
+              "description": "South Ndebele.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NSO",
+              "description": "Northern Sotho.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NUS",
+              "description": "Nuer.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NV",
+              "description": "Navajo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NWC",
+              "description": "Classical Newari.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NY",
+              "description": "Nyanja.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NYM",
+              "description": "Nyamwezi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NYN",
+              "description": "Nyankole.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NYO",
+              "description": "Nyoro.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "NZI",
+              "description": "Nzima.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "OC",
+              "description": "Occitan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "OJ",
+              "description": "Ojibwa.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "OM",
+              "description": "Oromo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "OR",
+              "description": "Odia.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "OS",
+              "description": "Ossetic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "OSA",
+              "description": "Osage.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "OTA",
+              "description": "Ottoman Turkish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PA",
+              "description": "Punjabi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PAG",
+              "description": "Pangasinan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PAL",
+              "description": "Pahlavi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PAM",
+              "description": "Pampanga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PAP",
+              "description": "Papiamento.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PAU",
+              "description": "Palauan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PCD",
+              "description": "Picard.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PCM",
+              "description": "Nigerian Pidgin.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PDC",
+              "description": "Pennsylvania German.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PDT",
+              "description": "Plautdietsch.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PEO",
+              "description": "Old Persian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PFL",
+              "description": "Palatine German.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PHN",
+              "description": "Phoenician.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PI",
+              "description": "Pali.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PL",
+              "description": "Polish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PMS",
+              "description": "Piedmontese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PNT",
+              "description": "Pontic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PON",
+              "description": "Pohnpeian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PRG",
+              "description": "Prussian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PRO",
+              "description": "Old Provençal.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PS",
+              "description": "Pashto.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PT",
+              "description": "Portuguese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "QU",
+              "description": "Quechua.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "QUC",
+              "description": "Kʼicheʼ.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "QUG",
+              "description": "Chimborazo Highland Quichua.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RAJ",
+              "description": "Rajasthani.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RAP",
+              "description": "Rapanui.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RAR",
+              "description": "Rarotongan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RGN",
+              "description": "Romagnol.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RIF",
+              "description": "Riffian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RM",
+              "description": "Romansh.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RN",
+              "description": "Rundi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RO",
+              "description": "Romanian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ROF",
+              "description": "Rombo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ROM",
+              "description": "Romany.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RTM",
+              "description": "Rotuman.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RU",
+              "description": "Russian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RUE",
+              "description": "Rusyn.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RUG",
+              "description": "Roviana.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RUP",
+              "description": "Aromanian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RW",
+              "description": "Kinyarwanda.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "RWK",
+              "description": "Rwa.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SA",
+              "description": "Sanskrit.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SAD",
+              "description": "Sandawe.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SAH",
+              "description": "Sakha.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SAM",
+              "description": "Samaritan Aramaic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SAQ",
+              "description": "Samburu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SAS",
+              "description": "Sasak.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SAT",
+              "description": "Santali.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SAZ",
+              "description": "Saurashtra.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SBA",
+              "description": "Ngambay.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SBP",
+              "description": "Sangu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SC",
+              "description": "Sardinian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SCN",
+              "description": "Sicilian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SCO",
+              "description": "Scots.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SD",
+              "description": "Sindhi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SDC",
+              "description": "Sassarese Sardinian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SDH",
+              "description": "Southern Kurdish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SE",
+              "description": "Northern Sami.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SEE",
+              "description": "Seneca.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SEH",
+              "description": "Sena.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SEI",
+              "description": "Seri.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SEL",
+              "description": "Selkup.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SES",
+              "description": "Koyraboro Senni.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SG",
+              "description": "Sango.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SGA",
+              "description": "Old Irish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SGS",
+              "description": "Samogitian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SH",
+              "description": "Serbo-Croatian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SHI",
+              "description": "Tachelhit.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SHN",
+              "description": "Shan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SHU",
+              "description": "Chadian Arabic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SI",
+              "description": "Sinhala.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SID",
+              "description": "Sidamo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SK",
+              "description": "Slovak.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SL",
+              "description": "Slovenian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SLI",
+              "description": "Lower Silesian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SLY",
+              "description": "Selayar.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SM",
+              "description": "Samoan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SMA",
+              "description": "Southern Sami.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SMJ",
+              "description": "Lule Sami.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SMN",
+              "description": "Inari Sami.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SMS",
+              "description": "Skolt Sami.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SN",
+              "description": "Shona.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SNK",
+              "description": "Soninke.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SO",
+              "description": "Somali.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SOG",
+              "description": "Sogdien.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SQ",
+              "description": "Albanian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SR",
+              "description": "Serbian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SRN",
+              "description": "Sranan Tongo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SRR",
+              "description": "Serer.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SS",
+              "description": "Swati.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SSY",
+              "description": "Saho.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ST",
+              "description": "Southern Sotho.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "STQ",
+              "description": "Saterland Frisian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SU",
+              "description": "Sundanese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SUK",
+              "description": "Sukuma.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SUS",
+              "description": "Susu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SUX",
+              "description": "Sumerian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SV",
+              "description": "Swedish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SW",
+              "description": "Swahili.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SWB",
+              "description": "Comorian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SYC",
+              "description": "Classical Syriac.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SYR",
+              "description": "Syriac.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SZL",
+              "description": "Silesian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TA",
+              "description": "Tamil.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TCY",
+              "description": "Tulu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TE",
+              "description": "Telugu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TEM",
+              "description": "Timne.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TEO",
+              "description": "Teso.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TER",
+              "description": "Tereno.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TET",
+              "description": "Tetum.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TG",
+              "description": "Tajik.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TH",
+              "description": "Thai.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TI",
+              "description": "Tigrinya.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TIG",
+              "description": "Tigre.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TIV",
+              "description": "Tiv.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TK",
+              "description": "Turkmen.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TKL",
+              "description": "Tokelau.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TKR",
+              "description": "Tsakhur.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TL",
+              "description": "Tagalog.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TLH",
+              "description": "Klingon.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TLI",
+              "description": "Tlingit.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TLY",
+              "description": "Talysh.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TMH",
+              "description": "Tamashek.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TN",
+              "description": "Tswana.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TO",
+              "description": "Tongan.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TOG",
+              "description": "Nyasa Tonga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TPI",
+              "description": "Tok Pisin.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TR",
+              "description": "Turkish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TRU",
+              "description": "Turoyo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TRV",
+              "description": "Taroko.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TS",
+              "description": "Tsonga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TSD",
+              "description": "Tsakonian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TSI",
+              "description": "Tsimshian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TT",
+              "description": "Tatar.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TTT",
+              "description": "Muslim Tat.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TUM",
+              "description": "Tumbuka.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TVL",
+              "description": "Tuvalu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TW",
+              "description": "Twi.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TWQ",
+              "description": "Tasawaq.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TY",
+              "description": "Tahitian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TYV",
+              "description": "Tuvinian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "TZM",
+              "description": "Central Atlas Tamazight.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "UDM",
+              "description": "Udmurt.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "UG",
+              "description": "Uyghur.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "UGA",
+              "description": "Ugaritic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "UK",
+              "description": "Ukrainian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "UMB",
+              "description": "Umbundu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "UND",
+              "description": "Unknown language.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "UR",
+              "description": "Urdu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "UZ",
+              "description": "Uzbek.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VAI",
+              "description": "Vai.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VE",
+              "description": "Venda.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VEC",
+              "description": "Venetian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VEP",
+              "description": "Veps.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VI",
+              "description": "Vietnamese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VLS",
+              "description": "West Flemish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VMF",
+              "description": "Main-Franconian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VO",
+              "description": "Volapük.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VOT",
+              "description": "Votic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VRO",
+              "description": "Võro.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "VUN",
+              "description": "Vunjo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "WA",
+              "description": "Walloon.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "WAE",
+              "description": "Walser.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "WAL",
+              "description": "Wolaytta.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "WAR",
+              "description": "Waray.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "WAS",
+              "description": "Washo.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "WBP",
+              "description": "Warlpiri.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "WO",
+              "description": "Wolof.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "WUU",
+              "description": "Wu Chinese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "XAL",
+              "description": "Kalmyk.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "XH",
+              "description": "Xhosa.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "XMF",
+              "description": "Mingrelian.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "XOG",
+              "description": "Soga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "YAO",
+              "description": "Yao.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "YAP",
+              "description": "Yapese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "YAV",
+              "description": "Yangben.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "YBB",
+              "description": "Yemba.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "YI",
+              "description": "Yiddish.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "YO",
+              "description": "Yoruba.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "YRL",
+              "description": "Nheengatu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "YUE",
+              "description": "Cantonese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ZA",
+              "description": "Zhuang.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ZAP",
+              "description": "Zapotec.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ZBL",
+              "description": "Blissymbols.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ZEA",
+              "description": "Zeelandic.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ZEN",
+              "description": "Zenaga.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ZGH",
+              "description": "Standard Moroccan Tamazight.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ZH",
+              "description": "Chinese.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ZU",
+              "description": "Zulu.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ZUN",
+              "description": "Zuni.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ZXX",
+              "description": "No linguistic content.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "ZZA",
+              "description": "Zaza.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
           "kind": "OBJECT",
           "name": "Library",
           "description": null,
@@ -9971,14 +13588,14 @@
             },
             {
               "name": "language",
-              "description": "BCP 47 language tag used when matching metadata, for example `fr-FR`.",
+              "description": "The language its metadata is matched and shown in: `fr-FR`.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
                 "name": null,
                 "ofType": {
-                  "kind": "SCALAR",
-                  "name": "String",
+                  "kind": "OBJECT",
+                  "name": "Locale",
                   "ofType": null
                 }
               },
@@ -10815,6 +14432,97 @@
               "deprecationReason": null
             },
             {
+              "name": "trackLanguages",
+              "description": "The languages the tracks of one kind of this library's items are in, each once, in\nthe order of their tags: `fr` and `fr-CA` apart, `fre` and `fra` one `fr`. Series have\nno tracks: their episodes', reached with `depth: ALL`, are listed.",
+              "args": [
+                {
+                  "name": "kind",
+                  "description": "Which tracks' languages to list.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "ENUM",
+                      "name": "TrackLanguageKind",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "filter",
+                  "description": "List only the languages of the items this filter keeps.",
+                  "type": {
+                    "kind": "INPUT_OBJECT",
+                    "name": "ItemFilterInput",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "after",
+                  "description": "Return languages after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "before",
+                  "description": "Return languages before this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many languages from the start of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "last",
+                  "description": "Return at most this many languages from the end of the range.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "offset",
+                  "description": "Discard this many languages before the page begins.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "LocaleValueConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "common",
               "description": "What every item a filter keeps has in common — fields, tags, collections and locks:\nwhat a client starts from to edit several items at once.",
               "args": [
@@ -11107,7 +14815,7 @@
             },
             {
               "name": "INVALID_LANGUAGE",
-              "description": "Not shaped as a BCP 47 language tag, such as `fr-FR`.",
+              "description": "A script or a region that is not one: `Canada` rather than `CA`.",
               "isDeprecated": false,
               "deprecationReason": null
             },
@@ -11773,6 +15481,264 @@
                 "ofType": {
                   "kind": "ENUM",
                   "name": "LibraryErrorCode",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "Locale",
+          "description": null,
+          "fields": [
+            {
+              "name": "language",
+              "description": "The language. `MIS` for a code the enum does not hold, which `tag` keeps.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "Language",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "script",
+              "description": "The script, ISO 15924 in title case: `Hant`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "region",
+              "description": "The region, ISO 3166-1 alpha-2 or UN M.49 in upper case: `CA`, `419`.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "tag",
+              "description": "The BCP 47 tag, written canonically: `fr-CA`, `zh-Hant`, `es-419`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "name",
+              "description": "The language's name in English: `French`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nativeName",
+              "description": "The language's name in itself, `français`, where it is known.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "LocaleInput",
+          "description": "A language, with the script and region a BCP 47 tag may add.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "language",
+              "description": "The language.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "Language",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "script",
+              "description": "A script, ISO 15924 in four letters: `Hant`.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "region",
+              "description": "A region, ISO 3166-1 alpha-2 (`CA`) or UN M.49 (`419`).",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "LocaleValueConnection",
+          "description": null,
+          "fields": [
+            {
+              "name": "pageInfo",
+              "description": "Information to aid in pagination.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PageInfo",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "edges",
+              "description": "A list of edges.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "LocaleValueEdge",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nodes",
+              "description": "A list of nodes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Locale",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "LocaleValueEdge",
+          "description": "An edge in a connection.",
+          "fields": [
+            {
+              "name": "node",
+              "description": "The item at the end of the edge",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Locale",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cursor",
+              "description": "A cursor for use in pagination",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
                   "ofType": null
                 }
               },
@@ -12796,11 +16762,11 @@
             },
             {
               "name": "language",
-              "description": "Language tag as stored, for example `fr` or `en`.",
+              "description": "The language: `fr`, or `fr-CA` for a Quebec dub. What the file states as written is\n`stated.language`.",
               "args": [],
               "type": {
-                "kind": "SCALAR",
-                "name": "String",
+                "kind": "OBJECT",
+                "name": "Locale",
                 "ofType": null
               },
               "isDeprecated": false,
@@ -26130,7 +30096,19 @@
             },
             {
               "name": "language",
-              "description": "The language as the file states it.",
+              "description": "The language the file states.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "Locale",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "statedLanguage",
+              "description": "The language as the file states it, as written: `fre`, `und`.",
               "args": [],
               "type": {
                 "kind": "SCALAR",
@@ -29304,13 +33282,13 @@
               "deprecationReason": null
             },
             {
-              "name": "AUDIO_LANGUAGE",
-              "description": "The language an audio track states, as its file writes it: `fre` and `fra` apart. Only\na scanned file states one.",
+              "name": "STATED_AUDIO_LANGUAGE",
+              "description": "The language an audio track states, as its file writes it: `fre` and `fra` apart. Only\na scanned file states one; `trackLanguages` lists and filters by the language itself.",
               "isDeprecated": false,
               "deprecationReason": null
             },
             {
-              "name": "SUBTITLE_LANGUAGE",
+              "name": "STATED_SUBTITLE_LANGUAGE",
               "description": "The language a subtitle track states, as its file writes it.",
               "isDeprecated": false,
               "deprecationReason": null
@@ -29402,6 +33380,90 @@
             {
               "name": "SUBTITLE",
               "description": "Subtitles or captions.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "TrackLanguageFilterInput",
+          "description": "Keeps items with a track of any of their versions in one of the languages; or, negated,\nthe items with none. A language without a region stands for all of its regions, `FR` for\n`fr`, `fr-FR` and `fr-CA`; with one, for that region alone, a Quebec dub apart from one\nfrom France.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "kind",
+              "description": "Which tracks to compare.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "TrackLanguageKind",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "anyOf",
+              "description": "The languages, at least one and at most 50, any of which a track may be in.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "LocaleInput",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "negated",
+              "description": "Keep the items none of whose tracks is in any of the languages instead.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "defaultValue": "false"
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "TrackLanguageKind",
+          "description": "The tracks whose language is meant.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "AUDIO",
+              "description": "Audio tracks.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SUBTITLE",
+              "description": "Subtitle tracks, embedded or beside the file.",
               "isDeprecated": false,
               "deprecationReason": null
             }
@@ -30064,10 +34126,10 @@
             },
             {
               "name": "language",
-              "description": "The language its metadata is in, as a BCP 47 tag such as `fr-FR`.",
+              "description": "The language its metadata is matched and shown in.",
               "type": {
-                "kind": "SCALAR",
-                "name": "String",
+                "kind": "INPUT_OBJECT",
+                "name": "LocaleInput",
                 "ofType": null
               },
               "defaultValue": null

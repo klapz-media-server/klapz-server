@@ -7,6 +7,7 @@ use sea_orm::{
 
 use super::{source_error, ImportError, PlexRow};
 use crate::entity::{library_section, section_root};
+use crate::language::canonical;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct LibrarySummary {
@@ -55,7 +56,10 @@ pub async fn import(
             kind: ActiveValue::Set(kind.to_owned()),
             title: ActiveValue::Set(row.plex_get("name")?),
             title_sort: ActiveValue::Set(row.plex_text("name_sort")),
-            language: ActiveValue::Set(row.plex_get("language")?),
+            language: ActiveValue::Set({
+                let stored: String = row.plex_get("language")?;
+                canonical(Some(&stored)).unwrap_or(stored)
+            }),
             uuid: ActiveValue::Set(row.plex_get("uuid")?),
             created_at: ActiveValue::Set(row.plex_get("created_at")?),
             updated_at: ActiveValue::Set(row.plex_get("updated_at")?),

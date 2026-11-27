@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use klapz_core::edit::ItemField;
+use klapz_core::language::LanguageTag;
 use klapz_core::metadata::{ItemKind, TagKind};
 use klapz_core::source_metadata::{
     match_library, AgentError, Candidate, Credit, ExternalId, Genre, MatchQuery, MetadataSource,
@@ -98,7 +99,7 @@ async fn seeded() -> DatabaseConnection {
 
 fn text(language: &str, title: &str) -> Translation {
     Translation {
-        language: language.to_owned(),
+        language: LanguageTag::parse(language).unwrap(),
         title: Some(title.to_owned()),
         summary: None,
         tagline: None,
@@ -116,7 +117,7 @@ fn record(
         agent: "tvdb".to_owned(),
         provider_id: id.to_owned(),
         position,
-        original_language: Some("en".to_owned()),
+        original_language: LanguageTag::parse("en"),
         original_title: None,
         translations,
         year: Some(2008),
@@ -191,8 +192,14 @@ impl MetadataSource for FakeTvdb {
         ];
         show.genres = vec![Genre {
             names: vec![
-                ("en".to_owned(), "Science Fiction".to_owned()),
-                ("fr".to_owned(), "Science-Fiction".to_owned()),
+                (
+                    LanguageTag::parse("en").unwrap(),
+                    "Science Fiction".to_owned(),
+                ),
+                (
+                    LanguageTag::parse("fr").unwrap(),
+                    "Science-Fiction".to_owned(),
+                ),
             ],
         }];
         show.credits = vec![Credit {
