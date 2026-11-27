@@ -1,19 +1,20 @@
-//! The server's settings, for its owners.
+//! The server's settings, and the values libraries hold in place of some, for its owners.
 //!
 //! A setting is no `Node`: it is a value of the server, named by its key, and lives on
-//! `Server.settings` as the transcoder's capabilities live on `Server.transcoder`.
+//! `Server.settings` as the transcoder's capabilities live on `Server.transcoder`; a library's
+//! own value lives on `Library.settings`.
 
 // Resolvers are `async` even when they only read a field: async-graphql requires that shape,
 // and `unused_async` does not know it.
 #![allow(clippy::unused_async)]
 
 use async_graphql::connection::{query, Connection, Edge, EmptyFields};
-use async_graphql::{Context, Enum, InputObject, Object, Result, SimpleObject};
-use klapz_core::now_epoch;
+use async_graphql::{Context, Enum, InputObject, Object, OutputType, Result, SimpleObject, ID};
 use klapz_core::page::{Cursor, MAX_ITEMS};
 use klapz_core::settings::{
-    self, Rejected, Setting, SettingError, SettingKind, SettingUpdate, MAX_UPDATES,
+    self, LibrarySetting, Rejected, Setting, SettingError, SettingKind, SettingUpdate, MAX_UPDATES,
 };
+use klapz_core::{now_epoch, SectionId};
 
 use crate::access::UserObject;
 use crate::cursor::OpaqueCursor;
@@ -54,12 +55,13 @@ impl ServerSettingObject {
 
     /// What values it takes.
     async fn kind(&self) -> ServerSettingKind {
-        match self.0.definition.kind {
-            SettingKind::Choice(_) => ServerSettingKind::Choice,
-            SettingKind::Integer { .. } => ServerSettingKind::Integer,
-            SettingKind::Boolean => ServerSettingKind::Boolean,
-            SettingKind::Address => ServerSettingKind::Address,
-        }
+        kind(self.0.definition.kind)
+    }
+
+    /// Whether a library may hold a value of its own, which it follows instead of this one:
+    /// see `Library.settings`.
+    async fn per_library(&self) -> bool {
+        self.0.definition.per_library
     }
 
     /// The value in force, in its canonical form: a choice as listed, a number in decimal,
@@ -131,8 +133,110 @@ impl ServerSettingObject {
     }
 }
 
+fn kind(kind: SettingKind) -> ServerSettingKind {
+    match kind {
+        SettingKind::Choice(_) => ServerSettingKind::Choice,
+        SettingKind::Integer { .. } => ServerSettingKind::Integer,
+        SettingKind::Boolean => ServerSettingKind::Boolean,
+        SettingKind::Address => ServerSettingKind::Address,
+    }
+}
+
+/// A setting as one library sees it: its own value, or the server's while it holds none.
+#[derive(Debug, Clone)]
+pub struct LibrarySettingObject(LibrarySetting);
+
+#[Object(name = "LibrarySetting")]
+impl LibrarySettingObject {
+    /// The setting's key, as `ServerSetting.key` names it, where the values it takes are
+    /// described. What `updateLibrarySettings` takes.
+    async fn key(&self) -> &str {
+        self.0.server.definition.key
+    }
+
+    /// What it changes, in English.
+    async fn description(&self) -> &str {
+        self.0.server.definition.description
+    }
+
+    /// What values it takes.
+    async fn kind(&self) -> ServerSettingKind {
+        kind(self.0.server.definition.kind)
+    }
+
+    /// The value in force for the library, in its canonical form: its own, else the server's.
+    async fn value(&self) -> String {
+        self.0.value()
+    }
+
+    /// Whether the library holds no value of its own and follows the server's, which
+    /// `serverValue` gives.
+    async fn is_inherited(&self) -> bool {
+        self.0.stored.is_none()
+    }
+
+    /// The server's value, the one in force while the library holds none of its own.
+    async fn server_value(&self) -> String {
+        self.0.server.value()
+    }
+
+    /// When an owner last chose the library's own value. Null while it follows the server.
+    async fn updated_at(&self) -> Option<DateTime> {
+        self.0
+            .stored
+            .as_ref()
+            .map(|stored| stored.updated_at.into())
+    }
+
+    /// The owner who last chose the library's own value. Null while it follows the server,
+    /// and when that account is gone.
+    async fn updated_by(&self, context: &Context<'_>) -> Result<Option<UserObject>> {
+        let Some(user) = self.0.stored.as_ref().and_then(|stored| stored.updated_by) else {
+            return Ok(None);
+        };
+        crate::access::user_node(context, user.get()).await
+    }
+}
+
 fn repository<'c>(context: &Context<'c>) -> Result<&'c dyn settings::SettingsRepository> {
     Ok(context.data::<ApiContext>()?.settings.as_ref())
+}
+
+fn is_owner(context: &Context<'_>) -> bool {
+    crate::access::caller(context).is_some_and(klapz_core::Principal::is_owner)
+}
+
+/// What the analysis reads is read before its every round, but a round may be waiting for a
+/// file to change: it is told.
+fn settings_changed(context: &Context<'_>) -> Result<()> {
+    context.data::<ApiContext>()?.scans.settings_changed();
+    Ok(())
+}
+
+/// `Library.settings`: empty for anyone but an owner, as `Server.settings` is.
+pub(crate) async fn library_settings(
+    context: &Context<'_>,
+    section: SectionId,
+    namespace: Option<String>,
+    after: Option<String>,
+    first: Option<i32>,
+) -> Result<Connection<OpaqueCursor, LibrarySettingObject, EmptyFields, EmptyFields>> {
+    let listed = if is_owner(context) {
+        settings::library_settings(
+            repository(context)?,
+            section,
+            namespace.as_deref().map(str::trim),
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
+    by_position(
+        listed.into_iter().map(LibrarySettingObject).collect(),
+        after,
+        first,
+    )
+    .await
 }
 
 /// `Server.settings`: empty for anyone but an owner, as if the server had none.
@@ -142,12 +246,25 @@ pub(crate) async fn server_settings(
     after: Option<String>,
     first: Option<i32>,
 ) -> Result<Connection<OpaqueCursor, ServerSettingObject, EmptyFields, EmptyFields>> {
-    let owner = crate::access::caller(context).is_some_and(klapz_core::Principal::is_owner);
-    let listed = if owner {
+    let listed = if is_owner(context) {
         settings::settings(repository(context)?, namespace.as_deref().map(str::trim)).await?
     } else {
         Vec::new()
     };
+    by_position(
+        listed.into_iter().map(ServerSettingObject).collect(),
+        after,
+        first,
+    )
+    .await
+}
+
+/// A short list held whole, paged forward by position.
+async fn by_position<T: OutputType>(
+    listed: Vec<T>,
+    after: Option<String>,
+    first: Option<i32>,
+) -> Result<Connection<OpaqueCursor, T, EmptyFields, EmptyFields>> {
     query(
         after,
         None,
@@ -167,12 +284,12 @@ pub(crate) async fn server_settings(
             connection
                 .edges
                 .extend(listed.into_iter().enumerate().skip(start).take(count).map(
-                    |(position, setting)| {
+                    |(position, node)| {
                         Edge::new(
                             OpaqueCursor(Cursor::by_id(
                                 i64::try_from(position).unwrap_or(i64::MAX),
                             )),
-                            ServerSettingObject(setting),
+                            node,
                         )
                     },
                 ));
@@ -193,6 +310,11 @@ pub enum ServerSettingErrorCode {
     RepeatedSetting,
     /// More than 100 settings came in one change.
     TooManySettings,
+    /// A library was given a value of a setting that is the server's alone:
+    /// `ServerSetting.perLibrary` is false.
+    ServerOnly,
+    /// No library has this id.
+    LibraryNotFound,
 }
 
 /// A problem with what was asked, as opposed to a failure of the server.
@@ -224,6 +346,11 @@ impl ServerSettingUserError {
                 "key",
                 ServerSettingErrorCode::RepeatedSetting,
                 format!("`{key}` is named more than once"),
+            ),
+            SettingError::ServerOnly => (
+                "key",
+                ServerSettingErrorCode::ServerOnly,
+                format!("`{key}` is the server's alone: no library holds a value of it"),
             ),
         };
         Self {
@@ -268,6 +395,33 @@ pub struct UpdateServerSettingsPayload {
     pub user_errors: Vec<ServerSettingUserError>,
 }
 
+/// What an owner asked, or why none of it is taken before anything is checked.
+fn updates(
+    settings: &[ServerSettingInput],
+) -> std::result::Result<Vec<SettingUpdate>, ServerSettingUserError> {
+    if settings.len() > MAX_UPDATES {
+        return Err(ServerSettingUserError {
+            field: vec!["settings".to_owned()],
+            message: format!("a change names {MAX_UPDATES} settings at most"),
+            code: ServerSettingErrorCode::TooManySettings,
+        });
+    }
+    Ok(settings
+        .iter()
+        .map(|setting| SettingUpdate {
+            key: setting.key.trim().to_owned(),
+            value: setting.value.clone(),
+        })
+        .collect())
+}
+
+fn refused(rejected: Vec<Rejected>, updates: &[SettingUpdate]) -> Vec<ServerSettingUserError> {
+    rejected
+        .into_iter()
+        .map(|rejected| ServerSettingUserError::of(rejected, updates))
+        .collect()
+}
+
 pub(crate) async fn update_server_settings(
     context: &Context<'_>,
     input: UpdateServerSettingsInput,
@@ -278,33 +432,98 @@ pub(crate) async fn update_server_settings(
         settings: Vec::new(),
         user_errors,
     };
-    if input.settings.len() > MAX_UPDATES {
-        return Ok(refuse(vec![ServerSettingUserError {
-            field: vec!["settings".to_owned()],
-            message: format!("a change names {MAX_UPDATES} settings at most"),
-            code: ServerSettingErrorCode::TooManySettings,
-        }]));
-    }
-    let updates: Vec<SettingUpdate> = input
-        .settings
-        .iter()
-        .map(|setting| SettingUpdate {
-            key: setting.key.trim().to_owned(),
-            value: setting.value.clone(),
-        })
-        .collect();
+    let updates = match updates(&input.settings) {
+        Ok(updates) => updates,
+        Err(error) => return Ok(refuse(vec![error])),
+    };
     match settings::update_settings(repository(context)?, &updates, owner.user, now_epoch()).await?
     {
-        Ok(changed) => Ok(UpdateServerSettingsPayload {
-            client_mutation_id: input.client_mutation_id.clone(),
-            settings: changed.into_iter().map(ServerSettingObject).collect(),
-            user_errors: Vec::new(),
-        }),
-        Err(rejected) => Ok(refuse(
-            rejected
-                .into_iter()
-                .map(|rejected| ServerSettingUserError::of(rejected, &updates))
-                .collect(),
-        )),
+        Ok(changed) => {
+            settings_changed(context)?;
+            Ok(UpdateServerSettingsPayload {
+                client_mutation_id: input.client_mutation_id.clone(),
+                settings: changed.into_iter().map(ServerSettingObject).collect(),
+                user_errors: Vec::new(),
+            })
+        }
+        Err(rejected) => Ok(refuse(refused(rejected, &updates))),
+    }
+}
+
+/// A library's own values to change together.
+#[derive(Debug, InputObject)]
+pub struct UpdateLibrarySettingsInput {
+    /// Echoed back in the payload, for the client to match the two.
+    pub client_mutation_id: Option<String>,
+    /// The library, as returned in `Library.id`.
+    pub library_id: ID,
+    /// Each setting at most once, 100 at most, each one whose `ServerSetting.perLibrary` is
+    /// true. A null value makes the library follow the server's again.
+    pub settings: Vec<ServerSettingInput>,
+}
+
+/// What `updateLibrarySettings` did.
+#[derive(Debug, SimpleObject)]
+pub struct UpdateLibrarySettingsPayload {
+    /// The value the input carried.
+    pub client_mutation_id: Option<String>,
+    /// The library, as it now is. Null when nothing changed.
+    pub library: Option<crate::library::Library>,
+    /// The settings named, as the library now sees them, in the order asked. Empty when
+    /// nothing changed.
+    pub settings: Vec<LibrarySettingObject>,
+    /// Why nothing changed: one setting refused, none is changed. Empty when all were.
+    pub user_errors: Vec<ServerSettingUserError>,
+}
+
+pub(crate) async fn update_library_settings(
+    context: &Context<'_>,
+    input: UpdateLibrarySettingsInput,
+) -> Result<UpdateLibrarySettingsPayload> {
+    let owner = crate::access::require_owner(context)?;
+    let refuse = |user_errors| UpdateLibrarySettingsPayload {
+        client_mutation_id: input.client_mutation_id.clone(),
+        library: None,
+        settings: Vec::new(),
+        user_errors,
+    };
+    let library = match crate::library_management::section_id(&input.library_id) {
+        Some(section) => match context.data::<ApiContext>()?.library.section(section).await {
+            Ok(section) => Some(section),
+            Err(klapz_core::LibraryError::SectionNotFound(_)) => None,
+            Err(error) => return Err(error.into()),
+        },
+        None => None,
+    };
+    let Some(library) = library else {
+        return Ok(refuse(vec![ServerSettingUserError {
+            field: vec!["libraryId".to_owned()],
+            message: "no such library".to_owned(),
+            code: ServerSettingErrorCode::LibraryNotFound,
+        }]));
+    };
+    let updates = match updates(&input.settings) {
+        Ok(updates) => updates,
+        Err(error) => return Ok(refuse(vec![error])),
+    };
+    match settings::update_library_settings(
+        repository(context)?,
+        library.id,
+        &updates,
+        owner.user,
+        now_epoch(),
+    )
+    .await?
+    {
+        Ok(changed) => {
+            settings_changed(context)?;
+            Ok(UpdateLibrarySettingsPayload {
+                client_mutation_id: input.client_mutation_id.clone(),
+                library: Some(crate::library::Library::new(library)),
+                settings: changed.into_iter().map(LibrarySettingObject).collect(),
+                user_errors: Vec::new(),
+            })
+        }
+        Err(rejected) => Ok(refuse(refused(rejected, &updates))),
     }
 }

@@ -24,7 +24,7 @@ pub use fingerprint::fingerprint;
 pub use identity::identify;
 pub use loudness::loudness;
 pub use probe::{analysis_from_ffprobe, measure, probe};
-pub use subtitles::extract_subtitle;
+pub use subtitles::{extract_subtitle, extract_subtitles};
 
 use crate::report;
 

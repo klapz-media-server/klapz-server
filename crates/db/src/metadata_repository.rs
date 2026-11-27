@@ -45,9 +45,9 @@ use crate::chapter_store;
 use crate::closest_store;
 use crate::entity::{
     collection, collection_entry, item_corner_colors, item_external_id, item_field_lock,
-    item_rating, item_tag, item_title_key, item_title_word, media, media_analysis, media_part,
-    media_stream, metadata_item, part_side_stream, person, stream_dolby_vision, stream_loudness,
-    tag, tag_word, user_favorite, user_rating, watch_state,
+    item_rating, item_tag, item_title_key, item_title_word, media, media_part, media_stream,
+    media_task, metadata_item, part_side_stream, person, stream_dolby_vision, stream_loudness, tag,
+    tag_word, user_favorite, user_rating, watch_state,
 };
 use crate::extra_store;
 use crate::item_order::{ItemOrder, SearchRanking};
@@ -2569,22 +2569,29 @@ fn to_version(row: media::Model) -> MediaVersion {
     }
 }
 
-/// The files among `parts` still to be read, and what is left of each: no row, nothing.
+/// The files among `parts` whose media is still to be read, and the first of their headers
+/// and packets left: no entry, both read. Extractions describe no media and do not count.
 async fn queued_stages<C: ConnectionTrait>(
     connection: &C,
     parts: &[i64],
 ) -> Result<HashMap<i64, i32>, DbErr> {
-    let mut stages = HashMap::new();
+    let mut stages: HashMap<i64, i32> = HashMap::new();
     for chunk in parts.chunks(500) {
-        let rows: Vec<(i64, i32)> = media_analysis::Entity::find()
+        let rows: Vec<(i64, i32)> = media_task::Entity::find()
             .select_only()
-            .column(media_analysis::Column::MediaPartId)
-            .column(media_analysis::Column::Stage)
-            .filter(media_analysis::Column::MediaPartId.is_in(chunk.iter().copied()))
+            .column(media_task::Column::MediaPartId)
+            .column(media_task::Column::Task)
+            .filter(media_task::Column::MediaPartId.is_in(chunk.iter().copied()))
+            .filter(media_task::Column::Task.is_in([media_task::HEADERS, media_task::PACKETS]))
             .into_tuple()
             .all(connection)
             .await?;
-        stages.extend(rows);
+        for (part, task) in rows {
+            stages
+                .entry(part)
+                .and_modify(|first| *first = (*first).min(task))
+                .or_insert(task);
+        }
     }
     Ok(stages)
 }
@@ -2614,7 +2621,7 @@ fn to_file(row: media_part::Model, queued: Option<i32>) -> MediaFile {
         },
         analysis: match queued {
             None => FileAnalysis::Complete,
-            Some(media_analysis::HEADERS) => FileAnalysis::Pending,
+            Some(media_task::HEADERS) => FileAnalysis::Pending,
             Some(_) => FileAnalysis::HeadersRead,
         },
     }
