@@ -21,9 +21,11 @@ use crate::auth::Caller;
 use crate::client::ClientIdentity;
 use crate::error::ApiError;
 use crate::gql;
-use crate::gql_items::{with_shared_fragments, GqlItemConnection, GqlLibraryRef, GqlParentRef};
+use crate::gql_items::{
+    with_shared_fragments, GqlItemConnection, GqlLibraryRef, GqlParentRef, GqlTheme,
+};
 use crate::items::{
-    MetadataEntry, ViewStyle, LIBRARY_IDENTIFIER, MEDIA_TAG_PREFIX, MEDIA_TAG_VERSION,
+    theme_path, MetadataEntry, ViewStyle, LIBRARY_IDENTIFIER, MEDIA_TAG_PREFIX, MEDIA_TAG_VERSION,
 };
 use crate::language::Language;
 use crate::listing;
@@ -58,6 +60,7 @@ query PlexChildren($id: ID!, $first: Int!, $offset: Int!, $markers: Boolean = fa
       number
       year
       summary
+      theme { changedAt }
       library { id title uuid kind }
       stats { seasonCount episodeCount watchedEpisodeCount }
       children: seasons(first: $first, offset: $offset) {
@@ -69,7 +72,7 @@ query PlexChildren($id: ID!, $first: Int!, $offset: Int!, $markers: Boolean = fa
       title
       number
       year
-      show { id title guid studio number year contentRating }
+      show { id title guid studio number year contentRating theme { changedAt } }
       library { id title uuid kind }
       stats { episodeCount }
       children: episodes(first: $first, offset: $offset) {
@@ -160,6 +163,7 @@ query PlexAllLeaves($id: ID!, $first: Int!, $offset: Int!, $markers: Boolean = f
       number
       year
       studio
+      theme { changedAt }
       library { id title uuid kind }
       stats { episodeCount }
       children: episodes(first: $first, offset: $offset) {
@@ -181,7 +185,7 @@ query PlexAllLeaves($id: ID!, $first: Int!, $offset: Int!, $markers: Boolean = f
       title
       number
       year
-      show { id title guid studio number year contentRating }
+      show { id title guid studio number year contentRating theme { changedAt } }
       library { id title uuid kind }
     }
     ... on Episode {
@@ -224,6 +228,7 @@ struct GqlParent {
     year: Option<i32>,
     summary: Option<String>,
     studio: Option<String>,
+    theme: Option<GqlTheme>,
     show: Option<GqlParentRef>,
     season: Option<GqlParentRef>,
     library: Option<GqlLibraryRef>,
@@ -294,6 +299,9 @@ pub struct ChildrenContainer {
     pub grandparent_rating_key: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grandparent_studio: Option<String>,
+    /// A season's series' theme.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grandparent_theme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grandparent_title: Option<String>,
     pub identifier: &'static str,
@@ -318,6 +326,9 @@ pub struct ChildrenContainer {
     pub parent_year: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// The series' theme, below a season as below the series.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
     pub title1: String,
     pub title2: String,
     pub view_group: &'static str,
@@ -356,6 +367,9 @@ pub struct AllLeavesContainer {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<u64>,
     pub allow_sync: bool,
+    /// A season's series' theme.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grandparent_theme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grandparent_title: Option<String>,
     pub identifier: &'static str,
@@ -373,6 +387,9 @@ pub struct AllLeavesContainer {
     pub parent_title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_year: Option<i32>,
+    /// The series' theme, below a season as below the series.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
     pub title1: String,
     pub title2: String,
     pub view_group: &'static str,
@@ -455,6 +472,7 @@ pub(crate) async fn children(
 
     let body = if parent.typename == "Season" {
         let show = parent.show.as_ref();
+        let show_theme = show.and_then(|show| theme_path(show.database_id(), show.theme.as_ref()));
         ChildrenContainer {
             size: u32::try_from(items.len()).unwrap_or(u32::MAX),
             total_size: total,
@@ -463,6 +481,7 @@ pub(crate) async fn children(
             grandparent_content_rating: show.and_then(|show| show.content_rating.clone()),
             grandparent_rating_key: show.map(GqlParentRef::database_id),
             grandparent_studio: show.and_then(|show| show.studio.clone()),
+            grandparent_theme: show_theme.clone(),
             grandparent_title: show.and_then(|show| show.title.clone()),
             identifier: LIBRARY_IDENTIFIER,
             key: parent.database_id().to_string(),
@@ -478,6 +497,7 @@ pub(crate) async fn children(
             // fallback the season reports as an item.
             parent_year: parent.year.or(show.and_then(|show| show.year)),
             summary: None,
+            theme: show_theme,
             title1: show.and_then(|show| show.title.clone()).unwrap_or_default(),
             title2: language.season_title(parent.title.as_deref(), parent.number),
             view_group: "episode",
@@ -505,6 +525,7 @@ pub(crate) async fn children(
             grandparent_content_rating: None,
             grandparent_rating_key: None,
             grandparent_studio: None,
+            grandparent_theme: None,
             grandparent_title: None,
             identifier: LIBRARY_IDENTIFIER,
             key: parent.database_id().to_string(),
@@ -520,6 +541,7 @@ pub(crate) async fn children(
             // Omitted when empty, unlike the season item's own `summary`, which the
             // reference sends as an empty string. Different element, different rule.
             summary: parent.summary.clone().filter(|text| !text.is_empty()),
+            theme: theme_path(parent.database_id(), parent.theme.as_ref()),
             title1: library.title.clone(),
             title2: parent.title.clone().unwrap_or_default(),
             view_group: "season",
@@ -553,6 +575,7 @@ pub(crate) async fn all_leaves(
         total_size: None,
         offset: None,
         allow_sync: true,
+        grandparent_theme: None,
         grandparent_title: None,
         identifier: LIBRARY_IDENTIFIER,
         key: parent.database_id().to_string(),
@@ -567,6 +590,7 @@ pub(crate) async fn all_leaves(
         parent_index: parent.number.unwrap_or(1),
         parent_title: title.clone(),
         parent_year: parent.year,
+        theme: None,
         title1: library.title.clone(),
         title2: title.clone(),
         view_group: "episode",
@@ -584,6 +608,7 @@ pub(crate) async fn all_leaves(
                 })
                 .collect();
             let total = parent.stats.episode_count.unwrap_or(0);
+            body.theme = theme_path(parent.database_id(), parent.theme.as_ref());
             body.size = u32::try_from(items.len()).unwrap_or(u32::MAX);
             body.total_size = Some(total);
             body.offset = Some(offset);
@@ -592,6 +617,8 @@ pub(crate) async fn all_leaves(
         }
         "Season" => {
             let show = parent.show.as_ref();
+            body.theme = show.and_then(|show| theme_path(show.database_id(), show.theme.as_ref()));
+            body.grandparent_theme.clone_from(&body.theme);
             body.grandparent_title =
                 Some(show.and_then(|show| show.title.clone()).unwrap_or_default());
             body.parent_year = parent.year.or(show.and_then(|show| show.year));

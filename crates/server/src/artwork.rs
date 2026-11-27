@@ -1,19 +1,24 @@
-//! Where provider images are kept, the artwork store as matching keeps them through it, and
-//! `/artwork/…`, where the official API's `ItemImage.url` points.
+//! Where provider images and series' themes are kept, the artwork store as matching keeps them
+//! through it, and `/artwork/…`, where the official API's `ItemImage.url` and `ItemTheme.url`
+//! point.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
-use axum::http::{header, StatusCode};
+use axum::body::Body;
+use axum::extract::{Path, Request, State};
+use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use klapz_core::source_metadata::artwork::{
     ArtworkError, ArtworkFetcher, ArtworkReader, StoredImage,
 };
-use klapz_transcoder::artwork::ArtworkStore;
+use klapz_core::source_metadata::theme::{StoredTheme, ThemeStore};
+use klapz_transcoder::artwork::{ArtworkStore, StoredThemeFile};
 use klapz_transcoder::Transcoder;
+use tower::ServiceExt as _;
+use tower_http::services::ServeFile;
 
 /// A stored image never changes under its name, which is the hash of its source.
 const CACHE_CONTROL: &str = "private, max-age=31536000, immutable";
@@ -60,7 +65,37 @@ impl ArtworkReader for StoreReader {
 pub fn router(store: Arc<ArtworkStore>) -> Router {
     Router::new()
         .route("/artwork/provider/{shard}/{name}", get(serve))
+        .route("/artwork/themes/{shard}/{name}", get(serve_theme))
         .with_state(store)
+}
+
+/// `/artwork/themes/{shard}/{name}`: a stored theme, with `Range`, which a player seeks with.
+async fn serve_theme(
+    State(store): State<Arc<ArtworkStore>>,
+    Path((shard, name)): Path<(String, String)>,
+    request: Request,
+) -> Response {
+    let Some((path, content_type)) = store.located(&format!("themes/{shard}/{name}")) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut response = match ServeFile::new(path).oneshot(request).await {
+        Ok(response) => response.map(Body::new),
+        Err(never) => match never {},
+    };
+    if response.status().is_success() {
+        let headers = response.headers_mut();
+        // The store's type, not one guessed from the extension.
+        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+        headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static(CACHE_CONTROL),
+        );
+        headers.insert(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        );
+    }
+    response
 }
 
 async fn serve(
@@ -131,6 +166,34 @@ impl ArtworkFetcher for StoreFetcher {
                 ]
             }),
         })
+    }
+}
+
+#[async_trait::async_trait]
+impl ThemeStore for StoreFetcher {
+    async fn fetch(&self, url: &str) -> Result<Option<StoredTheme>, ArtworkError> {
+        let stored = self
+            .0
+            .fetch_theme(url)
+            .await
+            .map_err(|error| ArtworkError(Box::new(error)))?;
+        Ok(stored.map(stored_theme))
+    }
+
+    async fn keep(&self, bytes: Vec<u8>, extension: &str) -> Result<StoredTheme, ArtworkError> {
+        self.0
+            .keep_theme(&bytes, extension)
+            .await
+            .map(stored_theme)
+            .map_err(|error| ArtworkError(Box::new(error)))
+    }
+}
+
+fn stored_theme(stored: StoredThemeFile) -> StoredTheme {
+    StoredTheme {
+        file: stored.file,
+        content_type: stored.content_type.to_owned(),
+        size_bytes: stored.size_bytes,
     }
 }
 

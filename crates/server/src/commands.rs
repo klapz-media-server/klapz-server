@@ -49,6 +49,14 @@ pub fn artwork_fetcher(images: &Path) -> crate::artwork::StoreFetcher {
     )))
 }
 
+/// Series' themes found in this machine's libraries and kept in the artwork store.
+fn themes(fetcher: &crate::artwork::StoreFetcher) -> klapz_core::source_metadata::theme::Themes {
+    klapz_core::source_metadata::theme::Themes {
+        store: Arc::new(fetcher.clone()),
+        files: Arc::new(LocalFiles),
+    }
+}
+
 /// `match`: a library's films or series matched against their provider, in this process.
 /// Without `--force`, only the items no record describes yet.
 pub async fn match_command(
@@ -65,10 +73,12 @@ pub async fn match_command(
     let sources = metadata_sources(klapz_agents::ProviderCredentials::from_env())?;
     let repository = SqlSourceMetadataRepository::new(connection.clone());
     let fetcher = artwork_fetcher(images);
+    let themes = themes(&fetcher);
     let report = match_library(
         &repository,
         &sources,
         Some(&fetcher),
+        Some(&themes),
         section,
         force,
         klapz_core::now_epoch(),
@@ -248,10 +258,12 @@ pub async fn scan(
     let sources = metadata_sources(klapz_agents::ProviderCredentials::from_env())?;
     let repository = SqlSourceMetadataRepository::new(connection.clone());
     let fetcher = artwork_fetcher(images);
+    let themes = themes(&fetcher);
     match match_library(
         &repository,
         &sources,
         Some(&fetcher),
+        Some(&themes),
         section,
         false,
         klapz_core::now_epoch(),

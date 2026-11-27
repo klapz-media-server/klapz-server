@@ -105,6 +105,10 @@ fn source_metadata(
         )),
         sources: commands::metadata_sources(credentials)?,
         artwork: Some(Arc::new(artwork::StoreFetcher(Arc::clone(&store)))),
+        themes: Some(klapz_core::source_metadata::theme::Themes {
+            store: Arc::new(artwork::StoreFetcher(Arc::clone(&store))),
+            files: Arc::new(files::LocalFiles),
+        }),
     };
     Ok((store, matching))
 }

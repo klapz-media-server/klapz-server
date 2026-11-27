@@ -671,6 +671,13 @@ Places where we knowingly answer differently, each decided rather than overlooke
 - **An item's images follow its library's language, not the client's.** The reference picks a
   localized poster or logo by `X-Plex-Language`; here one item shows one image per kind, chosen
   when it is matched, the repo owner's decision.
+- **A series' theme is found as the reference finds it, in more formats.** At matching, a
+  `theme-?[0-9]?` file beside its episodes (the directory, its parent and grandparent, the
+  library's root left out) wins over Plex's service's for its TVDB id, and either is copied into
+  the artwork store, as the reference copies a local asset into its bundle, so no route serves a
+  library file by its path. A local theme may be any format browsers play (`mp3`, `m4a`, `aac`,
+  `flac`, `ogg`, `oga`, `opus`, `wav`), the repo owner's decision, where the reference reads `mp3`
+  alone; its type is its extension's, nothing reads its content (`docs/spec-gaps.md`).
 - **A category's tile shows no item's art.** The reference draws each genre's tile from the
   background art of its best-rated item not already shown; this server keeps no artwork, so
   every tile names the image the reference uses for a genre without art,
@@ -1139,7 +1146,10 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `BackdropImageTags`, `ImageBlurHashes` and the series' images through `Parent…` fields, and
   `/Items/{id}/Images/{type}` scaled by its size parameters, served without a token only for a
   right `tag` (`security.md`). On the Plex surface `parentThumb`, `grandparentThumb` and
-  `grandparentArt` too. Not yet: season names and posters, TVDB's age ratings, collections, extras from providers.
+  `grandparentArt` too. A series' theme music (migration `m0049`): a local `theme.*` file, else
+  Plex's theme service's, kept in the artwork store; `Show.theme` on the official API, `theme`,
+  `parentTheme` and `grandparentTheme` on the Plex surface, served with `Range`. Not yet: season
+  names and posters, TVDB's age ratings, collections, extras from providers.
 - 🚧 **library scans in the server**: libraries walked through `LibraryFiles` (local disks for
   now), files grouped into films, series, seasons and episodes by the reference's measured
   naming rules (`CleanName`, stacking, versions, the 18 episode patterns, dates, sidecars,

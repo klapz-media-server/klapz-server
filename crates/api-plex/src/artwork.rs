@@ -4,11 +4,13 @@
 //! As captured on the reference, an item publishes `thumb` and `art` at these addresses, an
 //! `Image` list naming them by their roles (`coverPoster`, `background`, `clearLogo`), and the
 //! timestamp is the image's: it changes with the image so that clients refetch it. Any
-//! timestamp is served the current image.
+//! timestamp is served the current image. A series' `theme` is its music, at the same kind of
+//! address, through `Show.theme`.
 
 use async_graphql::Variables;
-use axum::extract::{Path, State};
-use axum::http::header;
+use axum::body::Body;
+use axum::extract::{Path, Request, State};
+use axum::http::{header, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -17,6 +19,8 @@ use klapz_api::item::ITEM_TYPE;
 use klapz_api::GlobalId;
 use serde::Deserialize;
 use serde_json::json;
+use tower::ServiceExt as _;
+use tower_http::services::ServeFile;
 
 use crate::auth::Caller;
 use crate::error::ApiError;
@@ -106,6 +110,59 @@ pub(crate) async fn element_file(
         .ok_or(ApiError::NotFound)
 }
 
+const THEME: &str = r"
+query PlexTheme($id: ID!) {
+  node(id: $id) {
+    ... on Show { theme { url } }
+  }
+}
+";
+
+#[derive(Debug, Deserialize)]
+struct ThemeData {
+    node: Option<ShowTheme>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ShowTheme {
+    theme: Option<StoredTheme>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StoredTheme {
+    url: String,
+}
+
+/// A series' theme, served from the artwork store with `Range`, which a player seeks with.
+async fn theme_response(
+    state: &PlexState,
+    item: i64,
+    request: Request,
+) -> Result<Response, ApiError> {
+    let store = state.artwork.as_ref().ok_or(ApiError::NotFound)?;
+    let variables = Variables::from_json(json!({ "id": GlobalId::encode(ITEM_TYPE, item) }));
+    let data: ThemeData = gql::execute(&state.schema, THEME, variables).await?;
+    let file = data
+        .node
+        .and_then(|show| show.theme)
+        .and_then(|theme| theme.url.strip_prefix(ARTWORK_PREFIX).map(str::to_owned))
+        .ok_or(ApiError::NotFound)?;
+    let (path, content_type) = store.located(&file).ok_or(ApiError::NotFound)?;
+    let mut response = match ServeFile::new(path).oneshot(request).await {
+        Ok(response) => response.map(Body::new),
+        Err(never) => match never {},
+    };
+    if response.status().is_success() {
+        let headers = response.headers_mut();
+        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+        headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static(CACHE_CONTROL),
+        );
+    }
+    Ok(response)
+}
+
 /// An address of the shape items publish, `/library/metadata/{id}/{element}/{timestamp}`: the
 /// item and the element. `None` for any other path.
 pub(crate) fn parse_element_path(path: &str) -> Option<(i64, &str)> {
@@ -122,8 +179,12 @@ async fn read_element(
     _caller: Caller,
     State(state): State<PlexState>,
     Path((ids, element, _timestamp)): Path<(String, String, String)>,
+    request: Request,
 ) -> Result<Response, ApiError> {
     let id: i64 = ids.parse().map_err(|_| ApiError::NotFound)?;
+    if element == "theme" {
+        return theme_response(&state, id, request).await;
+    }
     let (bytes, content_type) = element_bytes(&state, id, &element).await?;
     Ok((
         [

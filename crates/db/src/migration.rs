@@ -50,6 +50,7 @@ mod m0045_teletext_pages;
 mod m0046_teletext_tracks;
 mod m0047_server_setting;
 mod m0048_extension_token;
+mod m0049_item_theme;
 
 use sea_orm_migration::prelude::*;
 
@@ -107,6 +108,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0046_teletext_tracks::Migration),
             Box::new(m0047_server_setting::Migration),
             Box::new(m0048_extension_token::Migration),
+            Box::new(m0049_item_theme::Migration),
         ]
     }
 }

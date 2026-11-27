@@ -18,7 +18,7 @@ use crate::language::Language;
 use crate::gql_items::{
     GqlChapter, GqlCollectionTag, GqlConnection, GqlCornerColors, GqlEdge, GqlExternalId, GqlImage,
     GqlItem, GqlLibraryRef, GqlMarker, GqlParentRef, GqlPart, GqlProfiled, GqlRating, GqlStream,
-    GqlTag, GqlVersion, GqlWatchState,
+    GqlTag, GqlTheme, GqlVersion, GqlWatchState,
 };
 use crate::stream_labels;
 
@@ -214,6 +214,15 @@ pub struct MetadataEntry {
     /// An episode's series' background.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grandparent_art: Option<String>,
+    /// `/library/metadata/{id}/theme/{changed at}`: a series' theme music.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+    /// A season's series' theme.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_theme: Option<String>,
+    /// An episode's series' theme.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grandparent_theme: Option<String>,
     /// Runtime in milliseconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<i64>,
@@ -301,12 +310,20 @@ struct PublishedArtwork {
     parent_thumb: Option<String>,
     grandparent_thumb: Option<String>,
     grandparent_art: Option<String>,
+    theme: Option<String>,
+    parent_theme: Option<String>,
+    grandparent_theme: Option<String>,
     images: Vec<ImageEntry>,
 }
 
 const POSTER: &[&str] = &["POSTER"];
 const BACKGROUND: &[&str] = &["BACKGROUND"];
 const CLEAR_LOGO: &[&str] = &["CLEAR_LOGO"];
+
+/// `/library/metadata/{id}/theme/{changed at}`, where a series' theme is served.
+pub(crate) fn theme_path(id: i64, theme: Option<&GqlTheme>) -> Option<String> {
+    theme.map(|theme| format!("/library/metadata/{id}/theme/{}", theme.changed_at))
+}
 
 /// `/library/metadata/{id}/{element}/{changed at}` for the first of `kinds` among `images`.
 fn element_path(images: &[GqlImage], id: i64, element: &str, kinds: &[&str]) -> Option<String> {
@@ -367,12 +384,23 @@ impl PublishedArtwork {
             ),
             _ => (None, None, None),
         };
+        // A series' theme is its own; a season and an episode name their series'.
+        let show_theme = show.and_then(|show| theme_path(show.database_id(), show.theme.as_ref()));
+        let (theme, parent_theme, grandparent_theme) = match item.typename.as_str() {
+            "Show" => (theme_path(rating_key, item.theme.as_ref()), None, None),
+            "Season" => (None, show_theme, None),
+            "Episode" => (None, None, show_theme),
+            _ => (None, None, None),
+        };
         Self {
             thumb,
             art,
             parent_thumb,
             grandparent_thumb,
             grandparent_art,
+            theme,
+            parent_theme,
+            grandparent_theme,
             images,
         }
     }
@@ -1191,6 +1219,9 @@ impl MetadataEntry {
             parent_thumb: artwork.parent_thumb,
             grandparent_thumb: artwork.grandparent_thumb,
             grandparent_art: artwork.grandparent_art,
+            theme: artwork.theme,
+            parent_theme: artwork.parent_theme,
+            grandparent_theme: artwork.grandparent_theme,
             images: artwork.images,
             duration: runtime(item),
             originally_available_at: item.released_on.clone(),

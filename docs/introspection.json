@@ -9852,6 +9852,97 @@
           "possibleTypes": null
         },
         {
+          "kind": "OBJECT",
+          "name": "ItemTheme",
+          "description": "A series' theme music, kept on this server: a local `theme.*` file wins over the theme\nservice's, as on the reference.",
+          "fields": [
+            {
+              "name": "url",
+              "description": "Where this server serves it, below `/artwork/`, with `Range`. A new theme has a new\naddress, so a client may cache one for good.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "contentType",
+              "description": "Its media type: `audio/mpeg` for the service's; a local one's by its extension.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "sizeBytes",
+              "description": "Its size in bytes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Int64",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "source",
+              "description": "Where it came from.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "ThemeSource",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "changedAt",
+              "description": "When the series took it.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "DateTime",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
           "kind": "ENUM",
           "name": "ItemType",
           "description": "The kind of media an item is.",
@@ -25264,6 +25355,18 @@
               "deprecationReason": null
             },
             {
+              "name": "theme",
+              "description": "Its theme music, kept on this server: a `theme.*` file beside its episodes, else the\none Plex's theme service keeps for it. Null when it has none, or before it is matched.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "ItemTheme",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "updatedAt",
               "description": "When the item's metadata last changed.",
               "args": [],
@@ -29230,6 +29333,29 @@
             {
               "name": "STUDIO",
               "description": "The studio or network that made the item.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "ENUM",
+          "name": "ThemeSource",
+          "description": "Where a theme came from.",
+          "fields": null,
+          "inputFields": null,
+          "interfaces": null,
+          "enumValues": [
+            {
+              "name": "LOCAL",
+              "description": "A `theme.*` file beside the series' episodes, copied when the series was matched.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "PROVIDER",
+              "description": "Plex's theme service, by the series' TVDB id.",
               "isDeprecated": false,
               "deprecationReason": null
             }
