@@ -31,8 +31,8 @@ const MAX_TEXT_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_TTML_BYTES: u64 = 128 * 1024 * 1024;
 
 /// What every file's subtitles may weigh together: a film's tracks weigh some hundred
-/// kilobytes each.
-const MAX_CACHE_BYTES: u64 = 1024 * 1024 * 1024;
+/// kilobytes each, a broadcast's teletext stream kept as it is some 60 megabytes.
+const MAX_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// How often the subtitles are brought back within their budget.
 const PRUNE_EVERY: Duration = Duration::from_secs(10 * 60);
@@ -165,13 +165,21 @@ struct Output {
     track: Track,
     format: SubtitleFormat,
     path: PathBuf,
+    /// For a teletext track, where its stream is kept as it is, which it is decoded from.
+    copy: Option<PathBuf>,
 }
 
-/// The command extracting every one of `outputs` from `source` in one pass, each into its own
-/// file: copied when the track already is the format asked, converted otherwise. Every file is
-/// named `file:…`, so that no name is read as an option or a protocol.
-fn extraction_arguments(source: &Path, outputs: &[Output]) -> Vec<String> {
-    let mut arguments: Vec<String> = [
+/// A teletext stream copied as it is from the source, which its pages are then decoded from.
+#[derive(Debug, Clone)]
+struct Copied {
+    index: i32,
+    /// Where the pass writes it, to be moved to its place once whole.
+    path: PathBuf,
+}
+
+/// The options every pass starts with.
+fn common_arguments() -> Vec<String> {
+    [
         "-nostdin",
         "-loglevel",
         "error",
@@ -182,47 +190,83 @@ fn extraction_arguments(source: &Path, outputs: &[Output]) -> Vec<String> {
     ]
     .iter()
     .map(ToString::to_string)
-    .collect();
-    for output in outputs {
-        if is_teletext(&output.track.codec) {
-            // libzvbi's options, for this track's decoder alone: text rather than the pictures
-            // of the page, and the page the subtitles are on, else every subtitle page. A page
-            // shows until it changes, so its subtitles come with no end: each is ended where
-            // the next begins, the page cleared included.
-            let index = output.track.index;
-            let page = output
-                .track
-                .teletext_page
-                .map_or_else(|| "subtitle".to_owned(), |page| page.to_string());
-            arguments.extend([
-                format!("-txt_format:{index}"),
-                "text".to_owned(),
-                format!("-txt_page:{index}"),
-                page,
-                format!("-fix_sub_duration:{index}"),
-            ]);
-        }
+    .collect()
+}
+
+/// How `output` is written once its track is mapped: copied when the track already is the
+/// format asked, converted otherwise.
+fn output_arguments(arguments: &mut Vec<String>, output: &Output) {
+    let codec = if SubtitleFormat::of_codec(&output.track.codec) == Some(output.format) {
+        "copy"
+    } else {
+        output.format.encoder()
+    };
+    arguments.extend([
+        "-codec:0".to_owned(),
+        codec.to_owned(),
+        "-f".to_owned(),
+        output.format.muxer().to_owned(),
+    ]);
+    if output.format == SubtitleFormat::Ttml {
+        // One file, as every other format is kept and served, rather than one per picture.
+        arguments.extend(["-embed_images".to_owned(), "1".to_owned()]);
     }
+    arguments.push(format!("file:{}", output.path.display()));
+}
+
+/// The command reading `source` once: every one of `outputs` into its own file, and each of
+/// `copied` as it is. Every file is named `file:…`, so that no name is read as an option or a
+/// protocol.
+fn extraction_arguments(source: &Path, outputs: &[Output], copied: &[Copied]) -> Vec<String> {
+    let mut arguments = common_arguments();
     arguments.extend(["-i".to_owned(), format!("file:{}", source.display())]);
     for output in outputs {
-        let codec = if SubtitleFormat::of_codec(&output.track.codec) == Some(output.format) {
-            "copy"
-        } else {
-            output.format.encoder()
-        };
+        arguments.extend(["-map".to_owned(), format!("0:{}", output.track.index)]);
+        output_arguments(&mut arguments, output);
+    }
+    for copy in copied {
+        // NUT keeps the timestamps as the source's reader shifted them, which the pages'
+        // pass then reads as they are (`-copyts`): its cues fall where a direct decode's do.
         arguments.extend([
             "-map".to_owned(),
-            format!("0:{}", output.track.index),
+            format!("0:{}", copy.index),
             "-codec:0".to_owned(),
-            codec.to_owned(),
+            "copy".to_owned(),
             "-f".to_owned(),
-            output.format.muxer().to_owned(),
+            "nut".to_owned(),
+            format!("file:{}", copy.path.display()),
         ]);
-        if output.format == SubtitleFormat::Ttml {
-            // One file, as every other format is kept and served, rather than one per picture.
-            arguments.extend(["-embed_images".to_owned(), "1".to_owned()]);
-        }
-        arguments.push(format!("file:{}", output.path.display()));
+    }
+    arguments
+}
+
+/// The command decoding each teletext output from its stream's copy: an input per output,
+/// since libzvbi's options (text rather than the pictures of the page, the page the subtitles
+/// are on) belong to a decoder, and a decoder to an input's stream. A page shows until it
+/// changes, so its subtitles come with no end: each is ended where the next begins, the page
+/// cleared included.
+fn teletext_arguments(outputs: &[(&Output, &Path)]) -> Vec<String> {
+    let mut arguments = common_arguments();
+    arguments.push("-copyts".to_owned());
+    for (output, copy) in outputs {
+        // A track scanned before its pages were known: every subtitle page.
+        let page = output
+            .track
+            .teletext_page
+            .map_or_else(|| "subtitle".to_owned(), |page| page.to_string());
+        arguments.extend([
+            "-txt_format:0".to_owned(),
+            "text".to_owned(),
+            "-txt_page:0".to_owned(),
+            page,
+            "-fix_sub_duration:0".to_owned(),
+            "-i".to_owned(),
+            format!("file:{}", copy.display()),
+        ]);
+    }
+    for (input, (output, _)) in outputs.iter().enumerate() {
+        arguments.extend(["-map".to_owned(), format!("{input}:0")]);
+        output_arguments(&mut arguments, output);
     }
     arguments
 }
@@ -299,10 +343,29 @@ fn touch(path: &Path) -> std::io::Result<()> {
         .set_modified(SystemTime::now())
 }
 
-/// Where a track's subtitle is kept: in its file's directory, named after a digest of the
-/// file's path, under a name that tells the track (and the teletext page decoded), the format,
-/// and the file as it stood — size and modification time. A file changed is a new name; the
+/// The directory a file's subtitles are kept in, named after a digest of the file's path.
+fn file_directory(root: &Path, source: &Path) -> PathBuf {
+    let digest = Sha256::digest(source.as_os_str().as_encoded_bytes());
+    let hex = digest[..16]
+        .iter()
+        .fold(String::with_capacity(32), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        });
+    root.join(format!("{SUBTITLE_DIRECTORY}{hex}"))
+}
+
+/// The file as it stood, size and modification time: a file changed is a new name, and the
 /// old one ages out.
+fn file_stamp(size: u64, modified: Option<SystemTime>) -> String {
+    let modified = modified
+        .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map_or(0, |since| since.as_nanos());
+    format!("{size}-{modified}")
+}
+
+/// Where a track's subtitle is kept: in its file's directory, under a name that tells the
+/// track (and the teletext page decoded), the format, and the file as it stood.
 fn cache_path(
     root: &Path,
     source: &Path,
@@ -311,25 +374,27 @@ fn cache_path(
     track: &Track,
     format: SubtitleFormat,
 ) -> PathBuf {
-    let modified = modified
-        .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
-        .map_or(0, |since| since.as_nanos());
-    let digest = Sha256::digest(source.as_os_str().as_encoded_bytes());
-    let hex = digest[..16]
-        .iter()
-        .fold(String::with_capacity(32), |mut hex, byte| {
-            let _ = write!(hex, "{byte:02x}");
-            hex
-        });
     let page = track
         .teletext_page
         .map_or_else(String::new, |page| format!("p{page}-"));
-    root.join(format!("{SUBTITLE_DIRECTORY}{hex}"))
-        .join(format!(
-            "{}-{page}{size}-{modified}.{}",
-            track.index,
-            format.extension()
-        ))
+    file_directory(root, source).join(format!(
+        "{}-{page}{}.{}",
+        track.index,
+        file_stamp(size, modified),
+        format.extension()
+    ))
+}
+
+/// Where a teletext stream is kept as it is, beside its subtitles: every page in every format
+/// is decoded from it without reading the file again, a page or a format asked later included.
+fn copy_path(
+    root: &Path,
+    source: &Path,
+    size: u64,
+    modified: Option<SystemTime>,
+    index: i32,
+) -> PathBuf {
+    file_directory(root, source).join(format!("{index}-raw-{}.nut", file_stamp(size, modified)))
 }
 
 /// Subtitles extracted, kept on disk across streams, users and restarts: a player changes track
@@ -385,6 +450,8 @@ impl Subtitles {
                     track: (*track).clone(),
                     format: *format,
                     path: path.clone(),
+                    copy: is_teletext(&track.codec)
+                        .then(|| copy_path(&self.root, source, size, modified, track.index)),
                 });
             }
         }
@@ -557,12 +624,17 @@ async fn keep(output: &Output, path: &Path) -> bool {
     tokio::fs::rename(&output.path, path).await.is_ok()
 }
 
-/// Runs the transcoder over the file once.
+/// Runs the transcoder over the file once. A teletext track's stream is copied as it is in
+/// that pass and kept, and its pages are decoded from the copy after it, all at once: a
+/// broadcast's stream is interleaved with its video, so reading the file is what takes time,
+/// and a stream carrying several pages, asked in several formats, is read once for all of
+/// them. With its copy kept, the file is not read again.
 ///
 /// # Errors
 ///
-/// [`TranscodeError::Io`] when a directory cannot be made, [`TranscodeError::Spawn`] when the
-/// process cannot start, [`TranscodeError::SubtitleExtraction`] when it fails.
+/// [`TranscodeError::Io`] when a directory cannot be made or a copy moved to its place,
+/// [`TranscodeError::Spawn`] when the process cannot start,
+/// [`TranscodeError::SubtitleExtraction`] when it fails.
 async fn extract(
     config: &crate::Config,
     source: &Path,
@@ -575,9 +647,64 @@ async fn extract(
                 .map_err(TranscodeError::Io)?;
         }
     }
+    let (teletext, direct): (Vec<&Output>, Vec<&Output>) =
+        outputs.iter().partition(|output| output.copy.is_some());
+    // The copies missing, each written under a partial name until it is whole.
+    let mut copied: Vec<(Copied, &Path)> = Vec::new();
+    for output in &teletext {
+        let Some(kept) = output.copy.as_deref() else {
+            continue;
+        };
+        if copied.iter().any(|(_, place)| *place == kept) {
+            continue;
+        }
+        // Read now, so that pruning, which removes the least recently read first, leaves it.
+        let owned = kept.to_path_buf();
+        let found = tokio::task::spawn_blocking(move || touch(&owned))
+            .await
+            .is_ok_and(|touched| touched.is_ok());
+        if found {
+            continue;
+        }
+        let pass = uuid::Uuid::new_v4().simple();
+        let copy = Copied {
+            index: output.track.index,
+            path: kept.with_file_name(format!("{PARTIAL}{pass}.nut")),
+        };
+        copied.push((copy, kept));
+    }
+    let direct: Vec<Output> = direct.into_iter().cloned().collect();
+    let mut ran = Ok(());
+    if !direct.is_empty() || !copied.is_empty() {
+        let written: Vec<Copied> = copied.iter().map(|(copy, _)| copy.clone()).collect();
+        ran = run_transcoder(config, extraction_arguments(source, &direct, &written)).await;
+    }
+    for (copy, kept) in &copied {
+        if ran.is_ok() {
+            ran = tokio::fs::rename(&copy.path, kept)
+                .await
+                .map_err(TranscodeError::Io);
+        }
+        let _ = tokio::fs::remove_file(&copy.path).await;
+    }
+    if ran.is_ok() && !teletext.is_empty() {
+        let decoded: Vec<(&Output, &Path)> = teletext
+            .iter()
+            .filter_map(|output| Some((*output, output.copy.as_deref()?)))
+            .collect();
+        ran = run_transcoder(config, teletext_arguments(&decoded)).await;
+    }
+    ran
+}
+
+/// Runs the transcoder with `arguments` to its end.
+async fn run_transcoder(
+    config: &crate::Config,
+    arguments: Vec<String>,
+) -> Result<(), TranscodeError> {
     let mut command = Command::new(&config.binary);
     command
-        .args(extraction_arguments(source, outputs))
+        .args(arguments)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -644,6 +771,7 @@ mod tests {
             track,
             format,
             path: PathBuf::from(path),
+            copy: None,
         }
     }
 
@@ -685,36 +813,54 @@ mod tests {
     }
 
     #[test]
-    fn decodes_teletext_from_its_page_as_text() {
-        let mut teletext = track("dvb_teletext");
-        teletext.index = 5;
-        teletext.teletext_page = Some(888);
-        let joined = extraction_arguments(
+    fn copies_a_teletext_stream_once_and_decodes_each_page_from_the_copy() {
+        let mut french = track("dvb_teletext");
+        french.index = 5;
+        french.teletext_page = Some(889);
+        let mut german = french.clone();
+        german.teletext_page = Some(150);
+        let copy = Copied {
+            index: 5,
+            path: PathBuf::from("c.nut"),
+        };
+        let read = extraction_arguments(
             Path::new("f.ts"),
-            &[
-                output(teletext.clone(), SubtitleFormat::Srt, "a"),
-                output(track("subrip"), SubtitleFormat::WebVtt, "b"),
-            ],
+            &[output(track("subrip"), SubtitleFormat::WebVtt, "b")],
+            std::slice::from_ref(&copy),
         )
         .join(" ");
-        // Decoder options, before the input they apply to, for the teletext track alone.
         assert!(
-            joined.contains(
-                "-txt_format:5 text -txt_page:5 888 -fix_sub_duration:5 -i file:f.ts -map 0:5 -codec:0 subrip -f srt file:a"
-            ),
-            "{joined}"
+            read.ends_with(concat!(
+                "-i file:f.ts -map 0:3 -codec:0 webvtt -f webvtt file:b ",
+                "-map 0:5 -codec:0 copy -f nut file:c.nut"
+            )),
+            "{read}"
         );
-        assert!(!joined.contains("-txt_page:3"), "{joined}");
-        // A track scanned before its pages were known: every subtitle page.
-        teletext.teletext_page = None;
-        let joined = extraction_arguments(
-            Path::new("f.ts"),
-            &[output(teletext, SubtitleFormat::WebVtt, "a")],
-        )
-        .join(" ");
+        assert!(!read.contains("-txt_"), "{read}");
+
+        let (a, b) = (
+            output(french, SubtitleFormat::Srt, "a"),
+            output(german, SubtitleFormat::WebVtt, "g"),
+        );
+        let decoded =
+            teletext_arguments(&[(&a, copy.path.as_path()), (&b, copy.path.as_path())]).join(" ");
+        // Decoder options before the input they apply to: an input per page.
         assert!(
-            joined.contains("-txt_page:5 subtitle -fix_sub_duration:5 -i"),
-            "{joined}"
+            decoded.ends_with(concat!(
+                "-copyts ",
+                "-txt_format:0 text -txt_page:0 889 -fix_sub_duration:0 -i file:c.nut ",
+                "-txt_format:0 text -txt_page:0 150 -fix_sub_duration:0 -i file:c.nut ",
+                "-map 0:0 -codec:0 subrip -f srt file:a -map 1:0 -codec:0 webvtt -f webvtt file:g"
+            )),
+            "{decoded}"
+        );
+        // A track scanned before its pages were known: every subtitle page.
+        let mut any = a.clone();
+        any.track.teletext_page = None;
+        let decoded = teletext_arguments(&[(&any, copy.path.as_path())]).join(" ");
+        assert!(
+            decoded.contains("-txt_page:0 subtitle -fix_sub_duration:0 -i"),
+            "{decoded}"
         );
     }
 
@@ -829,6 +975,10 @@ mod tests {
             place("/m/b.mkv", 10, 3, SubtitleFormat::WebVtt).parent(),
             Some(directory)
         );
+        // A teletext stream kept as it is, beside the subtitles decoded from it.
+        let copy = copy_path(Path::new("/t"), Path::new("/m/a.mkv"), 10, None, 0);
+        assert_eq!(copy.parent(), Some(directory));
+        assert_eq!(copy.file_name().unwrap(), "0-raw-10-0.nut");
     }
 
     #[test]
@@ -885,6 +1035,7 @@ mod tests {
         let joined = extraction_arguments(
             Path::new("/m/film.mkv"),
             &[output(track("subrip"), SubtitleFormat::Srt, "/t/3.srt")],
+            &[],
         )
         .join(" ");
         assert!(
@@ -894,6 +1045,7 @@ mod tests {
         let ass = extraction_arguments(
             Path::new("f"),
             &[output(track("ass"), SubtitleFormat::Ass, "a")],
+            &[],
         )
         .join(" ");
         assert!(ass.contains("-codec:0 copy -f ass file:a"), "{ass}");
@@ -910,6 +1062,7 @@ mod tests {
                 // SSA is not ASS to the muxer: it is converted.
                 output(ssa, SubtitleFormat::Ass, "b"),
             ],
+            &[],
         )
         .join(" ");
         assert!(
@@ -925,6 +1078,7 @@ mod tests {
                 SubtitleFormat::Ttml,
                 "d",
             )],
+            &[],
         )
         .join(" ");
         assert!(
@@ -934,6 +1088,7 @@ mod tests {
         let mov = extraction_arguments(
             Path::new("f"),
             &[output(track("mov_text"), SubtitleFormat::Srt, "c")],
+            &[],
         )
         .join(" ");
         assert!(mov.contains("-codec:0 subrip -f srt file:c"), "{mov}");

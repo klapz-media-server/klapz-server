@@ -47,6 +47,7 @@ mod m0042_source_metadata;
 mod m0043_artwork;
 mod m0044_media_analysis;
 mod m0045_teletext_pages;
+mod m0046_teletext_tracks;
 
 use sea_orm_migration::prelude::*;
 
@@ -101,6 +102,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0043_artwork::Migration),
             Box::new(m0044_media_analysis::Migration),
             Box::new(m0045_teletext_pages::Migration),
+            Box::new(m0046_teletext_tracks::Migration),
         ]
     }
 }

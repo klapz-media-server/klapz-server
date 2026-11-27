@@ -22,7 +22,7 @@ use klapz_db::entity::{
 use klapz_db::SqlScanRepository;
 use klapz_scanner::analysis_from_ffprobe;
 use klapz_scanner::report::{Analysis, FileIdentity};
-use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use serde_json::Value;
 
 const FILMS: SectionId = SectionId::new(1);
@@ -30,7 +30,7 @@ const FILMS: SectionId = SectionId::new(1);
 /// Values the reference's older libav read otherwise, by sample and field.
 const KNOWN: &[(&str, &str, &str)] = &[
     // Teletext tags a language per page, `fra,fra`, which the reference stores as `und`: ours
-    // takes the language of the page its subtitles are decoded from, 889's.
+    // stores a track per page, the first 889's.
     (
         "peur-primale-1996-multi-vff-1080i-hdtv-full-avc-he-aac-2-0",
         "stream 0 language",
@@ -202,10 +202,17 @@ async fn stored(connection: &DatabaseConnection, item: i64) -> BTreeMap<String, 
 
     let tracks = media_stream::Entity::find()
         .filter(media_stream::Column::MediaPartId.eq(part.id))
+        .order_by_asc(media_stream::Column::Id)
         .all(connection)
         .await
         .unwrap();
+    // A stream's first row stands for it: the reference stores one track for a teletext
+    // stream, where ours stores a row per page, the others beside it.
+    let mut seen = std::collections::BTreeSet::new();
     for track in tracks {
+        if !seen.insert(track.position) {
+            continue;
+        }
         let record = stream_dolby_vision::Entity::find_by_id(track.id)
             .one(connection)
             .await
@@ -463,6 +470,54 @@ async fn a_scan_keeps_what_ffprobe_states_and_what_does_not_play() {
     let picture = side[0].picture.as_ref().unwrap();
     assert_eq!((picture.width, picture.height), (Some(640), Some(360)));
     assert_eq!(picture.real_frame_rate.as_deref(), Some("90000/1"));
+}
+
+#[tokio::test]
+async fn a_teletext_recording_lists_a_subtitle_track_per_page() {
+    use klapz_core::metadata::{MetadataRepository, StreamKind};
+    use klapz_core::stream::StreamTrack;
+    let connection = films_library().await;
+    let scan = SqlScanRepository::new(connection.clone());
+    let metadata = klapz_db::SqlMetadataRepository::new(connection.clone());
+    // Arte's French pages declared, its German ones sent undeclared, as ffprobe-plex states
+    // them: one track mixed them all, or showed one.
+    let sample = samples().join("peur-primale-1996-multi-vff-1080i-hdtv-full-avc-he-aac-2-0");
+    let item = scanned(&scan, &sample).await;
+    let versions = metadata.versions_for(&[item]).await.unwrap();
+    let files = metadata.files_for(&[versions[0].id]).await.unwrap();
+    let tracks = metadata.streams_for(&[files[0].id]).await.unwrap();
+
+    let subtitles: Vec<(i32, Option<&str>, bool, Option<u16>)> = tracks
+        .iter()
+        .filter(|track| track.kind == StreamKind::Subtitle)
+        .map(|track| {
+            (
+                track.position,
+                track.language.as_deref(),
+                track.traits.hearing_impaired,
+                StreamTrack::of(track).teletext_page,
+            )
+        })
+        .collect();
+    assert_eq!(
+        subtitles,
+        [
+            (0, Some("fr"), false, Some(889)),
+            (0, Some("de"), false, Some(150)),
+            (0, Some("de"), false, Some(152)),
+            (0, Some("fr"), false, Some(702)),
+            (0, Some("de"), false, Some(708)),
+            (0, Some("fr"), true, Some(888)),
+        ]
+    );
+    // Each a track of its own, the others of the file after them.
+    let ids: std::collections::BTreeSet<_> = tracks.iter().map(|track| track.id).collect();
+    assert_eq!(ids.len(), tracks.len());
+    assert_eq!(
+        tracks.len(),
+        6 + 5,
+        "six pages, a video and four audio tracks"
+    );
 }
 
 #[test]

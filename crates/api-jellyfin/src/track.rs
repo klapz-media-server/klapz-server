@@ -567,6 +567,9 @@ impl FileStreams<'_> {
                 .map(|side| (false, side.position, side_stream(side))),
         );
         streams.sort_by_key(|(external, position, _)| (*external, *position));
+        // A teletext stream is a track per page, all at its index, which is how a Jellyfin
+        // player names the subtitle it wants: the first page stands for the stream.
+        streams.dedup_by(|later, first| !later.0 && !first.0 && later.1 == first.1);
         streams.into_iter().map(|(_, _, stream)| stream).collect()
     }
 
