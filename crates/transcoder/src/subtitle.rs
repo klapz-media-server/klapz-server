@@ -31,8 +31,8 @@ const MAX_TEXT_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_TTML_BYTES: u64 = 128 * 1024 * 1024;
 
 /// What every file's subtitles may weigh together: a film's tracks weigh some hundred
-/// kilobytes each.
-const MAX_CACHE_BYTES: u64 = 1024 * 1024 * 1024;
+/// kilobytes each, a broadcast's teletext stream kept as it is some 60 megabytes.
+const MAX_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// How often the subtitles are brought back within their budget.
 const PRUNE_EVERY: Duration = Duration::from_secs(10 * 60);
@@ -165,12 +165,15 @@ struct Output {
     track: Track,
     format: SubtitleFormat,
     path: PathBuf,
+    /// For a teletext track, where its stream is kept as it is, which it is decoded from.
+    copy: Option<PathBuf>,
 }
 
 /// A teletext stream copied as it is from the source, which its pages are then decoded from.
 #[derive(Debug, Clone)]
 struct Copied {
     index: i32,
+    /// Where the pass writes it, to be moved to its place once whole.
     path: PathBuf,
 }
 
@@ -340,10 +343,29 @@ fn touch(path: &Path) -> std::io::Result<()> {
         .set_modified(SystemTime::now())
 }
 
-/// Where a track's subtitle is kept: in its file's directory, named after a digest of the
-/// file's path, under a name that tells the track (and the teletext page decoded), the format,
-/// and the file as it stood — size and modification time. A file changed is a new name; the
+/// The directory a file's subtitles are kept in, named after a digest of the file's path.
+fn file_directory(root: &Path, source: &Path) -> PathBuf {
+    let digest = Sha256::digest(source.as_os_str().as_encoded_bytes());
+    let hex = digest[..16]
+        .iter()
+        .fold(String::with_capacity(32), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        });
+    root.join(format!("{SUBTITLE_DIRECTORY}{hex}"))
+}
+
+/// The file as it stood, size and modification time: a file changed is a new name, and the
 /// old one ages out.
+fn file_stamp(size: u64, modified: Option<SystemTime>) -> String {
+    let modified = modified
+        .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map_or(0, |since| since.as_nanos());
+    format!("{size}-{modified}")
+}
+
+/// Where a track's subtitle is kept: in its file's directory, under a name that tells the
+/// track (and the teletext page decoded), the format, and the file as it stood.
 fn cache_path(
     root: &Path,
     source: &Path,
@@ -352,25 +374,27 @@ fn cache_path(
     track: &Track,
     format: SubtitleFormat,
 ) -> PathBuf {
-    let modified = modified
-        .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
-        .map_or(0, |since| since.as_nanos());
-    let digest = Sha256::digest(source.as_os_str().as_encoded_bytes());
-    let hex = digest[..16]
-        .iter()
-        .fold(String::with_capacity(32), |mut hex, byte| {
-            let _ = write!(hex, "{byte:02x}");
-            hex
-        });
     let page = track
         .teletext_page
         .map_or_else(String::new, |page| format!("p{page}-"));
-    root.join(format!("{SUBTITLE_DIRECTORY}{hex}"))
-        .join(format!(
-            "{}-{page}{size}-{modified}.{}",
-            track.index,
-            format.extension()
-        ))
+    file_directory(root, source).join(format!(
+        "{}-{page}{}.{}",
+        track.index,
+        file_stamp(size, modified),
+        format.extension()
+    ))
+}
+
+/// Where a teletext stream is kept as it is, beside its subtitles: every page in every format
+/// is decoded from it without reading the file again, a page or a format asked later included.
+fn copy_path(
+    root: &Path,
+    source: &Path,
+    size: u64,
+    modified: Option<SystemTime>,
+    index: i32,
+) -> PathBuf {
+    file_directory(root, source).join(format!("{index}-raw-{}.nut", file_stamp(size, modified)))
 }
 
 /// Subtitles extracted, kept on disk across streams, users and restarts: a player changes track
@@ -426,6 +450,8 @@ impl Subtitles {
                     track: (*track).clone(),
                     format: *format,
                     path: path.clone(),
+                    copy: is_teletext(&track.codec)
+                        .then(|| copy_path(&self.root, source, size, modified, track.index)),
                 });
             }
         }
@@ -598,15 +624,17 @@ async fn keep(output: &Output, path: &Path) -> bool {
     tokio::fs::rename(&output.path, path).await.is_ok()
 }
 
-/// Runs the transcoder over the file once. A teletext track is copied as it is in that pass
-/// and its pages decoded from the copy after it, all at once: a broadcast's stream is
-/// interleaved with its video, so reading the file is what takes time, and a stream carrying
-/// several pages is read once for all of them.
+/// Runs the transcoder over the file once. A teletext track's stream is copied as it is in
+/// that pass and kept, and its pages are decoded from the copy after it, all at once: a
+/// broadcast's stream is interleaved with its video, so reading the file is what takes time,
+/// and a stream carrying several pages, asked in several formats, is read once for all of
+/// them. With its copy kept, the file is not read again.
 ///
 /// # Errors
 ///
-/// [`TranscodeError::Io`] when a directory cannot be made, [`TranscodeError::Spawn`] when the
-/// process cannot start, [`TranscodeError::SubtitleExtraction`] when it fails.
+/// [`TranscodeError::Io`] when a directory cannot be made or a copy moved to its place,
+/// [`TranscodeError::Spawn`] when the process cannot start,
+/// [`TranscodeError::SubtitleExtraction`] when it fails.
 async fn extract(
     config: &crate::Config,
     source: &Path,
@@ -619,37 +647,52 @@ async fn extract(
                 .map_err(TranscodeError::Io)?;
         }
     }
-    let (teletext, direct): (Vec<&Output>, Vec<&Output>) = outputs
-        .iter()
-        .partition(|output| is_teletext(&output.track.codec));
-    let mut copied: Vec<Copied> = Vec::new();
+    let (teletext, direct): (Vec<&Output>, Vec<&Output>) =
+        outputs.iter().partition(|output| output.copy.is_some());
+    // The copies missing, each written under a partial name until it is whole.
+    let mut copied: Vec<(Copied, &Path)> = Vec::new();
     for output in &teletext {
-        if copied.iter().all(|copy| copy.index != output.track.index) {
-            // Beside the outputs, under the name of a partial file, which pruning removes if
-            // the pass is killed before removing it itself.
-            let pass = uuid::Uuid::new_v4().simple();
-            copied.push(Copied {
-                index: output.track.index,
-                path: output.path.with_file_name(format!("{PARTIAL}{pass}.nut")),
-            });
+        let Some(kept) = output.copy.as_deref() else {
+            continue;
+        };
+        if copied.iter().any(|(_, place)| *place == kept) {
+            continue;
         }
+        // Read now, so that pruning, which removes the least recently read first, leaves it.
+        let owned = kept.to_path_buf();
+        let found = tokio::task::spawn_blocking(move || touch(&owned))
+            .await
+            .is_ok_and(|touched| touched.is_ok());
+        if found {
+            continue;
+        }
+        let pass = uuid::Uuid::new_v4().simple();
+        let copy = Copied {
+            index: output.track.index,
+            path: kept.with_file_name(format!("{PARTIAL}{pass}.nut")),
+        };
+        copied.push((copy, kept));
     }
     let direct: Vec<Output> = direct.into_iter().cloned().collect();
-    let mut ran = run_transcoder(config, extraction_arguments(source, &direct, &copied)).await;
+    let mut ran = Ok(());
+    if !direct.is_empty() || !copied.is_empty() {
+        let written: Vec<Copied> = copied.iter().map(|(copy, _)| copy.clone()).collect();
+        ran = run_transcoder(config, extraction_arguments(source, &direct, &written)).await;
+    }
+    for (copy, kept) in &copied {
+        if ran.is_ok() {
+            ran = tokio::fs::rename(&copy.path, kept)
+                .await
+                .map_err(TranscodeError::Io);
+        }
+        let _ = tokio::fs::remove_file(&copy.path).await;
+    }
     if ran.is_ok() && !teletext.is_empty() {
         let decoded: Vec<(&Output, &Path)> = teletext
             .iter()
-            .filter_map(|output| {
-                let copy = copied
-                    .iter()
-                    .find(|copy| copy.index == output.track.index)?;
-                Some((*output, copy.path.as_path()))
-            })
+            .filter_map(|output| Some((*output, output.copy.as_deref()?)))
             .collect();
         ran = run_transcoder(config, teletext_arguments(&decoded)).await;
-    }
-    for copy in &copied {
-        let _ = tokio::fs::remove_file(&copy.path).await;
     }
     ran
 }
@@ -728,6 +771,7 @@ mod tests {
             track,
             format,
             path: PathBuf::from(path),
+            copy: None,
         }
     }
 
@@ -931,6 +975,10 @@ mod tests {
             place("/m/b.mkv", 10, 3, SubtitleFormat::WebVtt).parent(),
             Some(directory)
         );
+        // A teletext stream kept as it is, beside the subtitles decoded from it.
+        let copy = copy_path(Path::new("/t"), Path::new("/m/a.mkv"), 10, None, 0);
+        assert_eq!(copy.parent(), Some(directory));
+        assert_eq!(copy.file_name().unwrap(), "0-raw-10-0.nut");
     }
 
     #[test]
