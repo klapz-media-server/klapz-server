@@ -7,6 +7,7 @@
 //! the test files (`docs/scanner/analysis.md`, §1).
 
 use klapz_core::scan::NewSidecar;
+use klapz_core::teletext::TeletextPage;
 use klapz_scanner::report::{Analysis, DolbyVision, Track, TrackKind, VideoTrack};
 
 use crate::entity::{media_stream, part_side_stream, stream_dolby_vision};
@@ -289,7 +290,8 @@ fn track_language(analysis: &Analysis, track: &Track, path: &str) -> Option<Stri
 
 /// The rows of a file's tracks, numbered from `first_id`. Attachments, data tracks and cover
 /// pictures have no row: the reference keeps video, audio and subtitles only, and a cover as
-/// the part's `hasThumbnail`.
+/// the part's `hasThumbnail`. A teletext track has a row per subtitle page it carries, each a
+/// subtitle of its own, and one row when it states none.
 #[allow(
     clippy::too_many_lines,
     reason = "one column after another, each from what the scanner reported"
@@ -305,16 +307,28 @@ pub(super) fn track_rows(
         .iter()
         .filter(|track| !track.disposition.attached_picture)
         .filter_map(|track| Some((track, kind_name(track.kind)?)))
-        .zip(first_id..)
-        .map(|((track, kind), id)| {
-            let bitrate = track_bitrate(analysis, track);
-            // A teletext track tags a language per page, `fra,fra`, which the reference stores
-            // as `und`: it is named after the page its subtitles are decoded from instead, its
-            // language and whether it is for the hearing impaired, like any other subtitle.
-            let teletext = track
+        .flat_map(|(track, kind)| {
+            let mut pages = track
                 .teletext_pages
                 .as_deref()
-                .and_then(klapz_core::teletext::subtitle_page);
+                .map(klapz_core::teletext::pages)
+                .unwrap_or_default();
+            // Subtitles proper first, in ffprobe's order: a broadcaster may declare a page for
+            // the hearing impaired it leaves empty, as Arte's 888 on Peur primale.
+            pages.sort_by_key(|page| page.hearing_impaired);
+            let rows: Vec<Option<TeletextPage>> = if pages.is_empty() {
+                vec![None]
+            } else {
+                pages.into_iter().map(Some).collect()
+            };
+            rows.into_iter().map(move |page| (track, kind, page))
+        })
+        .zip(first_id..)
+        .map(|((track, kind, teletext), id)| {
+            let bitrate = track_bitrate(analysis, track);
+            // A teletext track tags a language per page, `fra,fra`, which the reference stores
+            // as `und`: each of its rows is named after its page instead, its language and
+            // whether it is for the hearing impaired, like any other subtitle.
             let language = teletext
                 .as_ref()
                 .and_then(|page| language(page.language.as_deref()?))
@@ -432,7 +446,7 @@ pub(super) fn track_rows(
                 canvas_height: track
                     .subtitle
                     .and_then(|canvas| i32::try_from(canvas.height).ok()),
-                teletext_pages: track.teletext_pages.clone(),
+                teletext_pages: teletext.as_ref().map(TeletextPage::stated),
             };
             TrackRows {
                 dolby_vision: picture
@@ -764,7 +778,7 @@ mod tests {
     use klapz_scanner::report::Cropping;
 
     #[test]
-    fn names_a_teletext_track_after_the_page_it_is_decoded_from() {
+    fn gives_each_teletext_page_a_subtitle_track_named_after_it() {
         let sample = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../scanner/tests/fixtures/samples/",
@@ -779,17 +793,45 @@ mod tests {
         };
         let mut analysis = klapz_scanner::analysis_from_ffprobe(&ffprobe, identity).unwrap();
         let teletext = |analysis: &Analysis| {
-            let rows = track_rows(analysis, "a.m2ts", 1, 1);
-            let stream = &rows[0].stream;
-            (stream.language.clone(), stream.is_hearing_impaired)
+            track_rows(analysis, "a.m2ts", 1, 10)
+                .into_iter()
+                .map(|rows| rows.stream)
+                .filter(|stream| stream.codec.as_deref() == Some("dvb_teletext"))
+                .map(|stream| {
+                    (
+                        stream.id,
+                        stream.position,
+                        stream.language,
+                        stream.is_hearing_impaired,
+                        stream.teletext_pages,
+                    )
+                })
+                .collect::<Vec<_>>()
         };
-        // Arte's 888 for the hearing impaired, 889 subtitles proper: 889 is decoded.
-        assert_eq!(teletext(&analysis), (Some("fr".to_owned()), false));
-        analysis.tracks[0].teletext_pages = Some("888:deu:hearing_impaired".to_owned());
-        assert_eq!(teletext(&analysis), (Some("de".to_owned()), true));
-        // Pages not known: the tag, judged as the reference judges it.
+        // Arte's declared French pages, then its German subtitles, sent undeclared: subtitles
+        // proper first.
+        analysis.tracks[0].teletext_pages =
+            Some("888:fra:hearing_impaired,889:fra:subtitles,150:deu:subtitles".to_owned());
+        let rows = teletext(&analysis);
+        let page = |stated: &str| Some(stated.to_owned());
+        assert_eq!(
+            rows,
+            [
+                (10, 0, page("fr"), false, page("889:fra:subtitles")),
+                (11, 0, page("de"), false, page("150:deu:subtitles")),
+                (12, 0, page("fr"), true, page("888:fra:hearing_impaired")),
+            ]
+        );
+        // The tracks after it are numbered on.
+        let all = track_rows(&analysis, "a.m2ts", 1, 10);
+        assert_eq!(all[3].stream.id, 13);
+        assert_eq!(all[3].stream.position, 1);
+        // A page with no language: the tag, judged as the reference judges it.
+        analysis.tracks[0].teletext_pages = Some("150::subtitles".to_owned());
+        assert_eq!(teletext(&analysis)[0].2, page("und"));
+        // Pages not known: one track.
         analysis.tracks[0].teletext_pages = None;
-        assert_eq!(teletext(&analysis), (Some("und".to_owned()), false));
+        assert_eq!(teletext(&analysis), [(10, 0, page("und"), false, None)]);
     }
 
     #[test]

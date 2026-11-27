@@ -1,8 +1,9 @@
 //! Which page of a broadcast's teletext a subtitle track is decoded from.
 //!
-//! A teletext track holds many pages, and its descriptor names those that are subtitles, each
-//! with a language and its kind: subtitles proper, or subtitles for the hearing impaired. One
-//! track reaches a player as one subtitle, as on the reference, so one page is chosen.
+//! A teletext track holds many pages. ffprobe-plex names those that are subtitles, each with a
+//! language and its kind (subtitles proper, or for the hearing impaired): the ones its
+//! descriptor declares, then the ones it carries undeclared, as Arte sends its German
+//! subtitles beside its declared French ones. Each page is a subtitle track of its own.
 
 /// One subtitle page a teletext track declares.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,6 +13,24 @@ pub struct TeletextPage {
     /// As declared, `fra`; none when the descriptor left it blank.
     pub language: Option<String>,
     pub hearing_impaired: bool,
+}
+
+impl TeletextPage {
+    /// The page as ffprobe-plex states it, `889:fra:subtitles`: what a track decoded from it
+    /// stores, read back by [`pages`].
+    #[must_use]
+    pub fn stated(&self) -> String {
+        format!(
+            "{}:{}:{}",
+            self.number,
+            self.language.as_deref().unwrap_or_default(),
+            if self.hearing_impaired {
+                "hearing_impaired"
+            } else {
+                "subtitles"
+            }
+        )
+    }
 }
 
 /// The pages as stated, `888:fra:hearing_impaired,889:fra:subtitles`, in their order. An
@@ -42,8 +61,9 @@ pub fn pages(stated: &str) -> Vec<TeletextPage> {
         .collect()
 }
 
-/// The page a track's subtitles are decoded from: the first that is subtitles proper, else the
-/// first for the hearing impaired. None when it declares none, and every subtitle page is then
+/// The page a track's subtitles are decoded from: its own, for a track stored per page; for one
+/// stored with all its pages, before tracks were, the first that is subtitles proper, else the
+/// first for the hearing impaired. None when it states none, and every subtitle page is then
 /// decoded.
 ///
 /// Subtitles proper first, because a broadcaster may declare a page for the hearing impaired it
@@ -91,6 +111,17 @@ mod tests {
             []
         );
         assert_eq!(pages(""), []);
+    }
+
+    #[test]
+    fn a_page_states_itself_as_it_is_read() {
+        for stated in [
+            "889:fra:subtitles",
+            "888:fra:hearing_impaired",
+            "150::subtitles",
+        ] {
+            assert_eq!(pages(stated)[0].stated(), stated);
+        }
     }
 
     #[test]
