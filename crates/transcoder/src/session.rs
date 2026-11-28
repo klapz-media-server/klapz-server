@@ -26,7 +26,7 @@ use tokio::task::JoinHandle;
 
 use crate::adapt::{self, Delivery, ServerAdaptation};
 use crate::plan::{
-    audio_decoder, video_decoder, Adaptation, AudioAction, H264Preset, KeyFrames, Ladder,
+    audio_decoder, video_decoder, Adaptation, AudioAction, Crf, H264Tuning, KeyFrames, Ladder,
     StreamPlan, Track, VideoAction, VideoEncode,
 };
 use crate::subtitle::{self, Extraction, SubtitleFormat};
@@ -126,8 +126,8 @@ pub struct StreamRequest {
     /// The file's subtitle tracks and the format each would reach the player in: those that
     /// convert into it are extracted from the start, for the player to switch to.
     pub text_subtitles: Vec<(Track, SubtitleFormat)>,
-    /// How hard x264 works on every rung it encodes.
-    pub h264_preset: H264Preset,
+    /// How x264 encodes every rung it encodes.
+    pub h264: H264Tuning,
 }
 
 /// How a subtitle reaches the player.
@@ -207,7 +207,7 @@ impl StreamRequest {
             && self.ladder == other.ladder
             && self.protocol == other.protocol
             && self.subtitle == other.subtitle
-            && self.h264_preset == other.h264_preset
+            && self.h264 == other.h264
     }
 
     fn segment_seconds(&self) -> u32 {
@@ -923,12 +923,13 @@ fn input_arguments(request: &StreamRequest, run: &RunPlan<'_>) -> Vec<String> {
 /// and the top rung's 20 Mbps: left to x264, it follows the bitrate.
 const SHARED_LEVEL: &str = "4.2";
 
-fn video_encoder_options(encode: &VideoEncode, preset: H264Preset) -> Vec<String> {
+fn video_encoder_options(encode: &VideoEncode, tuning: H264Tuning) -> Vec<String> {
+    let crf = tuning.crf.map_or(encode.crf, Crf::get);
     let mut args = strings(&[
         "-codec:0",
         "libx264",
         "-crf:0",
-        &encode.crf.to_string(),
+        &crf.to_string(),
         "-maxrate:0",
         &format!("{}k", encode.video_kbps),
         "-bufsize:0",
@@ -946,7 +947,12 @@ fn video_encoder_options(encode: &VideoEncode, preset: H264Preset) -> Vec<String
         // Otherwise the picture parameters follow the CRF, and the level the bitrate.
         x264.push_str(":stitchable=1");
     }
-    args.extend(strings(&["-preset:0", preset.name(), "-x264opts:0", &x264]));
+    args.extend(strings(&[
+        "-preset:0",
+        tuning.preset.name(),
+        "-x264opts:0",
+        &x264,
+    ]));
     if encode.shared_headers {
         args.extend(strings(&["-level:0", SHARED_LEVEL]));
     }
@@ -1005,7 +1011,7 @@ fn video_arguments(
     video: &Track,
     action: VideoAction,
     burn: Option<Burn<'_>>,
-    preset: H264Preset,
+    tuning: H264Tuning,
 ) -> Vec<String> {
     let mut args = match action {
         VideoAction::Copy => strings(&["-map", &format!("0:{}", video.index)]),
@@ -1045,7 +1051,7 @@ fn video_arguments(
     }
     match action {
         VideoAction::Copy => args.extend(strings(&["-codec:0", "copy"])),
-        VideoAction::Encode(encode) => args.extend(video_encoder_options(&encode, preset)),
+        VideoAction::Encode(encode) => args.extend(video_encoder_options(&encode, tuning)),
     }
     args
 }
@@ -1119,7 +1125,7 @@ fn stream_arguments(
         &request.video,
         run.plan.video,
         burn,
-        request.h264_preset,
+        request.h264,
     ));
     args.extend(audio_arguments(&request.audio, run.plan, burn, client));
     if request.protocol == Protocol::Dash
@@ -2335,6 +2341,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+    use crate::plan::H264Preset;
 
     /// From the reference's log: a file with H.264 at 0 and DTS at 1, video copied and audio
     /// converted. Only the URLs and the length of the segment list differ.
@@ -2389,7 +2396,7 @@ mod tests {
             total_ms: 0,
             subtitle: None,
             text_subtitles: Vec::new(),
-            h264_preset: H264Preset::default(),
+            h264: H264Tuning::default(),
         }
     }
 
@@ -2631,7 +2638,7 @@ mod tests {
     #[test]
     fn an_encode_takes_the_preset_asked_for() {
         let mut asked = encoded(720, 388, 1333, 167, 20);
-        asked.h264_preset = H264Preset::Slow;
+        asked.h264.preset = H264Preset::Slow;
         let joined = arguments(&asked, 1, None).join(" ");
         assert!(joined.contains(" -preset:0 slow -x264opts:0 "));
         assert!(!joined.contains("veryfast"));
@@ -2644,6 +2651,57 @@ mod tests {
         }
         assert_eq!(H264Preset::named("placebo"), None);
         assert_eq!(H264Preset::default().name(), "veryfast");
+    }
+
+    #[test]
+    fn an_encode_keeps_its_rungs_factor_unless_one_is_chosen() {
+        let mut asked = encoded(720, 388, 1333, 167, 20);
+        let factor = |asked: &StreamRequest| {
+            let args = arguments(asked, 1, None);
+            let at = args.iter().position(|arg| arg == "-crf:0").unwrap();
+            args[at + 1].clone()
+        };
+        assert_eq!(factor(&asked), "20");
+
+        asked.h264.crf = Crf::new(28);
+        assert_eq!(factor(&asked), "28");
+        // The rung's cap still holds under a chosen factor.
+        let joined = arguments(&asked, 1, None).join(" ");
+        assert!(
+            joined.contains("-crf:0 28 -maxrate:0 1333k -bufsize:0 2666k"),
+            "{joined}"
+        );
+
+        asked.h264.crf = Crf::new(0);
+        assert_eq!(factor(&asked), "0");
+    }
+
+    #[test]
+    fn a_copied_video_takes_no_factor() {
+        let mut asked = request(AudioAction::ConvertToAac);
+        asked.h264 = H264Tuning {
+            preset: H264Preset::Slow,
+            crf: Crf::new(30),
+        };
+        let joined = arguments(&asked, 0, None).join(" ");
+        assert!(!joined.contains("-crf"), "{joined}");
+        assert!(!joined.contains("-preset"), "{joined}");
+    }
+
+    #[test]
+    fn a_factor_stays_within_x264s_range() {
+        assert_eq!(Crf::new(Crf::MIN).map(Crf::get), Some(0));
+        assert_eq!(Crf::new(Crf::MAX).map(Crf::get), Some(51));
+        assert_eq!(Crf::new(52), None);
+    }
+
+    #[test]
+    fn another_tuning_is_another_stream() {
+        let asked = encoded(720, 388, 1333, 167, 20);
+        let mut retuned = asked.clone();
+        retuned.h264.crf = Crf::new(28);
+        assert!(asked.produces_the_same_as(&asked.clone()));
+        assert!(!asked.produces_the_same_as(&retuned));
     }
 
     /// From the reference's log, started at 600 seconds: an exact seek, and no `-fps_mode`.

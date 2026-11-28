@@ -43,5 +43,6 @@ paths:
   running process keeps 20 s; an unknown or stopped session is `404` at once.
 - Quality follows a fixed ladder of sizes and bitrates measured on the reference; adaptive rules
   live in `transcoder::adapt` (see `docs/plex/spec-gaps.md`). A fallback is always `NO_FALLBACK`.
-- `transcoder.h264.preset` is read at every start (`settings`), passed as
-  `transcoder::plan::H264Preset`, never as stored text.
+- `transcoder.h264.preset` and `transcoder.h264.crf` are read at every start (`settings`), passed
+  as `transcoder::plan::H264Tuning`, never as stored text. An empty CRF leaves each rung its
+  measured factor; a chosen one applies to every rung, under its bitrate cap.
