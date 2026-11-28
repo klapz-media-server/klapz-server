@@ -24505,6 +24505,22 @@
               "deprecationReason": null
             },
             {
+              "name": "optional",
+              "description": "Whether it takes the empty value, for none: an `ADDRESS` always, an `INTEGER` such as\n`transcoder.h264.crf` when declared so.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "updatedAt",
               "description": "When an owner last chose its value. Null while the default is in force.",
               "args": [],
@@ -24750,7 +24766,7 @@
             },
             {
               "name": "INTEGER",
-              "description": "A whole number between `minimum` and `maximum`, both included.",
+              "description": "A whole number between `minimum` and `maximum`, both included; empty for none when\n`optional`.",
               "isDeprecated": false,
               "deprecationReason": null
             },
