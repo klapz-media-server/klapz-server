@@ -4,7 +4,7 @@
 //! analysis read the same headers with the same libav and stored them under other names
 //! (`mkv`, `srt`, `fr`, `high`). A scanned film must be indistinguishable from an imported
 //! one, so the renaming happens here, once, measured against what the reference stored for
-//! the test files (`docs/scanner/analysis.md`, §1).
+//! the test files (`docs/plex/scanner/analysis.md`, §1).
 
 use klapz_core::scan::NewSidecar;
 use klapz_core::teletext::TeletextPage;

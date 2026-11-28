@@ -4,7 +4,7 @@
 //! `SearchResult`s, each a `score` around a `Metadata` or a `Directory`, grouped by kind and
 //! cut to `limit` as a whole: films, series, episodes, then actors, directors, genres and
 //! collections, each group best first. Items are ranked by the official API's `search`, people,
-//! genres and collections as `/hubs/search` ranks its shelves of them. `docs/spec-gaps.md` says
+//! genres and collections as `/hubs/search` ranks its shelves of them. `docs/plex/spec-gaps.md` says
 //! how far this follows the reference.
 
 use std::collections::HashMap;

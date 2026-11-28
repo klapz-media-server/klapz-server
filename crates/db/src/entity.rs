@@ -1,6 +1,6 @@
 //! `SeaORM` entities for our own schema.
 //!
-//! Deliberately not a copy of Plex's schema: `docs/plex-db-schema.md` records that one as a
+//! Deliberately not a copy of Plex's schema: `docs/plex/db-schema.md` records that one as a
 //! reference, including the parts we reject — packed key/value columns, denormalized display
 //! columns, and a column named `index`.
 //!

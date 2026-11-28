@@ -1,5 +1,5 @@
 //! The series scanner's file-name patterns, in the reference's order
-//! (`docs/scanner/discovery.md` §5.2, numbered as there). Each is matched by hand over the
+//! (`docs/plex/scanner/discovery.md` §5.2, numbered as there). Each is matched by hand over the
 //! lower-cased name's bytes with the regex's own leftmost, greedy-then-shorter semantics, so a
 //! pattern reads beside its source line.
 

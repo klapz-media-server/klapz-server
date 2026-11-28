@@ -28,8 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gen_endpoints import DEFERRED_PATHS, DEFERRED_TAGS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = ROOT / "docs" / "openapi.json"
-OUT = ROOT / "docs" / "endpoint-probe.md"
+SPEC = ROOT / "docs" / "plex" / "openapi.json"
+OUT = ROOT / "docs" / "plex" / "endpoint-probe.md"
 
 BASE = os.environ.get("PLEX_URL", "http://127.0.0.1:32400").rstrip("/")
 TOKEN = os.environ.get("PLEX_TOKEN")
@@ -122,7 +122,7 @@ def main() -> None:
     lines = [
         "# Live endpoint probe",
         "",
-        "Which `GET` operations of `docs/openapi.json` the reference server actually answers. "
+        "Which `GET` operations of `docs/plex/openapi.json` the reference server actually answers. "
         "**Generated** — regenerate with `PLEX_TOKEN=... python tools/probe_endpoints.py`.",
         "",
         "The spec is not perfectly faithful, so this informs what is worth implementing. "

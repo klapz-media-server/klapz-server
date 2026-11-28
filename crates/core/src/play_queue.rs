@@ -3,7 +3,7 @@
 //! A queue is built from a source — the items a client named, in their natural order — and
 //! edited afterwards: items queued by hand, moved, removed. Shuffling rebuilds it from that
 //! source, as the reference does, so what was edited is lost. Every rule below was measured on
-//! the reference (`docs/spec-gaps.md`).
+//! the reference (`docs/plex/spec-gaps.md`).
 
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;

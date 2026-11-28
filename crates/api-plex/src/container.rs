@@ -2,7 +2,7 @@
 //!
 //! Field order is significant: it is the attribute order a real server emits, and
 //! `serde_json`'s `preserve_order` feature keeps it. Field *types* are significant too, and
-//! are taken from captures rather than chosen — see `docs/wire-format.md`. Plex is not
+//! are taken from captures rather than chosen — see `docs/plex/wire-format.md`. Plex is not
 //! self-consistent here, so within one struct a `0` in XML may be `false` or `0` in JSON
 //! depending on the field.
 

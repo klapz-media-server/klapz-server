@@ -1,5 +1,5 @@
 //! How file and directory names become items: the reference's movie and series scanners, as
-//! measured in `docs/scanner/discovery.md`. Pure functions over names; nothing here reads a
+//! measured in `docs/plex/scanner/discovery.md`. Pure functions over names; nothing here reads a
 //! file.
 
 mod clean;

@@ -1,11 +1,13 @@
-# Spec gaps
+# Plex: spec gaps and deliberate divergences
 
-Where `docs/openapi.json` and the reference server (1.43.5.11029) disagree. Every entry here
+The Plex surface only (`crates/api-plex`). Where `docs/plex/openapi.json` and the reference Plex Media
+Server (1.43.5.11029) disagree, and where klapz deliberately answers otherwise. The Jellyfin
+surface has its own file, `docs/jellyfin/spec-gaps.md`. Every entry here
 was verified by hand against `127.0.0.1:32400`, not inferred from the automated probe.
 
 The spec is treated as authoritative for request shapes; this file records the exceptions. When
 an operation 404s under the automated probe, the first assumption is a wrong path parameter, not
-a missing route — see the caveat in `docs/endpoint-probe.md`.
+a missing route — see the caveat in `docs/plex/endpoint-probe.md`.
 
 ## Missing from the spec
 
@@ -330,7 +332,7 @@ Where ours differ:
 `/status/sessions/history/all`, `/status/sessions/history/{historyId}` and its `DELETE`,
 measured on the reference's test libraries 27 and 28 by playing, marking and deleting, each
 step read back (its rows in `metadata_item_views`, with a `view_type` column
-`docs/plex-db-schema.md` predates):
+`docs/plex/db-schema.md` predates):
 
 - **An entry is a viewing counted, and nothing else.** A timeline crossing 90% writes one
   (`viewType` 0), and the reports after it in the same playback none; `/:/scrobble` writes one
@@ -1004,7 +1006,7 @@ noise is drawn from a fixed seed, so an image is the same on every request.
 ### A file listed before it is read
 
 A scan lists what it finds from names, sizes and times, and reads each file afterwards
-(`docs/scanner/analysis.md`, §1), every file's headers in a few minutes, its packets over hours.
+(`docs/plex/scanner/analysis.md`, §1), every file's headers in a few minutes, its packets over hours.
 Until its headers are read, a file is published as one whose analysis failed is: `Media` without
 `duration`, `bitrate`, `container`, codecs, resolution or profiles (absent, never `0`), its `Part`
 with `file` and `size` and no `Stream` but its sidecars; on the official API
@@ -3033,7 +3035,7 @@ client turns out to depend on the exact sequence.
 
 The spec's `MediaContainer` schema declares four properties with `additionalProperties: true`, so
 it describes almost nothing about responses. The authoritative per-field type map is
-`docs/wire-format.md`, generated from live captures. Notable findings recorded there:
+`docs/plex/wire-format.md`, generated from live captures. Notable findings recorded there:
 
 - JSON scalar types are per-field: `ratingKey` is a string, `Media.id` is a number.
 - Booleans are inconsistent in JSON: `allowSync` is `true`, `hasPremiumPrimaryExtra` is `"1"`.

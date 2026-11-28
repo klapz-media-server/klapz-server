@@ -3,7 +3,7 @@
 //! The list is the library's genres, `Library.tags(kind: GENRE)` on the official API, each
 //! opening the listing it filters. What the reference adds is presentation: a tile color and
 //! a backdrop. Measured on ten libraries and on genres added to a test library;
-//! `docs/spec-gaps.md` has the rules.
+//! `docs/plex/spec-gaps.md` has the rules.
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};

@@ -128,7 +128,7 @@ SQLite traps met here:
 
 ## Our schema, not Plex's
 
-`docs/plex-db-schema.md` documents the real Plex schema as a *reference*. It is there to learn
+`docs/plex/db-schema.md` documents the real Plex schema as a *reference*. It is there to learn
 how Plex models entities and which columns feed which API attributes — not to be reproduced.
 
 What that reference shows us we do **not** want:

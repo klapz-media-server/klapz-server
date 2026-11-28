@@ -1,6 +1,6 @@
 //! One scan of a library: walk, compare, group, write, and queue what is to be read.
 //!
-//! The order of `docs/scanner/discovery.md` §2: each directory's media files are compared with
+//! The order of `docs/plex/scanner/discovery.md` §2: each directory's media files are compared with
 //! the parts storage holds for it, and a directory whose files all match by name, size and
 //! modification time is skipped whole. Elsewhere a known path keeps its item (rewritten when
 //! the file changed), new files are grouped into items, and whatever was known below the

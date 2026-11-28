@@ -56,7 +56,7 @@ async fn get(app: &Router, uri: &str) -> Response {
 
 ## Spec-driven route coverage
 
-The cheapest high-value test in the project: walk `docs/openapi.json` and assert that every
+The cheapest high-value test in the project: walk `docs/plex/openapi.json` and assert that every
 operation resolves to a route. It fails the moment a spec path is missing or misspelled — a
 whole class of error that is otherwise found by a client months later.
 
@@ -85,7 +85,7 @@ async fn every_spec_operation_is_routed() {
 
 Two details that decide whether this test is useful or merely noisy. Path parameters must be
 filled with plausible sample values, since `{sectionId}` is not a URI — derive them from the
-parameter name and type. And the deferred operations from `docs/ENDPOINTS.md` need to be excluded
+parameter name and type. And the deferred operations from `docs/plex/ENDPOINTS.md` need to be excluded
 by an explicit list, so the test tracks real intent rather than failing on the 37 scanner
 endpoints that are out of scope on purpose.
 

@@ -1,5 +1,5 @@
 //! Stacking: the parts of one copy split across files (`cd1`, `pt2`, `1 of 2`), by the legacy
-//! rule the reference still follows (`docs/scanner/discovery.md` §4.4).
+//! rule the reference still follows (`docs/plex/scanner/discovery.md` §4.4).
 
 /// Files that make one copy, in part order, and the name they share when stacked.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -8,7 +8,7 @@
 //! Matching and ranking are the official API's: `search`, ranked by its score, the score the
 //! reference gives, and `searchTags`; a film or series shelf no title fills is filled through
 //! the people the term names (`searchCredits`), as the reference fills it. Each shelf is cut
-//! to `limit`. `docs/spec-gaps.md` lists the rules and where they stop.
+//! to `limit`. `docs/plex/spec-gaps.md` lists the rules and where they stop.
 
 use std::cmp::Reverse;
 use std::collections::HashMap;
