@@ -9,15 +9,19 @@ use klapz_core::files::RelativePath;
 use klapz_core::library::{
     checked_roots, is_language_tag, normalized_title, RootError, SectionKind,
 };
-use klapz_core::scan::{scan_section, BackgroundAnalysis, ScanRepository, ScanRequest, Scanner};
+use klapz_core::scan::{
+    scan_section, AnalysisTools, BackgroundAnalysis, ScanRepository, ScanRequest, Scanner,
+};
 use klapz_core::source_metadata::{match_library, MetadataSources, SourceMetadataError};
 use klapz_core::{LibraryRepository, SectionId};
 use klapz_db::repository::{create_library, NewLibrary};
 use klapz_db::{
-    DatabaseConnection, SqlLibraryRepository, SqlScanRepository, SqlSourceMetadataRepository,
+    DatabaseConnection, SqlLibraryRepository, SqlScanRepository, SqlSettingsRepository,
+    SqlSourceMetadataRepository,
 };
 
 use crate::analyzer::MediaReader;
+use crate::extracts::Extracts;
 use crate::files::LocalFiles;
 
 const LIBRARY_USAGE: &str =
@@ -88,13 +92,13 @@ pub async fn match_command(
     Ok(())
 }
 
-/// What a scan reads and writes with, for the server and the command line alike.
-/// What scans and the analysis of what they find need. One store for both, so that their
-/// writes take turns.
-pub fn scanning(
+/// What scans and the analysis of what they find need, for the server and the command line
+/// alike. One store for both, so that their writes take turns; what the analysis extracts is
+/// kept below `extracts`, whose unfinished work is removed first.
+pub async fn scanning(
     connection: &DatabaseConnection,
     library: Arc<dyn LibraryRepository>,
-    concurrency: usize,
+    extracts: &Path,
 ) -> (Scanner, BackgroundAnalysis) {
     let store: Arc<dyn ScanRepository> = Arc::new(SqlScanRepository::new(connection.clone()));
     let files: Arc<dyn LibraryFiles> = Arc::new(LocalFiles);
@@ -103,44 +107,19 @@ pub fn scanning(
         files: Arc::clone(&files),
         store: Arc::clone(&store),
     };
+    let extractor = Extracts::from_env(extracts.to_path_buf());
+    extractor.remove_leftovers().await;
     let analysis = BackgroundAnalysis::new(
         store,
         library,
         files,
-        Arc::new(MediaReader::from_env()),
-        concurrency,
+        AnalysisTools {
+            analyzer: Arc::new(MediaReader::from_env()),
+            extractor: Arc::new(extractor),
+            settings: Arc::new(SqlSettingsRepository::new(connection.clone())),
+        },
     );
     (scanner, analysis)
-}
-
-/// How many files the analysis reads at once: `KLAPZ_ANALYSIS_CONCURRENCY`, each a process
-/// reading a file, often over a network share.
-///
-/// # Errors
-///
-/// A value that is not a number from 1 to 16.
-pub fn analysis_concurrency() -> Result<usize, String> {
-    concurrency_from(std::env::var("KLAPZ_ANALYSIS_CONCURRENCY").ok().as_deref())
-}
-
-const DEFAULT_ANALYSIS_CONCURRENCY: usize = 2;
-const MAX_ANALYSIS_CONCURRENCY: usize = 16;
-
-fn concurrency_from(setting: Option<&str>) -> Result<usize, String> {
-    let Some(value) = setting else {
-        return Ok(DEFAULT_ANALYSIS_CONCURRENCY);
-    };
-    value
-        .trim()
-        .parse::<usize>()
-        .ok()
-        .filter(|count| (1..=MAX_ANALYSIS_CONCURRENCY).contains(count))
-        .ok_or_else(|| {
-            format!(
-                "KLAPZ_ANALYSIS_CONCURRENCY must be a number from 1 to {MAX_ANALYSIS_CONCURRENCY}, \
-                 not {value:?}"
-            )
-        })
 }
 
 /// `library add`: a library over directories of this machine, without serving.
@@ -208,6 +187,7 @@ pub async fn scan(
     connection: &DatabaseConnection,
     arguments: &[String],
     images: &Path,
+    extracts: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = arguments.iter();
     let section = arguments
@@ -235,7 +215,7 @@ pub async fn scan(
     };
     let library: Arc<dyn LibraryRepository> =
         Arc::new(SqlLibraryRepository::new(connection.clone()));
-    let (scanner, analysis) = scanning(connection, library, analysis_concurrency()?);
+    let (scanner, analysis) = scanning(connection, library, extracts).await;
     let request = ScanRequest {
         section,
         below,
@@ -249,9 +229,9 @@ pub async fn scan(
     // A server reads what a scan queued in the background; the command waits for it, so that
     // the library it leaves is read, what an earlier run left queued included.
     analysis.analyze_library(section).await?;
-    let read = scanner.store.analysis_progress(section).await?;
+    let read = analysis.progress(section).await?;
     println!(
-        "files {}, read {}, measured {}",
+        "files {}, read {}, complete {}",
         read.files, read.read, read.complete
     );
     // As the server's scans do: what was added is matched before the command ends.
@@ -312,19 +292,4 @@ fn log_report(report: &klapz_core::source_metadata::MatchReport) {
         failed = report.failed.len(),
         "matching complete"
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reads_two_files_at_once_unless_told_a_number_it_can_keep_to() {
-        assert_eq!(concurrency_from(None), Ok(2));
-        assert_eq!(concurrency_from(Some(" 4 ")), Ok(4));
-        assert_eq!(concurrency_from(Some("16")), Ok(16));
-        for refused in ["0", "17", "-1", "two", ""] {
-            assert!(concurrency_from(Some(refused)).is_err(), "{refused}");
-        }
-    }
 }

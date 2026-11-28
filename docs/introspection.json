@@ -7469,7 +7469,7 @@
             },
             {
               "name": "HEADERS_READ",
-              "description": "Its headers: tracks, codecs, and the durations and rates they declare. The rates\nmeasured over its packets are still to come.",
+              "description": "Its headers: tracks, codecs, and the durations and rates they declare. The rates\nmeasured over its packets are still to come, or not measured at all where the\n`analysis.deep` setting is off.",
               "isDeprecated": false,
               "deprecationReason": null
             },
@@ -10181,6 +10181,53 @@
               "deprecationReason": null
             },
             {
+              "name": "settings",
+              "description": "The settings the library may hold a value of its own for, such as the analysis it\ngives its files, each with the value in force for it: its own, else the server's. For\nthe server's owners only; empty for anyone else. Pages forward only, by position.",
+              "args": [
+                {
+                  "name": "namespace",
+                  "description": "Only the settings in this namespace: `analysis` lists `analysis.deep`. Absent, every setting a library may hold.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "after",
+                  "description": "Return settings after this cursor.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                },
+                {
+                  "name": "first",
+                  "description": "Return at most this many settings; 500 at most, and when absent.",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "LibrarySettingConnection",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "analysis",
               "description": "How far the library's files are read. Null for a kind this server does not scan.",
               "args": [],
@@ -11010,7 +11057,7 @@
             },
             {
               "name": "completeFileCount",
-              "description": "Those read to the end, or as far as they could be.",
+              "description": "Those whose headers are read and that have nothing left of what the library's settings\nturn on — packets measured, subtitles extracted, thumbnails made — or as far as it\ncould go.",
               "args": [],
               "type": {
                 "kind": "NON_NULL",
@@ -11519,6 +11566,255 @@
               "deprecationReason": null
             }
           ],
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "LibrarySetting",
+          "description": null,
+          "fields": [
+            {
+              "name": "key",
+              "description": "The setting's key, as `ServerSetting.key` names it, where the values it takes are\ndescribed. What `updateLibrarySettings` takes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "What it changes, in English.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "kind",
+              "description": "What values it takes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "ServerSettingKind",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "value",
+              "description": "The value in force for the library, in its canonical form: its own, else the server's.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "isInherited",
+              "description": "Whether the library holds no value of its own and follows the server's, which\n`serverValue` gives.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "serverValue",
+              "description": "The server's value, the one in force while the library holds none of its own.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "updatedAt",
+              "description": "When an owner last chose the library's own value. Null while it follows the server.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "DateTime",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "updatedBy",
+              "description": "The owner who last chose the library's own value. Null while it follows the server,\nand when that account is gone.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "User",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "LibrarySettingConnection",
+          "description": null,
+          "fields": [
+            {
+              "name": "pageInfo",
+              "description": "Information to aid in pagination.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "PageInfo",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "edges",
+              "description": "A list of edges.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "LibrarySettingEdge",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "nodes",
+              "description": "A list of nodes.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "LibrarySetting",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "LibrarySettingEdge",
+          "description": "An edge in a connection.",
+          "fields": [
+            {
+              "name": "node",
+              "description": "The item at the end of the edge",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "LibrarySetting",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "cursor",
+              "description": "A cursor for use in pagination",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "enumValues": null,
           "possibleTypes": null
         },
         {
@@ -15786,6 +16082,37 @@
                 "ofType": {
                   "kind": "OBJECT",
                   "name": "UpdateServerSettingsPayload",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "updateLibrarySettings",
+              "description": "Changes the values one library holds in place of the server's, all of them or none:\none refused, nothing changes. A null value makes the library follow the server again.\nOnly a setting whose `ServerSetting.perLibrary` is true is taken. For the server's\nowners only.",
+              "args": [
+                {
+                  "name": "input",
+                  "description": "The library and the settings to change.",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "UpdateLibrarySettingsInput",
+                      "ofType": null
+                    }
+                  },
+                  "defaultValue": null
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "UpdateLibrarySettingsPayload",
                   "ofType": null
                 }
               },
@@ -24070,6 +24397,22 @@
               "deprecationReason": null
             },
             {
+              "name": "perLibrary",
+              "description": "Whether a library may hold a value of its own, which it follows instead of this one:\nsee `Library.settings`.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "Boolean",
+                  "ofType": null
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
               "name": "value",
               "description": "The value in force, in its canonical form: a choice as listed, a number in decimal,\n`true` or `false`.",
               "args": [],
@@ -24338,6 +24681,18 @@
             {
               "name": "TOO_MANY_SETTINGS",
               "description": "More than 100 settings came in one change.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "SERVER_ONLY",
+              "description": "A library was given a value of a setting that is the server's alone:\n`ServerSetting.perLibrary` is false.",
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "LIBRARY_NOT_FOUND",
+              "description": "No library has this id.",
               "isDeprecated": false,
               "deprecationReason": null
             }
@@ -30218,6 +30573,146 @@
             }
           ],
           "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "INPUT_OBJECT",
+          "name": "UpdateLibrarySettingsInput",
+          "description": "A library's own values to change together.",
+          "fields": null,
+          "inputFields": [
+            {
+              "name": "clientMutationId",
+              "description": "Echoed back in the payload, for the client to match the two.",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "libraryId",
+              "description": "The library, as returned in `Library.id`.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              },
+              "defaultValue": null
+            },
+            {
+              "name": "settings",
+              "description": "Each setting at most once, 100 at most, each one whose `ServerSetting.perLibrary` is\ntrue. A null value makes the library follow the server's again.",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "INPUT_OBJECT",
+                      "name": "ServerSettingInput",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "defaultValue": null
+            }
+          ],
+          "interfaces": null,
+          "enumValues": null,
+          "possibleTypes": null
+        },
+        {
+          "kind": "OBJECT",
+          "name": "UpdateLibrarySettingsPayload",
+          "description": "What `updateLibrarySettings` did.",
+          "fields": [
+            {
+              "name": "clientMutationId",
+              "description": "The value the input carried.",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "library",
+              "description": "The library, as it now is. Null when nothing changed.",
+              "args": [],
+              "type": {
+                "kind": "OBJECT",
+                "name": "Library",
+                "ofType": null
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "settings",
+              "description": "The settings named, as the library now sees them, in the order asked. Empty when\nnothing changed.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "LibrarySetting",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "userErrors",
+              "description": "Why nothing changed: one setting refused, none is changed. Empty when all were.",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "ServerSettingUserError",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
           "enumValues": null,
           "possibleTypes": null
         },

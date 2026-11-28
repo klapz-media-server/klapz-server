@@ -175,11 +175,24 @@ without them saying so.
   cannot be read, such as `Recovery` at the top of a Windows drive, is passed over, and one whose
   listing fails stops the scan with its path in `Library.scanFailure`. A step of the walk that
   takes 30 seconds counts as a share that stopped answering. Each new, changed or forced file is
-  queued in storage (`media_analysis`), and `scan::BackgroundAnalysis` reads the queue through
-  `MediaAnalyzer`: every file's headers first (tracks, codecs, declared rates and durations,
-  chapters; a minute at most), then every file's packets (the deep analysis' measured rates and
-  span, written onto the same tracks, which keep their ids; ten minutes at most, the headers
-  standing when it cannot finish), `KLAPZ_ANALYSIS_CONCURRENCY` files at once. A player does not
+  queued in storage, one row per task left on it (`media_task`, `scan::MediaTask`), and
+  `scan::BackgroundAnalysis` works through the queue, one task per file at a time, each kind of
+  task in a pool of its own whose size is a server setting (`analysis.concurrency.headers`,
+  `.deep`, `.subtitles`, `.preview_thumbnails`: 2, 1, 1 and 1 by default, 1 to 16, read before
+  every round, a lowered one letting the tasks under way end): a file's headers first, through
+  `MediaAnalyzer` (tracks, codecs, declared rates and durations, chapters, the file's name,
+  size and hashes; a minute at most; always done), which queue what the file calls for — its
+  packets (the deep analysis' measured rates and span, written onto the same tracks, which keep
+  their ids; ten minutes at most, the headers standing when it cannot finish), its embedded
+  subtitle tracks when it has any, its seeking thumbnails when it has a video track. The last
+  two go through `MediaExtractor` and are kept on disk by the file's content hash, not in
+  storage (`server::extracts`, below `KLAPZ_EXTRACTS_DIR`: `{hash[..2]}/{hash}/subtitles/` and
+  `index-sd.bif`), made in a working directory and moved into place whole, so a content found
+  there is not made again, for any copy of the file; a file without a content hash is not
+  extracted. Each of the three is turned on and off by a setting, for the server and per
+  library (`analysis.deep`, `analysis.subtitles`, `analysis.preview_thumbnails`, all on by
+  default), read before every round: a task turned off stays queued and is done once it is
+  turned on, and a change wakes the queue (`ScanControl::settings_changed`). A player does not
   wait for the queue: `startStream` and `readMediaFile` read a file's headers at once. The queue
   outlives the process, a result read from a file that changed or went since is dropped, a
   library being walked is not read, and a scan and the analysis write in turn.
@@ -216,7 +229,13 @@ without them saying so.
   them: `Server.settings(namespace:)` is empty for anyone else, and `updateServerSettings`
   changes everything it names or nothing (at most 100 per change). A setting is read where it
   is used, at every use, so a change applies from the next one without a restart:
-  `server::streams` reads `transcoder.h264.preset` at every start. `general.*` holds what
+  `server::streams` reads `transcoder.h264.preset` at every start. A setting declared
+  `per_library` may also hold a value for one library (`library_setting`, keyed by library and
+  name, going with its library), which that library follows instead of the server's; one
+  holding none follows the server, and a null value in `updateLibrarySettings` makes it follow
+  again. Owners alone read and change them too (`Library.settings`, `LibrarySetting.isInherited`
+  and `serverValue`); a setting that is the server's alone is refused there (`SERVER_ONLY`).
+  `analysis.*` turns the analysis' optional tasks on and off. `general.*` holds what
   is the server's as a whole, such as `general.public_url`, the address it is reached at from
   outside its network. What reaches a child
   process is the engine's own value for it (`transcoder::plan::H264Preset`), never the stored
@@ -271,7 +290,7 @@ without them saying so.
   `preview_index` (the BIF, packed from ffmpeg's frames), `chapter_thumbs`, `artwork` — and reads
   their output into `klapz_scanner::report`. Every child is killed when the future running it is
   dropped: `server::analyzer` bounds a file's headers to a minute and its packets to ten, and
-  the analysis queue reads `KLAPZ_ANALYSIS_CONCURRENCY` files at once. Files it makes go
+  the analysis queue runs as many of each task at once as `analysis.concurrency.*` says. Files it makes go
   into a directory the server created and owns; it creates no directory, overwrites nothing,
   reaches no network and holds no state. A failure is the media's (recorded against the file),
   the tools' (no ffmpeg, or one that refuses `-probe`: the queue is held as it is until a scan
@@ -772,10 +791,10 @@ startup.
 | `KLAPZ_TRANSCODER` | `klapz-ffmpeg`, else `ffmpeg`, beside the executable (with `.exe` on Windows), else the `ffmpeg` on `PATH` (`klapz_scanner::transcoder`) | The patched ffmpeg that Direct Stream runs; its command lines use options a stock build lacks. Plex's sources rebuilt with its configuration, codecs included: `github.com/Maxou44/ffmpeg-plex` releases. A stream whose player chooses its rung needs `absolute_segments`, which cuts and numbers its segments on the media's timeline and its audio where each key frame is shown: v8.1.3-13 onward. A scan needs v8.1.3-21 onward for the MP4 layout, the MPEG-TS packet length, H.264's sequence header, Matroska's undetermined languages and fingerprints; an older build leaves them out. A file's hashes (`format.hashes`: the part's `content` hash and OpenSubtitles' `oshash`) need a build after v9.1-84; an older one stores none. A player given a picture subtitle (PGS, DVD, DVB) beside the stream rather than burned in, as TTML (`subtitleFormats: TTML`), needs v8.1.3-69 onward: its `imsc_image` encoder and muxer. A broadcast's teletext subtitles, given as text, need a build with libzvbi, whose ffprobe also prints the subtitle pages a scan stores (`teletext_pages`), the ones a stream carries undeclared in the releases after v9.1-84; an older one fails their extraction, and the player plays on without them. `files/Plex Transcoder.exe` also works for the rest, with the codecs below. |
 | `KLAPZ_TRANSCODER_FONTS` | `Resources/Fonts` beside the transcoder | The fonts burned-in subtitles are drawn with: a Plex install's, `files/Resources/Fonts` here. Without them, a burn answers `501`. |
 | `KLAPZ_FFPROBE` | `KLAPZ_TRANSCODER -probe` | The ffprobe a scan reads files with. ffmpeg-plex carries its own, run as `ffmpeg -probe` (first argument), from v8.1.3-15; with an older release or Plex's binary, a stock ffprobe. An ffmpeg that refuses `-probe` is named as such at startup and in the scan's failure, never taken for a corrupt file. |
-| `KLAPZ_ANALYSIS_CONCURRENCY` | `2` | Files the analysis reads at once, from 1 to 16: each a process reading a file, often over a network share. Another value stops the server. A player's own reads, which do not wait for the queue, are bounded apart, four at once. |
 | `KLAPZ_TRAY` | *(on, Windows only)* | `0` or `off` leaves the notification-area icon out. |
 | `KLAPZ_TMDB_TOKEN` | the project's, built in | TMDB's v4 read access token, sent as a bearer header. Built into `klapz-agents::credentials`, the repo owner's decision (`security.md`); a blank value keeps the built-in one. |
 | `KLAPZ_TVDB_API_KEY` | the project's, built in | TVDB's v4 key, built in likewise. |
+| `KLAPZ_EXTRACTS_DIR` | `extracts` beside an SQLite database's file, else beside the executable | Where the analysis keeps what it makes out of a file's content, by its content hash: `ab/{hash}/subtitles/stream-{track}.{ext}` and `ab/{hash}/index-sd.bif`. A content kept there is not extracted again; what an unfinished run left (`*.partial`) is removed at startup. |
 | `KLAPZ_IMAGES_DIR` | `images` beside an SQLite database's file, else beside the executable | Where provider images are kept, originals, `provider/ab/{sha256(url)}.{ext}`; served from there when the provider no longer is. |
 | `KLAPZ_TVDB_PIN` | *(none)* | A TVDB subscriber's PIN, which a user-supported key requires. Never built in. Startup logs which providers have a key and from where, never the key. |
 | `KLAPZ_TRANSCODER_CODECS` | *(none)* | Plex's separately distributed codecs (`%LOCALAPPDATA%/Plex Media Server/Codecs/<build>`), which Plex's own binary needs. The rebuilt one has them built in and needs none. |
@@ -1146,7 +1165,7 @@ Next, as the repo owner asked: the library shelves `/hubs/sections/{id}` still l
   `BackdropImageTags`, `ImageBlurHashes` and the series' images through `Parent…` fields, and
   `/Items/{id}/Images/{type}` scaled by its size parameters, served without a token only for a
   right `tag` (`security.md`). On the Plex surface `parentThumb`, `grandparentThumb` and
-  `grandparentArt` too. A series' theme music (migration `m0049`): a local `theme.*` file, else
+  `grandparentArt` too. A series' theme music (migration `m0051`): a local `theme.*` file, else
   Plex's theme service's, kept in the artwork store; `Show.theme` on the official API, `theme`,
   `parentTheme` and `grandparentTheme` on the Plex surface, served with `Range`. Not yet: season
   names and posters, TVDB's age ratings, collections, extras from providers.

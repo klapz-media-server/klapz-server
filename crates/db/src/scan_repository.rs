@@ -6,7 +6,7 @@
 //! and versions, files and tracks with an extra's.
 //!
 //! Removal leans on the foreign keys the migrations declare `ON DELETE CASCADE` (an item's
-//! indexes, tags, locks, history and extras; a file's tracks, track choices and place in the
+//! indexes, tags, locks, history and extras; a file's tracks, track choices and tasks in the
 //! analysis queue; a track's offsets and analysis), and deletes by hand what refers to an item
 //! without one: markers and the entries of collections, playlists and play queues. Watch state
 //! and ratings are keyed by `guid` and kept, as they are for every copy of a work.
@@ -19,12 +19,12 @@ use std::sync::Arc;
 
 use klapz_core::chapter::ChapterSource;
 use klapz_core::ids::{MediaId, PartId, RatingKey, SectionId};
-use klapz_core::metadata::{self, FileAnalysis};
+use klapz_core::metadata;
 use klapz_core::scan::{
-    AnalysisProgress, KnownPart, NewItem, NewMedia, NewPart, NewSidecar, QueueFilter, QueuedFile,
-    ScanError, ScanRepository, ShowKey, Stored,
+    AnalysisProgress, ContentHash, KnownPart, MediaTask, NewItem, NewMedia, NewPart, NewSidecar,
+    QueueFilter, QueuedFile, ScanError, ScanRepository, ShowKey, Stored, TaskSwitch,
 };
-use klapz_scanner::report::{Analysis, DeepAnalysis};
+use klapz_scanner::report::{Analysis, DeepAnalysis, TrackKind};
 use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection,
@@ -32,11 +32,11 @@ use sea_orm::{
     QuerySelect, RelationTrait, TransactionTrait,
 };
 
-use crate::entity::media_analysis::{HEADERS, PACKETS};
+use crate::entity::media_task::{HEADERS, PACKETS, PREVIEW_THUMBNAILS, SUBTITLES};
 use crate::entity::{
     collection, collection_entry, extra, extra_media, extra_track, item_chapter, item_marker,
-    library_section, media, media_analysis, media_part, media_stream, metadata_item,
-    part_side_stream, play_queue_entry, playlist_entry, stream_dolby_vision, track_choice,
+    library_section, media, media_part, media_stream, media_task, metadata_item, part_side_stream,
+    play_queue_entry, playlist_entry, stream_dolby_vision, track_choice,
 };
 use crate::{chapter_store, write};
 use analysis::MediaSummary;
@@ -264,37 +264,57 @@ impl ScanRepository for SqlScanRepository {
         limit: usize,
         filter: &QueueFilter,
     ) -> Result<Vec<QueuedFile>, ScanError> {
+        // A file holds a task of each kind at most: this many rows hold `limit` files, when
+        // the queue does.
+        let rows_held = limit.saturating_mul(MediaTask::ALL.len());
         let mut query = queued_query()
-            .order_by_asc(media_analysis::Column::Stage)
-            .order_by_asc(media_analysis::Column::QueuedAt)
-            .order_by_asc(media_analysis::Column::MediaPartId)
-            .limit(u64::try_from(limit).unwrap_or(u64::MAX));
+            .order_by_asc(media_task::Column::Task)
+            .order_by_asc(media_task::Column::QueuedAt)
+            .order_by_asc(media_task::Column::MediaPartId)
+            .limit(u64::try_from(rows_held).unwrap_or(u64::MAX));
         if let Some(section) = filter.section {
-            query = query.filter(media_analysis::Column::LibrarySectionId.eq(section.get()));
+            query = query.filter(media_task::Column::LibrarySectionId.eq(section.get()));
+        }
+        if let Some(task) = filter.task {
+            query = query.filter(media_task::Column::Task.eq(task_number(task)));
         }
         if !filter.busy.is_empty() {
             query = query.filter(
-                media_analysis::Column::MediaPartId
+                media_task::Column::MediaPartId
                     .is_not_in(filter.busy.iter().map(|part| part.get())),
             );
         }
         if !filter.held.is_empty() {
             query = query.filter(
-                media_analysis::Column::LibrarySectionId
+                media_task::Column::LibrarySectionId
                     .is_not_in(filter.held.iter().map(|section| section.get())),
             );
+        }
+        for switch in &filter.switches {
+            query = query.filter(taken_where_on(switch));
         }
         let rows: Vec<QueuedRow> = query
             .into_tuple()
             .all(&self.connection)
             .await
             .map_err(storage)?;
-        Ok(rows.into_iter().map(queued_file).collect())
+        // One task per file, its first: two at once would read the same file twice.
+        let mut files: Vec<QueuedFile> = Vec::with_capacity(limit);
+        for file in rows.into_iter().map(queued_file) {
+            if files.len() == limit {
+                break;
+            }
+            if !files.iter().any(|taken| taken.part == file.part) {
+                files.push(file);
+            }
+        }
+        Ok(files)
     }
 
     async fn queued_file(&self, part: PartId) -> Result<Option<QueuedFile>, ScanError> {
         let row: Option<QueuedRow> = queued_query()
-            .filter(media_analysis::Column::MediaPartId.eq(part.get()))
+            .filter(media_task::Column::MediaPartId.eq(part.get()))
+            .order_by_asc(media_task::Column::Task)
             .into_tuple()
             .one(&self.connection)
             .await
@@ -310,10 +330,7 @@ impl ScanRepository for SqlScanRepository {
     ) -> Result<Stored, ScanError> {
         let _writing = self.writes.lock().await;
         let transaction = self.connection.begin().await.map_err(storage)?;
-        let Some(mut stored) = still_queued(&transaction, file, HEADERS)
-            .await
-            .map_err(storage)?
-        else {
+        let Some(mut stored) = still_queued(&transaction, file).await.map_err(storage)? else {
             return Ok(Stored::Stale);
         };
 
@@ -351,15 +368,30 @@ impl ScanRepository for SqlScanRepository {
                 .await
                 .map_err(storage)?;
         }
-        if analysis.is_some() {
-            media_analysis::Entity::update_many()
-                .col_expr(media_analysis::Column::Stage, Expr::value(PACKETS))
-                .filter(media_analysis::Column::MediaPartId.eq(stored.id))
-                .exec(&transaction)
+        dequeue(&transaction, file.part, HEADERS)
+            .await
+            .map_err(storage)?;
+        if let Some(analysis) = analysis {
+            let follow = following_tasks(analysis);
+            let rows = follow.iter().map(|task| media_task::ActiveModel {
+                media_part_id: ActiveValue::Set(file.part.get()),
+                task: ActiveValue::Set(*task),
+                library_section_id: ActiveValue::Set(file.section.get()),
+                queued_at: ActiveValue::Set(now),
+            });
+            media_task::Entity::insert_many(rows)
+                .on_conflict(
+                    OnConflict::columns([
+                        media_task::Column::MediaPartId,
+                        media_task::Column::Task,
+                    ])
+                    .do_nothing()
+                    .to_owned(),
+                )
+                .do_nothing()
+                .exec_without_returning(&transaction)
                 .await
                 .map_err(storage)?;
-        } else {
-            dequeue(&transaction, file.part).await.map_err(storage)?;
         }
         transaction.commit().await.map_err(storage)?;
         Ok(Stored::Written)
@@ -373,10 +405,7 @@ impl ScanRepository for SqlScanRepository {
     ) -> Result<Stored, ScanError> {
         let _writing = self.writes.lock().await;
         let transaction = self.connection.begin().await.map_err(storage)?;
-        let Some(mut stored) = still_queued(&transaction, file, PACKETS)
-            .await
-            .map_err(storage)?
-        else {
+        let Some(mut stored) = still_queued(&transaction, file).await.map_err(storage)? else {
             return Ok(Stored::Stale);
         };
         if let Some(measured) = measured {
@@ -389,12 +418,35 @@ impl ScanRepository for SqlScanRepository {
             .await
             .map_err(storage)?;
         }
-        dequeue(&transaction, file.part).await.map_err(storage)?;
+        dequeue(&transaction, file.part, PACKETS)
+            .await
+            .map_err(storage)?;
         transaction.commit().await.map_err(storage)?;
         Ok(Stored::Written)
     }
 
-    async fn analysis_progress(&self, section: SectionId) -> Result<AnalysisProgress, ScanError> {
+    async fn finish_task(&self, file: &QueuedFile) -> Result<Stored, ScanError> {
+        let _writing = self.writes.lock().await;
+        let transaction = self.connection.begin().await.map_err(storage)?;
+        if still_queued(&transaction, file)
+            .await
+            .map_err(storage)?
+            .is_none()
+        {
+            return Ok(Stored::Stale);
+        }
+        dequeue(&transaction, file.part, task_number(file.task))
+            .await
+            .map_err(storage)?;
+        transaction.commit().await.map_err(storage)?;
+        Ok(Stored::Written)
+    }
+
+    async fn analysis_progress(
+        &self,
+        section: SectionId,
+        counted: &[MediaTask],
+    ) -> Result<AnalysisProgress, ScanError> {
         let files = media_part::Entity::find()
             .join(JoinType::InnerJoin, media_part::Relation::Media.def())
             .join(JoinType::InnerJoin, media::Relation::MetadataItem.def())
@@ -402,28 +454,27 @@ impl ScanRepository for SqlScanRepository {
             .count(&self.connection)
             .await
             .map_err(storage)?;
-        let queued: Vec<(i32, i64)> = media_analysis::Entity::find()
-            .select_only()
-            .column(media_analysis::Column::Stage)
-            .column_as(media_analysis::Column::MediaPartId.count(), "files")
-            .filter(media_analysis::Column::LibrarySectionId.eq(section.get()))
-            .group_by(media_analysis::Column::Stage)
-            .into_tuple()
-            .all(&self.connection)
-            .await
-            .map_err(storage)?;
-        let at = |stage: i32| {
-            queued
-                .iter()
-                .filter(|(queued, _)| *queued == stage)
-                .map(|(_, count)| u64::try_from(*count).unwrap_or(0))
-                .sum::<u64>()
+        let left = |tasks: Vec<i32>| {
+            media_task::Entity::find()
+                .select_only()
+                .column(media_task::Column::MediaPartId)
+                .distinct()
+                .filter(media_task::Column::LibrarySectionId.eq(section.get()))
+                .filter(media_task::Column::Task.is_in(tasks))
+                .count(&self.connection)
         };
-        let read = files.saturating_sub(at(HEADERS));
+        let unread = left(vec![HEADERS]).await.map_err(storage)?;
+        let incomplete = left(
+            std::iter::once(HEADERS)
+                .chain(counted.iter().map(|task| task_number(*task)))
+                .collect(),
+        )
+        .await
+        .map_err(storage)?;
         Ok(AnalysisProgress {
             files,
-            read,
-            complete: read.saturating_sub(at(PACKETS)),
+            read: files.saturating_sub(unread),
+            complete: files.saturating_sub(incomplete),
         })
     }
 
@@ -1072,55 +1123,98 @@ fn summed(durations: impl Iterator<Item = Option<i64>>) -> Option<i64> {
         })
 }
 
-/// Queues files to be read from their headers, whatever was read of them before.
+const fn task_number(task: MediaTask) -> i32 {
+    match task {
+        MediaTask::Headers => HEADERS,
+        MediaTask::Packets => PACKETS,
+        MediaTask::Subtitles => SUBTITLES,
+        MediaTask::PreviewThumbnails => PREVIEW_THUMBNAILS,
+    }
+}
+
+fn task_of(number: i32) -> Option<MediaTask> {
+    MediaTask::ALL
+        .into_iter()
+        .find(|task| task_number(*task) == number)
+}
+
+/// What a file's headers call for once read: its packets measured, its subtitle tracks
+/// extracted when it has any, its thumbnails made when it has a video track that is not a
+/// cover.
+fn following_tasks(analysis: &Analysis) -> Vec<i32> {
+    let has = |kind: TrackKind| {
+        analysis
+            .tracks
+            .iter()
+            .any(|track| track.kind == kind && !track.disposition.attached_picture)
+    };
+    let mut tasks = vec![PACKETS];
+    if has(TrackKind::Subtitle) {
+        tasks.push(SUBTITLES);
+    }
+    if has(TrackKind::Video) {
+        tasks.push(PREVIEW_THUMBNAILS);
+    }
+    tasks
+}
+
+/// The rows of a task the queue may take: those of libraries where it is on.
+fn taken_where_on(switch: &TaskSwitch) -> Condition {
+    let other_task = media_task::Column::Task.ne(task_number(switch.task));
+    let except = switch.switch.except.iter().map(|section| section.get());
+    let section = media_task::Column::LibrarySectionId;
+    match (switch.switch.server, switch.switch.except.is_empty()) {
+        (true, true) => Condition::all(),
+        (true, false) => Condition::any()
+            .add(other_task)
+            .add(section.is_not_in(except)),
+        (false, true) => Condition::all().add(other_task),
+        (false, false) => Condition::any().add(other_task).add(section.is_in(except)),
+    }
+}
+
+/// Queues files to be read from their headers, in place of whatever was left on them.
 async fn queue<C: ConnectionTrait>(
     connection: &C,
     files: &[(i64, i64)],
     now: i64,
 ) -> Result<(), DbErr> {
     for chunk in files.chunks(BATCH / 4) {
-        let rows = chunk
-            .iter()
-            .map(|(part, section)| media_analysis::ActiveModel {
-                media_part_id: ActiveValue::Set(*part),
-                library_section_id: ActiveValue::Set(*section),
-                stage: ActiveValue::Set(HEADERS),
-                queued_at: ActiveValue::Set(now),
-            });
-        media_analysis::Entity::insert_many(rows)
-            .on_conflict(
-                OnConflict::column(media_analysis::Column::MediaPartId)
-                    .update_columns([
-                        media_analysis::Column::LibrarySectionId,
-                        media_analysis::Column::Stage,
-                        media_analysis::Column::QueuedAt,
-                    ])
-                    .to_owned(),
-            )
+        media_task::Entity::delete_many()
+            .filter(media_task::Column::MediaPartId.is_in(chunk.iter().map(|(part, _)| *part)))
+            .exec(connection)
+            .await?;
+        let rows = chunk.iter().map(|(part, section)| media_task::ActiveModel {
+            media_part_id: ActiveValue::Set(*part),
+            task: ActiveValue::Set(HEADERS),
+            library_section_id: ActiveValue::Set(*section),
+            queued_at: ActiveValue::Set(now),
+        });
+        media_task::Entity::insert_many(rows)
             .exec_without_returning(connection)
             .await?;
     }
     Ok(())
 }
 
-async fn dequeue<C: ConnectionTrait>(connection: &C, part: PartId) -> Result<(), DbErr> {
-    media_analysis::Entity::delete_by_id(part.get())
+async fn dequeue<C: ConnectionTrait>(connection: &C, part: PartId, task: i32) -> Result<(), DbErr> {
+    media_task::Entity::delete_by_id((part.get(), task))
         .exec(connection)
         .await?;
     Ok(())
 }
 
-/// The file, when it is still queued at `stage` and as it was when it was taken: a scan that
-/// found it changed has queued it again, and a read that finished first moved it on.
+/// The file, when its task is still queued and the file is as it was when the task was taken:
+/// a scan that found it changed has queued it again, and a run that finished first took the
+/// task off.
 async fn still_queued<C: ConnectionTrait>(
     connection: &C,
     file: &QueuedFile,
-    stage: i32,
 ) -> Result<Option<media_part::Model>, DbErr> {
-    let queued = media_analysis::Entity::find_by_id(file.part.get())
+    let queued = media_task::Entity::find_by_id((file.part.get(), task_number(file.task)))
         .one(connection)
         .await?
-        .is_some_and(|queued| queued.stage == stage);
+        .is_some();
     if !queued {
         return Ok(None);
     }
@@ -1132,38 +1226,46 @@ async fn still_queued<C: ConnectionTrait>(
         }))
 }
 
-/// Part, library, stage, path, size, time and duration of a queued file.
-type QueuedRow = (i64, i64, i32, String, Option<i64>, i64, Option<i64>);
+/// Part, library, task, path, size, time, duration and content hash of a queued task.
+type QueuedRow = (
+    i64,
+    i64,
+    i32,
+    String,
+    Option<i64>,
+    i64,
+    Option<i64>,
+    Option<String>,
+);
 
-fn queued_query() -> sea_orm::Select<media_analysis::Entity> {
-    media_analysis::Entity::find()
+fn queued_query() -> sea_orm::Select<media_task::Entity> {
+    media_task::Entity::find()
         .select_only()
-        .column(media_analysis::Column::MediaPartId)
-        .column(media_analysis::Column::LibrarySectionId)
-        .column(media_analysis::Column::Stage)
+        .column(media_task::Column::MediaPartId)
+        .column(media_task::Column::LibrarySectionId)
+        .column(media_task::Column::Task)
         .column(media_part::Column::Path)
         .column(media_part::Column::SizeBytes)
         .column(media_part::Column::UpdatedAt)
         .column(media_part::Column::DurationMs)
-        .join(
-            JoinType::InnerJoin,
-            media_analysis::Relation::MediaPart.def(),
-        )
+        .column(media_part::Column::ContentHash)
+        .join(JoinType::InnerJoin, media_task::Relation::MediaPart.def())
+        // A task a later version no longer knows is not taken.
+        .filter(media_task::Column::Task.is_in(MediaTask::ALL.map(task_number)))
 }
 
-fn queued_file((part, section, stage, path, size, modified_at, duration): QueuedRow) -> QueuedFile {
+fn queued_file(
+    (part, section, task, path, size, modified_at, duration, content_hash): QueuedRow,
+) -> QueuedFile {
     QueuedFile {
         part: PartId::new(part),
         section: SectionId::new(section),
         path,
         size: size.and_then(|size| u64::try_from(size).ok()).unwrap_or(0),
         modified_at,
-        analysis: if stage == HEADERS {
-            FileAnalysis::Pending
-        } else {
-            FileAnalysis::HeadersRead
-        },
+        task: task_of(task).unwrap_or(MediaTask::Headers),
         duration_ms: duration.and_then(|duration| u64::try_from(duration).ok()),
+        content_hash: content_hash.as_deref().and_then(ContentHash::parse),
     }
 }
 

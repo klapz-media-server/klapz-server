@@ -19,7 +19,8 @@ pub enum FileAnalysisType {
     /// Nothing yet: no track, codec or duration is known. Playing it reads its headers first.
     Pending,
     /// Its headers: tracks, codecs, and the durations and rates they declare. The rates
-    /// measured over its packets are still to come.
+    /// measured over its packets are still to come, or not measured at all where the
+    /// `analysis.deep` setting is off.
     HeadersRead,
     /// All there is to read, or all that could be read of it.
     Complete,
@@ -44,7 +45,9 @@ pub struct LibraryAnalysisObject {
     /// Those whose headers are read, measured or not: they show their tracks and durations,
     /// and play without waiting.
     pub read_file_count: i32,
-    /// Those read to the end, or as far as they could be.
+    /// Those whose headers are read and that have nothing left of what the library's settings
+    /// turn on — packets measured, subtitles extracted, thumbnails made — or as far as it
+    /// could go.
     pub complete_file_count: i32,
     /// Whether some of its files are being read now. False with files left to read when the
     /// analysis waits: for the library's scan, for its next one after `cancelLibraryScan`, or
