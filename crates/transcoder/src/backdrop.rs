@@ -5,7 +5,7 @@
 //! the one scoring best on lightness, saturation, its place in the palette and its distance
 //! from the corner chosen before it, in Okhsl ([`okhsl`]); it is then darkened to a ceiling and
 //! pushed out of the muddy middle saturations. The gradient blends the four over black, each
-//! by its distance to its corner. `docs/spec-gaps.md` has the measurements.
+//! by its distance to its corner. `docs/plex/spec-gaps.md` has the measurements.
 //!
 //! All of this is CPU work; the caller runs it off the async workers.
 

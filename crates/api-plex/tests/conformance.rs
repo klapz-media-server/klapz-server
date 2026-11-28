@@ -3,7 +3,7 @@
 //! These drive the real router with real requests and assert what a client actually reads:
 //! the status, the negotiated content type, and the exact encoding of each field. The
 //! expectations come from captures against a reference server (1.43.5), recorded in
-//! `docs/wire-format.md`.
+//! `docs/plex/wire-format.md`.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 

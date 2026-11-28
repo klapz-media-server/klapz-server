@@ -1,4 +1,4 @@
-"""Generate docs/ENDPOINTS.md from the Plex OpenAPI spec.
+"""Generate docs/plex/ENDPOINTS.md from the Plex OpenAPI spec.
 
 Re-runnable. Statuses split in two: `partial` and `done` record a judgement a human made
 and are carried over from the previous file, while `todo`, `stub` and `deferred` are derived
@@ -17,8 +17,8 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = ROOT / "docs" / "openapi.json"
-OUT = ROOT / "docs" / "ENDPOINTS.md"
+SPEC = ROOT / "docs" / "plex" / "openapi.json"
+OUT = ROOT / "docs" / "plex" / "ENDPOINTS.md"
 
 METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
 
@@ -193,7 +193,7 @@ IMPLEMENTED = frozenset(
 
 # Served by a real handler but absent from the spec, so the loop over the spec never sees them.
 # Status and notes are written here rather than carried over from the file, since there is no
-# spec row for the carry-over to key on. Each is described in docs/spec-gaps.md.
+# spec row for the carry-over to key on. Each is described in docs/plex/spec-gaps.md.
 OFF_SPEC = (
     (
         "partial",
@@ -219,7 +219,7 @@ OFF_SPEC = (
         "user",
         "A collection",
         "As `/library/metadata/{collectionId}` shows it: in the lookup form, with its library "
-        "and its locks. See spec-gaps.md.",
+        "and its locks. See plex/spec-gaps.md.",
     ),
     (
         "done",
@@ -228,7 +228,7 @@ OFF_SPEC = (
         "user",
         "Items in a collection",
         "The same answer as `/items`, which the spec declares: what Plex Web calls. See "
-        "spec-gaps.md.",
+        "plex/spec-gaps.md.",
     ),
     (
         "done",
@@ -246,7 +246,7 @@ OFF_SPEC = (
         "What a library, or every library of a kind, added lately",
         "`type=1` films by date added, ties by arrival; `type=2` a series library's grouped "
         "entries, at most 50; anything else empty. The spec names it only in examples. See "
-        "spec-gaps.md.",
+        "plex/spec-gaps.md.",
     ),
     (
         "done",
@@ -254,7 +254,7 @@ OFF_SPEC = (
         "/hubs/continueWatching/items",
         "user",
         "Every item of the home Continue Watching shelf",
-        "Films in progress and next episodes, newest first, with `includedAt`. See spec-gaps.md.",
+        "Films in progress and next episodes, newest first, with `includedAt`. See plex/spec-gaps.md.",
     ),
     (
         "done",
@@ -270,7 +270,7 @@ OFF_SPEC = (
         "/hubs/home/onDeck",
         "user",
         "The next episodes",
-        "Each series' episode, in progress or the one after the last watched; no films. See spec-gaps.md.",
+        "Each series' episode, in progress or the one after the last watched; no films. See plex/spec-gaps.md.",
     ),
     (
         "done",
@@ -297,7 +297,7 @@ OFF_SPEC = (
         "The choices of one filter",
         "Genres, countries, directors, writers, starring actors, producers, years, decades, "
         "content ratings, studios and resolutions, encoded as the reference encodes each. "
-        "No `None` rating. Windowed at 500. See `docs/spec-gaps.md`.",
+        "No `None` rating. Windowed at 500. See `docs/plex/spec-gaps.md`.",
     ),
     (
         "done",
@@ -317,7 +317,7 @@ OFF_SPEC = (
         "directors, genres and collections, each group best first, cut to `limit`; "
         "`searchTypes` honored as measured (`people` from the libraries the other values "
         "name). Gaps: the reference's fuzzy matching, and the title-ordered pool it ranks, "
-        "which we do not cut. See `docs/spec-gaps.md`.",
+        "which we do not cut. See `docs/plex/spec-gaps.md`.",
     ),
     (
         "done",
@@ -493,7 +493,7 @@ def main() -> None:
     lines = [
         "# Endpoints",
         "",
-        f"Implementation tracker for the {total} operations in `docs/openapi.json` "
+        f"Implementation tracker for the {total} operations in `docs/plex/openapi.json` "
         f"(Plex Media Server {spec['info']['version'].strip()}).",
         "",
         "**Generated** — regenerate with `python tools/gen_endpoints.py` after a spec update. "
@@ -543,7 +543,7 @@ def main() -> None:
     lines += [
         "## Outside the spec",
         "",
-        "Served, but absent from `docs/openapi.json` and therefore from the counts above.",
+        "Served, but absent from `docs/plex/openapi.json` and therefore from the counts above.",
         "",
         "| Status | Method | Path | Scope | Description | Notes |",
         "| --- | --- | --- | --- | --- | --- |",

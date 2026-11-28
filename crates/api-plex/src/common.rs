@@ -4,7 +4,7 @@
 //! any listing filter. One `common` element: the values every item shares, `mixedFields`
 //! naming those that differ, the tags every item carries and the fields every one locked.
 //! Measured on the reference's films, series and episodes; the rules are in
-//! `docs/spec-gaps.md`.
+//! `docs/plex/spec-gaps.md`.
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};

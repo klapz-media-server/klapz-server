@@ -38,7 +38,7 @@ OUT = ROOT / "crates" / "scanner" / "tests" / "fixtures" / "samples"
 MEDIA = (".mkv", ".mp4", ".m4v", ".avi", ".webm", ".flv", ".ts", ".m2ts", ".mpg", ".mov", ".wmv")
 
 # The reference shows the rates its deep analysis measured on these, the declared ones on the
-# rest, whose deep analysis a later normal one overwrote (docs/scanner/analysis.md, §2).
+# rest, whose deep analysis a later normal one overwrote (docs/plex/scanner/analysis.md, §2).
 MEASURED = {
     "anatole-latuile-s1e35-la-chasse-au-tresor",
     "devil-in-ohio-s01e07-par-le-sang-1080p-dv-hdr-x265-amen",

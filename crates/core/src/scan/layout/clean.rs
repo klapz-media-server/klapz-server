@@ -1,5 +1,5 @@
 //! `CleanName`: the title and year a file or folder name gives, as the reference reads them
-//! (`docs/scanner/discovery.md` §4.3).
+//! (`docs/plex/scanner/discovery.md` §4.3).
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
