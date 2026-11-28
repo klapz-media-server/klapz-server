@@ -1,4 +1,4 @@
-//! `.plexignore` (`docs/scanner/discovery.md` §3.3).
+//! `.plexignore` (`docs/plex/scanner/discovery.md` §3.3).
 
 use crate::files::RelativePath;
 

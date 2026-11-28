@@ -1,7 +1,7 @@
 //! Working through the tasks scans queue, in the background, a few files at a time: every
 //! file's headers before anything else. Headers take a fraction of a second and make a file
 //! playable and fully described; the rest reads a whole file each — its packets, which refine
-//! its rates and duration (`docs/scanner/analysis.md`, §1 and §2), its subtitle tracks, its
+//! its rates and duration (`docs/plex/scanner/analysis.md`, §1 and §2), its subtitle tracks, its
 //! seeking thumbnails (§4) — and is done where its setting is on, read before every round so
 //! that a change applies from the next file.
 //!

@@ -3,7 +3,7 @@
 //! What a client names in a `uri` is expanded here, as a play queue expands it, into the items
 //! the official API is handed; a smart playlist's library listing is translated into that
 //! API's filter. Everything kept, checked and counted is the official API's. The shapes are
-//! the reference's, measured on its test libraries (`docs/spec-gaps.md`).
+//! the reference's, measured on its test libraries (`docs/plex/spec-gaps.md`).
 //!
 //! The generator routes belong to the reference's optimizer, which keeps optimized versions
 //! as playlists of its own. Nothing here optimizes, so no such generator exists: they answer

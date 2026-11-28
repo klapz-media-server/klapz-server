@@ -642,7 +642,7 @@ struct GqlCharacter {
 /// `GET /library/sections/{sectionId}/firstCharacter` — the A–Z jump bar.
 ///
 /// Singular, and absent from the spec in that form: the spec declares
-/// `firstCharacters`, which 404s on a real server. See `docs/spec-gaps.md`.
+/// `firstCharacters`, which 404s on a real server. See `docs/plex/spec-gaps.md`.
 ///
 /// `type=` is required by the reference, which 404s without it. We accept its absence and
 /// bucket the library's top level, because answering the obvious question beats refusing it.
@@ -766,7 +766,7 @@ pub struct SearchParams {
 /// `GET /search` — one search box across every library.
 ///
 /// Absent from the spec, which declares only `/hubs/search`; the reference answers it, and it
-/// is what a client's search field calls. See `docs/spec-gaps.md`.
+/// is what a client's search field calls. See `docs/plex/spec-gaps.md`.
 async fn search(
     _caller: Caller,
     client: ClientIdentity,

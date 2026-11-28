@@ -5,7 +5,7 @@
 //! account avatars first. Library artwork is not served yet, so a relative source answers
 //! `501`.
 //!
-//! Measured on the reference; `docs/spec-gaps.md` has the rules.
+//! Measured on the reference; `docs/plex/spec-gaps.md` has the rules.
 
 use std::collections::HashMap;
 

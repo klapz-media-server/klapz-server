@@ -1,6 +1,6 @@
 //! Every operation the spec declares must resolve to a route.
 //!
-//! This is the cheapest high-value test in the project: it walks `docs/openapi.json` and
+//! This is the cheapest high-value test in the project: it walks `docs/plex/openapi.json` and
 //! checks that nothing answers `404`. A mistyped or forgotten path is otherwise found by a
 //! client months later, and the failure looks like "the app does not work" rather than "this
 //! route is missing".
@@ -176,8 +176,8 @@ fn substitute(parameter: &str) -> &'static str {
 }
 
 fn spec_operations() -> Vec<(Method, String)> {
-    let spec: Value =
-        serde_json::from_str(include_str!("../../../docs/openapi.json")).expect("the spec parses");
+    let spec: Value = serde_json::from_str(include_str!("../../../docs/plex/openapi.json"))
+        .expect("the spec parses");
     let paths = spec["paths"].as_object().expect("paths object");
 
     let mut operations = Vec::new();

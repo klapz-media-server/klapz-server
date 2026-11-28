@@ -3,7 +3,7 @@
 Design note for the next migration — the one that carries the library contents. **Not
 implemented yet**; this exists to be reviewed before 2 million rows are committed to a shape.
 
-Derived from the real Plex schema in `docs/plex-db-schema.md` and from measurements against the
+Derived from the real Plex schema in `docs/plex/db-schema.md` and from measurements against the
 reference library: 204,388 metadata items, 244,078 media, 244,092 parts, 947,346 streams.
 
 ## What Plex gets right, and we keep

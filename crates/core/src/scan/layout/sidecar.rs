@@ -1,5 +1,5 @@
 //! Which subtitle files belong to a media file, and what their names say
-//! (`docs/scanner/discovery.md` §3.2).
+//! (`docs/plex/scanner/discovery.md` §3.2).
 
 use super::{classify, split_extension, FileClass, SidecarMatch};
 use crate::language::LanguageTag;

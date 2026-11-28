@@ -4,7 +4,7 @@
 //! What a client names in a `uri` is expanded here into the items the official API is
 //! handed, and a smart collection's library listing translated into that API's filter, as
 //! for playlists. Everything kept, checked and counted is the official API's. The shapes are
-//! the reference's, measured on its test libraries (`docs/spec-gaps.md`).
+//! the reference's, measured on its test libraries (`docs/plex/spec-gaps.md`).
 //!
 //! The reference draws a collection's poster from its items' (`composite`); we publish the
 //! address it publishes and draw nothing, as artwork is not served yet. The reference itself

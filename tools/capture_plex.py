@@ -4,7 +4,7 @@ Produces two things from the same captures:
 
   captures/           raw XML and JSON bodies plus response headers. NOT committed: they
                       carry library content, file paths and the token used to fetch them.
-  docs/wire-format.md the per-field type map and element-name table. Safe to commit —
+  docs/plex/wire-format.md the per-field type map and element-name table. Safe to commit —
                       field names and types only, never values.
 
 Credentials come from the environment so no token is ever written into the repo:
@@ -28,7 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CAPTURES = ROOT / "captures"
-OUT = ROOT / "docs" / "wire-format.md"
+OUT = ROOT / "docs" / "plex" / "wire-format.md"
 
 BASE = os.environ.get("PLEX_URL", "http://127.0.0.1:32400").rstrip("/")
 TOKEN = os.environ.get("PLEX_TOKEN")

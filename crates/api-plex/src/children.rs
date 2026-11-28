@@ -3,7 +3,7 @@
 //!
 //! Neither is in the spec, and both are how every client opens a series: the seasons of a
 //! show, the episodes of a season, and the episodes of a show as one list. See
-//! `docs/spec-gaps.md`.
+//! `docs/plex/spec-gaps.md`.
 //!
 //! The two containers differ more than the items in them. `/children` describes the parent
 //! being opened — its title, year, synopsis, and for a season the series above it — because

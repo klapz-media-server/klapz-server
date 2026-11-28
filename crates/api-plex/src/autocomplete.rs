@@ -5,7 +5,7 @@
 //! `/all` lists them with `title.queryRange` added; a tag field completes the tags the
 //! library's items carry, as `Directory` entries. Both read the official API: a listing
 //! filtered with `ItemFilterInput.titleCompletion`, and `Library.tags(completing:)`. The rule
-//! is `core::completion`'s, measured on the reference and listed in `docs/spec-gaps.md`.
+//! is `core::completion`'s, measured on the reference and listed in `docs/plex/spec-gaps.md`.
 
 use async_graphql::{Name, Value, Variables};
 use axum::extract::{Path, Query, State};

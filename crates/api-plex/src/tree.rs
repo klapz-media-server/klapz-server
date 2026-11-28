@@ -3,7 +3,7 @@
 //!
 //! What the reference writes is its own rows nearly as stored: `MetadataItem`, `MediaItem`,
 //! `MediaPart` and `MediaStream`, a track's analysis as the raw keys it keeps them under. The
-//! rules below were measured on its films, series, seasons and episodes (`docs/spec-gaps.md`).
+//! rules below were measured on its films, series, seasons and episodes (`docs/plex/spec-gaps.md`).
 //!
 //! - The path takes a list, and exactly one of its numbers must name something: two known
 //!   numbers, even twice the same, answer `404`, as does none. Unknown numbers are dropped.

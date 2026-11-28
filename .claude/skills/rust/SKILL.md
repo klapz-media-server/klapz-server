@@ -6,7 +6,7 @@ description: Rust conventions for klapz, an Axum server reimplementing the Plex 
 # Rust in klapz
 
 klapz reimplements the Plex Media Server API: ~260 HTTP operations described by the official
-spec in `docs/openapi.json`. The dominant risk in this project is surface area — 260 handlers
+spec in `docs/plex/openapi.json`. The dominant risk in this project is surface area — 260 handlers
 written without discipline become an unreadable mass where every bug costs three times over.
 
 This skill exists for a specific reason, stated by the repo owner: the code must not read as
@@ -300,7 +300,7 @@ isolation.
 Mount the router and drive real requests with `tower::ServiceExt::oneshot`, without opening a
 socket. Two complementary forms:
 
-- a test parameterized by `docs/openapi.json` asserting that no expected operation answers
+- a test parameterized by `docs/plex/openapi.json` asserting that no expected operation answers
   `404` — it fails the moment a route from the spec is missing, which is exactly what you want
   during the skeleton phase;
 - per implemented endpoint, assertions on the status, the negotiated `Content-Type`, and the
