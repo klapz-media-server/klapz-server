@@ -1,10 +1,17 @@
-//! Reading the files scans queued, in the background, a few at a time: every file's headers
-//! before any file's packets. Headers take a fraction of a second and make a file playable and
-//! fully described; packets take as long as the whole file takes to read, and only refine its
-//! rates and duration (`docs/plex/scanner/analysis.md`, §1 and §2).
+//! Working through the tasks scans queue, in the background, a few files at a time: every
+//! file's headers before anything else. Headers take a fraction of a second and make a file
+//! playable and fully described; the rest reads a whole file each — its packets, which refine
+//! its rates and duration (`docs/plex/scanner/analysis.md`, §1 and §2), its subtitle tracks, its
+//! seeking thumbnails (§4) — and is done where its setting is on, read before every round so
+//! that a change applies from the next file.
 //!
-//! The queue is storage's, so it outlives the process: what a stopped server did not read is
-//! read when it starts again.
+//! Each kind of task runs as many files at once as its setting says
+//! (`analysis.concurrency.*`), apart from the others: a long measurement holds no slot of the
+//! headers, so a new library is described while the last one is still being read. A file has
+//! one task done at a time.
+//!
+//! The queue is storage's, so it outlives the process: what a stopped server did not do is
+//! done when it starts again. A task turned off stays queued, and is done once turned on.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -16,12 +23,12 @@ use tokio::task::{AbortHandle, JoinHandle};
 use crate::files::{FileLocation, LibraryFiles};
 use crate::ids::{PartId, SectionId};
 use crate::library::LibraryRepository;
-use crate::metadata::FileAnalysis;
 use crate::now_epoch;
 use crate::scan::{
-    AnalysisProgress, AnalyzeError, MediaAnalyzer, QueueFilter, QueuedFile, ScanError,
-    ScanRepository, Stored,
+    AnalysisProgress, AnalyzeError, Extraction, MediaAnalyzer, MediaExtractor, MediaTask,
+    QueueFilter, QueuedFile, ScanError, ScanRepository, Stored, TaskSwitch,
 };
+use crate::settings::{self, SettingsRepository};
 
 /// Reads a player asks for at once, besides the queue's: a viewer does not wait behind a
 /// measurement that reads a whole film, and a client cannot start more than this many.
@@ -30,7 +37,15 @@ const ON_DEMAND: usize = 4;
 /// How long the queue waits after storage failed to hand it files.
 const STORAGE_RETRY: Duration = Duration::from_secs(30);
 
-/// Reads what scans queue; one per server, cheap to clone.
+/// What the queue reads files and settings with.
+#[derive(Debug, Clone)]
+pub struct AnalysisTools {
+    pub analyzer: Arc<dyn MediaAnalyzer>,
+    pub extractor: Arc<dyn MediaExtractor>,
+    pub settings: Arc<dyn SettingsRepository>,
+}
+
+/// Works through what scans queue; one per server, cheap to clone.
 #[derive(Debug, Clone)]
 pub struct BackgroundAnalysis {
     shared: Arc<Shared>,
@@ -41,8 +56,7 @@ struct Shared {
     store: Arc<dyn ScanRepository>,
     library: Arc<dyn LibraryRepository>,
     files: Arc<dyn LibraryFiles>,
-    analyzer: Arc<dyn MediaAnalyzer>,
-    concurrency: usize,
+    tools: AnalysisTools,
     state: Mutex<State>,
     wake: Notify,
     on_demand: Semaphore,
@@ -63,33 +77,31 @@ struct State {
 #[derive(Debug)]
 struct Busy {
     section: SectionId,
+    work: MediaTask,
     task: AbortHandle,
 }
 
-/// What reading one file came to.
+/// What working on one file came to.
 enum Outcome {
-    /// Stored as far as it was read, or found read already or changed: this read is over.
+    /// Stored as far as it went, or found done already or changed: this task is over.
     Done,
-    /// Nothing was written; the file stays queued as it was.
+    /// Nothing was written; the task stays queued as it was.
     Left,
 }
 
 impl BackgroundAnalysis {
-    /// `concurrency` files are read at once, at least one.
     pub fn new(
         store: Arc<dyn ScanRepository>,
         library: Arc<dyn LibraryRepository>,
         files: Arc<dyn LibraryFiles>,
-        analyzer: Arc<dyn MediaAnalyzer>,
-        concurrency: usize,
+        tools: AnalysisTools,
     ) -> Self {
         Self {
             shared: Arc::new(Shared {
                 store,
                 library,
                 files,
-                analyzer,
-                concurrency: concurrency.max(1),
+                tools,
                 state: Mutex::default(),
                 wake: Notify::new(),
                 on_demand: Semaphore::new(ON_DEMAND),
@@ -97,7 +109,8 @@ impl BackgroundAnalysis {
         }
     }
 
-    /// Reads the queue as long as the server runs, starting with what a stopped one left.
+    /// Works through the queue as long as the server runs, starting with what a stopped one
+    /// left.
     pub fn spawn(&self) -> JoinHandle<()> {
         let analysis = self.clone();
         tokio::spawn(async move {
@@ -106,7 +119,8 @@ impl BackgroundAnalysis {
         })
     }
 
-    /// Reads one library's queue to its end, outside a server.
+    /// Works through one library's queue to its end, outside a server: what its settings
+    /// turn off is left queued.
     ///
     /// # Errors
     ///
@@ -115,38 +129,51 @@ impl BackgroundAnalysis {
         self.run(Some(section)).await
     }
 
-    /// The loop that takes files off the queue. One runs per instance: wake-ups go to one
+    /// The loop that takes tasks off the queue. One runs per instance: wake-ups go to one
     /// waiter.
     async fn run(&self, scope: Option<SectionId>) -> Result<(), ScanError> {
         loop {
             let woken = self.shared.wake.notified();
-            let (free, filter) = {
-                let state = self.shared.lock();
-                if let (Some(reason), Some(_)) = (&state.unavailable, scope) {
-                    return Err(ScanError::AnalyzerUnavailable(reason.clone()));
+            let settings = match self.shared.round_settings().await {
+                Ok(settings) => settings,
+                Err(error) => {
+                    tracing::error!(%error, "cannot read the analysis settings");
+                    tokio::time::sleep(STORAGE_RETRY).await;
+                    continue;
                 }
-                let free = if state.unavailable.is_some() {
-                    0
-                } else {
-                    self.shared.concurrency.saturating_sub(state.busy.len())
-                };
-                let filter = QueueFilter {
-                    section: scope,
-                    busy: state.busy.keys().copied().collect(),
-                    held: state
-                        .walking
-                        .iter()
-                        .chain(state.paused.keys())
-                        .copied()
-                        .collect(),
-                };
-                (free, filter)
             };
             let mut taken = 0;
-            if free > 0 {
+            for (work, limit) in MediaTask::ALL.into_iter().zip(settings.limits) {
+                let (free, filter) = {
+                    let state = self.shared.lock();
+                    if let (Some(reason), Some(_)) = (&state.unavailable, scope) {
+                        return Err(ScanError::AnalyzerUnavailable(reason.clone()));
+                    }
+                    if state.unavailable.is_some() {
+                        break;
+                    }
+                    let running = state.busy.values().filter(|busy| busy.work == work).count();
+                    let filter = QueueFilter {
+                        section: scope,
+                        task: Some(work),
+                        // Read again for each task: what the one before started is busy now.
+                        busy: state.busy.keys().copied().collect(),
+                        held: state
+                            .walking
+                            .iter()
+                            .chain(state.paused.keys())
+                            .copied()
+                            .collect(),
+                        switches: settings.switches.clone(),
+                    };
+                    (limit.saturating_sub(running), filter)
+                };
+                if free == 0 {
+                    continue;
+                }
                 match self.shared.store.queued_files(free, &filter).await {
                     Ok(files) => {
-                        taken = files.len();
+                        taken += files.len();
                         for file in files {
                             self.start(file);
                         }
@@ -154,7 +181,7 @@ impl BackgroundAnalysis {
                     Err(error) => {
                         tracing::error!(%error, "cannot read the analysis queue");
                         tokio::time::sleep(STORAGE_RETRY).await;
-                        continue;
+                        break;
                     }
                 }
             }
@@ -171,7 +198,7 @@ impl BackgroundAnalysis {
     fn start(&self, file: QueuedFile) {
         let shared = Arc::clone(&self.shared);
         let mut state = self.shared.lock();
-        let (part, section) = (file.part, file.section);
+        let (part, section, work) = (file.part, file.section, file.task);
         // Spawned under the lock, so that the task, which removes its entry as it ends, cannot
         // end before the entry is there.
         let task = tokio::spawn(async move {
@@ -179,14 +206,20 @@ impl BackgroundAnalysis {
                 shared: Arc::clone(&shared),
                 part,
             };
-            if let Err(error) = shared.read(&file).await {
-                tracing::error!(path = %file.path, %error, "cannot store the file's analysis");
+            if let Err(error) = shared.work(&file).await {
+                tracing::error!(
+                    path = %file.path,
+                    task = ?file.task,
+                    %error,
+                    "cannot store what a file's task came to"
+                );
             }
         });
         state.busy.insert(
             part,
             Busy {
                 section,
+                work,
                 task: task.abort_handle(),
             },
         );
@@ -202,17 +235,22 @@ impl BackgroundAnalysis {
         let Some(file) = self.shared.store.queued_file(part).await? else {
             return Ok(true);
         };
-        if file.analysis != FileAnalysis::Pending {
+        if file.task != MediaTask::Headers {
             return Ok(true);
         }
         let Ok(_permit) = self.shared.on_demand.acquire().await else {
             return Ok(false);
         };
         // The queue may be reading it too: whichever stores first is kept, the other is stale.
-        Ok(match self.shared.read(&file).await? {
+        Ok(match self.shared.work(&file).await? {
             Outcome::Done => true,
             Outcome::Left => false,
         })
+    }
+
+    /// A setting changed: what it turned on is taken at once.
+    pub(crate) fn settings_changed(&self) {
+        self.shared.wake.notify_one();
     }
 
     /// Holds the library's files while a scan walks it.
@@ -256,8 +294,22 @@ impl BackgroundAnalysis {
             .or_else(|| state.paused.get(&section).cloned().flatten())
     }
 
-    pub(crate) async fn progress(&self, section: SectionId) -> Result<AnalysisProgress, ScanError> {
-        self.shared.store.analysis_progress(section).await
+    /// How far the library's files are, counting the tasks its settings turn on.
+    ///
+    /// # Errors
+    ///
+    /// Storage's failure.
+    pub async fn progress(&self, section: SectionId) -> Result<AnalysisProgress, ScanError> {
+        let counted: Vec<MediaTask> = self
+            .shared
+            .switches()
+            .await
+            .map_err(|error| ScanError::Storage(Box::new(error)))?
+            .into_iter()
+            .filter(|switch| switch.switch.is_on(section))
+            .map(|switch| switch.task)
+            .collect();
+        self.shared.store.analysis_progress(section, &counted).await
     }
 }
 
@@ -266,8 +318,36 @@ impl Shared {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Reads what is left of one file and stores it.
-    async fn read(&self, file: &QueuedFile) -> Result<Outcome, ScanError> {
+    /// What a round of the queue follows: how many of each task may run, in
+    /// [`MediaTask::ALL`]'s order, and where each optional one is on.
+    async fn round_settings(&self) -> Result<RoundSettings, settings::SettingsError> {
+        let definitions = MediaTask::ALL.map(MediaTask::concurrency);
+        let limits = settings::values_of(self.tools.settings.as_ref(), &definitions)
+            .await?
+            .iter()
+            .map(|value| value.parse::<usize>().unwrap_or(1).max(1))
+            .collect();
+        Ok(RoundSettings {
+            limits,
+            switches: self.switches().await?,
+        })
+    }
+
+    async fn switches(&self) -> Result<Vec<TaskSwitch>, settings::SettingsError> {
+        let (tasks, definitions): (Vec<MediaTask>, Vec<_>) = MediaTask::OPTIONAL
+            .into_iter()
+            .filter_map(|task| Some((task, task.setting()?)))
+            .unzip();
+        let switches = settings::switches(self.tools.settings.as_ref(), &definitions).await?;
+        Ok(tasks
+            .into_iter()
+            .zip(switches)
+            .map(|(task, switch)| TaskSwitch { task, switch })
+            .collect())
+    }
+
+    /// Does the file's task and stores what it came to.
+    async fn work(&self, file: &QueuedFile) -> Result<Outcome, ScanError> {
         let location = match self.locate(file).await {
             Ok(location) => location,
             Err(reason) => {
@@ -276,9 +356,10 @@ impl Shared {
             }
         };
         let now = now_epoch();
-        let stored = match file.analysis {
-            FileAnalysis::Pending => {
-                let analysis = match self.analyzer.read_headers(&location).await {
+        let analyzer = &self.tools.analyzer;
+        let stored = match file.task {
+            MediaTask::Headers => {
+                let analysis = match analyzer.read_headers(&location).await {
                     Ok(analysis) => Some(analysis),
                     Err(error) if self.leaves_queued(file, &error) => return Ok(Outcome::Left),
                     Err(_) => None,
@@ -287,8 +368,8 @@ impl Shared {
                     .store_headers(file, analysis.as_ref(), now)
                     .await?
             }
-            FileAnalysis::HeadersRead => {
-                let measured = match self.analyzer.measure(&location, file.duration_ms).await {
+            MediaTask::Packets => {
+                let measured = match analyzer.measure(&location, file.duration_ms).await {
                     Ok(measured) => Some(measured),
                     Err(error) if self.leaves_queued(file, &error) => return Ok(Outcome::Left),
                     Err(_) => None,
@@ -297,7 +378,12 @@ impl Shared {
                     .store_measurement(file, measured.as_ref(), now)
                     .await?
             }
-            FileAnalysis::Complete => return Ok(Outcome::Done),
+            MediaTask::Subtitles | MediaTask::PreviewThumbnails => {
+                if let Outcome::Left = self.extract(file, &location).await {
+                    return Ok(Outcome::Left);
+                }
+                self.store.finish_task(file).await?
+            }
         };
         if stored == Stored::Written {
             self.count_change(file).await?;
@@ -305,8 +391,41 @@ impl Shared {
         Ok(Outcome::Done)
     }
 
-    /// Whether a failed read leaves the file queued — for its library's next scan, or for
-    /// tools that can run — rather than stored as far as it was read.
+    /// Makes the task's files, unless they are kept already. A failure that is the file's
+    /// alone ends the task, as a measurement that cannot finish does.
+    async fn extract(&self, file: &QueuedFile, location: &FileLocation) -> Outcome {
+        let Some(hash) = &file.content_hash else {
+            // An ffmpeg-plex too old to state it: a forced scan with a newer one reads it.
+            tracing::warn!(
+                path = %file.path,
+                task = ?file.task,
+                "no content hash to keep the extracted files by"
+            );
+            return Outcome::Done;
+        };
+        let extractor = &self.tools.extractor;
+        let extracted = if file.task == MediaTask::Subtitles {
+            extractor.extract_subtitles(location, hash).await
+        } else {
+            extractor.generate_preview_thumbnails(location, hash).await
+        };
+        match extracted {
+            Ok(extraction) => {
+                tracing::debug!(
+                    path = %file.path,
+                    task = ?file.task,
+                    kept_already = extraction == Extraction::AlreadyKept,
+                    "file extracted"
+                );
+                Outcome::Done
+            }
+            Err(error) if self.leaves_queued(file, &error) => Outcome::Left,
+            Err(_) => Outcome::Done,
+        }
+    }
+
+    /// Whether a failure leaves the task queued — for its library's next scan, or for tools
+    /// that can run — rather than over as far as it went.
     fn leaves_queued(&self, file: &QueuedFile, error: &AnalyzeError) -> bool {
         match error {
             AnalyzeError::Unavailable(reason) => {
@@ -319,11 +438,11 @@ impl Shared {
                 true
             }
             AnalyzeError::Unreadable(reason) => {
-                tracing::warn!(path = %file.path, %reason, "file is not readable as media");
+                tracing::warn!(path = %file.path, task = ?file.task, %reason, "file is not readable as media");
                 false
             }
             error @ AnalyzeError::Failed(_) => {
-                tracing::error!(path = %file.path, %error, "media analysis failed");
+                tracing::error!(path = %file.path, task = ?file.task, %error, "media analysis failed");
                 false
             }
         }
@@ -360,24 +479,38 @@ impl Shared {
 
     /// Counts a change of the library once a round of reading it is over — every file's
     /// headers, then every file's packets — rather than once per file: listings show what
-    /// the headers give, and a client refreshes them on each change.
+    /// the headers give, and a client refreshes them on each change. What is extracted shows
+    /// in no listing.
     async fn count_change(&self, file: &QueuedFile) -> Result<(), ScanError> {
-        let progress = self.store.analysis_progress(file.section).await?;
-        let round_over = match file.analysis {
-            FileAnalysis::Pending => progress.read == progress.files,
-            _ => progress.complete == progress.files,
+        let round_over = match file.task {
+            MediaTask::Headers => {
+                let progress = self.store.analysis_progress(file.section, &[]).await?;
+                progress.read == progress.files
+            }
+            MediaTask::Packets => {
+                let progress = self
+                    .store
+                    .analysis_progress(file.section, &[MediaTask::Packets])
+                    .await?;
+                progress.complete == progress.files
+            }
+            MediaTask::Subtitles | MediaTask::PreviewThumbnails => false,
         };
         if round_over {
             self.store.contents_changed(file.section).await?;
             tracing::info!(
                 section = file.section.get(),
-                files = progress.files,
-                measured = progress.complete == progress.files,
+                task = ?file.task,
                 "library files read"
             );
         }
         Ok(())
     }
+}
+
+struct RoundSettings {
+    limits: Vec<usize>,
+    switches: Vec<TaskSwitch>,
 }
 
 impl State {
@@ -421,27 +554,30 @@ mod tests {
     use klapz_scanner::report::{Analysis, DeepAnalysis, FileIdentity};
 
     use crate::files::{Directory, DirectoryListing, Entry, FilesError, RelativePath};
-    use crate::ids::RatingKey;
+    use crate::ids::{RatingKey, UserId};
     use crate::library::{LibrarySection, SectionKind, SectionRoot};
-    use crate::scan::{KnownPart, NewItem, NewPart};
-    use crate::testing::InMemoryLibrary;
+    use crate::scan::{ContentHash, KnownPart, NewItem, NewPart};
+    use crate::settings::SettingUpdate;
+    use crate::testing::{InMemoryLibrary, InMemorySettings};
 
     const FILMS: SectionId = SectionId::new(1);
     const SERIES: SectionId = SectionId::new(2);
+    const HASH: &str = "0123456789abcdef0123456789abcdef01234567";
 
-    /// A queue in memory: each file's state, and what was stored for it.
+    /// A queue in memory: one entry per task left on a file, and what was stored.
     #[derive(Debug, Default)]
     struct Queue {
-        files: Mutex<Vec<QueuedFile>>,
+        tasks: Mutex<Vec<QueuedFile>>,
         headers: Mutex<Vec<(PartId, bool)>>,
         measured: Mutex<Vec<(PartId, bool)>>,
+        finished: Mutex<Vec<(PartId, MediaTask)>>,
         changes: Mutex<Vec<SectionId>>,
     }
 
     impl Queue {
         fn with(files: &[(i64, SectionId)]) -> Self {
             Self {
-                files: Mutex::new(
+                tasks: Mutex::new(
                     files
                         .iter()
                         .map(|(part, section)| QueuedFile {
@@ -450,8 +586,9 @@ mod tests {
                             path: format!("/media/{part}.mkv"),
                             size: 100,
                             modified_at: 10,
-                            analysis: FileAnalysis::Pending,
+                            task: MediaTask::Headers,
                             duration_ms: None,
+                            content_hash: None,
                         })
                         .collect(),
                 ),
@@ -459,22 +596,27 @@ mod tests {
             }
         }
 
-        fn state(&self, part: i64) -> FileAnalysis {
-            self.files
+        /// The tasks left on a file, in the queue's order.
+        fn left(&self, part: i64) -> Vec<MediaTask> {
+            let mut left: Vec<MediaTask> = self
+                .tasks
                 .lock()
                 .unwrap()
                 .iter()
-                .find(|file| file.part.get() == part)
-                .map_or(FileAnalysis::Complete, |file| file.analysis)
+                .filter(|queued| queued.part.get() == part)
+                .map(|queued| queued.task)
+                .collect();
+            left.sort();
+            left
         }
 
-        /// The file as storage holds it, against what the read started from.
-        fn current(&self, file: &QueuedFile) -> Option<usize> {
-            self.files
-                .lock()
-                .unwrap()
-                .iter()
-                .position(|queued| queued == file)
+        fn take(&self, file: &QueuedFile) -> bool {
+            let mut tasks = self.tasks.lock().unwrap();
+            let Some(index) = tasks.iter().position(|queued| queued == file) else {
+                return false;
+            };
+            tasks.remove(index);
+            true
         }
     }
 
@@ -503,13 +645,18 @@ mod tests {
             file: NewPart,
             _now: i64,
         ) -> Result<(), ScanError> {
-            for queued in self.files.lock().unwrap().iter_mut() {
-                if queued.part == part {
-                    queued.size = file.size;
-                    queued.modified_at = file.modified_at;
-                    queued.analysis = FileAnalysis::Pending;
-                }
-            }
+            let mut tasks = self.tasks.lock().unwrap();
+            let Some(first) = tasks.iter().find(|queued| queued.part == part).cloned() else {
+                return Ok(());
+            };
+            tasks.retain(|queued| queued.part != part);
+            tasks.push(QueuedFile {
+                size: file.size,
+                modified_at: file.modified_at,
+                task: MediaTask::Headers,
+                content_hash: None,
+                ..first
+            });
             Ok(())
         }
 
@@ -535,28 +682,43 @@ mod tests {
             limit: usize,
             filter: &QueueFilter,
         ) -> Result<Vec<QueuedFile>, ScanError> {
-            let mut files: Vec<QueuedFile> = self
-                .files
+            let mut tasks: Vec<QueuedFile> = self
+                .tasks
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|file| filter.section.is_none_or(|section| section == file.section))
-                .filter(|file| !filter.busy.contains(&file.part))
-                .filter(|file| !filter.held.contains(&file.section))
+                .filter(|queued| {
+                    filter
+                        .section
+                        .is_none_or(|section| section == queued.section)
+                })
+                .filter(|queued| filter.task.is_none_or(|task| task == queued.task))
+                .filter(|queued| !filter.busy.contains(&queued.part))
+                .filter(|queued| !filter.held.contains(&queued.section))
+                .filter(|queued| {
+                    filter
+                        .switches
+                        .iter()
+                        .filter(|switch| switch.task == queued.task)
+                        .all(|switch| switch.switch.is_on(queued.section))
+                })
                 .cloned()
                 .collect();
-            files.sort_by_key(|file| file.analysis != FileAnalysis::Pending);
-            files.truncate(limit);
-            Ok(files)
+            tasks.sort_by_key(|queued| queued.task);
+            let mut parts = HashSet::new();
+            tasks.retain(|queued| parts.insert(queued.part));
+            tasks.truncate(limit);
+            Ok(tasks)
         }
 
         async fn queued_file(&self, part: PartId) -> Result<Option<QueuedFile>, ScanError> {
             Ok(self
-                .files
+                .tasks
                 .lock()
                 .unwrap()
                 .iter()
-                .find(|file| file.part == part)
+                .filter(|queued| queued.part == part)
+                .min_by_key(|queued| queued.task)
                 .cloned())
         }
 
@@ -566,14 +728,27 @@ mod tests {
             analysis: Option<&Analysis>,
             _now: i64,
         ) -> Result<Stored, ScanError> {
-            let Some(index) = self.current(file) else {
+            if !self.take(file) {
                 return Ok(Stored::Stale);
-            };
-            let mut files = self.files.lock().unwrap();
-            if analysis.is_some() {
-                files[index].analysis = FileAnalysis::HeadersRead;
-            } else {
-                files.remove(index);
+            }
+            if let Some(analysis) = analysis {
+                let follow = |task| QueuedFile {
+                    task,
+                    content_hash: analysis
+                        .file
+                        .content_hash
+                        .as_deref()
+                        .and_then(ContentHash::parse),
+                    ..file.clone()
+                };
+                self.tasks.lock().unwrap().extend(
+                    [
+                        MediaTask::Packets,
+                        MediaTask::Subtitles,
+                        MediaTask::PreviewThumbnails,
+                    ]
+                    .map(follow),
+                );
             }
             self.headers
                 .lock()
@@ -588,10 +763,9 @@ mod tests {
             measured: Option<&DeepAnalysis>,
             _now: i64,
         ) -> Result<Stored, ScanError> {
-            let Some(index) = self.current(file) else {
+            if !self.take(file) {
                 return Ok(Stored::Stale);
-            };
-            self.files.lock().unwrap().remove(index);
+            }
             self.measured
                 .lock()
                 .unwrap()
@@ -599,22 +773,34 @@ mod tests {
             Ok(Stored::Written)
         }
 
+        async fn finish_task(&self, file: &QueuedFile) -> Result<Stored, ScanError> {
+            if !self.take(file) {
+                return Ok(Stored::Stale);
+            }
+            self.finished.lock().unwrap().push((file.part, file.task));
+            Ok(Stored::Written)
+        }
+
         async fn analysis_progress(
             &self,
             section: SectionId,
+            counted: &[MediaTask],
         ) -> Result<AnalysisProgress, ScanError> {
-            let files = self.files.lock().unwrap();
-            let of = |state: FileAnalysis| {
-                files
+            let tasks = self.tasks.lock().unwrap();
+            let left = |of: &dyn Fn(MediaTask) -> bool| {
+                tasks
                     .iter()
-                    .filter(|file| file.section == section && file.analysis == state)
-                    .count() as u64
+                    .filter(|queued| queued.section == section && of(queued.task))
+                    .map(|queued| queued.part)
+                    .collect::<HashSet<_>>()
+                    .len() as u64
             };
-            let (pending, measuring) = (of(FileAnalysis::Pending), of(FileAnalysis::HeadersRead));
+            let unread = left(&|task| task == MediaTask::Headers);
+            let incomplete = left(&|task| task == MediaTask::Headers || counted.contains(&task));
             Ok(AnalysisProgress {
                 files: 10,
-                read: 10 - pending,
-                complete: 10 - pending - measuring,
+                read: 10 - unread,
+                complete: 10 - incomplete,
             })
         }
 
@@ -632,6 +818,8 @@ mod tests {
         reads: Mutex<Vec<(String, &'static str)>>,
         gate: Option<Arc<Notify>>,
         failing: Option<fn() -> AnalyzeError>,
+        /// What the headers state as the file's content hash.
+        hash: Option<&'static str>,
     }
 
     impl Reader {
@@ -653,13 +841,17 @@ mod tests {
             }
         }
 
-        fn steps(&self, step: &str) -> usize {
+        fn steps(&self) -> Vec<&'static str> {
             self.reads
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|(_, done)| *done == step)
-                .count()
+                .map(|(_, step)| *step)
+                .collect()
+        }
+
+        fn count(&self, step: &str) -> usize {
+            self.steps().iter().filter(|done| **done == step).count()
         }
     }
 
@@ -671,7 +863,7 @@ mod tests {
                 file: FileIdentity {
                     size: 100,
                     modified_at: 10,
-                    content_hash: None,
+                    content_hash: self.hash.map(str::to_owned),
                     open_subtitles_hash: None,
                 },
                 container: "matroska,webm".to_owned(),
@@ -698,6 +890,29 @@ mod tests {
                 bitrate: 8000,
                 tracks: Vec::new(),
             })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MediaExtractor for Reader {
+        async fn extract_subtitles(
+            &self,
+            file: &FileLocation,
+            hash: &ContentHash,
+        ) -> Result<Extraction, AnalyzeError> {
+            assert_eq!(hash.as_str(), HASH);
+            self.read(file, "subtitles").await?;
+            Ok(Extraction::Written)
+        }
+
+        async fn generate_preview_thumbnails(
+            &self,
+            file: &FileLocation,
+            hash: &ContentHash,
+        ) -> Result<Extraction, AnalyzeError> {
+            assert_eq!(hash.as_str(), HASH);
+            self.read(file, "thumbnails").await?;
+            Ok(Extraction::Written)
         }
     }
 
@@ -782,18 +997,56 @@ mod tests {
         )
     }
 
-    fn analysis(
+    fn analysis_with(
         queue: &Arc<Queue>,
         reader: &Arc<Reader>,
-        concurrency: usize,
+        settings: &Arc<InMemorySettings>,
     ) -> BackgroundAnalysis {
         BackgroundAnalysis::new(
             Arc::clone(queue) as Arc<dyn ScanRepository>,
             library(),
             Arc::new(Disk),
-            Arc::clone(reader) as Arc<dyn MediaAnalyzer>,
-            concurrency,
+            AnalysisTools {
+                analyzer: Arc::clone(reader) as Arc<dyn MediaAnalyzer>,
+                extractor: Arc::clone(reader) as Arc<dyn MediaExtractor>,
+                settings: Arc::clone(settings) as Arc<dyn SettingsRepository>,
+            },
         )
+    }
+
+    fn analysis(queue: &Arc<Queue>, reader: &Arc<Reader>) -> BackgroundAnalysis {
+        analysis_with(queue, reader, &Arc::new(InMemorySettings::default()))
+    }
+
+    /// Settings under which each task runs these many files at once, in [`MediaTask::ALL`]'s
+    /// order.
+    async fn running(limits: [u32; 4]) -> Arc<InMemorySettings> {
+        let settings = Arc::new(InMemorySettings::default());
+        let updates: Vec<SettingUpdate> = MediaTask::ALL
+            .into_iter()
+            .zip(limits)
+            .map(|(task, limit)| SettingUpdate {
+                key: task.concurrency().key.to_owned(),
+                value: Some(limit.to_string()),
+            })
+            .collect();
+        settings::update_settings(settings.as_ref(), &updates, UserId::new(1), 0)
+            .await
+            .unwrap()
+            .unwrap();
+        settings
+    }
+
+    /// One file at a time, whatever the task.
+    async fn one_at_a_time(queue: &Arc<Queue>, reader: &Arc<Reader>) -> BackgroundAnalysis {
+        analysis_with(queue, reader, &running([1; 4]).await)
+    }
+
+    fn turn(key: &str, on: bool) -> SettingUpdate {
+        SettingUpdate {
+            key: key.to_owned(),
+            value: Some(on.to_string()),
+        }
     }
 
     /// Lets the tasks spawned so far run until they wait.
@@ -804,52 +1057,232 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reads_every_files_headers_before_any_files_packets() {
+    async fn does_every_task_of_every_file_one_task_of_a_file_at_a_time() {
         let queue = Arc::new(Queue::with(&[(1, FILMS), (2, FILMS), (3, FILMS)]));
-        let reader = Arc::new(Reader::default());
-        analysis(&queue, &reader, 1)
+        let reader = Arc::new(Reader {
+            hash: Some(HASH),
+            ..Reader::default()
+        });
+        one_at_a_time(&queue, &reader)
+            .await
             .analyze_library(FILMS)
             .await
             .unwrap();
 
-        let steps: Vec<&str> = reader
-            .reads
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(_, step)| *step)
-            .collect();
-        assert_eq!(
-            steps,
-            ["headers", "headers", "headers", "packets", "packets", "packets"]
+        let reads = reader.reads.lock().unwrap().clone();
+        for part in 1..=3 {
+            let steps: Vec<&str> = reads
+                .iter()
+                .filter(|(path, _)| *path == format!("/media/{part}.mkv"))
+                .map(|(_, step)| *step)
+                .collect();
+            assert_eq!(steps.len(), 4, "{steps:?}");
+            assert_eq!(steps[0], "headers", "what follows comes once they are read");
+            for step in ["packets", "subtitles", "thumbnails"] {
+                assert!(steps.contains(&step), "{step} of {part}: {steps:?}");
+            }
+        }
+        assert!(
+            reader.most.load(Ordering::SeqCst) <= 4,
+            "one of each kind at most"
         );
-        assert!(queue.files.lock().unwrap().is_empty());
+        assert!(queue.tasks.lock().unwrap().is_empty());
         assert_eq!(
             *queue.changes.lock().unwrap(),
             [FILMS, FILMS],
-            "one change when every header is read, one when every packet is"
+            "one change when every header is read, one when every packet is; none for what \
+             is extracted"
         );
     }
 
     #[tokio::test]
-    async fn reads_no_more_files_at_once_than_it_is_given() {
-        let files: Vec<(i64, SectionId)> = (1..=6).map(|part| (part, FILMS)).collect();
-        let queue = Arc::new(Queue::with(&files));
+    async fn a_task_turned_off_stays_queued_and_is_done_once_turned_on() {
+        let queue = Arc::new(Queue::with(&[(1, FILMS), (2, SERIES)]));
+        let reader = Arc::new(Reader {
+            hash: Some(HASH),
+            ..Reader::default()
+        });
+        let settings = Arc::new(InMemorySettings::default());
+        let owner = UserId::new(1);
+        // Off for the server, on again for the series; thumbnails off for the films alone.
+        settings::update_settings(
+            settings.as_ref(),
+            &[turn(settings::DEEP_ANALYSIS.key, false)],
+            owner,
+            1,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        settings::update_library_settings(
+            settings.as_ref(),
+            SERIES,
+            &[turn(settings::DEEP_ANALYSIS.key, true)],
+            owner,
+            1,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        settings::update_library_settings(
+            settings.as_ref(),
+            FILMS,
+            &[turn(settings::PREVIEW_THUMBNAILS.key, false)],
+            owner,
+            1,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let analysis = analysis_with(&queue, &reader, &settings);
+
+        analysis.analyze_library(FILMS).await.unwrap();
+        assert_eq!(reader.steps(), ["headers", "subtitles"]);
+        assert_eq!(
+            queue.left(1),
+            [MediaTask::Packets, MediaTask::PreviewThumbnails]
+        );
+        let progress = analysis.progress(FILMS).await.unwrap();
+        assert_eq!(
+            (progress.read, progress.complete),
+            (10, 10),
+            "what is off does not count as left"
+        );
+
+        analysis.analyze_library(SERIES).await.unwrap();
+        assert!(queue.left(2).is_empty(), "everything is on for the series");
+
+        settings::update_settings(
+            settings.as_ref(),
+            &[turn(settings::DEEP_ANALYSIS.key, true)],
+            owner,
+            2,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        analysis.analyze_library(FILMS).await.unwrap();
+        assert_eq!(queue.left(1), [MediaTask::PreviewThumbnails]);
+        assert_eq!(
+            *queue.measured.lock().unwrap(),
+            [(PartId::new(2), true), (PartId::new(1), true)]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_file_whose_content_hash_is_unknown_is_not_extracted() {
+        let queue = Arc::new(Queue::with(&[(1, FILMS)]));
+        let reader = Arc::new(Reader::default());
+        analysis(&queue, &reader)
+            .analyze_library(FILMS)
+            .await
+            .unwrap();
+        assert_eq!(reader.steps(), ["headers", "packets"]);
+        assert_eq!(
+            *queue.finished.lock().unwrap(),
+            [
+                (PartId::new(1), MediaTask::Subtitles),
+                (PartId::new(1), MediaTask::PreviewThumbnails)
+            ],
+            "nothing to keep them by: the tasks end"
+        );
+    }
+
+    #[tokio::test]
+    async fn turning_a_task_on_wakes_the_queue() {
+        let queue = Arc::new(Queue::with(&[(1, FILMS)]));
+        let reader = Arc::new(Reader {
+            hash: Some(HASH),
+            ..Reader::default()
+        });
+        let settings = Arc::new(InMemorySettings::default());
+        let owner = UserId::new(1);
+        settings::update_settings(
+            settings.as_ref(),
+            &[turn(settings::SUBTITLE_EXTRACTION.key, false)],
+            owner,
+            1,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let analysis = analysis_with(&queue, &reader, &settings);
+        let worker = analysis.spawn();
+        settle().await;
+        assert_eq!(queue.left(1), [MediaTask::Subtitles]);
+
+        settings::update_settings(
+            settings.as_ref(),
+            &[turn(settings::SUBTITLE_EXTRACTION.key, true)],
+            owner,
+            2,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        analysis.settings_changed();
+        settle().await;
+        assert!(queue.left(1).is_empty());
+        worker.abort();
+    }
+
+    #[tokio::test]
+    async fn each_task_runs_no_more_files_at_once_than_its_setting_says() {
+        // Six files to read, six to extract subtitles from, six to make thumbnails of.
+        let queue = Arc::new(Queue::with(&[]));
+        let tasks = [
+            MediaTask::Headers,
+            MediaTask::Subtitles,
+            MediaTask::PreviewThumbnails,
+        ];
+        for (part, task) in (1..=18).zip(tasks.iter().flat_map(|task| [*task; 6])) {
+            queue.tasks.lock().unwrap().push(QueuedFile {
+                part: PartId::new(part),
+                section: FILMS,
+                path: format!("/media/{part}.mkv"),
+                size: 100,
+                modified_at: 10,
+                task,
+                duration_ms: None,
+                content_hash: ContentHash::parse(HASH),
+            });
+        }
         let gate = Arc::new(Notify::new());
         let reader = Arc::new(Reader {
             gate: Some(Arc::clone(&gate)),
+            hash: Some(HASH),
             ..Reader::default()
         });
-        let analysis = analysis(&queue, &reader, 2);
+        let analysis = analysis_with(&queue, &reader, &running([2, 1, 4, 1]).await);
         let worker = analysis.spawn();
         settle().await;
-        assert_eq!(reader.running.load(Ordering::SeqCst), 2);
-        for _ in 0..40 {
+        assert_eq!(reader.count("headers"), 2);
+        assert_eq!(reader.count("subtitles"), 4);
+        assert_eq!(reader.count("thumbnails"), 1);
+
+        // Lowered while they run: those under way end, and no more start.
+        settings::update_settings(
+            analysis.shared.tools.settings.as_ref(),
+            &[SettingUpdate {
+                key: settings::SUBTITLE_EXTRACTION_CONCURRENCY.key.to_owned(),
+                value: Some("1".to_owned()),
+            }],
+            UserId::new(1),
+            1,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        analysis.settings_changed();
+        gate.notify_waiters();
+        settle().await;
+        assert_eq!(reader.count("subtitles"), 5, "one more, where four ended");
+
+        for _ in 0..80 {
             gate.notify_waiters();
             settle().await;
         }
-        assert_eq!(reader.most.load(Ordering::SeqCst), 2);
-        assert!(queue.files.lock().unwrap().is_empty());
+        assert!(queue.tasks.lock().unwrap().is_empty());
         worker.abort();
     }
 
@@ -857,7 +1290,7 @@ mod tests {
     async fn a_library_being_walked_or_paused_is_not_read() {
         let queue = Arc::new(Queue::with(&[(1, FILMS), (2, SERIES)]));
         let reader = Arc::new(Reader::default());
-        let analysis = analysis(&queue, &reader, 2);
+        let analysis = analysis(&queue, &reader);
         analysis.walking(FILMS);
         analysis.pause(SERIES);
         let worker = analysis.spawn();
@@ -866,17 +1299,17 @@ mod tests {
 
         analysis.walked(FILMS);
         settle().await;
-        assert_eq!(queue.state(1), FileAnalysis::Complete);
+        assert!(queue.left(1).is_empty());
         assert_eq!(
-            queue.state(2),
-            FileAnalysis::Pending,
+            queue.left(2),
+            [MediaTask::Headers],
             "paused until its next scan"
         );
 
         analysis.walking(SERIES);
         analysis.walked(SERIES);
         settle().await;
-        assert_eq!(queue.state(2), FileAnalysis::Complete);
+        assert!(queue.left(2).is_empty());
         worker.abort();
     }
 
@@ -888,7 +1321,7 @@ mod tests {
             gate: Some(Arc::clone(&gate)),
             ..Reader::default()
         });
-        let analysis = analysis(&queue, &reader, 2);
+        let analysis = analysis(&queue, &reader);
         let worker = analysis.spawn();
         settle().await;
         assert!(analysis.reads(FILMS));
@@ -897,7 +1330,7 @@ mod tests {
         settle().await;
         assert!(!analysis.reads(FILMS));
         assert!(analysis.reads(SERIES), "another library goes on");
-        assert_eq!(queue.state(1), FileAnalysis::Pending);
+        assert_eq!(queue.left(1), [MediaTask::Headers]);
         assert!(queue.headers.lock().unwrap().is_empty());
         worker.abort();
     }
@@ -910,7 +1343,7 @@ mod tests {
             gate: Some(Arc::clone(&gate)),
             ..Reader::default()
         });
-        let analysis = analysis(&queue, &reader, 1);
+        let analysis = analysis(&queue, &reader);
         let worker = analysis.spawn();
         settle().await;
 
@@ -930,7 +1363,7 @@ mod tests {
             .unwrap();
         gate.notify_waiters();
         settle().await;
-        assert_eq!(reader.steps("headers"), 2, "read again, as it now is");
+        assert_eq!(reader.count("headers"), 2, "read again, as it now is");
         gate.notify_waiters();
         settle().await;
         assert_eq!(
@@ -948,12 +1381,12 @@ mod tests {
             failing: Some(|| AnalyzeError::Unreadable("invalid data".to_owned())),
             ..Reader::default()
         });
-        analysis(&queue, &reader, 1)
+        analysis(&queue, &reader)
             .analyze_library(FILMS)
             .await
             .unwrap();
         assert_eq!(*queue.headers.lock().unwrap(), [(PartId::new(1), false)]);
-        assert_eq!(queue.state(1), FileAnalysis::Complete);
+        assert!(queue.left(1).is_empty());
     }
 
     #[tokio::test]
@@ -963,14 +1396,14 @@ mod tests {
             failing: Some(|| AnalyzeError::Unavailable("no ffprobe".to_owned())),
             ..Reader::default()
         });
-        let analysis = analysis(&queue, &reader, 1);
+        let analysis = one_at_a_time(&queue, &reader).await;
         let stopped = analysis.analyze_library(FILMS).await;
         assert!(
             matches!(&stopped, Err(ScanError::AnalyzerUnavailable(reason)) if reason == "no ffprobe"),
             "{stopped:?}"
         );
-        assert_eq!(reader.steps("headers"), 1, "the next file is not tried");
-        assert_eq!(queue.files.lock().unwrap().len(), 2);
+        assert_eq!(reader.count("headers"), 1, "the next file is not tried");
+        assert_eq!(queue.tasks.lock().unwrap().len(), 2);
         assert_eq!(analysis.failure(FILMS).as_deref(), Some("no ffprobe"));
 
         // A scan's start tries again.
@@ -985,11 +1418,11 @@ mod tests {
             failing: Some(|| AnalyzeError::Unreachable("no such file".to_owned())),
             ..Reader::default()
         });
-        let analysis = analysis(&queue, &reader, 1);
+        let analysis = one_at_a_time(&queue, &reader).await;
         analysis.analyze_library(FILMS).await.unwrap();
-        assert_eq!(reader.steps("headers"), 1);
+        assert_eq!(reader.count("headers"), 1);
         assert_eq!(
-            queue.files.lock().unwrap().len(),
+            queue.tasks.lock().unwrap().len(),
             3,
             "nothing is taken off the queue"
         );
@@ -1001,11 +1434,11 @@ mod tests {
     async fn a_player_has_a_files_headers_read_at_once() {
         let queue = Arc::new(Queue::with(&[(1, FILMS), (2, FILMS)]));
         let reader = Arc::new(Reader::default());
-        let analysis = analysis(&queue, &reader, 1);
+        let analysis = analysis(&queue, &reader);
         // No worker runs: the read is the player's own.
         assert!(analysis.read_now(PartId::new(2)).await.unwrap());
-        assert_eq!(queue.state(2), FileAnalysis::HeadersRead);
-        assert_eq!(queue.state(1), FileAnalysis::Pending);
+        assert_eq!(queue.left(2)[0], MediaTask::Packets);
+        assert_eq!(queue.left(1), [MediaTask::Headers]);
 
         assert!(
             analysis.read_now(PartId::new(2)).await.unwrap(),
@@ -1015,7 +1448,7 @@ mod tests {
             analysis.read_now(PartId::new(9)).await.unwrap(),
             "not queued"
         );
-        assert_eq!(reader.steps("headers"), 1);
+        assert_eq!(reader.count("headers"), 1);
     }
 
     #[tokio::test]
@@ -1025,10 +1458,29 @@ mod tests {
             failing: Some(|| AnalyzeError::Unreachable("no such file".to_owned())),
             ..Reader::default()
         });
-        assert!(!analysis(&queue, &reader, 1)
+        assert!(!analysis(&queue, &reader)
             .read_now(PartId::new(1))
             .await
             .unwrap());
-        assert_eq!(queue.state(1), FileAnalysis::Pending);
+        assert_eq!(queue.left(1), [MediaTask::Headers]);
+    }
+
+    #[test]
+    fn a_content_hash_is_forty_hex_digits_and_nothing_else() {
+        assert_eq!(
+            ContentHash::parse(&HASH.to_ascii_uppercase())
+                .unwrap()
+                .as_str(),
+            HASH
+        );
+        for refused in [
+            "",
+            "../../etc",
+            &HASH[1..],
+            &format!("{HASH}0"),
+            &HASH.replace('a', "g"),
+        ] {
+            assert!(ContentHash::parse(refused).is_none(), "{refused}");
+        }
     }
 }

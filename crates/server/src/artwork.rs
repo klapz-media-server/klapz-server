@@ -1,7 +1,6 @@
 //! Where provider images are kept, the artwork store as matching keeps them through it, and
 //! `/artwork/…`, where the official API's `ItemImage.url` points.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -80,29 +79,6 @@ async fn serve(
     }
 }
 
-/// The images directory: `KLAPZ_IMAGES_DIR`, else `images` beside an `SQLite` database's file,
-/// else beside the executable. Beside the database rather than the binary, so that a rebuild or
-/// a `cargo clean` does not take the images with it.
-pub fn images_directory(database_url: &str) -> PathBuf {
-    if let Some(configured) = std::env::var_os("KLAPZ_IMAGES_DIR").filter(|v| !v.is_empty()) {
-        return PathBuf::from(configured);
-    }
-    let database_file = database_url
-        .strip_prefix("sqlite:")
-        .map(|rest| rest.trim_start_matches("//"))
-        .map(|rest| rest.split_once('?').map_or(rest, |(path, _)| path))
-        .filter(|path| !path.is_empty() && !path.starts_with(':'));
-    if let Some(directory) =
-        database_file.and_then(|file| PathBuf::from(file).parent().map(PathBuf::from))
-    {
-        return directory.join("images");
-    }
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|directory| directory.join("images")))
-        .unwrap_or_else(|| PathBuf::from("images"))
-}
-
 #[derive(Debug, Clone)]
 pub struct StoreFetcher(pub Arc<ArtworkStore>);
 
@@ -131,29 +107,5 @@ impl ArtworkFetcher for StoreFetcher {
                 ]
             }),
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn images_sit_beside_an_sqlite_database() {
-        if std::env::var_os("KLAPZ_IMAGES_DIR").is_some() {
-            return;
-        }
-        assert_eq!(
-            images_directory("sqlite://C:/data/klapz.db?mode=rwc"),
-            PathBuf::from("C:/data/images")
-        );
-        assert_eq!(
-            images_directory("sqlite:///srv/klapz/klapz.db"),
-            PathBuf::from("/srv/klapz/images")
-        );
-        assert_ne!(
-            images_directory("sqlite::memory:"),
-            PathBuf::from("images/images")
-        );
     }
 }

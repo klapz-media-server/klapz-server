@@ -6,8 +6,10 @@
 //! somewhere other than a local disk changes nothing in this module.
 //!
 //! A scan lists what it finds from names, sizes and times alone, and queues each new or changed
-//! file; [`BackgroundAnalysis`] reads them afterwards, every file's headers before any file's
-//! packets, so that a library is browsable as soon as it is walked and playable soon after.
+//! file; [`BackgroundAnalysis`] works through them afterwards, task by task ([`MediaTask`]):
+//! every file's headers before anything else, so that a library is browsable as soon as it is
+//! walked and playable soon after, then what reads a whole file — its packets, its subtitle
+//! tracks, its seeking thumbnails — each where its setting is on.
 //!
 //! [`LibraryFiles`]: crate::files::LibraryFiles
 
@@ -20,9 +22,9 @@ use klapz_scanner::report::{Analysis, DeepAnalysis};
 
 use crate::files::{FileLocation, FilesError, RelativePath};
 use crate::ids::{MediaId, PartId, RatingKey, SectionId};
-use crate::metadata::FileAnalysis;
+use crate::settings::{self, SettingDefinition, Switch};
 
-pub use analysis::BackgroundAnalysis;
+pub use analysis::{AnalysisTools, BackgroundAnalysis};
 pub use control::{BackgroundScans, LibraryAnalysis, ScanControl};
 pub use walk::{scan_section, ScanOutcome, ScanRequest, Scanner};
 
@@ -81,6 +83,109 @@ pub trait MediaAnalyzer: Send + Sync + std::fmt::Debug {
         file: &FileLocation,
         duration_ms: Option<u64>,
     ) -> Result<DeepAnalysis, AnalyzeError>;
+}
+
+/// Makes files out of a file's content and keeps them by its content hash, so that every copy
+/// of a file shares them and none is made twice. Run as children of the server, as reads are;
+/// dropping a run stops it, its process included.
+#[async_trait::async_trait]
+pub trait MediaExtractor: Send + Sync + std::fmt::Debug {
+    /// Every embedded subtitle track a file format holds by itself, each in a file of its own.
+    async fn extract_subtitles(
+        &self,
+        file: &FileLocation,
+        hash: &ContentHash,
+    ) -> Result<Extraction, AnalyzeError>;
+
+    /// The seeking thumbnails of the first video track, packed into a BIF.
+    async fn generate_preview_thumbnails(
+        &self,
+        file: &FileLocation,
+        hash: &ContentHash,
+    ) -> Result<Extraction, AnalyzeError>;
+}
+
+/// What an extraction came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Extraction {
+    Written,
+    /// Kept for this content already, from this file or a copy of it: nothing was read.
+    AlreadyKept,
+}
+
+/// A file's content hash, as the scan stores it: 40 hex digits, in lower case. What the files
+/// made out of a file are kept by, which makes it a path component: nothing else passes.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ContentHash(String);
+
+impl ContentHash {
+    #[must_use]
+    pub fn parse(hash: &str) -> Option<Self> {
+        (hash.len() == 40 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .then(|| Self(hash.to_ascii_lowercase()))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// One piece of work on one file. The queue takes them in this order, each in the order its
+/// files were queued: every file's headers before anything that reads a whole file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum MediaTask {
+    /// Tracks, codecs, declared rates and durations, chapters, and the file's hashes: what
+    /// makes it playable and described. Always done.
+    Headers,
+    /// The deep analysis: the rates and span measured over every packet.
+    Packets,
+    /// The embedded subtitle tracks, extracted to files of their own.
+    Subtitles,
+    /// The BIF a player seeks with.
+    PreviewThumbnails,
+}
+
+impl MediaTask {
+    /// The tasks a setting turns on and off.
+    pub const OPTIONAL: [Self; 3] = [Self::Packets, Self::Subtitles, Self::PreviewThumbnails];
+
+    /// Every task, in the queue's order.
+    pub const ALL: [Self; 4] = [
+        Self::Headers,
+        Self::Packets,
+        Self::Subtitles,
+        Self::PreviewThumbnails,
+    ];
+
+    /// The server's setting that says how many of it run at once.
+    #[must_use]
+    pub const fn concurrency(self) -> &'static SettingDefinition {
+        match self {
+            Self::Headers => &settings::HEADERS_CONCURRENCY,
+            Self::Packets => &settings::DEEP_ANALYSIS_CONCURRENCY,
+            Self::Subtitles => &settings::SUBTITLE_EXTRACTION_CONCURRENCY,
+            Self::PreviewThumbnails => &settings::PREVIEW_THUMBNAILS_CONCURRENCY,
+        }
+    }
+
+    /// The per-library setting that turns it on and off; `None` for what is always done.
+    #[must_use]
+    pub const fn setting(self) -> Option<&'static SettingDefinition> {
+        match self {
+            Self::Headers => None,
+            Self::Packets => Some(&settings::DEEP_ANALYSIS),
+            Self::Subtitles => Some(&settings::SUBTITLE_EXTRACTION),
+            Self::PreviewThumbnails => Some(&settings::PREVIEW_THUMBNAILS),
+        }
+    }
+}
+
+/// Where an optional task is done.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskSwitch {
+    pub task: MediaTask,
+    pub switch: Switch,
 }
 
 /// A part storage already holds, as the skip rule compares it.
@@ -155,7 +260,7 @@ pub struct ShowKey {
     pub year: Option<i32>,
 }
 
-/// A file whose media is still to be read, as the analysis takes it from storage.
+/// A task left on a file, as the analysis takes it from storage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueuedFile {
     pub part: PartId,
@@ -168,22 +273,27 @@ pub struct QueuedFile {
     /// changed: the scan has queued it again.
     pub size: u64,
     pub modified_at: i64,
-    /// What is left to read: [`FileAnalysis::Pending`] its headers,
-    /// [`FileAnalysis::HeadersRead`] its packets.
-    pub analysis: FileAnalysis,
+    pub task: MediaTask,
     /// The duration its headers declared, once read.
     pub duration_ms: Option<u64>,
+    /// Once its headers are read, and when the tools state it.
+    pub content_hash: Option<ContentHash>,
 }
 
-/// Which queued files the analysis may take.
+/// Which queued tasks the analysis may take.
 #[derive(Debug, Clone, Default)]
 pub struct QueueFilter {
     /// Only this library's.
     pub section: Option<SectionId>,
-    /// Being read already.
+    /// Only this task.
+    pub task: Option<MediaTask>,
+    /// Files being worked on already.
     pub busy: Vec<PartId>,
     /// Libraries whose files are not read for now: being walked by a scan, or paused.
     pub held: Vec<SectionId>,
+    /// Where each optional task is on; one that is off stays queued, and is taken once it is
+    /// turned on.
+    pub switches: Vec<TaskSwitch>,
 }
 
 /// What became of a result handed to storage.
@@ -199,9 +309,9 @@ pub enum Stored {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AnalysisProgress {
     pub files: u64,
-    /// Whose headers are read, measured or not.
+    /// Whose headers are read.
     pub read: u64,
-    /// Read to the end, or as far as they could be.
+    /// Whose headers are read and that have none of the tasks counted left.
     pub complete: u64,
 }
 
@@ -231,22 +341,24 @@ pub trait ScanRepository: Send + Sync + std::fmt::Debug {
     /// Its tracks stay as they were until then.
     async fn update_part(&self, part: PartId, file: NewPart, now: i64) -> Result<(), ScanError>;
 
-    /// Queues these files to be read again from their headers, as a forced scan asks.
+    /// Queues these files to be read again from their headers, as a forced scan asks, in
+    /// place of whatever task they had left.
     async fn queue_again(&self, parts: &[PartId], now: i64) -> Result<(), ScanError>;
 
-    /// Up to `limit` queued files: every one whose headers are unread before any whose packets
-    /// are, each in the order it was queued.
+    /// Up to `limit` queued tasks, of distinct files, each a file's first task the filter
+    /// lets through: by [`MediaTask`]'s order, then each in the order it was queued.
     async fn queued_files(
         &self,
         limit: usize,
         filter: &QueueFilter,
     ) -> Result<Vec<QueuedFile>, ScanError>;
 
-    /// The part, when it is queued.
+    /// The part's first task left, when it has one.
     async fn queued_file(&self, part: PartId) -> Result<Option<QueuedFile>, ScanError>;
 
-    /// Writes what a file's headers say — tracks, codecs, durations, chapters — in place of
-    /// the tracks it had inside, its sidecars kept, and queues its packets to be measured.
+    /// Writes what a file's headers say — tracks, codecs, durations, hashes, chapters — in
+    /// place of the tracks it had inside, its sidecars kept, and queues what follows: its
+    /// packets, its subtitle tracks when it has any, its thumbnails when it has a video track.
     /// `None` is a file that could not be read as media: it stays listed, its tracks inside
     /// and their description gone, and is not queued again until it changes.
     async fn store_headers(
@@ -257,8 +369,8 @@ pub trait ScanRepository: Send + Sync + std::fmt::Debug {
     ) -> Result<Stored, ScanError>;
 
     /// Writes the rates and duration measured over a file's packets onto the tracks its
-    /// headers gave, which keep their ids, and takes it off the queue. `None` keeps what the
-    /// headers declared: the measurement could not finish.
+    /// headers gave, which keep their ids, and takes the task off the queue. `None` keeps what
+    /// the headers declared: the measurement could not finish.
     async fn store_measurement(
         &self,
         file: &QueuedFile,
@@ -266,7 +378,17 @@ pub trait ScanRepository: Send + Sync + std::fmt::Debug {
         now: i64,
     ) -> Result<Stored, ScanError>;
 
-    async fn analysis_progress(&self, section: SectionId) -> Result<AnalysisProgress, ScanError>;
+    /// Takes a task whose result is kept outside storage off the queue: an extraction, done or
+    /// failed.
+    async fn finish_task(&self, file: &QueuedFile) -> Result<Stored, ScanError>;
+
+    /// How far the library's files are read, `counted` the optional tasks that count for
+    /// [`AnalysisProgress::complete`].
+    async fn analysis_progress(
+        &self,
+        section: SectionId,
+        counted: &[MediaTask],
+    ) -> Result<AnalysisProgress, ScanError>;
 
     /// Counts a change of the library's contents, as a scan that changed it does: what the
     /// analysis wrote changes what its listings show.

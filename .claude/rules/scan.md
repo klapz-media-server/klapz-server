@@ -11,6 +11,7 @@ paths:
   - "crates/db/src/scan_repository/**"
   - "crates/db/tests/scan*.rs"
   - "crates/server/src/analyzer.rs"
+  - "crates/server/src/extracts.rs"
   - "crates/server/src/files.rs"
   - "crates/server/src/commands.rs"
   - "crates/api/src/scan.rs"
@@ -62,10 +63,21 @@ reads is `.plexignore` (`MAX_IGNORE_FILE`).
 - Removal is refused when a whole root is unreachable or the parent directory unreadable; an
   unreadable directory is skipped; a failed listing stops the scan into `Library.scanFailure`.
   A walk step over 30 s is a dead share.
-- New/changed/forced files queue in `media_analysis`; `BackgroundAnalysis` reads headers first
-  (≤ 1 min), then packets (≤ 10 min), `KLAPZ_ANALYSIS_CONCURRENCY` at once. A result from a file
-  changed since is dropped; scan and analysis write in turn. `startStream` / `readMediaFile`
-  read headers at once without waiting.
+- New/changed/forced files queue in storage, one row per task left (`media_task`,
+  `scan::MediaTask`). `BackgroundAnalysis` does one task per file at a time, each kind in its own
+  pool sized by `analysis.concurrency.{headers,deep,subtitles,preview_thumbnails}` (2/1/1/1,
+  1–16), read before every round. Headers first (`MediaAnalyzer`, ≤ 1 min, always), which queue
+  what the file calls for: packets (deep, ≤ 10 min, headers standing if it cannot finish),
+  embedded subtitles, seeking thumbnails (BIF).
+- Subtitles and thumbnails go through `MediaExtractor` and live on disk by content hash, not in
+  storage (`server::extracts`, `KLAPZ_EXTRACTS_DIR`), built in a working directory and moved in
+  whole; found there, not made again for any copy; no content hash, no extraction.
+- `analysis.deep`, `analysis.subtitles`, `analysis.preview_thumbnails` switch tasks on and off,
+  server-wide and per library: a task switched off stays queued; a change wakes the queue
+  (`ScanControl::settings_changed`).
+- A result from a file changed since is dropped; scan and analysis write in turn; a library
+  being walked is not read. `startStream` / `readMediaFile` read headers at once without
+  waiting.
 - Failures are classified: the media's (recorded on the file), the tools' (queue held), the
   file's absence (library waits for next scan). Cancel drops scan and matching at once.
 - `force` analyzes every file again; Plex's `refresh?path=` is `403`.

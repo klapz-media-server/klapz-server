@@ -5,8 +5,11 @@
 //! drives first (`transcoder.h264.preset`), and a key not declared is refused, never stored.
 //! What the process needs before it can read its database — where to listen, the database
 //! itself, secrets, directories — stays in the environment.
+//!
+//! A setting declared `per_library` may also be given a value for one library, which that
+//! library follows instead of the server's; a library that holds none follows the server.
 
-use crate::ids::UserId;
+use crate::ids::{SectionId, UserId};
 
 /// The longest key: a namespace and a few words.
 pub const MAX_KEY_LENGTH: usize = 96;
@@ -39,6 +42,15 @@ pub struct SettingDefinition {
     /// The value in force while no owner chose one, in its canonical form.
     pub default: &'static str,
     pub description: &'static str,
+    /// Whether a library may hold a value of its own, which it follows instead of the server's.
+    pub per_library: bool,
+}
+
+/// Where a value is kept: the server's, or one library's in place of the server's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingScope {
+    Server,
+    Library(SectionId),
 }
 
 /// x264's presets, fastest first: each trades encoding speed for compression.
@@ -63,17 +75,113 @@ pub const H264_PRESET: SettingDefinition = SettingDefinition {
                   preset makes a smaller or sharper picture at the same bitrate and costs more \
                   processor time; too slow a one cannot keep up with playback. Applies from the \
                   next stream.",
+    per_library: false,
 };
 
 pub const PUBLIC_URL: SettingDefinition = SettingDefinition {
     key: "general.public_url",
     kind: SettingKind::Address,
     default: "",
-    description: "The address the server is reached at from outside its network, such as a                   domain or a tunnel leading to it: `https://media.example.com`. Empty when the                   server is only reached at the addresses it listens on.",
+    description: "The address the server is reached at from outside its network, such as a \
+                  domain or a tunnel leading to it: `https://media.example.com`. Empty when the \
+                  server is only reached at the addresses it listens on.",
+    per_library: false,
+};
+
+/// The most tasks of one kind the analysis runs at once: each a process reading a whole file,
+/// often over a network share.
+pub const MAX_CONCURRENT_TASKS: i64 = 16;
+
+const fn concurrency(
+    key: &'static str,
+    default: &'static str,
+    description: &'static str,
+) -> SettingDefinition {
+    SettingDefinition {
+        key,
+        kind: SettingKind::Integer {
+            minimum: 1,
+            maximum: MAX_CONCURRENT_TASKS,
+        },
+        default,
+        description,
+        per_library: false,
+    }
+}
+
+pub const HEADERS_CONCURRENCY: SettingDefinition = concurrency(
+    "analysis.concurrency.headers",
+    "2",
+    "How many files have their headers read at once, over every library: the quick analysis \
+     that makes a file playable, with its name, size and hashes. Each read is a process \
+     reading the start of a file.",
+);
+
+pub const DEEP_ANALYSIS_CONCURRENCY: SettingDefinition = concurrency(
+    "analysis.concurrency.deep",
+    "1",
+    "How many files have their packets measured at once, over every library. Each is a \
+     process reading a whole file.",
+);
+
+pub const SUBTITLE_EXTRACTION_CONCURRENCY: SettingDefinition = concurrency(
+    "analysis.concurrency.subtitles",
+    "1",
+    "How many files have their subtitle tracks extracted at once, over every library. Each is \
+     a process reading a whole file.",
+);
+
+pub const PREVIEW_THUMBNAILS_CONCURRENCY: SettingDefinition = concurrency(
+    "analysis.concurrency.preview_thumbnails",
+    "1",
+    "How many files have their seeking thumbnails made at once, over every library. Each is a \
+     process decoding every key frame of a video.",
+);
+
+pub const DEEP_ANALYSIS: SettingDefinition = SettingDefinition {
+    key: "analysis.deep",
+    kind: SettingKind::Boolean,
+    default: "true",
+    description: "Whether every file's packets are read once its headers are, to measure its \
+                  tracks' bitrates and its duration rather than trust what the file declares. \
+                  It reads the whole file. A file's headers, name, size and hashes are always \
+                  read.",
+    per_library: true,
+};
+
+pub const SUBTITLE_EXTRACTION: SettingDefinition = SettingDefinition {
+    key: "analysis.subtitles",
+    kind: SettingKind::Boolean,
+    default: "true",
+    description: "Whether the subtitle tracks inside every file are extracted to files of their \
+                  own, kept by the file's content hash: a copy of a file already extracted is \
+                  not extracted again. It reads the whole file.",
+    per_library: true,
+};
+
+pub const PREVIEW_THUMBNAILS: SettingDefinition = SettingDefinition {
+    key: "analysis.preview_thumbnails",
+    kind: SettingKind::Boolean,
+    // The reference's `GenerateBIFBehavior`, as measured: `asap`.
+    default: "true",
+    description: "Whether every video gets its seeking thumbnails, a picture every two seconds \
+                  packed into a BIF, kept by the file's content hash: a copy of a file already \
+                  done is not done again. It decodes every key frame of the video.",
+    per_library: true,
 };
 
 /// Every setting, by key.
-pub const DEFINITIONS: &[SettingDefinition] = &[PUBLIC_URL, H264_PRESET];
+pub const DEFINITIONS: &[SettingDefinition] = &[
+    DEEP_ANALYSIS_CONCURRENCY,
+    HEADERS_CONCURRENCY,
+    PREVIEW_THUMBNAILS_CONCURRENCY,
+    SUBTITLE_EXTRACTION_CONCURRENCY,
+    DEEP_ANALYSIS,
+    PREVIEW_THUMBNAILS,
+    SUBTITLE_EXTRACTION,
+    PUBLIC_URL,
+    H264_PRESET,
+];
 
 /// The setting declared under this key.
 #[must_use]
@@ -110,6 +218,8 @@ pub enum SettingError {
     InvalidValue,
     /// The same key came twice in one change.
     RepeatedSetting,
+    /// A library was given a value of a setting that is the server's alone.
+    ServerOnly,
 }
 
 impl SettingDefinition {
@@ -195,12 +305,23 @@ pub enum SettingsError {
 
 #[async_trait::async_trait]
 pub trait SettingsRepository: Send + Sync + std::fmt::Debug {
-    /// The stored values of these keys. A key no owner set is absent.
-    async fn stored(&self, keys: &[&str]) -> Result<Vec<StoredSetting>, SettingsError>;
+    /// The values of these keys stored in `scope`. A key no owner set there is absent.
+    async fn stored(
+        &self,
+        scope: SettingScope,
+        keys: &[&str],
+    ) -> Result<Vec<StoredSetting>, SettingsError>;
 
-    /// Applies every change, or none.
+    /// The values of these keys that libraries hold, by library.
+    async fn library_values(
+        &self,
+        keys: &[&str],
+    ) -> Result<Vec<(SectionId, StoredSetting)>, SettingsError>;
+
+    /// Applies every change in `scope`, or none.
     async fn apply(
         &self,
+        scope: SettingScope,
         changes: &[SettingChange],
         by: UserId,
         at: i64,
@@ -235,11 +356,150 @@ pub async fn value_of(
     definition: &'static SettingDefinition,
 ) -> Result<String, SettingsError> {
     let stored = repository
-        .stored(&[definition.key])
+        .stored(SettingScope::Server, &[definition.key])
         .await?
         .into_iter()
         .next();
     Ok(Setting { definition, stored }.value())
+}
+
+/// The values in force for these settings, the server's, in the order given.
+///
+/// # Errors
+///
+/// When storage fails.
+pub async fn values_of(
+    repository: &dyn SettingsRepository,
+    definitions: &[&'static SettingDefinition],
+) -> Result<Vec<String>, SettingsError> {
+    Ok(with_stored(repository, definitions.to_vec())
+        .await?
+        .iter()
+        .map(Setting::value)
+        .collect())
+}
+
+/// Where a per-library boolean setting is on: the server's value, and the libraries that hold
+/// the other one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Switch {
+    pub server: bool,
+    pub except: Vec<SectionId>,
+}
+
+impl Switch {
+    #[must_use]
+    pub fn is_on(&self, section: SectionId) -> bool {
+        self.server != self.except.contains(&section)
+    }
+}
+
+/// Where each of these per-library boolean settings is on, for every library at once, in the
+/// order given: what work run over every library reads before each round of it.
+///
+/// # Errors
+///
+/// When storage fails.
+pub async fn switches(
+    repository: &dyn SettingsRepository,
+    definitions: &[&'static SettingDefinition],
+) -> Result<Vec<Switch>, SettingsError> {
+    let servers = with_stored(repository, definitions.to_vec()).await?;
+    let libraries = repository.library_values(&keys(definitions)).await?;
+    Ok(servers
+        .iter()
+        .map(|setting| {
+            let definition = setting.definition;
+            let server = setting.value() == "true";
+            let except = libraries
+                .iter()
+                .filter(|(_, stored)| stored.key == definition.key)
+                .filter(|(_, stored)| {
+                    definition
+                        .check(&stored.value)
+                        .is_ok_and(|value| (value == "true") != server)
+                })
+                .map(|(section, _)| *section)
+                .collect();
+            Switch { server, except }
+        })
+        .collect())
+}
+
+/// A per-library setting as one library sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibrarySetting {
+    /// The server's, which the library follows while it holds no value of its own.
+    pub server: Setting,
+    /// The library's own value, if an owner chose one.
+    pub stored: Option<StoredSetting>,
+}
+
+impl LibrarySetting {
+    /// The value in force for the library: its own, else the server's. A value of its own the
+    /// setting no longer takes gives way to the server's.
+    #[must_use]
+    pub fn value(&self) -> String {
+        self.stored
+            .as_ref()
+            .and_then(|stored| self.server.definition.check(&stored.value).ok())
+            .unwrap_or_else(|| self.server.value())
+    }
+}
+
+/// The per-library settings under `namespace`, or all of them, as `section` sees them, by key.
+///
+/// # Errors
+///
+/// When storage fails.
+pub async fn library_settings(
+    repository: &dyn SettingsRepository,
+    section: SectionId,
+    namespace: Option<&str>,
+) -> Result<Vec<LibrarySetting>, SettingsError> {
+    let definitions: Vec<&'static SettingDefinition> = DEFINITIONS
+        .iter()
+        .filter(|definition| definition.per_library)
+        .filter(|definition| {
+            namespace.is_none_or(|namespace| in_namespace(definition.key, namespace))
+        })
+        .collect();
+    of_library(repository, section, definitions).await
+}
+
+async fn of_library(
+    repository: &dyn SettingsRepository,
+    section: SectionId,
+    definitions: Vec<&'static SettingDefinition>,
+) -> Result<Vec<LibrarySetting>, SettingsError> {
+    if definitions.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut stored = repository
+        .stored(SettingScope::Library(section), &keys(&definitions))
+        .await?;
+    Ok(with_stored(repository, definitions)
+        .await?
+        .into_iter()
+        .map(|server| LibrarySetting {
+            stored: take(&mut stored, server.definition.key),
+            server,
+        })
+        .collect())
+}
+
+fn keys(definitions: &[&'static SettingDefinition]) -> Vec<&'static str> {
+    definitions
+        .iter()
+        .map(|definition| definition.key)
+        .collect()
+}
+
+fn take(stored: &mut Vec<StoredSetting>, key: &str) -> Option<StoredSetting> {
+    stored
+        .iter()
+        .position(|row| row.key == key)
+        .map(|at| stored.swap_remove(at))
 }
 
 async fn with_stored(
@@ -249,19 +509,14 @@ async fn with_stored(
     if definitions.is_empty() {
         return Ok(Vec::new());
     }
-    let keys: Vec<&str> = definitions
-        .iter()
-        .map(|definition| definition.key)
-        .collect();
-    let mut stored = repository.stored(&keys).await?;
+    let mut stored = repository
+        .stored(SettingScope::Server, &keys(&definitions))
+        .await?;
     Ok(definitions
         .into_iter()
         .map(|definition| Setting {
             definition,
-            stored: stored
-                .iter()
-                .position(|row| row.key == definition.key)
-                .map(|at| stored.swap_remove(at)),
+            stored: take(&mut stored, definition.key),
         })
         .collect())
 }
@@ -292,12 +547,52 @@ pub async fn update_settings(
     by: UserId,
     at: i64,
 ) -> Result<Result<Vec<Setting>, Vec<Rejected>>, SettingsError> {
+    let changes = match checked(updates, SettingScope::Server) {
+        Ok(changes) => changes,
+        Err(rejected) => return Ok(Err(rejected)),
+    };
+    repository
+        .apply(SettingScope::Server, &changes, by, at)
+        .await?;
+    Ok(Ok(with_stored(repository, named(&changes)).await?))
+}
+
+/// Checks every update of a library's own values, then applies them all at once, as
+/// [`update_settings`] does: a value is the library's own, `None` makes it follow the server
+/// again. Only a per-library setting is taken.
+///
+/// # Errors
+///
+/// When storage fails.
+pub async fn update_library_settings(
+    repository: &dyn SettingsRepository,
+    section: SectionId,
+    updates: &[SettingUpdate],
+    by: UserId,
+    at: i64,
+) -> Result<Result<Vec<LibrarySetting>, Vec<Rejected>>, SettingsError> {
+    let scope = SettingScope::Library(section);
+    let changes = match checked(updates, scope) {
+        Ok(changes) => changes,
+        Err(rejected) => return Ok(Err(rejected)),
+    };
+    repository.apply(scope, &changes, by, at).await?;
+    Ok(Ok(of_library(repository, section, named(&changes)).await?))
+}
+
+fn checked(
+    updates: &[SettingUpdate],
+    scope: SettingScope,
+) -> Result<Vec<SettingChange>, Vec<Rejected>> {
     let mut changes = Vec::with_capacity(updates.len());
     let mut rejected = Vec::new();
     for (index, update) in updates.iter().enumerate() {
         let checked = definition(&update.key)
             .ok_or(SettingError::UnknownSetting)
             .and_then(|definition| {
+                if matches!(scope, SettingScope::Library(_)) && !definition.per_library {
+                    return Err(SettingError::ServerOnly);
+                }
                 if updates[..index]
                     .iter()
                     .any(|before| before.key == update.key)
@@ -319,17 +614,20 @@ pub async fn update_settings(
             Err(error) => rejected.push(Rejected { index, error }),
         }
     }
-    if !rejected.is_empty() {
-        return Ok(Err(rejected));
+    if rejected.is_empty() {
+        Ok(changes)
+    } else {
+        Err(rejected)
     }
-    repository.apply(&changes, by, at).await?;
-    let named = changes
+}
+
+fn named(changes: &[SettingChange]) -> Vec<&'static SettingDefinition> {
+    changes
         .iter()
         .filter_map(|change| match change {
             SettingChange::Set { key, .. } | SettingChange::Reset { key } => definition(key),
         })
-        .collect();
-    Ok(Ok(with_stored(repository, named).await?))
+        .collect()
 }
 
 #[cfg(test)]
@@ -563,5 +861,117 @@ mod tests {
             settings(&repository, None).await.unwrap().len(),
             DEFINITIONS.len()
         );
+    }
+
+    #[tokio::test]
+    async fn a_library_follows_the_server_until_it_holds_a_value_of_its_own() {
+        let repository = InMemorySettings::default();
+        let owner = UserId::new(1);
+        let (films, series) = (SectionId::new(1), SectionId::new(2));
+        let deep = |section| {
+            let repository = &repository;
+            async move {
+                library_settings(repository, section, Some(DEEP_ANALYSIS.key))
+                    .await
+                    .unwrap()
+                    .remove(0)
+                    .value()
+            }
+        };
+        assert_eq!(deep(films).await, "true");
+
+        update_settings(
+            &repository,
+            &[update(DEEP_ANALYSIS.key, Some("false"))],
+            owner,
+            10,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let changed = update_library_settings(
+            &repository,
+            series,
+            &[update(DEEP_ANALYSIS.key, Some("true"))],
+            owner,
+            20,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(changed[0].value(), "true");
+        assert_eq!(changed[0].server.value(), "false");
+        assert_eq!(
+            (deep(films).await, deep(series).await),
+            ("false".to_owned(), "true".to_owned())
+        );
+        assert_eq!(
+            value_of(&repository, &DEEP_ANALYSIS).await.unwrap(),
+            "false",
+            "the server's own value is unchanged"
+        );
+
+        let deep_analysis = switches(&repository, &[&DEEP_ANALYSIS, &SUBTITLE_EXTRACTION])
+            .await
+            .unwrap();
+        assert!(!deep_analysis[0].is_on(films));
+        assert!(deep_analysis[0].is_on(series));
+        assert!(deep_analysis[1].is_on(films) && deep_analysis[1].is_on(series));
+
+        update_library_settings(
+            &repository,
+            series,
+            &[update(DEEP_ANALYSIS.key, None)],
+            owner,
+            30,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(deep(series).await, "false", "it follows the server again");
+    }
+
+    #[tokio::test]
+    async fn a_library_takes_no_value_of_a_setting_that_is_the_servers_alone() {
+        let repository = InMemorySettings::default();
+        let refused = update_library_settings(
+            &repository,
+            SectionId::new(1),
+            &[
+                update(SUBTITLE_EXTRACTION.key, Some("false")),
+                update(H264_PRESET.key, Some("slow")),
+            ],
+            UserId::new(1),
+            10,
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(
+            refused,
+            [Rejected {
+                index: 1,
+                error: SettingError::ServerOnly
+            }]
+        );
+        assert_eq!(
+            library_settings(&repository, SectionId::new(1), None)
+                .await
+                .unwrap()
+                .iter()
+                .map(|setting| setting.server.definition.key)
+                .collect::<Vec<_>>(),
+            [
+                DEEP_ANALYSIS.key,
+                PREVIEW_THUMBNAILS.key,
+                SUBTITLE_EXTRACTION.key
+            ],
+            "nothing was kept, and only per-library settings are listed"
+        );
+        assert!(library_settings(&repository, SectionId::new(1), None)
+            .await
+            .unwrap()
+            .iter()
+            .all(|setting| setting.stored.is_none()));
     }
 }

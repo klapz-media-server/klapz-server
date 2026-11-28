@@ -61,6 +61,10 @@ pub trait ScanControl: Send + Sync + std::fmt::Debug {
     /// Storage's failure.
     async fn analysis(&self, section: SectionId) -> Result<LibraryAnalysis, ScanError>;
 
+    /// A setting of the analysis changed, for the server or a library: what it turned on is
+    /// taken at once rather than at the next scan.
+    fn settings_changed(&self);
+
     /// What the scans read libraries through, and so where a root an owner names is looked
     /// up before a library is given it.
     fn files(&self) -> &dyn LibraryFiles;
@@ -194,6 +198,10 @@ impl ScanControl for BackgroundScans {
         })
     }
 
+    fn settings_changed(&self) {
+        self.analysis.settings_changed();
+    }
+
     fn files(&self) -> &dyn LibraryFiles {
         self.scanner.files.as_ref()
     }
@@ -289,7 +297,10 @@ mod tests {
     use crate::files::FileLocation;
     use crate::library::SectionKind;
     use crate::scan::walk::tests::{scanner, whole_library, Store, Tree};
-    use crate::scan::{AnalyzeError, MediaAnalyzer};
+    use crate::scan::{
+        AnalysisTools, AnalyzeError, ContentHash, Extraction, MediaAnalyzer, MediaExtractor,
+    };
+    use crate::testing::InMemorySettings;
 
     const FILMS: SectionId = SectionId::new(1);
 
@@ -316,6 +327,29 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
+    impl MediaExtractor for Unused {
+        async fn extract_subtitles(
+            &self,
+            _file: &FileLocation,
+            _hash: &ContentHash,
+        ) -> Result<Extraction, AnalyzeError> {
+            Err(AnalyzeError::Unavailable(
+                "not run in these tests".to_owned(),
+            ))
+        }
+
+        async fn generate_preview_thumbnails(
+            &self,
+            _file: &FileLocation,
+            _hash: &ContentHash,
+        ) -> Result<Extraction, AnalyzeError> {
+            Err(AnalyzeError::Unavailable(
+                "not run in these tests".to_owned(),
+            ))
+        }
+    }
+
     async fn ended(scans: &BackgroundScans) {
         tokio::time::timeout(Duration::from_secs(5), async {
             while scans.is_running(FILMS) {
@@ -332,8 +366,11 @@ mod tests {
             Arc::clone(&scanner.store),
             Arc::clone(&scanner.library),
             Arc::clone(&scanner.files),
-            Arc::new(Unused),
-            1,
+            AnalysisTools {
+                analyzer: Arc::new(Unused),
+                extractor: Arc::new(Unused),
+                settings: Arc::new(InMemorySettings::default()),
+            },
         );
         BackgroundScans::new(scanner, analysis)
     }
