@@ -914,9 +914,18 @@ pub fn build_schema(context: ApiContext) -> ApiSchema {
             &matching.repository,
         )))
     });
+    let themes = context.matching.as_ref().map(|matching| {
+        loader(crate::theme::ThemesLoader::new(Arc::clone(
+            &matching.repository,
+        )))
+    });
     let builder = Schema::build(Query, crate::playback::Mutation, EmptySubscription);
     let builder = match images {
         Some(images) => builder.data(images),
+        None => builder,
+    };
+    let builder = match themes {
+        Some(themes) => builder.data(themes),
         None => builder,
     };
     builder

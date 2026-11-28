@@ -7,6 +7,7 @@ paths:
   - "crates/db/tests/source_metadata.rs"
   - "crates/api/src/source_metadata.rs"
   - "crates/api/src/artwork.rs"
+  - "crates/api/src/theme.rs"
   - "crates/server/src/artwork.rs"
   - "crates/api-plex/src/matching.rs"
   - "crates/api-plex/src/artwork.rs"
@@ -30,3 +31,12 @@ paths:
   BlurHash and backdrop colors. Jellyfin's image routes serve without a token only for the right
   `tag`.
 - Matching runs after every scan and through `klapz-server match`.
+- A series' theme music is found at matching, as the reference finds it: a `theme-?[0-9]?` file
+  beside its episodes (their directory, its parent and grandparent, never the library's root)
+  wins over Plex's service's for its TVDB id (`tvthemes.plexapp.com/{tvdb}.mp3`, the one host
+  fetched). Either is copied into the artwork store (`themes/ab/{sha256}.{ext}`), as the
+  reference copies a local asset into its bundle, so no route serves a library file by its path.
+  A local theme may be any format browsers play (`mp3`, `m4a`, `aac`, `flac`, `ogg`, `oga`,
+  `opus`, `wav`), the repo owner's decision, where the reference reads `mp3` alone; its type is
+  its extension's, nothing reads its content. `Show.theme` on the official API; `/unmatch`
+  forgets the service's and keeps a local one (`docs/plex/spec-gaps.md`).

@@ -69,7 +69,7 @@ fragment Shared on Item {
   watchState { viewCount offsetMs lastViewedAt }
   userRating { value ratedAt }
   ... on Movie { primaryExtra { id } chapterSource }
-  ... on Show { primaryExtra { id } }
+  ... on Show { primaryExtra { id } theme { changedAt } }
   ... on Episode { chapterSource }
   cornerColors { topLeft topRight bottomRight bottomLeft }
   images { kind changedAt }
@@ -165,7 +165,7 @@ fragment TrackFields on MediaStream {
 fragment SeasonFields on Season {
   number
   year
-  show { id title guid studio number year images { kind changedAt } }
+  show { id title guid studio number year images { kind changedAt } theme { changedAt } }
   seasonStats: stats { episodeCount watchedEpisodeCount }
 }
 
@@ -178,7 +178,7 @@ fragment EpisodeFields on Episode {
   audienceRating
   durationMs
   season { id number title year guid images { kind changedAt } }
-  show { id title guid images { kind changedAt } }
+  show { id title guid images { kind changedAt } theme { changedAt } }
 }
 
 fragment ListedItem on Item {
@@ -909,6 +909,8 @@ pub struct GqlItem {
     pub chapters: GqlConnection<GqlChapter>,
     pub corner_colors: Option<GqlCornerColors>,
     pub images: Vec<GqlImage>,
+    /// A series' theme music.
+    pub theme: Option<GqlTheme>,
     /// A film's or a series' first trailer.
     pub primary_extra: Option<GqlTrackRef>,
     /// Asked for on `includeExtras=1` only, and then present even when empty.
@@ -949,6 +951,14 @@ impl GqlExtra {
 #[serde(rename_all = "camelCase")]
 pub struct GqlImage {
     pub kind: String,
+    #[serde(deserialize_with = "crate::gql::date_time::seconds")]
+    pub changed_at: i64,
+}
+
+/// A series' theme, by when the series took it, which its address carries.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GqlTheme {
     #[serde(deserialize_with = "crate::gql::date_time::seconds")]
     pub changed_at: i64,
 }
@@ -1116,6 +1126,7 @@ pub struct GqlParentRef {
     pub year: Option<i32>,
     pub content_rating: Option<String>,
     pub images: Vec<GqlImage>,
+    pub theme: Option<GqlTheme>,
 }
 
 impl GqlParentRef {

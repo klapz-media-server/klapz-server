@@ -5,6 +5,7 @@ use std::collections::{BTreeSet, HashMap};
 use klapz_core::edit::ItemField;
 use klapz_core::language::{Language, LanguageTag};
 use klapz_core::metadata::{ItemKind, MetadataItem, TagKind};
+use klapz_core::source_metadata::theme::{ItemTheme, SeriesFiles, ShownTheme, ThemeSource};
 use klapz_core::source_metadata::{
     AppliedItem, AppliedTag, ExternalId, ImageKind, ItemImage, Linked, MatchPlan, MatchTarget,
     ProviderRating, SavedSource, SeasonTarget, ShownImage, SourceMetadataError,
@@ -19,9 +20,10 @@ use sea_orm::{
 
 use crate::entity::{
     image_file, item_corner_colors, item_external_id, item_field_lock, item_image, item_rating,
-    item_source, item_tag, library_section, metadata_item, person, source_metadata,
-    source_metadata_certification, source_metadata_external_id, source_metadata_image,
-    source_metadata_translation, tag, user_favorite, user_rating, watch_state,
+    item_source, item_tag, item_theme, library_section, media, media_part, metadata_item, person,
+    section_root, source_metadata, source_metadata_certification, source_metadata_external_id,
+    source_metadata_image, source_metadata_translation, tag, user_favorite, user_rating,
+    watch_state,
 };
 use crate::metadata_repository::{kind_name, to_domain};
 use crate::write;
@@ -250,6 +252,114 @@ impl SourceMetadataRepository for SqlSourceMetadataRepository {
                     blur_hash: file.blur_hash,
                     file: file.file,
                     chosen_at: image.chosen_at,
+                })
+            }));
+        }
+        Ok(shown)
+    }
+
+    async fn series_files(&self, show: RatingKey) -> Result<SeriesFiles, SourceMetadataError> {
+        let Some(row) = metadata_item::Entity::find_by_id(show.get())
+            .one(&self.connection)
+            .await
+            .map_err(storage)?
+        else {
+            return Ok(SeriesFiles::default());
+        };
+        let roots = section_root::Entity::find()
+            .select_only()
+            .column(section_root::Column::Path)
+            .filter(section_root::Column::SectionId.eq(row.library_section_id))
+            .into_tuple()
+            .all(&self.connection)
+            .await
+            .map_err(storage)?;
+        let seasons = self.children_of(std::iter::once(row.id)).await?;
+        let episodes = self
+            .children_of(seasons.iter().map(|season| season.id))
+            .await?;
+        let mut parts = Vec::new();
+        for chunk in episodes.chunks(INSERT_CHUNK) {
+            let versions = Query::select()
+                .column(media::Column::Id)
+                .from(media::Entity)
+                .and_where(
+                    media::Column::MetadataItemId.is_in(chunk.iter().map(|episode| episode.id)),
+                )
+                .to_owned();
+            let paths: Vec<String> = media_part::Entity::find()
+                .select_only()
+                .column(media_part::Column::Path)
+                .filter(media_part::Column::MediaId.in_subquery(versions))
+                .into_tuple()
+                .all(&self.connection)
+                .await
+                .map_err(storage)?;
+            parts.extend(paths);
+        }
+        Ok(SeriesFiles { roots, parts })
+    }
+
+    async fn save_theme(&self, theme: &ItemTheme, at: i64) -> Result<(), SourceMetadataError> {
+        let item = theme.item.get();
+        let current = item_theme::Entity::find_by_id(item)
+            .one(&self.connection)
+            .await
+            .map_err(storage)?;
+        // The same file again keeps its time, and so the address clients cached it under.
+        let chosen_at = match &current {
+            Some(current) if current.file == theme.stored.file => current.chosen_at,
+            _ => at,
+        };
+        let row = item_theme::ActiveModel {
+            item_id: ActiveValue::Set(item),
+            source: ActiveValue::Set(theme.source.as_str().to_owned()),
+            origin: ActiveValue::Set(theme.origin.clone()),
+            file: ActiveValue::Set(theme.stored.file.clone()),
+            content_type: ActiveValue::Set(theme.stored.content_type.clone()),
+            size_bytes: ActiveValue::Set(
+                i64::try_from(theme.stored.size_bytes).unwrap_or(i64::MAX),
+            ),
+            chosen_at: ActiveValue::Set(chosen_at),
+        };
+        let written = if current.is_some() {
+            row.update(&self.connection).await.map(drop)
+        } else {
+            row.insert(&self.connection).await.map(drop)
+        };
+        written.map_err(storage)
+    }
+
+    async fn clear_theme(
+        &self,
+        item: RatingKey,
+        source: Option<ThemeSource>,
+    ) -> Result<(), SourceMetadataError> {
+        let mut deleted =
+            item_theme::Entity::delete_many().filter(item_theme::Column::ItemId.eq(item.get()));
+        if let Some(source) = source {
+            deleted = deleted.filter(item_theme::Column::Source.eq(source.as_str()));
+        }
+        deleted.exec(&self.connection).await.map_err(storage)?;
+        Ok(())
+    }
+
+    async fn themes_of(&self, items: &[RatingKey]) -> Result<Vec<ShownTheme>, SourceMetadataError> {
+        let mut shown = Vec::new();
+        for chunk in items.chunks(INSERT_CHUNK) {
+            let rows = item_theme::Entity::find()
+                .filter(item_theme::Column::ItemId.is_in(chunk.iter().map(|item| item.get())))
+                .all(&self.connection)
+                .await
+                .map_err(storage)?;
+            shown.extend(rows.into_iter().filter_map(|row| {
+                Some(ShownTheme {
+                    item: RatingKey::new(row.item_id),
+                    source: ThemeSource::parse(&row.source)?,
+                    file: row.file,
+                    content_type: row.content_type,
+                    size_bytes: u64::try_from(row.size_bytes).ok()?,
+                    chosen_at: row.chosen_at,
                 })
             }));
         }
@@ -605,6 +715,12 @@ async fn unmatch_one<C: sea_orm::ConnectionTrait>(connection: &C, id: i64) -> Re
         .await?;
     item_image::Entity::delete_many()
         .filter(item_image::Column::ItemId.eq(id))
+        .exec(connection)
+        .await?;
+    // A local theme is the library's, not the record's: it stays.
+    item_theme::Entity::delete_many()
+        .filter(item_theme::Column::ItemId.eq(id))
+        .filter(item_theme::Column::Source.eq(ThemeSource::Provider.as_str()))
         .exec(connection)
         .await?;
     item_external_id::Entity::delete_many()

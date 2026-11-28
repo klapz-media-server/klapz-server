@@ -3442,6 +3442,34 @@ type ItemTags {
 }
 
 """
+A series' theme music, kept on this server: a local `theme.*` file wins over the theme
+service's, as on the reference.
+"""
+type ItemTheme {
+	"""
+	Where this server serves it, below `/artwork/`, with `Range`. A new theme has a new
+	address, so a client may cache one for good.
+	"""
+	url: String!
+	"""
+	Its media type: `audio/mpeg` for the service's; a local one's by its extension.
+	"""
+	contentType: String!
+	"""
+	Its size in bytes.
+	"""
+	sizeBytes: Int64!
+	"""
+	Where it came from.
+	"""
+	source: ThemeSource!
+	"""
+	When the series took it.
+	"""
+	changedAt: DateTime!
+}
+
+"""
 The kind of media an item is.
 """
 enum ItemType {
@@ -11377,6 +11405,11 @@ type Show implements Item & Node {
 	"""
 	images: [ItemImage!]!
 	"""
+	Its theme music, kept on this server: a `theme.*` file beside its episodes, else the
+	one Plex's theme service keeps for it. Null when it has none, or before it is matched.
+	"""
+	theme: ItemTheme
+	"""
 	When the item's metadata last changed.
 	"""
 	updatedAt: DateTime!
@@ -12821,6 +12854,20 @@ enum TextField {
 	The studio or network that made the item.
 	"""
 	STUDIO
+}
+
+"""
+Where a theme came from.
+"""
+enum ThemeSource {
+	"""
+	A `theme.*` file beside the series' episodes, copied when the series was matched.
+	"""
+	LOCAL
+	"""
+	Plex's theme service, by the series' TVDB id.
+	"""
+	PROVIDER
 }
 
 """

@@ -29,6 +29,7 @@ use crate::marker::MarkerConnection;
 use crate::media::Version;
 use crate::node::GlobalId;
 use crate::tag::{external_ids_of, ratings_of, ExternalIdConnection, ItemTags, RatingConnection};
+use crate::theme::ItemThemeObject;
 use crate::user_rating::UserRatingObject;
 use crate::watch::WatchStateObject;
 use crate::DateTime;
@@ -609,6 +610,12 @@ impl Show {
     /// matched.
     pub async fn images(&self, context: &Context<'_>) -> Result<Vec<ItemImageObject>> {
         crate::artwork::images_of(context, self.0.id).await
+    }
+
+    /// Its theme music, kept on this server: a `theme.*` file beside its episodes, else the
+    /// one Plex's theme service keeps for it. Null when it has none, or before it is matched.
+    pub async fn theme(&self, context: &Context<'_>) -> Result<Option<ItemThemeObject>> {
+        crate::theme::theme_of(context, self.0.id).await
     }
 
     /// When the item's metadata last changed.

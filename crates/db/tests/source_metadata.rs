@@ -4,20 +4,26 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use klapz_core::edit::ItemField;
+use klapz_core::files::{
+    Directory, DirectoryListing, Entry, EntryKind, FileLocation, FilesError, LibraryFiles,
+    RelativePath,
+};
 use klapz_core::language::LanguageTag;
 use klapz_core::metadata::{ItemKind, TagKind};
+use klapz_core::source_metadata::artwork::ArtworkError;
+use klapz_core::source_metadata::theme::{StoredTheme, ThemeSource, ThemeStore, Themes};
 use klapz_core::source_metadata::{
     match_library, AgentError, Candidate, Credit, ExternalId, Genre, MatchQuery, MetadataSource,
-    MetadataSources, SourceRecord, Translation,
+    MetadataSources, SourceMetadataRepository, SourceRecord, Translation,
 };
-use klapz_core::SectionId;
+use klapz_core::{RatingKey, SectionId};
 use klapz_db::entity::{
-    item_external_id, item_source, item_tag, library_section, metadata_item, person,
-    source_metadata, tag, watch_state,
+    item_external_id, item_source, item_tag, item_theme, library_section, media, media_part,
+    metadata_item, person, section_root, source_metadata, tag, watch_state,
 };
 use klapz_db::write;
 use klapz_db::SqlSourceMetadataRepository;
@@ -240,6 +246,7 @@ async fn shows_a_series_and_its_episodes_in_the_library_language() {
         &repository,
         &sources(Arc::clone(&tvdb)),
         None,
+        None,
         SectionId::new(SECTION),
         false,
         NOW,
@@ -287,6 +294,7 @@ async fn a_refresh_fetches_the_same_record_again_without_searching() {
         &repository,
         &sources(Arc::clone(&tvdb)),
         None,
+        None,
         section,
         false,
         NOW,
@@ -297,6 +305,7 @@ async fn a_refresh_fetches_the_same_record_again_without_searching() {
         &repository,
         &sources(Arc::clone(&tvdb)),
         None,
+        None,
         section,
         false,
         NOW,
@@ -306,6 +315,7 @@ async fn a_refresh_fetches_the_same_record_again_without_searching() {
     let refreshed = match_library(
         &repository,
         &sources(Arc::clone(&tvdb)),
+        None,
         None,
         section,
         true,
@@ -337,6 +347,7 @@ async fn a_locked_title_survives_matching() {
     match_library(
         &repository,
         &sources(Arc::new(FakeTvdb::default())),
+        None,
         None,
         SectionId::new(SECTION),
         false,
@@ -371,6 +382,7 @@ async fn viewers_keep_their_state_when_the_item_changes_identity() {
     match_library(
         &repository,
         &sources(Arc::new(FakeTvdb::default())),
+        None,
         None,
         SectionId::new(SECTION),
         false,
@@ -412,6 +424,7 @@ async fn copies_of_an_imported_work_keep_its_guid() {
         &repository,
         &sources(Arc::new(FakeTvdb::default())),
         None,
+        None,
         SectionId::new(SECTION),
         false,
         NOW,
@@ -442,6 +455,7 @@ async fn credits_land_on_the_person_the_provider_names() {
     match_library(
         &repository,
         &sources(Arc::new(FakeTvdb::default())),
+        None,
         None,
         SectionId::new(SECTION),
         false,
@@ -485,4 +499,266 @@ async fn credits_land_on_the_person_the_provider_names() {
         Some("https://artworks.thetvdb.com/anna.jpg")
     );
     assert_eq!(person::Entity::find().count(&connection).await.unwrap(), 1);
+}
+
+/// A library on no disk: listings and contents by path below one root.
+#[derive(Debug, Default)]
+struct FakeFiles {
+    files: std::collections::BTreeMap<String, Vec<u8>>,
+}
+
+const ROOT: &str = "/series";
+
+#[async_trait::async_trait]
+impl LibraryFiles for FakeFiles {
+    async fn list(&self, root: &str, directory: &RelativePath) -> Result<Vec<Entry>, FilesError> {
+        assert_eq!(root, ROOT);
+        let prefix = format!("{directory}/");
+        Ok(self
+            .files
+            .iter()
+            .filter_map(|(path, bytes)| {
+                let name = path.strip_prefix(&prefix)?;
+                (!name.contains('/')).then(|| Entry {
+                    name: name.to_owned(),
+                    kind: EntryKind::File,
+                    size: bytes.len() as u64,
+                    modified_at: 0,
+                })
+            })
+            .collect())
+    }
+
+    async fn read(
+        &self,
+        _root: &str,
+        file: &RelativePath,
+        _limit: u64,
+    ) -> Result<Vec<u8>, FilesError> {
+        self.files
+            .get(file.as_str())
+            .cloned()
+            .ok_or(FilesError::NotFound)
+    }
+
+    fn stored_path(&self, root: &str, file: &RelativePath) -> String {
+        format!("{root}/{file}")
+    }
+
+    fn relative_path(&self, root: &str, stored: &str) -> Option<RelativePath> {
+        RelativePath::parse(stored.strip_prefix(root)?.strip_prefix('/')?).ok()
+    }
+
+    async fn locate(&self, _root: &str, _file: &RelativePath) -> Result<FileLocation, FilesError> {
+        Err(FilesError::NotFound)
+    }
+
+    async fn resolve_root(&self, _path: &str) -> Result<String, FilesError> {
+        Err(FilesError::NotFound)
+    }
+
+    async fn starting_points(&self) -> Result<Vec<Directory>, FilesError> {
+        Ok(Vec::new())
+    }
+
+    async fn list_directories(
+        &self,
+        _path: &str,
+        _limit: usize,
+    ) -> Result<DirectoryListing, FilesError> {
+        Err(FilesError::NotFound)
+    }
+}
+
+/// Plex's theme service, holding a theme or none, and a store keeping what it is handed.
+#[derive(Debug)]
+struct FakeThemes {
+    service_has_one: AtomicBool,
+    asked: Mutex<Vec<String>>,
+    kept: Mutex<Vec<(Vec<u8>, String)>>,
+}
+
+impl FakeThemes {
+    fn new(service_has_one: bool) -> Self {
+        Self {
+            service_has_one: AtomicBool::new(service_has_one),
+            asked: Mutex::default(),
+            kept: Mutex::default(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl ThemeStore for FakeThemes {
+    async fn fetch(&self, url: &str) -> Result<Option<StoredTheme>, ArtworkError> {
+        self.asked.lock().unwrap().push(url.to_owned());
+        Ok(self
+            .service_has_one
+            .load(Ordering::SeqCst)
+            .then(|| StoredTheme {
+                file: "themes/aa/service.mp3".to_owned(),
+                content_type: "audio/mpeg".to_owned(),
+                size_bytes: 1000,
+            }))
+    }
+
+    async fn keep(&self, bytes: Vec<u8>, extension: &str) -> Result<StoredTheme, ArtworkError> {
+        let size_bytes = bytes.len() as u64;
+        self.kept
+            .lock()
+            .unwrap()
+            .push((bytes, extension.to_owned()));
+        Ok(StoredTheme {
+            file: format!("themes/bb/local.{extension}"),
+            content_type: "audio/flac".to_owned(),
+            size_bytes,
+        })
+    }
+}
+
+/// Fringe's episode, as a file below a season folder of the series' own.
+async fn with_episode_file(connection: &DatabaseConnection) {
+    section_root::Entity::insert(section_root::ActiveModel {
+        id: ActiveValue::Set(1),
+        section_id: ActiveValue::Set(SECTION),
+        path: ActiveValue::Set(ROOT.to_owned()),
+        created_at: ActiveValue::Set(0),
+    })
+    .exec(connection)
+    .await
+    .unwrap();
+    media::Entity::insert(media::ActiveModel {
+        id: ActiveValue::Set(100),
+        metadata_item_id: ActiveValue::Set(EPISODE),
+        width: ActiveValue::Set(None),
+        height: ActiveValue::Set(None),
+        aspect_ratio: ActiveValue::Set(None),
+        duration_ms: ActiveValue::Set(None),
+        bitrate: ActiveValue::Set(None),
+        container: ActiveValue::Set(None),
+        video_codec: ActiveValue::Set(None),
+        audio_codec: ActiveValue::Set(None),
+        audio_channels: ActiveValue::Set(None),
+        frame_rate: ActiveValue::Set(None),
+        interlaced: ActiveValue::Set(false),
+        optimized_for_streaming: ActiveValue::Set(false),
+        created_at: ActiveValue::Set(0),
+        updated_at: ActiveValue::Set(0),
+    })
+    .exec(connection)
+    .await
+    .unwrap();
+    media_part::Entity::insert(media_part::ActiveModel {
+        id: ActiveValue::Set(1000),
+        media_id: ActiveValue::Set(100),
+        position: ActiveValue::Set(0),
+        path: ActiveValue::Set(format!("{ROOT}/Fringe/Season 03/Fringe S03E19.mkv")),
+        size_bytes: ActiveValue::Set(None),
+        duration_ms: ActiveValue::Set(None),
+        created_at: ActiveValue::Set(0),
+        updated_at: ActiveValue::Set(0),
+        has_thumbnail: ActiveValue::Set(false),
+        has_chapter_text_stream: ActiveValue::Set(false),
+        content_hash: ActiveValue::Set(None),
+        open_subtitles_hash: ActiveValue::Set(None),
+        ..Default::default()
+    })
+    .exec(connection)
+    .await
+    .unwrap();
+}
+
+async fn match_with_themes(repository: &SqlSourceMetadataRepository, themes: &Themes, force: bool) {
+    match_library(
+        repository,
+        &sources(Arc::new(FakeTvdb::default())),
+        None,
+        Some(themes),
+        SectionId::new(SECTION),
+        force,
+        NOW,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn a_theme_beside_the_episodes_wins_over_the_service() {
+    let connection = seeded().await;
+    with_episode_file(&connection).await;
+    let repository = SqlSourceMetadataRepository::new(connection.clone());
+    let store = Arc::new(FakeThemes::new(true));
+    let mut files = FakeFiles::default();
+    for (path, bytes) in [
+        ("Fringe/Season 03/Fringe S03E19.mkv", &b""[..]),
+        ("Fringe/Theme-1.mp3", b"second"),
+        ("Fringe/theme.flac", b"first"),
+    ] {
+        files.files.insert(path.to_owned(), bytes.to_vec());
+    }
+    let themes = Themes {
+        store: Arc::clone(&store) as Arc<dyn ThemeStore>,
+        files: Arc::new(files),
+    };
+
+    match_with_themes(&repository, &themes, false).await;
+
+    assert!(store.asked.lock().unwrap().is_empty());
+    assert_eq!(
+        *store.kept.lock().unwrap(),
+        [(b"first".to_vec(), "flac".to_owned())]
+    );
+    let row = item_theme::Entity::find_by_id(SHOW)
+        .one(&connection)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.source, "local");
+    assert_eq!(row.origin, "/series/Fringe/theme.flac");
+    assert_eq!(row.file, "themes/bb/local.flac");
+    assert_eq!(row.chosen_at, NOW);
+
+    // Unmatched, the series keeps the library's theme.
+    repository.unmatch(RatingKey::new(SHOW)).await.unwrap();
+    let shown = repository.themes_of(&[RatingKey::new(SHOW)]).await.unwrap();
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].source, ThemeSource::Local);
+}
+
+#[tokio::test]
+async fn the_service_gives_its_theme_by_tvdb_id_and_takes_it_back() {
+    let connection = seeded().await;
+    with_episode_file(&connection).await;
+    let repository = SqlSourceMetadataRepository::new(connection.clone());
+    let store = Arc::new(FakeThemes::new(true));
+    let themes = Themes {
+        store: Arc::clone(&store) as Arc<dyn ThemeStore>,
+        files: Arc::new(FakeFiles::default()),
+    };
+
+    match_with_themes(&repository, &themes, false).await;
+    assert_eq!(
+        *store.asked.lock().unwrap(),
+        ["https://tvthemes.plexapp.com/82066.mp3"]
+    );
+    let shown = repository.themes_of(&[RatingKey::new(SHOW)]).await.unwrap();
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].source, ThemeSource::Provider);
+    assert_eq!(shown[0].file, "themes/aa/service.mp3");
+    assert_eq!(shown[0].size_bytes, 1000);
+    // Only the series has one.
+    assert!(repository
+        .themes_of(&[RatingKey::new(SEASON), RatingKey::new(EPISODE)])
+        .await
+        .unwrap()
+        .is_empty());
+
+    // The service no longer holds one: refreshed, the series has none.
+    store.service_has_one.store(false, Ordering::SeqCst);
+    match_with_themes(&repository, &themes, true).await;
+    assert!(repository
+        .themes_of(&[RatingKey::new(SHOW)])
+        .await
+        .unwrap()
+        .is_empty());
 }

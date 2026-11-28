@@ -1568,6 +1568,47 @@ chapter of that title — eight chapters of one film all `id="76"`, the untitled
 chapter's own number, which `filter` repeats; `Chapter` is a node on the official API. The
 image address is published as imported and answers `501`: no chapter image is stored here.
 
+### A series' theme music
+
+**Where the reference finds one.** Two agents, read in its plug-ins and its database. Its
+`LocalMedia` agent (`localmedia.py`, `findAssets`) looks for `theme-?[0-9]?.mp3`
+(`config.AUDIO_EXTS` is `['mp3']`, matched without case) in each episode's directory, the one
+above it and the one above that (`FindUniqueSubdirs`), sorted by stem, and copies what it finds
+into the series' metadata bundle (`Core.storage.load`, `Proxy.Media(data)`), the first one first.
+Its series agent names the theme Plex's service keeps for the series' TVDB id,
+`https://tvthemes.plexapp.com/{tvdb}.mp3` (`docs/plex/scanner/matching.md`, the record's `theme`),
+downloaded into the bundle's `themes/` kind as `tv.plex.agents.series_{sha1(url)}`; the item
+keeps `user_music_url = metadata://themes/…`, set on 2,271 of the reference's 4,003 series and on
+no film, season or episode. The service answers `audio/mpeg`, and `404` (`NoSuchKey`, typed
+`text/html`) for a series it has no theme for.
+
+**What it publishes.** `theme="/library/metadata/{series}/theme/{changed at}"` on the series,
+after `art`; `parentTheme` on a season, after `parentThumb`; `grandparentTheme` on an episode,
+after `grandparentArt`; and on the containers of a series' `/children` and `/allLeaves`
+`theme`, below a season `grandparentTheme` and `theme` both, each the series' address. Measured on
+captures of the reference's libraries (`theme` 1 of 41 items in `docs/plex/wire-format.md`,
+`grandparentTheme` 15 of 41).
+
+**What we do.** The same two sources, at matching (after a scan, `klapz-server match`,
+`/refresh`, `/match`): a local theme first, else the service's when the series' record has a
+TVDB id (its own, matched on TVDB, or an external id), both copied into the artwork store
+(`themes/ab/{sha256}.{ext}`; the service's by its address, a local one by its content) and
+published as `Show.theme` on the official API, served at `/artwork/themes/…` and at the item's
+`theme` address, with `Range`. Where we differ, each the repo owner's decision or a consequence
+of a settled one:
+
+- A local theme may also be `m4a`, `aac`, `flac`, `ogg`, `oga`, `opus` or `wav`, the formats
+  browsers play. Its type comes from its extension: nothing reads its content.
+- The library's root is never searched: a `theme.mp3` there is no one series', where the
+  reference's grandparent directory of a root-level episode is the root itself.
+- One theme per series, the first; the reference keeps every local one and the service's,
+  and serves the first.
+- A theme the service could not be asked for (network, another status) keeps the one the
+  series had; one it answers `404` for is forgotten with it, as is a local one gone. `/unmatch`
+  forgets the service's and keeps a local one.
+- Imported series keep no theme: the bundles are not imported. A refresh gives them theirs.
+- There is no lock on the theme, and Plex's routes to set or delete one stay `501`.
+
 ### Extras: trailers, deleted scenes, featurettes
 
 **How the reference keeps them.** An extra is a metadata item of `metadata_type` 12 outside any

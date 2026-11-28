@@ -78,7 +78,7 @@ mod tests {
         let connection = Database::connect("sqlite::memory:").await.unwrap();
         let before = Migrator::migrations()
             .iter()
-            .position(|migration| migration.name() == "m0051_canonical_languages")
+            .position(|migration| migration.name() == "m0052_canonical_languages")
             .expect("registered");
         Migrator::up(&connection, Some(u32::try_from(before).unwrap()))
             .await

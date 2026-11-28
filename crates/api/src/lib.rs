@@ -47,6 +47,7 @@ mod source_metadata;
 pub mod stated;
 pub mod stream;
 pub mod tag;
+pub mod theme;
 pub mod user_rating;
 pub mod watch;
 

@@ -5,7 +5,7 @@ paths:
   - "crates/api/src/language.rs"
   - "crates/api/src/language/**"
   - "crates/*/src/language.rs"
-  - "crates/db/src/migration/m0051_canonical_languages.rs"
+  - "crates/db/src/migration/m0052_canonical_languages.rs"
   - "tools/gen_languages.py"
 ---
 
@@ -21,7 +21,7 @@ labels (below).
   apart (TRUEFRENCH `fr-FR`, VFQ `fr-CA`); a language without one stands for all its regions
   in a filter, a region for itself alone. A well-formed code outside the list (`qaa`) is kept,
   its language `MIS`; a word naming no language (`unknown`) is none.
-- Storage keeps the canonical tag only (migration `m0051`); the scan and the importer write
+- Storage keeps the canonical tag only (migration `m0052`); the scan and the importer write
   nothing else. What a file wrote stays beside it as stated (`declared_language`).
 - Official API: the `Language` enum, or `Locale` (`language`, `script`, `region`, `tag`,
   `name`, `nativeName`) and `LocaleInput` where a region counts. Only stated values stay text

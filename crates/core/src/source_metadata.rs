@@ -14,6 +14,7 @@
 
 pub mod artwork;
 pub mod matching;
+pub mod theme;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -337,6 +338,32 @@ pub trait SourceMetadataRepository: Send + Sync + std::fmt::Debug {
 
     /// The images these items show.
     async fn images_of(&self, items: &[RatingKey]) -> Result<Vec<ShownImage>, SourceMetadataError>;
+
+    /// Where a series' episodes lie, which its local theme is looked for beside.
+    async fn series_files(
+        &self,
+        show: RatingKey,
+    ) -> Result<theme::SeriesFiles, SourceMetadataError>;
+
+    /// Makes `theme` its item's, replacing the one it had.
+    async fn save_theme(
+        &self,
+        theme: &theme::ItemTheme,
+        at: i64,
+    ) -> Result<(), SourceMetadataError>;
+
+    /// Forgets an item's theme: any, or only one from `source`.
+    async fn clear_theme(
+        &self,
+        item: RatingKey,
+        source: Option<theme::ThemeSource>,
+    ) -> Result<(), SourceMetadataError>;
+
+    /// The themes these items have.
+    async fn themes_of(
+        &self,
+        items: &[RatingKey],
+    ) -> Result<Vec<theme::ShownTheme>, SourceMetadataError>;
 }
 
 /// An image an item shows, as clients are told of it.
@@ -419,6 +446,8 @@ pub struct Matching {
     pub sources: MetadataSources,
     /// Where the images items show are kept; `None` keeps none.
     pub artwork: Option<Arc<dyn artwork::ArtworkFetcher>>,
+    /// Where series' themes are found and kept; `None` keeps none.
+    pub themes: Option<theme::Themes>,
 }
 
 impl Matching {
@@ -437,6 +466,7 @@ impl Matching {
             self.repository.as_ref(),
             &self.sources,
             self.artwork.as_deref(),
+            self.themes.as_ref(),
             section,
             force,
             now,
@@ -534,6 +564,7 @@ impl Matching {
             self.repository.as_ref(),
             source,
             self.artwork.as_deref(),
+            self.themes.as_ref(),
             &target,
             language,
             now,
@@ -553,6 +584,7 @@ pub async fn match_library(
     repository: &dyn SourceMetadataRepository,
     sources: &MetadataSources,
     artwork: Option<&dyn artwork::ArtworkFetcher>,
+    themes: Option<&theme::Themes>,
     section: SectionId,
     force: bool,
     now: i64,
@@ -564,7 +596,17 @@ pub async fn match_library(
     let mut report = MatchReport::default();
     for target in plan.targets {
         let key = target.target.item.id;
-        match match_one(repository, source, artwork, &target, plan.language, now).await {
+        match match_one(
+            repository,
+            source,
+            artwork,
+            themes,
+            &target,
+            plan.language,
+            now,
+        )
+        .await
+        {
             Ok(Outcome::Matched(matched)) => report.matched.push(matched),
             Ok(Outcome::Unmatched(unmatched)) => report.unmatched.push(unmatched),
             Err(reason) => {
@@ -587,6 +629,7 @@ async fn match_one(
     repository: &dyn SourceMetadataRepository,
     source: &dyn MetadataSource,
     artwork: Option<&dyn artwork::ArtworkFetcher>,
+    themes: Option<&theme::Themes>,
     target: &MatchTarget,
     language: LanguageTag,
     now: i64,
@@ -602,13 +645,16 @@ async fn match_one(
                 (candidate.provider_id, Some(score))
             }
             best => {
+                if let Some(themes) = themes {
+                    keep_theme(repository, themes, item, None, now).await?;
+                }
                 return Ok(Outcome::Unmatched(Unmatched {
                     item: item.id,
                     searched: named,
                     best: best.map(|(candidate, score)| {
                         (candidate.names.first().cloned().unwrap_or_default(), score)
                     }),
-                }))
+                }));
             }
         },
     };
@@ -672,6 +718,9 @@ async fn match_one(
             .await
             .map_err(|e| with_causes(&e))?;
     }
+    if let Some(themes) = themes {
+        keep_theme(repository, themes, item, Some(&record), now).await?;
+    }
     Ok(Outcome::Matched(Matched {
         item: item.id,
         searched: named,
@@ -718,6 +767,106 @@ async fn fetch_images(
         }
     }
     images
+}
+
+/// Gives a series the theme the reference would: a local one, else the service's for its
+/// record. A theme the service could not be asked for keeps the one the series had; one it
+/// holds none of, or a local one gone, is forgotten.
+async fn keep_theme(
+    repository: &dyn SourceMetadataRepository,
+    themes: &theme::Themes,
+    item: &MetadataItem,
+    record: Option<&SourceRecord>,
+    now: i64,
+) -> Result<(), String> {
+    if item.kind != ItemKind::Show {
+        return Ok(());
+    }
+    let found = match local_theme(repository, themes, item.id).await? {
+        Some(local) => Some(local),
+        None => match record.and_then(theme::provider_theme_url) {
+            Some(url) => match themes.store.fetch(&url).await {
+                Ok(stored) => stored.map(|stored| theme::ItemTheme {
+                    item: item.id,
+                    source: theme::ThemeSource::Provider,
+                    origin: url,
+                    stored,
+                }),
+                Err(error) => {
+                    tracing::warn!(
+                        item = item.id.get(),
+                        reason = with_causes(&error),
+                        "the theme service could not be asked"
+                    );
+                    return Ok(());
+                }
+            },
+            None => None,
+        },
+    };
+    let written = match (&found, record) {
+        (Some(found), _) => repository.save_theme(found, now).await,
+        (None, Some(_)) => repository.clear_theme(item.id, None).await,
+        // Unmatched, a series keeps the service's theme it was given while it was matched.
+        (None, None) => {
+            repository
+                .clear_theme(item.id, Some(theme::ThemeSource::Local))
+                .await
+        }
+    };
+    written.map_err(|e| with_causes(&e))
+}
+
+/// The first `theme.*` beside a series' episodes, copied into the store. A directory that
+/// cannot be listed, or a file that cannot be read, is passed over.
+async fn local_theme(
+    repository: &dyn SourceMetadataRepository,
+    themes: &theme::Themes,
+    show: RatingKey,
+) -> Result<Option<theme::ItemTheme>, String> {
+    let series = repository
+        .series_files(show)
+        .await
+        .map_err(|e| with_causes(&e))?;
+    let files = themes.files.as_ref();
+    for (root, directory) in theme::theme_directories(files, &series) {
+        let Ok(entries) = files.list(&root, &directory).await else {
+            continue;
+        };
+        let names: Vec<&str> = entries
+            .iter()
+            .filter(|entry| entry.kind == crate::files::EntryKind::File)
+            .map(|entry| entry.name.as_str())
+            .collect();
+        let Some((name, extension)) =
+            theme::first_theme(&names).and_then(|name| Some((name, theme::theme_extension(name)?)))
+        else {
+            continue;
+        };
+        let Ok(path) = directory.join(name) else {
+            continue;
+        };
+        let kept = match files.read(&root, &path, theme::MAX_THEME_BYTES).await {
+            Ok(bytes) => themes.store.keep(bytes, extension).await,
+            Err(error) => Err(artwork::ArtworkError(Box::new(error))),
+        };
+        match kept {
+            Ok(stored) => {
+                return Ok(Some(theme::ItemTheme {
+                    item: show,
+                    source: theme::ThemeSource::Local,
+                    origin: files.stored_path(&root, &path),
+                    stored,
+                }))
+            }
+            Err(error) => tracing::warn!(
+                item = show.get(),
+                reason = with_causes(&error),
+                "a local theme could not be kept"
+            ),
+        }
+    }
+    Ok(None)
 }
 
 /// The best scored result of every search worth making for an item named `named`.
