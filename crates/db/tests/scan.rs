@@ -3,7 +3,7 @@
 //!
 //! The analyses are the scanner's own reports on the reference's test files (`fixtures/scan`),
 //! deep ones as a scan makes them, and the values asserted are the ones
-//! `docs/scanner/analysis.md` measured the reference storing for those same files. A scan
+//! `docs/plex/scanner/analysis.md` measured the reference storing for those same files. A scan
 //! writes what it finds, and the analysis what it reads afterwards, its headers then its
 //! packets, as `klapz_core::testing::read_queued` replays them.
 

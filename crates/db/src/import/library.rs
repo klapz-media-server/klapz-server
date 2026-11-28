@@ -105,7 +105,7 @@ pub async fn import(
 
 /// Extracts `pr:hidden` from Plex's packed `user_fields` blob.
 ///
-/// This is the denormalized design `docs/plex-db-schema.md` records as one we reject: a
+/// This is the denormalized design `docs/plex/db-schema.md` records as one we reject: a
 /// per-section preference that should be a column lives inside a JSON string, so it cannot be
 /// queried or indexed. We unpack it once here and store it as a real column; the key is absent
 /// entirely on sections that were never hidden, which reads as `false`.

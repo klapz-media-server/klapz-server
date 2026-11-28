@@ -1,6 +1,6 @@
 # Live endpoint probe
 
-Which `GET` operations of `docs/openapi.json` the reference server actually answers. **Generated** — regenerate with `PLEX_TOKEN=... python tools/probe_endpoints.py`.
+Which `GET` operations of `docs/plex/openapi.json` the reference server actually answers. **Generated** — regenerate with `PLEX_TOKEN=... python tools/probe_endpoints.py`.
 
 The spec is not perfectly faithful, so this informs what is worth implementing. Write operations are not probed, and deferred scanner/analysis paths are skipped.
 

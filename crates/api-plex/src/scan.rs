@@ -1,7 +1,7 @@
 //! Scanning: `/library/sections/{sectionId}/refresh` and the all-libraries forms, bound onto
 //! `scanLibrary` and `cancelLibraryScan`.
 //!
-//! As measured on the reference (`docs/scanner/discovery.md` §1): a scan request answers `200`
+//! As measured on the reference (`docs/plex/scanner/discovery.md` §1): a scan request answers `200`
 //! with an empty body at once and runs in the background, a request while the library is being
 //! scanned is coalesced into the running scan, and `force=1` does not rescan unchanged
 //! directories — on the reference it refreshes metadata, which this server has no agent for,

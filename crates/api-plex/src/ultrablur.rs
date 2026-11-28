@@ -4,7 +4,7 @@
 //! art are the ones its analysis stored, read on the official API, since the artwork itself is
 //! not served. Any other address answers `404`, as the reference does for an image it cannot
 //! read — and the transcoder fetches nothing but Plex's hosts, where the reference fetches
-//! whatever it is given, its own loopback included. `docs/spec-gaps.md` has the rules.
+//! whatever it is given, its own loopback included. `docs/plex/spec-gaps.md` has the rules.
 
 use std::collections::HashMap;
 

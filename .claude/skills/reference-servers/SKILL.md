@@ -5,7 +5,7 @@ description: How to measure behavior on a reference Plex Media Server or Jellyfi
 
 # Working against a reference server
 
-A reference server is the arbiter of every behavioral question (CLAUDE.md, "Reference server").
+A reference server is the arbiter of every behavioral question (CLAUDE.md, "Reference servers").
 It is usually also someone's real server, with real accounts and real watch state. Measuring is
 cheap; repairing is not.
 
@@ -63,7 +63,7 @@ artwork, they are also where a fixture can be byte-identical to the reference, J
 Some *reads* write too: `GET /library/metadata/{id}/posters` caches the provider's image list as
 taggings on the item. Prefer the test libraries even for reads that look free.
 
-Record anything left changed in the "side effects" section of the `docs/scanner/*.md` page of
+Record anything left changed in the "side effects" section of the `docs/plex/scanner/*.md` page of
 the work. Repairing the database itself is SQL with Plex **stopped**: back the file up beside
 the original, write with the `Plex SQLite` binary shipped with the server, `PRAGMA quick_check`,
 restart, verify through the API.
@@ -76,7 +76,7 @@ restart, verify through the API.
    runs, and search for the whole call, not fragments, before calling something unknown.
 3. **Plex Web**, the bundle the server ships: which settings and attributes a client actually
    reads, and the rules it applies.
-4. **The spec**, last: it is wrong often enough (`docs/spec-gaps.md`).
+4. **The spec**, last: it is wrong often enough (`docs/plex/spec-gaps.md`).
 
 Without a Plex Pass on the reference account, the success path of gated features (markers,
 session termination, the provider's extras) cannot be measured; its shape then comes from the
@@ -104,7 +104,7 @@ binary, Plex Web or the spec. Say so where it is used.
 - **Filter to the population you talk about** before quoting a ratio: "14 % of items have
   several versions" was 0.06 % once extras were left out.
 - **Re-verify every figure you quote** after each fix.
-- When a measurement and a settled decision in CLAUDE.md disagree, the decision wins: apply it
+- When a measurement and a settled decision in CLAUDE.md or `.claude/rules/` disagree, the decision wins: apply it
   and record where the measurement differs.
 
 ## Comparing klapz with a reference

@@ -1,11 +1,13 @@
-# Spec gaps
+# Plex: spec gaps and deliberate divergences
 
-Where `docs/openapi.json` and the reference server (1.43.5.11029) disagree. Every entry here
+The Plex surface only (`crates/api-plex`). Where `docs/plex/openapi.json` and the reference Plex Media
+Server (1.43.5.11029) disagree, and where klapz deliberately answers otherwise. The Jellyfin
+surface has its own file, `docs/jellyfin/spec-gaps.md`. Every entry here
 was verified by hand against `127.0.0.1:32400`, not inferred from the automated probe.
 
 The spec is treated as authoritative for request shapes; this file records the exceptions. When
 an operation 404s under the automated probe, the first assumption is a wrong path parameter, not
-a missing route — see the caveat in `docs/endpoint-probe.md`.
+a missing route — see the caveat in `docs/plex/endpoint-probe.md`.
 
 ## Missing from the spec
 
@@ -330,7 +332,7 @@ Where ours differ:
 `/status/sessions/history/all`, `/status/sessions/history/{historyId}` and its `DELETE`,
 measured on the reference's test libraries 27 and 28 by playing, marking and deleting, each
 step read back (its rows in `metadata_item_views`, with a `view_type` column
-`docs/plex-db-schema.md` predates):
+`docs/plex/db-schema.md` predates):
 
 - **An entry is a viewing counted, and nothing else.** A timeline crossing 90% writes one
   (`viewType` 0), and the reports after it in the same playback none; `/:/scrobble` writes one
@@ -1004,7 +1006,7 @@ noise is drawn from a fixed seed, so an image is the same on every request.
 ### A file listed before it is read
 
 A scan lists what it finds from names, sizes and times, and reads each file afterwards
-(`docs/scanner/analysis.md`, §1), every file's headers in a few minutes, its packets over hours.
+(`docs/plex/scanner/analysis.md`, §1), every file's headers in a few minutes, its packets over hours.
 Until its headers are read, a file is published as one whose analysis failed is: `Media` without
 `duration`, `bitrate`, `container`, codecs, resolution or profiles (absent, never `0`), its `Part`
 with `file` and `size` and no `Stream` but its sidecars; on the official API
@@ -1573,7 +1575,7 @@ image address is published as imported and answers `501`: no chapter image is st
 above it and the one above that (`FindUniqueSubdirs`), sorted by stem, and copies what it finds
 into the series' metadata bundle (`Core.storage.load`, `Proxy.Media(data)`), the first one first.
 Its series agent names the theme Plex's service keeps for the series' TVDB id,
-`https://tvthemes.plexapp.com/{tvdb}.mp3` (`docs/scanner/matching.md`, the record's `theme`),
+`https://tvthemes.plexapp.com/{tvdb}.mp3` (`docs/plex/scanner/matching.md`, the record's `theme`),
 downloaded into the bundle's `themes/` kind as `tv.plex.agents.series_{sha1(url)}`; the item
 keeps `user_music_url = metadata://themes/…`, set on 2,271 of the reference's 4,003 series and on
 no film, season or episode. The service answers `audio/mpeg`, and `404` (`NoSuchKey`, typed
@@ -1583,7 +1585,7 @@ no film, season or episode. The service answers `audio/mpeg`, and `404` (`NoSuch
 after `art`; `parentTheme` on a season, after `parentThumb`; `grandparentTheme` on an episode,
 after `grandparentArt`; and on the containers of a series' `/children` and `/allLeaves`
 `theme`, below a season `grandparentTheme` and `theme` both, each the series' address. Measured on
-captures of the reference's libraries (`theme` 1 of 41 items in `docs/wire-format.md`,
+captures of the reference's libraries (`theme` 1 of 41 items in `docs/plex/wire-format.md`,
 `grandparentTheme` 15 of 41).
 
 **What we do.** The same two sources, at matching (after a scan, `klapz-server match`,
@@ -3074,7 +3076,7 @@ client turns out to depend on the exact sequence.
 
 The spec's `MediaContainer` schema declares four properties with `additionalProperties: true`, so
 it describes almost nothing about responses. The authoritative per-field type map is
-`docs/wire-format.md`, generated from live captures. Notable findings recorded there:
+`docs/plex/wire-format.md`, generated from live captures. Notable findings recorded there:
 
 - JSON scalar types are per-field: `ratingKey` is a string, `Media.id` is a number.
 - Booleans are inconsistent in JSON: `allowSync` is `true`, `hasPremiumPrimaryExtra` is `"1"`.
