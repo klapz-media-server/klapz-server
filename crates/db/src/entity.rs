@@ -26,6 +26,7 @@ pub mod item_marker;
 pub mod item_rating;
 pub mod item_source;
 pub mod item_tag;
+pub mod item_theme;
 pub mod item_title_key;
 pub mod item_title_word;
 pub mod library_permission;

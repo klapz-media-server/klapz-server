@@ -129,7 +129,7 @@ Served, but absent from `docs/plex/openapi.json` and therefore from the counts a
 | `stub` | `DELETE` | `/library/metadata/{ids}/{element}` | user | Delete an item's artwork, theme, etc |  |
 | `stub` | `POST` | `/library/metadata/{ids}/{element}` | user | Set an item's artwork, theme, etc |  |
 | `stub` | `PUT` | `/library/metadata/{ids}/{element}` | user | Set an item's artwork, theme, etc |  |
-| `done` | `GET` | `/library/metadata/{ids}/{element}/{timestamp}` | user | Get an item's artwork, theme, etc | `Item.images`: `thumb` (an episode's still, else the poster), `art`, `clearLogo`, `banner`, `poster`, read from the artwork store; any timestamp serves the current image. Also a source of `/photo/:/transcode`. |
+| `done` | `GET` | `/library/metadata/{ids}/{element}/{timestamp}` | user | Get an item's artwork, theme, etc | `Item.images`: `thumb` (an episode's still, else the poster), `art`, `clearLogo`, `banner`, `poster`, read from the artwork store; any timestamp serves the current image. Also a source of `/photo/:/transcode`. `theme`: a series' music, `Show.theme`, with `Range`. |
 | `deferred` | `PUT` | `/library/optimize` | admin | Optimize the Database | scanner/analysis, separate binary |
 | `done` | `PUT` | `/library/parts/{partId}` | user | Set stream selection | The caller's audio or subtitle per file, `subtitleStreamID=0` for none; `400` for a track not of the part or kind. Burned in on `subtitles=burn`. See plex/spec-gaps.md. |
 | `deferred` | `GET` | `/library/parts/{partId}/indexes/{index}` | user | Get BIF index for a part | scanner/analysis, separate binary |

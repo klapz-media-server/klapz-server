@@ -25,6 +25,24 @@ use crate::TranscodeError;
 /// The hosts providers serve their images from, and the only ones fetched.
 const PROVIDER_HOSTS: &[&str] = &["image.tmdb.org", "artworks.thetvdb.com"];
 
+/// Plex's theme service, the one host themes are fetched from.
+const THEME_HOSTS: &[&str] = &["tvthemes.plexapp.com"];
+
+/// A theme's extensions, and the media type each is served as.
+const THEME_TYPES: [(&str, &str); 8] = [
+    ("mp3", "audio/mpeg"),
+    ("m4a", "audio/mp4"),
+    ("aac", "audio/aac"),
+    ("flac", "audio/flac"),
+    ("ogg", "audio/ogg"),
+    ("oga", "audio/ogg"),
+    ("opus", "audio/ogg"),
+    ("wav", "audio/wav"),
+];
+
+/// A song of a few minutes, even as FLAC.
+const MAX_THEME_BYTES: usize = 48 * 1024 * 1024;
+
 /// Originals: a 4K backdrop as PNG runs to tens of megabytes.
 const MAX_ARTWORK_BYTES: usize = 64 * 1024 * 1024;
 
@@ -47,6 +65,15 @@ pub fn snapped(side: u32) -> u32 {
         .copied()
         .find(|step| *step >= side)
         .unwrap_or(SIZE_LADDER[SIZE_LADDER.len() - 1])
+}
+
+/// A theme stored on disk, kept as it came: nothing reads its content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredThemeFile {
+    /// Below the store's root: `themes/ab/abcd….mp3`.
+    pub file: String,
+    pub content_type: &'static str,
+    pub size_bytes: u64,
 }
 
 /// An image stored on disk, with what was worked out from it.
@@ -103,6 +130,70 @@ impl ArtworkStore {
         Ok(stored)
     }
 
+    /// The theme Plex's service keeps at `url`, from disk when it is there, else downloaded
+    /// and written; `None` when the service holds none.
+    ///
+    /// # Errors
+    ///
+    /// [`TranscodeError::ForbiddenSource`] for a host that is not the service's,
+    /// [`TranscodeError::UnavailableSource`] when it cannot be fetched or written,
+    /// [`TranscodeError::Undecodable`] for an answer that is not MP3 audio.
+    pub async fn fetch_theme(&self, url: &str) -> Result<Option<StoredThemeFile>, TranscodeError> {
+        let parsed = allowed_url(url, THEME_HOSTS)?;
+        let hash = hex_sha256(url.as_bytes());
+        let file = format!("themes/{}/{hash}.mp3", &hash[..2]);
+        if let Ok(metadata) = tokio::fs::metadata(self.root.join(&file)).await {
+            return Ok(Some(StoredThemeFile {
+                file,
+                content_type: "audio/mpeg",
+                size_bytes: metadata.len(),
+            }));
+        }
+        let client = self.client.get_or_try_init(|| async { client() }).await?;
+        let Some(bytes) = download_theme(client, parsed).await? else {
+            return Ok(None);
+        };
+        self.write(&file, &hash, &bytes).await?;
+        Ok(Some(StoredThemeFile {
+            file,
+            content_type: "audio/mpeg",
+            size_bytes: bytes.len() as u64,
+        }))
+    }
+
+    /// A theme read from a library, kept under the SHA-256 of its content with the extension
+    /// its file had: copies of one file share one.
+    ///
+    /// # Errors
+    ///
+    /// [`TranscodeError::Undecodable`] for an extension no theme has,
+    /// [`TranscodeError::SourceTooLarge`] past the size a theme may have,
+    /// [`TranscodeError::UnavailableSource`] when it cannot be written.
+    pub async fn keep_theme(
+        &self,
+        bytes: &[u8],
+        extension: &str,
+    ) -> Result<StoredThemeFile, TranscodeError> {
+        let extension = extension.to_ascii_lowercase();
+        let content_type = theme_type(&extension).ok_or(TranscodeError::Undecodable)?;
+        if bytes.len() > MAX_THEME_BYTES {
+            return Err(TranscodeError::SourceTooLarge);
+        }
+        let hash = hex_sha256(bytes);
+        let file = format!("themes/{}/{hash}.{extension}", &hash[..2]);
+        let present = tokio::fs::try_exists(self.root.join(&file))
+            .await
+            .unwrap_or(false);
+        if !present {
+            self.write(&file, &hash, bytes).await?;
+        }
+        Ok(StoredThemeFile {
+            file,
+            content_type,
+            size_bytes: bytes.len() as u64,
+        })
+    }
+
     /// A stored file's bytes and type. Only a name this store gives out is read: anything
     /// else is [`TranscodeError::MissingFile`], whatever it points at.
     ///
@@ -110,7 +201,7 @@ impl ArtworkStore {
     ///
     /// [`TranscodeError::MissingFile`] for a name of another shape or a file gone from disk.
     pub async fn read(&self, file: &str) -> Result<(Vec<u8>, &'static str), TranscodeError> {
-        let content_type = stored_name_type(file).ok_or(TranscodeError::MissingFile)?;
+        let content_type = stored_type(file).ok_or(TranscodeError::MissingFile)?;
         let bytes = tokio::fs::read(self.root.join(file))
             .await
             .map_err(|_| TranscodeError::MissingFile)?;
@@ -241,16 +332,25 @@ impl ArtworkStore {
     pub fn root(&self) -> &Path {
         &self.root
     }
+
+    /// Where a name this store gave out lies, and its type: `None` for any other string, so
+    /// that a caller serving it from disk reads nothing else.
+    pub fn located(&self, file: &str) -> Option<(PathBuf, &'static str)> {
+        let content_type = stored_type(file)?;
+        Some((self.root.join(file), content_type))
+    }
 }
 
 fn provider_url(requested: &str) -> Result<Url, TranscodeError> {
+    allowed_url(requested, PROVIDER_HOSTS)
+}
+
+fn allowed_url(requested: &str, hosts: &[&str]) -> Result<Url, TranscodeError> {
     let url = Url::parse(requested).map_err(|_| TranscodeError::InvalidSource)?;
     let allowed = url.scheme() == "https"
         && url.port().is_none()
         && url.username().is_empty()
-        && url
-            .host_str()
-            .is_some_and(|host| PROVIDER_HOSTS.contains(&host));
+        && url.host_str().is_some_and(|host| hosts.contains(&host));
     if !allowed {
         tracing::warn!("refused an artwork source outside the providers' hosts");
         return Err(TranscodeError::ForbiddenSource);
@@ -290,6 +390,49 @@ async fn download(client: &Client, url: Url) -> Result<Vec<u8>, TranscodeError> 
     Ok(bytes)
 }
 
+/// The service's theme, `None` for the `404` it answers a series it has none for. What it
+/// sends must say it is MP3: the bytes themselves are not looked into.
+async fn download_theme(client: &Client, url: Url) -> Result<Option<Vec<u8>>, TranscodeError> {
+    let unavailable = |_| TranscodeError::UnavailableSource;
+    let mut response = client.get(url).send().await.map_err(unavailable)?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if !response.status().is_success() {
+        return Err(TranscodeError::UnavailableSource);
+    }
+    let is_mp3 = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("audio/mpeg"));
+    if !is_mp3 {
+        return Err(TranscodeError::Undecodable);
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_THEME_BYTES as u64)
+    {
+        return Err(TranscodeError::SourceTooLarge);
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(unavailable)? {
+        if bytes.len() + chunk.len() > MAX_THEME_BYTES {
+            return Err(TranscodeError::SourceTooLarge);
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(Some(bytes))
+}
+
+fn theme_type(extension: &str) -> Option<&'static str> {
+    THEME_TYPES
+        .iter()
+        .find(|(known, _)| *known == extension)
+        .map(|(_, content_type)| *content_type)
+}
+
 async fn analyzed(file: String, bytes: Vec<u8>) -> Result<StoredArtwork, TranscodeError> {
     tokio::task::spawn_blocking(move || analyze(file, &bytes))
         .await
@@ -324,23 +467,36 @@ fn extension(format: ImageFormat) -> Option<&'static str> {
 /// The type of a name this store gives out — `provider/`, two hex digits, the 64 of a SHA-256,
 /// a known extension — and `None` for any other string.
 fn stored_name_type(file: &str) -> Option<&'static str> {
-    let rest = file.strip_prefix("provider/")?;
+    match hashed_extension(file.strip_prefix("provider/")?)? {
+        "jpg" => Some("image/jpeg"),
+        "png" => Some("image/png"),
+        "webp" => Some("image/webp"),
+        _ => None,
+    }
+}
+
+/// The type of any name this store gives out, an image's or a theme's.
+fn stored_type(file: &str) -> Option<&'static str> {
+    stored_name_type(file).or_else(|| stored_theme_type(file))
+}
+
+/// The type of a theme's name this store gives out — `themes/`, two hex digits, the 64 of a
+/// SHA-256, a theme's extension — and `None` for any other string.
+fn stored_theme_type(file: &str) -> Option<&'static str> {
+    theme_type(hashed_extension(file.strip_prefix("themes/")?)?)
+}
+
+/// The extension of `ab/{64 hex digits starting ab}.{extension}`, `None` for another shape.
+fn hashed_extension(rest: &str) -> Option<&str> {
     let (shard, name) = rest.split_once('/')?;
     let (hash, extension) = name.split_once('.')?;
     let hex = |text: &str| {
         text.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     };
-    if shard.len() != 2 || hash.len() != 64 || !hex(shard) || !hex(hash) || !hash.starts_with(shard)
-    {
-        return None;
-    }
-    match extension {
-        "jpg" => Some("image/jpeg"),
-        "png" => Some("image/png"),
-        "webp" => Some("image/webp"),
-        _ => None,
-    }
+    let well_formed =
+        shard.len() == 2 && hash.len() == 64 && hex(shard) && hex(hash) && hash.starts_with(shard);
+    well_formed.then_some(extension)
 }
 
 /// `scaled/ab/{hash}-{width}x{height}-{fit}`, for a name this store gave out.
@@ -529,6 +685,49 @@ mod tests {
         ] {
             assert_eq!(stored_name_type(&bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn themes_are_fetched_from_the_theme_service_alone() {
+        assert!(allowed_url("https://tvthemes.plexapp.com/71663.mp3", THEME_HOSTS).is_ok());
+        for refused in [
+            "http://tvthemes.plexapp.com/71663.mp3",
+            "https://image.tmdb.org/71663.mp3",
+            "https://tvthemes.plexapp.com.evil.example/71663.mp3",
+        ] {
+            assert!(allowed_url(refused, THEME_HOSTS).is_err(), "{refused}");
+        }
+        assert!(provider_url("https://tvthemes.plexapp.com/71663.mp3").is_err());
+    }
+
+    #[tokio::test]
+    async fn a_kept_theme_is_named_after_its_content_and_read_back() {
+        let root = std::env::temp_dir().join(format!("klapz-themes-{}", std::process::id()));
+        let store = ArtworkStore::new(root.clone());
+
+        let kept = store.keep_theme(b"a song", "FLAC").await.unwrap();
+        let hash = hex_sha256(b"a song");
+        assert_eq!(kept.file, format!("themes/{}/{hash}.flac", &hash[..2]));
+        assert_eq!(kept.content_type, "audio/flac");
+        assert_eq!(kept.size_bytes, 6);
+        assert_eq!(store.keep_theme(b"a song", "flac").await.unwrap(), kept);
+        assert_eq!(
+            store.read(&kept.file).await.unwrap(),
+            (b"a song".to_vec(), "audio/flac")
+        );
+        let (path, content_type) = store.located(&kept.file).unwrap();
+        assert_eq!((path, content_type), (root.join(&kept.file), "audio/flac"));
+
+        assert!(store.keep_theme(b"a film", "mkv").await.is_err());
+        for bad in [
+            "themes/../secrets.mp3".to_owned(),
+            format!("themes/{}/{hash}.mkv", &hash[..2]),
+            format!("themes/{}/{hash}.jpg", &hash[..2]),
+            format!("provider/{}/{hash}.flac", &hash[..2]),
+        ] {
+            assert!(store.located(&bad).is_none(), "{bad}");
+        }
+        tokio::fs::remove_dir_all(root).await.unwrap();
     }
 
     #[test]
