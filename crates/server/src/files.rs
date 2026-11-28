@@ -698,7 +698,7 @@ mod tests {
                 NewLibrary {
                     kind: SectionKind::Movie,
                     title: "Films".to_owned(),
-                    language: "fr-FR".to_owned(),
+                    language: klapz_core::language::LanguageTag::parse("fr-FR").unwrap(),
                     roots: vec![LocalFiles.resolve_root(typed).await.unwrap()],
                 },
                 0,

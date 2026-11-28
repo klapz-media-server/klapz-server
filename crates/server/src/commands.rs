@@ -6,9 +6,8 @@ use std::sync::Arc;
 
 use klapz_core::files::LibraryFiles;
 use klapz_core::files::RelativePath;
-use klapz_core::library::{
-    checked_roots, is_language_tag, normalized_title, RootError, SectionKind,
-};
+use klapz_core::language::LanguageTag;
+use klapz_core::library::{checked_roots, normalized_title, RootError, SectionKind};
 use klapz_core::scan::{
     scan_section, AnalysisTools, BackgroundAnalysis, ScanRepository, ScanRequest, Scanner,
 };
@@ -156,9 +155,8 @@ pub async fn library(
         return Err(LIBRARY_USAGE.into());
     };
     let title = normalized_title(&title).ok_or("the title is empty or too long")?;
-    if !is_language_tag(&language) {
-        return Err(format!("{language} is not a language tag such as fr-FR").into());
-    }
+    let language = LanguageTag::parse(&language)
+        .ok_or_else(|| format!("{language} is not a language tag such as fr-FR"))?;
     // The rules the API applies to an owner's roots, so both ways in store the same paths.
     let roots = checked_roots(&LocalFiles, &roots)
         .await

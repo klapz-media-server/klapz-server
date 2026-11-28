@@ -974,7 +974,7 @@ mod tests {
             kind,
             title: "Library".to_owned(),
             title_sort: None,
-            language: "fr-FR".to_owned(),
+            language: crate::language::LanguageTag::parse("fr-FR").unwrap(),
             uuid: "uuid".to_owned(),
             created_at: 0,
             updated_at: 0,

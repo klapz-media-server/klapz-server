@@ -113,7 +113,7 @@ query PlexSections($first: Int!, $after: String) {
         kind
         title
         titleSort
-        language
+        language { tag }
         uuid
         hidden
         createdAt
@@ -169,6 +169,7 @@ pub struct GqlLibrary {
     pub kind: LibraryKind,
     pub title: String,
     pub title_sort: Option<String>,
+    #[serde(deserialize_with = "crate::gql::locale::tag")]
     pub language: String,
     pub uuid: String,
     pub hidden: bool,

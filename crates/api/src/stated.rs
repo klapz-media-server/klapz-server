@@ -17,6 +17,7 @@ use klapz_core::metadata::{
 use klapz_core::PartId;
 
 use crate::int64::Int64;
+use crate::language::Locale;
 use crate::loader::StreamsLoader;
 
 /// What a track states as the prober printed it.
@@ -143,9 +144,14 @@ impl SideStreamObject {
         self.0.profile.as_deref()
     }
 
-    /// The language as the file states it.
-    async fn language(&self) -> Option<&str> {
-        self.0.language.as_deref()
+    /// The language the file states.
+    async fn language(&self) -> Option<Locale> {
+        self.0.language.map(Locale)
+    }
+
+    /// The language as the file states it, as written: `fre`, `und`.
+    async fn stated_language(&self) -> Option<&str> {
+        self.0.stated_language.as_deref()
     }
 
     /// The unit of the stream's timestamps, `num/den`.

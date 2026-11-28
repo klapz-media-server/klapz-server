@@ -6,6 +6,7 @@
 //! with no choice made — French forced subtitles under French audio.
 
 use crate::ids::StreamId;
+use crate::language::LanguageTag;
 use crate::metadata::{MediaStream, StreamKind};
 
 /// What a viewer asked for on one file. `None` is "choose for me".
@@ -52,7 +53,11 @@ pub fn selected_tracks(streams: &[MediaStream], choice: TrackChoice) -> Selected
         Some(SubtitleChoice::Track(id)) if chosen(StreamKind::Subtitle, id).is_some() => Some(id),
         _ => audio.and_then(|audio| {
             of_kind(StreamKind::Subtitle)
-                .find(|stream| stream.is_forced && stream.language == audio.language)
+                .find(|stream| {
+                    stream.is_forced
+                        && stream.language.as_ref().map(LanguageTag::code)
+                            == audio.language.as_ref().map(LanguageTag::code)
+                })
                 .map(|stream| stream.id)
         }),
     };
@@ -81,7 +86,7 @@ mod tests {
             kind,
             position: 0,
             codec: None,
-            language: Some(language.to_owned()),
+            language: LanguageTag::parse(language),
             channels: None,
             bitrate: None,
             is_default: default,
@@ -119,6 +124,17 @@ mod tests {
             selected.audio.map(StreamId::get),
             selected.subtitle.map(StreamId::get),
         )
+    }
+
+    #[test]
+    fn a_forced_subtitle_is_in_the_audios_language_whatever_its_region() {
+        let streams = vec![
+            stream(1, StreamKind::Audio, "fr-CA", true, false),
+            stream(2, StreamKind::Subtitle, "en", false, true),
+            stream(3, StreamKind::Subtitle, "fre", false, true),
+        ];
+        let selected = selected_tracks(&streams, TrackChoice::default());
+        assert_eq!(selected.subtitle, Some(StreamId::new(3)));
     }
 
     #[test]

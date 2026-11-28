@@ -37,8 +37,10 @@ pub struct Track {
     /// Its position in the source file.
     pub index: i32,
     pub codec: String,
-    /// As stored: `fr`, `en`.
+    /// A BCP 47 tag: `fr`, `fr-CA`.
     pub language: Option<String>,
+    /// The ISO 639-2 code a converted track is labelled with: `fra`.
+    pub language_code: Option<String>,
     /// The page a teletext track's subtitles are decoded from, when it declares one.
     pub teletext_page: Option<u16>,
 }
@@ -691,23 +693,6 @@ pub(crate) fn audio_decoder(codec: &str) -> Option<&'static str> {
         "pcm_bluray" => "pcm_bluray",
         "adpcm_ms" => "adpcm_ms",
         "adpcm_ima_wav" => "adpcm_ima_wav",
-        _ => return None,
-    })
-}
-
-/// The ISO 639-2 code the transcoder labels a track with, from the code we store.
-pub(crate) fn language_tag(language: &str) -> Option<&'static str> {
-    Some(match language {
-        "fr" => "fra",
-        "en" => "eng",
-        "de" => "deu",
-        "es" => "spa",
-        "it" => "ita",
-        "ja" => "jpn",
-        "pt" => "por",
-        "ru" => "rus",
-        "zh" => "zho",
-        "ko" => "kor",
         _ => return None,
     })
 }

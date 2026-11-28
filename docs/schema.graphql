@@ -1189,9 +1189,10 @@ input CreateLibraryInput {
 	"""
 	kind: LibraryKind!
 	"""
-	The language its metadata is in, as a BCP 47 tag such as `fr-FR`.
+	The language its metadata is matched and shown in, with its region where it matters:
+	`{language: FR, region: "FR"}`.
 	"""
-	language: String!
+	language: LocaleInput!
 	"""
 	The directories it scans: absolute paths on the server, 1 to 32 of them, none inside
 	another. Each is stored resolved, links followed; a repeat is kept once.
@@ -3083,6 +3084,10 @@ input ItemFilterInput {
 	"""
 	tracks: [TrackFilterInput!]
 	"""
+	Keep only items whose own tracks are in the languages named. Every condition must hold.
+	"""
+	trackLanguages: [TrackLanguageFilterInput!]
+	"""
 	Keep only items carrying the named tags. Every condition must hold.
 	"""
 	tags: [TagFilterInput!]
@@ -3499,6 +3504,2407 @@ enum ItemType {
 	TRACK
 }
 
+"""
+A language, by its shortest ISO 639 code: ISO 639-1 where it has one (`FR`), else
+ISO 639-2 or 639-3 (`FIL`, `YUE`). `UND`, `MUL`, `ZXX` and `MIS` are ISO 639-2's
+undetermined, multiple, no linguistic content and uncoded languages; `MIS` also stands
+for a code this list does not hold, which `Locale.tag` keeps.
+"""
+enum Language {
+	"""
+	Afar.
+	"""
+	AA
+	"""
+	Abkhazian.
+	"""
+	AB
+	"""
+	Achinese.
+	"""
+	ACE
+	"""
+	Acoli.
+	"""
+	ACH
+	"""
+	Adangme.
+	"""
+	ADA
+	"""
+	Adyghe.
+	"""
+	ADY
+	"""
+	Avestan.
+	"""
+	AE
+	"""
+	Tunisian Arabic.
+	"""
+	AEB
+	"""
+	Afrikaans.
+	"""
+	AF
+	"""
+	Afrihili.
+	"""
+	AFH
+	"""
+	Aghem.
+	"""
+	AGQ
+	"""
+	Ainu.
+	"""
+	AIN
+	"""
+	Akan.
+	"""
+	AK
+	"""
+	Akkadian.
+	"""
+	AKK
+	"""
+	Alabama.
+	"""
+	AKZ
+	"""
+	Aleut.
+	"""
+	ALE
+	"""
+	Gheg Albanian.
+	"""
+	ALN
+	"""
+	Southern Altai.
+	"""
+	ALT
+	"""
+	Amharic.
+	"""
+	AM
+	"""
+	Aragonese.
+	"""
+	AN
+	"""
+	Old English.
+	"""
+	ANG
+	"""
+	Angika.
+	"""
+	ANP
+	"""
+	Arabic.
+	"""
+	AR
+	"""
+	Aramaic.
+	"""
+	ARC
+	"""
+	Mapuche.
+	"""
+	ARN
+	"""
+	Araona.
+	"""
+	ARO
+	"""
+	Arapaho.
+	"""
+	ARP
+	"""
+	Algerian Arabic.
+	"""
+	ARQ
+	"""
+	Najdi Arabic.
+	"""
+	ARS
+	"""
+	Arawak.
+	"""
+	ARW
+	"""
+	Moroccan Arabic.
+	"""
+	ARY
+	"""
+	Egyptian Arabic.
+	"""
+	ARZ
+	"""
+	Assamese.
+	"""
+	AS
+	"""
+	Asu.
+	"""
+	ASA
+	"""
+	American Sign Language.
+	"""
+	ASE
+	"""
+	Asturian.
+	"""
+	AST
+	"""
+	Avaric.
+	"""
+	AV
+	"""
+	Kotava.
+	"""
+	AVK
+	"""
+	Awadhi.
+	"""
+	AWA
+	"""
+	Aymara.
+	"""
+	AY
+	"""
+	Azerbaijani.
+	"""
+	AZ
+	"""
+	Bashkir.
+	"""
+	BA
+	"""
+	Baluchi.
+	"""
+	BAL
+	"""
+	Balinese.
+	"""
+	BAN
+	"""
+	Bavarian.
+	"""
+	BAR
+	"""
+	Basaa.
+	"""
+	BAS
+	"""
+	Bamun.
+	"""
+	BAX
+	"""
+	Batak Toba.
+	"""
+	BBC
+	"""
+	Ghomala.
+	"""
+	BBJ
+	"""
+	Belarusian.
+	"""
+	BE
+	"""
+	Beja.
+	"""
+	BEJ
+	"""
+	Bemba.
+	"""
+	BEM
+	"""
+	Betawi.
+	"""
+	BEW
+	"""
+	Bena.
+	"""
+	BEZ
+	"""
+	Bafut.
+	"""
+	BFD
+	"""
+	Badaga.
+	"""
+	BFQ
+	"""
+	Bulgarian.
+	"""
+	BG
+	"""
+	Western Balochi.
+	"""
+	BGN
+	"""
+	Bhojpuri.
+	"""
+	BHO
+	"""
+	Bislama.
+	"""
+	BI
+	"""
+	Bikol.
+	"""
+	BIK
+	"""
+	Bini.
+	"""
+	BIN
+	"""
+	Banjar.
+	"""
+	BJN
+	"""
+	Kom.
+	"""
+	BKM
+	"""
+	Siksika.
+	"""
+	BLA
+	"""
+	Bambara.
+	"""
+	BM
+	"""
+	Bangla.
+	"""
+	BN
+	"""
+	Tibetan.
+	"""
+	BO
+	"""
+	Bishnupriya.
+	"""
+	BPY
+	"""
+	Bakhtiari.
+	"""
+	BQI
+	"""
+	Breton.
+	"""
+	BR
+	"""
+	Braj.
+	"""
+	BRA
+	"""
+	Brahui.
+	"""
+	BRH
+	"""
+	Bodo.
+	"""
+	BRX
+	"""
+	Bosnian.
+	"""
+	BS
+	"""
+	Akoose.
+	"""
+	BSS
+	"""
+	Buriat.
+	"""
+	BUA
+	"""
+	Buginese.
+	"""
+	BUG
+	"""
+	Bulu.
+	"""
+	BUM
+	"""
+	Blin.
+	"""
+	BYN
+	"""
+	Medumba.
+	"""
+	BYV
+	"""
+	Catalan.
+	"""
+	CA
+	"""
+	Caddo.
+	"""
+	CAD
+	"""
+	Carib.
+	"""
+	CAR
+	"""
+	Cayuga.
+	"""
+	CAY
+	"""
+	Atsam.
+	"""
+	CCH
+	"""
+	Chakma.
+	"""
+	CCP
+	"""
+	Chechen.
+	"""
+	CE
+	"""
+	Cebuano.
+	"""
+	CEB
+	"""
+	Chiga.
+	"""
+	CGG
+	"""
+	Chamorro.
+	"""
+	CH
+	"""
+	Chibcha.
+	"""
+	CHB
+	"""
+	Chagatai.
+	"""
+	CHG
+	"""
+	Chuukese.
+	"""
+	CHK
+	"""
+	Mari.
+	"""
+	CHM
+	"""
+	Chinook Jargon.
+	"""
+	CHN
+	"""
+	Choctaw.
+	"""
+	CHO
+	"""
+	Chipewyan.
+	"""
+	CHP
+	"""
+	Cherokee.
+	"""
+	CHR
+	"""
+	Cheyenne.
+	"""
+	CHY
+	"""
+	Chickasaw.
+	"""
+	CIC
+	"""
+	Central Kurdish.
+	"""
+	CKB
+	"""
+	Corsican.
+	"""
+	CO
+	"""
+	Coptic.
+	"""
+	COP
+	"""
+	Capiznon.
+	"""
+	CPS
+	"""
+	Cree.
+	"""
+	CR
+	"""
+	Crimean Turkish.
+	"""
+	CRH
+	"""
+	Seselwa Creole French.
+	"""
+	CRS
+	"""
+	Czech.
+	"""
+	CS
+	"""
+	Kashubian.
+	"""
+	CSB
+	"""
+	Church Slavic.
+	"""
+	CU
+	"""
+	Chuvash.
+	"""
+	CV
+	"""
+	Welsh.
+	"""
+	CY
+	"""
+	Danish.
+	"""
+	DA
+	"""
+	Dakota.
+	"""
+	DAK
+	"""
+	Dargwa.
+	"""
+	DAR
+	"""
+	Taita.
+	"""
+	DAV
+	"""
+	German.
+	"""
+	DE
+	"""
+	Delaware.
+	"""
+	DEL
+	"""
+	Slave.
+	"""
+	DEN
+	"""
+	Dogrib.
+	"""
+	DGR
+	"""
+	Dinka.
+	"""
+	DIN
+	"""
+	Zarma.
+	"""
+	DJE
+	"""
+	Dogri.
+	"""
+	DOI
+	"""
+	Lower Sorbian.
+	"""
+	DSB
+	"""
+	Central Dusun.
+	"""
+	DTP
+	"""
+	Duala.
+	"""
+	DUA
+	"""
+	Middle Dutch.
+	"""
+	DUM
+	"""
+	Divehi.
+	"""
+	DV
+	"""
+	Jola-Fonyi.
+	"""
+	DYO
+	"""
+	Dyula.
+	"""
+	DYU
+	"""
+	Dzongkha.
+	"""
+	DZ
+	"""
+	Dazaga.
+	"""
+	DZG
+	"""
+	Embu.
+	"""
+	EBU
+	"""
+	Ewe.
+	"""
+	EE
+	"""
+	Efik.
+	"""
+	EFI
+	"""
+	Emilian.
+	"""
+	EGL
+	"""
+	Ancient Egyptian.
+	"""
+	EGY
+	"""
+	Ekajuk.
+	"""
+	EKA
+	"""
+	Greek.
+	"""
+	EL
+	"""
+	Elamite.
+	"""
+	ELX
+	"""
+	English.
+	"""
+	EN
+	"""
+	Middle English.
+	"""
+	ENM
+	"""
+	Esperanto.
+	"""
+	EO
+	"""
+	Spanish.
+	"""
+	ES
+	"""
+	Central Yupik.
+	"""
+	ESU
+	"""
+	Estonian.
+	"""
+	ET
+	"""
+	Basque.
+	"""
+	EU
+	"""
+	Ewondo.
+	"""
+	EWO
+	"""
+	Extremaduran.
+	"""
+	EXT
+	"""
+	Persian.
+	"""
+	FA
+	"""
+	Fang.
+	"""
+	FAN
+	"""
+	Fanti.
+	"""
+	FAT
+	"""
+	Fulah.
+	"""
+	FF
+	"""
+	Finnish.
+	"""
+	FI
+	"""
+	Filipino.
+	"""
+	FIL
+	"""
+	Tornedalen Finnish.
+	"""
+	FIT
+	"""
+	Fijian.
+	"""
+	FJ
+	"""
+	Faroese.
+	"""
+	FO
+	"""
+	Fon.
+	"""
+	FON
+	"""
+	French.
+	"""
+	FR
+	"""
+	Cajun French.
+	"""
+	FRC
+	"""
+	Middle French.
+	"""
+	FRM
+	"""
+	Old French.
+	"""
+	FRO
+	"""
+	Arpitan.
+	"""
+	FRP
+	"""
+	Northern Frisian.
+	"""
+	FRR
+	"""
+	Eastern Frisian.
+	"""
+	FRS
+	"""
+	Friulian.
+	"""
+	FUR
+	"""
+	Western Frisian.
+	"""
+	FY
+	"""
+	Irish.
+	"""
+	GA
+	"""
+	Ga.
+	"""
+	GAA
+	"""
+	Gagauz.
+	"""
+	GAG
+	"""
+	Gan Chinese.
+	"""
+	GAN
+	"""
+	Gayo.
+	"""
+	GAY
+	"""
+	Gbaya.
+	"""
+	GBA
+	"""
+	Zoroastrian Dari.
+	"""
+	GBZ
+	"""
+	Scottish Gaelic.
+	"""
+	GD
+	"""
+	Geez.
+	"""
+	GEZ
+	"""
+	Gilbertese.
+	"""
+	GIL
+	"""
+	Galician.
+	"""
+	GL
+	"""
+	Gilaki.
+	"""
+	GLK
+	"""
+	Middle High German.
+	"""
+	GMH
+	"""
+	Guarani.
+	"""
+	GN
+	"""
+	Old High German.
+	"""
+	GOH
+	"""
+	Goan Konkani.
+	"""
+	GOM
+	"""
+	Gondi.
+	"""
+	GON
+	"""
+	Gorontalo.
+	"""
+	GOR
+	"""
+	Gothic.
+	"""
+	GOT
+	"""
+	Grebo.
+	"""
+	GRB
+	"""
+	Ancient Greek.
+	"""
+	GRC
+	"""
+	Swiss German.
+	"""
+	GSW
+	"""
+	Gujarati.
+	"""
+	GU
+	"""
+	Wayuu.
+	"""
+	GUC
+	"""
+	Frafra.
+	"""
+	GUR
+	"""
+	Gusii.
+	"""
+	GUZ
+	"""
+	Manx.
+	"""
+	GV
+	"""
+	Gwichʼin.
+	"""
+	GWI
+	"""
+	Hausa.
+	"""
+	HA
+	"""
+	Haida.
+	"""
+	HAI
+	"""
+	Hakka Chinese.
+	"""
+	HAK
+	"""
+	Hawaiian.
+	"""
+	HAW
+	"""
+	Hebrew.
+	"""
+	HE
+	"""
+	Hindi.
+	"""
+	HI
+	"""
+	Fiji Hindi.
+	"""
+	HIF
+	"""
+	Hiligaynon.
+	"""
+	HIL
+	"""
+	Hittite.
+	"""
+	HIT
+	"""
+	Hmong.
+	"""
+	HMN
+	"""
+	Hiri Motu.
+	"""
+	HO
+	"""
+	Croatian.
+	"""
+	HR
+	"""
+	Upper Sorbian.
+	"""
+	HSB
+	"""
+	Xiang Chinese.
+	"""
+	HSN
+	"""
+	Haitian Creole.
+	"""
+	HT
+	"""
+	Hungarian.
+	"""
+	HU
+	"""
+	Hupa.
+	"""
+	HUP
+	"""
+	Armenian.
+	"""
+	HY
+	"""
+	Herero.
+	"""
+	HZ
+	"""
+	Interlingua.
+	"""
+	IA
+	"""
+	Iban.
+	"""
+	IBA
+	"""
+	Ibibio.
+	"""
+	IBB
+	"""
+	Indonesian.
+	"""
+	ID
+	"""
+	Interlingue.
+	"""
+	IE
+	"""
+	Igbo.
+	"""
+	IG
+	"""
+	Sichuan Yi.
+	"""
+	II
+	"""
+	Inupiaq.
+	"""
+	IK
+	"""
+	Iloko.
+	"""
+	ILO
+	"""
+	Ingush.
+	"""
+	INH
+	"""
+	Ido.
+	"""
+	IO
+	"""
+	Icelandic.
+	"""
+	IS
+	"""
+	Italian.
+	"""
+	IT
+	"""
+	Inuktitut.
+	"""
+	IU
+	"""
+	Ingrian.
+	"""
+	IZH
+	"""
+	Japanese.
+	"""
+	JA
+	"""
+	Jamaican Creole English.
+	"""
+	JAM
+	"""
+	Lojban.
+	"""
+	JBO
+	"""
+	Ngomba.
+	"""
+	JGO
+	"""
+	Machame.
+	"""
+	JMC
+	"""
+	Judeo-Persian.
+	"""
+	JPR
+	"""
+	Judeo-Arabic.
+	"""
+	JRB
+	"""
+	Jutish.
+	"""
+	JUT
+	"""
+	Javanese.
+	"""
+	JV
+	"""
+	Georgian.
+	"""
+	KA
+	"""
+	Kara-Kalpak.
+	"""
+	KAA
+	"""
+	Kabyle.
+	"""
+	KAB
+	"""
+	Kachin.
+	"""
+	KAC
+	"""
+	Jju.
+	"""
+	KAJ
+	"""
+	Kamba.
+	"""
+	KAM
+	"""
+	Kawi.
+	"""
+	KAW
+	"""
+	Kabardian.
+	"""
+	KBD
+	"""
+	Kanembu.
+	"""
+	KBL
+	"""
+	Tyap.
+	"""
+	KCG
+	"""
+	Makonde.
+	"""
+	KDE
+	"""
+	Kabuverdianu.
+	"""
+	KEA
+	"""
+	Kenyang.
+	"""
+	KEN
+	"""
+	Koro.
+	"""
+	KFO
+	"""
+	Kongo.
+	"""
+	KG
+	"""
+	Kaingang.
+	"""
+	KGP
+	"""
+	Khasi.
+	"""
+	KHA
+	"""
+	Khotanese.
+	"""
+	KHO
+	"""
+	Koyra Chiini.
+	"""
+	KHQ
+	"""
+	Khowar.
+	"""
+	KHW
+	"""
+	Kikuyu.
+	"""
+	KI
+	"""
+	Kirmanjki.
+	"""
+	KIU
+	"""
+	Kuanyama.
+	"""
+	KJ
+	"""
+	Kazakh.
+	"""
+	KK
+	"""
+	Kako.
+	"""
+	KKJ
+	"""
+	Kalaallisut.
+	"""
+	KL
+	"""
+	Kalenjin.
+	"""
+	KLN
+	"""
+	Khmer.
+	"""
+	KM
+	"""
+	Kimbundu.
+	"""
+	KMB
+	"""
+	Kannada.
+	"""
+	KN
+	"""
+	Korean.
+	"""
+	KO
+	"""
+	Komi-Permyak.
+	"""
+	KOI
+	"""
+	Konkani.
+	"""
+	KOK
+	"""
+	Kosraean.
+	"""
+	KOS
+	"""
+	Kpelle.
+	"""
+	KPE
+	"""
+	Kanuri.
+	"""
+	KR
+	"""
+	Karachay-Balkar.
+	"""
+	KRC
+	"""
+	Krio.
+	"""
+	KRI
+	"""
+	Kinaray-a.
+	"""
+	KRJ
+	"""
+	Karelian.
+	"""
+	KRL
+	"""
+	Kurukh.
+	"""
+	KRU
+	"""
+	Kashmiri.
+	"""
+	KS
+	"""
+	Shambala.
+	"""
+	KSB
+	"""
+	Bafia.
+	"""
+	KSF
+	"""
+	Colognian.
+	"""
+	KSH
+	"""
+	Kurdish.
+	"""
+	KU
+	"""
+	Kumyk.
+	"""
+	KUM
+	"""
+	Kutenai.
+	"""
+	KUT
+	"""
+	Komi.
+	"""
+	KV
+	"""
+	Cornish.
+	"""
+	KW
+	"""
+	Kyrgyz.
+	"""
+	KY
+	"""
+	Latin.
+	"""
+	LA
+	"""
+	Ladino.
+	"""
+	LAD
+	"""
+	Langi.
+	"""
+	LAG
+	"""
+	Lahnda.
+	"""
+	LAH
+	"""
+	Lamba.
+	"""
+	LAM
+	"""
+	Luxembourgish.
+	"""
+	LB
+	"""
+	Lezghian.
+	"""
+	LEZ
+	"""
+	Lingua Franca Nova.
+	"""
+	LFN
+	"""
+	Ganda.
+	"""
+	LG
+	"""
+	Limburgish.
+	"""
+	LI
+	"""
+	Ligurian.
+	"""
+	LIJ
+	"""
+	Livonian.
+	"""
+	LIV
+	"""
+	Lakota.
+	"""
+	LKT
+	"""
+	Lombard.
+	"""
+	LMO
+	"""
+	Lingala.
+	"""
+	LN
+	"""
+	Lao.
+	"""
+	LO
+	"""
+	Mongo.
+	"""
+	LOL
+	"""
+	Louisiana Creole.
+	"""
+	LOU
+	"""
+	Lozi.
+	"""
+	LOZ
+	"""
+	Northern Luri.
+	"""
+	LRC
+	"""
+	Lithuanian.
+	"""
+	LT
+	"""
+	Latgalian.
+	"""
+	LTG
+	"""
+	Luba-Katanga.
+	"""
+	LU
+	"""
+	Luba-Lulua.
+	"""
+	LUA
+	"""
+	Luiseno.
+	"""
+	LUI
+	"""
+	Lunda.
+	"""
+	LUN
+	"""
+	Luo.
+	"""
+	LUO
+	"""
+	Mizo.
+	"""
+	LUS
+	"""
+	Luyia.
+	"""
+	LUY
+	"""
+	Latvian.
+	"""
+	LV
+	"""
+	Literary Chinese.
+	"""
+	LZH
+	"""
+	Laz.
+	"""
+	LZZ
+	"""
+	Madurese.
+	"""
+	MAD
+	"""
+	Mafa.
+	"""
+	MAF
+	"""
+	Magahi.
+	"""
+	MAG
+	"""
+	Maithili.
+	"""
+	MAI
+	"""
+	Makasar.
+	"""
+	MAK
+	"""
+	Mandingo.
+	"""
+	MAN
+	"""
+	Masai.
+	"""
+	MAS
+	"""
+	Maba.
+	"""
+	MDE
+	"""
+	Moksha.
+	"""
+	MDF
+	"""
+	Mandar.
+	"""
+	MDR
+	"""
+	Mende.
+	"""
+	MEN
+	"""
+	Meru.
+	"""
+	MER
+	"""
+	Morisyen.
+	"""
+	MFE
+	"""
+	Malagasy.
+	"""
+	MG
+	"""
+	Middle Irish.
+	"""
+	MGA
+	"""
+	Makhuwa-Meetto.
+	"""
+	MGH
+	"""
+	Metaʼ.
+	"""
+	MGO
+	"""
+	Marshallese.
+	"""
+	MH
+	"""
+	Maori.
+	"""
+	MI
+	"""
+	Mi'kmaq.
+	"""
+	MIC
+	"""
+	Minangkabau.
+	"""
+	MIN
+	"""
+	Uncoded languages.
+	"""
+	MIS
+	"""
+	Macedonian.
+	"""
+	MK
+	"""
+	Malayalam.
+	"""
+	ML
+	"""
+	Mongolian.
+	"""
+	MN
+	"""
+	Manchu.
+	"""
+	MNC
+	"""
+	Manipuri.
+	"""
+	MNI
+	"""
+	Mohawk.
+	"""
+	MOH
+	"""
+	Mossi.
+	"""
+	MOS
+	"""
+	Marathi.
+	"""
+	MR
+	"""
+	Western Mari.
+	"""
+	MRJ
+	"""
+	Malay.
+	"""
+	MS
+	"""
+	Maltese.
+	"""
+	MT
+	"""
+	Mundang.
+	"""
+	MUA
+	"""
+	Multiple languages.
+	"""
+	MUL
+	"""
+	Muscogee.
+	"""
+	MUS
+	"""
+	Mirandese.
+	"""
+	MWL
+	"""
+	Marwari.
+	"""
+	MWR
+	"""
+	Mentawai.
+	"""
+	MWV
+	"""
+	Burmese.
+	"""
+	MY
+	"""
+	Myene.
+	"""
+	MYE
+	"""
+	Erzya.
+	"""
+	MYV
+	"""
+	Mazanderani.
+	"""
+	MZN
+	"""
+	Nauru.
+	"""
+	NA
+	"""
+	Min Nan Chinese.
+	"""
+	NAN
+	"""
+	Neapolitan.
+	"""
+	NAP
+	"""
+	Nama.
+	"""
+	NAQ
+	"""
+	Norwegian Bokmål.
+	"""
+	NB
+	"""
+	North Ndebele.
+	"""
+	ND
+	"""
+	Low German.
+	"""
+	NDS
+	"""
+	Nepali.
+	"""
+	NE
+	"""
+	Newari.
+	"""
+	NEW
+	"""
+	Ndonga.
+	"""
+	NG
+	"""
+	Nias.
+	"""
+	NIA
+	"""
+	Niuean.
+	"""
+	NIU
+	"""
+	Ao Naga.
+	"""
+	NJO
+	"""
+	Dutch.
+	"""
+	NL
+	"""
+	Kwasio.
+	"""
+	NMG
+	"""
+	Norwegian Nynorsk.
+	"""
+	NN
+	"""
+	Ngiemboon.
+	"""
+	NNH
+	"""
+	Norwegian.
+	"""
+	NO
+	"""
+	Nogai.
+	"""
+	NOG
+	"""
+	Old Norse.
+	"""
+	NON
+	"""
+	Novial.
+	"""
+	NOV
+	"""
+	N’Ko.
+	"""
+	NQO
+	"""
+	South Ndebele.
+	"""
+	NR
+	"""
+	Northern Sotho.
+	"""
+	NSO
+	"""
+	Nuer.
+	"""
+	NUS
+	"""
+	Navajo.
+	"""
+	NV
+	"""
+	Classical Newari.
+	"""
+	NWC
+	"""
+	Nyanja.
+	"""
+	NY
+	"""
+	Nyamwezi.
+	"""
+	NYM
+	"""
+	Nyankole.
+	"""
+	NYN
+	"""
+	Nyoro.
+	"""
+	NYO
+	"""
+	Nzima.
+	"""
+	NZI
+	"""
+	Occitan.
+	"""
+	OC
+	"""
+	Ojibwa.
+	"""
+	OJ
+	"""
+	Oromo.
+	"""
+	OM
+	"""
+	Odia.
+	"""
+	OR
+	"""
+	Ossetic.
+	"""
+	OS
+	"""
+	Osage.
+	"""
+	OSA
+	"""
+	Ottoman Turkish.
+	"""
+	OTA
+	"""
+	Punjabi.
+	"""
+	PA
+	"""
+	Pangasinan.
+	"""
+	PAG
+	"""
+	Pahlavi.
+	"""
+	PAL
+	"""
+	Pampanga.
+	"""
+	PAM
+	"""
+	Papiamento.
+	"""
+	PAP
+	"""
+	Palauan.
+	"""
+	PAU
+	"""
+	Picard.
+	"""
+	PCD
+	"""
+	Nigerian Pidgin.
+	"""
+	PCM
+	"""
+	Pennsylvania German.
+	"""
+	PDC
+	"""
+	Plautdietsch.
+	"""
+	PDT
+	"""
+	Old Persian.
+	"""
+	PEO
+	"""
+	Palatine German.
+	"""
+	PFL
+	"""
+	Phoenician.
+	"""
+	PHN
+	"""
+	Pali.
+	"""
+	PI
+	"""
+	Polish.
+	"""
+	PL
+	"""
+	Piedmontese.
+	"""
+	PMS
+	"""
+	Pontic.
+	"""
+	PNT
+	"""
+	Pohnpeian.
+	"""
+	PON
+	"""
+	Prussian.
+	"""
+	PRG
+	"""
+	Old Provençal.
+	"""
+	PRO
+	"""
+	Pashto.
+	"""
+	PS
+	"""
+	Portuguese.
+	"""
+	PT
+	"""
+	Quechua.
+	"""
+	QU
+	"""
+	Kʼicheʼ.
+	"""
+	QUC
+	"""
+	Chimborazo Highland Quichua.
+	"""
+	QUG
+	"""
+	Rajasthani.
+	"""
+	RAJ
+	"""
+	Rapanui.
+	"""
+	RAP
+	"""
+	Rarotongan.
+	"""
+	RAR
+	"""
+	Romagnol.
+	"""
+	RGN
+	"""
+	Riffian.
+	"""
+	RIF
+	"""
+	Romansh.
+	"""
+	RM
+	"""
+	Rundi.
+	"""
+	RN
+	"""
+	Romanian.
+	"""
+	RO
+	"""
+	Rombo.
+	"""
+	ROF
+	"""
+	Romany.
+	"""
+	ROM
+	"""
+	Rotuman.
+	"""
+	RTM
+	"""
+	Russian.
+	"""
+	RU
+	"""
+	Rusyn.
+	"""
+	RUE
+	"""
+	Roviana.
+	"""
+	RUG
+	"""
+	Aromanian.
+	"""
+	RUP
+	"""
+	Kinyarwanda.
+	"""
+	RW
+	"""
+	Rwa.
+	"""
+	RWK
+	"""
+	Sanskrit.
+	"""
+	SA
+	"""
+	Sandawe.
+	"""
+	SAD
+	"""
+	Sakha.
+	"""
+	SAH
+	"""
+	Samaritan Aramaic.
+	"""
+	SAM
+	"""
+	Samburu.
+	"""
+	SAQ
+	"""
+	Sasak.
+	"""
+	SAS
+	"""
+	Santali.
+	"""
+	SAT
+	"""
+	Saurashtra.
+	"""
+	SAZ
+	"""
+	Ngambay.
+	"""
+	SBA
+	"""
+	Sangu.
+	"""
+	SBP
+	"""
+	Sardinian.
+	"""
+	SC
+	"""
+	Sicilian.
+	"""
+	SCN
+	"""
+	Scots.
+	"""
+	SCO
+	"""
+	Sindhi.
+	"""
+	SD
+	"""
+	Sassarese Sardinian.
+	"""
+	SDC
+	"""
+	Southern Kurdish.
+	"""
+	SDH
+	"""
+	Northern Sami.
+	"""
+	SE
+	"""
+	Seneca.
+	"""
+	SEE
+	"""
+	Sena.
+	"""
+	SEH
+	"""
+	Seri.
+	"""
+	SEI
+	"""
+	Selkup.
+	"""
+	SEL
+	"""
+	Koyraboro Senni.
+	"""
+	SES
+	"""
+	Sango.
+	"""
+	SG
+	"""
+	Old Irish.
+	"""
+	SGA
+	"""
+	Samogitian.
+	"""
+	SGS
+	"""
+	Serbo-Croatian.
+	"""
+	SH
+	"""
+	Tachelhit.
+	"""
+	SHI
+	"""
+	Shan.
+	"""
+	SHN
+	"""
+	Chadian Arabic.
+	"""
+	SHU
+	"""
+	Sinhala.
+	"""
+	SI
+	"""
+	Sidamo.
+	"""
+	SID
+	"""
+	Slovak.
+	"""
+	SK
+	"""
+	Slovenian.
+	"""
+	SL
+	"""
+	Lower Silesian.
+	"""
+	SLI
+	"""
+	Selayar.
+	"""
+	SLY
+	"""
+	Samoan.
+	"""
+	SM
+	"""
+	Southern Sami.
+	"""
+	SMA
+	"""
+	Lule Sami.
+	"""
+	SMJ
+	"""
+	Inari Sami.
+	"""
+	SMN
+	"""
+	Skolt Sami.
+	"""
+	SMS
+	"""
+	Shona.
+	"""
+	SN
+	"""
+	Soninke.
+	"""
+	SNK
+	"""
+	Somali.
+	"""
+	SO
+	"""
+	Sogdien.
+	"""
+	SOG
+	"""
+	Albanian.
+	"""
+	SQ
+	"""
+	Serbian.
+	"""
+	SR
+	"""
+	Sranan Tongo.
+	"""
+	SRN
+	"""
+	Serer.
+	"""
+	SRR
+	"""
+	Swati.
+	"""
+	SS
+	"""
+	Saho.
+	"""
+	SSY
+	"""
+	Southern Sotho.
+	"""
+	ST
+	"""
+	Saterland Frisian.
+	"""
+	STQ
+	"""
+	Sundanese.
+	"""
+	SU
+	"""
+	Sukuma.
+	"""
+	SUK
+	"""
+	Susu.
+	"""
+	SUS
+	"""
+	Sumerian.
+	"""
+	SUX
+	"""
+	Swedish.
+	"""
+	SV
+	"""
+	Swahili.
+	"""
+	SW
+	"""
+	Comorian.
+	"""
+	SWB
+	"""
+	Classical Syriac.
+	"""
+	SYC
+	"""
+	Syriac.
+	"""
+	SYR
+	"""
+	Silesian.
+	"""
+	SZL
+	"""
+	Tamil.
+	"""
+	TA
+	"""
+	Tulu.
+	"""
+	TCY
+	"""
+	Telugu.
+	"""
+	TE
+	"""
+	Timne.
+	"""
+	TEM
+	"""
+	Teso.
+	"""
+	TEO
+	"""
+	Tereno.
+	"""
+	TER
+	"""
+	Tetum.
+	"""
+	TET
+	"""
+	Tajik.
+	"""
+	TG
+	"""
+	Thai.
+	"""
+	TH
+	"""
+	Tigrinya.
+	"""
+	TI
+	"""
+	Tigre.
+	"""
+	TIG
+	"""
+	Tiv.
+	"""
+	TIV
+	"""
+	Turkmen.
+	"""
+	TK
+	"""
+	Tokelau.
+	"""
+	TKL
+	"""
+	Tsakhur.
+	"""
+	TKR
+	"""
+	Tagalog.
+	"""
+	TL
+	"""
+	Klingon.
+	"""
+	TLH
+	"""
+	Tlingit.
+	"""
+	TLI
+	"""
+	Talysh.
+	"""
+	TLY
+	"""
+	Tamashek.
+	"""
+	TMH
+	"""
+	Tswana.
+	"""
+	TN
+	"""
+	Tongan.
+	"""
+	TO
+	"""
+	Nyasa Tonga.
+	"""
+	TOG
+	"""
+	Tok Pisin.
+	"""
+	TPI
+	"""
+	Turkish.
+	"""
+	TR
+	"""
+	Turoyo.
+	"""
+	TRU
+	"""
+	Taroko.
+	"""
+	TRV
+	"""
+	Tsonga.
+	"""
+	TS
+	"""
+	Tsakonian.
+	"""
+	TSD
+	"""
+	Tsimshian.
+	"""
+	TSI
+	"""
+	Tatar.
+	"""
+	TT
+	"""
+	Muslim Tat.
+	"""
+	TTT
+	"""
+	Tumbuka.
+	"""
+	TUM
+	"""
+	Tuvalu.
+	"""
+	TVL
+	"""
+	Twi.
+	"""
+	TW
+	"""
+	Tasawaq.
+	"""
+	TWQ
+	"""
+	Tahitian.
+	"""
+	TY
+	"""
+	Tuvinian.
+	"""
+	TYV
+	"""
+	Central Atlas Tamazight.
+	"""
+	TZM
+	"""
+	Udmurt.
+	"""
+	UDM
+	"""
+	Uyghur.
+	"""
+	UG
+	"""
+	Ugaritic.
+	"""
+	UGA
+	"""
+	Ukrainian.
+	"""
+	UK
+	"""
+	Umbundu.
+	"""
+	UMB
+	"""
+	Unknown language.
+	"""
+	UND
+	"""
+	Urdu.
+	"""
+	UR
+	"""
+	Uzbek.
+	"""
+	UZ
+	"""
+	Vai.
+	"""
+	VAI
+	"""
+	Venda.
+	"""
+	VE
+	"""
+	Venetian.
+	"""
+	VEC
+	"""
+	Veps.
+	"""
+	VEP
+	"""
+	Vietnamese.
+	"""
+	VI
+	"""
+	West Flemish.
+	"""
+	VLS
+	"""
+	Main-Franconian.
+	"""
+	VMF
+	"""
+	Volapük.
+	"""
+	VO
+	"""
+	Votic.
+	"""
+	VOT
+	"""
+	Võro.
+	"""
+	VRO
+	"""
+	Vunjo.
+	"""
+	VUN
+	"""
+	Walloon.
+	"""
+	WA
+	"""
+	Walser.
+	"""
+	WAE
+	"""
+	Wolaytta.
+	"""
+	WAL
+	"""
+	Waray.
+	"""
+	WAR
+	"""
+	Washo.
+	"""
+	WAS
+	"""
+	Warlpiri.
+	"""
+	WBP
+	"""
+	Wolof.
+	"""
+	WO
+	"""
+	Wu Chinese.
+	"""
+	WUU
+	"""
+	Kalmyk.
+	"""
+	XAL
+	"""
+	Xhosa.
+	"""
+	XH
+	"""
+	Mingrelian.
+	"""
+	XMF
+	"""
+	Soga.
+	"""
+	XOG
+	"""
+	Yao.
+	"""
+	YAO
+	"""
+	Yapese.
+	"""
+	YAP
+	"""
+	Yangben.
+	"""
+	YAV
+	"""
+	Yemba.
+	"""
+	YBB
+	"""
+	Yiddish.
+	"""
+	YI
+	"""
+	Yoruba.
+	"""
+	YO
+	"""
+	Nheengatu.
+	"""
+	YRL
+	"""
+	Cantonese.
+	"""
+	YUE
+	"""
+	Zhuang.
+	"""
+	ZA
+	"""
+	Zapotec.
+	"""
+	ZAP
+	"""
+	Blissymbols.
+	"""
+	ZBL
+	"""
+	Zeelandic.
+	"""
+	ZEA
+	"""
+	Zenaga.
+	"""
+	ZEN
+	"""
+	Standard Moroccan Tamazight.
+	"""
+	ZGH
+	"""
+	Chinese.
+	"""
+	ZH
+	"""
+	Zulu.
+	"""
+	ZU
+	"""
+	Zuni.
+	"""
+	ZUN
+	"""
+	No linguistic content.
+	"""
+	ZXX
+	"""
+	Zaza.
+	"""
+	ZZA
+}
+
 type Library implements Node {
 	"""
 	Globally unique, opaque identifier. Pass it to `node` to refetch this library.
@@ -3520,9 +5926,9 @@ type Library implements Node {
 	"""
 	titleSort: String
 	"""
-	BCP 47 language tag used when matching metadata, for example `fr-FR`.
+	The language its metadata is matched and shown in: `fr-FR`.
 	"""
-	language: String!
+	language: Locale!
 	"""
 	Stable identifier that survives renaming, used to recognize this library across
 	servers and backups.
@@ -3867,6 +6273,41 @@ type Library implements Node {
 		offset: Int
 	): FieldValueConnection!
 	"""
+	The languages the tracks of one kind of this library's items are in, each once, in
+	the order of their tags: `fr` and `fr-CA` apart, `fre` and `fra` one `fr`. Series have
+	no tracks: their episodes', reached with `depth: ALL`, are listed.
+	"""
+	trackLanguages(
+		"""
+		Which tracks' languages to list.
+		"""
+		kind: TrackLanguageKind!,
+		"""
+		List only the languages of the items this filter keeps.
+		"""
+		filter: ItemFilterInput,
+		"""
+		Return languages after this cursor.
+		"""
+		after: String,
+		"""
+		Return languages before this cursor.
+		"""
+		before: String,
+		"""
+		Return at most this many languages from the start of the range.
+		"""
+		first: Int,
+		"""
+		Return at most this many languages from the end of the range.
+		"""
+		last: Int,
+		"""
+		Discard this many languages before the page begins.
+		"""
+		offset: Int
+	): LocaleValueConnection!
+	"""
 	What every item a filter keeps has in common — fields, tags, collections and locks:
 	what a client starts from to edit several items at once.
 	"""
@@ -3962,7 +6403,7 @@ enum LibraryErrorCode {
 	"""
 	INVALID_TITLE
 	"""
-	Not shaped as a BCP 47 language tag, such as `fr-FR`.
+	A script or a region that is not one: `Canada` rather than `CA`.
 	"""
 	INVALID_LANGUAGE
 	"""
@@ -4256,6 +6697,80 @@ type LibraryUserError {
 	What went wrong, for a program to branch on.
 	"""
 	code: LibraryErrorCode!
+}
+
+type Locale {
+	"""
+	The language. `MIS` for a code the enum does not hold, which `tag` keeps.
+	"""
+	language: Language!
+	"""
+	The script, ISO 15924 in title case: `Hant`.
+	"""
+	script: String
+	"""
+	The region, ISO 3166-1 alpha-2 or UN M.49 in upper case: `CA`, `419`.
+	"""
+	region: String
+	"""
+	The BCP 47 tag, written canonically: `fr-CA`, `zh-Hant`, `es-419`.
+	"""
+	tag: String!
+	"""
+	The language's name in English: `French`.
+	"""
+	name: String!
+	"""
+	The language's name in itself, `français`, where it is known.
+	"""
+	nativeName: String
+}
+
+"""
+A language, with the script and region a BCP 47 tag may add.
+"""
+input LocaleInput {
+	"""
+	The language.
+	"""
+	language: Language!
+	"""
+	A script, ISO 15924 in four letters: `Hant`.
+	"""
+	script: String
+	"""
+	A region, ISO 3166-1 alpha-2 (`CA`) or UN M.49 (`419`).
+	"""
+	region: String
+}
+
+type LocaleValueConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [LocaleValueEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Locale!]!
+}
+
+"""
+An edge in a connection.
+"""
+type LocaleValueEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Locale!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type Loudness {
@@ -4598,9 +7113,10 @@ type MediaStream implements Node {
 	"""
 	codec: String
 	"""
-	Language tag as stored, for example `fr` or `en`.
+	The language: `fr`, or `fr-CA` for a Quebec dub. What the file states as written is
+	`stated.language`.
 	"""
-	language: String
+	language: Locale
 	"""
 	Channel count, for audio tracks.
 	"""
@@ -9201,9 +11717,13 @@ type SideStream {
 	"""
 	profile: String
 	"""
-	The language as the file states it.
+	The language the file states.
 	"""
-	language: String
+	language: Locale
+	"""
+	The language as the file states it, as written: `fre`, `und`.
+	"""
+	statedLanguage: String
 	"""
 	The unit of the stream's timestamps, `num/den`.
 	"""
@@ -10401,13 +12921,13 @@ enum TrackField {
 	SUBTITLE_CODEC
 	"""
 	The language an audio track states, as its file writes it: `fre` and `fra` apart. Only
-	a scanned file states one.
+	a scanned file states one; `trackLanguages` lists and filters by the language itself.
 	"""
-	AUDIO_LANGUAGE
+	STATED_AUDIO_LANGUAGE
 	"""
 	The language a subtitle track states, as its file writes it.
 	"""
-	SUBTITLE_LANGUAGE
+	STATED_SUBTITLE_LANGUAGE
 }
 
 """
@@ -10443,6 +12963,41 @@ enum TrackKind {
 	AUDIO
 	"""
 	Subtitles or captions.
+	"""
+	SUBTITLE
+}
+
+"""
+Keeps items with a track of any of their versions in one of the languages; or, negated,
+the items with none. A language without a region stands for all of its regions, `FR` for
+`fr`, `fr-FR` and `fr-CA`; with one, for that region alone, a Quebec dub apart from one
+from France.
+"""
+input TrackLanguageFilterInput {
+	"""
+	Which tracks to compare.
+	"""
+	kind: TrackLanguageKind!
+	"""
+	The languages, at least one and at most 50, any of which a track may be in.
+	"""
+	anyOf: [LocaleInput!]!
+	"""
+	Keep the items none of whose tracks is in any of the languages instead.
+	"""
+	negated: Boolean! = false
+}
+
+"""
+The tracks whose language is meant.
+"""
+enum TrackLanguageKind {
+	"""
+	Audio tracks.
+	"""
+	AUDIO
+	"""
+	Subtitle tracks, embedded or beside the file.
 	"""
 	SUBTITLE
 }
@@ -10656,9 +13211,9 @@ input UpdateLibraryInput {
 	"""
 	title: String
 	"""
-	The language its metadata is in, as a BCP 47 tag such as `fr-FR`.
+	The language its metadata is matched and shown in.
 	"""
-	language: String
+	language: LocaleInput
 	"""
 	Replaces the directories it scans, as `createLibrary` takes them; for owners only. A
 	root kept keeps its id, and a scan starts: the files of a root taken away leave the

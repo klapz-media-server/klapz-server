@@ -22,6 +22,7 @@ use klapz_scanner::report::{Analysis, DeepAnalysis};
 
 use crate::files::{FileLocation, FilesError, RelativePath};
 use crate::ids::{MediaId, PartId, RatingKey, SectionId};
+use crate::language::LanguageTag;
 use crate::settings::{self, SettingDefinition, Switch};
 
 pub use analysis::{AnalysisTools, BackgroundAnalysis};
@@ -221,8 +222,8 @@ pub struct NewSidecar {
     pub path: String,
     /// The extension, lower-cased: `srt`, `ass`, `vtt`…
     pub codec: String,
-    /// As the file name gives it: `fr`, `fre`, `pt-BR`.
-    pub language: Option<String>,
+    /// What the file name gives: `fr`, `fre` and `pt-BR` read as `fr`, `fr` and `pt-BR`.
+    pub language: Option<LanguageTag>,
     pub forced: bool,
     pub hearing_impaired: bool,
 }

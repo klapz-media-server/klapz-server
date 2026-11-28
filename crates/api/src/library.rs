@@ -5,6 +5,7 @@ use async_graphql::connection::{
 };
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Enum, Object, OutputType, Result, SimpleObject, ID};
+use klapz_core::language::LanguageTag;
 use klapz_core::library::{LibrarySection, SectionKind, SectionRoot};
 use klapz_core::metadata::{
     FieldValue, FirstCharacter as DomainFirstCharacter, ItemFilter, ItemQuery, ItemSort, TagScope,
@@ -16,9 +17,10 @@ use klapz_core::{Listed, RatingKey, SectionId};
 
 use crate::common::CommonFieldsObject;
 use crate::cursor::OpaqueCursor;
-use crate::filter::{ItemFilterInput, ItemOrder, SortDirection, TrackField};
+use crate::filter::{ItemFilterInput, ItemOrder, SortDirection, TrackField, TrackLanguageKind};
 use crate::int64::Int64;
 use crate::item::{Item, ItemConnection};
+use crate::language::Locale;
 use crate::loader::{ItemLoader, RootsLoader};
 use crate::node::GlobalId;
 use crate::schema::{self, ApiContext, DEFAULT_PAGE_SIZE};
@@ -179,6 +181,7 @@ macro_rules! connection_names {
 connection_names!(LibraryTagConnection, LibraryTagEdge);
 connection_names!(YearConnection, YearEdge);
 connection_names!(FieldValueConnection, FieldValueEdge);
+connection_names!(LocaleValueConnection, LocaleValueEdge);
 
 /// A page of the tags a library's items carry.
 pub type LibraryTags = Connection<
@@ -199,6 +202,16 @@ pub type FieldValues = Connection<
     EmptyFields,
     FieldValueConnection,
     FieldValueEdge,
+>;
+
+/// A page of the languages a library's tracks are in.
+pub type LocaleValues = Connection<
+    OpaqueCursor,
+    Locale,
+    EmptyFields,
+    EmptyFields,
+    LocaleValueConnection,
+    LocaleValueEdge,
 >;
 
 /// A collection of media of a single kind — what the interface calls a library.
@@ -258,9 +271,9 @@ impl Library {
         self.section.title_sort.as_deref()
     }
 
-    /// BCP 47 language tag used when matching metadata, for example `fr-FR`.
-    async fn language(&self) -> &str {
-        &self.section.language
+    /// The language its metadata is matched and shown in: `fr-FR`.
+    async fn language(&self) -> Locale {
+        Locale(self.section.language)
     }
 
     /// Stable identifier that survives renaming, used to recognize this library across
@@ -695,6 +708,44 @@ impl Library {
         let item_query = self.item_query(context, filter, ItemSort::Title, None)?;
         let window = (after, before, first, last, offset);
         text_values(context, item_query, ValueField::Track(field.into()), window).await
+    }
+
+    /// The languages the tracks of one kind of this library's items are in, each once, in
+    /// the order of their tags: `fr` and `fr-CA` apart, `fre` and `fra` one `fr`. Series have
+    /// no tracks: their episodes', reached with `depth: ALL`, are listed.
+    #[allow(clippy::too_many_arguments)]
+    async fn track_languages(
+        &self,
+        context: &Context<'_>,
+        #[graphql(desc = "Which tracks' languages to list.")] kind: TrackLanguageKind,
+        #[graphql(desc = "List only the languages of the items this filter keeps.")] filter: Option<
+            ItemFilterInput,
+        >,
+        #[graphql(desc = "Return languages after this cursor.")] after: Option<String>,
+        #[graphql(desc = "Return languages before this cursor.")] before: Option<String>,
+        #[graphql(desc = "Return at most this many languages from the start of the range.")]
+        first: Option<i32>,
+        #[graphql(desc = "Return at most this many languages from the end of the range.")]
+        last: Option<i32>,
+        #[graphql(desc = "Discard this many languages before the page begins.")] offset: Option<
+            u32,
+        >,
+    ) -> Result<LocaleValues> {
+        let item_query = self.item_query(context, filter, ItemSort::Title, None)?;
+        let texts = text_values(
+            context,
+            item_query,
+            ValueField::Track(kind.into()),
+            (after, before, first, last, offset),
+        )
+        .await?;
+        let mut connection = Connection::new(texts.has_previous_page, texts.has_next_page);
+        connection
+            .edges
+            .extend(texts.edges.into_iter().filter_map(|edge| {
+                LanguageTag::parse(&edge.node).map(|tag| Edge::new(edge.cursor, Locale(tag)))
+            }));
+        Ok(connection)
     }
 
     /// What every item a filter keeps has in common — fields, tags, collections and locks:

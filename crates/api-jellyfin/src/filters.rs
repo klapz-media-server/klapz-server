@@ -36,8 +36,8 @@ const FILTER_VALUES: &str = r"query($id: ID!, $filter: ItemFilterInput) {
         genres: tags(kind: GENRE, filter: $filter, first: 500) { nodes { id name } }
         years(filter: $filter, first: 500) { nodes }
         ratings: fieldValues(field: CONTENT_RATING, filter: $filter, first: 500) { nodes }
-        audio: trackValues(field: AUDIO_LANGUAGE, filter: $filter, first: 500) { nodes }
-        subtitles: trackValues(field: SUBTITLE_LANGUAGE, filter: $filter, first: 500) { nodes }
+        audio: trackValues(field: STATED_AUDIO_LANGUAGE, filter: $filter, first: 500) { nodes }
+        subtitles: trackValues(field: STATED_SUBTITLE_LANGUAGE, filter: $filter, first: 500) { nodes }
     } }
 }";
 

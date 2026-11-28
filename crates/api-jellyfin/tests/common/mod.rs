@@ -65,7 +65,7 @@ fn section(id: i64, kind: SectionKind, title: &str) -> LibrarySection {
         kind,
         title: title.to_owned(),
         title_sort: None,
-        language: "fr-FR".to_owned(),
+        language: klapz_core::language::LanguageTag::parse("fr-FR").unwrap(),
         uuid: format!("uuid-{id}"),
         created_at: 1_795_163_514,
         updated_at: 1_795_163_514,
@@ -310,7 +310,7 @@ fn doodlebug_tracks() -> Vec<MediaStream> {
         1,
         "opus",
     );
-    audio.language = Some("en".to_owned());
+    audio.language = klapz_core::language::LanguageTag::parse("en");
     audio.channels = Some(2);
     audio.bitrate = Some(128);
     audio.is_default = true;
@@ -376,6 +376,7 @@ fn metadata(
         codec_tag: Some("[0][0][0][0]".to_owned()),
         profile: None,
         language: None,
+        stated_language: None,
         time_base: Some("1/90000".to_owned()),
         mime_type: None,
         filename: None,

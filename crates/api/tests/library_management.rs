@@ -19,7 +19,7 @@ fn section(id: i64, kind: SectionKind) -> LibrarySection {
         kind,
         title: format!("library {id}"),
         title_sort: Some(format!("sorted {id}")),
-        language: "fr-FR".to_owned(),
+        language: klapz_core::language::LanguageTag::parse("fr-FR").unwrap(),
         uuid: format!("uuid-{id}"),
         created_at: 0,
         updated_at: 0,
@@ -116,7 +116,7 @@ const CREATE: &str = r"
 mutation Create($input: CreateLibraryInput!) {
   createLibrary(input: $input) {
     clientMutationId
-    library { title kind language roots { path } }
+    library { title kind language { tag } roots { path } }
     userErrors { field code }
   }
 }
@@ -125,7 +125,7 @@ mutation Create($input: CreateLibraryInput!) {
 const UPDATE: &str = r"
 mutation Update($input: UpdateLibraryInput!) {
   updateLibrary(input: $input) {
-    library { title titleSort language roots { id path } }
+    library { title titleSort language { tag } roots { id path } }
     userErrors { field code }
   }
 }
@@ -146,7 +146,7 @@ fn films(roots: &[&str]) -> Value {
         "clientMutationId": "c",
         "title": "  Films  ",
         "kind": "MOVIE",
-        "language": "fr-FR",
+        "language": { "language": "FR", "region": "FR" },
         "roots": roots,
     } })
 }
@@ -169,7 +169,7 @@ async fn an_owner_creates_a_library_which_is_then_scanned() {
             "library": {
                 "title": "Films",
                 "kind": "MOVIE",
-                "language": "fr-FR",
+                "language": { "tag": "fr-FR" },
                 "roots": [{ "path": "/media/films" }, { "path": "/media/anime" }],
             },
             "userErrors": [],
@@ -206,7 +206,7 @@ async fn a_library_is_refused_what_it_cannot_hold_or_reach() {
                 .clone()
         }
     };
-    let valid = json!({ "title": "Films", "kind": "MOVIE", "language": "fr-FR", "roots": ["/media/films"] });
+    let valid = json!({ "title": "Films", "kind": "MOVIE", "language": { "language": "FR", "region": "FR" }, "roots": ["/media/films"] });
     let with = |field: &str, value: Value| {
         let mut input = valid.clone();
         input[field] = value;
@@ -224,7 +224,7 @@ async fn a_library_is_refused_what_it_cannot_hold_or_reach() {
             "INVALID_TITLE",
         ),
         (
-            with("language", json!("french")),
+            with("language", json!({ "language": "FR", "region": "France" })),
             json!(["input", "language"]),
             "INVALID_LANGUAGE",
         ),
@@ -261,7 +261,7 @@ async fn a_library_admin_renames_it_but_does_not_choose_its_directories() {
         &schema,
         user(),
         UPDATE,
-        json!({ "input": { "id": library(28), "title": "Séries", "language": "en-US" } }),
+        json!({ "input": { "id": library(28), "title": "Séries", "language": { "language": "EN", "region": "US" } } }),
     )
     .await;
     assert_eq!(
@@ -270,7 +270,7 @@ async fn a_library_admin_renames_it_but_does_not_choose_its_directories() {
             "library": {
                 "title": "Séries",
                 "titleSort": null,
-                "language": "en-US",
+                "language": { "tag": "en-US" },
                 "roots": [{ "id": GlobalId::encode("Root", 3), "path": "/media/series" }],
             },
             "userErrors": [],

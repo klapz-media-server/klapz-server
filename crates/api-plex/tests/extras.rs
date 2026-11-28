@@ -51,7 +51,7 @@ fn section(id: i64, kind: SectionKind, title: &str) -> LibrarySection {
         kind,
         title: title.to_owned(),
         title_sort: None,
-        language: "fr-FR".to_owned(),
+        language: klapz_core::language::LanguageTag::parse("fr-FR").unwrap(),
         uuid: format!("uuid-{id}"),
         created_at: 0,
         updated_at: 0,
@@ -221,7 +221,9 @@ fn stream(file: PartId, track: &Value) -> MediaStream {
         kind,
         position: int32(track, "index").unwrap(),
         codec: text(track, "codec"),
-        language: text(track, "languageTag"),
+        language: text(track, "languageTag")
+            .as_deref()
+            .and_then(klapz_core::language::LanguageTag::parse),
         channels: int32(track, "channels"),
         bitrate: int32(track, "bitrate").map(|kilobits| kilobits * 1000),
         is_default: false,

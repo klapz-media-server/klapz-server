@@ -9,6 +9,7 @@ mod sidecar;
 mod stack;
 
 use crate::files::RelativePath;
+use crate::language::LanguageTag;
 use crate::scan::ShowKey;
 
 pub use ignore::IgnoreRules;
@@ -55,7 +56,7 @@ pub enum GroupedKind {
 pub struct SidecarMatch {
     /// Index into the `siblings` given.
     pub index: usize,
-    pub language: Option<String>,
+    pub language: Option<LanguageTag>,
     pub forced: bool,
     pub hearing_impaired: bool,
 }

@@ -5,12 +5,14 @@
 //! rename it and change its language, as they change what it holds.
 
 use async_graphql::{Context, Enum, InputObject, Result, SimpleObject, ID};
+use klapz_core::language::LanguageTag;
 use klapz_core::library::{
-    checked_roots, create_library, delete_library, edit_library, is_language_tag, normalized_title,
-    Deletion, Edited, LibraryEdit, NewLibrary, RootError, SectionKind,
+    checked_roots, create_library, delete_library, edit_library, normalized_title, Deletion,
+    Edited, LibraryEdit, NewLibrary, RootError, SectionKind,
 };
 use klapz_core::{now_epoch, SectionId};
 
+use crate::language::LocaleInput;
 use crate::library::{Library, LibraryKind, LIBRARY_TYPE};
 use crate::node::GlobalId;
 use crate::schema::ApiContext;
@@ -22,7 +24,7 @@ pub enum LibraryErrorCode {
     LibraryNotFound,
     /// A title is 1 to 255 characters once trimmed, with no control character.
     InvalidTitle,
-    /// Not shaped as a BCP 47 language tag, such as `fr-FR`.
+    /// A script or a region that is not one: `Canada` rather than `CA`.
     InvalidLanguage,
     /// Music and photo libraries are not held by this server.
     UnsupportedKind,
@@ -57,7 +59,9 @@ impl LibraryUserError {
         let message = match code {
             LibraryErrorCode::LibraryNotFound => "no such library",
             LibraryErrorCode::InvalidTitle => "a title is 1 to 255 characters, none a control",
-            LibraryErrorCode::InvalidLanguage => "not a language tag such as fr-FR",
+            LibraryErrorCode::InvalidLanguage => {
+                "not a script of four letters or a region such as CA"
+            }
             LibraryErrorCode::UnsupportedKind => "no library here holds this kind",
             LibraryErrorCode::NoRoot => "a library needs a directory to scan",
             LibraryErrorCode::TooManyRoots => "a library scans at most 32 directories",
@@ -100,16 +104,10 @@ fn title(title: &str) -> Refusal<String> {
         .ok_or_else(|| LibraryUserError::new("title", LibraryErrorCode::InvalidTitle))
 }
 
-fn language(language: &str) -> Refusal<String> {
-    let language = language.trim();
-    if is_language_tag(language) {
-        Ok(language.to_owned())
-    } else {
-        Err(LibraryUserError::new(
-            "language",
-            LibraryErrorCode::InvalidLanguage,
-        ))
-    }
+fn language(language: &LocaleInput) -> Refusal<LanguageTag> {
+    language
+        .tag()
+        .ok_or_else(|| LibraryUserError::new("language", LibraryErrorCode::InvalidLanguage))
 }
 
 async fn roots(context: &Context<'_>, paths: &[String]) -> Result<Refusal<Vec<String>>> {
@@ -165,8 +163,9 @@ pub struct CreateLibraryInput {
     pub title: String,
     /// What it holds: films or series.
     pub kind: LibraryKind,
-    /// The language its metadata is in, as a BCP 47 tag such as `fr-FR`.
-    pub language: String,
+    /// The language its metadata is matched and shown in, with its region where it matters:
+    /// `{language: FR, region: "FR"}`.
+    pub language: LocaleInput,
     /// The directories it scans: absolute paths on the server, 1 to 32 of them, none inside
     /// another. Each is stored resolved, links followed; a repeat is kept once.
     pub roots: Vec<String>,
@@ -221,8 +220,8 @@ pub struct UpdateLibraryInput {
     pub id: ID,
     /// Its new name: 1 to 255 characters, trimmed. Clears `titleSort`.
     pub title: Option<String>,
-    /// The language its metadata is in, as a BCP 47 tag such as `fr-FR`.
-    pub language: Option<String>,
+    /// The language its metadata is matched and shown in.
+    pub language: Option<LocaleInput>,
     /// Replaces the directories it scans, as `createLibrary` takes them; for owners only. A
     /// root kept keeps its id, and a scan starts: the files of a root taken away leave the
     /// library with it. Refused while the library is being scanned.

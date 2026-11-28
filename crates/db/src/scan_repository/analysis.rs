@@ -6,6 +6,7 @@
 //! one, so the renaming happens here, once, measured against what the reference stored for
 //! the test files (`docs/plex/scanner/analysis.md`, §1).
 
+use klapz_core::language::{Language, LanguageTag};
 use klapz_core::scan::NewSidecar;
 use klapz_core::teletext::TeletextPage;
 use klapz_scanner::report::{Analysis, DolbyVision, Track, TrackKind, VideoTrack};
@@ -199,28 +200,21 @@ pub(super) fn codec(ffprobe: &str) -> String {
     name.to_owned()
 }
 
-/// A track's language as the reference stores it: the ISO 639-1 code when the language has
-/// one (`fre` and `fra` are `fr`), else the tag as written (`pt-BR`, `mul`). `und` is no
-/// language.
+/// A track's language as stored: the [`LanguageTag`] its tag reads as, `fre`, `fra` and `fr`
+/// all `fr` and the region kept (`fr-CA`). `und` is no language, as the reference stores none;
+/// teletext's one language per page, `fra,fra`, is `und`, as the reference stores it; a word
+/// that names no language (`unknown`) is none.
 pub(super) fn language(tag: &str) -> Option<String> {
     let tag = tag.trim();
-    if tag.is_empty() || tag.eq_ignore_ascii_case("und") {
-        return None;
+    if tag.contains(',') {
+        return Some(Language::Und.code().to_owned());
     }
-    // Teletext lists one language per page, `fra,fra`: the reference stores `und` for what
-    // is not a tag at all, and keeps words such as `unknown`.
-    if !tag
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
-    {
-        return Some("und".to_owned());
-    }
-    let lower = tag.to_ascii_lowercase();
-    let short = super::languages::ALPHA2
-        .binary_search_by_key(&lower.as_str(), |(alpha3, _)| alpha3)
-        .ok()
-        .map(|found| super::languages::ALPHA2[found].1);
-    Some(short.map_or_else(|| tag.to_owned(), ToOwned::to_owned))
+    LanguageTag::parse(tag).and_then(stored)
+}
+
+/// A tag as a track stores it: none for `und`.
+fn stored(tag: LanguageTag) -> Option<String> {
+    (tag.language() != Language::Und).then(|| tag.to_string())
 }
 
 /// ffprobe's profile, lower-cased as the reference stores it: DTS's named by their extension
@@ -659,7 +653,7 @@ pub(super) fn sidecar_row(sidecar: &NewSidecar, part: i64, id: i64) -> media_str
         kind: "subtitle".to_owned(),
         position: 0,
         codec: Some(codec.clone()),
-        language: sidecar.language.as_deref().and_then(language),
+        language: sidecar.language.and_then(stored),
         channels: None,
         bitrate: None,
         is_default: false,
@@ -883,26 +877,21 @@ mod tests {
     }
 
     #[test]
-    fn shortens_languages_that_have_a_two_letter_code() {
+    fn stores_every_spelling_of_a_language_as_one_tag() {
         assert_eq!(language("fre").as_deref(), Some("fr"));
         assert_eq!(language("fra").as_deref(), Some("fr"));
         assert_eq!(language("ger").as_deref(), Some("de"));
         assert_eq!(language("eng").as_deref(), Some("en"));
         assert_eq!(language("fr").as_deref(), Some("fr"));
+        assert_eq!(language("French").as_deref(), Some("fr"));
         assert_eq!(language("pt-BR").as_deref(), Some("pt-BR"));
+        assert_eq!(language("fr-ca").as_deref(), Some("fr-CA"));
         assert_eq!(language("mul").as_deref(), Some("mul"));
         assert_eq!(language("und"), None);
         assert_eq!(language(""), None);
         // Not a tag: teletext's language per page.
         assert_eq!(language("fra,fra").as_deref(), Some("und"));
-        assert_eq!(language("unknown").as_deref(), Some("unknown"));
-    }
-
-    #[test]
-    fn the_language_table_is_sorted_for_its_search() {
-        assert!(super::super::languages::ALPHA2
-            .windows(2)
-            .all(|pair| pair[0].0 < pair[1].0));
+        assert_eq!(language("unknown"), None);
     }
 
     #[test]

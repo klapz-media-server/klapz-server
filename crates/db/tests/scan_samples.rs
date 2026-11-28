@@ -487,13 +487,13 @@ async fn a_teletext_recording_lists_a_subtitle_track_per_page() {
     let files = metadata.files_for(&[versions[0].id]).await.unwrap();
     let tracks = metadata.streams_for(&[files[0].id]).await.unwrap();
 
-    let subtitles: Vec<(i32, Option<&str>, bool, Option<u16>)> = tracks
+    let subtitles: Vec<(i32, Option<String>, bool, Option<u16>)> = tracks
         .iter()
         .filter(|track| track.kind == StreamKind::Subtitle)
         .map(|track| {
             (
                 track.position,
-                track.language.as_deref(),
+                track.language.map(|tag| tag.to_string()),
                 track.traits.hearing_impaired,
                 StreamTrack::of(track).teletext_page,
             )
@@ -502,12 +502,12 @@ async fn a_teletext_recording_lists_a_subtitle_track_per_page() {
     assert_eq!(
         subtitles,
         [
-            (0, Some("fr"), false, Some(889)),
-            (0, Some("de"), false, Some(150)),
-            (0, Some("de"), false, Some(152)),
-            (0, Some("fr"), false, Some(702)),
-            (0, Some("de"), false, Some(708)),
-            (0, Some("fr"), true, Some(888)),
+            (0, Some("fr".to_owned()), false, Some(889)),
+            (0, Some("de".to_owned()), false, Some(150)),
+            (0, Some("de".to_owned()), false, Some(152)),
+            (0, Some("fr".to_owned()), false, Some(702)),
+            (0, Some("de".to_owned()), false, Some(708)),
+            (0, Some("fr".to_owned()), true, Some(888)),
         ]
     );
     // Each a track of its own, the others of the file after them.

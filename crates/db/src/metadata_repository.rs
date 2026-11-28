@@ -14,6 +14,7 @@ use klapz_core::collection::{CollectionCondition, CollectionRef};
 use klapz_core::common::CommonFields;
 use klapz_core::edit::{ItemEdit, ItemField};
 use klapz_core::extra::Extra;
+use klapz_core::language::LanguageTag;
 use klapz_core::marker::{Marker, NewMarker};
 use klapz_core::metadata::{
     first_character_bucket, AudioAnalysis, ColorDescription, CreditRef, DolbyVision, Edited,
@@ -2653,7 +2654,8 @@ fn to_side_stream(row: part_side_stream::Model) -> SideStream {
         codec: row.codec,
         codec_tag: row.codec_tag,
         profile: row.profile,
-        language: row.language,
+        language: row.language.as_deref().and_then(LanguageTag::parse),
+        stated_language: row.language,
         time_base: row.time_base,
         mime_type: row.mime_type,
         filename: row.filename,
@@ -2743,7 +2745,7 @@ fn to_track(
         kind,
         position: row.position,
         codec: row.codec,
-        language: row.language,
+        language: row.language.as_deref().and_then(LanguageTag::parse),
         channels: row.channels,
         bitrate: row.bitrate,
         is_default: row.is_default,

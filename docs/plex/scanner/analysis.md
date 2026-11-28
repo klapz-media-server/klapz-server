@@ -136,7 +136,9 @@ and `open_subtitles_hash`.
 
 **`media_streams`** (our `media_stream`): `codec` (`subrip` → `srt`), `index` (ffmpeg's
 stream index, our `position`), `language` (ISO 639-2 → 639-1: `fre` → `fr`; a value that is
-not a tag, teletext's `fra,fra`, is stored `und`, a word such as `unknown` as it is; Matroska's
+not a tag, teletext's `fra,fra`, is stored `und`, a word such as `unknown` as it is — ours stores
+every value as the canonical tag of `core::language::LanguageTag`, region kept (`fr-CA`), and
+a word naming no language as none, what the file wrote staying in `declared_language`; Matroska's
 implicit English needs nothing, since ffprobe reports `eng` for a track without the element and
 nothing for one written `und`, which the reference leaves without), `channels`, `bitrate`,
 `default`, `forced`. A cover picture stored as a video track (`attached_pic`) has no row: the

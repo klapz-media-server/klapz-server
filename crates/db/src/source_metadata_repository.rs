@@ -3,6 +3,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use klapz_core::edit::ItemField;
+use klapz_core::language::{Language, LanguageTag};
 use klapz_core::metadata::{ItemKind, MetadataItem, TagKind};
 use klapz_core::source_metadata::theme::{ItemTheme, SeriesFiles, ShownTheme, ThemeSource};
 use klapz_core::source_metadata::{
@@ -80,7 +81,7 @@ impl SourceMetadataRepository for SqlSourceMetadataRepository {
         let targets = self.targets(top).await?;
         Ok(MatchPlan {
             kind: top_kind,
-            language: library.language,
+            language: LanguageTag::parse(&library.language).unwrap_or(Language::Und.into()),
             targets,
         })
     }
@@ -174,7 +175,7 @@ impl SourceMetadataRepository for SqlSourceMetadataRepository {
     async fn item_target(
         &self,
         item: RatingKey,
-    ) -> Result<Option<(String, MatchTarget)>, SourceMetadataError> {
+    ) -> Result<Option<(LanguageTag, MatchTarget)>, SourceMetadataError> {
         let Some(row) = metadata_item::Entity::find_by_id(item.get())
             .one(&self.connection)
             .await
@@ -191,7 +192,12 @@ impl SourceMetadataRepository for SqlSourceMetadataRepository {
                 row.library_section_id,
             )))?;
         let target = self.targets(vec![row]).await?.into_iter().next();
-        Ok(target.map(|target| (library.language, target)))
+        Ok(target.map(|target| {
+            (
+                LanguageTag::parse(&library.language).unwrap_or(Language::Und.into()),
+                target,
+            )
+        }))
     }
 
     async fn unmatch(&self, item: RatingKey) -> Result<(), SourceMetadataError> {
@@ -516,7 +522,7 @@ async fn save_row<C: sea_orm::ConnectionTrait>(
         provider_id: ActiveValue::Set(record.provider_id.clone()),
         parent_id: ActiveValue::Set(parent),
         position: ActiveValue::Set(record.position),
-        original_language: ActiveValue::Set(record.original_language.clone()),
+        original_language: ActiveValue::Set(record.original_language.map(|tag| tag.to_string())),
         original_title: ActiveValue::Set(record.original_title.clone()),
         year: ActiveValue::Set(record.year),
         released_on: ActiveValue::Set(record.released_on),
@@ -551,10 +557,10 @@ async fn save_row<C: sea_orm::ConnectionTrait>(
         .exec(connection)
         .await?;
 
-    let translations: Vec<_> = dedup_by_key(&record.translations, |t| t.language.as_str())
+    let translations: Vec<_> = dedup_by_key(&record.translations, |t| t.language)
         .map(|t| source_metadata_translation::ActiveModel {
             source_metadata_id: ActiveValue::Set(id),
-            language: ActiveValue::Set(t.language.clone()),
+            language: ActiveValue::Set(t.language.to_string()),
             title: ActiveValue::Set(t.title.clone()),
             summary: ActiveValue::Set(t.summary.clone()),
             tagline: ActiveValue::Set(t.tagline.clone()),
@@ -597,7 +603,7 @@ async fn save_row<C: sea_orm::ConnectionTrait>(
             source_metadata_id: ActiveValue::Set(id),
             kind: ActiveValue::Set(image.kind.as_str().to_owned()),
             url: ActiveValue::Set(image.url.clone()),
-            language: ActiveValue::Set(image.language.clone()),
+            language: ActiveValue::Set(image.language.map(|tag| tag.to_string())),
             width: ActiveValue::Set(image.width),
             height: ActiveValue::Set(image.height),
             vote_average: ActiveValue::Set(image.vote_average),

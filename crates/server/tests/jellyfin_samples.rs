@@ -247,7 +247,7 @@ async fn every_sample_is_published_as_the_reference_publishes_it() {
             NewLibrary {
                 kind: SectionKind::Movie,
                 title: library.to_owned(),
-                language: language.to_owned(),
+                language: klapz_core::language::LanguageTag::parse(language).unwrap(),
                 roots: vec![format!("/media/{library}")],
             },
         )

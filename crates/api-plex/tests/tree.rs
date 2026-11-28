@@ -49,7 +49,7 @@ fn section(id: i64, kind: SectionKind) -> LibrarySection {
         kind,
         title: format!("Library {id}"),
         title_sort: None,
-        language: "fr-FR".to_owned(),
+        language: klapz_core::language::LanguageTag::parse("fr-FR").unwrap(),
         uuid: format!("uuid-{id}"),
         created_at: 0,
         updated_at: 0,
@@ -177,7 +177,9 @@ fn track_of(file: i64, track: &Value) -> MediaStream {
         kind,
         position: i32::try_from(track["index"].as_i64().unwrap()).unwrap(),
         codec: text("codec"),
-        language: text("language"),
+        language: text("language")
+            .as_deref()
+            .and_then(klapz_core::language::LanguageTag::parse),
         channels: track["channels"]
             .as_i64()
             .map(|value| i32::try_from(value).unwrap()),

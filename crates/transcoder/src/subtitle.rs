@@ -763,6 +763,7 @@ mod tests {
             index: 3,
             codec: codec.to_owned(),
             language: Some("fr".to_owned()),
+            language_code: Some("fra".to_owned()),
         }
     }
 

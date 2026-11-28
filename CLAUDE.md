@@ -31,6 +31,7 @@ history in `docs/`.
 | `search-and-listing` | listings, filters, sorts, search, shelves |
 | `viewer-state` | watch state, history, ratings, playlists, play queues, collections, markers, edits |
 | `settings` | `core::settings`, server settings |
+| `languages` | `core::language`: the one language type, its tags, its tables |
 
 Skills: `rust` (load before writing any Rust), `reference-servers` (load before any capture or
 comparison against a reference server).
@@ -151,6 +152,8 @@ tree instead of resolving conflicts:
 - stub routes: `python tools/gen_stub_routes.py` then `cargo fmt`, when a stub becomes real;
 - `docs/plex/ENDPOINTS.md`: `python tools/gen_endpoints.py`, then diff it;
 - `docs/jellyfin/ENDPOINTS.md`: `python tools/gen_jellyfin_endpoints.py`;
+- `crates/core/src/language/table.rs`, `crates/api/src/language/values.rs`:
+  `python tools/gen_languages.py`;
 - `crates/api-plex/src/language_names.rs`: `python tools/gen_language_names.py`.
 
 ## Closing procedure

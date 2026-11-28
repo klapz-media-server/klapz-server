@@ -163,7 +163,7 @@ mod tests {
             kind,
             title: title.to_owned(),
             title_sort: None,
-            language: "fr-FR".to_owned(),
+            language: crate::language::LanguageTag::parse("fr-FR").unwrap(),
             uuid: format!("uuid-{id}"),
             created_at: 0,
             updated_at: 0,

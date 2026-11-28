@@ -44,7 +44,7 @@ fn section_with_uuid(
         kind,
         title: title.to_owned(),
         title_sort: None,
-        language: "fr-FR".to_owned(),
+        language: klapz_core::language::LanguageTag::parse("fr-FR").unwrap(),
         uuid: uuid.to_owned(),
         created_at: 1_477_835_115,
         updated_at: 1_792_916_300,
@@ -482,7 +482,7 @@ fn avatar_audio() -> MediaStream {
         position: 1,
         codec: Some("dca".to_owned()),
         // The source stores BCP 47 tags.
-        language: Some("fr".to_owned()),
+        language: klapz_core::language::LanguageTag::parse("fr"),
         channels: Some(6),
         bitrate: Some(1_536_000),
         is_default: true,

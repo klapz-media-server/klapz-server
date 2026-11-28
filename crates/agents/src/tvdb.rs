@@ -15,6 +15,7 @@ use tokio::sync::{Mutex, OnceCell};
 use crate::http::{empty_to_none, Http};
 use crate::language::{from_tvdb, to_tvdb};
 use crate::TvdbCredentials;
+use klapz_core::language::{Language, LanguageTag};
 
 const API: &str = "https://api4.thetvdb.com/v4";
 
@@ -150,7 +151,7 @@ impl MetadataSource for Tvdb {
             parameters.push(("year", year.to_string()));
         }
         let found: Vec<SearchSeries> = self.get("/search", &parameters).await?;
-        let wanted = to_tvdb(&query.language);
+        let wanted = to_tvdb(query.language);
         Ok(found
             .into_iter()
             .filter_map(|series| {
@@ -158,7 +159,7 @@ impl MetadataSource for Tvdb {
                 let (own, others): (Vec<_>, Vec<_>) = series
                     .translations
                     .into_iter()
-                    .partition(|(language, _)| Some(language) == wanted.as_ref());
+                    .partition(|(language, _)| Some(language.as_str()) == wanted);
                 let mut names = vec![series.name];
                 names.extend(own.into_iter().map(|(_, name)| name));
                 names.retain(|name| !name.is_empty());
@@ -372,31 +373,29 @@ impl Series {
 
     /// The series' name and overview in each language, aliases left out, and its own name in
     /// its original language where no translation gives one.
-    fn texts(&self, original_language: Option<&str>) -> Vec<Translation> {
-        let mut texts: BTreeMap<String, Translation> = BTreeMap::new();
+    fn texts(&self, original_language: Option<LanguageTag>) -> Vec<Translation> {
+        let mut texts: BTreeMap<LanguageTag, Translation> = BTreeMap::new();
         for name in self
             .translations
             .name_translations
             .iter()
             .filter(|name| name.is_alias != Some(true))
         {
-            let language = from_tvdb(&name.language);
-            let entry = texts
-                .entry(language.clone())
-                .or_insert_with(|| empty(language));
+            let Some(language) = from_tvdb(&name.language) else {
+                continue;
+            };
+            let entry = texts.entry(language).or_insert_with(|| empty(language));
             entry.title = empty_to_none(&name.name);
         }
         for overview in &self.translations.overview_translations {
-            let language = from_tvdb(&overview.language);
-            let entry = texts
-                .entry(language.clone())
-                .or_insert_with(|| empty(language));
+            let Some(language) = from_tvdb(&overview.language) else {
+                continue;
+            };
+            let entry = texts.entry(language).or_insert_with(|| empty(language));
             entry.summary = empty_to_none(&overview.overview);
         }
         if let Some(language) = original_language {
-            let entry = texts
-                .entry(language.to_owned())
-                .or_insert_with(|| empty(language.to_owned()));
+            let entry = texts.entry(language).or_insert_with(|| empty(language));
             if entry.title.is_none() {
                 entry.title = empty_to_none(&self.name);
             }
@@ -411,8 +410,8 @@ impl Series {
         translated: &BTreeMap<String, Vec<Episode>>,
     ) -> SourceRecord {
         let first_aired = self.first_aired.as_deref().and_then(CalendarDate::parse);
-        let original_language = self.original_language.as_deref().map(from_tvdb);
-        let translations = self.texts(original_language.as_deref());
+        let original_language = self.original_language.as_deref().and_then(from_tvdb);
+        let translations = self.texts(original_language);
         let images = self
             .artworks
             .into_iter()
@@ -420,7 +419,7 @@ impl Series {
                 Some(RemoteImage {
                     kind: *kinds.get(&artwork.kind)?,
                     url: artwork.image,
-                    language: artwork.language.as_deref().map(from_tvdb),
+                    language: artwork.language.as_deref().and_then(from_tvdb),
                     width: artwork.width,
                     height: artwork.height,
                     vote_average: artwork.score,
@@ -447,7 +446,7 @@ impl Series {
             .seasons
             .iter()
             .filter(|season| season.order.name == ORDER)
-            .map(|season| season_record(season, original, original_language.as_deref(), translated))
+            .map(|season| season_record(season, original, original_language, translated))
             .collect();
 
         SourceRecord {
@@ -471,7 +470,7 @@ impl Series {
                 .into_iter()
                 .filter(|genre| !genre.name.is_empty())
                 .map(|genre| Genre {
-                    names: vec![("en".to_owned(), genre.name)],
+                    names: vec![(Language::En.into(), genre.name)],
                 })
                 .collect(),
             countries: Vec::new(),
@@ -485,7 +484,7 @@ impl Series {
 fn season_record(
     season: &Season,
     episodes: &[Episode],
-    original_language: Option<&str>,
+    original_language: Option<LanguageTag>,
     translated: &BTreeMap<String, Vec<Episode>>,
 ) -> SourceRecord {
     SourceRecord {
@@ -493,7 +492,7 @@ fn season_record(
         agent: "tvdb".to_owned(),
         provider_id: season.id.to_string(),
         position: Some(season.number),
-        original_language: original_language.map(str::to_owned),
+        original_language,
         original_title: None,
         translations: Vec::new(),
         year: None,
@@ -519,7 +518,7 @@ fn season_record(
     }
 }
 
-fn empty(language: String) -> Translation {
+fn empty(language: LanguageTag) -> Translation {
     Translation {
         language,
         title: None,
@@ -530,7 +529,7 @@ fn empty(language: String) -> Translation {
 
 fn episode_record(
     episode: &Episode,
-    original_language: Option<&str>,
+    original_language: Option<LanguageTag>,
     translated: &BTreeMap<String, Vec<Episode>>,
 ) -> SourceRecord {
     let aired = episode.aired.as_deref().and_then(CalendarDate::parse);
@@ -539,7 +538,7 @@ fn episode_record(
         .filter_map(|(language, episodes)| {
             let same = episodes.iter().find(|other| other.id == episode.id)?;
             let translation = Translation {
-                language: from_tvdb(language),
+                language: from_tvdb(language)?,
                 title: same.name.as_deref().and_then(empty_to_none),
                 summary: same.overview.as_deref().and_then(empty_to_none),
                 tagline: None,
@@ -549,7 +548,7 @@ fn episode_record(
         .collect();
     if let Some(language) = original_language {
         translations.push(Translation {
-            language: language.to_owned(),
+            language,
             title: episode.name.as_deref().and_then(empty_to_none),
             summary: episode.overview.as_deref().and_then(empty_to_none),
             tagline: None,
@@ -560,7 +559,7 @@ fn episode_record(
         agent: "tvdb".to_owned(),
         provider_id: episode.id.to_string(),
         position: Some(episode.number),
-        original_language: original_language.map(str::to_owned),
+        original_language,
         original_title: None,
         translations,
         year: aired.map(CalendarDate::year),
@@ -670,17 +669,23 @@ mod tests {
         let french = record
             .translations
             .iter()
-            .find(|t| t.language == "fr")
+            .find(|t| t.language.code() == "fr")
             .unwrap();
         assert_eq!(french.title.as_deref(), Some("Le Trône de fer"));
         let english = record
             .translations
             .iter()
-            .find(|t| t.language == "en")
+            .find(|t| t.language.code() == "en")
             .unwrap();
         assert_eq!(english.title.as_deref(), Some("Game of Thrones"));
         assert_eq!(record.external_ids.len(), 2);
-        assert_eq!(record.images[0].language.as_deref(), Some("fr"));
+        assert_eq!(
+            record.images[0]
+                .language
+                .map(|tag| tag.to_string())
+                .as_deref(),
+            Some("fr")
+        );
         assert_eq!(
             record.children.len(),
             1,

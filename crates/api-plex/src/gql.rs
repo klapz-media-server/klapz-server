@@ -73,6 +73,23 @@ pub async fn execute<T: DeserializeOwned>(
         .map_err(|error| ApiError::Internal(Box::new(error)))
 }
 
+/// The official API's `Locale`, selected as `{ tag }`, read back into the tag Plex publishes as
+/// `languageTag` and labels from; for `#[serde(deserialize_with)]`.
+pub(crate) mod locale {
+    use serde::Deserializer;
+
+    pub fn tag<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+        klapz_api::language::deserialize(deserializer).map(|tag| tag.to_string())
+    }
+
+    pub fn optional_tag<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<String>, D::Error> {
+        klapz_api::language::deserialize_optional(deserializer)
+            .map(|tag| tag.map(|tag| tag.to_string()))
+    }
+}
+
 /// The official API's `DateTime`, read back into the Unix seconds Plex publishes; for
 /// `#[serde(deserialize_with)]`.
 pub(crate) mod date_time {

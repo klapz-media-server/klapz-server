@@ -70,7 +70,7 @@ fn schema() -> ApiSchema {
             kind: SectionKind::Movie,
             title: "VF - Films".to_owned(),
             title_sort: None,
-            language: "fr-FR".to_owned(),
+            language: klapz_core::language::LanguageTag::parse("fr-FR").unwrap(),
             uuid: "2cd48489-54c0-41e9-ae62-f3dcb0f3c249".to_owned(),
             created_at: 0,
             updated_at: 0,

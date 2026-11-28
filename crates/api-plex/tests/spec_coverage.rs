@@ -76,7 +76,7 @@ fn catalog() -> (InMemoryLibrary, InMemoryMetadata) {
         kind: SectionKind::Movie,
         title: "Films".to_owned(),
         title_sort: None,
-        language: "fr-FR".to_owned(),
+        language: klapz_core::language::LanguageTag::parse("fr-FR").unwrap(),
         uuid: "00000000-0000-0000-0000-000000000001".to_owned(),
         created_at: 0,
         updated_at: 0,

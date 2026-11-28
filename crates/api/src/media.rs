@@ -16,6 +16,7 @@ use klapz_core::StreamId;
 use klapz_core::stream::{reads_as_is, FileFormat, PlayerFormat};
 
 use crate::int64::Int64;
+use crate::language::Locale;
 use crate::loader::{FilesLoader, StreamsLoader};
 use crate::node::GlobalId;
 
@@ -437,9 +438,10 @@ impl Track {
         self.0.codec.as_deref()
     }
 
-    /// Language tag as stored, for example `fr` or `en`.
-    async fn language(&self) -> Option<&str> {
-        self.0.language.as_deref()
+    /// The language: `fr`, or `fr-CA` for a Quebec dub. What the file states as written is
+    /// `stated.language`.
+    async fn language(&self) -> Option<Locale> {
+        self.0.language.map(Locale)
     }
 
     /// Channel count, for audio tracks.

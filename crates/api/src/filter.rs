@@ -10,6 +10,7 @@ use klapz_core::page::{Direction, MAX_ITEMS};
 use klapz_core::user_rating::RatingCondition;
 use klapz_core::{CollectionId, RatingKey, UserId};
 
+use crate::language::LocaleInput;
 use crate::tag::{TagFilterError, TagFilterInput};
 use crate::DateTime;
 
@@ -218,6 +219,8 @@ pub struct ItemFilterInput {
     /// Keep only items whose own tracks hold the values named. Every condition must hold. A
     /// series has no tracks, its episodes holding them.
     pub tracks: Option<Vec<TrackFilterInput>>,
+    /// Keep only items whose own tracks are in the languages named. Every condition must hold.
+    pub track_languages: Option<Vec<TrackLanguageFilterInput>>,
     /// Keep only items carrying the named tags. Every condition must hold.
     pub tags: Option<Vec<TagFilterInput>>,
     /// Keep only items in the named collections. Every condition must hold.
@@ -343,10 +346,10 @@ pub enum TrackField {
     /// The format of a subtitle track, embedded or beside the file: `srt`, `pgs`.
     SubtitleCodec,
     /// The language an audio track states, as its file writes it: `fre` and `fra` apart. Only
-    /// a scanned file states one.
-    AudioLanguage,
+    /// a scanned file states one; `trackLanguages` lists and filters by the language itself.
+    StatedAudioLanguage,
     /// The language a subtitle track states, as its file writes it.
-    SubtitleLanguage,
+    StatedSubtitleLanguage,
 }
 
 impl From<TrackField> for DomainTrackField {
@@ -356,9 +359,63 @@ impl From<TrackField> for DomainTrackField {
             TrackField::AudioCodec => Self::AudioCodec,
             TrackField::AudioLayout => Self::AudioLayout,
             TrackField::SubtitleCodec => Self::SubtitleCodec,
-            TrackField::AudioLanguage => Self::AudioLanguage,
-            TrackField::SubtitleLanguage => Self::SubtitleLanguage,
+            TrackField::StatedAudioLanguage => Self::StatedAudioLanguage,
+            TrackField::StatedSubtitleLanguage => Self::StatedSubtitleLanguage,
         }
+    }
+}
+
+/// The tracks whose language is meant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
+pub enum TrackLanguageKind {
+    /// Audio tracks.
+    Audio,
+    /// Subtitle tracks, embedded or beside the file.
+    Subtitle,
+}
+
+impl From<TrackLanguageKind> for DomainTrackField {
+    fn from(kind: TrackLanguageKind) -> Self {
+        match kind {
+            TrackLanguageKind::Audio => Self::AudioLanguage,
+            TrackLanguageKind::Subtitle => Self::SubtitleLanguage,
+        }
+    }
+}
+
+/// Keeps items with a track of any of their versions in one of the languages; or, negated,
+/// the items with none. A language without a region stands for all of its regions, `FR` for
+/// `fr`, `fr-FR` and `fr-CA`; with one, for that region alone, a Quebec dub apart from one
+/// from France.
+#[derive(Debug, Clone, InputObject)]
+pub struct TrackLanguageFilterInput {
+    /// Which tracks to compare.
+    pub kind: TrackLanguageKind,
+    /// The languages, at least one and at most 50, any of which a track may be in.
+    pub any_of: Vec<LocaleInput>,
+    /// Keep the items none of whose tracks is in any of the languages instead.
+    #[graphql(default)]
+    pub negated: bool,
+}
+
+impl TryFrom<TrackLanguageFilterInput> for TrackCondition {
+    type Error = FilterError;
+
+    fn try_from(input: TrackLanguageFilterInput) -> Result<Self, Self::Error> {
+        if input.any_of.is_empty() || input.any_of.len() > TagCondition::MAX_VALUES {
+            return Err(FilterError::TrackValueCount);
+        }
+        let any_of = input
+            .any_of
+            .iter()
+            .map(|locale| locale.tag().map(|tag| tag.to_string()))
+            .collect::<Option<_>>()
+            .ok_or(FilterError::NotALocale)?;
+        Ok(Self {
+            field: input.kind.into(),
+            any_of,
+            negated: input.negated,
+        })
     }
 }
 
@@ -427,6 +484,8 @@ pub enum FilterError {
         TagCondition::MAX_VALUES
     )]
     TrackValueCount,
+    #[error("a track language names a script of four letters and a region such as CA")]
+    NotALocale,
     #[error("an item filter names between one and {MAX_ITEMS} items")]
     ItemCount,
     #[error(
@@ -496,6 +555,13 @@ impl TryFrom<ItemFilterInput> for ItemFilter {
             .unwrap_or_default()
             .into_iter()
             .map(TrackCondition::try_from)
+            .chain(
+                input
+                    .track_languages
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(TrackCondition::try_from),
+            )
             .collect::<Result<_, _>>()?;
         Ok(Self {
             ids: item_ids(input.ids)?,
@@ -581,6 +647,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one assertion per field of the input"
+    )]
     fn carries_every_field_through() {
         let input = ItemFilterInput {
             kind: Some(ItemType::Show),
@@ -607,6 +677,15 @@ mod tests {
                 field: TrackField::AudioLayout,
                 any_of: vec!["5.1".to_owned()],
                 negated: true,
+            }]),
+            track_languages: Some(vec![TrackLanguageFilterInput {
+                kind: TrackLanguageKind::Audio,
+                any_of: vec![LocaleInput {
+                    language: crate::language::Language::Fr,
+                    script: None,
+                    region: Some("CA".to_owned()),
+                }],
+                negated: false,
             }]),
             tags: Some(vec![TagFilterInput {
                 kind: crate::tag::TagType::Genre,
@@ -673,12 +752,39 @@ mod tests {
         );
         assert_eq!(
             filter.tracks,
-            vec![TrackCondition {
-                field: DomainTrackField::AudioLayout,
-                any_of: vec!["5.1".to_owned()],
-                negated: true,
-            }]
+            vec![
+                TrackCondition {
+                    field: DomainTrackField::AudioLayout,
+                    any_of: vec!["5.1".to_owned()],
+                    negated: true,
+                },
+                TrackCondition {
+                    field: DomainTrackField::AudioLanguage,
+                    any_of: vec!["fr-CA".to_owned()],
+                    negated: false,
+                },
+            ]
         );
+    }
+
+    #[test]
+    fn a_track_language_needs_a_real_region() {
+        let input = ItemFilterInput {
+            track_languages: Some(vec![TrackLanguageFilterInput {
+                kind: TrackLanguageKind::Subtitle,
+                any_of: vec![LocaleInput {
+                    language: crate::language::Language::Fr,
+                    script: None,
+                    region: Some("Canada".to_owned()),
+                }],
+                negated: false,
+            }]),
+            ..ItemFilterInput::default()
+        };
+        assert!(matches!(
+            ItemFilter::try_from(input),
+            Err(FilterError::NotALocale)
+        ));
     }
 
     #[test]

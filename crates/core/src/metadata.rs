@@ -1,5 +1,7 @@
 //! Library contents: items, their media, and the queries bindings run against them.
 
+use std::borrow::Cow;
+
 use crate::chapter::{Chapter, ChapterSource};
 use crate::edit::{ItemEdit, ItemField};
 use crate::extra::Extra;
@@ -7,6 +9,7 @@ use crate::ids::{
     ChapterId, ExtraId, MarkerId, MediaId, PartId, PersonId, RatingKey, SectionId, StreamId, TagId,
     UserId,
 };
+use crate::language::LanguageTag;
 use crate::marker::{Marker, NewMarker};
 use crate::page::{Cursor, CursorKey, Direction, Page, Window};
 
@@ -209,8 +212,10 @@ pub struct SideStream {
     /// The container's codec tag as ffprobe prints it: `[0][0][0][0]` where it names none.
     pub codec_tag: Option<String>,
     pub profile: Option<String>,
+    /// What the file states, read as a language.
+    pub language: Option<LanguageTag>,
     /// As the file states it.
-    pub language: Option<String>,
+    pub stated_language: Option<String>,
     pub time_base: Option<String>,
     /// An attachment's.
     pub mime_type: Option<String>,
@@ -268,7 +273,8 @@ pub struct MediaStream {
     /// The index the transcoder addresses this track by.
     pub position: i32,
     pub codec: Option<String>,
-    pub language: Option<String>,
+    /// The scan's reading of what the file states, or the import's of the reference's value.
+    pub language: Option<LanguageTag>,
     pub channels: Option<i32>,
     /// Bits per second, as the source measured it — not kilobits.
     pub bitrate: Option<i32>,
@@ -697,10 +703,14 @@ pub enum TrackField {
     /// The channel layout, as the analysis names it: `5.1(side)`, `stereo`.
     AudioLayout,
     SubtitleCodec,
-    /// The language an audio track states, as written: `fre`, `fra`. A scanned file's only.
+    /// An audio track's language, a [`LanguageTag`]: `fr`, `fr-CA`.
     AudioLanguage,
-    /// The language a subtitle track states, as written.
+    /// A subtitle track's language.
     SubtitleLanguage,
+    /// The language an audio track states, as written: `fre`, `fra`. A scanned file's only.
+    StatedAudioLanguage,
+    /// The language a subtitle track states, as written.
+    StatedSubtitleLanguage,
 }
 
 impl TrackField {
@@ -708,20 +718,43 @@ impl TrackField {
     pub const fn kind(self) -> StreamKind {
         match self {
             Self::VideoCodec => StreamKind::Video,
-            Self::AudioCodec | Self::AudioLayout | Self::AudioLanguage => StreamKind::Audio,
-            Self::SubtitleCodec | Self::SubtitleLanguage => StreamKind::Subtitle,
+            Self::AudioCodec
+            | Self::AudioLayout
+            | Self::AudioLanguage
+            | Self::StatedAudioLanguage => StreamKind::Audio,
+            Self::SubtitleCodec | Self::SubtitleLanguage | Self::StatedSubtitleLanguage => {
+                StreamKind::Subtitle
+            }
         }
     }
 
+    /// Whether the values are canonical language tags, which a wanted tag matches with the
+    /// tags extending it, `fr` matching `fr-CA`, rather than exactly.
+    pub const fn is_language(self) -> bool {
+        matches!(self, Self::AudioLanguage | Self::SubtitleLanguage)
+    }
+
     /// The value a track holds, if it holds one.
-    pub fn of(self, track: &MediaStream) -> Option<&str> {
+    pub fn of(self, track: &MediaStream) -> Option<Cow<'_, str>> {
         if track.kind != self.kind() {
             return None;
         }
         match self {
-            Self::AudioLayout => track.audio.as_ref()?.channel_layout.as_deref(),
-            Self::VideoCodec | Self::AudioCodec | Self::SubtitleCodec => track.codec.as_deref(),
-            Self::AudioLanguage | Self::SubtitleLanguage => track.stated.language.as_deref(),
+            Self::AudioLayout => track
+                .audio
+                .as_ref()?
+                .channel_layout
+                .as_deref()
+                .map(Cow::Borrowed),
+            Self::VideoCodec | Self::AudioCodec | Self::SubtitleCodec => {
+                track.codec.as_deref().map(Cow::Borrowed)
+            }
+            Self::AudioLanguage | Self::SubtitleLanguage => {
+                track.language.map(|tag| Cow::Owned(tag.to_string()))
+            }
+            Self::StatedAudioLanguage | Self::StatedSubtitleLanguage => {
+                track.stated.language.as_deref().map(Cow::Borrowed)
+            }
         }
     }
 }
@@ -729,10 +762,12 @@ impl TrackField {
 /// Keeps items with a track holding one of the values, or, negated, those with none.
 ///
 /// Matched exactly, case included: the reference finds 8,854 films for `videoCodec=h264`
-/// and none for `H264`. Several conditions combine with `AND`.
+/// and none for `H264`. A language is the exception: `fr` keeps the tracks in `fr`, `fr-FR`
+/// and `fr-CA`, `fr-CA` those in `fr-CA` alone. Several conditions combine with `AND`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrackCondition {
     pub field: TrackField,
+    /// For a language field, canonical tags, as [`LanguageTag`] writes them.
     pub any_of: Vec<String>,
     pub negated: bool,
 }
@@ -741,9 +776,15 @@ impl TrackCondition {
     /// Whether an item whose tracks are these satisfies the condition.
     pub fn holds<'a>(&self, tracks: impl IntoIterator<Item = &'a MediaStream>) -> bool {
         let found = tracks.into_iter().any(|track| {
-            self.field
-                .of(track)
-                .is_some_and(|value| self.any_of.iter().any(|wanted| wanted == value))
+            self.field.of(track).is_some_and(|value| {
+                self.any_of.iter().any(|wanted| {
+                    *wanted == value
+                        || (self.field.is_language()
+                            && value
+                                .strip_prefix(wanted.as_str())
+                                .is_some_and(|rest| rest.starts_with('-')))
+                })
+            })
         });
         found != self.negated
     }
@@ -1875,6 +1916,55 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
 
     use super::*;
+
+    fn audio_in(language: &str) -> MediaStream {
+        MediaStream {
+            id: StreamId::new(1),
+            file_id: PartId::new(1),
+            kind: StreamKind::Audio,
+            position: 1,
+            codec: None,
+            language: LanguageTag::parse(language),
+            channels: None,
+            bitrate: None,
+            is_default: true,
+            is_forced: false,
+            external_path: None,
+            title: None,
+            stream_identifier: None,
+            profile: None,
+            bit_depth: None,
+            traits: TrackTraits::default(),
+            video: None,
+            audio: None,
+            subtitle: None,
+            required_bandwidths: Vec::new(),
+            stated: StatedTrack {
+                language: Some(language.to_owned()),
+                ..StatedTrack::default()
+            },
+        }
+    }
+
+    #[test]
+    fn a_language_condition_keeps_its_regions_and_a_region_itself() {
+        let keeps = |field, wanted: &str, language: &str| {
+            TrackCondition {
+                field,
+                any_of: vec![wanted.to_owned()],
+                negated: false,
+            }
+            .holds([&audio_in(language)])
+        };
+        assert!(keeps(TrackField::AudioLanguage, "fr", "fre"));
+        assert!(keeps(TrackField::AudioLanguage, "fr", "fr-CA"));
+        assert!(keeps(TrackField::AudioLanguage, "fr-CA", "fr-CA"));
+        assert!(!keeps(TrackField::AudioLanguage, "fr-CA", "fr-FR"));
+        assert!(!keeps(TrackField::AudioLanguage, "f", "fr"));
+        // What the file states is matched as written.
+        assert!(keeps(TrackField::StatedAudioLanguage, "fre", "fre"));
+        assert!(!keeps(TrackField::StatedAudioLanguage, "fr", "fre"));
+    }
 
     #[test]
     fn only_movies_and_episodes_are_playable() {

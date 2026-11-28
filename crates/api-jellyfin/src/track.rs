@@ -9,6 +9,8 @@
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
+use klapz_core::language::LanguageTag;
+
 use crate::language;
 
 /// What the official API is asked of a track and of what else a file carries. A macro, so that
@@ -17,7 +19,7 @@ macro_rules! track_fields {
     () => {
         r"
 fragment JellyfinTrack on MediaStream {
-    id kind position codec language channels bitrate isDefault isForced isExternal title
+    id kind position codec language { tag } channels bitrate isDefault isForced isExternal title
     profile bitDepth estimatedBitrate
     stated { language name handlerName timeBase codecTag }
     video { width height frameRate level refFrames scan isAnamorphic chromaSubsampling
@@ -31,7 +33,7 @@ fragment JellyfinTrack on MediaStream {
     traits { isHearingImpaired isOriginal }
 }
 fragment JellyfinSideStream on SideStream {
-    kind position codec codecTag profile language timeBase mimeType filename isDefault
+    kind position codec codecTag profile language: statedLanguage timeBase mimeType filename isDefault
     isForced
     picture { width height pixelFormat bitDepth colorSpace level realFrameRate
               averageFrameRate sampleAspectRatio displayAspectRatio isInterlaced }
@@ -48,7 +50,11 @@ pub struct Track {
     pub kind: String,
     pub position: i32,
     pub codec: Option<String>,
-    pub language: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "klapz_api::language::deserialize_optional"
+    )]
+    pub language: Option<LanguageTag>,
     pub channels: Option<i32>,
     pub bitrate: Option<i64>,
     pub is_default: bool,
@@ -614,8 +620,7 @@ impl FileStreams<'_> {
         }
         track
             .language
-            .as_deref()
-            .map(|stored| language::three_letters(stored).to_owned())
+            .map(|tag| language::code_of(tag).map_or_else(|| tag.to_string(), ToOwned::to_owned))
     }
 
     /// The track's name, and for sound and subtitles an MP4 handler's when it names one.
@@ -1199,7 +1204,7 @@ pub(crate) mod tests {
 
     fn audio(language: &str, codec: &str, layout: &str) -> Track {
         let mut audio = track("AUDIO", codec);
-        audio.language = Some(language.to_owned());
+        audio.language = LanguageTag::parse(language);
         audio.audio = Some(AudioAnalysis {
             sampling_rate: Some(48_000),
             channel_layout: Some(layout.to_owned()),
@@ -1455,7 +1460,7 @@ pub(crate) mod tests {
     #[test]
     fn a_subtitle_is_labelled_as_the_reference_and_text_is_fetchable() {
         let mut sdh = track("SUBTITLE", "srt");
-        sdh.language = Some("fr".to_owned());
+        sdh.language = LanguageTag::parse("fr");
         sdh.title = Some("SDH".to_owned());
         sdh.traits.is_hearing_impaired = true;
         let stream = imported(&sdh);
@@ -1467,7 +1472,7 @@ pub(crate) mod tests {
         assert_eq!(stream["IsTextSubtitleStream"], true);
         assert_eq!(stream["LocalizedForced"], "Forced");
         let mut forced = track("SUBTITLE", "ass");
-        forced.language = Some("fr".to_owned());
+        forced.language = LanguageTag::parse("fr");
         forced.is_default = true;
         assert_eq!(imported(&forced)["DisplayTitle"], "French - Default - ASS");
         let image = imported(&track("SUBTITLE", "pgs"));

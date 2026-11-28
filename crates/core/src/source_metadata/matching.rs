@@ -142,6 +142,8 @@ fn levenshtein(a: &str, b: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
     use crate::metadata::ItemKind;
 
@@ -150,7 +152,7 @@ mod tests {
             kind: ItemKind::Movie,
             title: title.to_owned(),
             year,
-            language: "fr-FR".to_owned(),
+            language: crate::language::LanguageTag::parse("fr-FR").unwrap(),
         }
     }
 

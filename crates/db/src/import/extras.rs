@@ -21,6 +21,7 @@ use super::analysis::Analysis;
 use super::{source_error, ImportError, PlexRow, SOURCE_PAGE};
 use crate::entity::{extra, extra_media, extra_track};
 use crate::extra_store;
+use crate::language::canonical;
 
 /// Rows per insert: at most nineteen columns, far inside every engine's parameter limit.
 const WRITE_CHUNK: usize = 500;
@@ -319,7 +320,7 @@ async fn import_tracks(
                 kind: ActiveValue::Set(kind.to_owned()),
                 position: ActiveValue::Set(row.plex_opt("index").unwrap_or(0)),
                 codec: ActiveValue::Set(row.plex_text("codec")),
-                language: ActiveValue::Set(row.plex_text("language")),
+                language: ActiveValue::Set(canonical(row.plex_text("language").as_deref())),
                 channels: ActiveValue::Set(row.plex_opt("channels")),
                 bitrate: ActiveValue::Set(row.plex_opt("bitrate")),
                 width: ActiveValue::Set(packed.int("ma:width")),

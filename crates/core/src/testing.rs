@@ -1646,7 +1646,7 @@ impl InMemoryMetadata {
                         .tracks_of(item.id)
                         .iter()
                         .filter_map(|track| track_field.of(track))
-                        .map(|value| FieldValue::Text(value.to_owned()))
+                        .map(|value| FieldValue::Text(value.into_owned()))
                         .collect(),
                 }
             })
